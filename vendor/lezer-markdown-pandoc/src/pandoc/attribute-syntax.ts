@@ -222,19 +222,23 @@ function scanToken (source: string, start: number): PandocSyntaxScan<PandocAttri
   const quote = source[valueStart]
   if (quote === '"' || quote === "'") {
     const quoted = scanQuotedValue(source, valueStart, quote)
-    if (quoted.status !== 'match') {
-      return quoted
+    if (quoted.status === 'match') {
+      return {
+        status: 'match',
+        value: {
+          kind: 'key-value',
+          from: start,
+          to: quoted.value.to,
+          key: source.slice(start, keyEnd),
+          value: quoted.value.value,
+        },
+      }
     }
-    return {
-      status: 'match',
-      value: {
-        kind: 'key-value',
-        from: start,
-        to: quoted.value.to,
-        key: source.slice(start, keyEnd),
-        value: quoted.value.value,
-      },
-    }
+    // Pandoc's keyValAttr wraps the quoted alternatives in `try`. When a
+    // closing quote is absent, it rewinds and lets the unquoted-value branch
+    // consume the leading quote as an ordinary character up to whitespace or
+    // `}`. Do the same instead of declaring the whole attribute list
+    // incomplete. Reference: Markdown.hs `keyValAttr`.
   }
 
   const unquoted = scanUnquotedValue(source, valueStart)

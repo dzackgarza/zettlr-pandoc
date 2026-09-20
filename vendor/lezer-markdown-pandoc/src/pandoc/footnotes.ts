@@ -20,6 +20,7 @@
  */
 
 import type { InlineParser, BlockParser, DelimiterType, BlockContext, Line } from '../markdown'
+import { scanPandocAttributeList } from './attribute-syntax'
 
 const FootnoteDelimiter: DelimiterType = {}
 
@@ -28,6 +29,58 @@ const validFootnoteRe = /^[^\s\^\[\]]+$/
 // Group 1 is the label alone; the body may start after a space or on the next
 // line, so the separator is a space *or* the end of the line.
 const footnoteRefRe = /^(\[\^[^\s\^\[\]]+\]:)(?:\s|$)/
+
+function codeSpanEnd (text: string, from: number): number {
+  if (text[from] !== '`') return from
+  let width = 1
+  while (text[from + width] === '`') width++
+  const mark = '`'.repeat(width)
+  const end = text.indexOf(mark, from + width)
+  return end < 0 ? from : end + width
+}
+
+function delimitedEnd (text: string, from: number, open: string, close: string): number {
+  if (!text.startsWith(open, from)) return from
+  for (let cursor = from + open.length; cursor < text.length; cursor++) {
+    if (text.startsWith(close, cursor)) return cursor + close.length
+    if (text[cursor] === '\\') cursor++
+  }
+  return from
+}
+
+/**
+ * Pandoc `inlineNote` uses `inBalancedBrackets inlines`, so brackets inside
+ * code/math do not participate in note balancing. This scanner is lookahead
+ * only: it must not mutate InlineContext until the whole note and its trailing
+ * negative-lookahead condition are known to succeed.
+ */
+function inlineNoteClose (text: string, from: number): number {
+  if (!text.startsWith('^[', from)) return -1
+  let depth = 1
+  for (let cursor = from + 2; cursor < text.length;) {
+    if (text[cursor] === '\\') {
+      const bracketMath = delimitedEnd(text, cursor, '\\[', '\\]')
+      if (bracketMath !== cursor) { cursor = bracketMath; continue }
+      const parenMath = delimitedEnd(text, cursor, '\\(', '\\)')
+      if (parenMath !== cursor) { cursor = parenMath; continue }
+      cursor += Math.min(2, text.length - cursor)
+      continue
+    }
+    const codeEnd = codeSpanEnd(text, cursor)
+    if (codeEnd !== cursor) { cursor = codeEnd; continue }
+    const displayMath = delimitedEnd(text, cursor, '$$', '$$')
+    if (displayMath !== cursor) { cursor = displayMath; continue }
+    const inlineMath = delimitedEnd(text, cursor, '$', '$')
+    if (inlineMath !== cursor) { cursor = inlineMath; continue }
+    if (text[cursor] === '[') depth++
+    if (text[cursor] === ']') {
+      depth--
+      if (depth === 0) return cursor
+    }
+    cursor++
+  }
+  return -1
+}
 
 export const footnoteParser: InlineParser = {
   name: 'footnotes',
@@ -46,9 +99,26 @@ export const footnoteParser: InlineParser = {
       return -1
     }
 
-    // Footnote Style: ^[inline]
+    // Footnote Style: ^[inline]. Pandoc wraps the entire parser in `try`, so a
+    // failure must leave both `^` and `[` untouched for later alternatives.
     if (next === 94 && ctx.char(pos + 1) === 91) {
-      return ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false)
+      const localFrom = pos - ctx.offset
+      const close = inlineNoteClose(ctx.text, localFrom)
+      if (close < 0) return -1
+      const after = close + 1
+      const following = ctx.text[after]
+      const followedByAttributes = following === '{' &&
+        scanPandocAttributeList(ctx.text, after).status === 'match'
+      if (following === '(' || following === '[' || followedByAttributes) return -1
+
+      const contentFrom = localFrom + 2
+      const absoluteContentFrom = ctx.offset + contentFrom
+      const absoluteClose = ctx.offset + close
+      const children = ctx.parser.parseInline(
+        ctx.text.slice(contentFrom, close),
+        absoluteContentFrom,
+      )
+      return ctx.addElement(ctx.elt('Footnote', pos, absoluteClose + 1, children))
     }
 
     let opening = null
@@ -61,18 +131,20 @@ export const footnoteParser: InlineParser = {
     const delim = ctx.getDelimiterAt(opening)
     if (delim === null) { return -1 }
 
-    // Inline footnotes can contain markup, however, identifier footnotes cannot.
-    const isInline = ctx.char(delim.from) === 94 // 94 === '^'
-
     // Finally, check if the identifier is valid
-    if (!isInline && !validFootnoteRe.test(ctx.slice(delim.to, pos))) {
+    if (!validFootnoteRe.test(ctx.slice(delim.to, pos))) {
+      ctx.discardDelimiter(opening)
       return -1
     }
 
     const children = ctx.takeContent(opening)
+    // `note` has higher Pandoc precedence than `bracketedSpan` and `link` for
+    // `[^id]`. A successful note therefore owns the opening `[` outright.
+    ctx.discardLinkCompanionDelimiters(delim.from, delim.from + 1)
+    ctx.discardOpeningLinkDelimiter(delim.from, delim.from + 1)
 
     ctx.addDelimiter(FootnoteDelimiter, pos, pos + 1, false, true)
-    return ctx.addElement(ctx.elt('Footnote', delim.from, pos + 1, isInline ? children : undefined))
+    return ctx.addElement(ctx.elt('Footnote', delim.from, pos + 1))
   }
 }
 

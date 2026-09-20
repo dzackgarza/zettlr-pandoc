@@ -10,6 +10,11 @@ class CompositeBlock {
 
   /// @internal
   hashProp: [NodeProp<any>, any][]
+  /// Pandoc list items have two continuation phases. Before a blank line,
+  /// unindented physical lines may remain in the current raw list item. After a
+  /// blank line, `listContinuation` requires the continuation indent before
+  /// lazy continuation can resume. @internal
+  pandocListNeedsIndent = false
 
   constructor(readonly type: number,
               // Used for indentation in list items, markup character in lists
@@ -129,6 +134,9 @@ export class Line {
   indent = 0
   /// The character code of the character after `pos`.
   next = -1
+  /// This physical line lacks a `>` marker but is being retained inside a
+  /// Pandoc-style block quote as lazy continuation text. @internal
+  lazyBlockquoteContinuation = false
 
   /// @internal
   forward() {
@@ -151,6 +159,7 @@ export class Line {
   /// @internal
   reset(text: string) {
     this.text = text
+    this.lazyBlockquoteContinuation = false
     this.baseIndent = this.basePos = this.pos = this.indent = 0
     this.forwardInner()
     this.depth = 1
@@ -209,6 +218,23 @@ function skipForList(bl: CompositeBlock, cx: BlockContext, line: Line) {
       (bl != cx.block && line.indent >= cx.stack[line.depth + 1].value + line.baseIndent)) return true
   if (line.indent >= line.baseIndent + 4) return false
   let size = (bl.type == Type.OrderedList ? isOrderedList : isBulletList)(line, cx, false)
+  let anyListStart = isBulletList(line, cx, false) >= 0 || isOrderedList(line, cx, false) >= 0
+  let activeItem: CompositeBlock | undefined
+  for (let i = cx.stack.length - 1; i >= 0; i--) {
+    if (cx.stack[i].type == Type.ListItem) { activeItem = cx.stack[i]; break }
+  }
+  let continuationIndented = activeItem != null &&
+    line.indent >= line.baseIndent + activeItem.value
+  if (cx.parser.pandocParagraphContinuation && size < 0 && !anyListStart &&
+      isFencedCode(line) < 0 && activeItem != null &&
+      (!activeItem.pandocListNeedsIndent || continuationIndented)) {
+    // Pandoc `rawListItem` / `listLine` allows an unindented non-list line to
+    // remain inside the current list item. This is how a following raw-TeX
+    // block, paragraph continuation, block quote text, etc. stays owned by the
+    // list item. A new list marker or fenced code opener terminates this lazy
+    // continuation. Reference: Markdown.hs `rawListItem`, `listLine`.
+    return true
+  }
   return size > 0 &&
     (bl.type != Type.BulletList || isHorizontalRule(line, cx, false) < 0) &&
     line.text.charCodeAt(line.pos + size - 1) == bl.value
@@ -216,14 +242,41 @@ function skipForList(bl: CompositeBlock, cx: BlockContext, line: Line) {
 
 const DefaultSkipMarkup: {[type: number]: (bl: CompositeBlock, cx: BlockContext, line: Line) => boolean} = {
   [Type.Blockquote](bl, cx, line) {
-    if (line.next != 62 /* '>' */) return false
+    if (line.next != 62 /* '>' */) {
+      // Pandoc `emailLine` carries unmarked physical lines into the current
+      // block quote through the Markdown `endline` parser. That parser refuses
+      // to cross a fenced-code opener when Ext_backtick_code_blocks is enabled,
+      // so an unmarked ```/~~~ line closes the quote rather than becoming a
+      // fenced code block inside it. Reference: Markdown.hs `emailLine` and
+      // `endline` (the `codeBlockFenced` negative lookahead).
+      if (cx.parser.lazyBlockquotes && line.next > -1 && isFencedCode(line) < 0) {
+        line.lazyBlockquoteContinuation = true
+        return true
+      }
+      return false
+    }
     line.markers.push(elt(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1))
     line.moveBase(line.pos + (space(line.text.charCodeAt(line.pos + 1)) ? 2 : 1))
     bl.end = cx.lineStart + line.text.length
     return true
   },
   [Type.ListItem](bl, _cx, line) {
-    if (line.indent < line.baseIndent + bl.value && line.next > -1) return false
+    if (line.next < 0) {
+      if (_cx.parser.pandocParagraphContinuation) bl.pandocListNeedsIndent = true
+      line.moveBaseColumn(line.baseIndent + bl.value)
+      return true
+    }
+    if (line.indent < line.baseIndent + bl.value && line.next > -1) {
+      if (_cx.parser.pandocParagraphContinuation &&
+          !bl.pandocListNeedsIndent &&
+          isBulletList(line, _cx, false) < 0 &&
+          isOrderedList(line, _cx, false) < 0 &&
+          isFencedCode(line) < 0) {
+        return true
+      }
+      return false
+    }
+    if (_cx.parser.pandocParagraphContinuation) bl.pandocListNeedsIndent = false
     line.moveBaseColumn(line.baseIndent + bl.value)
     return true
   },
@@ -275,6 +328,10 @@ function inList(cx: BlockContext, type: Type) {
   for (let i = cx.stack.length - 1; i >= 0; i--)
     if (cx.stack[i].type == type) return true
   return false
+}
+
+function inAnyList(cx: BlockContext) {
+  return inList(cx, Type.BulletList) || inList(cx, Type.OrderedList)
 }
 
 function isBulletList(line: Line, cx: BlockContext, breaking: boolean) {
@@ -376,26 +433,31 @@ const DefaultBlockParsers: {[name: string]: ((cx: BlockContext, line: Line) => B
     let from = cx.lineStart + start, to = cx.lineStart + line.text.length
     let marks: Element[] = [], pendingMarks: Element[] = []
     addCodeText(marks, from, to)
-    while (cx.nextLine() && line.depth >= cx.stack.length) {
-      if (line.pos == line.text.length) { // Empty
-        addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart)
-        for (let m of line.markers) pendingMarks.push(m)
-      } else if (line.indent < base) {
-        break
-      } else {
-        if (pendingMarks.length) {
-          for (let m of pendingMarks) {
-            if (m.type == Type.CodeText) addCodeText(marks, m.from, m.to)
-            else marks.push(m)
+    cx.beginOpaqueBlock()
+    try {
+      while (cx.nextLine() && line.depth >= cx.stack.length) {
+        if (line.pos == line.text.length) { // Empty
+          addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart)
+          for (let m of line.markers) pendingMarks.push(m)
+        } else if (line.indent < base) {
+          break
+        } else {
+          if (pendingMarks.length) {
+            for (let m of pendingMarks) {
+              if (m.type == Type.CodeText) addCodeText(marks, m.from, m.to)
+              else marks.push(m)
+            }
+            pendingMarks = []
           }
-          pendingMarks = []
+          addCodeText(marks, cx.lineStart - 1, cx.lineStart)
+          for (let m of line.markers) marks.push(m)
+          to = cx.lineStart + line.text.length
+          let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4)
+          if (codeStart < to) addCodeText(marks, codeStart, to)
         }
-        addCodeText(marks, cx.lineStart - 1, cx.lineStart)
-        for (let m of line.markers) marks.push(m)
-        to = cx.lineStart + line.text.length
-        let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4)
-        if (codeStart < to) addCodeText(marks, codeStart, to)
       }
+    } finally {
+      cx.endOpaqueBlock()
     }
     if (pendingMarks.length) {
       pendingMarks = pendingMarks.filter(m => m.type != Type.CodeText)
@@ -415,24 +477,34 @@ const DefaultBlockParsers: {[name: string]: ((cx: BlockContext, line: Line) => B
     if (infoFrom < infoTo)
       marks.push(elt(Type.CodeInfo, cx.lineStart + infoFrom, cx.lineStart + infoTo))
 
-    for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
-      let i = line.pos
-      if (line.indent - line.baseIndent < 4)
-        while (i < line.text.length && line.text.charCodeAt(i) == ch) i++
-      if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
-        for (let m of line.markers) marks.push(m)
-        if (empty && hasLine) addCodeText(marks, cx.lineStart - 1, cx.lineStart)
-        marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i))
-        cx.nextLine()
-        break
-      } else {
-        hasLine = true
-        if (!first) { addCodeText(marks, cx.lineStart - 1, cx.lineStart); empty = false }
-        for (let m of line.markers) marks.push(m)
-        let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length
-        if (textStart < textEnd) { addCodeText(marks, textStart, textEnd); empty = false }
+    let closed = false
+    cx.beginOpaqueBlock()
+    try {
+      for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
+        let i = line.pos
+        if (line.indent - line.baseIndent < 4)
+          while (i < line.text.length && line.text.charCodeAt(i) == ch) i++
+        if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
+          for (let m of line.markers) marks.push(m)
+          if (empty && hasLine) addCodeText(marks, cx.lineStart - 1, cx.lineStart)
+          marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i))
+          closed = true
+          break
+        } else {
+          hasLine = true
+          if (!first) { addCodeText(marks, cx.lineStart - 1, cx.lineStart); empty = false }
+          for (let m of line.markers) marks.push(m)
+          let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length
+          if (textStart < textEnd) { addCodeText(marks, textStart, textEnd); empty = false }
+        }
       }
+    } finally {
+      cx.endOpaqueBlock()
     }
+    // Advance past the closing code fence only after opaque mode is lifted, so
+    // container syntax on the following physical line (for example a Pandoc
+    // fenced-div closer) is interpreted in its normal context.
+    if (closed) cx.nextLine()
     cx.addNode(cx.buffer.writeElements(marks, -from)
       .finish(Type.FencedCode, cx.prevLineEnd() - from), from)
     return true
@@ -626,13 +698,15 @@ const DefaultLeafBlocks: {[name: string]: (cx: BlockContext, leaf: LeafBlock) =>
 }
 
 const DefaultEndLeaf: readonly ((cx: BlockContext, line: Line) => boolean)[] = [
-  (_, line) => isAtxHeading(line) >= 0,
+  (p, line) => !p.parser.pandocParagraphContinuation && !line.lazyBlockquoteContinuation && isAtxHeading(line) >= 0,
   (_, line) => isFencedCode(line) >= 0,
-  (_, line) => isBlockquote(line) >= 0,
-  (p, line) => isBulletList(line, p, true) >= 0,
-  (p, line) => isOrderedList(line, p, true) >= 0,
-  (p, line) => isHorizontalRule(line, p, true) >= 0,
-  (p, line) => isHTMLBlock(line, p, true) >= 0
+  (p, line) => !p.parser.pandocParagraphContinuation && isBlockquote(line) >= 0,
+  (p, line) => (!p.parser.pandocParagraphContinuation || inAnyList(p)) &&
+    !line.lazyBlockquoteContinuation && isBulletList(line, p, true) >= 0,
+  (p, line) => (!p.parser.pandocParagraphContinuation || inAnyList(p)) &&
+    !line.lazyBlockquoteContinuation && isOrderedList(line, p, true) >= 0,
+  (p, line) => !p.parser.pandocParagraphContinuation && !line.lazyBlockquoteContinuation && isHorizontalRule(line, p, true) >= 0,
+  (p, line) => !line.lazyBlockquoteContinuation && isHTMLBlock(line, p, true) >= 0
 ]
 
 const scanLineResult = {text: "", end: 0}
@@ -653,6 +727,7 @@ export class BlockContext implements PartialParse {
   /// the proper node in `injectGaps` @internal
   reusePlaceholders: Map<Tree, Tree> = new Map
   stoppedAt: number | null = null
+  private opaqueBlockDepth = 0
 
   /// The start of the current line.
   lineStart: number
@@ -684,6 +759,19 @@ export class BlockContext implements PartialParse {
   get parsedPos() {
     return this.absoluteLineStart
   }
+
+  /// True while a block parser is consuming source whose interior must not be
+  /// interpreted as container-closing syntax by extension composite blocks.
+  /// Fenced/indented code and raw-TeX blocks use this while advancing across
+  /// their body lines. Container syntax that owns per-line prefixes (lists,
+  /// blockquotes) still runs normally; extensions may opt into this signal.
+  get inOpaqueBlock() { return this.opaqueBlockDepth > 0 }
+
+  /// @internal
+  beginOpaqueBlock() { this.opaqueBlockDepth++ }
+
+  /// @internal
+  endOpaqueBlock() { this.opaqueBlockDepth-- }
 
   advance() {
     if (this.stoppedAt != null && this.absoluteLineStart > this.stoppedAt)
@@ -1109,6 +1197,21 @@ export interface MarkdownConfig {
   parseBlock?: readonly BlockParser[]
   /// Define new [inline parsing](#InlineParser) logic.
   parseInline?: readonly InlineParser[]
+  /// Node names which, when they begin immediately after a completed `[label]`,
+  /// prevent the standard reference-link parser from consuming that following
+  /// bracket as a `LinkLabel`. Pandoc uses this for `normalCite`: `[label]`
+  /// followed by `[@cite]` must leave the citation to the citation parser.
+  referenceLabelBlockers?: readonly string[]
+  /// Preserve Pandoc's email-style blockquote continuation behavior: after a
+  /// marked `>` line, subsequent nonblank unmarked physical lines remain quote
+  /// content until a parser boundary which Pandoc's `endline` actually permits
+  /// to interrupt it. This differs materially from CommonMark block quotes.
+  lazyBlockquotes?: boolean
+  /// Pandoc's default markdown reader requires a blank line before ATX
+  /// headings, block quotes, and lists, and does not let horizontal rules
+  /// interrupt a paragraph. CommonMark does. Enable Pandoc's `endline` policy
+  /// for those block starts while retaining fenced-code and HTML interruption.
+  pandocParagraphContinuation?: boolean
   /// Remove the named parsers from the configuration.
   remove?: readonly string[]
   /// Add a parse wrapper (such as a [mixed-language
@@ -1147,6 +1250,12 @@ export class MarkdownParser extends Parser {
     /// @internal
     readonly inlineNames: readonly string[],
     /// @internal
+    readonly referenceLabelBlockers: readonly string[],
+    /// @internal
+    readonly lazyBlockquotes: boolean,
+    /// @internal
+    readonly pandocParagraphContinuation: boolean,
+    /// @internal
     readonly wrappers: readonly ParseWrapper[]
   ) {
     super()
@@ -1167,6 +1276,9 @@ export class MarkdownParser extends Parser {
     let blockParsers = this.blockParsers.slice(), leafBlockParsers = this.leafBlockParsers.slice(),
         blockNames = this.blockNames.slice(), inlineParsers = this.inlineParsers.slice(),
         inlineNames = this.inlineNames.slice(), endLeafBlock = this.endLeafBlock.slice(),
+        referenceLabelBlockers = this.referenceLabelBlockers.slice(),
+        lazyBlockquotes = this.lazyBlockquotes || config.lazyBlockquotes === true,
+        pandocParagraphContinuation = this.pandocParagraphContinuation || config.pandocParagraphContinuation === true,
         wrappers = this.wrappers
 
     if (nonEmpty(config.defineNodes)) {
@@ -1236,12 +1348,19 @@ export class MarkdownParser extends Parser {
       }
     }
 
+    if (nonEmpty(config.referenceLabelBlockers)) {
+      for (let name of config.referenceLabelBlockers) {
+        if (!referenceLabelBlockers.includes(name)) referenceLabelBlockers.push(name)
+      }
+    }
+
     if (config.wrap) wrappers = wrappers.concat(config.wrap)
 
     return new MarkdownParser(nodeSet,
                               blockParsers, leafBlockParsers, blockNames,
                               endLeafBlock, skipContextMarkup,
-                              inlineParsers, inlineNames, wrappers)
+                              inlineParsers, inlineNames, referenceLabelBlockers,
+                              lazyBlockquotes, pandocParagraphContinuation, wrappers)
   }
 
   /// @internal
@@ -1266,6 +1385,16 @@ export class MarkdownParser extends Parser {
     }
     return cx.resolveMarkers(0)
   }
+
+  /// Whether parsing the source beginning at `offset` produces one of the
+  /// configured semantic nodes which Pandoc gives precedence over a reference
+  /// link label at this position.
+  referenceLabelBlockedAt(text: string, offset: number) {
+    if (!this.referenceLabelBlockers.length) return false
+    let elements = this.parseInline(text, offset)
+    let first = elements.find(element => element.from == offset)
+    return first != null && this.referenceLabelBlockers.includes(this.nodeSet.types[first.type].name)
+  }
 }
 
 function nonEmpty<T>(a: undefined | readonly T[]): a is readonly T[] {
@@ -1287,6 +1416,10 @@ function resolveConfig(spec: MarkdownExtension): MarkdownConfig | null {
     defineNodes: conc(conf.defineNodes, rest.defineNodes),
     parseBlock: conc(conf.parseBlock, rest.parseBlock),
     parseInline: conc(conf.parseInline, rest.parseInline),
+    referenceLabelBlockers: conc(conf.referenceLabelBlockers, rest.referenceLabelBlockers),
+    lazyBlockquotes: conf.lazyBlockquotes === true || rest.lazyBlockquotes === true,
+    pandocParagraphContinuation:
+      conf.pandocParagraphContinuation === true || rest.pandocParagraphContinuation === true,
     remove: conc(conf.remove, rest.remove),
     wrap: !wrapA ? wrapB : !wrapB ? wrapA :
       (inner, input, fragments, ranges) => wrapA!(wrapB!(inner, input, fragments, ranges), input, fragments, ranges)
@@ -1407,10 +1540,74 @@ export interface DelimiterType {
   /// If the delimiter itself should, when matched, create a syntax
   /// node, set this to the name of the syntax node.
   mark?: string
+  /// When a standard Markdown link/image successfully consumes a `[` opener at
+  /// the same source range, invalidate this companion delimiter as well. This
+  /// lets extensions that share bracket syntax (notably Pandoc bracketed
+  /// spans) keep their own nesting stack without leaving a stale inner opener
+  /// behind after `[label](target)` becomes a real link.
+  consumeWithLink?: boolean
 }
 
 const EmphasisUnderscore: DelimiterType = {resolve: "Emphasis", mark: "EmphasisMark"}
 const EmphasisAsterisk: DelimiterType = {resolve: "Emphasis", mark: "EmphasisMark"}
+
+// Pandoc's Markdown emphasis parser is not CommonMark's delimiter-run
+// resolver. In `one`, a `**` encountered inside a single-star enclosure is
+// parsed by `two`; when that nested strong opener has no `**` closer, `two`
+// consumes the remainder literally and the outer single-star enclosure also
+// fails. Thus `*a**b*` is literal in Pandoc, rather than one Emphasis node.
+//
+// Reference implementation: Pandoc 3.10.2 commit
+// f2ee5dfee866aab007a33552acc6bc01810c6918,
+// Text/Pandoc/Readers/Markdown.hs `enclosure`, `one`, `two`, and `ender`
+// (around lines 1680-1735).
+function pandocSingleAsteriskHasCloser(text: string, start: number) {
+  let pos = start + 1
+
+  function skipCodeSpan(at: number) {
+    if (text.charCodeAt(at) != 96 /* ` */) return at
+    let width = 1
+    while (text.charCodeAt(at + width) == 96) width++
+    let close = text.indexOf("`".repeat(width), at + width)
+    return close < 0 ? at : close + width
+  }
+
+  function nextStrongClose(at: number) {
+    for (let i = at; i < text.length;) {
+      if (text.charCodeAt(i) == 92 /* \\ */) { i += 2; continue }
+      let codeEnd = skipCodeSpan(i)
+      if (codeEnd != i) { i = codeEnd; continue }
+      if (text.charCodeAt(i) == 42 /* * */) {
+        let run = 1
+        while (text.charCodeAt(i + run) == 42) run++
+        if (run >= 2) return i + 2
+        i += run
+      } else {
+        i++
+      }
+    }
+    return -1
+  }
+
+  while (pos < text.length) {
+    if (text.charCodeAt(pos) == 92 /* \\ */) { pos += 2; continue }
+    let codeEnd = skipCodeSpan(pos)
+    if (codeEnd != pos) { pos = codeEnd; continue }
+    if (text.charCodeAt(pos) != 42 /* * */) { pos++; continue }
+
+    let run = 1
+    while (text.charCodeAt(pos + run) == 42) run++
+    if (run == 1 || run >= 3) return true
+
+    // Exactly `**`: Pandoc's `one` delegates to `two`. If that nested strong
+    // cannot close, it consumes the rest and prevents this outer emphasis from
+    // closing as well.
+    let nestedEnd = nextStrongClose(pos + 2)
+    if (nestedEnd < 0) return false
+    pos = nestedEnd
+  }
+  return false
+}
 const LinkStart: DelimiterType = {}, ImageStart: DelimiterType = {}
 
 class InlineDelimiter {
@@ -1492,6 +1689,8 @@ const DefaultInline: {[name: string]: (cx: InlineContext, next: number, pos: num
     let rightFlanking = !sBefore && (!pBefore || sAfter || pAfter)
     let canOpen = leftFlanking && (next == 42 || !rightFlanking || pBefore)
     let canClose = rightFlanking && (next == 42 || !leftFlanking || pAfter)
+    if (next == 42 && pos == start + 1 && canOpen &&
+        !pandocSingleAsteriskHasCloser(cx.text, start - cx.offset)) canOpen = false
     return cx.append(new InlineDelimiter(next == 95 ? EmphasisUnderscore : EmphasisAsterisk, start, pos,
                                          (canOpen ? Mark.Open : Mark.None) | (canClose ? Mark.Close : Mark.None)))
   },
@@ -1533,6 +1732,7 @@ const DefaultInline: {[name: string]: (cx: InlineContext, next: number, pos: num
         // this.parts with the link/image node.
         let content = cx.takeContent(i)
         let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1)
+        cx.discardLinkCompanionDelimiters(part.from, part.to)
         // Set any open-link markers before this link to invalid.
         if (part.type == LinkStart) for (let j = 0; j < i; j++) {
           let p = cx.parts[j]
@@ -1568,10 +1768,24 @@ function finishLink(cx: InlineContext, content: Element[], type: Type, start: nu
       content.push(elt(Type.LinkMark, pos, endPos))
     }
   } else if (next == 91 /* '[' */) {
-    let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false)
-    if (label) {
-      content.push(label)
-      endPos = label.to
+    // Pandoc referenceLink performs a look-ahead for `normalCite` before it
+    // consumes a following reference label. The fork exposes that precedence
+    // generically through `referenceLabelBlockers` so the link parser reuses
+    // the configured citation grammar instead of restating it here.
+    let blocked = cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos)
+    if (!blocked) {
+      let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false)
+      if (label) {
+        // Pandoc `referenceLink` reparses the raw reference label with the
+        // inline grammar for its fallback representation (`parsedRaw <-
+        // parseFromString' inlines raw'`). Preserve those semantic children in
+        // the Lezer LinkLabel node instead of treating it as opaque source.
+        let innerFrom = label.from + 1, innerTo = label.to - 1
+        let parsedLabel = cx.elt("LinkLabel", label.from, label.to,
+          cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom))
+        content.push(parsedLabel)
+        endPos = parsedLabel.to
+      }
     }
   }
   return elt(type, start, endPos, content)
@@ -1764,6 +1978,12 @@ export class InlineContext {
     return null
   }
 
+  /// Find the nearest unmatched standard Markdown link opening delimiter.
+  /// Pandoc extensions such as bracketed spans share the same `[` opener as
+  /// links and need to observe which openings the link parser has already
+  /// consumed, rather than maintaining an independent delimiter stack.
+  findOpeningLinkDelimiter() { return this.findOpeningDelimiter(LinkStart) }
+
   /// Remove all inline elements and delimiters starting from the
   /// given index (which you should get from
   /// [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter),
@@ -1782,6 +2002,38 @@ export class InlineContext {
   getDelimiterAt(index: number): {from: number, to: number, type: DelimiterType} | null {
     let part = this.parts[index]
     return part instanceof InlineDelimiter ? part : null
+  }
+
+  /// Invalidate an unmatched delimiter without discarding the content parsed
+  /// after it. Fork extensions use this when the reference grammar has parsed
+  /// far enough to prove that a speculative opener must backtrack to literal
+  /// source (for example Pandoc `inlineNote` followed by link syntax).
+  discardDelimiter(index: number) {
+    if (this.parts[index] instanceof InlineDelimiter) this.parts[index] = null
+  }
+
+  /// Invalidate extension delimiters that share a source opener with a link
+  /// which has just been recognized. Fork extensions call this too because
+  /// Pandoc's readable-path link parser can recognize a link before the
+  /// default Lezer LinkEnd parser runs.
+  discardLinkCompanionDelimiters(from: number, to: number) {
+    for (let i = 0; i < this.parts.length; i++) {
+      let part = this.parts[i]
+      if (part instanceof InlineDelimiter && part.type.consumeWithLink &&
+          part.from == from && part.to == to) this.parts[i] = null
+    }
+  }
+
+  /// Remove the standard Markdown LinkStart delimiter at an exact source
+  /// opener. Extensions such as Pandoc footnote references initially let the
+  /// Link parser observe `[` as a fallback, but must invalidate that fallback
+  /// once their higher-precedence construct succeeds.
+  discardOpeningLinkDelimiter(from: number, to: number) {
+    for (let i = 0; i < this.parts.length; i++) {
+      let part = this.parts[i]
+      if (part instanceof InlineDelimiter && part.type == LinkStart &&
+          part.from == from && part.to == to) this.parts[i] = null
+    }
   }
 
   /// Skip space after the given (document) position, returning either
@@ -1962,5 +2214,8 @@ export const parser = new MarkdownParser(
   DefaultSkipMarkup,
   Object.keys(DefaultInline).map(n => DefaultInline[n]),
   Object.keys(DefaultInline),
+  [],
+  false,
+  false,
   []
 )

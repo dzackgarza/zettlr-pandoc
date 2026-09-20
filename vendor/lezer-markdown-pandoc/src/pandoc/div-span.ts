@@ -24,9 +24,8 @@ import type { InlineParser, BlockParser, BlockContext, Line, DelimiterType } fro
 import type { Input } from '@lezer/common'
 import { scanPandocAttributeList, scanPandocFencedDivOpening, type PandocFencedDivOpeningScan } from './attribute-syntax'
 
-const PandocSpanDelimiter: DelimiterType = {}
-
 const pandocDivClosingRe = /^(?<mark>:{3,})\s*$/d
+const PandocSpanDelimiter: DelimiterType = { consumeWithLink: true }
 
 
 interface BlockContextInput {
@@ -85,9 +84,11 @@ export const pandocSpanParser: InlineParser = {
   before: 'Link',
   parse: (ctx, next, pos) => {
     if (next === 91) { // 91 === '['
+      // Keep a span-specific bracket stack. The fork's standard link resolver
+      // consumes the companion delimiter at this exact source position when
+      // this bracket becomes a real link, preventing nested links from leaving
+      // stale span openers without invalidating an outer span opener.
       ctx.addDelimiter(PandocSpanDelimiter, pos, pos + 1, true, false)
-
-      // Return -1 so that the default link parser can add delimiters
       return -1
     }
 
@@ -119,7 +120,6 @@ export const pandocSpanParser: InlineParser = {
     ])
 
     const innerElements = ctx.takeContent(opening)
-    ctx.addDelimiter(PandocSpanDelimiter, pos, pos + 1, false, true)
 
     const openingMark = ctx.elt('PandocSpanMark', delim.from, delim.to)
     const closingMark = ctx.elt('PandocSpanMark', pos, pos + 1)
@@ -203,9 +203,12 @@ export const pandocDivParser: BlockParser = {
 
   endLeaf: (ctx, line, _leaf) => {
     if (ctx.parentType().name === 'PandocDiv') {
-      return pandocDivClosingRe.test(line.text) || scanDivOpening(ctx) !== undefined
+      return pandocDivClosingRe.test(line.text)
     }
-    return pandocDivClosingRe.test(line.text)
+    // Pandoc's paragraph `endline` only tests `notFollowedByDivCloser` while
+    // already inside a fenced div. At top level, and for nested div OPENERS,
+    // `:::` is ordinary paragraph text unless a blank line ended the leaf.
+    return false
   },
 }
 
@@ -217,6 +220,15 @@ export const pandocDivParser: BlockParser = {
 // optionally adjusts the line's base position and registers nodes
 // for any markers involved in the block's syntax.
 export function pandocDivComposite (ctx: BlockContext, line: Line, value: number): boolean {
+
+  // Pandoc's `divFenced` asks for a closing fence only between parsed blocks.
+  // A `:::` line inside fenced/indented code or another opaque child block is
+  // therefore ordinary child-block content, not a div close. Lezer composite
+  // continuation runs before the child block parser, so the base fork exposes
+  // this explicit opaque-block signal to preserve Pandoc's ordering.
+  if (ctx.inOpaqueBlock) {
+    return true
+  }
 
   // We only want to end the block if the nesting level, `value`,
   // matches the number of parent PandocDivs so that other parent

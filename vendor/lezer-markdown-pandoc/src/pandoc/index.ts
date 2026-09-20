@@ -8,14 +8,16 @@
  */
 
 import type { MarkdownExtension } from '../markdown'
+import { tags as t } from '@lezer/highlight'
 import { pandocAttributesParser } from './attributes-parser'
 import { citationParser } from './citations'
 import { pandocDivComposite, pandocDivParser, pandocSpanParser } from './div-span'
 import { footnoteComposite, footnoteParser, footnoteRefParser } from './footnotes'
 import { frontmatterParser } from './frontmatter'
 import { pandocLinkParser } from './link'
-import { blockMathParser, inlineMathParser, singleBackslashMathParser } from './math'
+import { inlineMathParser, singleBackslashMathParser } from './math'
 import { rawLatexBlockParser, rawLatexInlineParser } from './raw-latex'
+import { pandocStrikeoutParser } from './strikeout'
 import { gridTableParser, pipeTableParser } from './tables'
 import { type ZknLinkParserConfig, zknLinkParser } from './wikilinks'
 
@@ -70,11 +72,19 @@ const pandocNodes: MarkdownExtension = {
     'RawInline',
     'RawInlineContent',
 
+    { name: 'Strikethrough', style: { 'Strikethrough/...': t.strikethrough } },
+    { name: 'StrikethroughMark', style: t.processingInstruction },
+
     { name: 'Table', block: true },
     'TableHeader',
     'TableRow',
     'TableCell',
+    'TableCellLine',
     'TableDelimiter',
+    'GridTableColumnDefault',
+    'GridTableColumnLeft',
+    'GridTableColumnCenter',
+    'GridTableColumnRight',
   ],
 }
 
@@ -92,11 +102,13 @@ export function PandocSyntax (options: PandocMarkdownOptions = {}): MarkdownExte
   return [
     pandocNodes,
     {
+      referenceLabelBlockers: ['Citation'],
+      lazyBlockquotes: true,
+      pandocParagraphContinuation: true,
       parseBlock: [
         pandocDivParser,
         rawLatexBlockParser,
         frontmatterParser,
-        blockMathParser,
         footnoteRefParser,
         gridTableParser,
         pipeTableParser,
@@ -106,6 +118,7 @@ export function PandocSyntax (options: PandocMarkdownOptions = {}): MarkdownExte
         inlineMathParser,
         singleBackslashMathParser,
         rawLatexInlineParser,
+        pandocStrikeoutParser,
         footnoteParser,
         citationParser,
         zknLinkParser({ format: options.wikilinks }),
@@ -138,6 +151,7 @@ export {
   rawLatexBlockStartsAt,
   rawLatexEnvironmentEnd,
   rawLatexBlockEndAtStart,
+  rawLatexBlockSequenceEndAtStart,
   rawLatexInlineEndAtStart,
   rawBlockSourceFromNode,
   rawBlockLineRangesFromNode,

@@ -1,6 +1,6 @@
 import {parser} from "./markdown"
 import type {MarkdownExtension} from "./markdown"
-import {Strikethrough, Subscript, Superscript, TaskList} from "./extension"
+import {Subscript, Superscript, TaskList} from "./extension"
 import {PandocSyntax} from "./pandoc/index"
 
 export {parser, MarkdownParser, MarkdownConfig, MarkdownExtension,
@@ -19,6 +19,7 @@ export {
   rawLatexBlockStartsAt,
   rawLatexEnvironmentEnd,
   rawLatexBlockEndAtStart,
+  rawLatexBlockSequenceEndAtStart,
   rawLatexInlineEndAtStart,
   rawBlockSourceFromNode,
   rawBlockLineRangesFromNode,
@@ -38,12 +39,12 @@ export type {
 
 /**
  * Complete Pandoc-flavored Markdown extension supported by this fork.
- * The reused Lezer extensions correspond to Pandoc's default strikeout,
- * superscript, subscript, and task-list extensions; all remaining syntax is
- * owned by `PandocSyntax` in the fork.
+ * The reused Lezer extensions correspond to Pandoc's default superscript,
+ * subscript, and task-list extensions. Strikeout is fork-owned because GFM's
+ * delimiter-run behavior is not Pandoc's `strikeout` parser.
  */
 export function Pandoc(options: import("./pandoc/index").PandocMarkdownOptions = {}): MarkdownExtension {
-  return [Strikethrough, Superscript, Subscript, TaskList, PandocSyntax(options)]
+  return [Superscript, Subscript, TaskList, PandocSyntax(options)]
 }
 
 export function createPandocParser(options: import("./pandoc/index").PandocMarkdownOptions = {}) {

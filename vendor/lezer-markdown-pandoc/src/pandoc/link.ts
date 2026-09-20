@@ -73,6 +73,7 @@ export const pandocLinkParser: InlineParser = {
     if (!delim) { return -1 }
 
     const isLink = delim.to - delim.from === 1
+    ctx.discardLinkCompanionDelimiters(delim.from, delim.to)
     let linkContents = ctx.takeContent(opening)
 
     ctx.addDelimiter(PandocLinkDelimiter, pos, pos + 1, false, true)

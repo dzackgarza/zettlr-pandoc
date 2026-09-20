@@ -9,6 +9,8 @@
  */
 
 import type { InlineParser, Element as MDElement } from '../markdown'
+import { scanPandocAttributeList } from './attribute-syntax'
+import { scanPandocAttributeList } from './attribute-syntax'
 
 // See https://github.com/bwiernik/schema/blob/ff67ae11347a4fb444ef839d96549540e9516cc1/schemas/input/csl-citation.json#L144 ff
 export type CSL_LOCATOR_TERM = 'article-locator' | 'book' | 'canon' | 'chapter'
@@ -112,6 +114,69 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 // Pandoc keys admit single internal punctuation between Unicode alphanumerics.
 // https://pandoc.org/MANUAL.html#citations
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u
+
+/**
+ * Port the negative lookahead at the end of Pandoc `normalCite`:
+ *
+ *   notFollowedBy (try (void source) <|>
+ *                  (Ext_bracketed_spans *> void attributes) <|>
+ *                  void reference)
+ *
+ * A bracketed citation immediately followed by syntax that would make the
+ * bracket group a link/reference/span is NOT a normal citation. Pandoc then
+ * falls back to parsing the interior `@key` textually. This distinction is
+ * observable in e.g. `[@a][label](url)`.
+ */
+function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0], pos: number): boolean {
+  const next = ctx.char(pos)
+
+  if (next === CHAR.CURLY_OPEN) {
+    return scanPandocAttributeList(ctx.text, pos - ctx.offset).status === 'match'
+  }
+
+  if (next === CHAR.BRACKET_OPEN) {
+    // Pandoc `reference` uses balanced brackets. We only need existence here,
+    // not its parsed inline payload.
+    let depth = 0
+    for (let i = pos; i < ctx.end; i++) {
+      const ch = ctx.char(i)
+      if (ch === 92 /* \\ */) { i++; continue }
+      if (ch === CHAR.BRACKET_OPEN) depth++
+      if (ch === CHAR.BRACKET_CLOSE && --depth === 0) return true
+    }
+    return false
+  }
+
+  if (next === CHAR.BRACE_OPEN) {
+    // This spelling is already handled above as Pandoc attributes.
+    return false
+  }
+
+  if (next === 40 /* ( */) {
+    // `source` is parenthesized and permits nested parenthesized URL chunks.
+    // A balanced close is sufficient for the normal-citation exclusion; the
+    // actual Link parser remains authoritative for the detailed destination.
+    let depth = 0
+    let angle = false
+    let quote = 0
+    for (let i = pos; i < ctx.end; i++) {
+      const ch = ctx.char(i)
+      if (ch === 92 /* \\ */) { i++; continue }
+      if (quote !== 0) {
+        if (ch === quote) quote = 0
+        continue
+      }
+      if (ch === 34 /* " */ || ch === 39 /* ' */) { quote = ch; continue }
+      if (ch === 60 /* < */) { angle = true; continue }
+      if (ch === 62 /* > */ && angle) { angle = false; continue }
+      if (angle) continue
+      if (ch === 40) depth++
+      if (ch === 41 && --depth === 0) return true
+    }
+  }
+
+  return false
+}
 
 /**
  * Checks whether the text starts with a complete Roman-numeral locator. The
@@ -280,24 +345,28 @@ export const citationParser: InlineParser = {
       return -1
     }
 
-    // Ensure the character before `pos` is valid. NOTE: The InlineContext may
-    // include newlines, since single newlines are considered part of the same
-    // line due to the hard wrapping rule.
-    const prevChar = ctx.char(pos - 1)
-    const validBefore = Number.isNaN(prevChar) || [
-      CHAR.BRACE_OPEN,
-      CHAR.BRACKET_OPEN,
-      CHAR.BRACKET_CLOSE,
-      CHAR.ASTERISK,
-      CHAR.UNDERSCORE,
-      CHAR.TILDE,
-      CHAR.LF,
-      CHAR.CR,
-      CHAR.TAB,
-      CHAR.SPACE
-    ].includes(prevChar)
-    if (!validBefore) {
-      return -1
+    // Pandoc's `normalCite` begins directly at `[` and imposes no condition on
+    // the preceding character, so constructs such as `` `code`[@key] `` are
+    // valid citations. The boundary restriction belongs only to textual
+    // `@key` / `-@key` recognition, where it prevents email-like false
+    // positives. Reference: Markdown.hs `cite`, `normalCite`, `textualCite`.
+    if (next !== CHAR.BRACKET_OPEN) {
+      const prevChar = ctx.char(pos - 1)
+      const validBefore = Number.isNaN(prevChar) || [
+        CHAR.BRACE_OPEN,
+        CHAR.BRACKET_OPEN,
+        CHAR.BRACKET_CLOSE,
+        CHAR.ASTERISK,
+        CHAR.UNDERSCORE,
+        CHAR.TILDE,
+        CHAR.LF,
+        CHAR.CR,
+        CHAR.TAB,
+        CHAR.SPACE
+      ].includes(prevChar)
+      if (!validBefore) {
+        return -1
+      }
     }
 
     // Quick additional check to save us some headaches, because if `next` is a
@@ -428,6 +497,9 @@ export const citationParser: InlineParser = {
         if (ch === CHAR.BRACKET_CLOSE) {
           // End-condition -- marks the finish of the entire parsing.
           parts.push(ctx.elt(NODES.MARK, i, ++i))
+          if (conflictsWithNormalCiteClose(ctx, i)) {
+            return -1
+          }
           closed = true
           break // Stop iterating; citation is between pos and i.
         }
@@ -561,6 +633,74 @@ export const citationParser: InlineParser = {
       if (!closed) {
         return -1
       }
+
+      // Pandoc `normalCite` explicitly rejects a bracketed citation when the
+      // closing `]` is immediately followed by link-source syntax, a bracketed
+      // span attribute list, or a reference label. In that situation the
+      // opening `[` remains literal and the inner `@key` is parsed by
+      // `textualCite` instead. This is observable for constructs such as
+      // `[@key][label](target)` and `[@key]{.class}`.
+      //
+      // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
+      // Pandoc commit.
+      const localAfter = i - ctx.offset
+      const following = ctx.text.slice(localAfter)
+      const followedBySource = (() => {
+        if (!following.startsWith('(')) return false
+        let depth = 0
+        let quote: '"'|"'"|undefined
+        let escaped = false
+        for (let cursor = 0; cursor < following.length; cursor++) {
+          const char = following[cursor]
+          if (escaped) {
+            escaped = false
+            continue
+          }
+          if (char === '\\') {
+            escaped = true
+            continue
+          }
+          if (quote !== undefined) {
+            if (char === quote) quote = undefined
+            continue
+          }
+          if (char === '"' || char === "'") {
+            quote = char
+            continue
+          }
+          if (char === '(') depth++
+          if (char === ')') {
+            depth--
+            if (depth === 0) return true
+          }
+        }
+        return false
+      })()
+      const followedByAttributes = following.startsWith('{') &&
+        scanPandocAttributeList(ctx.text, localAfter).status === 'match'
+      const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
+        let depth = 0
+        let escaped = false
+        for (const char of following) {
+          if (escaped) {
+            escaped = false
+            continue
+          }
+          if (char === '\\') {
+            escaped = true
+            continue
+          }
+          if (char === '[') depth++
+          if (char === ']') {
+            depth--
+            if (depth === 0) return true
+          }
+        }
+        return false
+      })()
+      if (followedBySource || followedByAttributes || followedByReference) {
+        return -1
+      }
     } else {
       // Inline-citation. That one is easier, albeit not without issues.
       // However, until the optional locator/suffix, we can essentially move
@@ -686,6 +826,12 @@ export const citationParser: InlineParser = {
     // several parts of the code we assume that a citation MUST have at least
     // one citekey.
     if (parts.length > 0 && citekeysFound > 0) {
+      if (next === CHAR.BRACKET_OPEN) {
+        // Pandoc dispatches `[` as note <|> cite <|> bracketedSpan <|> ... .
+        // Once `normalCite` succeeds, this authored bracket cannot later act
+        // as the opener of an enclosing span in the Lezer delimiter stack.
+        ctx.discardLinkCompanionDelimiters(pos, pos + 1)
+      }
       // Final step: Compose the full citation element.
       return ctx.addElement(ctx.elt(NODES.CITATION, pos, i, parts))
     } else {

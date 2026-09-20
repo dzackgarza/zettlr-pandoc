@@ -63,6 +63,12 @@ export const zknLinkParser = function (config?: ZknLinkParserConfig): InlinePars
       const delim = ctx.getDelimiterAt(opening)
       if (delim === null) { return -1 }
 
+      // A successful wikilink owns both authored opening brackets. Clear any
+      // speculative Pandoc-span companions at those exact positions while
+      // leaving an earlier outer span opener intact.
+      ctx.discardLinkCompanionDelimiters(delim.from, delim.from + 1)
+      ctx.discardLinkCompanionDelimiters(delim.from + 1, delim.from + 2)
+
       // Remove any elements that were parsed internally
       ctx.takeContent(opening)
 

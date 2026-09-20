@@ -201,6 +201,16 @@ const cases = [
     name: "LaTeX-reader inline environment remains outside RawBlock",
     source: "Before.\n\n\\begin{align}\na &= b \\\\ \nc &= d\n\\end{align}\n\nAfter.\n",
   },
+  {
+    name: "adjacent raw environments coalesce across one newline",
+    source:
+      "\\begin{tikzpicture}\na\n\\end{tikzpicture}\n\\begin{tikzpicture}\nb\n\\end{tikzpicture}\n",
+  },
+  {
+    name: "a blank line separates adjacent raw environments",
+    source:
+      "\\begin{tikzpicture}\na\n\\end{tikzpicture}\n\n\\begin{tikzpicture}\nb\n\\end{tikzpicture}\n",
+  },
 ] as const;
 
 const inlineCases = [

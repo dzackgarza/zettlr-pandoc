@@ -8,6 +8,7 @@
 
 import {
   rawLatexBlockEndAtStart,
+  rawLatexBlockSequenceEndAtStart,
   rawLatexBlockStartsAt,
   rawLatexInlineEndAtStart,
 } from "./raw-latex-syntax";
@@ -76,7 +77,7 @@ export const rawLatexBlockParser: BlockParser = {
 
     const absoluteStart = ctx.parsedPos + line.pos;
     const remaining = blockInput(ctx).read(absoluteStart, blockInput(ctx).length);
-    const relativeEnd = rawLatexBlockEndAtStart(remaining);
+    const relativeEnd = rawLatexBlockSequenceEndAtStart(remaining);
     if (relativeEnd === null) {
       return false;
     }
@@ -88,14 +89,19 @@ export const rawLatexBlockParser: BlockParser = {
     // Advance only after a complete closing environment is known to exist.
     // This keeps an unterminated environment ordinary editable source rather
     // than consuming the rest of the document speculatively.
-    while (absoluteEnd > ctx.parsedPos + line.text.length) {
-      const contentFrom = ctx.lineStart + (firstLine ? line.pos : line.basePos);
-      const contentTo = ctx.lineStart + line.text.length + 1;
-      content.push(ctx.elt("RawBlockContent", contentFrom, contentTo));
-      firstLine = false;
-      if (!ctx.nextLine()) {
-        return false;
+    ctx.beginOpaqueBlock();
+    try {
+      while (absoluteEnd > ctx.parsedPos + line.text.length) {
+        const contentFrom = ctx.lineStart + (firstLine ? line.pos : line.basePos);
+        const contentTo = ctx.lineStart + line.text.length + 1;
+        content.push(ctx.elt("RawBlockContent", contentFrom, contentTo));
+        firstLine = false;
+        if (!ctx.nextLine()) {
+          return false;
+        }
       }
+    } finally {
+      ctx.endOpaqueBlock();
     }
 
     const closePos = absoluteEnd - ctx.parsedPos;

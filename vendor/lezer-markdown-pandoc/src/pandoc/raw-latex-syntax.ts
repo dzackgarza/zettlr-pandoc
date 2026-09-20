@@ -469,32 +469,60 @@ export function rawLatexInlineEndAtStart(text: string): number | null {
     return null;
   }
 
+  const name = command[1];
   let cursor = command[0].length;
-  let consumedArgument = false;
-  while (cursor < text.length) {
-    const beforeSpace = cursor;
-    cursor = skipHorizontalSpace(text, cursor);
-    const opener = text[cursor];
-    if (opener !== "[" && opener !== "{") {
-      // TeX control WORDS absorb following horizontal space when they carry no
-      // argument. Pandoc preserves that absorbed space in RawInline(tex).
-      // Once an argument has been consumed, subsequent space is Markdown.
-      if (consumedArgument) {
-        cursor = beforeSpace;
-      }
-      break;
-    }
-    const end = balancedGroupEnd(text, cursor, opener, opener === "[" ? "]" : "}");
-    if (end === null) {
-      return null;
-    }
-    consumedArgument = true;
+
+  // Pandoc's LaTeX reader does not greedily absorb arbitrary following groups.
+  // `rawLaTeXInline` delegates to the actual command parser (`inlineCommands`)
+  // and therefore consumes exactly the argument shape owned by that command.
+  // Unknown commands accept optional [] groups followed by at most one braced
+  // group; known multi-argument commands below mirror their literal entries in
+  // LaTeX.hs `inlineCommands` (textcolor/colorbox, href, texorpdfstring, etc.).
+  // This keeps `\textbf{raw} [label](...)` from swallowing the Markdown link.
+  const MULTI_BRACED_ARGS: Readonly<Record<string, number>> = {
+    href: 2,
+    hyperlink: 2,
+    texorpdfstring: 2,
+    textcolor: 2,
+    colorbox: 2,
+  };
+  const requiredBraces = MULTI_BRACED_ARGS[name] ?? 1;
+
+  let consumedAny = false;
+  let beforeSpace = cursor;
+  cursor = skipHorizontalSpace(text, cursor);
+
+  // TeX optional arguments precede the main braced argument(s). Pandoc's
+  // command parsers use `option`/`skipopts` in these positions.
+  while (text[cursor] === "[") {
+    const end = balancedGroupEnd(text, cursor, "[", "]");
+    if (end === null) return null;
+    consumedAny = true;
     cursor = end;
+    beforeSpace = cursor;
+    cursor = skipHorizontalSpace(text, cursor);
   }
 
-  // A control sequence itself is valid raw inline even without arguments
-  // (e.g. \LaTeX); arguments are consumed when present.
-  return consumedArgument || cursor > 1 ? cursor : null;
+  let braces = 0;
+  while (braces < requiredBraces && text[cursor] === "{") {
+    const end = balancedGroupEnd(text, cursor, "{", "}");
+    if (end === null) return null;
+    consumedAny = true;
+    braces++;
+    cursor = end;
+    if (braces < requiredBraces) {
+      cursor = skipHorizontalSpace(text, cursor);
+    }
+  }
+
+  if (consumedAny) {
+    // Space after the final owned argument belongs back to Markdown.
+    return cursor;
+  }
+
+  // A bare TeX control word gobbles following horizontal space. Pandoc keeps
+  // those spaces in RawInline(tex), e.g. `\LaTeX   text`.
+  return cursor > beforeSpace ? cursor : command[0].length;
 }
 
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */
@@ -504,6 +532,46 @@ export function rawLatexBlockEndAtStart(text: string): number | null {
     return rawLatexEnvironmentEnd(text, environment);
   }
   return rawLatexCommandEndAtStart(text);
+}
+
+/**
+ * End of one Pandoc Markdown `rawTeXBlock`, which may aggregate several
+ * adjacent LaTeX blocks.
+ *
+ * Reference implementation: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text/Pandoc/Readers/Markdown.hs `rawTeXBlock`:
+ * `many1 ((<>) <$> rawLaTeXBlock <*> spnl')`; `spnl'` accepts horizontal
+ * whitespace plus at most one newline not followed by another newline.
+ * Consequently adjacent raw blocks coalesce, but a blank line separates them.
+ */
+export function rawLatexBlockSequenceEndAtStart(text: string): number | null {
+  const firstEnd = rawLatexBlockEndAtStart(text);
+  if (firstEnd === null) return null;
+
+  let end = firstEnd;
+  for (;;) {
+    let cursor = end;
+    while (text[cursor] === " " || text[cursor] === "\t") cursor++;
+
+    let afterGap = cursor;
+    if (text.startsWith("\r\n", cursor)) {
+      afterGap = cursor + 2;
+    } else if (text[cursor] === "\n") {
+      afterGap = cursor + 1;
+    }
+
+    if (afterGap !== cursor) {
+      while (text[afterGap] === " " || text[afterGap] === "\t") afterGap++;
+      // `spnl'` refuses the optional newline when it would create a blank line.
+      if (text[afterGap] === "\n" || text.startsWith("\r\n", afterGap)) break;
+    }
+
+    const nextEnd = rawLatexBlockEndAtStart(text.slice(afterGap));
+    if (nextEnd === null) break;
+    end = afterGap + nextEnd;
+  }
+  return end;
 }
 
 export interface RawBlockSyntaxNode {

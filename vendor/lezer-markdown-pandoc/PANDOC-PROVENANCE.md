@@ -7,6 +7,10 @@ The reference implementation is Pandoc itself.
 Reference release: **Pandoc 3.10.2**
 Reference commit: **`f2ee5dfee866aab007a33552acc6bc01810c6918`**
 
+Pandoc 3.10.2 delegates grid-table geometry to **gridtables 0.1.1.0**. The
+corresponding reference source is `tarleb/gridtables` commit
+**`5d4730fe39911ddad49797a9e800cdd5a9904016`**.
+
 The editor reader dialect is Pandoc Markdown with the system-required additions
 `fenced_divs`, `raw_tex`, `tex_math_dollars`, `tex_math_single_backslash`, and
 `wikilinks_title_after_pipe`. Pandoc's own default `markdown` reader already
@@ -31,7 +35,11 @@ fixture is not sufficient evidence for a Pandoc grammar rule.
 | --- | --- |
 | YAML metadata | `Text/Pandoc/Readers/Markdown.hs`: `yamlMetaBlock'` |
 | attributes | `Markdown.hs`: `attributes`, `attribute`, `identifierAttr`, `classAttr`, `keyValAttr`, `specialAttr` |
-| grid tables | `Markdown.hs`: `gridTable`; `Text/Pandoc/Parsing/GridTable.hs`: `gridTableWith'`; `Text.GridTable` geometry parser |
+| paragraph interruption | `Markdown.hs`: `endline`, including `blank_before_header`, `blank_before_blockquote`, `lists_without_preceding_blankline`, `codeBlockFenced`, and `notFollowedByDivCloser` |
+| block quotes / lazy continuation | `Markdown.hs`: `emailBlockQuoteStart`, `emailBlockQuote`, `emailLine`, plus `endline` |
+| list items / lazy continuation | `Markdown.hs`: `bulletListStart`, `orderedListStart`, `listStart`, `listLine`, `rawListItem`, `listContinuation` |
+| emphasis / strong | `Markdown.hs`: `enclosure`, `ender`, `one`, `two`, `three`, `strongOrEmph` |
+| grid tables | `Markdown.hs`: `gridTable`; `Text/Pandoc/Parsing/GridTable.hs`: `gridTableWith'`; gridtables 0.1.1.0 `Text/GridTable/Parse.hs`: `gridTable`, `tableLine`; `Text/GridTable/Trace.hs`: `traceLines`, `scanRight`, `scanDown`, `scanLeft`, `scanUp`, `lastCellInRow`, `scanRestOfLines`, `getLines` |
 | pipe tables | `Markdown.hs`: `pipeBreak`, `pipeTable`, `pipeTableRow`, `pipeTableCell`, `pipeTableHeaderPart`, `scanForPipe` |
 | TeX math | `Text/Pandoc/Parsing/Math.hs`: `mathInlineWith`, `mathDisplayWith`, `mathInline`, `mathDisplay`; `Markdown.hs`: `math` |
 | LaTeX environments in Markdown | `Text/Pandoc/Readers/LaTeX.hs`: `rawLaTeXInline`, `rawLaTeXBlock`; `Text/Pandoc/Readers/LaTeX/Math.hs`: `inlineEnvironments` (these are `RawInline(tex)` in the Markdown reader, not Markdown `Math`) |
@@ -41,7 +49,7 @@ fixture is not sufficient evidence for a Pandoc grammar rule.
 | footnotes / inline notes | `Markdown.hs`: `note`, `inlineNote` |
 | fenced divs | `Markdown.hs`: `divFenced`, `divFenceEnd` |
 | citations | `Markdown.hs`: `cite`, `textualCite`, `normalCite`, `citeList`, `citation`, `prefix`, `suffix` |
-| raw TeX | `Text/Pandoc/Readers/LaTeX.hs`: `rawLaTeXBlock`, `rawLaTeXInline`, `inlineEnvironment`, `blockCommands`, `treatAsBlock`; `Markdown.hs`: `rawLaTeXInline'` |
+| raw TeX | `Text/Pandoc/Readers/LaTeX.hs`: `rawLaTeXBlock`, `rawLaTeXInline`, `inlineEnvironment`, `blockCommands`, `treatAsBlock`; `Markdown.hs`: `rawTeXBlock`, `spnl'`, `rawLaTeXInline'` |
 | strikeout | `Markdown.hs`: `strikeout` |
 | superscript / subscript | `Markdown.hs`: `superscript`, `subscript` |
 | task lists | `Markdown.hs`: list item parsing and `taskListItemFromAscii` application |

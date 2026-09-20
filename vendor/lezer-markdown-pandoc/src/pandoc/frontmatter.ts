@@ -9,7 +9,69 @@
  * package; this module owns only Markdown syntax.
  */
 
-import type { BlockParser } from '../markdown'
+import type { Input } from '@lezer/common'
+import type { BlockContext, BlockParser } from '../markdown'
+
+interface BlockContextInput {
+  /** @lezer/markdown exposes this at runtime but marks it internal in the d.ts. */
+  input: Input
+}
+
+function blockInput (ctx: BlockContext): Input {
+  return (ctx as unknown as BlockContextInput).input
+}
+
+interface FrontmatterExtent {
+  bodyFrom: number
+  bodyTo: number
+  closeFrom: number
+  closeTo: number
+  linesToClose: number
+}
+
+/**
+ * Non-mutating port of Pandoc Metadata.hs `yamlMetaBlock` / `stopLine`.
+ * Lezer cannot roll BlockContext back after `nextLine()`, so recognition must
+ * be complete before the block parser advances at all.
+ */
+function frontmatterExtent (ctx: BlockContext, openingStart: number): FrontmatterExtent | undefined {
+  const source = blockInput(ctx).read(openingStart, blockInput(ctx).length)
+  if (!source.startsWith('---')) return undefined
+
+  const openingNewline = source.indexOf('\n')
+  if (openingNewline < 0) return undefined
+  const bodyFrom = openingStart + openingNewline + 1
+  let cursor = openingNewline + 1
+  let linesToClose = 1
+  let firstBodyLine = true
+
+  while (cursor <= source.length) {
+    const newline = source.indexOf('\n', cursor)
+    const lineEnd = newline < 0 ? source.length : newline
+    const line = source.slice(cursor, lineEnd)
+
+    if (firstBodyLine && line.trim() === '') {
+      // Pandoc: `notFollowedBy blankline` immediately after the opener.
+      return undefined
+    }
+    firstBodyLine = false
+
+    if (/^(?:---|\.\.\.)[ \t]*$/u.test(line)) {
+      return {
+        bodyFrom,
+        bodyTo: openingStart + Math.max(openingNewline + 1, cursor - 1),
+        closeFrom: openingStart + cursor,
+        closeTo: openingStart + lineEnd,
+        linesToClose,
+      }
+    }
+
+    if (newline < 0) return undefined
+    cursor = newline + 1
+    linesToClose++
+  }
+  return undefined
+}
 
 export const frontmatterParser: BlockParser = {
   name: 'frontmatter',
@@ -23,24 +85,19 @@ export const frontmatterParser: BlockParser = {
     }
 
     const openingStart = ctx.lineStart + line.pos
-
-    const yamlLines: string[] = []
-    while (ctx.nextLine() && !/^(?:-{3}|\.{3})$/.test(line.text)) {
-      yamlLines.push(line.text)
-    }
-
-    if (!/^(?:-{3}|\.{3})$/.test(line.text)) {
+    const extent = frontmatterExtent(ctx, openingStart)
+    if (extent === undefined) {
       return false
     }
 
-    if (yamlLines.length > 0 && yamlLines[0].trim() === '') {
-      return false
+    for (let i = 0; i < extent.linesToClose; i++) {
+      if (!ctx.nextLine()) return false
     }
 
-    const wrapperNode = ctx.elt('YAMLFrontmatter', openingStart, ctx.lineStart + 3, [
+    const wrapperNode = ctx.elt('YAMLFrontmatter', openingStart, extent.closeTo, [
       ctx.elt('YAMLFrontmatterStart', openingStart, openingStart + 3),
-      ctx.elt('CodeText', openingStart + 4, ctx.lineStart - 1),
-      ctx.elt('YAMLFrontmatterEnd', ctx.lineStart, ctx.lineStart + 3)
+      ctx.elt('CodeText', extent.bodyFrom, extent.bodyTo),
+      ctx.elt('YAMLFrontmatterEnd', extent.closeFrom, extent.closeTo)
     ])
 
     ctx.nextLine()

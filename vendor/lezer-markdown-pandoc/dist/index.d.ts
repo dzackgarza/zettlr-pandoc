@@ -103,11 +103,20 @@ declare class BlockContext implements PartialParse {
     private fragments;
     private to;
     stoppedAt: number | null;
+    private opaqueBlockDepth;
     /**
     The start of the current line.
     */
     lineStart: number;
     get parsedPos(): number;
+    /**
+    True while a block parser is consuming source whose interior must not be
+    interpreted as container-closing syntax by extension composite blocks.
+    Fenced/indented code and raw-TeX blocks use this while advancing across
+    their body lines. Container syntax that owns per-line prefixes (lists,
+    blockquotes) still runs normally; extensions may opt into this signal.
+    */
+    get inOpaqueBlock(): boolean;
     advance(): Tree | null;
     stopAt(pos: number): void;
     private reuseFragment;
@@ -348,6 +357,27 @@ interface MarkdownConfig {
     */
     parseInline?: readonly InlineParser[];
     /**
+    Node names which, when they begin immediately after a completed `[label]`,
+    prevent the standard reference-link parser from consuming that following
+    bracket as a `LinkLabel`. Pandoc uses this for `normalCite`: `[label]`
+    followed by `[@cite]` must leave the citation to the citation parser.
+    */
+    referenceLabelBlockers?: readonly string[];
+    /**
+    Preserve Pandoc's email-style blockquote continuation behavior: after a
+    marked `>` line, subsequent nonblank unmarked physical lines remain quote
+    content until a parser boundary which Pandoc's `endline` actually permits
+    to interrupt it. This differs materially from CommonMark block quotes.
+    */
+    lazyBlockquotes?: boolean;
+    /**
+    Pandoc's default markdown reader requires a blank line before ATX
+    headings, block quotes, and lists, and does not let horizontal rules
+    interrupt a paragraph. CommonMark does. Enable Pandoc's `endline` policy
+    for those block starts while retaining fenced-code and HTML interruption.
+    */
+    pandocParagraphContinuation?: boolean;
+    /**
     Remove the named parsers from the configuration.
     */
     remove?: readonly string[];
@@ -387,6 +417,12 @@ declare class MarkdownParser extends Parser {
     the inline content.
     */
     parseInline(text: string, offset: number): Element[];
+    /**
+    Whether parsing the source beginning at `offset` produces one of the
+    configured semantic nodes which Pandoc gives precedence over a reference
+    link label at this position.
+    */
+    referenceLabelBlockedAt(text: string, offset: number): any;
 }
 /**
 Elements are used to compose syntax nodes during parsing.
@@ -431,6 +467,14 @@ interface DelimiterType {
     node, set this to the name of the syntax node.
     */
     mark?: string;
+    /**
+    When a standard Markdown link/image successfully consumes a `[` opener at
+    the same source range, invalidate this companion delimiter as well. This
+    lets extensions that share bracket syntax (notably Pandoc bracketed
+    spans) keep their own nesting stack without leaving a stale inner opener
+    behind after `[label](target)` becomes a real link.
+    */
+    consumeWithLink?: boolean;
 }
 /**
 Inline parsing functions get access to this context, and use it to
@@ -486,6 +530,13 @@ declare class InlineContext {
     */
     findOpeningDelimiter(type: DelimiterType): number | null;
     /**
+    Find the nearest unmatched standard Markdown link opening delimiter.
+    Pandoc extensions such as bracketed spans share the same `[` opener as
+    links and need to observe which openings the link parser has already
+    consumed, rather than maintaining an independent delimiter stack.
+    */
+    findOpeningLinkDelimiter(): number | null;
+    /**
     Remove all inline elements and delimiters starting from the
     given index (which you should get from
     [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter),
@@ -504,6 +555,27 @@ declare class InlineContext {
         to: number;
         type: DelimiterType;
     } | null;
+    /**
+    Invalidate an unmatched delimiter without discarding the content parsed
+    after it. Fork extensions use this when the reference grammar has parsed
+    far enough to prove that a speculative opener must backtrack to literal
+    source (for example Pandoc `inlineNote` followed by link syntax).
+    */
+    discardDelimiter(index: number): void;
+    /**
+    Invalidate extension delimiters that share a source opener with a link
+    which has just been recognized. Fork extensions call this too because
+    Pandoc's readable-path link parser can recognize a link before the
+    default Lezer LinkEnd parser runs.
+    */
+    discardLinkCompanionDelimiters(from: number, to: number): void;
+    /**
+    Remove the standard Markdown LinkStart delimiter at an exact source
+    opener. Extensions such as Pandoc footnote references initially let the
+    Link parser observe `[` as a fallback, but must invalidate that fallback
+    once their higher-precedence construct succeeds.
+    */
+    discardOpeningLinkDelimiter(from: number, to: number): void;
     /**
     Skip space after the given (document) position, returning either
     the position of the next non-space character or the end of the
@@ -785,6 +857,18 @@ declare function rawLatexEnvironmentEnd(text: string, environment: string): numb
 declare function rawLatexInlineEndAtStart(text: string): number | null;
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */
 declare function rawLatexBlockEndAtStart(text: string): number | null;
+/**
+ * End of one Pandoc Markdown `rawTeXBlock`, which may aggregate several
+ * adjacent LaTeX blocks.
+ *
+ * Reference implementation: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text/Pandoc/Readers/Markdown.hs `rawTeXBlock`:
+ * `many1 ((<>) <$> rawLaTeXBlock <*> spnl')`; `spnl'` accepts horizontal
+ * whitespace plus at most one newline not followed by another newline.
+ * Consequently adjacent raw blocks coalesce, but a blank line separates them.
+ */
+declare function rawLatexBlockSequenceEndAtStart(text: string): number | null;
 interface RawBlockSyntaxNode {
     from: number;
     to: number;
@@ -895,11 +979,11 @@ declare const Emoji: MarkdownConfig;
 
 /**
  * Complete Pandoc-flavored Markdown extension supported by this fork.
- * The reused Lezer extensions correspond to Pandoc's default strikeout,
- * superscript, subscript, and task-list extensions; all remaining syntax is
- * owned by `PandocSyntax` in the fork.
+ * The reused Lezer extensions correspond to Pandoc's default superscript,
+ * subscript, and task-list extensions. Strikeout is fork-owned because GFM's
+ * delimiter-run behavior is not Pandoc's `strikeout` parser.
  */
 declare function Pandoc(options?: PandocMarkdownOptions): MarkdownExtension;
 declare function createPandocParser(options?: PandocMarkdownOptions): MarkdownParser;
 
-export { Autolink, BlockContext, BlockParser, NODES as CITATION_NODES, CSL_LOCATOR_TERM, Citation, CiteItem, DelimiterType, Element, Emoji, GFM, InlineContext, InlineParser, LeafBlock, LeafBlockParser, Line, MarkdownConfig, MarkdownExtension, MarkdownParser, NodeSpec, Pandoc, PandocAttributeListScan, PandocAttributeToken, PandocFencedDivOpeningScan, PandocMarkdownOptions, PandocSyntaxScan, RawBlockSyntaxNode, Strikethrough, Subscript, Superscript, Table, TaskList, ZknLinkParserConfig, citationParser, createPandocParser, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };
+export { Autolink, BlockContext, BlockParser, NODES as CITATION_NODES, CSL_LOCATOR_TERM, Citation, CiteItem, DelimiterType, Element, Emoji, GFM, InlineContext, InlineParser, LeafBlock, LeafBlockParser, Line, MarkdownConfig, MarkdownExtension, MarkdownParser, NodeSpec, Pandoc, PandocAttributeListScan, PandocAttributeToken, PandocFencedDivOpeningScan, PandocMarkdownOptions, PandocSyntaxScan, RawBlockSyntaxNode, Strikethrough, Subscript, Superscript, Table, TaskList, ZknLinkParserConfig, citationParser, createPandocParser, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockSequenceEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };

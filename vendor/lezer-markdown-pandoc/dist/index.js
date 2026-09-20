@@ -17,6 +17,13 @@ class CompositeBlock {
         this.end = end;
         this.children = children;
         this.positions = positions;
+        /**
+        Pandoc list items have two continuation phases. Before a blank line,
+        unindented physical lines may remain in the current raw list item. After a
+        blank line, `listContinuation` requires the continuation indent before
+        lazy continuation can resume. @internal
+        */
+        this.pandocListNeedsIndent = false;
         this.hashProp = [[NodeProp.contextHash, hash]];
     }
     addChild(child, pos) {
@@ -153,6 +160,11 @@ class Line {
         The character code of the character after `pos`.
         */
         this.next = -1;
+        /**
+        This physical line lacks a `>` marker but is being retained inside a
+        Pandoc-style block quote as lazy continuation text. @internal
+        */
+        this.lazyBlockquoteContinuation = false;
     }
     /**
     @internal
@@ -181,6 +193,7 @@ class Line {
     */
     reset(text) {
         this.text = text;
+        this.lazyBlockquoteContinuation = false;
         this.baseIndent = this.basePos = this.pos = this.indent = 0;
         this.forwardInner();
         this.depth = 1;
@@ -249,22 +262,69 @@ function skipForList(bl, cx, line) {
     if (line.indent >= line.baseIndent + 4)
         return false;
     let size = (bl.type == Type.OrderedList ? isOrderedList : isBulletList)(line, cx, false);
+    let anyListStart = isBulletList(line, cx, false) >= 0 || isOrderedList(line, cx, false) >= 0;
+    let activeItem;
+    for (let i = cx.stack.length - 1; i >= 0; i--) {
+        if (cx.stack[i].type == Type.ListItem) {
+            activeItem = cx.stack[i];
+            break;
+        }
+    }
+    let continuationIndented = activeItem != null &&
+        line.indent >= line.baseIndent + activeItem.value;
+    if (cx.parser.pandocParagraphContinuation && size < 0 && !anyListStart &&
+        isFencedCode(line) < 0 && activeItem != null &&
+        (!activeItem.pandocListNeedsIndent || continuationIndented)) {
+        // Pandoc `rawListItem` / `listLine` allows an unindented non-list line to
+        // remain inside the current list item. This is how a following raw-TeX
+        // block, paragraph continuation, block quote text, etc. stays owned by the
+        // list item. A new list marker or fenced code opener terminates this lazy
+        // continuation. Reference: Markdown.hs `rawListItem`, `listLine`.
+        return true;
+    }
     return size > 0 &&
         (bl.type != Type.BulletList || isHorizontalRule(line, cx, false) < 0) &&
         line.text.charCodeAt(line.pos + size - 1) == bl.value;
 }
 const DefaultSkipMarkup = {
     [Type.Blockquote](bl, cx, line) {
-        if (line.next != 62 /* '>' */)
+        if (line.next != 62 /* '>' */) {
+            // Pandoc `emailLine` carries unmarked physical lines into the current
+            // block quote through the Markdown `endline` parser. That parser refuses
+            // to cross a fenced-code opener when Ext_backtick_code_blocks is enabled,
+            // so an unmarked ```/~~~ line closes the quote rather than becoming a
+            // fenced code block inside it. Reference: Markdown.hs `emailLine` and
+            // `endline` (the `codeBlockFenced` negative lookahead).
+            if (cx.parser.lazyBlockquotes && line.next > -1 && isFencedCode(line) < 0) {
+                line.lazyBlockquoteContinuation = true;
+                return true;
+            }
             return false;
+        }
         line.markers.push(elt(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1));
         line.moveBase(line.pos + (space(line.text.charCodeAt(line.pos + 1)) ? 2 : 1));
         bl.end = cx.lineStart + line.text.length;
         return true;
     },
     [Type.ListItem](bl, _cx, line) {
-        if (line.indent < line.baseIndent + bl.value && line.next > -1)
+        if (line.next < 0) {
+            if (_cx.parser.pandocParagraphContinuation)
+                bl.pandocListNeedsIndent = true;
+            line.moveBaseColumn(line.baseIndent + bl.value);
+            return true;
+        }
+        if (line.indent < line.baseIndent + bl.value && line.next > -1) {
+            if (_cx.parser.pandocParagraphContinuation &&
+                !bl.pandocListNeedsIndent &&
+                isBulletList(line, _cx, false) < 0 &&
+                isOrderedList(line, _cx, false) < 0 &&
+                isFencedCode(line) < 0) {
+                return true;
+            }
             return false;
+        }
+        if (_cx.parser.pandocParagraphContinuation)
+            bl.pandocListNeedsIndent = false;
         line.moveBaseColumn(line.baseIndent + bl.value);
         return true;
     },
@@ -322,6 +382,9 @@ function inList(cx, type) {
         if (cx.stack[i].type == type)
             return true;
     return false;
+}
+function inAnyList(cx) {
+    return inList(cx, Type.BulletList) || inList(cx, Type.OrderedList);
 }
 function isBulletList(line, cx, breaking) {
     return (line.next == 45 || line.next == 43 || line.next == 42 /* '-+*' */) &&
@@ -415,33 +478,39 @@ const DefaultBlockParsers = {
         let from = cx.lineStart + start, to = cx.lineStart + line.text.length;
         let marks = [], pendingMarks = [];
         addCodeText(marks, from, to);
-        while (cx.nextLine() && line.depth >= cx.stack.length) {
-            if (line.pos == line.text.length) { // Empty
-                addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart);
-                for (let m of line.markers)
-                    pendingMarks.push(m);
-            }
-            else if (line.indent < base) {
-                break;
-            }
-            else {
-                if (pendingMarks.length) {
-                    for (let m of pendingMarks) {
-                        if (m.type == Type.CodeText)
-                            addCodeText(marks, m.from, m.to);
-                        else
-                            marks.push(m);
-                    }
-                    pendingMarks = [];
+        cx.beginOpaqueBlock();
+        try {
+            while (cx.nextLine() && line.depth >= cx.stack.length) {
+                if (line.pos == line.text.length) { // Empty
+                    addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart);
+                    for (let m of line.markers)
+                        pendingMarks.push(m);
                 }
-                addCodeText(marks, cx.lineStart - 1, cx.lineStart);
-                for (let m of line.markers)
-                    marks.push(m);
-                to = cx.lineStart + line.text.length;
-                let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4);
-                if (codeStart < to)
-                    addCodeText(marks, codeStart, to);
+                else if (line.indent < base) {
+                    break;
+                }
+                else {
+                    if (pendingMarks.length) {
+                        for (let m of pendingMarks) {
+                            if (m.type == Type.CodeText)
+                                addCodeText(marks, m.from, m.to);
+                            else
+                                marks.push(m);
+                        }
+                        pendingMarks = [];
+                    }
+                    addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+                    for (let m of line.markers)
+                        marks.push(m);
+                    to = cx.lineStart + line.text.length;
+                    let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4);
+                    if (codeStart < to)
+                        addCodeText(marks, codeStart, to);
+                }
             }
+        }
+        finally {
+            cx.endOpaqueBlock();
         }
         if (pendingMarks.length) {
             pendingMarks = pendingMarks.filter(m => m.type != Type.CodeText);
@@ -460,35 +529,47 @@ const DefaultBlockParsers = {
         let marks = [elt(Type.CodeMark, from, from + len)];
         if (infoFrom < infoTo)
             marks.push(elt(Type.CodeInfo, cx.lineStart + infoFrom, cx.lineStart + infoTo));
-        for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
-            let i = line.pos;
-            if (line.indent - line.baseIndent < 4)
-                while (i < line.text.length && line.text.charCodeAt(i) == ch)
-                    i++;
-            if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
-                for (let m of line.markers)
-                    marks.push(m);
-                if (empty && hasLine)
-                    addCodeText(marks, cx.lineStart - 1, cx.lineStart);
-                marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i));
-                cx.nextLine();
-                break;
-            }
-            else {
-                hasLine = true;
-                if (!first) {
-                    addCodeText(marks, cx.lineStart - 1, cx.lineStart);
-                    empty = false;
+        let closed = false;
+        cx.beginOpaqueBlock();
+        try {
+            for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
+                let i = line.pos;
+                if (line.indent - line.baseIndent < 4)
+                    while (i < line.text.length && line.text.charCodeAt(i) == ch)
+                        i++;
+                if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
+                    for (let m of line.markers)
+                        marks.push(m);
+                    if (empty && hasLine)
+                        addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+                    marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i));
+                    closed = true;
+                    break;
                 }
-                for (let m of line.markers)
-                    marks.push(m);
-                let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length;
-                if (textStart < textEnd) {
-                    addCodeText(marks, textStart, textEnd);
-                    empty = false;
+                else {
+                    hasLine = true;
+                    if (!first) {
+                        addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+                        empty = false;
+                    }
+                    for (let m of line.markers)
+                        marks.push(m);
+                    let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length;
+                    if (textStart < textEnd) {
+                        addCodeText(marks, textStart, textEnd);
+                        empty = false;
+                    }
                 }
             }
         }
+        finally {
+            cx.endOpaqueBlock();
+        }
+        // Advance past the closing code fence only after opaque mode is lifted, so
+        // container syntax on the following physical line (for example a Pandoc
+        // fenced-div closer) is interpreted in its normal context.
+        if (closed)
+            cx.nextLine();
         cx.addNode(cx.buffer.writeElements(marks, -from)
             .finish(Type.FencedCode, cx.prevLineEnd() - from), from);
         return true;
@@ -691,13 +772,15 @@ const DefaultLeafBlocks = {
     SetextHeading() { return new SetextHeadingParser; }
 };
 const DefaultEndLeaf = [
-    (_, line) => isAtxHeading(line) >= 0,
+    (p, line) => !p.parser.pandocParagraphContinuation && !line.lazyBlockquoteContinuation && isAtxHeading(line) >= 0,
     (_, line) => isFencedCode(line) >= 0,
-    (_, line) => isBlockquote(line) >= 0,
-    (p, line) => isBulletList(line, p, true) >= 0,
-    (p, line) => isOrderedList(line, p, true) >= 0,
-    (p, line) => isHorizontalRule(line, p, true) >= 0,
-    (p, line) => isHTMLBlock(line, p, true) >= 0
+    (p, line) => !p.parser.pandocParagraphContinuation && isBlockquote(line) >= 0,
+    (p, line) => (!p.parser.pandocParagraphContinuation || inAnyList(p)) &&
+        !line.lazyBlockquoteContinuation && isBulletList(line, p, true) >= 0,
+    (p, line) => (!p.parser.pandocParagraphContinuation || inAnyList(p)) &&
+        !line.lazyBlockquoteContinuation && isOrderedList(line, p, true) >= 0,
+    (p, line) => !p.parser.pandocParagraphContinuation && !line.lazyBlockquoteContinuation && isHorizontalRule(line, p, true) >= 0,
+    (p, line) => !line.lazyBlockquoteContinuation && isHTMLBlock(line, p, true) >= 0
 ];
 const scanLineResult = { text: "", end: 0 };
 /**
@@ -733,6 +816,7 @@ class BlockContext {
         */
         this.reusePlaceholders = new Map;
         this.stoppedAt = null;
+        this.opaqueBlockDepth = 0;
         /**
         The range index that absoluteLineStart points into @internal
         */
@@ -747,6 +831,22 @@ class BlockContext {
     get parsedPos() {
         return this.absoluteLineStart;
     }
+    /**
+    True while a block parser is consuming source whose interior must not be
+    interpreted as container-closing syntax by extension composite blocks.
+    Fenced/indented code and raw-TeX blocks use this while advancing across
+    their body lines. Container syntax that owns per-line prefixes (lists,
+    blockquotes) still runs normally; extensions may opt into this signal.
+    */
+    get inOpaqueBlock() { return this.opaqueBlockDepth > 0; }
+    /**
+    @internal
+    */
+    beginOpaqueBlock() { this.opaqueBlockDepth++; }
+    /**
+    @internal
+    */
+    endOpaqueBlock() { this.opaqueBlockDepth--; }
     advance() {
         if (this.stoppedAt != null && this.absoluteLineStart > this.stoppedAt)
             return this.finish();
@@ -1104,6 +1204,18 @@ class MarkdownParser extends Parser {
     /**
     @internal
     */
+    referenceLabelBlockers,
+    /**
+    @internal
+    */
+    lazyBlockquotes,
+    /**
+    @internal
+    */
+    pandocParagraphContinuation,
+    /**
+    @internal
+    */
     wrappers) {
         super();
         this.nodeSet = nodeSet;
@@ -1114,6 +1226,9 @@ class MarkdownParser extends Parser {
         this.skipContextMarkup = skipContextMarkup;
         this.inlineParsers = inlineParsers;
         this.inlineNames = inlineNames;
+        this.referenceLabelBlockers = referenceLabelBlockers;
+        this.lazyBlockquotes = lazyBlockquotes;
+        this.pandocParagraphContinuation = pandocParagraphContinuation;
         this.wrappers = wrappers;
         /**
         @internal
@@ -1136,7 +1251,7 @@ class MarkdownParser extends Parser {
         if (!config)
             return this;
         let { nodeSet, skipContextMarkup } = this;
-        let blockParsers = this.blockParsers.slice(), leafBlockParsers = this.leafBlockParsers.slice(), blockNames = this.blockNames.slice(), inlineParsers = this.inlineParsers.slice(), inlineNames = this.inlineNames.slice(), endLeafBlock = this.endLeafBlock.slice(), wrappers = this.wrappers;
+        let blockParsers = this.blockParsers.slice(), leafBlockParsers = this.leafBlockParsers.slice(), blockNames = this.blockNames.slice(), inlineParsers = this.inlineParsers.slice(), inlineNames = this.inlineNames.slice(), endLeafBlock = this.endLeafBlock.slice(), referenceLabelBlockers = this.referenceLabelBlockers.slice(), lazyBlockquotes = this.lazyBlockquotes || config.lazyBlockquotes === true, pandocParagraphContinuation = this.pandocParagraphContinuation || config.pandocParagraphContinuation === true, wrappers = this.wrappers;
         if (nonEmpty(config.defineNodes)) {
             skipContextMarkup = Object.assign({}, skipContextMarkup);
             let nodeTypes = nodeSet.types.slice(), styles;
@@ -1211,9 +1326,15 @@ class MarkdownParser extends Parser {
                 }
             }
         }
+        if (nonEmpty(config.referenceLabelBlockers)) {
+            for (let name of config.referenceLabelBlockers) {
+                if (!referenceLabelBlockers.includes(name))
+                    referenceLabelBlockers.push(name);
+            }
+        }
         if (config.wrap)
             wrappers = wrappers.concat(config.wrap);
-        return new MarkdownParser(nodeSet, blockParsers, leafBlockParsers, blockNames, endLeafBlock, skipContextMarkup, inlineParsers, inlineNames, wrappers);
+        return new MarkdownParser(nodeSet, blockParsers, leafBlockParsers, blockNames, endLeafBlock, skipContextMarkup, inlineParsers, inlineNames, referenceLabelBlockers, lazyBlockquotes, pandocParagraphContinuation, wrappers);
     }
     /**
     @internal
@@ -1245,6 +1366,18 @@ class MarkdownParser extends Parser {
         }
         return cx.resolveMarkers(0);
     }
+    /**
+    Whether parsing the source beginning at `offset` produces one of the
+    configured semantic nodes which Pandoc gives precedence over a reference
+    link label at this position.
+    */
+    referenceLabelBlockedAt(text, offset) {
+        if (!this.referenceLabelBlockers.length)
+            return false;
+        let elements = this.parseInline(text, offset);
+        let first = elements.find(element => element.from == offset);
+        return first != null && this.referenceLabelBlockers.includes(this.nodeSet.types[first.type].name);
+    }
 }
 function nonEmpty(a) {
     return a != null && a.length > 0;
@@ -1267,6 +1400,9 @@ function resolveConfig(spec) {
         defineNodes: conc(conf.defineNodes, rest.defineNodes),
         parseBlock: conc(conf.parseBlock, rest.parseBlock),
         parseInline: conc(conf.parseInline, rest.parseInline),
+        referenceLabelBlockers: conc(conf.referenceLabelBlockers, rest.referenceLabelBlockers),
+        lazyBlockquotes: conf.lazyBlockquotes === true || rest.lazyBlockquotes === true,
+        pandocParagraphContinuation: conf.pandocParagraphContinuation === true || rest.pandocParagraphContinuation === true,
         remove: conc(conf.remove, rest.remove),
         wrap: !wrapA ? wrapB : !wrapB ? wrapA :
             (inner, input, fragments, ranges) => wrapA(wrapB(inner, input, fragments, ranges), input, fragments, ranges)
@@ -1377,6 +1513,81 @@ function elt(type, from, to, children) {
 }
 const EmphasisUnderscore = { resolve: "Emphasis", mark: "EmphasisMark" };
 const EmphasisAsterisk = { resolve: "Emphasis", mark: "EmphasisMark" };
+// Pandoc's Markdown emphasis parser is not CommonMark's delimiter-run
+// resolver. In `one`, a `**` encountered inside a single-star enclosure is
+// parsed by `two`; when that nested strong opener has no `**` closer, `two`
+// consumes the remainder literally and the outer single-star enclosure also
+// fails. Thus `*a**b*` is literal in Pandoc, rather than one Emphasis node.
+//
+// Reference implementation: Pandoc 3.10.2 commit
+// f2ee5dfee866aab007a33552acc6bc01810c6918,
+// Text/Pandoc/Readers/Markdown.hs `enclosure`, `one`, `two`, and `ender`
+// (around lines 1680-1735).
+function pandocSingleAsteriskHasCloser(text, start) {
+    let pos = start + 1;
+    function skipCodeSpan(at) {
+        if (text.charCodeAt(at) != 96 /* ` */)
+            return at;
+        let width = 1;
+        while (text.charCodeAt(at + width) == 96)
+            width++;
+        let close = text.indexOf("`".repeat(width), at + width);
+        return close < 0 ? at : close + width;
+    }
+    function nextStrongClose(at) {
+        for (let i = at; i < text.length;) {
+            if (text.charCodeAt(i) == 92 /* \\ */) {
+                i += 2;
+                continue;
+            }
+            let codeEnd = skipCodeSpan(i);
+            if (codeEnd != i) {
+                i = codeEnd;
+                continue;
+            }
+            if (text.charCodeAt(i) == 42 /* * */) {
+                let run = 1;
+                while (text.charCodeAt(i + run) == 42)
+                    run++;
+                if (run >= 2)
+                    return i + 2;
+                i += run;
+            }
+            else {
+                i++;
+            }
+        }
+        return -1;
+    }
+    while (pos < text.length) {
+        if (text.charCodeAt(pos) == 92 /* \\ */) {
+            pos += 2;
+            continue;
+        }
+        let codeEnd = skipCodeSpan(pos);
+        if (codeEnd != pos) {
+            pos = codeEnd;
+            continue;
+        }
+        if (text.charCodeAt(pos) != 42 /* * */) {
+            pos++;
+            continue;
+        }
+        let run = 1;
+        while (text.charCodeAt(pos + run) == 42)
+            run++;
+        if (run == 1 || run >= 3)
+            return true;
+        // Exactly `**`: Pandoc's `one` delegates to `two`. If that nested strong
+        // cannot close, it consumes the rest and prevents this outer emphasis from
+        // closing as well.
+        let nestedEnd = nextStrongClose(pos + 2);
+        if (nestedEnd < 0)
+            return false;
+        pos = nestedEnd;
+    }
+    return false;
+}
 const LinkStart = {}, ImageStart = {};
 class InlineDelimiter {
     constructor(type, from, to, side) {
@@ -1467,6 +1678,9 @@ const DefaultInline = {
         let rightFlanking = !sBefore && (!pBefore || sAfter || pAfter);
         let canOpen = leftFlanking && (next == 42 || !rightFlanking || pBefore);
         let canClose = rightFlanking && (next == 42 || !leftFlanking || pAfter);
+        if (next == 42 && pos == start + 1 && canOpen &&
+            !pandocSingleAsteriskHasCloser(cx.text, start - cx.offset))
+            canOpen = false;
         return cx.append(new InlineDelimiter(next == 95 ? EmphasisUnderscore : EmphasisAsterisk, start, pos, (canOpen ? 1 /* Mark.Open */ : 0 /* Mark.None */) | (canClose ? 2 /* Mark.Close */ : 0 /* Mark.None */)));
     },
     HardBreak(cx, next, start) {
@@ -1505,6 +1719,7 @@ const DefaultInline = {
                 // this.parts with the link/image node.
                 let content = cx.takeContent(i);
                 let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1);
+                cx.discardLinkCompanionDelimiters(part.from, part.to);
                 // Set any open-link markers before this link to invalid.
                 if (part.type == LinkStart)
                     for (let j = 0; j < i; j++) {
@@ -1545,10 +1760,23 @@ function finishLink(cx, content, type, start, startPos) {
         }
     }
     else if (next == 91 /* '[' */) {
-        let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
-        if (label) {
-            content.push(label);
-            endPos = label.to;
+        // Pandoc referenceLink performs a look-ahead for `normalCite` before it
+        // consumes a following reference label. The fork exposes that precedence
+        // generically through `referenceLabelBlockers` so the link parser reuses
+        // the configured citation grammar instead of restating it here.
+        let blocked = cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos);
+        if (!blocked) {
+            let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
+            if (label) {
+                // Pandoc `referenceLink` reparses the raw reference label with the
+                // inline grammar for its fallback representation (`parsedRaw <-
+                // parseFromString' inlines raw'`). Preserve those semantic children in
+                // the Lezer LinkLabel node instead of treating it as opaque source.
+                let innerFrom = label.from + 1, innerTo = label.to - 1;
+                let parsedLabel = cx.elt("LinkLabel", label.from, label.to, cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom));
+                content.push(parsedLabel);
+                endPos = parsedLabel.to;
+            }
         }
     }
     return elt(type, start, endPos, content);
@@ -1783,6 +2011,13 @@ class InlineContext {
         return null;
     }
     /**
+    Find the nearest unmatched standard Markdown link opening delimiter.
+    Pandoc extensions such as bracketed spans share the same `[` opener as
+    links and need to observe which openings the link parser has already
+    consumed, rather than maintaining an independent delimiter stack.
+    */
+    findOpeningLinkDelimiter() { return this.findOpeningDelimiter(LinkStart); }
+    /**
     Remove all inline elements and delimiters starting from the
     given index (which you should get from
     [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter),
@@ -1803,6 +2038,44 @@ class InlineContext {
     getDelimiterAt(index) {
         let part = this.parts[index];
         return part instanceof InlineDelimiter ? part : null;
+    }
+    /**
+    Invalidate an unmatched delimiter without discarding the content parsed
+    after it. Fork extensions use this when the reference grammar has parsed
+    far enough to prove that a speculative opener must backtrack to literal
+    source (for example Pandoc `inlineNote` followed by link syntax).
+    */
+    discardDelimiter(index) {
+        if (this.parts[index] instanceof InlineDelimiter)
+            this.parts[index] = null;
+    }
+    /**
+    Invalidate extension delimiters that share a source opener with a link
+    which has just been recognized. Fork extensions call this too because
+    Pandoc's readable-path link parser can recognize a link before the
+    default Lezer LinkEnd parser runs.
+    */
+    discardLinkCompanionDelimiters(from, to) {
+        for (let i = 0; i < this.parts.length; i++) {
+            let part = this.parts[i];
+            if (part instanceof InlineDelimiter && part.type.consumeWithLink &&
+                part.from == from && part.to == to)
+                this.parts[i] = null;
+        }
+    }
+    /**
+    Remove the standard Markdown LinkStart delimiter at an exact source
+    opener. Extensions such as Pandoc footnote references initially let the
+    Link parser observe `[` as a fallback, but must invalidate that fallback
+    once their higher-precedence construct succeeds.
+    */
+    discardOpeningLinkDelimiter(from, to) {
+        for (let i = 0; i < this.parts.length; i++) {
+            let part = this.parts[i];
+            if (part instanceof InlineDelimiter && part.type == LinkStart &&
+                part.from == from && part.to == to)
+                this.parts[i] = null;
+        }
     }
     /**
     Skip space after the given (document) position, returning either
@@ -1982,7 +2255,7 @@ const markdownHighlighting = styleTags({
 /**
 The default CommonMark parser.
 */
-const parser = new MarkdownParser(new NodeSet(nodeTypes).extend(markdownHighlighting), Object.keys(DefaultBlockParsers).map(n => DefaultBlockParsers[n]), Object.keys(DefaultBlockParsers).map(n => DefaultLeafBlocks[n]), Object.keys(DefaultBlockParsers), DefaultEndLeaf, DefaultSkipMarkup, Object.keys(DefaultInline).map(n => DefaultInline[n]), Object.keys(DefaultInline), []);
+const parser = new MarkdownParser(new NodeSet(nodeTypes).extend(markdownHighlighting), Object.keys(DefaultBlockParsers).map(n => DefaultBlockParsers[n]), Object.keys(DefaultBlockParsers).map(n => DefaultLeafBlocks[n]), Object.keys(DefaultBlockParsers), DefaultEndLeaf, DefaultSkipMarkup, Object.keys(DefaultInline).map(n => DefaultInline[n]), Object.keys(DefaultInline), [], false, false, []);
 
 const StrikethroughDelim = { resolve: "Strikethrough", mark: "StrikethroughMark" };
 /**
@@ -2484,19 +2757,23 @@ function scanToken(source, start) {
     const quote = source[valueStart];
     if (quote === '"' || quote === "'") {
         const quoted = scanQuotedValue(source, valueStart, quote);
-        if (quoted.status !== 'match') {
-            return quoted;
+        if (quoted.status === 'match') {
+            return {
+                status: 'match',
+                value: {
+                    kind: 'key-value',
+                    from: start,
+                    to: quoted.value.to,
+                    key: source.slice(start, keyEnd),
+                    value: quoted.value.value,
+                },
+            };
         }
-        return {
-            status: 'match',
-            value: {
-                kind: 'key-value',
-                from: start,
-                to: quoted.value.to,
-                key: source.slice(start, keyEnd),
-                value: quoted.value.value,
-            },
-        };
+        // Pandoc's keyValAttr wraps the quoted alternatives in `try`. When a
+        // closing quote is absent, it rewinds and lets the unquoted-value branch
+        // consume the leading quote as an ordinary character up to whitespace or
+        // `}`. Do the same instead of declaring the whole attribute list
+        // incomplete. Reference: Markdown.hs `keyValAttr`.
     }
     const unquoted = scanUnquotedValue(source, valueStart);
     return {
@@ -2790,6 +3067,84 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 // https://pandoc.org/MANUAL.html#citations
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u;
 /**
+ * Port the negative lookahead at the end of Pandoc `normalCite`:
+ *
+ *   notFollowedBy (try (void source) <|>
+ *                  (Ext_bracketed_spans *> void attributes) <|>
+ *                  void reference)
+ *
+ * A bracketed citation immediately followed by syntax that would make the
+ * bracket group a link/reference/span is NOT a normal citation. Pandoc then
+ * falls back to parsing the interior `@key` textually. This distinction is
+ * observable in e.g. `[@a][label](url)`.
+ */
+function conflictsWithNormalCiteClose(ctx, pos) {
+    const next = ctx.char(pos);
+    if (next === CHAR.CURLY_OPEN) {
+        return scanPandocAttributeList(ctx.text, pos - ctx.offset).status === 'match';
+    }
+    if (next === CHAR.BRACKET_OPEN) {
+        // Pandoc `reference` uses balanced brackets. We only need existence here,
+        // not its parsed inline payload.
+        let depth = 0;
+        for (let i = pos; i < ctx.end; i++) {
+            const ch = ctx.char(i);
+            if (ch === 92 /* \\ */) {
+                i++;
+                continue;
+            }
+            if (ch === CHAR.BRACKET_OPEN)
+                depth++;
+            if (ch === CHAR.BRACKET_CLOSE && --depth === 0)
+                return true;
+        }
+        return false;
+    }
+    if (next === CHAR.BRACE_OPEN) {
+        // This spelling is already handled above as Pandoc attributes.
+        return false;
+    }
+    if (next === 40 /* ( */) {
+        // `source` is parenthesized and permits nested parenthesized URL chunks.
+        // A balanced close is sufficient for the normal-citation exclusion; the
+        // actual Link parser remains authoritative for the detailed destination.
+        let depth = 0;
+        let angle = false;
+        let quote = 0;
+        for (let i = pos; i < ctx.end; i++) {
+            const ch = ctx.char(i);
+            if (ch === 92 /* \\ */) {
+                i++;
+                continue;
+            }
+            if (quote !== 0) {
+                if (ch === quote)
+                    quote = 0;
+                continue;
+            }
+            if (ch === 34 /* " */ || ch === 39 /* ' */) {
+                quote = ch;
+                continue;
+            }
+            if (ch === 60 /* < */) {
+                angle = true;
+                continue;
+            }
+            if (ch === 62 /* > */ && angle) {
+                angle = false;
+                continue;
+            }
+            if (angle)
+                continue;
+            if (ch === 40)
+                depth++;
+            if (ch === 41 && --depth === 0)
+                return true;
+        }
+    }
+    return false;
+}
+/**
  * Checks whether the text starts with a complete Roman-numeral locator. The
  * token must end before another letter and every range component must be a
  * canonical Roman numeral. Without these boundaries, suffixes such as
@@ -2893,24 +3248,28 @@ const citationParser = {
         if (next !== CHAR.AT && next !== CHAR.BRACKET_OPEN && next !== CHAR.HYPHEN) {
             return -1;
         }
-        // Ensure the character before `pos` is valid. NOTE: The InlineContext may
-        // include newlines, since single newlines are considered part of the same
-        // line due to the hard wrapping rule.
-        const prevChar = ctx.char(pos - 1);
-        const validBefore = Number.isNaN(prevChar) || [
-            CHAR.BRACE_OPEN,
-            CHAR.BRACKET_OPEN,
-            CHAR.BRACKET_CLOSE,
-            CHAR.ASTERISK,
-            CHAR.UNDERSCORE,
-            CHAR.TILDE,
-            CHAR.LF,
-            CHAR.CR,
-            CHAR.TAB,
-            CHAR.SPACE
-        ].includes(prevChar);
-        if (!validBefore) {
-            return -1;
+        // Pandoc's `normalCite` begins directly at `[` and imposes no condition on
+        // the preceding character, so constructs such as `` `code`[@key] `` are
+        // valid citations. The boundary restriction belongs only to textual
+        // `@key` / `-@key` recognition, where it prevents email-like false
+        // positives. Reference: Markdown.hs `cite`, `normalCite`, `textualCite`.
+        if (next !== CHAR.BRACKET_OPEN) {
+            const prevChar = ctx.char(pos - 1);
+            const validBefore = Number.isNaN(prevChar) || [
+                CHAR.BRACE_OPEN,
+                CHAR.BRACKET_OPEN,
+                CHAR.BRACKET_CLOSE,
+                CHAR.ASTERISK,
+                CHAR.UNDERSCORE,
+                CHAR.TILDE,
+                CHAR.LF,
+                CHAR.CR,
+                CHAR.TAB,
+                CHAR.SPACE
+            ].includes(prevChar);
+            if (!validBefore) {
+                return -1;
+            }
         }
         // Quick additional check to save us some headaches, because if `next` is a
         // hyphen, it MUST be followed by an @ to be considered a valid citation.
@@ -3029,6 +3388,9 @@ const citationParser = {
                 if (ch === CHAR.BRACKET_CLOSE) {
                     // End-condition -- marks the finish of the entire parsing.
                     parts.push(ctx.elt(NODES.MARK, i, ++i));
+                    if (conflictsWithNormalCiteClose(ctx, i)) {
+                        return -1;
+                    }
                     closed = true;
                     break; // Stop iterating; citation is between pos and i.
                 }
@@ -3156,6 +3518,79 @@ const citationParser = {
             if (!closed) {
                 return -1;
             }
+            // Pandoc `normalCite` explicitly rejects a bracketed citation when the
+            // closing `]` is immediately followed by link-source syntax, a bracketed
+            // span attribute list, or a reference label. In that situation the
+            // opening `[` remains literal and the inner `@key` is parsed by
+            // `textualCite` instead. This is observable for constructs such as
+            // `[@key][label](target)` and `[@key]{.class}`.
+            //
+            // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
+            // Pandoc commit.
+            const localAfter = i - ctx.offset;
+            const following = ctx.text.slice(localAfter);
+            const followedBySource = (() => {
+                if (!following.startsWith('('))
+                    return false;
+                let depth = 0;
+                let quote;
+                let escaped = false;
+                for (let cursor = 0; cursor < following.length; cursor++) {
+                    const char = following[cursor];
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (char === '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (quote !== undefined) {
+                        if (char === quote)
+                            quote = undefined;
+                        continue;
+                    }
+                    if (char === '"' || char === "'") {
+                        quote = char;
+                        continue;
+                    }
+                    if (char === '(')
+                        depth++;
+                    if (char === ')') {
+                        depth--;
+                        if (depth === 0)
+                            return true;
+                    }
+                }
+                return false;
+            })();
+            const followedByAttributes = following.startsWith('{') &&
+                scanPandocAttributeList(ctx.text, localAfter).status === 'match';
+            const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
+                let depth = 0;
+                let escaped = false;
+                for (const char of following) {
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (char === '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (char === '[')
+                        depth++;
+                    if (char === ']') {
+                        depth--;
+                        if (depth === 0)
+                            return true;
+                    }
+                }
+                return false;
+            })();
+            if (followedBySource || followedByAttributes || followedByReference) {
+                return -1;
+            }
         }
         else {
             // Inline-citation. That one is easier, albeit not without issues.
@@ -3271,6 +3706,12 @@ const citationParser = {
         // several parts of the code we assume that a citation MUST have at least
         // one citekey.
         if (parts.length > 0 && citekeysFound > 0) {
+            if (next === CHAR.BRACKET_OPEN) {
+                // Pandoc dispatches `[` as note <|> cite <|> bracketedSpan <|> ... .
+                // Once `normalCite` succeeds, this authored bracket cannot later act
+                // as the opener of an enclosing span in the Lezer delimiter stack.
+                ctx.discardLinkCompanionDelimiters(pos, pos + 1);
+            }
             // Final step: Compose the full citation element.
             return ctx.addElement(ctx.elt(NODES.CITATION, pos, i, parts));
         }
@@ -3286,8 +3727,8 @@ const citationParser = {
  * src/Text/Pandoc/Readers/Markdown.hs `divFenced` (line 2169),
  * `divFenceEnd`, and `bracketedSpan` (line 1916).
  */
-const PandocSpanDelimiter = {};
 const pandocDivClosingRe = /^(?<mark>:{3,})\s*$/d;
+const PandocSpanDelimiter = { consumeWithLink: true };
 function blockInput$2(ctx) {
     return ctx.input;
 }
@@ -3335,8 +3776,11 @@ const pandocSpanParser = {
     before: 'Link',
     parse: (ctx, next, pos) => {
         if (next === 91) { // 91 === '['
+            // Keep a span-specific bracket stack. The fork's standard link resolver
+            // consumes the companion delimiter at this exact source position when
+            // this bracket becomes a real link, preventing nested links from leaving
+            // stale span openers without invalidating an outer span opener.
             ctx.addDelimiter(PandocSpanDelimiter, pos, pos + 1, true, false);
-            // Return -1 so that the default link parser can add delimiters
             return -1;
         }
         if (next !== 93) { // 93 === ']'
@@ -3362,7 +3806,6 @@ const pandocSpanParser = {
             ctx.elt('PandocAttributeMark', attrTo - 1, attrTo),
         ]);
         const innerElements = ctx.takeContent(opening);
-        ctx.addDelimiter(PandocSpanDelimiter, pos, pos + 1, false, true);
         const openingMark = ctx.elt('PandocSpanMark', delim.from, delim.to);
         const closingMark = ctx.elt('PandocSpanMark', pos, pos + 1);
         return ctx.addElement(ctx.elt('PandocSpan', delim.from, attrTo, [openingMark, ...innerElements, closingMark, attr]));
@@ -3425,9 +3868,12 @@ const pandocDivParser = {
     },
     endLeaf: (ctx, line, _leaf) => {
         if (ctx.parentType().name === 'PandocDiv') {
-            return pandocDivClosingRe.test(line.text) || scanDivOpening(ctx) !== undefined;
+            return pandocDivClosingRe.test(line.text);
         }
-        return pandocDivClosingRe.test(line.text);
+        // Pandoc's paragraph `endline` only tests `notFollowedByDivCloser` while
+        // already inside a fenced div. At top level, and for nested div OPENERS,
+        // `:::` is ordinary paragraph text unless a blank line ended the leaf.
+        return false;
     },
 };
 // This function is used in the node [composite](https://github.com/lezer-parser/markdown?tab=readme-ov-file#user-content-nodespec.composite) method:
@@ -3439,6 +3885,14 @@ const pandocDivParser = {
 // for any markers involved in the block's syntax.
 function pandocDivComposite(ctx, line, value) {
     var _a;
+    // Pandoc's `divFenced` asks for a closing fence only between parsed blocks.
+    // A `:::` line inside fenced/indented code or another opaque child block is
+    // therefore ordinary child-block content, not a div close. Lezer composite
+    // continuation runs before the child block parser, so the base fork exposes
+    // this explicit opaque-block signal to preserve Pandoc's ordering.
+    if (ctx.inOpaqueBlock) {
+        return true;
+    }
     // We only want to end the block if the nesting level, `value`,
     // matches the number of parent PandocDivs so that other parent
     // blocks are not ended early.
@@ -3470,6 +3924,78 @@ const validFootnoteRe = /^[^\s\^\[\]]+$/;
 // Group 1 is the label alone; the body may start after a space or on the next
 // line, so the separator is a space *or* the end of the line.
 const footnoteRefRe = /^(\[\^[^\s\^\[\]]+\]:)(?:\s|$)/;
+function codeSpanEnd$2(text, from) {
+    if (text[from] !== '`')
+        return from;
+    let width = 1;
+    while (text[from + width] === '`')
+        width++;
+    const mark = '`'.repeat(width);
+    const end = text.indexOf(mark, from + width);
+    return end < 0 ? from : end + width;
+}
+function delimitedEnd(text, from, open, close) {
+    if (!text.startsWith(open, from))
+        return from;
+    for (let cursor = from + open.length; cursor < text.length; cursor++) {
+        if (text.startsWith(close, cursor))
+            return cursor + close.length;
+        if (text[cursor] === '\\')
+            cursor++;
+    }
+    return from;
+}
+/**
+ * Pandoc `inlineNote` uses `inBalancedBrackets inlines`, so brackets inside
+ * code/math do not participate in note balancing. This scanner is lookahead
+ * only: it must not mutate InlineContext until the whole note and its trailing
+ * negative-lookahead condition are known to succeed.
+ */
+function inlineNoteClose(text, from) {
+    if (!text.startsWith('^[', from))
+        return -1;
+    let depth = 1;
+    for (let cursor = from + 2; cursor < text.length;) {
+        if (text[cursor] === '\\') {
+            const bracketMath = delimitedEnd(text, cursor, '\\[', '\\]');
+            if (bracketMath !== cursor) {
+                cursor = bracketMath;
+                continue;
+            }
+            const parenMath = delimitedEnd(text, cursor, '\\(', '\\)');
+            if (parenMath !== cursor) {
+                cursor = parenMath;
+                continue;
+            }
+            cursor += Math.min(2, text.length - cursor);
+            continue;
+        }
+        const codeEnd = codeSpanEnd$2(text, cursor);
+        if (codeEnd !== cursor) {
+            cursor = codeEnd;
+            continue;
+        }
+        const displayMath = delimitedEnd(text, cursor, '$$', '$$');
+        if (displayMath !== cursor) {
+            cursor = displayMath;
+            continue;
+        }
+        const inlineMath = delimitedEnd(text, cursor, '$', '$');
+        if (inlineMath !== cursor) {
+            cursor = inlineMath;
+            continue;
+        }
+        if (text[cursor] === '[')
+            depth++;
+        if (text[cursor] === ']') {
+            depth--;
+            if (depth === 0)
+                return cursor;
+        }
+        cursor++;
+    }
+    return -1;
+}
 const footnoteParser = {
     name: 'footnotes',
     before: 'Link', // [^1] will otherwise be detected as a link
@@ -3484,9 +4010,24 @@ const footnoteParser = {
             // since [^invalid id](my url) is a valid link otherwise.
             return -1;
         }
-        // Footnote Style: ^[inline]
+        // Footnote Style: ^[inline]. Pandoc wraps the entire parser in `try`, so a
+        // failure must leave both `^` and `[` untouched for later alternatives.
         if (next === 94 && ctx.char(pos + 1) === 91) {
-            return ctx.addDelimiter(FootnoteDelimiter, pos, pos + 2, true, false);
+            const localFrom = pos - ctx.offset;
+            const close = inlineNoteClose(ctx.text, localFrom);
+            if (close < 0)
+                return -1;
+            const after = close + 1;
+            const following = ctx.text[after];
+            const followedByAttributes = following === '{' &&
+                scanPandocAttributeList(ctx.text, after).status === 'match';
+            if (following === '(' || following === '[' || followedByAttributes)
+                return -1;
+            const contentFrom = localFrom + 2;
+            const absoluteContentFrom = ctx.offset + contentFrom;
+            const absoluteClose = ctx.offset + close;
+            const children = ctx.parser.parseInline(ctx.text.slice(contentFrom, close), absoluteContentFrom);
+            return ctx.addElement(ctx.elt('Footnote', pos, absoluteClose + 1, children));
         }
         let opening = null;
         if (next === 93) { // 93 === ']'
@@ -3499,15 +4040,18 @@ const footnoteParser = {
         if (delim === null) {
             return -1;
         }
-        // Inline footnotes can contain markup, however, identifier footnotes cannot.
-        const isInline = ctx.char(delim.from) === 94; // 94 === '^'
         // Finally, check if the identifier is valid
-        if (!isInline && !validFootnoteRe.test(ctx.slice(delim.to, pos))) {
+        if (!validFootnoteRe.test(ctx.slice(delim.to, pos))) {
+            ctx.discardDelimiter(opening);
             return -1;
         }
-        const children = ctx.takeContent(opening);
+        ctx.takeContent(opening);
+        // `note` has higher Pandoc precedence than `bracketedSpan` and `link` for
+        // `[^id]`. A successful note therefore owns the opening `[` outright.
+        ctx.discardLinkCompanionDelimiters(delim.from, delim.from + 1);
+        ctx.discardOpeningLinkDelimiter(delim.from, delim.from + 1);
         ctx.addDelimiter(FootnoteDelimiter, pos, pos + 1, false, true);
-        return ctx.addElement(ctx.elt('Footnote', delim.from, pos + 1, isInline ? children : undefined));
+        return ctx.addElement(ctx.elt('Footnote', delim.from, pos + 1));
     }
 };
 const footnoteRefParser = {
@@ -3556,6 +4100,50 @@ function footnoteComposite(ctx, line, _value) {
  * (line 310). The editor's YAML language mount is deliberately outside this
  * package; this module owns only Markdown syntax.
  */
+function blockInput$1(ctx) {
+    return ctx.input;
+}
+/**
+ * Non-mutating port of Pandoc Metadata.hs `yamlMetaBlock` / `stopLine`.
+ * Lezer cannot roll BlockContext back after `nextLine()`, so recognition must
+ * be complete before the block parser advances at all.
+ */
+function frontmatterExtent(ctx, openingStart) {
+    const source = blockInput$1(ctx).read(openingStart, blockInput$1(ctx).length);
+    if (!source.startsWith('---'))
+        return undefined;
+    const openingNewline = source.indexOf('\n');
+    if (openingNewline < 0)
+        return undefined;
+    const bodyFrom = openingStart + openingNewline + 1;
+    let cursor = openingNewline + 1;
+    let linesToClose = 1;
+    let firstBodyLine = true;
+    while (cursor <= source.length) {
+        const newline = source.indexOf('\n', cursor);
+        const lineEnd = newline < 0 ? source.length : newline;
+        const line = source.slice(cursor, lineEnd);
+        if (firstBodyLine && line.trim() === '') {
+            // Pandoc: `notFollowedBy blankline` immediately after the opener.
+            return undefined;
+        }
+        firstBodyLine = false;
+        if (/^(?:---|\.\.\.)[ \t]*$/u.test(line)) {
+            return {
+                bodyFrom,
+                bodyTo: openingStart + Math.max(openingNewline + 1, cursor - 1),
+                closeFrom: openingStart + cursor,
+                closeTo: openingStart + lineEnd,
+                linesToClose,
+            };
+        }
+        if (newline < 0)
+            return undefined;
+        cursor = newline + 1;
+        linesToClose++;
+    }
+    return undefined;
+}
 const frontmatterParser = {
     name: 'frontmatter',
     before: 'HorizontalRule',
@@ -3567,20 +4155,18 @@ const frontmatterParser = {
             return false;
         }
         const openingStart = ctx.lineStart + line.pos;
-        const yamlLines = [];
-        while (ctx.nextLine() && !/^(?:-{3}|\.{3})$/.test(line.text)) {
-            yamlLines.push(line.text);
-        }
-        if (!/^(?:-{3}|\.{3})$/.test(line.text)) {
+        const extent = frontmatterExtent(ctx, openingStart);
+        if (extent === undefined) {
             return false;
         }
-        if (yamlLines.length > 0 && yamlLines[0].trim() === '') {
-            return false;
+        for (let i = 0; i < extent.linesToClose; i++) {
+            if (!ctx.nextLine())
+                return false;
         }
-        const wrapperNode = ctx.elt('YAMLFrontmatter', openingStart, ctx.lineStart + 3, [
+        const wrapperNode = ctx.elt('YAMLFrontmatter', openingStart, extent.closeTo, [
             ctx.elt('YAMLFrontmatterStart', openingStart, openingStart + 3),
-            ctx.elt('CodeText', openingStart + 4, ctx.lineStart - 1),
-            ctx.elt('YAMLFrontmatterEnd', ctx.lineStart, ctx.lineStart + 3)
+            ctx.elt('CodeText', extent.bodyFrom, extent.bodyTo),
+            ctx.elt('YAMLFrontmatterEnd', extent.closeFrom, extent.closeTo)
         ]);
         ctx.nextLine();
         ctx.addElement(wrapperNode);
@@ -3636,6 +4222,7 @@ const pandocLinkParser = {
             return -1;
         }
         const isLink = delim.to - delim.from === 1;
+        ctx.discardLinkCompanionDelimiters(delim.from, delim.to);
         let linkContents = ctx.takeContent(opening);
         ctx.addDelimiter(PandocLinkDelimiter, pos, pos + 1, false, true);
         // Remove nested links, which are invalid
@@ -3700,9 +4287,6 @@ const pandocLinkParser = {
  * consumers remain source-compatible. Recognition, however, follows Pandoc;
  * presentation/language mounting is not part of the grammar.
  */
-function blockInput$1(ctx) {
-    return ctx.input;
-}
 function isSpaceChar(value) {
     return /\s/u.test(value);
 }
@@ -3831,78 +4415,6 @@ const singleBackslashMathParser = {
             return -1;
         const to = ctx.offset + localEnd;
         return ctx.addElement(mathElement(ctx, pos, to, open.length, close.length));
-    }
-};
-const DOLLAR_DISPLAY_LINE = /^(\s*\$\$)\s*$/u;
-const BRACKET_DISPLAY_LINE = /^\s*\\\[\s*$/u;
-const BLANK_LINE = /^\s*$/u;
-/**
- * Non-mutating lookahead for the editor's block-shaped representation of a
- * standalone Pandoc display-math expression. Pandoc's reference parser is
- * `mathDisplayWith` in Text/Pandoc/Parsing/Math.hs: a display expression may
- * cross ordinary newlines but not a blank line and must have its closing
- * delimiter. Lezer BlockParser.parse has no rollback after `nextLine()`, so we
- * must establish the close before moving BlockContext at all.
- */
-function hasDisplayBlockClose(ctx, line, dollar) {
-    const input = blockInput$1(ctx);
-    const afterOpening = ctx.lineStart + line.text.length + 1;
-    const remaining = input.read(afterOpening, input.length);
-    for (const physicalLine of remaining.split('\n')) {
-        if (BLANK_LINE.test(physicalLine))
-            return false;
-        if (dollar) {
-            if (DOLLAR_DISPLAY_LINE.test(physicalLine))
-                return true;
-        }
-        else if (physicalLine.includes('\\]')) {
-            return true;
-        }
-    }
-    return false;
-}
-const blockMathParser = {
-    name: 'pandoc-display-math-block',
-    parse: (ctx, line) => {
-        const dollar = DOLLAR_DISPLAY_LINE.test(line.text);
-        const bracket = !dollar && BRACKET_DISPLAY_LINE.test(line.text);
-        if (!dollar && !bracket)
-            return false;
-        if (!hasDisplayBlockClose(ctx, line, dollar))
-            return false;
-        const blockStart = ctx.lineStart;
-        const contentFrom = ctx.lineStart + line.text.length + 1;
-        let closeFrom = -1;
-        let closeTo = -1;
-        let contentTo = -1;
-        while (ctx.nextLine()) {
-            if (BLANK_LINE.test(line.text))
-                return false;
-            if (dollar && DOLLAR_DISPLAY_LINE.test(line.text)) {
-                closeFrom = ctx.lineStart;
-                closeTo = ctx.lineStart + line.text.length;
-                contentTo = ctx.prevLineEnd();
-                break;
-            }
-            if (bracket) {
-                const at = line.text.indexOf('\\]');
-                if (at >= 0) {
-                    closeFrom = ctx.lineStart + at;
-                    closeTo = closeFrom + 2;
-                    contentTo = closeFrom;
-                    break;
-                }
-            }
-        }
-        if (closeFrom < 0)
-            return false;
-        ctx.addElement(ctx.elt('FencedCode', blockStart, closeTo, [
-            ctx.elt('CodeMark', blockStart, contentFrom - 1),
-            ctx.elt('CodeText', contentFrom, contentTo),
-            ctx.elt('CodeMark', closeFrom, closeTo),
-        ]));
-        ctx.nextLine();
-        return true;
     }
 };
 
@@ -4330,6 +4842,7 @@ function rawLatexEnvironmentEnd(text, environment) {
  * oracle for the admitted shapes.
  */
 function rawLatexInlineEndAtStart(text) {
+    var _a;
     const environment = latexEnvironmentAtStart(text);
     if (environment !== null) {
         if (!PANDOC_INLINE_ENVIRONMENTS.has(environment)) {
@@ -4341,31 +4854,56 @@ function rawLatexInlineEndAtStart(text) {
     if (command === null) {
         return null;
     }
+    const name = command[1];
     let cursor = command[0].length;
-    let consumedArgument = false;
-    while (cursor < text.length) {
-        const beforeSpace = cursor;
-        cursor = skipHorizontalSpace$1(text, cursor);
-        const opener = text[cursor];
-        if (opener !== "[" && opener !== "{") {
-            // TeX control WORDS absorb following horizontal space when they carry no
-            // argument. Pandoc preserves that absorbed space in RawInline(tex).
-            // Once an argument has been consumed, subsequent space is Markdown.
-            if (consumedArgument) {
-                cursor = beforeSpace;
-            }
-            break;
-        }
-        const end = balancedGroupEnd(text, cursor, opener, opener === "[" ? "]" : "}");
-        if (end === null) {
+    // Pandoc's LaTeX reader does not greedily absorb arbitrary following groups.
+    // `rawLaTeXInline` delegates to the actual command parser (`inlineCommands`)
+    // and therefore consumes exactly the argument shape owned by that command.
+    // Unknown commands accept optional [] groups followed by at most one braced
+    // group; known multi-argument commands below mirror their literal entries in
+    // LaTeX.hs `inlineCommands` (textcolor/colorbox, href, texorpdfstring, etc.).
+    // This keeps `\textbf{raw} [label](...)` from swallowing the Markdown link.
+    const MULTI_BRACED_ARGS = {
+        href: 2,
+        hyperlink: 2,
+        texorpdfstring: 2,
+        textcolor: 2,
+        colorbox: 2,
+    };
+    const requiredBraces = (_a = MULTI_BRACED_ARGS[name]) !== null && _a !== void 0 ? _a : 1;
+    let consumedAny = false;
+    let beforeSpace = cursor;
+    cursor = skipHorizontalSpace$1(text, cursor);
+    // TeX optional arguments precede the main braced argument(s). Pandoc's
+    // command parsers use `option`/`skipopts` in these positions.
+    while (text[cursor] === "[") {
+        const end = balancedGroupEnd(text, cursor, "[", "]");
+        if (end === null)
             return null;
-        }
-        consumedArgument = true;
+        consumedAny = true;
         cursor = end;
+        beforeSpace = cursor;
+        cursor = skipHorizontalSpace$1(text, cursor);
     }
-    // A control sequence itself is valid raw inline even without arguments
-    // (e.g. \LaTeX); arguments are consumed when present.
-    return consumedArgument || cursor > 1 ? cursor : null;
+    let braces = 0;
+    while (braces < requiredBraces && text[cursor] === "{") {
+        const end = balancedGroupEnd(text, cursor, "{", "}");
+        if (end === null)
+            return null;
+        consumedAny = true;
+        braces++;
+        cursor = end;
+        if (braces < requiredBraces) {
+            cursor = skipHorizontalSpace$1(text, cursor);
+        }
+    }
+    if (consumedAny) {
+        // Space after the final owned argument belongs back to Markdown.
+        return cursor;
+    }
+    // A bare TeX control word gobbles following horizontal space. Pandoc keeps
+    // those spaces in RawInline(tex), e.g. `\LaTeX   text`.
+    return cursor > beforeSpace ? cursor : command[0].length;
 }
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */
 function rawLatexBlockEndAtStart(text) {
@@ -4374,6 +4912,47 @@ function rawLatexBlockEndAtStart(text) {
         return rawLatexEnvironmentEnd(text, environment);
     }
     return rawLatexCommandEndAtStart(text);
+}
+/**
+ * End of one Pandoc Markdown `rawTeXBlock`, which may aggregate several
+ * adjacent LaTeX blocks.
+ *
+ * Reference implementation: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text/Pandoc/Readers/Markdown.hs `rawTeXBlock`:
+ * `many1 ((<>) <$> rawLaTeXBlock <*> spnl')`; `spnl'` accepts horizontal
+ * whitespace plus at most one newline not followed by another newline.
+ * Consequently adjacent raw blocks coalesce, but a blank line separates them.
+ */
+function rawLatexBlockSequenceEndAtStart(text) {
+    const firstEnd = rawLatexBlockEndAtStart(text);
+    if (firstEnd === null)
+        return null;
+    let end = firstEnd;
+    for (;;) {
+        let cursor = end;
+        while (text[cursor] === " " || text[cursor] === "\t")
+            cursor++;
+        let afterGap = cursor;
+        if (text.startsWith("\r\n", cursor)) {
+            afterGap = cursor + 2;
+        }
+        else if (text[cursor] === "\n") {
+            afterGap = cursor + 1;
+        }
+        if (afterGap !== cursor) {
+            while (text[afterGap] === " " || text[afterGap] === "\t")
+                afterGap++;
+            // `spnl'` refuses the optional newline when it would create a blank line.
+            if (text[afterGap] === "\n" || text.startsWith("\r\n", afterGap))
+                break;
+        }
+        const nextEnd = rawLatexBlockEndAtStart(text.slice(afterGap));
+        if (nextEnd === null)
+            break;
+        end = afterGap + nextEnd;
+    }
+    return end;
 }
 /**
  * Reconstruct the semantic raw-block source from parser-owned content ranges.
@@ -4454,7 +5033,7 @@ const rawLatexBlockParser = {
         }
         const absoluteStart = ctx.parsedPos + line.pos;
         const remaining = blockInput(ctx).read(absoluteStart, blockInput(ctx).length);
-        const relativeEnd = rawLatexBlockEndAtStart(remaining);
+        const relativeEnd = rawLatexBlockSequenceEndAtStart(remaining);
         if (relativeEnd === null) {
             return false;
         }
@@ -4465,14 +5044,20 @@ const rawLatexBlockParser = {
         // Advance only after a complete closing environment is known to exist.
         // This keeps an unterminated environment ordinary editable source rather
         // than consuming the rest of the document speculatively.
-        while (absoluteEnd > ctx.parsedPos + line.text.length) {
-            const contentFrom = ctx.lineStart + (firstLine ? line.pos : line.basePos);
-            const contentTo = ctx.lineStart + line.text.length + 1;
-            content.push(ctx.elt("RawBlockContent", contentFrom, contentTo));
-            firstLine = false;
-            if (!ctx.nextLine()) {
-                return false;
+        ctx.beginOpaqueBlock();
+        try {
+            while (absoluteEnd > ctx.parsedPos + line.text.length) {
+                const contentFrom = ctx.lineStart + (firstLine ? line.pos : line.basePos);
+                const contentTo = ctx.lineStart + line.text.length + 1;
+                content.push(ctx.elt("RawBlockContent", contentFrom, contentTo));
+                firstLine = false;
+                if (!ctx.nextLine()) {
+                    return false;
+                }
             }
+        }
+        finally {
+            ctx.endOpaqueBlock();
         }
         const closePos = absoluteEnd - ctx.parsedPos;
         const blockEnd = ctx.lineStart + closePos;
@@ -4509,6 +5094,100 @@ const rawLatexInlineParser = {
         const to = pos + relativeEnd;
         return ctx.addElement(ctx.elt("RawInline", pos, to, [
             ctx.elt("RawInlineContent", pos, to),
+        ]));
+    },
+};
+
+/**
+ * Pandoc strikeout grammar.
+ *
+ * Reference implementation: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text/Pandoc/Readers/Markdown.hs `strikeout`, `strikeStart`, `strikeEnd`,
+ * and `inlinesBetween` (around lines 1750-1765).
+ */
+function codeSpanEnd$1(text, from) {
+    if (text[from] !== '`')
+        return from;
+    let width = 1;
+    while (text[from + width] === '`')
+        width++;
+    const mark = '`'.repeat(width);
+    const end = text.indexOf(mark, from + width);
+    return end < 0 ? from : end + width;
+}
+function mathEnd(text, from) {
+    let close;
+    let cursor = from;
+    if (text.startsWith('$$', from)) {
+        close = '$$';
+        cursor += 2;
+    }
+    else if (text[from] === '$') {
+        close = '$';
+        cursor++;
+    }
+    else if (text.startsWith('\\(', from)) {
+        close = '\\)';
+        cursor += 2;
+    }
+    else if (text.startsWith('\\[', from)) {
+        close = '\\]';
+        cursor += 2;
+    }
+    if (close === undefined)
+        return from;
+    while (cursor < text.length) {
+        if (text.startsWith(close, cursor))
+            return cursor + close.length;
+        if (text[cursor] === '\\')
+            cursor++;
+        cursor++;
+    }
+    return from;
+}
+function strikeEnd(text, from) {
+    for (let cursor = from; cursor < text.length;) {
+        if (text.startsWith('~~', cursor))
+            return cursor;
+        if (text[cursor] === '\\') {
+            cursor += Math.min(2, text.length - cursor);
+            continue;
+        }
+        const codeEnd = codeSpanEnd$1(text, cursor);
+        if (codeEnd !== cursor) {
+            cursor = codeEnd;
+            continue;
+        }
+        const equationEnd = mathEnd(text, cursor);
+        if (equationEnd !== cursor) {
+            cursor = equationEnd;
+            continue;
+        }
+        cursor++;
+    }
+    return -1;
+}
+const pandocStrikeoutParser = {
+    name: 'pandoc-strikeout',
+    before: 'Emphasis',
+    parse: (ctx, next, pos) => {
+        if (next !== 126 || ctx.char(pos + 1) !== 126 || ctx.char(pos + 2) === 126)
+            return -1;
+        const contentFrom = pos + 2;
+        const first = ctx.char(contentFrom);
+        if (first < 0 || /\s/u.test(String.fromCodePoint(first)))
+            return -1;
+        const localFrom = contentFrom - ctx.offset;
+        const localClose = strikeEnd(ctx.text, localFrom);
+        if (localClose < 0 || localClose === localFrom)
+            return -1;
+        const closeFrom = ctx.offset + localClose;
+        const to = closeFrom + 2;
+        return ctx.addElement(ctx.elt('Strikethrough', pos, to, [
+            ctx.elt('StrikethroughMark', pos, contentFrom),
+            ...ctx.parser.parseInline(ctx.text.slice(localFrom, localClose), contentFrom),
+            ctx.elt('StrikethroughMark', closeFrom, to),
         ]));
     },
 };
@@ -4768,6 +5447,12 @@ const pipeTableParser = {
         return scanPipeRow(leaf.content) === null ? null : new PandocPipeTableParser();
     },
     endLeaf(ctx, line, leaf) {
+        // Pandoc's paragraph `endline` does not recognize pipe-table starts as an
+        // interrupting block. A pipe table is parsed only when its header begins a
+        // fresh block (after a blank or other completed block). The old editor
+        // parser inherited GFM-style mid-paragraph table interruption here.
+        if (ctx.parser.pandocParagraphContinuation)
+            return false;
         if (leaf.parsers.some(parser => parser instanceof PandocPipeTableParser))
             return false;
         const current = line.text.slice(line.basePos);
@@ -4776,105 +5461,331 @@ const pipeTableParser = {
         return scanPipeDelimiter(ctx.peekLine()) !== null;
     },
 };
-// Grid tables use fixed column boundaries rather than inline pipe splitting.
-// The Lezer tree preserves physical row/cell spans for the editor; Pandoc's
-// JSON oracle verifies recognition, header-vs-body classification, and column
-// count for the supported geometry.
-const GRID_BORDER = /^\s*\+(?:(?:-+|=+)\+)+\s*$/u;
-const GRID_CONTENT = /^\s*\|.*\|\s*$/u;
-function gridBoundaries(line) {
-    const result = [];
-    for (let index = 0; index < line.length; index++) {
-        if (line[index] === '+')
-            result.push(index);
-    }
-    return result;
+function tableBlockInput(ctx) {
+    return ctx.input;
 }
-function sameGridGeometry(line, boundaries) {
-    const positions = [];
-    for (let index = 0; index < line.length; index++) {
-        if (line[index] === '+' || line[index] === '|')
-            positions.push(index);
+function readGridPhysicalLine(input, from) {
+    let cursor = from;
+    let text = '';
+    while (cursor < input.length) {
+        const chunk = input.chunk(cursor);
+        if (chunk.length === 0)
+            break;
+        const newline = chunk.indexOf('\n');
+        if (newline >= 0) {
+            text += chunk.slice(0, newline);
+            if (text.endsWith('\r'))
+                text = text.slice(0, -1);
+            return { text, next: cursor + newline + 1 };
+        }
+        text += chunk;
+        cursor += chunk.length;
     }
-    return positions.length === boundaries.length && positions.every((value, index) => value === boundaries[index]);
+    if (text.endsWith('\r'))
+        text = text.slice(0, -1);
+    return { text, next: cursor };
 }
-function gridCells(ctx, line, absoluteStart, boundaries) {
-    const result = [];
-    for (let column = 0; column + 1 < boundaries.length; column++) {
-        const raw = { from: boundaries[column] + 1, to: boundaries[column + 1] };
-        const cell = trimmedSpan(line, raw);
-        if (cell.from === cell.to)
+function gridSpecs(line, fill) {
+    const source = line.trimEnd();
+    if (!source.startsWith('+'))
+        return undefined;
+    const parts = source.slice(1).split('+');
+    if (parts.length === 0 || parts[parts.length - 1] !== '')
+        return undefined;
+    parts.pop();
+    const specs = [];
+    for (const part of parts) {
+        const run = fill === '-' ? '-+' : '=+';
+        if (!new RegExp(`^:?${run}:?$`, 'u').test(part))
+            return undefined;
+        specs.push(part.startsWith(':') && part.endsWith(':')
+            ? 'center'
+            : part.startsWith(':')
+                ? 'left'
+                : part.endsWith(':') ? 'right' : null);
+    }
+    return specs;
+}
+function collectGridLines(ctx, line) {
+    const opening = line.text.slice(line.pos).trimEnd();
+    if (gridSpecs(opening, '-') === undefined)
+        return undefined;
+    const lines = [{ text: opening, start: ctx.lineStart + line.pos }];
+    const input = tableBlockInput(ctx);
+    let physicalStart = ctx.lineStart;
+    let current = readGridPhysicalLine(input, physicalStart);
+    let cursor = current.next;
+    // Composite prefixes (`> `, list indentation, etc.) are stable across a
+    // table. `basePos` is the prefix already consumed by the active containers;
+    // ordinary nonindent spaces are skipped after it just as on the first line.
+    const basePrefix = line.basePos;
+    while (cursor < input.length) {
+        physicalStart = cursor;
+        current = readGridPhysicalLine(input, cursor);
+        cursor = current.next;
+        let pos = Math.min(basePrefix, current.text.length);
+        pos = skipHorizontalSpace(current.text, pos);
+        const text = current.text.slice(pos).trimEnd();
+        if (text[0] !== '+' && text[0] !== '|')
+            break;
+        lines.push({ text, start: physicalStart + pos });
+    }
+    return lines.length > 1 ? lines : undefined;
+}
+function gridChar(lines, width, row, column) {
+    if (row < 0 || row >= lines.length || column < 0 || column >= width)
+        return undefined;
+    return column < lines[row].text.length ? lines[row].text[column] : undefined;
+}
+function scanGridUp(lines, width, top, left, bottom) {
+    const rows = new Set();
+    for (let row = bottom - 1; row > top; row--) {
+        const char = gridChar(lines, width, row, left);
+        if (char === '+')
+            rows.add(row);
+        else if (char !== '|')
+            return undefined;
+    }
+    return rows;
+}
+function scanGridLeft(lines, width, top, left, bottom, right) {
+    if (gridChar(lines, width, bottom, left) !== '+')
+        return undefined;
+    const columns = new Set();
+    for (let column = right - 1; column > left; column--) {
+        const char = gridChar(lines, width, bottom, column);
+        if (char === '+')
+            columns.add(column);
+        else if (char !== '-')
+            return undefined;
+    }
+    const rows = scanGridUp(lines, width, top, left, bottom);
+    return rows === undefined ? undefined : { rowSeparators: rows, columnSeparators: columns };
+}
+function scanGridDown(lines, width, top, left, right) {
+    const rows = new Set();
+    for (let row = top + 1; row < lines.length; row++) {
+        const char = gridChar(lines, width, row, right);
+        if (char === '+') {
+            rows.add(row);
+            const leftScan = scanGridLeft(lines, width, top, left, row, right);
+            if (leftScan !== undefined) {
+                for (const value of leftScan.rowSeparators)
+                    rows.add(value);
+                return {
+                    bottom: row,
+                    right,
+                    rowSeparators: rows,
+                    columnSeparators: leftScan.columnSeparators,
+                };
+            }
             continue;
-        result.push(ctx.elt('TableCell', absoluteStart + cell.from, absoluteStart + cell.to, ctx.parser.parseInline(line.slice(cell.from, cell.to), absoluteStart + cell.from)));
+        }
+        if (char === '|')
+            continue;
+        // gridtables permits an unterminated final column to extend through
+        // arbitrary/missing characters at the padded right edge.
+        if (right === width - 1)
+            continue;
+        return undefined;
     }
-    for (const boundary of boundaries) {
-        result.push(ctx.elt('TableDelimiter', absoluteStart + boundary, absoluteStart + boundary + 1));
+    return undefined;
+}
+function scanGridRightRestOfLine(lines, width, left, bottom) {
+    if (gridChar(lines, width, bottom, left) !== '+')
+        return false;
+    for (let column = left + 1; column < width; column++) {
+        const char = gridChar(lines, width, bottom, column);
+        if (char !== '+' && char !== '-' && char !== undefined)
+            return false;
     }
-    result.sort((a, b) => a.from - b.from || a.to - b.to);
-    return result;
+    return true;
+}
+function scanGridRestOfLines(lines, width, top, left) {
+    for (let row = top + 1; row < lines.length; row++) {
+        if (scanGridRightRestOfLine(lines, width, left, row)) {
+            return {
+                bottom: row,
+                right: width - 1,
+                rowSeparators: new Set([row]),
+                columnSeparators: new Set([width - 1]),
+            };
+        }
+    }
+    return undefined;
+}
+function scanGridRight(lines, width, top, left) {
+    const seenColumns = new Set();
+    for (let column = left + 1; column < width; column++) {
+        const char = gridChar(lines, width, top, column);
+        if (char === '-')
+            continue;
+        if (char !== '+')
+            return undefined;
+        seenColumns.add(column);
+        const down = scanGridDown(lines, width, top, left, column);
+        if (down !== undefined) {
+            for (const value of seenColumns)
+                down.columnSeparators.add(value);
+            return down;
+        }
+        // Exact port of gridtables' `lastCellInRow`: after a failed candidate `+`,
+        // a padded line end can become the right edge of one forgiving cell.
+        if (gridChar(lines, width, top, column + 1) === undefined) {
+            const rest = scanGridRestOfLines(lines, width, top, left);
+            if (rest !== undefined)
+                return rest;
+        }
+    }
+    return undefined;
+}
+function traceGrid(physicalLines) {
+    var _a, _b, _c;
+    const width = Math.max(...physicalLines.map(line => line.text.length));
+    if (width < 2)
+        return undefined;
+    const partSeparators = physicalLines
+        // gridtables' `colSpecsInLine` works against the padded CharGrid and only
+        // succeeds when the separator reaches the grid's final column. A visually
+        // valid but shorter `+===+===+` line in a wider table is therefore cell
+        // content, not a part separator.
+        .map((line, row) => ({
+        row,
+        specs: line.text.length === width ? gridSpecs(line.text, '=') : undefined,
+    }))
+        .filter((entry) => entry.specs !== undefined);
+    // gridtables converts `=` separator rows and colon alignment markers to '-'
+    // before tracing geometry, but extracts cell content from the original grid.
+    const separatorRows = new Set([0, ...partSeparators.map(entry => entry.row)]);
+    const tracedLines = physicalLines.map((line, row) => (Object.assign(Object.assign({}, line), { text: separatorRows.has(row) ? line.text.replace(/[=:]/gu, '-') : line.text })));
+    const cells = [];
+    const rowSeparators = new Set([0]);
+    const columnSeparators = new Set([0]);
+    const corners = new Set(['0:0']);
+    const seen = new Set();
+    while (corners.size > 0) {
+        const ordered = [...corners]
+            .map(key => key.split(':').map(Number))
+            .sort(([ar, ac], [br, bc]) => ar - br || ac - bc);
+        const [top, left] = ordered[0];
+        const key = `${top}:${left}`;
+        corners.delete(key);
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        const scan = scanGridRight(tracedLines, width, top, left);
+        if (scan === undefined)
+            continue;
+        cells.push({ top, left, bottom: scan.bottom, right: scan.right });
+        for (const value of scan.rowSeparators)
+            rowSeparators.add(value);
+        for (const value of scan.columnSeparators)
+            columnSeparators.add(value);
+        corners.add(`${top}:${scan.right}`);
+        corners.add(`${scan.bottom}:${left}`);
+    }
+    if (cells.length === 0)
+        return undefined;
+    const rows = [...rowSeparators].sort((a, b) => a - b);
+    const columns = [...columnSeparators].sort((a, b) => a - b);
+    if (rows.length < 2 || columns.length < 2)
+        return undefined;
+    const headerSeparator = partSeparators.find(entry => rows.includes(entry.row));
+    const firstLineSpecs = physicalLines[0].text.length === width
+        ? gridSpecs(physicalLines[0].text, '-')
+        : undefined;
+    const specs = (_c = (_b = (_a = partSeparators[0]) === null || _a === void 0 ? void 0 : _a.specs) !== null && _b !== void 0 ? _b : firstLineSpecs) !== null && _c !== void 0 ? _c : [];
+    return {
+        cells,
+        rowSeparators: rows,
+        columnSeparators: columns,
+        headerBoundary: headerSeparator === null || headerSeparator === void 0 ? void 0 : headerSeparator.row,
+        alignment: Array.from({ length: columns.length - 1 }, (_, index) => { var _a; return (_a = specs[index]) !== null && _a !== void 0 ? _a : null; }),
+    };
+}
+function gridColumnNodeName(alignment) {
+    if (alignment === 'left')
+        return 'GridTableColumnLeft';
+    if (alignment === 'center')
+        return 'GridTableColumnCenter';
+    if (alignment === 'right')
+        return 'GridTableColumnRight';
+    return 'GridTableColumnDefault';
+}
+function gridCellElement(ctx, lines, cell) {
+    var _a, _b, _c, _d;
+    const physical = lines.slice(cell.top + 1, cell.bottom);
+    const spans = physical.map(line => {
+        let from = Math.min(cell.left + 1, line.text.length);
+        let to = Math.min(cell.right, line.text.length);
+        return { line, from, to };
+    });
+    // Pandoc GridTable.removeOneLeadingSpace drops one leading space iff every
+    // physical line in the cell starts with one (empty/missing lines qualify).
+    const dropLeading = spans.every(({ line, from, to }) => from >= to || line.text[from] === ' ');
+    const lineElements = [];
+    for (const span of spans) {
+        let from = span.from + (dropLeading && span.from < span.to ? 1 : 0);
+        let to = span.to;
+        while (to > from && (span.line.text[to - 1] === ' ' || span.line.text[to - 1] === '\t'))
+            to--;
+        const absoluteFrom = span.line.start + from;
+        const absoluteTo = span.line.start + to;
+        lineElements.push(ctx.elt('TableCellLine', absoluteFrom, absoluteTo, ctx.parser.parseInline(span.line.text.slice(from, to), absoluteFrom)));
+    }
+    const from = (_b = (_a = lineElements[0]) === null || _a === void 0 ? void 0 : _a.from) !== null && _b !== void 0 ? _b : lines[cell.top].start + cell.left + 1;
+    const to = (_d = (_c = lineElements[lineElements.length - 1]) === null || _c === void 0 ? void 0 : _c.to) !== null && _d !== void 0 ? _d : from;
+    return ctx.elt('TableCell', from, to, lineElements);
 }
 const gridTableParser = {
     name: 'grid-table',
     parse: (ctx, line) => {
-        const opening = line.text.slice(line.pos);
-        if (!GRID_BORDER.test(opening) || opening.includes('='))
+        const lines = collectGridLines(ctx, line);
+        if (lines === undefined)
             return false;
-        const boundaries = gridBoundaries(opening);
-        if (boundaries.length < 2)
+        const trace = traceGrid(lines);
+        if (trace === undefined)
             return false;
-        const start = ctx.lineStart + line.pos;
-        const children = [ctx.elt('TableDelimiter', start, start + opening.length)];
-        let rowStart = -1;
-        let rowLines = [];
-        let headerClosed = false;
-        let lastEnd = start + opening.length;
-        let closed = false;
-        const flushRow = (asHeader) => {
-            if (rowStart < 0 || rowLines.length === 0)
-                return;
-            const rowChildren = [];
-            // A physical line for each cell line. Multi-line grid cells remain within
-            // one logical TableHeader/TableRow container; the AST adapter can join
-            // their child nodes without fabricating extra rows.
-            for (const physical of rowLines) {
-                rowChildren.push(...gridCells(ctx, physical.text, physical.start, boundaries));
-            }
-            const rowEnd = rowLines[rowLines.length - 1].start + rowLines[rowLines.length - 1].text.length;
-            children.push(ctx.elt(asHeader ? 'TableHeader' : 'TableRow', rowStart, rowEnd, rowChildren));
-            rowStart = -1;
-            rowLines = [];
-        };
-        while (ctx.nextLine()) {
-            const text = line.text.slice(line.pos);
-            const absolute = ctx.lineStart + line.pos;
-            if (GRID_CONTENT.test(text) && sameGridGeometry(text, boundaries)) {
-                if (rowStart < 0)
-                    rowStart = absolute;
-                rowLines.push({ text, start: absolute });
-                lastEnd = absolute + text.length;
-                continue;
-            }
-            if (!GRID_BORDER.test(text) || !sameGridGeometry(text, boundaries)) {
-                return false;
-            }
-            const headerSeparator = text.includes('=');
-            flushRow(headerSeparator && !headerClosed);
-            if (headerSeparator)
-                headerClosed = true;
-            children.push(ctx.elt('TableDelimiter', absolute, absolute + text.length));
-            lastEnd = absolute + text.length;
-            // A border with no following grid-content line closes the table. Peek is
-            // sufficient here: gridTableWith' likewise stops at the completed border.
-            const next = ctx.peekLine();
-            if (!GRID_CONTENT.test(next)) {
-                closed = true;
-                ctx.nextLine();
-                break;
+        const start = lines[0].start;
+        const openingChildren = trace.alignment.map((alignment, index) => {
+            const left = trace.columnSeparators[index];
+            const right = trace.columnSeparators[index + 1];
+            const from = start + Math.min(lines[0].text.length, left + 1);
+            const to = start + Math.min(lines[0].text.length, Math.max(left + 1, right));
+            return ctx.elt(gridColumnNodeName(alignment), from, to);
+        });
+        const children = [
+            ctx.elt('TableDelimiter', start, start + lines[0].text.length, openingChildren),
+        ];
+        for (let rowIndex = 0; rowIndex + 1 < trace.rowSeparators.length; rowIndex++) {
+            const top = trace.rowSeparators[rowIndex];
+            const bottom = trace.rowSeparators[rowIndex + 1];
+            const rowCells = trace.cells
+                .filter(cell => cell.top === top)
+                .sort((a, b) => a.left - b.left)
+                .map(cell => gridCellElement(ctx, lines, cell));
+            const rowFrom = lines[Math.min(top + 1, lines.length - 1)].start;
+            const bottomLine = lines[Math.min(bottom, lines.length - 1)];
+            const rowTo = bottomLine.start;
+            const isHeader = trace.headerBoundary !== undefined && bottom <= trace.headerBoundary;
+            children.push(ctx.elt(isHeader ? 'TableHeader' : 'TableRow', rowFrom, rowTo, rowCells));
+        }
+        // Preserve authored border ranges for source-aware consumers. Only the
+        // first delimiter carries the semantic column children used by the AST.
+        for (let index = 1; index < lines.length; index++) {
+            if (lines[index].text.startsWith('+')) {
+                children.push(ctx.elt('TableDelimiter', lines[index].start, lines[index].start + lines[index].text.length));
             }
         }
-        if (!closed || rowStart >= 0)
-            return false;
-        ctx.addElement(ctx.elt('Table', start, lastEnd, children));
+        children.sort((a, b) => a.from - b.from || a.to - b.to);
+        // Commit BlockContext movement only after the non-mutating trace succeeds.
+        for (let index = 1; index < lines.length; index++) {
+            if (!ctx.nextLine())
+                return false;
+        }
+        const end = lines[lines.length - 1].start + lines[lines.length - 1].text.length;
+        ctx.addElement(ctx.elt('Table', start, end, children));
+        ctx.nextLine();
         return true;
     },
 };
@@ -4909,6 +5820,11 @@ const zknLinkParser = function (config) {
             if (delim === null) {
                 return -1;
             }
+            // A successful wikilink owns both authored opening brackets. Clear any
+            // speculative Pandoc-span companions at those exact positions while
+            // leaving an earlier outer span opener intact.
+            ctx.discardLinkCompanionDelimiters(delim.from, delim.from + 1);
+            ctx.discardLinkCompanionDelimiters(delim.from + 1, delim.from + 2);
             // Remove any elements that were parsed internally
             ctx.takeContent(opening);
             ctx.addDelimiter(ZknLinkDelimiter, pos, pos + 2, false, true);
@@ -4993,11 +5909,18 @@ const pandocNodes = {
         'RawBlockContent',
         'RawInline',
         'RawInlineContent',
+        { name: 'Strikethrough', style: { 'Strikethrough/...': tags.strikethrough } },
+        { name: 'StrikethroughMark', style: tags.processingInstruction },
         { name: 'Table', block: true },
         'TableHeader',
         'TableRow',
         'TableCell',
+        'TableCellLine',
         'TableDelimiter',
+        'GridTableColumnDefault',
+        'GridTableColumnLeft',
+        'GridTableColumnCenter',
+        'GridTableColumnRight',
     ],
 };
 /**
@@ -5014,11 +5937,13 @@ function PandocSyntax(options = {}) {
     return [
         pandocNodes,
         {
+            referenceLabelBlockers: ['Citation'],
+            lazyBlockquotes: true,
+            pandocParagraphContinuation: true,
             parseBlock: [
                 pandocDivParser,
                 rawLatexBlockParser,
                 frontmatterParser,
-                blockMathParser,
                 footnoteRefParser,
                 gridTableParser,
                 pipeTableParser,
@@ -5028,6 +5953,7 @@ function PandocSyntax(options = {}) {
                 inlineMathParser,
                 singleBackslashMathParser,
                 rawLatexInlineParser,
+                pandocStrikeoutParser,
                 footnoteParser,
                 citationParser,
                 zknLinkParser({ format: options.wikilinks }),
@@ -5079,15 +6005,15 @@ function parseCode(config) {
 
 /**
  * Complete Pandoc-flavored Markdown extension supported by this fork.
- * The reused Lezer extensions correspond to Pandoc's default strikeout,
- * superscript, subscript, and task-list extensions; all remaining syntax is
- * owned by `PandocSyntax` in the fork.
+ * The reused Lezer extensions correspond to Pandoc's default superscript,
+ * subscript, and task-list extensions. Strikeout is fork-owned because GFM's
+ * delimiter-run behavior is not Pandoc's `strikeout` parser.
  */
 function Pandoc(options = {}) {
-    return [Strikethrough, Superscript, Subscript, TaskList, PandocSyntax(options)];
+    return [Superscript, Subscript, TaskList, PandocSyntax(options)];
 }
 function createPandocParser(options = {}) {
     return parser.configure(Pandoc(options));
 }
 
-export { Autolink, BlockContext, NODES as CITATION_NODES, Element, Emoji, GFM, InlineContext, LeafBlock, Line, MarkdownParser, Pandoc, Strikethrough, Subscript, Superscript, Table, TaskList, citationParser, createPandocParser, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };
+export { Autolink, BlockContext, NODES as CITATION_NODES, Element, Emoji, GFM, InlineContext, LeafBlock, Line, MarkdownParser, Pandoc, Strikethrough, Subscript, Superscript, Table, TaskList, citationParser, createPandocParser, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockSequenceEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };

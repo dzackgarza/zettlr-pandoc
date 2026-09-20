@@ -612,15 +612,23 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const title = node.getChild("LinkTitle");
 
       if (url === null) {
-        return {
+        // A Lezer Link node without a URL can be a syntactic wrapper around
+        // source that Pandoc ultimately leaves as ordinary text while still
+        // recognizing semantic children inside it. Example:
+        // `[@a][label](url)` is not a normal citation in Pandoc; the leading
+        // `[` remains literal, while `@a` is an AuthorInText Cite. Collapsing
+        // this whole wrapper into one Text node discards that child semantic
+        // structure. Preserve the parsed children/gaps instead.
+        const genericLink: GenericNode = {
           type: "Generic",
           name: node.name,
           attributes: {},
           from: node.from,
           to: node.to,
           whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-          children: [genericTextNode(node.from, node.to, markdown.substring(node.from, node.to))],
+          children: [],
         };
+        return parseChildren(genericLink, node, markdown);
       }
 
       const astNode: LinkOrImage = {
