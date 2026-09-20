@@ -4331,7 +4331,13 @@ function inlineMathEnd(text, from, open, close) {
                 return -1;
             const before = (_a = text[cursor - 1]) !== null && _a !== void 0 ? _a : '';
             const after = (_b = text[cursor + close.length]) !== null && _b !== void 0 ? _b : '';
-            if (!isSpaceChar(before) && !/[0-9]/u.test(after))
+            // Pandoc's whitespace restriction is dollar-specific. In
+            // `mathInlineWith`, the whitespace-content branch is
+            // `many1 spaceChar <* notFollowedBy (char '$')`, so `$x $` is rejected,
+            // but `\( x \)` is valid and `trimMath` removes the surrounding spaces.
+            // `notFollowedBy digit` applies after either closing delimiter.
+            const dollarTrailingSpace = open === '$' && isSpaceChar(before);
+            if (!dollarTrailingSpace && !/[0-9]/u.test(after))
                 return cursor + close.length;
         }
         if (text[cursor] === '\\') {

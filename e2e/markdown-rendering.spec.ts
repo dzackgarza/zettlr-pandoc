@@ -27,6 +27,8 @@ const DOCUMENT = `# Rendered heading
 
 Ordinary *emphasis* and [a link](https://example.com) with inline $x+y$.
 
+The KSBA compactification generalizes the Deligne-Mumford compactification \\( \\overline{{ \\mathcal{M}_{g, n} }} \\) [@DM69] of \\( { \\mathcal{M}_{g, n} } \\), the moduli space of genus \\( g \\) curves with \\( n \\) marked points, to higher-dimensional varieties.
+
 ::: {.definition title="$(K+D)$-Trivial Polarized Involution Pairs"}
 A $(K+D)$-trivial polarized involution pair is a triple $(X,D,\\iota)$.
 :::
@@ -103,6 +105,20 @@ describe('assembled Markdown rendering', function () {
     assert.ok(!proseText.includes('https://example.com'), `link target remains visible: ${JSON.stringify(proseText)}`)
 
     assert.ok(await page.locator('.preview-math[data-equation="x+y"]').count() > 0, 'inline math must render')
+    const equations = await page.locator('.preview-math').evaluateAll(elements =>
+      elements.map(element => (element as HTMLElement).dataset.equation ?? '')
+    )
+    for (const equation of [
+      ' \\overline{{ \\mathcal{M}_{g, n} }} ',
+      ' { \\mathcal{M}_{g, n} } ',
+      ' g ',
+      ' n '
+    ]) {
+      assert.ok(
+        equations.includes(equation),
+        `assembled editor did not render Pandoc \\( … \\) equation ${JSON.stringify(equation)}; rendered equations: ${JSON.stringify(equations)}`
+      )
+    }
     assert.ok(
       await page.locator('pandoc-div-wrapper[data-pandoc-div-family="definition"]').count() > 0,
       'the definition fenced div must render as a semantic container'

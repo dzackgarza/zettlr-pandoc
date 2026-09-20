@@ -83,6 +83,17 @@ describe('Editor mounts math widgets for LaTeX delimiters', function () {
     assert.ok(container?.getAttribute('display') !== 'true', 'inline math must not be display mode')
   })
 
+  it('mounts spaced \\( … \\) math containing ordinary TeX commands', function () {
+    const dom = renderInEditor(
+      'the moduli space \\( \\overline{{ \\mathcal{M}_{g, n} }} \\) is compact',
+    )
+    const widget = [...dom.querySelectorAll<HTMLElement>('.preview-math')].find(
+      element => element.dataset.equation === ' \\overline{{ \\mathcal{M}_{g, n} }} ',
+    )
+    assert.ok(widget !== null, 'expected the entire spaced backslash-delimited expression to render')
+    assert.ok(widget?.querySelector('mjx-container') !== null, 'expected MathJax content inside the widget')
+  })
+
   it('still mounts a DISPLAY widget for a $$ block (regression)', function () {
     const dom = renderInEditor('text\n\n$$\n\\RR\n$$\n\nmore')
     const widget = dom.querySelector('.preview-math mjx-container[display="true"]')
