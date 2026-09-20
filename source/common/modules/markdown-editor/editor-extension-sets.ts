@@ -46,7 +46,6 @@ import { snippetsUpdateField } from "./autocomplete/snippets";
 import { markdownFolding } from "./code-folding/markdown";
 import { zettlrKeymap } from "./keymaps";
 import { languageTool } from "./linters/language-tool";
-import { latexEnvironmentLint } from "./linters/latex-environment-lint";
 import { mdLint } from "./linters/md-lint";
 import { referenceLint } from "./linters/reference-lint";
 import { scholarlyLint } from "./linters/scholarly-lint";
@@ -321,12 +320,6 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // frontmatter, so the linter is always active (issue #1 Phase 4). It
     // reports nothing until the workspace reference view arrives.
     referenceLint,
-    // A \begin{…} folded into the paragraph around it: a figure that never
-    // renders (an error, and nothing downstream says so — Pandoc exports it
-    // either way), or any other environment sitting inside a paragraph rather
-    // than standing alone (a warning). Always active, for the same reason
-    // referenceLint is.
-    latexEnvironmentLint,
     // A source block which the live renderer cannot compile is a document
     // correctness error at the authored TikZ line. The renderer and this lint
     // source share one request memo, so immediate feedback does not duplicate

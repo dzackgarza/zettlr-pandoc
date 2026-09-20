@@ -94,7 +94,11 @@ describe("scholarly mathematical document diagnostics", function () {
     const unknown = diagnostics.filter((diagnostic) =>
       /(?:typoMacro|commentedMacro)/u.test(diagnostic.message),
     );
-    assert.equal(unknown.length, 2);
+    // Pandoc parses `%` as ordinary Markdown text here and the following
+    // `\newcommand{\commentedMacro}{wrong}` as real RawInline(tex); its macro
+    // expansion therefore makes `\commentedMacro` an actual declaration.
+    assert.equal(unknown.length, 1);
+    assert.match(unknown[0].message, /\\typoMacro/u);
     assert.ok(unknown.every((diagnostic) => diagnostic.severity === "warning"));
     for (const command of ["\\frac", "\\Spec", "\\CompilerOnly", "\\localop", "\\localpair"]) {
       assert.equal(
@@ -162,6 +166,7 @@ describe("scholarly mathematical document diagnostics", function () {
       "\\graphicspath{{figures/}{../shared/}}",
       "\\includegraphics{diagram.pdf}",
       "\\includegraphics{missing-diagram.pdf}",
+      "[link](assets/\\input{missing-link-target}.md)",
       "",
       "<!-- \\input{comment/missing} -->",
       "```tex",
@@ -180,6 +185,11 @@ describe("scholarly mathematical document diagnostics", function () {
     assert.equal(
       missing.some((diagnostic) => diagnostic.message.includes("example/missing")),
       false,
+    );
+    assert.equal(
+      missing.some((diagnostic) => diagnostic.message.includes("missing-link-target")),
+      false,
+      "TeX-looking text owned by a Markdown link destination is not a TeX resource",
     );
   });
 

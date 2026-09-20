@@ -10,7 +10,7 @@
  * Description:     The single main-process execution seam for the Flowmark
  *                  submodule.  Both formatting and linting run the exact
  *                  pinned source under vendor/flowmark (or its packaged
- *                  resources copy) through uvx.  Nothing in Zettlr owns a
+ *                  resources copy) through `uv run --project`.  Nothing in Zettlr owns a
  *                  Markdown grammar or fetches an unpinned Flowmark checkout.
  *
  * END HEADER
@@ -29,7 +29,7 @@ export type FlowmarkProcessResult =
   | { ok: true, stdout: string, stderr: string }
   | { ok: false, kind: FlowmarkProcessFailureKind, message: string }
 
-const FLOWMARK_RUNNER = 'uvx'
+const FLOWMARK_RUNNER = 'uv'
 const KILL_GRACE_MS = 2_000
 
 /**
@@ -53,20 +53,24 @@ export function vendoredFlowmarkProjectPath (): string {
   return path.resolve('vendor', 'flowmark')
 }
 
-/** uvx argv that installs/runs an entry point from the pinned local submodule. */
+/** `uv run` argv that runs an entry point from the pinned local submodule. */
 export function vendoredFlowmarkArgs (
   entrypoint: 'flowmark' | 'flowmark-lint',
   args: string[],
   projectPath = vendoredFlowmarkProjectPath()
 ): string[] {
-  // A local `uvx --from <path>` environment is cached by package/version.
-  // Flowmark's source-archive fallback version is intentionally stable, so a
-  // newly pinned submodule could otherwise keep executing an older cached
-  // wheel. Refresh only Flowmark itself: unchanged source stays cache-fast,
-  // while a submodule SHA advance cannot be shadowed by stale package bytes.
+  // Do not use `uvx --from <path>` here. uvx tool environments are cached by
+  // package/version, and Flowmark's source-archive fallback version is stable;
+  // even `--refresh-package flowmark` can therefore execute an older locally
+  // built wheel after the vendored checkout changes. `uv run --project` makes
+  // the project checkout itself the editable import source. `--isolated`
+  // prevents an ambient active venv from changing dependencies, while
+  // `--frozen` requires the vendored uv.lock instead of resolving new ones.
   return [
-    '--refresh-package', 'flowmark',
-    '--from', projectPath,
+    'run',
+    '--project', projectPath,
+    '--isolated',
+    '--frozen',
     entrypoint,
     ...args
   ]

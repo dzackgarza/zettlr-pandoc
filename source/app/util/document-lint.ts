@@ -2,7 +2,6 @@
 
 import { extractReferences } from "@common/pandoc-util/extract-references";
 import { resolveWorkspace } from "@common/pandoc-util/resolve-references";
-import { latexEnvironmentLintText } from "@common/util/latex-environment-lint-core";
 import type { MathJaxMacro } from "@common/util/mathjax-config";
 import { referenceLintText } from "@common/util/reference-lint-core";
 import { scholarlyLintText } from "@common/util/scholarly-lint-core";
@@ -124,7 +123,6 @@ export async function lintDocumentText(
   }
 
   diagnostics.push(
-    ...latexEnvironmentLintText(text),
     ...(await scholarlyLintText(text, {
       knownCommands: context.knownCommands,
       configuredMacros: context.configuredMacros,

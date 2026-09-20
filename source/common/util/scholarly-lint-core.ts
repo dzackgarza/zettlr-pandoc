@@ -108,51 +108,65 @@ function sourceOffsetForCodeNode(markdown: string, node: ASTNode & { source: str
 
 function collectDocumentRegions(markdown: string): {
   math: SourceRegion[];
-  texIgnored: Array<{ from: number; to: number }>;
-  prose: SourceRegion[];
+  tex: SourceRegion[];
+  proseIgnored: Array<{ from: number; to: number }>;
 } {
   const math: SourceRegion[] = [];
-  const texIgnored: Array<{ from: number; to: number }> = [];
-  const prose: SourceRegion[] = [];
+  const tex: SourceRegion[] = [];
+  const proseIgnored: Array<{ from: number; to: number }> = [];
 
   walkAST(markdownToAST(markdown), (node) => {
     if (node.type === "InlineCode" || node.type === "FencedCode") {
+      proseIgnored.push({ from: node.from, to: node.to });
       const parsedMath = mathFromCodeNode(node.info, node.source);
-      if (parsedMath === null) {
-        texIgnored.push({ from: node.from, to: node.to });
-      } else {
+      if (parsedMath !== null) {
         const from = sourceOffsetForCodeNode(markdown, node);
         math.push({ from, to: from + node.source.length, source: node.source });
       }
       return;
     }
 
-    if (node.type === "Text" || node.type === "Comment") {
-      if (node.type === "Comment") {
-        texIgnored.push({ from: node.from, to: node.to });
+    if (node.type === "RawInline") {
+      proseIgnored.push({ from: node.from, to: node.to });
+      tex.push({ from: node.from, to: node.to, source: node.source });
+      return;
+    }
+
+    if (node.type === "RawBlock") {
+      proseIgnored.push({ from: node.from, to: node.to });
+      // Raw blocks inside containers can have non-contiguous authored ranges
+      // (`> ` / list markers are excluded from the semantic TeX source). Keep
+      // each semantic source line as its own exact-offset region rather than
+      // fabricating a contiguous span which never existed in the document.
+      if (node.sourceLineRanges.length === 0) {
+        return;
       }
-      prose.push({ from: node.from, to: node.to, source: markdown.slice(node.from, node.to) });
-    } else if (node.type === "YAMLFrontmatter") {
-      texIgnored.push({ from: node.from, to: node.to });
+      for (const range of node.sourceLineRanges) {
+        tex.push({
+          from: range.from,
+          to: range.to,
+          source: markdown.slice(range.from, range.to),
+        });
+      }
+      return;
+    }
+
+    if (node.type === "YAMLFrontmatter") {
+      proseIgnored.push({ from: node.from, to: node.to });
     }
   });
 
-  return { math, texIgnored, prose };
+  return { math, tex, proseIgnored };
 }
 
-function overlaps(range: { from: number; to: number }, offset: number): boolean {
-  return offset >= range.from && offset < range.to;
-}
-
-function localMacroNames(
-  markdown: string,
-  ignored: Array<{ from: number; to: number }>,
-): ReadonlySet<string> {
-  const chars = markdown.split("");
-  for (const range of ignored) {
-    chars.fill(" ", range.from, range.to);
+function localMacroNames(regions: SourceRegion[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const region of regions) {
+    for (const name of texCommandDeclarations(region.source)) {
+      names.add(name);
+    }
   }
-  return new Set(texCommandDeclarations(chars.join("")));
+  return names;
 }
 
 function unknownMacroDiagnostics(
@@ -267,67 +281,76 @@ function configuredMacroExpansionDiagnostics(
   return diagnostics;
 }
 
-function residueDiagnostics(regions: SourceRegion[]): SourceLintDiagnostic[] {
+function overlapsAny(
+  ranges: Array<{ from: number; to: number }>,
+  from: number,
+  to: number,
+): boolean {
+  return ranges.some((range) => from < range.to && to > range.from);
+}
+
+function residueDiagnostics(
+  markdown: string,
+  ignored: Array<{ from: number; to: number }>,
+): SourceLintDiagnostic[] {
   const diagnostics: SourceLintDiagnostic[] = [];
-  for (const region of regions) {
-    for (const residue of AUTHORIAL_RESIDUE) {
-      const pattern = new RegExp(residue.pattern.source, residue.pattern.flags);
-      for (const match of region.source.matchAll(pattern)) {
-        diagnostics.push({
-          from: region.from + match.index,
-          to: region.from + match.index + match[0].length,
-          severity: "info",
-          message: `Authorial residue: ${residue.description} ${JSON.stringify(match[0])} remains in the document.`,
-          source: "scholarly-lint",
-        });
+  for (const residue of AUTHORIAL_RESIDUE) {
+    const pattern = new RegExp(residue.pattern.source, residue.pattern.flags);
+    for (const match of markdown.matchAll(pattern)) {
+      const from = match.index;
+      const to = from + match[0].length;
+      if (overlapsAny(ignored, from, to)) {
+        continue;
       }
+      diagnostics.push({
+        from,
+        to,
+        severity: "info",
+        message: `Authorial residue: ${residue.description} ${JSON.stringify(match[0])} remains in the document.`,
+        source: "scholarly-lint",
+      });
     }
   }
   return diagnostics;
 }
 
 function collectTexResources(
-  markdown: string,
-  ignored: Array<{ from: number; to: number }>,
+  regions: SourceRegion[],
 ): { resources: AuthoredTexResource[]; graphicRoots: string[] } {
   const resources: AuthoredTexResource[] = [];
   const graphicRoots: string[] = [];
   let id = 0;
-  for (const [pattern, kind] of [
-    [TEX_INPUT_RESOURCE_RE, "input"],
-    [TEX_GRAPHICS_RESOURCE_RE, "graphics"],
-  ] as const) {
-    const scanner = new RegExp(pattern.source, pattern.flags);
-    for (const match of markdown.matchAll(scanner)) {
-      if (ignored.some((range) => overlaps(range, match.index))) {
+  for (const region of regions) {
+    for (const [pattern, kind] of [
+      [TEX_INPUT_RESOURCE_RE, "input"],
+      [TEX_GRAPHICS_RESOURCE_RE, "graphics"],
+    ] as const) {
+      const scanner = new RegExp(pattern.source, pattern.flags);
+      for (const match of region.source.matchAll(scanner)) {
+        const authoredPath = match.groups?.path;
+        if (authoredPath === undefined) {
+          continue;
+        }
+        const relative = match[0].indexOf(authoredPath);
+        resources.push({
+          id: id++,
+          kind,
+          path: authoredPath,
+          from: region.from + match.index + relative,
+          to: region.from + match.index + relative + authoredPath.length,
+        });
+      }
+    }
+    for (const match of region.source.matchAll(TEX_GRAPHICSPATH_RE)) {
+      const paths = match.groups?.paths;
+      if (paths === undefined) {
         continue;
       }
-      const authoredPath = match.groups?.path;
-      if (authoredPath === undefined) {
-        continue;
-      }
-      const relative = match[0].indexOf(authoredPath);
-      resources.push({
-        id: id++,
-        kind,
-        path: authoredPath,
-        from: match.index + relative,
-        to: match.index + relative + authoredPath.length,
-      });
-    }
-  }
-  for (const match of markdown.matchAll(TEX_GRAPHICSPATH_RE)) {
-    if (ignored.some((range) => overlaps(range, match.index))) {
-      continue;
-    }
-    const paths = match.groups?.paths;
-    if (paths === undefined) {
-      continue;
-    }
-    for (const entry of paths.matchAll(TEX_GRAPHICSPATH_ENTRY_RE)) {
-      const root = entry.groups?.path?.trim();
-      if (root !== undefined && root !== "") {
-        graphicRoots.push(root);
+      for (const entry of paths.matchAll(TEX_GRAPHICSPATH_ENTRY_RE)) {
+        const root = entry.groups?.path?.trim();
+        if (root !== undefined && root !== "") {
+          graphicRoots.push(root);
+        }
       }
     }
   }
@@ -335,11 +358,10 @@ function collectTexResources(
 }
 
 async function texResourceDiagnostics(
-  markdown: string,
-  ignored: Array<{ from: number; to: number }>,
+  regions: SourceRegion[],
   options: ScholarlyLintOptions,
 ): Promise<SourceLintDiagnostic[]> {
-  const { resources, graphicRoots } = collectTexResources(markdown, ignored);
+  const { resources, graphicRoots } = collectTexResources(regions);
   const sourcePath = options.sourcePath ?? "";
   if (resources.length === 0 || sourcePath === "" || options.resolveResources === undefined) {
     return [];
@@ -373,13 +395,13 @@ export async function scholarlyLintText(
   options: ScholarlyLintOptions,
 ): Promise<SourceLintDiagnostic[]> {
   const regions = collectDocumentRegions(markdown);
-  const localMacros = localMacroNames(markdown, regions.texIgnored);
-  const resourceDiagnostics = await texResourceDiagnostics(markdown, regions.texIgnored, options);
+  const localMacros = localMacroNames(regions.tex);
+  const resourceDiagnostics = await texResourceDiagnostics(regions.tex, options);
   return [
     ...unknownMacroDiagnostics(regions.math, options.knownCommands, localMacros),
     ...notationDiagnostics(regions.math),
     ...configuredMacroExpansionDiagnostics(regions.math, options.configuredMacros),
-    ...residueDiagnostics(regions.prose),
+    ...residueDiagnostics(markdown, regions.proseIgnored),
     ...resourceDiagnostics,
   ].sort((a, b) => a.from - b.from || a.to - b.to || a.message.localeCompare(b.message));
 }

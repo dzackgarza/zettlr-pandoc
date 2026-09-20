@@ -49,7 +49,7 @@ fixture is not sufficient evidence for a Pandoc grammar rule.
 | footnotes / inline notes | `Markdown.hs`: `note`, `inlineNote` |
 | fenced divs | `Markdown.hs`: `divFenced`, `divFenceEnd` |
 | citations | `Markdown.hs`: `cite`, `textualCite`, `normalCite`, `citeList`, `citation`, `prefix`, `suffix` |
-| raw TeX | `Text/Pandoc/Readers/LaTeX.hs`: `rawLaTeXBlock`, `rawLaTeXInline`, `inlineEnvironment`, `blockCommands`, `treatAsBlock`; `Markdown.hs`: `rawTeXBlock`, `spnl'`, `rawLaTeXInline'` |
+| raw TeX | `Text/Pandoc/Readers/LaTeX.hs`: `rawLaTeXBlock`, `rawLaTeXInline`, `blockCommand` (`rawDefiniteBlock`, `rawMaybeBlock`), `isInlineCommand`, `inlineCommands`, `treatAsInline`, `inlineEnvironment`, `blockCommands`, `treatAsBlock`; `Text/Pandoc/Readers/LaTeX/Parsing.hs`: `getRawCommand`, `skipopts`; `Markdown.hs`: `rawTeXBlock`, `spnl'`, `rawLaTeXInline'` |
 | strikeout | `Markdown.hs`: `strikeout` |
 | superscript / subscript | `Markdown.hs`: `superscript`, `subscript` |
 | task lists | `Markdown.hs`: list item parsing and `taskListItemFromAscii` application |

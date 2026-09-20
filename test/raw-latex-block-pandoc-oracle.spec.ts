@@ -194,6 +194,32 @@ const cases = [
     source: "\\def\\foo#1{value #1}\n",
   },
   {
+    name: "generic non-inline command at a block boundary",
+    source: "\\Foo[opt]{a}{b}\n",
+  },
+  {
+    name: "adjacent generic non-inline commands coalesce",
+    source: "\\Foo{a}\\Bar{b}\n",
+  },
+  {
+    name: "mathtools-style paired delimiter declaration is a raw block",
+    source: "\\DeclarePairedDelimiter\\localpair{[}{]}\n",
+  },
+  {
+    name: "macro definition plus paired delimiter declaration coalesces",
+    source:
+      "\\newcommand{\\localop}{\\operatorname{localop}}\n" +
+      "\\DeclarePairedDelimiter\\localpair{[}{]}\n",
+  },
+  {
+    name: "generic command with trailing prose is not a raw block",
+    source: "\\Foo{a} trailing\n",
+  },
+  {
+    name: "generic command followed by known inline command is not a raw block",
+    source: "\\Foo{a}\\bar{b}\n",
+  },
+  {
     name: "inline-only raw TeX command remains outside RawBlock",
     source: "\\includegraphics{figure.pdf}\n",
   },

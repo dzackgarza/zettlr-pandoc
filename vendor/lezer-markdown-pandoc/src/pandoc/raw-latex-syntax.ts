@@ -7,6 +7,8 @@
  * `rawLaTeXInline'` (line 2113) under Ext_raw_tex.
  */
 
+import { PANDOC_INLINE_COMMAND_NAMES } from './pandoc-inline-commands'
+
 /**
  * Pure recognition of Pandoc-style raw LaTeX environment blocks.
  *
@@ -171,10 +173,13 @@ export function rawLatexBlockStartsAt(text: string): boolean {
     return true;
   }
   const command = CONTROL_SEQUENCE_RE.exec(text);
-  return (
+  if (
     command !== null &&
     (PANDOC_BLOCK_COMMANDS.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))
-  );
+  ) {
+    return true;
+  }
+  return genericRawMaybeBlockEndAtStart(text) !== null;
 }
 
 function skipHorizontalSpace(text: string, from: number): number {
@@ -383,6 +388,92 @@ function rawLatexCommandEndAtStart(text: string): number | null {
   return genericBlockCommandEnd(text, initialEnd);
 }
 
+/**
+ * Port of LaTeX.hs `blockCommand.rawMaybeBlock` + Parsing.hs `getRawCommand`
+ * for a command which is neither a definite block command nor a macro
+ * definition. Pandoc first rejects names owned by `isInlineCommand`, then
+ * accepts ordinary options/braced arguments and promotes the sequence only
+ * when the physical line contains block commands and nothing else.
+ *
+ * The inline-command set is generated from the pinned Pandoc `inlineCommands`
+ * construction in `pandoc-inline-commands.ts`; this function therefore does
+ * not maintain an independent inline/block classification.
+ */
+function genericRawCommandUnitEnd(text: string): number | null {
+  const match = CONTROL_SEQUENCE_RE.exec(text);
+  if (
+    match === null ||
+    match[1] === 'begin' ||
+    match[1] === 'end' ||
+    match[1] === 'and' ||
+    PANDOC_INLINE_COMMAND_NAMES.has(match[1])
+  ) {
+    return null;
+  }
+
+  let cursor = match[0].length;
+  for (;;) {
+    const beforeSpace = cursor;
+    const argumentStart = skipHorizontalSpace(text, cursor);
+    const opener = text[argumentStart];
+
+    if (opener === '[' || opener === '{') {
+      const end = balancedGroupEnd(
+        text,
+        argumentStart,
+        opener,
+        opener === '[' ? ']' : '}',
+      );
+      if (end === null) return null;
+      cursor = end;
+      continue;
+    }
+
+    // Beamer overlay specifications are part of Pandoc's `skipopts`.
+    if (opener === '<') {
+      const end = text.indexOf('>', argumentStart + 1);
+      const newline = text.indexOf('\n', argumentStart + 1);
+      if (end < 0 || (newline >= 0 && newline < end)) return null;
+      cursor = end + 1;
+      continue;
+    }
+
+    // Horizontal whitespace belongs to the raw command only when followed by
+    // an owned argument. Otherwise it remains the block-line gap.
+    cursor = beforeSpace;
+    break;
+  }
+  return cursor;
+}
+
+function genericRawMaybeBlockEndAtStart(text: string): number | null {
+  let first = genericRawCommandUnitEnd(text);
+  if (first === null) return null;
+  let cursor = first;
+
+  // Pandoc `rest <- many blockCommand`: adjacent block commands with no
+  // intervening space are one raw block. A known inline command aborts the
+  // generic promotion, exactly as `guard $ not $ isInlineCommand name` does.
+  while (text[cursor] === '\\') {
+    const remainder = text.slice(cursor);
+    const environment = rawLatexEnvironmentAtStart(remainder);
+    let consumed: number | null = null;
+    if (environment !== null) {
+      consumed = rawLatexEnvironmentEnd(remainder, environment);
+    }
+    consumed ??= rawLatexCommandEndAtStart(remainder);
+    consumed ??= genericRawCommandUnitEnd(remainder);
+    if (consumed === null) return null;
+    cursor += consumed;
+  }
+
+  const boundary = skipHorizontalSpace(text, cursor);
+  if (boundary === text.length || text[boundary] === '\n' || text.startsWith('\r\n', boundary)) {
+    return cursor;
+  }
+  return null;
+}
+
 function escapedPercent(text: string, index: number): boolean {
   let backslashes = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor--) {
@@ -531,7 +622,7 @@ export function rawLatexBlockEndAtStart(text: string): number | null {
   if (environment !== null) {
     return rawLatexEnvironmentEnd(text, environment);
   }
-  return rawLatexCommandEndAtStart(text);
+  return rawLatexCommandEndAtStart(text) ?? genericRawMaybeBlockEndAtStart(text);
 }
 
 /**

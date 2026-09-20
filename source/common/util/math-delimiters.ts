@@ -32,42 +32,15 @@ export const MATH_DELIMITERS: MathDelimiterPair[] = [
   { open: '$', close: '$', display: false }
 ]
 
-/**
- * LaTeX-reader inline math environments. In Pandoc's Markdown reader these are
- * raw TeX, not Markdown math; this set is retained only for the environment
- * lint layer, which must not accuse a valid raw-inline environment of being an
- * unterminated raw block.
- *
- * Reference implementation: Pandoc 3.10.2 commit
- * f2ee5dfee866aab007a33552acc6bc01810c6918,
- * `src/Text/Pandoc/Readers/LaTeX/Math.hs`, `inlineEnvironments`
- * (lines 97-123).
- */
-export const MATH_ENVIRONMENTS: ReadonlySet<string> = new Set([
-  'displaymath', 'math',
-  'equation', 'equation*',
-  'gather', 'gather*',
-  'multline', 'multline*',
-  'eqnarray', 'eqnarray*',
-  'align', 'align*',
-  'alignat', 'alignat*',
-  'flalign', 'flalign*',
-  'dmath', 'dmath*',
-  'dgroup', 'dgroup*',
-  'darray', 'darray*',
-  'subequations'
-])
-
 const ENVIRONMENT_OPEN_RE = /^\\begin\{([A-Za-z]+\*?)\}/
 
 /**
  * The LaTeX environment name if `text` (ignoring trailing whitespace) is
  * exactly one `\begin{name}…\end{name}` block, or null otherwise. Agnostic of
- * which environment it is — this is the "is this whole text one LaTeX
- * environment" predicate shared by the environment linter
- * (latex-environment-lint.ts) and the TikZ raw-block renderer
- * (render-tikz.ts), each of which narrows the returned name to its own set
- * (MATH_ENVIRONMENTS, FIGURE_ENVIRONMENTS).
+ * which environment it is. This helper is used only after the Markdown AST has
+ * already established a Pandoc RawBlock; it helps the TikZ renderer narrow that
+ * raw TeX block to one of its supported figure environments. It is not a
+ * Markdown syntax recognizer or linter.
  */
 export function wholeEnvironment (text: string): string|null {
   const match = ENVIRONMENT_OPEN_RE.exec(text)

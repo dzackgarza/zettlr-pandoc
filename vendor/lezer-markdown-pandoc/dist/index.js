@@ -4419,6 +4419,428 @@ const singleBackslashMathParser = {
 };
 
 /**
+ * Generated from Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918.
+ *
+ * This is the exact control-sequence name set used by LaTeX.hs `isInlineCommand`:
+ * keys of `inlineCommands` (including the imported command maps and generated
+ * `text<polyglossia-language>` family) plus `treatAsInline`, normalized to the
+ * unstarred name because `blockCommand` checks `isInlineCommand name` before
+ * considering its optional star. Do not hand-edit this list; differential tests
+ * against the real Pandoc JSON reader are the acceptance oracle.
+ */
+const PANDOC_INLINE_COMMAND_NAMES = new Set([
+    '@',
+    'AA',
+    'AE',
+    'Ac',
+    'Acf',
+    'Acfp',
+    'Acl',
+    'Aclp',
+    'Acp',
+    'Acrfull',
+    'Acrlong',
+    'Acrshort',
+    'Acs',
+    'Acsp',
+    'Autocite',
+    'Autocites',
+    'Cite',
+    'Cites',
+    'Citeyear',
+    'Citeyearpar',
+    'Cref',
+    'Footcite',
+    'Footcites',
+    'Footcitetext',
+    'Footcitetexts',
+    'G',
+    'GLSdesc',
+    'GLSdescplural',
+    'Gls',
+    'Glsdesc',
+    'Glsdescplural',
+    'Glspl',
+    'H',
+    'L',
+    'LaTeX',
+    'MakeLowercase',
+    'MakeTextLowercase',
+    'MakeTextUppercase',
+    'MakeUppercase',
+    'O',
+    'OE',
+    'P',
+    'Parencite',
+    'Parencites',
+    'RN',
+    'Rn',
+    'S',
+    'SI',
+    'SIlist',
+    'SIrange',
+    'Smartcite',
+    'Supercite',
+    'Supercites',
+    'TeX',
+    'Textcite',
+    'Textcites',
+    'U',
+    'Verb',
+    'aa',
+    'abstractname',
+    'ac',
+    'acf',
+    'acfp',
+    'acl',
+    'aclp',
+    'acp',
+    'acrfull',
+    'acrlong',
+    'acrshort',
+    'acs',
+    'acsp',
+    'addabbrvspace',
+    'adddot',
+    'adddotspace',
+    'ae',
+    'alert',
+    'ang',
+    'autocap',
+    'autocite',
+    'autocites',
+    'autoref',
+    'b',
+    'backslash',
+    'bar',
+    'bf',
+    'bfseries',
+    'bibname',
+    'bibstring',
+    'bshyp',
+    'c',
+    'ccname',
+    'chaptername',
+    'cite',
+    'citeal',
+    'citealp',
+    'citealt',
+    'citeauthor',
+    'citep',
+    'cites',
+    'citet',
+    'citetext',
+    'citeyear',
+    'citeyearpar',
+    'clearpage',
+    'colonhyp',
+    'colorbox',
+    'contentsname',
+    'copyright',
+    'cref',
+    'd',
+    'dothyp',
+    'dots',
+    'dq',
+    'em',
+    'emph',
+    'enclname',
+    'enquote',
+    'ensuremath',
+    'eqref',
+    'euro',
+    'f',
+    'faCheck',
+    'faClose',
+    'figurename',
+    'flq',
+    'flqq',
+    'footcite',
+    'footcites',
+    'footcitetext',
+    'footcitetexts',
+    'footnote',
+    'footnotemark',
+    'footnotetext',
+    'foreignlanguage',
+    'foreignquote',
+    'frq',
+    'frqq',
+    'fshyp',
+    'glossaryname',
+    'glq',
+    'glqq',
+    'gls',
+    'glsdesc',
+    'glsdescplural',
+    'glspl',
+    'grq',
+    'grqq',
+    'guillemetleft',
+    'guillemetright',
+    'guillemotleft',
+    'guillemotright',
+    'guilsinglleft',
+    'guilsinglright',
+    'h',
+    'hbox',
+    'headtoname',
+    'hl',
+    'href',
+    'hspace',
+    'hyp',
+    'hyperlink',
+    'hyperref',
+    'hypertarget',
+    'hyphen',
+    'hyphenquote',
+    'i',
+    'ifdim',
+    'iftoggle',
+    'includegraphics',
+    'includesvg',
+    'index',
+    'indexname',
+    'input',
+    'it',
+    'itshape',
+    'j',
+    'k',
+    'l',
+    'label',
+    'ldots',
+    'lettrine',
+    'listfigurename',
+    'listtablename',
+    'lowercase',
+    'lq',
+    'lstinline',
+    'lstlistingname',
+    'mbox',
+    'mdots',
+    'mintinline',
+    'mkbibbold',
+    'mkbibbrackets',
+    'mkbibemph',
+    'mkbibitalic',
+    'mkbibparens',
+    'mkbibquote',
+    'newline',
+    'newpage',
+    'newtie',
+    'newtoggle',
+    'nhttfamily',
+    'nocite',
+    'nohyphens',
+    'noindent',
+    'nolinkurl',
+    'num',
+    'numlist',
+    'numrange',
+    'o',
+    'oe',
+    'pagebreak',
+    'pagename',
+    'pandocbounded',
+    'parencite',
+    'parencites',
+    'partname',
+    'passthrough',
+    'pounds',
+    'prefacename',
+    'proofname',
+    'ps',
+    'qed',
+    'qty',
+    'qtylist',
+    'qtyrange',
+    'quotedblbase',
+    'quotesinglbase',
+    'r',
+    'ref',
+    'refname',
+    'rm',
+    'rq',
+    'scshape',
+    'seealsoname',
+    'seename',
+    'sep',
+    'si',
+    'sim',
+    'sl',
+    'slash',
+    'slshape',
+    'smartcite',
+    'sout',
+    'ss',
+    'st',
+    'supercite',
+    'supercites',
+    't',
+    'tablename',
+    'texorpdfstring',
+    'textafrikaans',
+    'textalbanian',
+    'textamharic',
+    'textarabic',
+    'textarmenian',
+    'textasciicircum',
+    'textasciitilde',
+    'textassamese',
+    'textasturian',
+    'textbackslash',
+    'textbaht',
+    'textbasque',
+    'textbengali',
+    'textbf',
+    'textbigcircle',
+    'textblank',
+    'textbreton',
+    'textbrokenbar',
+    'textbulgarian',
+    'textbullet',
+    'textcatalan',
+    'textcentoldstyle',
+    'textcircled',
+    'textcite',
+    'textcites',
+    'textcolor',
+    'textcoptic',
+    'textcopyright',
+    'textcroatian',
+    'textczech',
+    'textdagger',
+    'textdanish',
+    'textdegree',
+    'textdivehi',
+    'textdollar',
+    'textdong',
+    'textdutch',
+    'textenglish',
+    'textesperanto',
+    'textestonian',
+    'textethiopic',
+    'textfarsi',
+    'textfinnish',
+    'textfrench',
+    'textfriulan',
+    'textgalician',
+    'textgerman',
+    'textgreater',
+    'textgreek',
+    'textgujarati',
+    'texthebrew',
+    'texthindi',
+    'texticelandic',
+    'textindonesian',
+    'textinterlingua',
+    'textirish',
+    'textit',
+    'textitalian',
+    'textjapanese',
+    'textkannada',
+    'textkhmer',
+    'textkorean',
+    'textkurmanji',
+    'textlao',
+    'textlatin',
+    'textlatvian',
+    'textless',
+    'textlira',
+    'textlithuanian',
+    'textlsorbian',
+    'textmagyar',
+    'textmalayalam',
+    'textmarathi',
+    'textmd',
+    'textmongolian',
+    'textmu',
+    'textmusicalnote',
+    'textnhtt',
+    'textnko',
+    'textnormal',
+    'textnorsk',
+    'textnynorsk',
+    'textoccitan',
+    'textogonekcentered',
+    'textonehalf',
+    'textonequarter',
+    'textoriya',
+    'textparagraph',
+    'textpertenthousand',
+    'textpeso',
+    'textpiedmontese',
+    'textpinyin',
+    'textpolish',
+    'textportuguese',
+    'textpunjabi',
+    'textquotedbl',
+    'textquotedblleft',
+    'textquotedblright',
+    'textquoteleft',
+    'textquoteright',
+    'textquotesingle',
+    'textregistered',
+    'textrm',
+    'textromanian',
+    'textromansh',
+    'textrussian',
+    'textsamin',
+    'textsanskrit',
+    'textsc',
+    'textscottish',
+    'textsection',
+    'textserbian',
+    'textserbianc',
+    'textsf',
+    'textsl',
+    'textslovak',
+    'textslovenian',
+    'textspanish',
+    'textsterling',
+    'textsubscript',
+    'textsuperscript',
+    'textswedish',
+    'textsyriac',
+    'texttamil',
+    'texttelugu',
+    'textthai',
+    'textthreequarters',
+    'textthreesuperior',
+    'texttibetan',
+    'texttt',
+    'textturkish',
+    'textturkmen',
+    'texttwosuperior',
+    'textukrainian',
+    'textup',
+    'texturdu',
+    'textusorbian',
+    'textvietnamese',
+    'textwelsh',
+    'textyen',
+    'thanks',
+    'today',
+    'togglefalse',
+    'toggletrue',
+    'tt',
+    'u',
+    'ul',
+    'uline',
+    'underline',
+    'unit',
+    'uppercase',
+    'url',
+    'v',
+    'vbox',
+    'vdots',
+    'verb',
+    'vref',
+    'vspace',
+]);
+
+/**
  * Pandoc reference: Pandoc 3.10.2 commit
  * f2ee5dfee866aab007a33552acc6bc01810c6918,
  * src/Text/Pandoc/Readers/LaTeX.hs `rawLaTeXBlock` (line 153),
@@ -4584,8 +5006,11 @@ function rawLatexBlockStartsAt(text) {
         return true;
     }
     const command = CONTROL_SEQUENCE_RE.exec(text);
-    return (command !== null &&
-        (PANDOC_BLOCK_COMMANDS.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1])));
+    if (command !== null &&
+        (PANDOC_BLOCK_COMMANDS.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))) {
+        return true;
+    }
+    return genericRawMaybeBlockEndAtStart(text) !== null;
 }
 function skipHorizontalSpace$1(text, from) {
     let cursor = from;
@@ -4777,6 +5202,81 @@ function rawLatexCommandEndAtStart(text) {
     }
     return genericBlockCommandEnd(text, initialEnd);
 }
+/**
+ * Port of LaTeX.hs `blockCommand.rawMaybeBlock` + Parsing.hs `getRawCommand`
+ * for a command which is neither a definite block command nor a macro
+ * definition. Pandoc first rejects names owned by `isInlineCommand`, then
+ * accepts ordinary options/braced arguments and promotes the sequence only
+ * when the physical line contains block commands and nothing else.
+ *
+ * The inline-command set is generated from the pinned Pandoc `inlineCommands`
+ * construction in `pandoc-inline-commands.ts`; this function therefore does
+ * not maintain an independent inline/block classification.
+ */
+function genericRawCommandUnitEnd(text) {
+    const match = CONTROL_SEQUENCE_RE.exec(text);
+    if (match === null ||
+        match[1] === 'begin' ||
+        match[1] === 'end' ||
+        match[1] === 'and' ||
+        PANDOC_INLINE_COMMAND_NAMES.has(match[1])) {
+        return null;
+    }
+    let cursor = match[0].length;
+    for (;;) {
+        const beforeSpace = cursor;
+        const argumentStart = skipHorizontalSpace$1(text, cursor);
+        const opener = text[argumentStart];
+        if (opener === '[' || opener === '{') {
+            const end = balancedGroupEnd(text, argumentStart, opener, opener === '[' ? ']' : '}');
+            if (end === null)
+                return null;
+            cursor = end;
+            continue;
+        }
+        // Beamer overlay specifications are part of Pandoc's `skipopts`.
+        if (opener === '<') {
+            const end = text.indexOf('>', argumentStart + 1);
+            const newline = text.indexOf('\n', argumentStart + 1);
+            if (end < 0 || (newline >= 0 && newline < end))
+                return null;
+            cursor = end + 1;
+            continue;
+        }
+        // Horizontal whitespace belongs to the raw command only when followed by
+        // an owned argument. Otherwise it remains the block-line gap.
+        cursor = beforeSpace;
+        break;
+    }
+    return cursor;
+}
+function genericRawMaybeBlockEndAtStart(text) {
+    let first = genericRawCommandUnitEnd(text);
+    if (first === null)
+        return null;
+    let cursor = first;
+    // Pandoc `rest <- many blockCommand`: adjacent block commands with no
+    // intervening space are one raw block. A known inline command aborts the
+    // generic promotion, exactly as `guard $ not $ isInlineCommand name` does.
+    while (text[cursor] === '\\') {
+        const remainder = text.slice(cursor);
+        const environment = rawLatexEnvironmentAtStart(remainder);
+        let consumed = null;
+        if (environment !== null) {
+            consumed = rawLatexEnvironmentEnd(remainder, environment);
+        }
+        consumed !== null && consumed !== void 0 ? consumed : (consumed = rawLatexCommandEndAtStart(remainder));
+        consumed !== null && consumed !== void 0 ? consumed : (consumed = genericRawCommandUnitEnd(remainder));
+        if (consumed === null)
+            return null;
+        cursor += consumed;
+    }
+    const boundary = skipHorizontalSpace$1(text, cursor);
+    if (boundary === text.length || text[boundary] === '\n' || text.startsWith('\r\n', boundary)) {
+        return cursor;
+    }
+    return null;
+}
 function escapedPercent(text, index) {
     let backslashes = 0;
     for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor--) {
@@ -4907,11 +5407,12 @@ function rawLatexInlineEndAtStart(text) {
 }
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */
 function rawLatexBlockEndAtStart(text) {
+    var _a;
     const environment = rawLatexEnvironmentAtStart(text);
     if (environment !== null) {
         return rawLatexEnvironmentEnd(text, environment);
     }
-    return rawLatexCommandEndAtStart(text);
+    return (_a = rawLatexCommandEndAtStart(text)) !== null && _a !== void 0 ? _a : genericRawMaybeBlockEndAtStart(text);
 }
 /**
  * End of one Pandoc Markdown `rawTeXBlock`, which may aggregate several

@@ -64,4 +64,33 @@ describe("main-process document lint", function () {
     assert.equal(compile.rule, "tikz/compile-error");
     assert.match(compile.message, /Undefined control sequence/u);
   });
+
+  it("keeps Pandoc multiline inline math intact through the real Flowmark lint subprocess", async function () {
+    const repositoryRoot = path.join(__dirname, "..");
+    const context = await createDocumentLintContext({
+      homeDirectory: home,
+      env: process.env,
+      citationKeys: null,
+      tikzRenderConfig: {
+        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
+        templatePath: path.join(
+          repositoryRoot,
+          "static",
+          "tikz",
+          "templates",
+          "standalone-tikz.tex",
+        ),
+        cacheDir,
+        env: process.env,
+      },
+    });
+    const markdown = [
+      "summand of $B\\cong U\\oplus U\\oplus\\latI_{0,7}$; then $e^{\\perp B} = \\ZZ e\\oplus",
+      "U\\oplus\\latI_{0,7}$ and $e^{\\perp}/e\\cong U\\oplus\\latI_{0,7}\\cong\\latI_{1,8}$,",
+    ].join("\n");
+
+    const diagnostics = await lintDocumentText(markdown, path.join(root, "math.md"), context);
+    const flowmark = diagnostics.filter((diagnostic) => diagnostic.source === "flowmark");
+    assert.deepEqual(flowmark, []);
+  });
 });

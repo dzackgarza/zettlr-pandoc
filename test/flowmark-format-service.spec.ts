@@ -9,7 +9,7 @@
  *
  * Description:     Locks the flowmark service's typed outcomes over the REAL
  *                  write-temp -> run -> read-back roundtrip. flowmark itself is
- *                  a uvx external tool, so the runner command is injected here
+ *                  an external process, so the runner command is injected here
  *                  with ordinary POSIX utilities that stand in for the three
  *                  cases the caller must distinguish: the binary is absent
  *                  (flowmark-absent), it runs but fails (flowmark-error), and
@@ -76,7 +76,7 @@ describe('flowmark format service (issue #26)', function () {
 
   it('bounds a hung runner: resolves ok:false timeout and terminates the child', async function () {
     // A runner that records its own PID and then blocks forever stands in for a
-    // wedged `uvx`/flowmark (a git fetch that stalls, a deadlocked process).
+    // wedged Flowmark process (dependency setup that stalls, a deadlocked process).
     // `exec sleep` replaces the shell in-place, so the recorded $$ is the PID of
     // the actual hanging process the service must kill — no grandchild orphan.
     // Without a time bound `formatMarkdownText` would await `close` forever and
