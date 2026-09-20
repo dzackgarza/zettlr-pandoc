@@ -3288,7 +3288,7 @@ const citationParser = {
  */
 const PandocSpanDelimiter = {};
 const pandocDivClosingRe = /^(?<mark>:{3,})\s*$/d;
-function blockInput$1(ctx) {
+function blockInput$2(ctx) {
     return ctx.input;
 }
 function readPhysicalLine(input, start) {
@@ -3314,7 +3314,7 @@ function readPhysicalLine(input, start) {
  * No BlockContext state moves until a complete, valid opening has been found.
  */
 function scanDivOpening(ctx) {
-    const input = blockInput$1(ctx);
+    const input = blockInput$2(ctx);
     let cursor = ctx.parsedPos;
     let source = '';
     while (true) {
@@ -3700,6 +3700,9 @@ const pandocLinkParser = {
  * consumers remain source-compatible. Recognition, however, follows Pandoc;
  * presentation/language mounting is not part of the grammar.
  */
+function blockInput$1(ctx) {
+    return ctx.input;
+}
 function isSpaceChar(value) {
     return /\s/u.test(value);
 }
@@ -3833,12 +3836,39 @@ const singleBackslashMathParser = {
 const DOLLAR_DISPLAY_LINE = /^(\s*\$\$)\s*$/u;
 const BRACKET_DISPLAY_LINE = /^\s*\\\[\s*$/u;
 const BLANK_LINE = /^\s*$/u;
+/**
+ * Non-mutating lookahead for the editor's block-shaped representation of a
+ * standalone Pandoc display-math expression. Pandoc's reference parser is
+ * `mathDisplayWith` in Text/Pandoc/Parsing/Math.hs: a display expression may
+ * cross ordinary newlines but not a blank line and must have its closing
+ * delimiter. Lezer BlockParser.parse has no rollback after `nextLine()`, so we
+ * must establish the close before moving BlockContext at all.
+ */
+function hasDisplayBlockClose(ctx, line, dollar) {
+    const input = blockInput$1(ctx);
+    const afterOpening = ctx.lineStart + line.text.length + 1;
+    const remaining = input.read(afterOpening, input.length);
+    for (const physicalLine of remaining.split('\n')) {
+        if (BLANK_LINE.test(physicalLine))
+            return false;
+        if (dollar) {
+            if (DOLLAR_DISPLAY_LINE.test(physicalLine))
+                return true;
+        }
+        else if (physicalLine.includes('\\]')) {
+            return true;
+        }
+    }
+    return false;
+}
 const blockMathParser = {
     name: 'pandoc-display-math-block',
     parse: (ctx, line) => {
         const dollar = DOLLAR_DISPLAY_LINE.test(line.text);
         const bracket = !dollar && BRACKET_DISPLAY_LINE.test(line.text);
         if (!dollar && !bracket)
+            return false;
+        if (!hasDisplayBlockClose(ctx, line, dollar))
             return false;
         const blockStart = ctx.lineStart;
         const contentFrom = ctx.lineStart + line.text.length + 1;
@@ -4388,10 +4418,36 @@ function blockInput(ctx) {
     }
     return input;
 }
+/**
+ * Pandoc does not let a raw-TeX block preempt an inline construct that began
+ * on an earlier physical line. In particular, Markdown.hs `symbol` only tests
+ * `notFollowedBy rawTeXBlock` when the inline parser actually reaches that
+ * backslash; higher-priority parsers such as `math` and `code` consume their
+ * complete source first.
+ *
+ * Lezer decides whether a new block interrupts a leaf before it performs the
+ * leaf's inline parse, so replay the fork's own inline parser here and suppress
+ * the block boundary when an already-open inline node spans this position.
+ * This is not a second syntax rule: the authoritative recognition is the same
+ * configured Pandoc inline parser.
+ */
+function earlierInlineSpansPosition(ctx, leaf, position) {
+    const input = blockInput(ctx);
+    const source = input.read(leaf.start, input.length);
+    return ctx.parser
+        .parseInline(source, leaf.start)
+        .some(element => element.from < position && element.to > position);
+}
 const rawLatexBlockParser = {
     name: "raw-latex-block",
     before: "HTMLBlock",
-    endLeaf: (_ctx, line) => rawLatexBlockStartsAt(line.text.slice(line.pos)),
+    endLeaf: (ctx, line, leaf) => {
+        if (!rawLatexBlockStartsAt(line.text.slice(line.pos))) {
+            return false;
+        }
+        const position = ctx.lineStart + line.pos;
+        return !earlierInlineSpansPosition(ctx, leaf, position);
+    },
     parse: (ctx, line) => {
         if (!rawLatexBlockStartsAt(line.text.slice(line.pos))) {
             return false;

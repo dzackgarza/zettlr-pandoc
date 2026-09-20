@@ -12,7 +12,17 @@
  * presentation/language mounting is not part of the grammar.
  */
 
-import type { BlockParser, InlineParser } from '../markdown'
+import type { Input } from '@lezer/common'
+import type { BlockContext, BlockParser, InlineParser, Line } from '../markdown'
+
+interface BlockContextInput {
+  /** @lezer/markdown exposes this at runtime but marks it internal in the d.ts. */
+  input: Input
+}
+
+function blockInput (ctx: BlockContext): Input {
+  return (ctx as unknown as BlockContextInput).input
+}
 
 function isSpaceChar (value: string): boolean {
   return /\s/u.test(value)
@@ -146,12 +156,36 @@ const DOLLAR_DISPLAY_LINE = /^(\s*\$\$)\s*$/u
 const BRACKET_DISPLAY_LINE = /^\s*\\\[\s*$/u
 const BLANK_LINE = /^\s*$/u
 
+/**
+ * Non-mutating lookahead for the editor's block-shaped representation of a
+ * standalone Pandoc display-math expression. Pandoc's reference parser is
+ * `mathDisplayWith` in Text/Pandoc/Parsing/Math.hs: a display expression may
+ * cross ordinary newlines but not a blank line and must have its closing
+ * delimiter. Lezer BlockParser.parse has no rollback after `nextLine()`, so we
+ * must establish the close before moving BlockContext at all.
+ */
+function hasDisplayBlockClose (ctx: BlockContext, line: Line, dollar: boolean): boolean {
+  const input = blockInput(ctx)
+  const afterOpening = ctx.lineStart + line.text.length + 1
+  const remaining = input.read(afterOpening, input.length)
+  for (const physicalLine of remaining.split('\n')) {
+    if (BLANK_LINE.test(physicalLine)) return false
+    if (dollar) {
+      if (DOLLAR_DISPLAY_LINE.test(physicalLine)) return true
+    } else if (physicalLine.includes('\\]')) {
+      return true
+    }
+  }
+  return false
+}
+
 export const blockMathParser: BlockParser = {
   name: 'pandoc-display-math-block',
   parse: (ctx, line) => {
     const dollar = DOLLAR_DISPLAY_LINE.test(line.text)
     const bracket = !dollar && BRACKET_DISPLAY_LINE.test(line.text)
     if (!dollar && !bracket) return false
+    if (!hasDisplayBlockClose(ctx, line, dollar)) return false
 
     const blockStart = ctx.lineStart
     const contentFrom = ctx.lineStart + line.text.length + 1

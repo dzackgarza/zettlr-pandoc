@@ -12,7 +12,7 @@ import {
   rawLatexInlineEndAtStart,
 } from "./raw-latex-syntax";
 import type { Input } from "@lezer/common";
-import type { BlockContext, BlockParser, InlineParser } from "../markdown";
+import type { BlockContext, BlockParser, InlineParser, LeafBlock } from "../markdown";
 
 function isLezerInput(value: unknown): value is Input {
   if (typeof value !== "object" || value === null) {
@@ -32,11 +32,42 @@ function blockInput(ctx: BlockContext): Input {
   return input;
 }
 
+/**
+ * Pandoc does not let a raw-TeX block preempt an inline construct that began
+ * on an earlier physical line. In particular, Markdown.hs `symbol` only tests
+ * `notFollowedBy rawTeXBlock` when the inline parser actually reaches that
+ * backslash; higher-priority parsers such as `math` and `code` consume their
+ * complete source first.
+ *
+ * Lezer decides whether a new block interrupts a leaf before it performs the
+ * leaf's inline parse, so replay the fork's own inline parser here and suppress
+ * the block boundary when an already-open inline node spans this position.
+ * This is not a second syntax rule: the authoritative recognition is the same
+ * configured Pandoc inline parser.
+ */
+function earlierInlineSpansPosition(
+  ctx: BlockContext,
+  leaf: LeafBlock,
+  position: number,
+): boolean {
+  const input = blockInput(ctx);
+  const source = input.read(leaf.start, input.length);
+  return ctx.parser
+    .parseInline(source, leaf.start)
+    .some(element => element.from < position && element.to > position);
+}
+
 export const rawLatexBlockParser: BlockParser = {
   name: "raw-latex-block",
   before: "HTMLBlock",
 
-  endLeaf: (_ctx, line) => rawLatexBlockStartsAt(line.text.slice(line.pos)),
+  endLeaf: (ctx, line, leaf) => {
+    if (!rawLatexBlockStartsAt(line.text.slice(line.pos))) {
+      return false;
+    }
+    const position = ctx.lineStart + line.pos;
+    return !earlierInlineSpansPosition(ctx, leaf, position);
+  },
 
   parse: (ctx, line) => {
     if (!rawLatexBlockStartsAt(line.text.slice(line.pos))) {

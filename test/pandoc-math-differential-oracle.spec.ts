@@ -74,6 +74,23 @@ const cases = [
   '\\[\nx+y\n\\]'
 ] as const
 
+const TRUNCATION_DIV = `::: {#def-good-truncation}
+## Good truncation
+
+For $n\\in\\mathbb Z$ let $\\tau_{\\ge n}C$ be the subcomplex of $C$ with
+$$
+(\\tau_{\\ge n}C)_i=
+\\begin{cases}
+0,& i<n,\\\\
+Z_n(C),& i=n,\\\\
+C_i,& i>n,
+\\end{cases}
+$$
+and let $\\tau_{<n}C=C/\\tau_{\\ge n}C$.
+Then $H_i(\\tau_{\\ge n}C)=H_i(C)$ for $i\\ge n$ and vanishes for $i<n$, while $H_i(\\tau_{<n}C)=H_i(C)$ for $i<n$ and vanishes for $i\\ge n$ [@Wei94, 1.2.7].
+:::
+`
+
 describe('Pandoc math differential oracle', function () {
   this.timeout(60000)
 
@@ -82,4 +99,32 @@ describe('Pandoc math differential oracle', function () {
       assert.deepEqual(editorMathKinds(source), pandocMathKinds(source))
     })
   }
+
+  it('keeps raw-looking TeX inside a cross-line display expression owned by Pandoc math', function () {
+    assert.deepEqual(editorMathKinds(TRUNCATION_DIV), pandocMathKinds(TRUNCATION_DIV))
+
+    const state = EditorState.create({ doc: TRUNCATION_DIV, extensions: [markdownParser()] })
+    const tree = ensureSyntaxTree(state, TRUNCATION_DIV.length, 5000)
+    assert.ok(tree !== null)
+    const names: string[] = []
+    let divMarks = 0
+    tree.iterate({
+      enter (node) {
+        names.push(node.name)
+        if (node.name === 'PandocDivMark') divMarks++
+      }
+    })
+    assert.equal(divMarks, 2, 'the closing fenced-div marker must survive the display-math parse')
+    assert.ok(names.includes('Citation'), 'content after the display expression must remain in the syntax tree')
+    assert.ok(!names.includes('RawBlock'), 'the cases environment belongs to the surrounding display math')
+  })
+
+  it('does not consume later blocks when a standalone display opener has no close', function () {
+    const source = '$$\nunclosed\n\n## Still here\n'
+    assert.deepEqual(editorMathKinds(source), pandocMathKinds(source))
+    const state = EditorState.create({ doc: source, extensions: [markdownParser()] })
+    const tree = ensureSyntaxTree(state, source.length, 5000)
+    assert.ok(tree !== null)
+    assert.match(tree.toString(), /ATXHeading2/u)
+  })
 })
