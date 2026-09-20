@@ -102,9 +102,9 @@ describe("scholarly mathematical document diagnostics", function () {
     assert.ok(unknown.every((diagnostic) => diagnostic.severity === "warning"));
     for (const command of ["\\frac", "\\Spec", "\\CompilerOnly", "\\localop", "\\localpair"]) {
       assert.equal(
-        diagnostics.some((diagnostic) => diagnostic.message.includes(`${command} is not present`)),
+        diagnostics.some((diagnostic) => diagnostic.message.includes(`${command} is not defined`)),
         false,
-        `${command} belongs to the configured/local authoring vocabulary`,
+        `${command} is defined in the configured or local macros`,
       );
     }
   });
@@ -114,16 +114,14 @@ describe("scholarly mathematical document diagnostics", function () {
       "Write $\\epsilon_x + \\epsilon_y + \\varepsilon_z$, but $\\phi$ and $\\varphi$ each occur once.\n";
     const diagnostics = await scholarlyLintSource(viewFor(doc));
 
-    const epsilon = diagnostics.filter((diagnostic) =>
-      /Notation is inconsistent/u.test(diagnostic.message),
-    );
+    const epsilon = diagnostics.filter((diagnostic) => /Use one form consistently/u.test(diagnostic.message));
     assert.equal(epsilon.length, 1);
     assert.match(epsilon[0].message, /\\epsilon/u);
     assert.match(epsilon[0].message, /\\varepsilon/u);
     assert.equal(
       diagnostics.some(
         (diagnostic) =>
-          /\\phi/u.test(diagnostic.message) && /Notation is inconsistent/u.test(diagnostic.message),
+          /\\phi/u.test(diagnostic.message) && /Use one form consistently/u.test(diagnostic.message),
       ),
       false,
       "one use of each variant establishes no dominant convention",
@@ -136,7 +134,7 @@ describe("scholarly mathematical document diagnostics", function () {
     const diagnostics = await scholarlyLintSource(viewFor(doc));
     for (const macro of ["\\Spec", "\\ZZ"]) {
       const convention = diagnostics.find((diagnostic) =>
-        diagnostic.message.includes(`canonical authoring macro ${macro}`),
+        diagnostic.message.startsWith(`${macro} expands to `),
       );
       assert.ok(convention !== undefined, `${macro} should own its exact configured expansion`);
       assert.equal(convention.severity, "info");
@@ -152,9 +150,7 @@ describe("scholarly mathematical document diagnostics", function () {
       "```",
     ].join("\n");
     const diagnostics = await scholarlyLintSource(viewFor(doc));
-    const residue = diagnostics.filter((diagnostic) =>
-      diagnostic.message.startsWith("Authorial residue:"),
-    );
+    const residue = diagnostics.filter((diagnostic) => /remains in the document\.$/u.test(diagnostic.message));
     assert.equal(residue.length, 3);
     assert.ok(residue.every((diagnostic) => diagnostic.from < doc.indexOf("```text")));
   });
@@ -174,7 +170,7 @@ describe("scholarly mathematical document diagnostics", function () {
       "```",
     ].join("\n");
     const diagnostics = await scholarlyLintSource(viewFor(doc, "/workspace/paper.md"));
-    const missing = diagnostics.filter((diagnostic) => /not resolvable/u.test(diagnostic.message));
+    const missing = diagnostics.filter((diagnostic) => /^Can't find TeX/u.test(diagnostic.message));
     assert.equal(missing.length, 2);
     assert.ok(missing.some((diagnostic) => diagnostic.message.includes("sections/missing")));
     assert.ok(missing.some((diagnostic) => diagnostic.message.includes("missing-diagram.pdf")));

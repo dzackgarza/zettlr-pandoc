@@ -51,7 +51,7 @@ describe("central ~/.pandoc MathJax projection", function () {
 
   it("fails loudly when the central generated projection is absent", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-macros-missing-"));
-    await assert.rejects(loadCanonicalMathJaxMacros(home), /central generated projection/);
+    await assert.rejects(loadCanonicalMathJaxMacros(home), /Can't find the generated MathJax macro file/);
   });
 });
 
@@ -78,8 +78,8 @@ describe("central ~/.pandoc compiler macro vocabulary", function () {
     );
   });
 
-  it("fails loudly when the canonical authoring macro tree is absent", async function () {
+  it("reports the missing TeX macro directory", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-tex-macros-missing-"));
-    await assert.rejects(loadCanonicalTexMacroCommands(home), /canonical authoring macro tree/);
+    await assert.rejects(loadCanonicalTexMacroCommands(home), /Can't read the TeX macro directory/);
   });
 });

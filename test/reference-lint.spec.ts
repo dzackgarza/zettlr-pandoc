@@ -313,7 +313,7 @@ describe("Reference diagnostics (issue #1 Phase 4)", function () {
     const mismatch = diagnostics.find((diagnostic) => diagnostic.message.includes("@eq:main"));
     assert.ok(mismatch !== undefined);
     assert.equal(mismatch.severity, "warning");
-    assert.match(mismatch.message, /another reference family/i);
+    assert.match(mismatch.message, /matching definition exists/i);
     assert.ok(mismatch.message.includes("@fig:main"));
     assert.match(mismatch.message, /reference type/i);
   });
@@ -361,7 +361,7 @@ describe("Reference diagnostics (issue #1 Phase 4)", function () {
     assert.strictEqual(proof.severity, "info");
     assert.strictEqual(proof.to, from + idToken.length);
     assert.match(proof.message, /proof/i);
-    assert.match(proof.message, /unreferenc/i);
+    assert.match(proof.message, /does not create a reference target/i);
     assertNoActions(diagnostics);
   });
 
@@ -386,16 +386,16 @@ describe("Reference diagnostics (issue #1 Phase 4)", function () {
 
     assert.ok(
       diagnostics.some((diagnostic) =>
-        /multiple referenceable theorem classes/i.test(diagnostic.message),
+        /multiple theorem classes/i.test(diagnostic.message),
       ),
     );
     assert.ok(
       diagnostics.some((diagnostic) =>
-        /mixes referenceable theorem class/i.test(diagnostic.message),
+        /is both "lemma" and "proof"/i.test(diagnostic.message),
       ),
     );
     assert.ok(
-      diagnostics.some((diagnostic) => /no referenceable theorem class/i.test(diagnostic.message)),
+      diagnostics.some((diagnostic) => /has no theorem class/i.test(diagnostic.message)),
     );
     assertNoActions(diagnostics);
   });

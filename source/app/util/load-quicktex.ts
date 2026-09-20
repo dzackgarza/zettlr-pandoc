@@ -42,7 +42,7 @@ export async function loadQuickTex (
   const lines = `${stdout}\n${stderr}`.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const json = [...lines].reverse().find(line => line.startsWith('{') && line.endsWith('}'))
   if (json === undefined) {
-    throw new Error(`Neovim did not return a QuickTeX catalogue.${stderr.trim() === '' ? '' : ` ${stderr.trim()}`}`)
+    throw new Error(`Couldn't load QuickTeX definitions from ${configFile}.${stderr.trim() === '' ? '' : ` ${stderr.trim()}`}`)
   }
 
   const parsed = JSON.parse(json) as {

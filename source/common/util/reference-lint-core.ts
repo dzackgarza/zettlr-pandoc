@@ -150,7 +150,7 @@ function collectASTDiagnostics(
         diagnostics.push({
           ...attributeRange,
           severity: "error",
-          message: `This div declares multiple referenceable theorem classes (${referenceableClasses.join(", ")}). Its theorem family and numbering semantics are ambiguous; keep exactly one referenceable theorem class.`,
+          message: `This block has multiple theorem classes (${referenceableClasses.join(", ")}). Keep one; only one numbering and reference type can apply.`,
           source: "reference-lint",
         });
       }
@@ -158,7 +158,7 @@ function collectASTDiagnostics(
         diagnostics.push({
           ...attributeRange,
           severity: "error",
-          message: `This div mixes referenceable theorem class "${referenceableClasses[0]}" with proof-like class "${proofClasses[0]}". Proofs are unnumbered/unreferenceable, so the two class semantics conflict.`,
+          message: `This block is both "${referenceableClasses[0]}" and "${proofClasses[0]}". "${referenceableClasses[0]}" is numbered; "${proofClasses[0]}" is not. Choose one class.`,
           source: "reference-lint",
         });
       }
@@ -185,7 +185,7 @@ function collectASTDiagnostics(
           from: located.range.from,
           to: located.range.to,
           severity: "info",
-          message: `The id "#${located.key}" on a proof div defines no reference target: proofs stay unnumbered and unreferenceable.`,
+          message: `Proof blocks are unnumbered, so "#${located.key}" does not create a reference target here.`,
           source: "reference-lint",
         });
       } else {
@@ -199,7 +199,7 @@ function collectASTDiagnostics(
             from: located.range.from,
             to: located.range.to,
             severity: "error",
-            message: `The id "#${located.key}" uses theorem family "${family}", but this div has no referenceable theorem class. Add the intended theorem class or use an id family matching the construct; otherwise theorem numbering/export semantics are undefined.`,
+            message: `The ID "#${located.key}" starts with "${family}", but this block has no theorem class. Change the ID or add the intended theorem class.`,
             source: "reference-lint",
           });
         }
@@ -218,7 +218,7 @@ function collectASTDiagnostics(
         to: node.to,
         severity: "warning",
         message:
-          "This cluster mixes bibliography citations with cross-references, so it stays raw: it renders neither as a citation nor as reference chips. Split it into separate clusters.",
+          "This citation contains both bibliography entries and cross-references. Put them in separate [...] groups.",
         source: "reference-lint",
       });
     }
@@ -234,7 +234,7 @@ function collectASTDiagnostics(
       diagnostics.push({
         ...citationKeyRange(markdown, node, key),
         severity: "error",
-        message: `The bibliography citation "@${key}" does not exist in the bibliography configured for this document.`,
+        message: `Bibliography entry "@${key}" was not found.`,
         source: "reference-lint",
       });
     }
@@ -253,7 +253,7 @@ function collectSnapshotDiagnostics(
         from: definition.range.from,
         to: definition.range.to,
         severity: "error",
-        message: `The reference key "${definition.key}" is defined more than once. Definition sites: ${sites.join(", ")}. Every key must be unique across the workspace.`,
+        message: `Reference "${definition.key}" is defined in more than one place: ${sites.join(", ")}.`,
         source: "reference-lint",
       });
     }
@@ -279,7 +279,7 @@ function collectSnapshotDiagnostics(
       from: definition.range.from,
       to: definition.range.to,
       severity: "error",
-      message: `The div class "${authoredClass}" conflicts with the id "#${definition.key}": a ${authoredClass} div uses the "${expectedPrefix}" family, e.g. "#${expectedPrefix}${separator}${remainder}". Change one side to match the other.`,
+      message: `This is a "${authoredClass}" block, but its ID is "#${definition.key}". Use "#${expectedPrefix}${separator}${remainder}" here, or change the block class.`,
       source: "reference-lint",
     });
   }
@@ -293,7 +293,7 @@ function collectSnapshotDiagnostics(
     const crossFamily = crossFamilyMatchesFor(occurrence.key, occurrence.family, context);
     const suffix =
       crossFamily.length > 0
-        ? ` A definition with the same label exists under another reference family: ${crossFamily.map((key) => `@${key}`).join(", ")}. Check the reference type.`
+        ? ` A matching definition exists as ${crossFamily.map((key) => `@${key}`).join(", ")}. Did you use the wrong reference type?`
         : candidates.length > 0
           ? ` Did you mean ${candidates.join(", ")}?`
           : "";
@@ -301,7 +301,7 @@ function collectSnapshotDiagnostics(
       from: occurrence.range.from,
       to: occurrence.range.to,
       severity: "warning",
-      message: `The reference "@${occurrence.key}" is not defined anywhere in the workspace.${suffix}`,
+      message: `Reference "@${occurrence.key}" is not defined in the workspace.${suffix}`,
       source: "reference-lint",
     });
   }

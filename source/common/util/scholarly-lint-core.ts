@@ -56,11 +56,11 @@ const NOTATION_VARIANTS = [
 ] as const;
 
 const AUTHORIAL_RESIDUE = [
-  { pattern: /\b(?:TODO|FIXME|XXX)\b/gu, description: "unfinished author note" },
-  { pattern: /\[\s*citation needed\s*\]/giu, description: "citation placeholder" },
-  { pattern: /\bCITE(?:ME)?\b/gu, description: "citation placeholder" },
-  { pattern: /\?\?\?/gu, description: "unresolved placeholder" },
-  { pattern: /\\todo\b/gu, description: "TeX todo marker" },
+  { pattern: /\b(?:TODO|FIXME|XXX)\b/gu, description: "Unfinished note" },
+  { pattern: /\[\s*citation needed\s*\]/giu, description: "Citation placeholder" },
+  { pattern: /\bCITE(?:ME)?\b/gu, description: "Citation placeholder" },
+  { pattern: /\?\?\?/gu, description: "Unresolved placeholder" },
+  { pattern: /\\todo\b/gu, description: "TODO command" },
 ] as const;
 
 const TEX_INPUT_RESOURCE_RE = /(?<!\\)\\(?:input|include)\s*\{(?<path>[^{}\n]+)\}/gu;
@@ -187,7 +187,7 @@ function unknownMacroDiagnostics(
         from: region.from + match.index,
         to: region.from + match.index + match[0].length,
         severity: "warning",
-        message: `${command} is not present in the editor's configured LaTeX/MathJax command catalogue or the document's local macro declarations. If it is supplied by the export preamble only, add it to the canonical authoring macro projection; otherwise this is an undefined macro.`,
+        message: `${command} is not defined in this document or in the configured TeX macros. Define it locally or add its definition to the configured macros.`,
         source: "scholarly-lint",
       });
     }
@@ -231,7 +231,7 @@ function notationDiagnostics(regions: SourceRegion[]): SourceLintDiagnostic[] {
         from,
         to: from + minority.length,
         severity: "info",
-        message: `Notation is inconsistent in this document: ${majority} is the established form (${majorityCount} uses), while ${minority} also appears.`,
+        message: `This document uses ${majority} ${majorityCount} times and ${minority} here. Use one form consistently.`,
         source: "scholarly-lint",
       });
     }
@@ -271,7 +271,7 @@ function configuredMacroExpansionDiagnostics(
           from: region.from + offset,
           to: region.from + offset + expansion.length,
           severity: "info",
-          message: `The canonical authoring macro ${macros[0]} expands exactly to ${expansion}; use the project macro so notation stays consistent with the shared vocabulary.`,
+          message: `${macros[0]} expands to ${expansion}. Use ${macros[0]} here for consistency.`,
           source: "scholarly-lint",
         });
         offset = region.source.indexOf(expansion, offset + expansion.length);
@@ -306,7 +306,7 @@ function residueDiagnostics(
         from,
         to,
         severity: "info",
-        message: `Authorial residue: ${residue.description} ${JSON.stringify(match[0])} remains in the document.`,
+        message: `${residue.description} ${JSON.stringify(match[0])} remains in the document.`,
         source: "scholarly-lint",
       });
     }
@@ -383,7 +383,7 @@ async function texResourceDiagnostics(
       from: resource.from,
       to: resource.to,
       severity: "warning",
-      message: `TeX ${resource.kind === "input" ? "input/include" : "graphics"} resource ${JSON.stringify(resource.path)} is not resolvable through the source/Project directory or the configured TeX search roots.`,
+      message: `Can't find TeX ${resource.kind === "input" ? "input" : "graphic"} ${JSON.stringify(resource.path)} from this document or the configured TeX paths.`,
       source: "scholarly-lint",
     });
   }

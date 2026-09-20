@@ -68,8 +68,8 @@ export async function loadCanonicalMathJaxMacros(
   const filePath = canonicalMathJaxMacrosPath(homeDirectory);
   if (!isFile(filePath)) {
     throw new Error(
-      `MathJax macros require the central generated projection ${filePath}; ` +
-        "run ~/.pandoc/bin/generate-mathjax-config.py from the canonical macro tree.",
+      `Can't find the generated MathJax macro file ${filePath}. ` +
+        "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
     );
   }
   return await loadMathJaxMacros(filePath);
@@ -86,7 +86,7 @@ export async function loadCanonicalTexMacroCommands(homeDirectory: string): Prom
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
   } catch (error) {
-    throw new Error(`TeX macro diagnostics require the canonical authoring macro tree ${root}.`, {
+    throw new Error(`Can't read the TeX macro directory ${root}.`, {
       cause: error,
     });
   }
@@ -152,7 +152,7 @@ export async function loadCanonicalMacroInventory(
       entries = await fs.readdir(directory, { withFileTypes: true });
     } catch (error) {
       if (directory === root) {
-        throw new Error(`Macro inspection requires the canonical authoring macro tree ${root}.`, {
+        throw new Error(`Can't read the TeX macro directory ${root}.`, {
           cause: error,
         });
       }
