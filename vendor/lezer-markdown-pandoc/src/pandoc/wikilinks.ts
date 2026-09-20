@@ -1,4 +1,11 @@
 /**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/Markdown.hs `wikilink` (line 1887), with
+ * Ext_wikilinks_title_after_pipe / Ext_wikilinks_title_before_pipe.
+ */
+
+/**
  * @ignore
  * BEGIN HEADER
  *
@@ -12,7 +19,7 @@
  * END HEADER
  */
 
-import type { DelimiterType, InlineParser } from '@lezer/markdown'
+import type { DelimiterType, InlineParser } from '../markdown'
 
 export interface ZknLinkParserConfig {
   /**
@@ -64,13 +71,25 @@ export const zknLinkParser = function (config?: ZknLinkParserConfig): InlinePars
       const contents = ctx.slice(delim.to, pos)
       const pipeIdx = contents.indexOf('|')
 
+      // Pandoc's `wikilink` only rejects control whitespace in the URL side of
+      // the construct. With `wikilinks_title_after_pipe`, that is the text
+      // before the first pipe; with the inverse dialect it is the text after.
+      // Reference: Markdown.hs `wikilink`, guard on `url` immediately before
+      // constructing the Link/Image.
+      const titleFirst = config?.format === 'title|link'
+      const target = pipeIdx < 0
+        ? contents
+        : titleFirst ? contents.slice(pipeIdx + 1) : contents.slice(0, pipeIdx)
+      if (/\n|\r|\f|\t/u.test(target)) {
+        return -1
+      }
+
       const children = []
       // NOTE: In order to avoid either empty links or empty titles and having
       // to deal with these edge cases, we disallow putting pipes at either the
       // beginning or the end of a link.
       if (pipeIdx > 0 && pipeIdx < contents.length) {
         // The link contains both a link and a title.
-        const titleFirst = config?.format === 'title|link'
         children.push(
           ctx.elt(titleFirst ? 'ZknLinkTitle' : 'ZknLinkContent', delim.to, delim.to + pipeIdx),
           ctx.elt('ZknLinkPipe', delim.to + pipeIdx,  delim.to + pipeIdx + 1),

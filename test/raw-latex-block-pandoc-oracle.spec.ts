@@ -44,6 +44,20 @@ function editorRawBlocks(source: string): string[] {
   return blocks;
 }
 
+function editorRawInlines(source: string): string[] {
+  const inlines: string[] = [];
+  const visit = (node: ASTNode): void => {
+    if (node.type === "RawInline" && node.format === "tex") {
+      inlines.push(node.source);
+    }
+    for (const child of childrenOf(node)) {
+      visit(child);
+    }
+  };
+  visit(markdownToAST(source));
+  return inlines;
+}
+
 function pandocRawBlocks(source: string): string[] {
   const raw = execFileSync("pandoc", ["-f", PANDOC_READER, "-t", "json"], {
     input: source,
@@ -76,6 +90,34 @@ function pandocRawBlocks(source: string): string[] {
   };
   visit(document);
   return blocks;
+}
+
+function pandocRawInlines(source: string): string[] {
+  const raw = execFileSync("pandoc", ["-f", PANDOC_READER, "-t", "json"], {
+    input: source,
+    encoding: "utf-8",
+  });
+  const document = JSON.parse(raw) as unknown;
+  const inlines: string[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    const record = value as Record<string, unknown>;
+    if (
+      record.t === "RawInline" &&
+      Array.isArray(record.c) &&
+      record.c[0] === "tex" &&
+      typeof record.c[1] === "string"
+    ) {
+      inlines.push(record.c[1]);
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(document);
+  return inlines;
 }
 
 const cases = [
@@ -156,8 +198,31 @@ const cases = [
     source: "\\includegraphics{figure.pdf}\n",
   },
   {
-    name: "display-math environment remains math rather than RawBlock",
+    name: "LaTeX-reader inline environment remains outside RawBlock",
     source: "Before.\n\n\\begin{align}\na &= b \\\\ \nc &= d\n\\end{align}\n\nAfter.\n",
+  },
+] as const;
+
+const inlineCases = [
+  {
+    name: "includegraphics command",
+    source: "\\includegraphics{figure.pdf}\n",
+  },
+  {
+    name: "bare LaTeX control sequence",
+    source: "Written in \\LaTeX today.\n",
+  },
+  {
+    name: "braced inline formatting command",
+    source: "Before \\textbf{bold} after.\n",
+  },
+  {
+    name: "align environment is RawInline in Pandoc Markdown",
+    source: "\\begin{align}\na &= b \\\\ \nc &= d\n\\end{align}\n",
+  },
+  {
+    name: "equation environment is RawInline in Pandoc Markdown",
+    source: "\\begin{equation}\nx = y\n\\end{equation}\n",
   },
 ] as const;
 
@@ -171,6 +236,12 @@ describe("Pandoc raw-LaTeX block differential oracle", function () {
   for (const testCase of cases) {
     it(`matches Pandoc for ${testCase.name}`, function () {
       assert.deepEqual(editorRawBlocks(testCase.source), pandocRawBlocks(testCase.source));
+    });
+  }
+
+  for (const testCase of inlineCases) {
+    it(`matches Pandoc RawInline(tex) for ${testCase.name}`, function () {
+      assert.deepEqual(editorRawInlines(testCase.source), pandocRawInlines(testCase.source));
     });
   }
 });

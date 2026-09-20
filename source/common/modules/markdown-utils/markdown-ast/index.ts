@@ -32,7 +32,7 @@
  * END HEADER
  */
 
-import { mathDisplayForOpen, mathEnvironmentName } from "@common/util/math-delimiters";
+import { mathDisplayForOpen } from "@common/util/math-delimiters";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
 import { type SyntaxNode } from "@lezer/common";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
@@ -534,6 +534,13 @@ export interface RawBlock extends MDNode {
   sourceLineRanges: Array<{ from: number; to: number }>;
 }
 
+/** A Pandoc-style raw inline. The editor currently recognizes raw TeX inlines. */
+export interface RawInline extends MDNode {
+  type: "RawInline";
+  format: "tex";
+  source: string;
+}
+
 /**
  * Any node that can be part of the AST is an ASTNode.
  */
@@ -566,7 +573,8 @@ export type ASTNode =
   | ZettelkastenTag
   | PandocDiv
   | PandocSpan
-  | RawBlock;
+  | RawBlock
+  | RawInline;
 /**
  * Extract the "type" properties from the ASTNodes that can differentiate these.
  */
@@ -948,6 +956,19 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       };
       return astNode;
     }
+    case "RawInline": {
+      const astNode: RawInline = {
+        type: "RawInline",
+        name: "RawInline",
+        format: "tex",
+        source: markdown.substring(node.from, node.to),
+        attributes: {},
+        from: node.from,
+        to: node.to,
+        whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
+      };
+      return astNode;
+    }
     case "PandocDiv": {
       const marks = node.getChildren("PandocDivMark");
       const content = marks.length === 2 ? markdown.substring(marks[0].to, marks[1].from) : "";
@@ -1027,11 +1048,8 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const [start, end] = node.getChildren("CodeMark");
       let info = "";
       const codeMark = markdown.substring(start.from, start.to);
-      // The mark opens math when the delimiter table or the math-environment
-      // set recognizes it; anything else is a genuine code span. Asked of
-      // math-delimiters rather than restated here, so the four delimiters and
-      // the environments have one owner.
-      if (mathDisplayForOpen(codeMark) !== null || mathEnvironmentName(codeMark) !== null) {
+      // The mark opens math only when Pandoc's Markdown math delimiters do.
+      if (mathDisplayForOpen(codeMark) !== null) {
         info = codeMark;
       }
 

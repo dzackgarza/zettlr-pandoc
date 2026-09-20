@@ -1,4 +1,11 @@
 /**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/Markdown.hs `divFenced` (line 2169),
+ * `divFenceEnd`, and `bracketedSpan` (line 1916).
+ */
+
+/**
  * @ignore
  * BEGIN HEADER
  *
@@ -13,9 +20,9 @@
  * END HEADER
  */
 
-import type { InlineParser, BlockParser, BlockContext, Line, DelimiterType } from '@lezer/markdown'
+import type { InlineParser, BlockParser, BlockContext, Line, DelimiterType } from '../markdown'
 import type { Input } from '@lezer/common'
-import { scanPandocAttributeList, scanPandocFencedDivOpening, type PandocFencedDivOpeningScan } from '@common/pandoc-util/pandoc-attribute-syntax'
+import { scanPandocAttributeList, scanPandocFencedDivOpening, type PandocFencedDivOpeningScan } from './attribute-syntax'
 
 const PandocSpanDelimiter: DelimiterType = {}
 

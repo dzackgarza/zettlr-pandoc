@@ -350,6 +350,9 @@ export function nodeToHTML(
     // editor renderers (TikZ) may visualize a subset, but copy/preview HTML
     // must not expose TeX source as prose.
     return "";
+  } else if (node.type === "RawInline") {
+    // Same Pandoc HTML-writer rule as RawBlock(tex): TeX source is omitted.
+    return "";
   } else if (node.type === "PandocDiv") {
     const attr = renderNodeAttributes(node);
     return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`;

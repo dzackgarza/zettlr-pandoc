@@ -1,4 +1,10 @@
 /**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/Markdown.hs `attributes` (line 643).
+ */
+
+/**
  * @ignore
  * BEGIN HEADER
  *
@@ -14,8 +20,8 @@
  * END HEADER
  */
 
-import type { InlineParser } from '@lezer/markdown'
-import { scanPandocAttributeList } from '@common/pandoc-util/pandoc-attribute-syntax'
+import type { InlineParser } from '../markdown'
+import { scanPandocAttributeList } from './attribute-syntax'
 
 /** Parses Pandoc attribute lists (for example `{#id .class key="value"}`). */
 export const pandocAttributesParser: InlineParser = {

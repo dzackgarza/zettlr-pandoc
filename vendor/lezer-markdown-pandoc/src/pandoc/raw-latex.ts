@@ -1,8 +1,18 @@
+/**
+ * Pandoc raw-TeX block grammar. Reference implementation: Pandoc 3.10.2
+ * commit f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/LaTeX.hs `rawLaTeXBlock` (line 153).
+ */
+
 /** Pandoc-compatible block parser for raw non-math LaTeX environments. */
 
-import { rawLatexBlockEndAtStart, rawLatexBlockStartsAt } from "@common/util/raw-latex-block";
+import {
+  rawLatexBlockEndAtStart,
+  rawLatexBlockStartsAt,
+  rawLatexInlineEndAtStart,
+} from "./raw-latex-syntax";
 import type { Input } from "@lezer/common";
-import type { BlockContext, BlockParser } from "@lezer/markdown";
+import type { BlockContext, BlockParser, InlineParser } from "../markdown";
 
 function isLezerInput(value: unknown): value is Input {
   if (typeof value !== "object" || value === null) {
@@ -72,5 +82,29 @@ export const rawLatexBlockParser: BlockParser = {
 
     ctx.nextLine();
     return true;
+  },
+};
+
+/**
+ * Pandoc RawInline(tex) adapter. Math delimiters run before this parser; raw
+ * TeX runs before CommonMark's Escape parser, matching Markdown.hs where
+ * `math <|> escaped... <|> rawLaTeXInline'` decides a backslash-led inline.
+ */
+export const rawLatexInlineParser: InlineParser = {
+  name: "raw-latex-inline",
+  before: "Escape",
+  parse: (ctx, next, pos) => {
+    if (next !== 92) { // backslash
+      return -1;
+    }
+    const localFrom = pos - ctx.offset;
+    const relativeEnd = rawLatexInlineEndAtStart(ctx.text.slice(localFrom));
+    if (relativeEnd === null) {
+      return -1;
+    }
+    const to = pos + relativeEnd;
+    return ctx.addElement(ctx.elt("RawInline", pos, to, [
+      ctx.elt("RawInlineContent", pos, to),
+    ]));
   },
 };

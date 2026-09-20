@@ -1,3 +1,11 @@
+/**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/Markdown.hs `attributes`, `attribute`,
+ * `identifierAttr`, `classAttr`, `keyValAttr`, and `specialAttr`
+ * (starting at line 643 in that revision).
+ */
+
 import { decodeHTMLStrict } from 'entities'
 
 /**

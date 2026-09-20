@@ -27,7 +27,7 @@ import { less } from "@codemirror/lang-less";
 import { lezer } from "@codemirror/lang-lezer";
 import { liquid } from "@codemirror/lang-liquid";
 // Import all the languages, first the "new" ones
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { commonmarkLanguage, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { php } from "@codemirror/lang-php";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
@@ -44,6 +44,8 @@ import {
   type LanguageSupport,
   StreamLanguage,
 } from "@codemirror/language";
+import { styleTags } from "@lezer/highlight";
+import { Pandoc, type ZknLinkParserConfig } from "@lezer/markdown";
 // Now from the legacy modes package
 import { c, csharp, dart, kotlin, objectiveC, scala } from "@codemirror/legacy-modes/mode/clike";
 import { clojure } from "@codemirror/legacy-modes/mode/clojure";
@@ -81,24 +83,12 @@ import { elixirLanguage } from "codemirror-lang-elixir";
 import { hcl } from "codemirror-lang-hcl";
 import { customTags } from "../util/custom-tags";
 
-// Additional parser
-import { citationParser } from "./citation-parser";
-import { footnoteComposite, footnoteParser, footnoteRefParser } from "./footnote-parser";
-import { frontmatterParser, yamlCodeParse } from "./frontmatter-parser";
+// Editor-only parser adapters. Pandoc Markdown grammar lives in the vendored
+// @lezer/markdown fork; nothing below redefines Pandoc syntax.
+import { yamlCodeParse } from "./frontmatter-parser";
 import { highlightParser } from "./highlight-parser";
-import {
-  blockMathParser,
-  inlineBracketMathParser,
-  inlineMathEnvironmentParser,
-  inlineMathParser,
-} from "./math-parser";
-import { pandocAttributesParser } from "./pandoc-attributes-parser";
-import { pandocDivComposite, pandocDivParser, pandocSpanParser } from "./pandoc-div-span-parser";
-import { pandocLinkParser } from "./pandoc-link-parser";
-import { gridTableParser, pipeTableParser } from "./pandoc-table-parser";
-import { rawLatexBlockParser } from "./raw-latex-block-parser";
+import { mathCodeParse } from "./math-parser";
 import { rawLatexLanguageParse, tikzCdLanguage, tikzLanguage } from "./tikz-parser";
-import { type ZknLinkParserConfig, zknLinkParser } from "./zkn-link-parser";
 import { zknTagParser } from "./zkn-tag-parser";
 
 const codeLanguages: Array<{ mode: Language | LanguageDescription | null; selectors: string[] }> = [
@@ -191,6 +181,43 @@ const customFoldNodeProp = foldNodeProp.add((type) => {
   return undefined;
 });
 
+// Pandoc syntax nodes are defined by the vendored @lezer/markdown fork. The
+// application only assigns editor-theme tags to those existing node types; it
+// does not redefine their recognition rules here.
+const pandocStyleProps = styleTags({
+  "YAMLFrontmatter/...": customTags.YAMLFrontmatter,
+  YAMLFrontmatterStart: customTags.YAMLFrontmatterStart,
+  YAMLFrontmatterEnd: customTags.YAMLFrontmatterEnd,
+  "Citation/...": customTags.Citation,
+  CitationMark: customTags.CitationMark,
+  CitationPrefix: customTags.CitationPrefix,
+  CitationSuppressAuthorFlag: customTags.CitationSuppressAuthorFlag,
+  CitationAtSign: customTags.CitationAtSign,
+  CitationCitekey: customTags.CitationCitekey,
+  CitationLocator: customTags.CitationLocator,
+  CitationSuffix: customTags.CitationSuffix,
+  "Footnote/...": customTags.Footnote,
+  "FootnoteRef/...": customTags.FootnoteRef,
+  FootnoteRefLabel: customTags.FootnoteRefLabel,
+  "ZknLink/...": customTags.ZknLink,
+  ZknLinkMark: customTags.ZknLinkMark,
+  ZknLinkContent: customTags.ZknLinkContent,
+  ZknLinkTitle: customTags.ZknLinkTitle,
+  ZknLinkPipe: customTags.ZknLinkPipe,
+  PandocAttribute: customTags.PandocAttribute,
+  PandocAttributeMark: customTags.PandocAttributeMark,
+  "PandocDiv/...": customTags.PandocDiv,
+  PandocDivInfo: customTags.PandocDivInfo,
+  PandocDivMark: customTags.PandocDivMark,
+  "PandocSpan/...": customTags.PandocSpan,
+  PandocSpanMark: customTags.PandocSpanMark,
+  "Table/...": customTags.Table,
+  TableHeader: customTags.TableHeader,
+  TableDelimiter: customTags.TableDelimiter,
+  TableRow: customTags.TableRow,
+  TableCell: customTags.TableCell,
+});
+
 export interface MarkdownParserConfig {
   zknLinkParserConfig?: ZknLinkParserConfig;
 }
@@ -203,7 +230,11 @@ export interface MarkdownParserConfig {
 // capabilities
 export default function markdownParser(config?: MarkdownParserConfig): LanguageSupport {
   return markdown({
-    base: markdownLanguage,
+    // Start from CommonMark rather than CodeMirror's GFM convenience parser.
+    // The vendored fork adds the Pandoc dialect explicitly; carrying GFM's
+    // table/autolink/emoji grammar underneath it would make the tree accept
+    // syntax that Pandoc's `markdown` reader does not.
+    base: commonmarkLanguage,
     codeLanguages: (infoString) => {
       // infostrings must start with the language and can be surrounded by curly
       // brackets. We just extract everything from the beginning that is an
@@ -228,100 +259,37 @@ export default function markdownParser(config?: MarkdownParserConfig): LanguageS
       return null;
     },
     addKeymap: false,
-    extensions: {
-      props: [customFoldNodeProp],
-      // yamlCodeParse is a wrapper that scans the document for the existence of
-      // a YAML frontmatter and then parses its contents. NOTE: Since a single
-      // MarkdownConfig only accepts one parse, I could either add additional
-      // logic to a generalized parser, or start passing additional config
-      // options here, since "extensions" also takes an array.
-      wrap: (inner, input, fragments, ranges) =>
-        yamlCodeParse()(
-          rawLatexLanguageParse()(inner, input, fragments, ranges),
-          input,
-          fragments,
-          ranges,
-        ),
-      parseBlock: [
-        pandocDivParser,
-        rawLatexBlockParser,
-        // This BlockParser parses YAML frontmatters
-        frontmatterParser,
-        // This BlockParser parses math blocks
-        blockMathParser,
-        footnoteRefParser,
-        gridTableParser,
-        pipeTableParser,
-      ],
-      parseInline: [
-        // Add inline parsers that add AST elements for various additional types
-        pandocSpanParser,
-        inlineMathParser,
-        inlineBracketMathParser,
-        inlineMathEnvironmentParser,
-        footnoteParser,
-        citationParser,
-        zknLinkParser(config?.zknLinkParserConfig),
-        zknTagParser,
-        pandocLinkParser,
-        pandocAttributesParser,
-        highlightParser,
-      ],
-      // We have to notify the markdown parser about the additional Node Types
-      // that the YAML block parser utilizes
-      // NOTE: Changes here must be reflected in util/custom-tags.ts and theme/syntax.ts!
-      defineNodes: [
-        { name: "YAMLFrontmatter", block: true },
-        { name: "YAMLFrontmatterStart", style: customTags.YAMLFrontmatterStart },
-        { name: "YAMLFrontmatterEnd", style: customTags.YAMLFrontmatterEnd },
-        // Citation elements
-        { name: "Citation", style: { "Citation/...": customTags.Citation } },
-        { name: "CitationMark", style: customTags.CitationMark },
-        { name: "CitationPrefix", style: customTags.CitationPrefix },
-        { name: "CitationSuppressAuthorFlag", style: customTags.CitationSuppressAuthorFlag },
-        { name: "CitationAtSign", style: customTags.CitationAtSign },
-        { name: "CitationCitekey", style: customTags.CitationCitekey },
-        { name: "CitationLocator", style: customTags.CitationLocator },
-        { name: "CitationSuffix", style: customTags.CitationSuffix },
-        { name: "HighlightMark", style: customTags.HighlightMark },
-        // NOTE: The convention {TagName}/... means that the corresponding styles
-        // from the syntax theme get assigned to all child nodes that are contained
-        // within this node as well. The default is to only style otherwise "empty"
-        // spans of plain text.
-        {
-          name: "HighlightContent",
-          style: { "HighlightContent/...": customTags.HighlightContent },
-        },
-        { name: "Footnote", style: { "Footnote/...": customTags.Footnote } },
-        {
-          name: "FootnoteRef",
-          style: { "FootnoteRef/...": customTags.FootnoteRef },
-          block: true,
-          composite: footnoteComposite,
-        },
-        { name: "FootnoteRefLabel", style: customTags.FootnoteRefLabel },
-        { name: "ZknLink", style: { "ZknLink/...": customTags.ZknLink } },
-        { name: "ZknLinkMark", style: customTags.ZknLinkMark },
-        { name: "ZknLinkContent", style: customTags.ZknLinkContent },
-        { name: "ZknLinkTitle", style: customTags.ZknLinkTitle },
-        { name: "ZknLinkPipe", style: customTags.ZknLinkPipe },
-        { name: "ZknTag", style: { "ZknTag/...": customTags.ZknTag } },
-        { name: "ZknTagMark", style: customTags.ZknTagMark },
-        { name: "PandocAttribute", style: customTags.PandocAttribute },
-        { name: "PandocAttributeMark", style: customTags.PandocAttributeMark },
-        {
-          name: "PandocDiv",
-          block: true,
-          style: { "PandocDiv/...": customTags.PandocDiv },
-          composite: pandocDivComposite,
-        },
-        { name: "PandocDivInfo", style: customTags.PandocDivInfo },
-        { name: "PandocDivMark", style: customTags.PandocDivMark },
-        { name: "PandocSpan", style: { "PandocSpan/...": customTags.PandocSpan } },
-        { name: "PandocSpanMark", style: customTags.PandocSpanMark },
-        { name: "RawBlock", block: true },
-        { name: "RawBlockContent" },
-      ],
-    },
+    extensions: [
+      Pandoc({
+        wikilinks: config?.zknLinkParserConfig?.format,
+      }),
+      {
+        props: [customFoldNodeProp, pandocStyleProps],
+        wrap: (inner, input, fragments, ranges) =>
+          yamlCodeParse()(
+            mathCodeParse()(
+              rawLatexLanguageParse()(inner, input, fragments, ranges),
+              input,
+              fragments,
+              ranges,
+            ),
+            input,
+            fragments,
+            ranges,
+          ),
+        // These are application syntax, not Pandoc Markdown. They intentionally
+        // remain as thin extensions on top of the fork-owned dialect.
+        parseInline: [zknTagParser, highlightParser],
+        defineNodes: [
+          { name: "HighlightMark", style: customTags.HighlightMark },
+          {
+            name: "HighlightContent",
+            style: { "HighlightContent/...": customTags.HighlightContent },
+          },
+          { name: "ZknTag", style: { "ZknTag/...": customTags.ZknTag } },
+          { name: "ZknTagMark", style: customTags.ZknTagMark },
+        ],
+      },
+    ],
   });
 }

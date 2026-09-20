@@ -1,4 +1,4 @@
-import { scanPandocAttributeList } from './pandoc-attribute-syntax'
+import { scanPandocAttributeList } from '@lezer/markdown'
 
 /**
  * Represents a parsed Pandoc LinkAttributes string (e.g., `{width=50%}`).

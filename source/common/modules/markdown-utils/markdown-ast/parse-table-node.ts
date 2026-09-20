@@ -96,30 +96,29 @@ export function parseTableNode (node: SyntaxNode, markdown: string): Table|TextN
   // pipe tables, and one that parses grid tables.
 
   // 2. We detect both the number of columns as well as the alignment using the
-  //    delimiter row
-  astNode.alignment = markdown
-    .slice(delimitingRow.from, delimitingRow.to)
-    // Account for Emacs tables which are essentially pipe tables with the one
-    // single exception that they contain "+" instead of "|" in the delimiter.
-    .replace('+', '|')
-    .split('|')
-    // We can throw away leading whitespace because table headers are required
-    // to be non-empty cells and must contain hyphens, whitespace, and colons.
-    .map(c => c.trim())
-    // NOTE: |-|-| will result in ['', '-', '-', ''] -> filter out
-    .filter(c => c.length > 0)
-    .map(c => {
-      // Now extract the alignment characters
-      if (c.startsWith(':') && c.endsWith(':')) {
-        return 'center'
-      } else if (c.startsWith(':')) {
-        return 'left'
-      } else if (c.endsWith(':')) {
-        return 'right'
-      } else {
-        return null
-      }
-    })
+  //    delimiter row. Grid-table border plus signs are column boundaries; pipe
+  //    tables use Pandoc's :--- / ---: / :---: alignment markers.
+  const delimiterSource = markdown.slice(delimitingRow.from, delimitingRow.to)
+  astNode.alignment = astNode.tableType === 'grid'
+    ? Array(Math.max(0, delimiterSource.split('+').length - 2)).fill(null)
+    : delimiterSource
+      // Account for Emacs tables, whose delimiter separators may be "+".
+      .replaceAll('+', '|')
+      .split('|')
+      .map(c => c.trim())
+      // NOTE: |-|-| will result in ['', '-', '-', ''] -> filter out
+      .filter(c => c.length > 0)
+      .map(c => {
+        if (c.startsWith(':') && c.endsWith(':')) {
+          return 'center'
+        } else if (c.startsWith(':')) {
+          return 'left'
+        } else if (c.endsWith(':')) {
+          return 'right'
+        } else {
+          return null
+        }
+      })
 
   // Delimiter row determines alignment + correct number of columns
   const nCols = astNode.alignment.length
@@ -249,6 +248,29 @@ export function parseTableNode (node: SyntaxNode, markdown: string): Table|TextN
     // assumption was clearly wrong in this case.
     if (hasHiddenFirstCell && tableRow.cells.length === nCols + 1) {
       tableRow.cells.shift()
+    }
+
+    // Pandoc's `pipeTable` normalizes every authored row to the number of
+    // columns declared by the delimiter line: extra cells are discarded and
+    // missing cells become empty cells. Keep the editor AST on that same
+    // semantic shape while the Lezer tree itself still preserves every
+    // authored delimiter/cell span for editing.
+    if (astNode.tableType === 'pipe') {
+      tableRow.cells = tableRow.cells.slice(0, nCols)
+      while (tableRow.cells.length < nCols) {
+        const at = row.to
+        tableRow.cells.push({
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
+          from: at,
+          to: at,
+          whitespaceBefore: '',
+          children: [],
+          padding: { from: at, to: at },
+          textContent: '',
+          attributes: {}
+        })
+      }
     }
 
     // Next row

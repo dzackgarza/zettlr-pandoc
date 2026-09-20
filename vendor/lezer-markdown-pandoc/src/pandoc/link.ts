@@ -1,4 +1,11 @@
 /**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/Markdown.hs `source` (line 1853), `link`
+ * (line 1907), `regLink`, and `referenceLink`.
+ */
+
+/**
  * @ignore
  * BEGIN HEADER
  *
@@ -18,13 +25,19 @@
  * END HEADER
  */
 
-import type { DelimiterType, InlineParser } from '@lezer/markdown'
+import type { DelimiterType, InlineParser } from '../markdown'
 
 const PandocLinkDelimiter: DelimiterType = {}
 
-const linkClosingRe = /^\]\((?<url>.+)\)/
+// Pandoc `source` permits an empty destination, so `[]()` is a real Link with
+// an empty target rather than falling back to literal source.
+const linkClosingRe = /^\]\((?<url>.*)\)/
 
-const linkTitleRe = /(?:^|[ \t]+)(?:"(?<double>(?:\\.|[^"])+)"|'(?<single>(?:\\.|[^'])+)'|\((?<parens>(?:\\.|[^\)])+)\))$/d
+// Pandoc `linkTitle` is deliberately narrower than CommonMark's title syntax:
+// only single- or double-quoted titles are accepted here. Parenthesized text
+// belongs to `sourceURL` via `parenthesizedChars`, so `[x](foo (bar))` links to
+// `foo (bar)` and has no title. See Markdown.hs `source` / `linkTitle`.
+const linkTitleRe = /(?:^|[ \t\r\n]+)(?:"(?<double>(?:\\.|[^"])*)"|'(?<single>(?:\\.|[^'])*)')$/d
 
 export const pandocLinkParser: InlineParser = {
   name: 'pandoc-link-parser',
@@ -99,7 +112,10 @@ export const pandocLinkParser: InlineParser = {
     if (title?.indices?.groups) {
       destination = url.substring(0, title.index)
 
-      const linkTitleIndices = title.indices.groups.double ?? title.indices.groups.single ?? title.indices.groups.parens
+      const linkTitleIndices = title.indices.groups.double ?? title.indices.groups.single
+      if (linkTitleIndices === undefined) {
+        return -1
+      }
       urlContents.push(ctx.elt('LinkTitle', pos + 2 + linkTitleIndices[0], pos + 2 + linkTitleIndices[1]))
     }
 
