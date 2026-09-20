@@ -11,14 +11,14 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import type { SyntaxNodeRef, Tree } from "@lezer/common";
+import type { SyntaxNode, SyntaxNodeRef, Tree } from "@lezer/common";
 
 interface VisibleSyntaxCacheEntry {
   state: EditorState;
   tree: Tree;
   rangesKey: string;
-  groups: ReadonlyArray<readonly SyntaxNodeRef[]>;
-  nodes: readonly SyntaxNodeRef[];
+  groups: ReadonlyArray<readonly SyntaxNode[]>;
+  nodes: readonly SyntaxNode[];
 }
 
 const visibleSyntaxCache = new WeakMap<EditorView, VisibleSyntaxCacheEntry>();
@@ -35,14 +35,23 @@ export function visibleSyntaxNodes(view: EditorView): readonly SyntaxNodeRef[] {
     return cached.nodes;
   }
 
-  const groups: SyntaxNodeRef[][] = [];
+  const groups: SyntaxNode[][] = [];
   for (const { from, to } of view.visibleRanges) {
-    const group: SyntaxNodeRef[] = [];
+    const group: SyntaxNode[] = [];
     tree.iterate({
       from,
       to,
       enter(node) {
-        group.push(node);
+        // Tree.iterate deliberately passes one mutable TreeCursor through the
+        // whole walk. Keeping that SyntaxNodeRef would therefore make every
+        // cached entry alias the cursor's final position. Lezer explicitly
+        // documents `.node` as the stable snapshot accessor; cache that.
+        //
+        // Reference implementation/API contract:
+        // @lezer/common SyntaxNodeRef.node — "Retrieve a stable syntax node at
+        // this position" (the adjacent docs warn that SyntaxNodeRef itself is
+        // not guaranteed to stay stable).
+        group.push(node.node);
       },
     });
     groups.push(group);

@@ -1,3 +1,4 @@
+import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
@@ -41,9 +42,18 @@ describe("shared visible syntax traversal", function () {
   it("reuses one node stream for an unchanged state and visible range", function () {
     const view = createView("# Heading\n\nParagraph with *emphasis* and [link](target).\n");
     try {
+      assert.ok(forceParsing(view, view.state.doc.length, 5000));
       const first = visibleSyntaxNodes(view);
       const second = visibleSyntaxNodes(view);
       assert.equal(second, first);
+
+      // Tree.iterate passes a mutable TreeCursor. The cache must hold stable
+      // snapshots, not repeated aliases to that cursor's final node.
+      const names = first.map(node => node.name);
+      assert.ok(names.includes("ATXHeading1"), `missing heading from cached stream: ${names.join(", ")}`);
+      assert.ok(names.includes("Emphasis"), `missing emphasis from cached stream: ${names.join(", ")}`);
+      assert.ok(names.includes("Link"), `missing link from cached stream: ${names.join(", ")}`);
+      assert.ok(new Set(first.map(node => `${node.name}:${node.from}:${node.to}`)).size > 3);
 
       view.dispatch({ selection: { anchor: view.state.doc.length } });
       const afterStateChange = visibleSyntaxNodes(view);
