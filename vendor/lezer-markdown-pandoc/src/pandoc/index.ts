@@ -153,8 +153,10 @@ export {
   rawLatexBlockEndAtStart,
   rawLatexBlockSequenceEndAtStart,
   rawLatexInlineEndAtStart,
+  pandocLatexMathEnvironmentAtStart,
   rawBlockSourceFromNode,
   rawBlockLineRangesFromNode,
+  type PandocLatexMathEnvironment,
   type RawBlockSyntaxNode,
 } from './raw-latex-syntax'
 export { type ZknLinkParserConfig } from './wikilinks'

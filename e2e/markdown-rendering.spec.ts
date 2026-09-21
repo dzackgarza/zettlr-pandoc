@@ -33,6 +33,16 @@ The KSBA compactification generalizes the Deligne-Mumford compactification \\( \
 A $(K+D)$-trivial polarized involution pair is a triple $(X,D,\\iota)$.
 :::
 
+\\begin{align*}
+\\{ \\phi_i\\colon U_i \\to \\RR^n \\}
+.\\end{align*}
+
+such that for each nonempty overlap $U_i \\cap U_j$, the transition maps
+
+\\begin{align*}
+\\phi_j \\circ \\phi_i^{-1} \\colon \\phi_i(U_i \\cap U_j) \\to \\phi_j(U_i \\cap U_j)
+.\\end{align*}
+
 Outside rendering probe.
 `
 
@@ -119,6 +129,19 @@ describe('assembled Markdown rendering', function () {
         `assembled editor did not render Pandoc \\( … \\) equation ${JSON.stringify(equation)}; rendered equations: ${JSON.stringify(equations)}`
       )
     }
+    const alignWidgets = await page.locator('.preview-math').evaluateAll(elements =>
+      elements
+        .filter(element => ((element as HTMLElement).dataset.equation ?? '').startsWith('\\begin{align*}'))
+        .map(element => ({
+          equation: (element as HTMLElement).dataset.equation ?? '',
+          display: element.querySelector('mjx-container')?.getAttribute('display') ?? null
+        }))
+    )
+    assert.equal(alignWidgets.length, 2, `expected both align* environments to render; got ${JSON.stringify(alignWidgets)}`)
+    assert.ok(
+      alignWidgets.every(widget => widget.display === 'true'),
+      `align* environments must render as display math: ${JSON.stringify(alignWidgets)}`
+    )
     assert.ok(
       await page.locator('pandoc-div-wrapper[data-pandoc-div-family="definition"]').count() > 0,
       'the definition fenced div must render as a semantic container'

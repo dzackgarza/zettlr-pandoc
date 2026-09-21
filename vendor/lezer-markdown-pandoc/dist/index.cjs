@@ -5341,6 +5341,26 @@ function rawLatexEnvironmentEnd(text, environment) {
     return null;
 }
 /**
+ * Recognize the LaTeX math environments that Pandoc's Markdown reader keeps as
+ * RawInline(tex). This is the exact `inlineEnvironments` set from Pandoc
+ * 3.10.2 Text/Pandoc/Readers/LaTeX/Math.hs at the pinned reference commit.
+ *
+ * Pandoc's AST classification and the editor's visual rendering are separate:
+ * these remain RawInline(tex) syntax nodes, while callers may render the
+ * complete environment as mathematics. `math` is inline; the other admitted
+ * environments are display mathematics.
+ */
+function pandocLatexMathEnvironmentAtStart(text) {
+    const environment = latexEnvironmentAtStart(text);
+    if (environment === null || !PANDOC_INLINE_ENVIRONMENTS.has(environment)) {
+        return null;
+    }
+    const end = rawLatexEnvironmentEnd(text, environment);
+    return end === null
+        ? null
+        : { environment, display: environment !== "math", end };
+}
+/**
  * End offset for the subset of Pandoc RawInline(tex) syntax that begins with a
  * control sequence or one of Pandoc's LaTeX inline environments.
  *
@@ -6543,6 +6563,7 @@ exports.Table = Table;
 exports.TaskList = TaskList;
 exports.citationParser = citationParser;
 exports.createPandocParser = createPandocParser;
+exports.pandocLatexMathEnvironmentAtStart = pandocLatexMathEnvironmentAtStart;
 exports.parseCitationLocator = parseCitationLocator;
 exports.parseCitationSuffix = parseCitationSuffix;
 exports.parseCode = parseCode;

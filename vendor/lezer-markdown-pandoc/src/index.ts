@@ -21,6 +21,7 @@ export {
   rawLatexBlockEndAtStart,
   rawLatexBlockSequenceEndAtStart,
   rawLatexInlineEndAtStart,
+  pandocLatexMathEnvironmentAtStart,
   rawBlockSourceFromNode,
   rawBlockLineRangesFromNode,
 } from "./pandoc/index"
@@ -33,6 +34,7 @@ export type {
   Citation,
   CiteItem,
   CSL_LOCATOR_TERM,
+  PandocLatexMathEnvironment,
   RawBlockSyntaxNode,
   ZknLinkParserConfig,
 } from "./pandoc/index"

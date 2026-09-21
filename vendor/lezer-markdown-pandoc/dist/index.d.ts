@@ -836,6 +836,11 @@ declare const citationParser: InlineParser$1;
  * Markdown integration is src/Text/Pandoc/Readers/Markdown.hs
  * `rawLaTeXInline'` (line 2113) under Ext_raw_tex.
  */
+interface PandocLatexMathEnvironment {
+    environment: string;
+    display: boolean;
+    end: number;
+}
 declare function rawLatexEnvironmentAtStart(text: string): string | null;
 declare function rawLatexBlockStartsAt(text: string): boolean;
 /**
@@ -845,6 +850,17 @@ declare function rawLatexBlockStartsAt(text: string): boolean;
  * not contribute fake open/close tokens.
  */
 declare function rawLatexEnvironmentEnd(text: string, environment: string): number | null;
+/**
+ * Recognize the LaTeX math environments that Pandoc's Markdown reader keeps as
+ * RawInline(tex). This is the exact `inlineEnvironments` set from Pandoc
+ * 3.10.2 Text/Pandoc/Readers/LaTeX/Math.hs at the pinned reference commit.
+ *
+ * Pandoc's AST classification and the editor's visual rendering are separate:
+ * these remain RawInline(tex) syntax nodes, while callers may render the
+ * complete environment as mathematics. `math` is inline; the other admitted
+ * environments are display mathematics.
+ */
+declare function pandocLatexMathEnvironmentAtStart(text: string): PandocLatexMathEnvironment | null;
 /**
  * End offset for the subset of Pandoc RawInline(tex) syntax that begins with a
  * control sequence or one of Pandoc's LaTeX inline environments.
@@ -986,4 +1002,4 @@ declare const Emoji: MarkdownConfig;
 declare function Pandoc(options?: PandocMarkdownOptions): MarkdownExtension;
 declare function createPandocParser(options?: PandocMarkdownOptions): MarkdownParser;
 
-export { Autolink, BlockContext, BlockParser, NODES as CITATION_NODES, CSL_LOCATOR_TERM, Citation, CiteItem, DelimiterType, Element, Emoji, GFM, InlineContext, InlineParser, LeafBlock, LeafBlockParser, Line, MarkdownConfig, MarkdownExtension, MarkdownParser, NodeSpec, Pandoc, PandocAttributeListScan, PandocAttributeToken, PandocFencedDivOpeningScan, PandocMarkdownOptions, PandocSyntaxScan, RawBlockSyntaxNode, Strikethrough, Subscript, Superscript, Table, TaskList, ZknLinkParserConfig, citationParser, createPandocParser, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockSequenceEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };
+export { Autolink, BlockContext, BlockParser, NODES as CITATION_NODES, CSL_LOCATOR_TERM, Citation, CiteItem, DelimiterType, Element, Emoji, GFM, InlineContext, InlineParser, LeafBlock, LeafBlockParser, Line, MarkdownConfig, MarkdownExtension, MarkdownParser, NodeSpec, Pandoc, PandocAttributeListScan, PandocAttributeToken, PandocFencedDivOpeningScan, PandocLatexMathEnvironment, PandocMarkdownOptions, PandocSyntaxScan, RawBlockSyntaxNode, Strikethrough, Subscript, Superscript, Table, TaskList, ZknLinkParserConfig, citationParser, createPandocParser, pandocLatexMathEnvironmentAtStart, parseCitationLocator, parseCitationSuffix, parseCode, parser, rawBlockLineRangesFromNode, rawBlockSourceFromNode, rawLatexBlockEndAtStart, rawLatexBlockSequenceEndAtStart, rawLatexBlockStartsAt, rawLatexEnvironmentAtStart, rawLatexEnvironmentEnd, rawLatexInlineEndAtStart, scanPandocAttributeList, scanPandocFencedDivOpening };

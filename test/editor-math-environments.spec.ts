@@ -12,8 +12,9 @@
  *                  With raw_tex enabled, LaTeX-reader inline environments are
  *                  RawInline(tex); other environments may be RawBlock(tex).
  *                  Only Pandoc's explicit Markdown math delimiters ($, $$,
- *                  \( \), \[ \]) produce Math. This suite keeps the editor and
- *                  HTML conversion on that exact boundary.
+ *                  \( \), \[ \]) produce Math nodes. The editor may still
+ *                  visualize Pandoc RawInline(tex) math environments without
+ *                  changing that syntax classification.
  *
  *                  The executable Pandoc JSON reader is the oracle. Source:
  *                  Pandoc 3.10.2 commit
@@ -120,7 +121,7 @@ describe('Pandoc Markdown LaTeX-environment classification', function () {
   })
 
   describe('the editor preview', function () {
-    it('does not turn Pandoc raw-TeX environments into math', function () {
+    it('does not reclassify Pandoc raw-TeX environments as Markdown Math nodes', function () {
       assert.equal(editorMath(ALIGN), null)
       assert.equal(editorMath('\\begin{equation}\nx = y\n\\end{equation}'), null)
       assert.equal(editorMath('\\begin{center}\nhello\n\\end{center}'), null)
