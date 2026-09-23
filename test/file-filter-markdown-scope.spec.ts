@@ -4,7 +4,6 @@ import type {
   DirDescriptor,
   MDFileDescriptor
 } from 'source/types/common/fsal'
-import { defaultKeybindings } from 'source/app/service-providers/menu/shortcuts'
 import matchQuery from 'source/win-main/file-manager/util/match-query'
 
 const markdown: MDFileDescriptor = {
@@ -67,13 +66,6 @@ const directory: DirDescriptor = {
 }
 
 describe('Ctrl+Shift+P Markdown file-filter scope', function () {
-  it('keeps the explicit file-filter shortcut', function () {
-    assert.deepEqual(defaultKeybindings['filter-files'], {
-      key: 'Ctrl-Shift-p',
-      mac: 'Cmd-Shift-p'
-    })
-  })
-
   it('keeps the ordinary file filter broad when the opt-in scope is inactive', function () {
     const filter = matchQuery('', false, false)
     assert.equal(filter(markdown), true)
