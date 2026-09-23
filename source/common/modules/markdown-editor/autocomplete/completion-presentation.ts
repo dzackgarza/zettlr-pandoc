@@ -11,7 +11,7 @@ import type { Completion, CompletionInfo } from '@codemirror/autocomplete'
 
 export type CompletionSourceName =
   'Code'|'Cite'|'Ref'|'File'|'Heading'|'Tag'|'Emoji'|'Snippet'|
-  'Pandoc'|'Markdown'|'LaTeX'|'MathJax'|'Macro'|'TikZ'|'tikzcd'|'Prose'|'Buffer'
+  'Pandoc'|'Markdown'|'LaTeX'|'MathJax'|'Macro'|'TikZ'|'tikzcd'|'Prose'|'Dictionary'|'Buffer'
 
 export interface PresentedCompletion extends Completion {
   /** Compact source column analogous to nvim-cmp's `vim_item.menu`. */
@@ -44,11 +44,43 @@ const SOURCE_ICON: Record<CompletionSourceName, string> = {
   TikZ: 'network-globe',
   tikzcd: 'network-globe',
   Prose: 'text',
+  Dictionary: 'text',
   Buffer: 'note'
+}
+
+const TEXT_SOURCE_ICON: Partial<Record<CompletionSourceName, string>> = {
+  LaTeX: 'T',
+  MathJax: 'M',
+  Macro: 'M',
+  Dictionary: 'D',
+  Prose: 'D',
+  Snippet: 'S',
+  Cite: 'C',
+  Ref: 'R',
+  File: 'F',
+  Heading: 'H',
+  Tag: '#',
+  Buffer: 'B'
 }
 
 export function completionSourceOf (completion: Completion): CompletionSourceName|undefined {
   return (completion as PresentedCompletion).zettlrSource
+}
+
+/** Compatibility name used by source-level tests and external completion helpers. */
+export const completionSource = completionSourceOf
+
+export function completionIconText (completion: Completion): string {
+  const source = completionSourceOf(completion)
+  if (source !== undefined && TEXT_SOURCE_ICON[source] !== undefined) {
+    return TEXT_SOURCE_ICON[source]
+  }
+  const type = completion.type?.split(/\s+/u)[0]
+  if (type === 'function') return 'ƒ'
+  if (type === 'keyword') return 'K'
+  if (type === 'type') return 'T'
+  if (type === 'text') return 't'
+  return ''
 }
 
 /** Add a source only when the option has not already declared a more precise one. */
@@ -185,3 +217,31 @@ export function completionOptionClass (completion: Completion): string {
     ? 'zettlr-completion-option'
     : `zettlr-completion-option zettlr-completion-source-${source.toLowerCase()}`
 }
+
+/**
+ * Text-only compatibility projection over the same provenance metadata.
+ * The production UI uses the richer Clarity-icon renderers above.
+ */
+export const completionPresentationOptions = [
+  {
+    position: 20,
+    render (completion: Completion): Node {
+      const icon = document.createElement('span')
+      icon.className = 'cm-completionIcon cm-completionSourceIcon'
+      icon.textContent = completionIconText(completion)
+      icon.setAttribute('aria-hidden', 'true')
+      return icon
+    }
+  },
+  {
+    position: 70,
+    render (completion: Completion): Node {
+      const source = document.createElement('span')
+      source.className = 'cm-completionSource'
+      const label = completionSourceOf(completion)
+      source.textContent = label === undefined ? '' : `[${label}]`
+      if (label === undefined) source.setAttribute('aria-hidden', 'true')
+      return source
+    }
+  }
+] as const

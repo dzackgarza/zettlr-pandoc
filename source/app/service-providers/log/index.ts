@@ -15,7 +15,7 @@
 import path from 'path'
 import { promises as fs } from 'fs'
 import { app, ipcMain } from 'electron'
-// @ts-expect-error Somehow TypeScript is very unhappy about this import.
+// @ts-expect-error Chalk's package metadata is incompatible with this project's legacy moduleResolution.
 import chalk from 'chalk'
 import ProviderContract from '../provider-contract'
 import { stderrError } from '@common/util/error-reporting'

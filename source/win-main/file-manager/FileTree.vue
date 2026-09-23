@@ -1,6 +1,7 @@
 <template>
   <div
     id="file-tree"
+    ref="rootElement"
     role="region"
     aria-label="File Tree"
     :class="{ 'hidden': !isVisible }"
@@ -224,6 +225,9 @@ const ipcRenderer = window.ipc
 const props = defineProps<{
   isVisible: boolean
   filterQuery: string
+  filePickerActive: boolean
+  filePickerPaths: string[]
+  filePickerPathSet: Set<string>
   windowId: string
 }>()
 
@@ -234,6 +238,7 @@ const emit = defineEmits<{
 
 // Can contain the path to a tree item that is focused
 const activeTreeItem = ref<undefined|[string, string]>(undefined)
+const rootElement = ref<HTMLDivElement|null>(null)
 
 const workspacesContextMenuButton = ref<HTMLElement|null>(null)
 const showSortingPopover = ref(false)
@@ -293,6 +298,7 @@ const useH1 = computed(() => configStore.config.fileNameDisplay.includes('headin
 const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
 
 const query = computed(() => props.filterQuery.trim().toLowerCase())
+const filterActive = computed(() => query.value !== '' || props.filePickerActive)
 
 const activeWorkspace = computed<DirDescriptor|undefined>(() => {
   const roots = getDirectories.value
@@ -317,16 +323,34 @@ const metadataDirectory = computed<DirDescriptor|undefined>(() => {
 
 const filterResults = computed<string[]>(() => {
   const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return []
   }
 
-  const filter = matchQuery(q, useTitle.value, useH1.value)
+  if (props.filePickerActive && q === '') {
+    return props.filePickerPaths
+  }
+
+  const filter = matchQuery(
+    q,
+    useTitle.value,
+    useH1.value,
+    undefined
+  )
   const results: string[] = []
 
-  for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
-    if (filter(descriptor)) {
-      results.push(absPath)
+  if (props.filePickerActive) {
+    for (const absPath of props.filePickerPaths) {
+      const descriptor = workspaceStore.descriptorMap.get(absPath)
+      if (descriptor !== undefined && filter(descriptor)) {
+        results.push(absPath)
+      }
+    }
+  } else {
+    for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
+      if (filter(descriptor)) {
+        results.push(absPath)
+      }
     }
   }
 
@@ -336,9 +360,12 @@ const filterResults = computed<string[]>(() => {
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
   const roots = rootDescriptors.value.filter(desc => desc.type === 'file' || desc.type === 'code')
-  const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return roots
+  }
+
+  if (props.filePickerActive && query.value === '') {
+    return roots.filter(root => props.filePickerPathSet.has(root.path))
   }
 
   return roots.filter(root => filterResults.value.includes(root.path))
@@ -346,8 +373,7 @@ const getFiles = computed(() => {
 
 const getDirectories = computed(() => {
   const roots = rootDescriptors.value.filter(desc => desc.type === 'directory')
-  const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return roots
   }
 
@@ -372,7 +398,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
   // Second, filter them if applicable.
     .filter(descriptor => {
-      return query.value === '' ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
+      return !filterActive.value ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
     })
 
   const uncollapsed = windowStateStore.uncollapsedDirectories
@@ -878,6 +904,10 @@ function stopNavigate (): void {
   activeTreeItem.value = undefined
 }
 
+function getRootElement (): HTMLDivElement|null {
+  return rootElement.value
+}
+
 // Dragging for the manual workspaces sort popover
 function startDragging (event: DragEvent): void {
   if (event.currentTarget === null || !(event.currentTarget instanceof HTMLLIElement)) {
@@ -945,7 +975,7 @@ function drop (event: DragEvent): void {
     .catch(e => reportError(e))
 }
 
-defineExpose({ navigate, stopNavigate })
+defineExpose({ navigate, stopNavigate, getRootElement })
 </script>
 
 <style lang="less">

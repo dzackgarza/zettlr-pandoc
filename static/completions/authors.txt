@@ -1,0 +1,232 @@
+# Author names and surnames. Spellings are literal insertion text.
+# Surnames and full names are separate optional completions.
+
+Abel
+Akira Fujiki
+Alexander Beilinson
+Alexander Grothendieck
+Alexeev
+André
+André Weil
+Angelo Vistoli
+Armand Borel
+Arnaud Beauville
+Artin
+Atiyah
+Baily
+Beauville
+Beilinson
+Bernhard Riemann
+Bernstein
+Berthelot
+Białynicki-Birula
+Birkar
+Bloch
+Bogomolov
+Borel
+Bott
+Bourbaki
+Bridgeland
+Brieskorn
+Burt Totaro
+Carl Ludwig Siegel
+Cartan
+Chevalley
+Christopher Hacon
+Claire Voisin
+Clemens
+Cox
+Daniel Huybrechts
+David Eisenbud
+David Mumford
+de Jong
+de Rham
+Deligne
+Demazure
+Dieudonné
+Dmitry Orlov
+Dolgachev
+Donu Arapura
+Drinfeld
+Eckart Viehweg
+Eduard Looijenga
+Eilenberg
+Elkik
+Emmy Noether
+Enriques
+Esnault
+Faltings
+Federigo Enriques
+Fedor Bogomolov
+Frances Kirwan
+Friedrich Hirzebruch
+Fujiki
+Fujino
+Fulton
+Fumio Sakai
+Gabber
+Gaitsgory
+Gelfand
+Gerd Faltings
+Gieseker
+Giraud
+Goro Shimura
+Grauert
+Griffiths
+Grothendieck
+Gérard Laumon
+Hacon
+Harder
+Hartshorne
+Hassett
+Hatcher
+Heisuke Hironaka
+Henri Cartan
+Henri Poincaré
+Henry John Stephen Smith
+Hermann Minkowski
+Hilbert
+Hironaka
+Hirzebruch
+Hochschild
+Hodge
+Hopkins
+Huybrechts
+Igor Dolgachev
+Igor Shafarevich
+Iitaka
+Illusie
+Jacob Lurie
+James Milne
+Jean-Louis Colliot-Thélène
+Jean-Louis Verdier
+Jean-Marc Fontaine
+Jean-Pierre Serre
+Johan de Jong
+John Milnor
+Joseph Bernstein
+János Kollár
+Kato
+Katsura
+Kawamata
+Kazuya Kato
+Kempf
+Kenji Fukaya
+Kenji Ueno
+Kirwan
+Kleiman
+Knudsen
+Kodaira
+Kollár
+Kontsevich
+Kostant
+Kovács
+Krull
+Kunihiko Kodaira
+Künneth
+Lefschetz
+Looijenga
+Luc Illusie
+Lurie
+Lusztig
+Mac Lane
+MacPherson
+Manin
+Martin Olsson
+Maruyama
+Masaki Kashiwara
+Masaki Maruyama
+Masayoshi Nagata
+Matsumura
+Maxim Kontsevich
+Michael Artin
+Michael Atiyah
+Michael Harris
+Michel Brion
+Michel Raynaud
+Mikhail Kapranov
+Miles Reid
+Milne
+Milnor
+Minkowski
+Mircea Mustață
+Miyaoka
+Mochizuki
+Moishezon
+Mori
+Morrison
+Mukai
+Mumford
+Nagata
+Namikawa
+Narasimhan
+Nicholas Shepherd-Barron
+Nicolas Bourbaki
+Nikulin
+Noboru Nakayama
+Noether
+Néron
+Oguiso
+Olsson
+Orlov
+Osamu Fujino
+Oscar Zariski
+Peter Scholze
+Phillip Griffiths
+Pierre Berthelot
+Pierre Deligne
+Poincaré
+Quillen
+Ravi Vakil
+Raynaud
+Reid
+Richard Borcherds
+Riemann
+Robert Friedman
+Robin Hartshorne
+Ron Donagi
+Saito
+Saunders Mac Lane
+Scholze
+Serge Lang
+Serre
+Shafarevich
+Shepherd-Barron
+Shigefumi Mori
+Shigeru Mukai
+Shing-Tung Yau
+Shioda
+Siegel
+Smith
+Spencer Bloch
+Steenbrink
+Steenrod
+Tate
+Thom
+Thomas Bridgeland
+Tjurina
+Tommaso de Fernex
+Totaro
+Vyacheslav Nikulin
+Verdier
+Viehweg
+Vladimir Drinfeld
+Vladimir Voevodsky
+Voevodsky
+Voisin
+Vologodsky
+Wahl
+Weibel
+Weil
+Weyl
+William Fulton
+Witten
+Yau
+Yoneda
+Yujiro Kawamata
+Yum-Tong Siu
+Yuri Manin
+Yuri Prokhorov
+Zariski
+Zaslow
+Zsolt Patakfalvi

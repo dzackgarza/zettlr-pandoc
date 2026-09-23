@@ -62,6 +62,19 @@ export function getSnippetsFields (): PreferencesFieldset[] {
             })
               .catch(err => reportError(err))
           }
+        },
+        {
+          type: 'button',
+          label: trans('Open phrase completion dictionary'),
+          onClick: () => {
+            ipcRenderer.invoke('assets-provider', {
+              command: 'open-phrase-completions-directory'
+            })
+              .then(error => {
+                if (error !== '') {console.error(error)}
+              })
+              .catch(err => console.error(err))
+          }
         }
       ]
     }

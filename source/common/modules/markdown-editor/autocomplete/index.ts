@@ -34,6 +34,15 @@ import { texConstructionSource } from './tex-constructions'
 import { texCommandSource } from './tex-commands'
 import { proseDictionarySource } from './prose-dictionary'
 import {
+  phraseCompletionSource,
+  phraseCompletionsField,
+  phraseCompletionsUpdate
+} from './phrases'
+import {
+  texCommandCompletionSource,
+  texMacroSourcesUpdate
+} from './tex'
+import {
   completionOptionClass,
   renderCompletionIcon,
   renderCompletionSource,
@@ -140,8 +149,10 @@ export const AUTOCOMPLETE_SOURCES: CompletionSource[] = [
   autocompleteSourceFor(tags, 30),
   autocompleteSourceFor(emojis, 10),
   autocompleteSourceFor(snippets, 25),
+  texCommandCompletionSource,
   texConstructionSource,
   texCommandSource,
+  phraseCompletionSource,
   proseDictionarySource,
   bufferWordSource,
 ]
@@ -179,7 +190,8 @@ export const autocomplete = [
   atSymbols.fields ?? [],
   files.fields ?? [],
   tags.fields ?? [],
-  snippets.fields ?? []
+  snippets.fields ?? [],
+  phraseCompletionsField
 ]
 
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
@@ -189,3 +201,4 @@ export { referencesUpdate } from './at-symbols'
 export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'
+export { phraseCompletionsUpdate, texMacroSourcesUpdate }

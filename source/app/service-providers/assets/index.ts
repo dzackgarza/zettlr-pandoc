@@ -30,6 +30,8 @@ import { isSnippetFileName, parseVSCodeSnippetFile } from '@common/modules/snipp
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from '@dts/common/snippets'
 import type { QuickTexCatalogue } from '@dts/common/quicktex'
 import { loadQuickTex } from '../../util/load-quicktex'
+import { loadPhraseDictionaries } from '../../util/load-phrase-dictionaries'
+import type { PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -203,6 +205,14 @@ export type AssetsProviderIPCContract = {
     request: { payload?: undefined }
     response: QuickTexCatalogue
   }
+  'list-phrase-completions': {
+    request: { payload?: undefined }
+    response: PhraseDictionaryEntry[]
+  }
+  'open-phrase-completions-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
 }
 
 export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>
@@ -237,6 +247,7 @@ export default class AssetsProvider extends ProviderContract {
    * @var {string}
    */
   private readonly _filterPath: string
+  private readonly _phraseCompletionsPath: string
   /**
    * Holds a list of all protected defaults files. Protected defaults files are
    * those that come by default with the app. Protected simply means here that
@@ -267,6 +278,7 @@ export default class AssetsProvider extends ProviderContract {
     this._snippetsFile = ''
     this._quickTexFile = ''
     this._filterPath = path.join(app.getPath('userData'), '/lua-filter')
+    this._phraseCompletionsPath = path.join(app.getPath('home'), '.pandoc', 'completions')
     this._protectedDefaults = []
     this._protectedFilters = []
     this._snippetsWatcher = new FSWatcher({
@@ -290,6 +302,12 @@ export default class AssetsProvider extends ProviderContract {
             error
           )
         })
+      }
+      if (
+        resolved === this._phraseCompletionsPath ||
+        resolved.startsWith(this._phraseCompletionsPath + path.sep)
+      ) {
+        broadcastIpcMessage('assets-provider', 'phrase-completions-updated')
       }
     })
 
@@ -376,12 +394,32 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === 'open-snippets-file') {
         this._logger.info(`[AssetsProvider] Opening path ${this._snippetsFile}`)
         return await shell.openPath(this._snippetsFile)
+      } else if (command === 'list-phrase-completions') {
+        return await loadPhraseDictionaries(this._phraseCompletionsPath)
+      } else if (command === 'open-phrase-completions-directory') {
+        this._logger.info(`[AssetsProvider] Opening path ${this._phraseCompletionsPath}`)
+        return await shell.openPath(this._phraseCompletionsPath)
       }
     })
   }
 
   async boot (): Promise<void> {
     this._logger.verbose('Assets provider starting up ...')
+    let phraseDirectoryExisted = true
+    try {
+      await fs.access(this._phraseCompletionsPath)
+    } catch {
+      phraseDirectoryExisted = false
+      await fs.mkdir(this._phraseCompletionsPath, { recursive: true })
+    }
+    if (!phraseDirectoryExisted) {
+      const starter = path.join(__dirname, './assets/completions')
+      const files = (await fs.readdir(starter)).filter(file => file.endsWith('.txt'))
+      for (const file of files) {
+        await fs.copyFile(path.join(starter, file), path.join(this._phraseCompletionsPath, file))
+      }
+    }
+    this._snippetsWatcher.add(this._phraseCompletionsPath)
     // First, ensure all required default files are where they should be.
     // Required are those defaults files which are in the assets/defaults
     // directory

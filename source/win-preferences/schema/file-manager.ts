@@ -17,7 +17,7 @@ import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 
-export function getFileManagerFields (config: ConfigOptions): PreferencesFieldset[] {
+export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDisplay'>): PreferencesFieldset[] {
   return [
     {
       title: trans('Display mode'),
@@ -75,6 +75,26 @@ export function getFileManagerFields (config: ConfigOptions): PreferencesFieldse
           info: trans('Only available if name display is set to "Filename only"'),
           model: 'display.markdownFileExtensions',
           disabled: config.fileNameDisplay !== 'filename'
+        }
+      ]
+    },
+    {
+      title: trans('File picker filters'),
+      infoString: trans('Permanent inclusion and exclusion settings for the Ctrl+Shift+P file picker. These rules do not change the ordinary file manager. Include is applied first; Exclude always wins. Leave Include empty to allow every file type.'),
+      group: PreferencesGroups.FileManager,
+      help: undefined,
+      fields: [
+        {
+          type: 'token',
+          label: trans('Include file extensions'),
+          placeholder: trans('Enter an extension, e.g. ".md"'),
+          model: 'fileManager.filePicker.include'
+        },
+        {
+          type: 'token',
+          label: trans('Exclude file extensions'),
+          placeholder: trans('Enter an extension, e.g. ".tex"'),
+          model: 'fileManager.filePicker.exclude'
         }
       ]
     },

@@ -43,6 +43,10 @@ import {
 import { emacs } from "@replit/codemirror-emacs";
 import { autocomplete } from "./autocomplete";
 import { snippetsUpdateField } from "./autocomplete/snippets";
+import {
+  texCommandAutocomplete,
+  texKnowledgeExtensions,
+} from "./autocomplete/tex";
 import { markdownFolding } from "./code-folding/markdown";
 import { zettlrKeymap } from "./keymaps";
 import { languageTool } from "./linters/language-tool";
@@ -358,6 +362,7 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     markdownParser({
       zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat },
     }),
+    texKnowledgeExtensions("markdown"),
     // ... which can then be styled with a highlighter
     markdownSyntaxHighlighter(),
     renderers(options.initialConfig),
@@ -411,7 +416,12 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
  * @return  {Extension[]}                    An array of options for LaTeX files
  */
 export function getTexExtensions(options: CoreExtensionOptions): Extension[] {
-  return [...getGenericCodeExtensions(options), StreamLanguage.define(stex)];
+  return [
+    ...getGenericCodeExtensions(options),
+    StreamLanguage.define(stex),
+    texKnowledgeExtensions("latex"),
+    texCommandAutocomplete,
+  ];
 }
 
 /**
@@ -424,7 +434,12 @@ export function getTexExtensions(options: CoreExtensionOptions): Extension[] {
  * @return  {Extension[]}                    An array of options for YAML files
  */
 export function getYAMLExtensions(options: CoreExtensionOptions): Extension[] {
-  return [...getGenericCodeExtensions(options), yaml()];
+  return [
+    ...getGenericCodeExtensions(options),
+    yaml(),
+    texKnowledgeExtensions("yaml"),
+    texCommandAutocomplete,
+  ];
 }
 
 /**

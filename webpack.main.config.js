@@ -37,6 +37,7 @@ module.exports = {
         { from: "static/csl-locales", to: "assets/csl-locales" },
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
+        { from: "static/completions", to: "assets/completions" },
         {
           from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
           to: "assets/defaults/mathjax-tex-chtml.js",

@@ -23,6 +23,7 @@ import { type WritingTarget } from '@providers/targets'
 import type { FileSearchResult } from 'source/app/service-providers/search'
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from '@dts/common/snippets'
 import type { QuickTexCatalogue } from '@dts/common/quicktex'
+import type { PhraseDictionaryEntry } from 'source/common/util/phrase-dictionary'
 import { useConfigStore } from './config'
 import { mergeSortedByDocumentPath } from '@common/util/merge-sorted-by-document-path'
 
@@ -43,6 +44,12 @@ async function updateQuickTex (quickTex: Ref<QuickTexCatalogue>): Promise<void> 
   quickTex.value = await ipcRenderer.invoke('assets-provider', { command: 'get-quicktex' })
 }
 
+async function updatePhraseCompletions (phrases: Ref<PhraseDictionaryEntry[]>): Promise<void> {
+  phrases.value = await ipcRenderer.invoke('assets-provider', {
+    command: 'list-phrase-completions'
+  })
+}
+
 export const useWindowStateStore = defineStore('window-state', () => {
   const configStore = useConfigStore()
   const isFullscreen = ref(false)
@@ -61,6 +68,7 @@ export const useWindowStateStore = defineStore('window-state', () => {
   const quickTex = ref<QuickTexCatalogue>({
     prose: {}, math: {}, excludeChars: ['{', '(', '['], sourceFile: '', diagnostics: []
   })
+  const phraseCompletions = ref<PhraseDictionaryEntry[]>([])
   const writingTargets = ref<WritingTarget[]>([])
 
   // Expanded Explorer rows are view state, but unlike transient search text
@@ -122,11 +130,14 @@ export const useWindowStateStore = defineStore('window-state', () => {
       updateSnippets(snippets, snippetDiagnostics).catch(e => reportError(e))
     } else if (what === 'quicktex-updated') {
       updateQuickTex(quickTex).catch(e => reportError(e))
+    } else if (what === 'phrase-completions-updated') {
+      updatePhraseCompletions(phraseCompletions).catch(e => reportError(e))
     }
   })
 
   updateSnippets(snippets, snippetDiagnostics).catch(e => reportError(e))
   updateQuickTex(quickTex).catch(e => reportError(e))
+  updatePhraseCompletions(phraseCompletions).catch(e => reportError(e))
 
   // Writing targets
   ipcRenderer.on('targets-provider', (event, what: string) => {
@@ -160,6 +171,7 @@ export const useWindowStateStore = defineStore('window-state', () => {
     snippets,
     snippetDiagnostics,
     quickTex,
+    phraseCompletions,
     writingTargets,
     isFullscreen
   }

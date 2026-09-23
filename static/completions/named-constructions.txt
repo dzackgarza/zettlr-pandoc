@@ -1,0 +1,248 @@
+# Named constructions and mathematical phrases.
+# Add one complete phrase per line. No abbreviation or escaping is required.
+
+Abel-Jacobi
+Abel-Jacobi map
+Abel-Jacobi theorem
+Abel-Ruffini theorem
+Adams spectral sequence
+Artin approximation
+Artin reciprocity
+Artin-Schreier
+Artin-Schreier sequence
+Artin-Tate
+Artin-Tate conjecture
+Atiyah-Bott
+Atiyah-Bott fixed point theorem
+Atiyah-Hirzebruch
+Atiyah-Hirzebruch spectral sequence
+Atiyah-Patodi-Singer
+Atiyah-Singer
+Atiyah-Singer index theorem
+Auslander-Buchsbaum
+Auslander-Buchsbaum formula
+Auslander-Reiten
+Baily-Borel
+Baily-Borel compactification
+Beauville-Bogomolov
+Beauville-Bogomolov decomposition
+Beauville-Bogomolov form
+Beauville-Bogomolov-Fujiki
+Beilinson-Bernstein
+Beilinson-Bernstein-Deligne
+Białynicki-Birula decomposition
+Birch-Swinnerton-Dyer
+Birch-Swinnerton-Dyer conjecture
+Birkhoff-Grothendieck
+Birkhoff-Grothendieck theorem
+Bloch-Kato
+Bloch-Kato conjecture
+Bloch-Ogus spectral sequence
+Bogomolov-Miyaoka-Yau
+Bogomolov-Miyaoka-Yau inequality
+Borel-Moore
+Borel-Moore homology
+Borel-Serre
+Borel-Serre compactification
+Borel-Weil-Bott
+Borel-Weil-Bott theorem
+Bott periodicity
+Bott-Samelson
+Bott-Samelson resolution
+Brauer-Manin
+Brauer-Manin obstruction
+Cartan-Eilenberg
+Cartan-Eilenberg resolution
+Cartan-Leray
+Cartan-Leray spectral sequence
+Cauchy-Schwarz inequality
+Cayley-Hamilton theorem
+Chern-Gauss-Bonnet
+Chern-Simons
+Chern-Weil
+Chern-Weil theory
+Chevalley-Eilenberg
+Chevalley-Eilenberg complex
+Chevalley-Shephard-Todd
+Chevalley-Shephard-Todd theorem
+Chow-Künneth
+Clemens-Schmid
+Clemens-Schmid sequence
+Cohen-Macaulay
+Cohen-Macaulay ring
+de Rham cohomology
+de Rham complex
+Deligne-Illusie
+Deligne-Mumford
+Deligne-Mumford compactification
+Deligne-Mumford stack
+Dold-Kan
+Dold-Kan correspondence
+Du Bois singularities
+Eilenberg-Mac Lane
+Eilenberg-Mac Lane space
+Eilenberg-Moore
+Eilenberg-Moore spectral sequence
+Eilenberg-Steenrod axioms
+Eilenberg-Zilber
+Eilenberg-Zilber theorem
+Enriques-Kodaira
+Enriques-Kodaira classification
+Erdős-Rényi
+Frobenius reciprocity
+Gauss-Bonnet
+Gauss-Bonnet theorem
+Gauss-Manin
+Gauss-Manin connection
+Gelfand-Kirillov
+Gelfand-Kirillov dimension
+Gelfand-Naimark
+Gelfand-Naimark-Segal
+Gelfand-Tsetlin
+Gieseker-Maruyama
+Goresky-MacPherson
+Grauert-Riemenschneider
+Grauert-Riemenschneider vanishing
+Grothendieck-Lefschetz
+Grothendieck-Lefschetz trace formula
+Grothendieck-Riemann-Roch
+Grothendieck-Riemann-Roch theorem
+Grothendieck-Serre duality
+Harder-Narasimhan
+Harder-Narasimhan filtration
+Hardy-Littlewood
+Hasse-Minkowski
+Hasse-Minkowski theorem
+Hilbert-Mumford
+Hilbert-Mumford criterion
+Hilbert-Samuel
+Hilbert-Samuel multiplicity
+Hilbert-Samuel polynomial
+Hilbert-Serre
+Hilbert syzygy theorem
+Hirzebruch-Jung
+Hirzebruch-Jung continued fraction
+Hirzebruch-Riemann-Roch
+Hirzebruch-Riemann-Roch theorem
+Hochschild-Kostant-Rosenberg
+Hochschild-Kostant-Rosenberg theorem
+Hochschild-Serre
+Hochschild-Serre spectral sequence
+Hodge-de Rham
+Hodge-de Rham spectral sequence
+Hodge-Riemann bilinear relations
+Hodge-Tate
+Hodge-Tate decomposition
+Hodge-Tate spectral sequence
+Hurewicz theorem
+Iitaka fibration
+Jordan-Chevalley
+Jordan-Chevalley decomposition
+Jordan-Hölder
+Jordan-Hölder filtration
+Jordan-Hölder theorem
+Kawamata-Viehweg
+Kawamata-Viehweg vanishing
+Kempf-Ness
+Kempf-Ness theorem
+Knudsen-Mumford
+Kodaira-Spencer
+Kodaira-Spencer deformation theory
+Kodaira-Spencer map
+Kollár-Shepherd-Barron-Alexeev
+Kollár-Shepherd-Barron-Alexeev compactification
+Koszul duality
+Krull-Schmidt
+Krull-Schmidt theorem
+Künneth formula
+Lefschetz fixed point theorem
+Lefschetz hyperplane theorem
+Leray-Hirsch
+Leray-Hirsch theorem
+Leray-Serre
+Leray-Serre spectral sequence
+Lindemann-Weierstrass
+Lyndon-Hochschild-Serre
+Lyndon-Hochschild-Serre spectral sequence
+Macdonald identities
+Mackey decomposition
+Matsusaka-Mumford
+Matsusaka-Mumford theorem
+Mayer-Vietoris
+Mayer-Vietoris sequence
+Mayer-Vietoris spectral sequence
+McKay correspondence
+Milnor-Moore
+Milnor-Moore theorem
+Minkowski-Weyl
+Mittag-Leffler
+Mittag-Leffler condition
+Mori cone theorem
+Morrison-Kawamata
+Morrison-Kawamata cone conjecture
+Nakai-Moishezon
+Nakai-Moishezon criterion
+Newton-Okounkov
+Newton-Okounkov body
+Nielsen-Schreier
+Noether normalization
+Noether-Lefschetz
+Noether-Lefschetz locus
+Néron-Severi
+Néron-Severi group
+Néron-Tate
+Néron-Tate height
+Perron-Frobenius
+Picard-Fuchs
+Picard-Fuchs equation
+Picard-Lefschetz
+Picard-Lefschetz formula
+Poincaré duality
+Poincaré-Birkhoff-Witt
+Poincaré-Birkhoff-Witt theorem
+Poincaré-Hopf
+Poincaré-Hopf theorem
+Pontryagin-Thom
+Pontryagin-Thom construction
+Radon-Nikodym
+Riemann-Hilbert
+Riemann-Hilbert correspondence
+Riemann-Hurwitz
+Riemann-Hurwitz formula
+Riemann-Roch
+Riemann-Roch theorem
+Riemann-Roch-Grothendieck
+Riemann-Roch-Hirzebruch
+Riemann-Stieltjes
+Riemann-Stieltjes integral
+Schur-Weyl
+Schur-Weyl duality
+Seifert-van Kampen
+Seifert-van Kampen theorem
+Serre duality
+Smith normal form
+Smith-Minkowski-Siegel
+Smith-Minkowski-Siegel mass formula
+Stein factorization
+Stiefel-Whitney
+Stiefel-Whitney class
+Stone-Weierstrass
+Stone-Weierstrass theorem
+Stone-Čech
+Stone-Čech compactification
+Tate-Shafarevich group
+Torelli theorem
+Verdier duality
+Weierstrass preparation theorem
+Weil-Petersson
+Weil-Petersson metric
+Wiener-Hopf
+Yau-Zaslow
+Yau-Zaslow formula
+Yoneda embedding
+Yoneda lemma
+Zariski decomposition
+Zariski main theorem
+Zariski-Fujita
+Zariski-Nagata
+Zariski-Nagata purity

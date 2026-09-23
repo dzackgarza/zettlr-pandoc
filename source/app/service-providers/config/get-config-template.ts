@@ -13,6 +13,7 @@
  */
 
 import getLanguageFile from "@common/util/get-language-file";
+import { MD_EXT } from "@common/util/file-extention-checks";
 import type { SidebarSectionId, SidebarViewId } from "@dts/common/sidebar-views";
 import * as bcp47 from "bcp-47";
 import { app, nativeTheme } from "electron";
@@ -22,6 +23,7 @@ import { v4 as uuid4 } from "uuid";
 import { type MenuShortcutName } from "../menu/shortcuts";
 
 export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
+export const DEFAULT_FILE_PICKER_INCLUDE = [...MD_EXT];
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
@@ -142,6 +144,11 @@ export interface ConfigOptions {
     sortWorkspacesManually: boolean;
     /** Expanded directory rows in the Explorer, persisted across restarts. */
     expandedDirectories: string[];
+    /** Permanent inclusion/exclusion policy for the Ctrl+Shift+P file picker. */
+    filePicker: {
+      include: string[];
+      exclude: string[];
+    };
   };
 
   newFileNamePattern: string;
@@ -417,6 +424,10 @@ export function getConfigTemplate(): ConfigOptions {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
       expandedDirectories: [],
+      filePicker: {
+        include: [...DEFAULT_FILE_PICKER_INCLUDE],
+        exclude: [],
+      },
     },
     newFileNamePattern: "%id.md",
     newFileDontPrompt: false, // If true immediately creates files

@@ -46,6 +46,7 @@ export const citekeyUpdateField = StateField.define<CitekeySnapshot>({
             label: entry.citekey,
             info: entry.displayText,
             apply,
+            zettlrSource: 'Cite' as const,
           })),
         };
       }
