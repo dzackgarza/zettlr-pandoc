@@ -28,6 +28,7 @@ import {
   type TexCommandAuthority,
   type TexstudioCommandIndex
 } from '@common/util/texstudio-command-index'
+import { withCompletionSource } from './completion-presentation'
 
 const texstudioIndex = indexJson as TexstudioCommandIndex
 
@@ -100,6 +101,20 @@ function completionDetail (
   return active.length === 0 ? '[TeX core]' : '[' + active.slice(0, 3).join(', ') + ']'
 }
 
+function completionInfo (
+  command: string,
+  knowledge: ResolvedTexKnowledge
+): string {
+  if (knowledge.userCommands.has(command)) {
+    return command + '\n\nUser-defined TeX macro active in this document or a declared macro source.'
+  }
+  const active = (knowledge.authority.providersByCommand.get(command) ?? [])
+    .filter(provider => knowledge.authority.activePackages.has(provider))
+  return active.length === 0
+    ? command + '\n\nTeX/LaTeX core command.'
+    : command + '\n\nProvided by active package' + (active.length === 1 ? ': ' : 's: ') + active.join(', ')
+}
+
 export const texCommandCompletionSource: CompletionSource = (
   context: CompletionContext
 ): CompletionResult|null => {
@@ -112,13 +127,14 @@ export const texCommandCompletionSource: CompletionSource = (
   }
 
   const knowledge = resolveKnowledge(context.state)
-  const options: Completion[] = [...knowledge.authority.activeCommands].map(command => ({
+  const options: Completion[] = [...knowledge.authority.activeCommands].map(command => withCompletionSource({
     label: command,
     apply: command,
     type: 'function',
     detail: completionDetail(command, knowledge),
+    info: completionInfo(command, knowledge),
     boost: knowledge.userCommands.has(command) ? 50 : undefined
-  }))
+  }, knowledge.userCommands.has(command) ? 'Macro' : 'LaTeX'))
 
   return {
     from: word.from,

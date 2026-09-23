@@ -61,6 +61,7 @@ import { runRecoverably } from '@common/util/run-recoverably'
 import { requestPandocQuickHelp } from '../plugins/pandoc-quick-help-effect'
 import { type AutocompletePlugin } from '.'
 import { citations, citekeyUpdateField } from './citations'
+import { withCompletionSource } from './completion-presentation'
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
@@ -241,7 +242,7 @@ export const atSymbols: AutocompletePlugin = {
         // applies; it never gates visibility or label/detail presentation.
         const referenceAffordance = completionAffordanceFor(entry.projectStatus, entry.appendPlan)
         const detail = labelDetail(entry)
-        return {
+        return withCompletionSource({
           label: entry.key,
           detail,
           apply: applyFor(referenceAffordance),
@@ -250,7 +251,7 @@ export const atSymbols: AutocompletePlugin = {
           // this — their objects pass through byte-identically.
           info: () => labelInfoPanel(detail, ctx.view),
           referenceAffordance
-        }
+        }, 'Pandoc')
       })
       .filter(entry => {
         // The same case-insensitive substring filter the citation provider

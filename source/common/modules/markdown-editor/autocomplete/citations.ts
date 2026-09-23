@@ -18,6 +18,7 @@ import { type EditorView } from '@codemirror/view'
 import { type AutocompletePlugin } from '.'
 import { configField } from '../util/configuration'
 import { extractCitationNodes, nodeToCiteItem } from '../parser/citation-parser'
+import { withCompletionSource } from './completion-presentation'
 
 /**
  * Use this effect to provide the editor state with a set of new citekeys
@@ -32,11 +33,11 @@ export const citekeyUpdateField = StateField.define<Completion[]>({
       if (effect.is(citekeyUpdate)) {
         // Convert the citationentries into completion objects
         return effect.value.map(entry => {
-          return {
+          return withCompletionSource({
             label: entry.citekey,
             info: entry.displayText,
             apply
-          }
+          }, 'Citation')
         })
       }
     }

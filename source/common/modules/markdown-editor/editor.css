@@ -52,9 +52,86 @@
     vertical-align: middle;
   }
 
-  /* Hide overflowing text in autocompletion info panels */
-  .cm-completionInfo {
+  /* Compact, columnar completion menu. CodeMirror still owns filtering,
+   * selection, keyboard handling and the side documentation tooltip. */
+  .cm-tooltip-autocomplete > ul {
+    min-width: min(42rem, 90vw);
+    max-width: min(58rem, 95vw);
+
+    > li {
+      display: grid;
+      grid-template-columns: 1.4rem minmax(12rem, 1fr) minmax(8rem, max-content) minmax(0, 1fr);
+      align-items: baseline;
+      column-gap: 0.45rem;
+      padding-top: 1px;
+      padding-bottom: 1px;
+    }
+  }
+
+  .cm-completionSourceIcon {
+    width: 1.4rem;
+    padding: 0;
+    font-size: 0.72em;
+    font-weight: 700;
+    opacity: 0.8;
+  }
+
+  .cm-completionLabel {
+    min-width: 0;
     overflow: hidden;
+    color: rgba(20, 20, 20, 0.55);
+    font-style: normal;
+    text-overflow: ellipsis;
+  }
+
+  .cm-completionMatchedText {
+    color: #111;
+    font-weight: 600;
+    font-style: normal;
+    text-decoration: none;
+  }
+
+  .cm-completionSource {
+    min-width: 8rem;
+    overflow: hidden;
+    opacity: 0.68;
+    font-style: normal;
+    text-overflow: ellipsis;
+  }
+
+  .cm-completionDetail {
+    min-width: 0;
+    overflow: hidden;
+    margin-left: 0;
+    opacity: 0.68;
+    font-style: normal;
+    text-overflow: ellipsis;
+  }
+
+  .cm-tooltip-autocomplete li[aria-selected] {
+    .cm-completionLabel, .cm-completionMatchedText, .cm-completionSource, .cm-completionDetail {
+      color: inherit;
+    }
+  }
+
+  /* CodeMirror's native info tooltip is the completion documentation popout.
+   * Give expansions and macro/package descriptions enough room to be useful. */
+  .cm-tooltip.cm-completionInfo {
+    min-width: min(24rem, 42vw);
+    max-width: min(36rem, 48vw);
+    max-height: min(28rem, 70vh);
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+
+  &.cm-dark {
+    .cm-completionLabel {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .cm-completionMatchedText {
+      color: #fff;
+    }
   }
 
   .cm-panel.cm-search label input[type=checkbox] {

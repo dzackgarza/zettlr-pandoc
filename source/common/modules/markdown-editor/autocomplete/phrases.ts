@@ -5,6 +5,7 @@ import {
 } from '@codemirror/autocomplete'
 import { StateEffect, StateField } from '@codemirror/state'
 import { type PhraseDictionaryEntry } from '../../../util/phrase-dictionary'
+import { withCompletionSource } from './completion-presentation'
 
 const nonProseNodes = [
   'FencedCode', 'CodeBlock', 'InlineCode', 'YAMLFrontmatter',
@@ -62,13 +63,13 @@ export const phraseCompletionSource: CompletionSource = ifNotIn(nonProseNodes, c
     if (!context.explicit && context.state.sliceDoc(from, context.pos).trim().length < 2) {return null}
     return {
       from,
-      options: entries.map(entry => ({
+      options: entries.map(entry => withCompletionSource({
         label: entry.text,
         apply: entry.text,
         type: 'text',
         detail: '[dictionary]',
         info: `${entry.text}\n\nDictionary: ${entry.source}`
-      })),
+      }, 'Dictionary')),
       // Spaces and hyphens must not terminate a phrase already being completed.
       // Native CodeMirror filtering, scoring, UI and insertion remain in charge.
       validFor: phrasePattern

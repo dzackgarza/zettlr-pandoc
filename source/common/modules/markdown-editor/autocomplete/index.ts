@@ -37,6 +37,7 @@ import {
   texCommandCompletionSource,
   texMacroSourcesUpdate
 } from './tex'
+import { completionPresentationOptions } from './completion-presentation'
 
 export interface AutocompletePlugin {
   /**
@@ -139,6 +140,8 @@ export const autocomplete = [
     closeOnBlur: true,
     maxRenderedOptions: 20,
     override: [autocompleteSource, texCommandCompletionSource, phraseCompletionSource],
+    icons: false,
+    addToOptions: [...completionPresentationOptions],
     // Do not include the default keymap. Instead, we re-define it below to
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to

@@ -31,6 +31,7 @@ import {
 } from '@codemirror/state'
 import { type Command, Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { type AutocompletePlugin } from '.'
+import { withCompletionSource } from './completion-presentation'
 import { DateTime } from 'luxon'
 import { v4 as uuid } from 'uuid'
 import generateId from '@common/util/generate-id'
@@ -79,7 +80,7 @@ class SnippetWidget extends WidgetType {
     return elem
   }
 
-  ignoreEvent (event: Event): boolean {
+  ignoreEvent (_event: Event): boolean {
     return true // By default ignore all events
   }
 }
@@ -148,11 +149,12 @@ export const snippetsUpdateField = StateField.define<SnippetStateField>({
     for (const effect of transaction.effects) {
       if (effect.is(snippetsUpdate)) {
         let availableSnippets = effect.value.map(entry => {
-          return {
+          return withCompletionSource({
             label: entry.name,
             info: entry.content,
-            apply: applySnippet
-          }
+            apply: applySnippet,
+            type: 'text'
+          }, 'Snippet')
         })
 
         return { ...val, availableSnippets }
@@ -406,20 +408,25 @@ async function replaceSnippetVariables (state: EditorState, text: string): Promi
 
   // Second: Replace those variables, and return the text. NOTE we're adding a
   // negative lookbehind -- (?<!\\) -- to make sure we're not including escaped ones.
-  return text.replace(/(?<!\\)\$([A-Z_]+)|(?<!\\)\$\{([A-Z_]+):(.+?)\}/g, (match, p1, p2, p3) => {
+  return text.replace(/(?<!\\)\$([A-Z_]+)|(?<!\\)\$\{([A-Z_]+):(.+?)\}/g, (
+    match: string,
+    p1: string|undefined,
+    p2: string|undefined,
+    p3: string|undefined
+  ): string => {
     if (p1 !== undefined) {
       // We have a single variable, so only replace if it's a supported one
       if (REPLACEMENTS[p1 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p1 as keyof typeof REPLACEMENTS]
+        return String(REPLACEMENTS[p1 as keyof typeof REPLACEMENTS])
       } else {
         return match
       }
     } else {
       // We have a variable with placeholder, so replace it potentially with the default
       if (REPLACEMENTS[p2 as keyof typeof REPLACEMENTS] !== undefined) {
-        return REPLACEMENTS[p2 as keyof typeof REPLACEMENTS]
+        return String(REPLACEMENTS[p2 as keyof typeof REPLACEMENTS])
       } else {
-        return p3
+        return p3 ?? match
       }
     }
   })
