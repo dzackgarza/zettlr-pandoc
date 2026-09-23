@@ -4,24 +4,24 @@
     ref="rootElement"
     role="region"
     aria-label="File Manager"
-    v-bind:class="{
+    :class="{
       expanded: isExpanded
     }"
-    v-on:keydown="maybeNavigate"
-    v-on:mouseenter="maybeShowArrowButton"
-    v-on:mousemove="maybeShowArrowButton"
-    v-on:mouseleave="maybeShowArrowButton"
-    v-on:dragover="handleDragOver"
-    v-on:wheel="handleWheel"
-    v-on:dragstart="lockDirectoryTree"
-    v-on:dragend="unlockDirectoryTree"
+    @keydown="maybeNavigate"
+    @mouseenter="maybeShowArrowButton"
+    @mousemove="maybeShowArrowButton"
+    @mouseleave="maybeShowArrowButton"
+    @dragover="handleDragOver"
+    @wheel="handleWheel"
+    @dragstart="lockDirectoryTree"
+    @dragend="unlockDirectoryTree"
   >
     <!-- Display the arrow button in case we have a non-combined view -->
     <div
       id="arrow-button"
       ref="arrowButton"
       class="hidden"
-      v-on:click="toggleFileList"
+      @click="toggleFileList"
     >
       <cds-icon
         role="presentation"
@@ -29,7 +29,7 @@
         solid="true"
         direction="left"
         size="l"
-      ></cds-icon>
+      />
     </div>
 
     <!-- Filter field -->
@@ -39,28 +39,29 @@
         v-model="filterQuery"
         class="chrome-filter-input file-manager-filter-input"
         type="search"
-        v-bind:placeholder="filterPlaceholder"
-        v-on:focus="($event.target as HTMLInputElement).select()"
-        v-on:blur="handleQuickFilterBlur"
-      />
+        :placeholder="filterPlaceholder"
+        @focus="($event.target as HTMLInputElement).select()"
+        @blur="handleQuickFilterBlur"
+      >
       <ShortcutDisplay
         v-if="filterShortcut !== undefined"
         class="chrome-filter-hint"
-        v-bind:shortcut="filterShortcut"
+        :shortcut="filterShortcut"
         display="muted"
-      ></ShortcutDisplay>
+      />
     </div>
 
     <div id="component-container">
       <!-- Render a the file-tree -->
       <FileTree
         ref="fileTreeComponent"
-        v-bind:is-visible="fileTreeVisible"
-        v-bind:filter-query="filterQuery"
-        v-bind:window-id="props.windowId"
-        v-on:selection="selectionListener"
-        v-on:toggle-file-list="toggleFileList"
-      ></FileTree>
+        :is-visible="fileTreeVisible"
+        :filter-query="filterQuery"
+        :markdown-only-filter="markdownOnlyFilter"
+        :window-id="props.windowId"
+        @selection="selectionListener"
+        @toggle-file-list="toggleFileList"
+      />
       <!-- Now render the file list -->
       <!--
         Why are we using both class: hidden (via isFileListVisible) as well
@@ -72,11 +73,12 @@
       <FileList
         v-show="!isCombined"
         ref="fileListComponent"
-        v-bind:is-visible="isFileListVisible"
-        v-bind:filter-query="filterQuery"
-        v-bind:window-id="props.windowId"
-        v-on:lock-file-tree="lockDirectoryTree()"
-      ></FileList>
+        :is-visible="isFileListVisible"
+        :filter-query="filterQuery"
+        :markdown-only-filter="markdownOnlyFilter"
+        :window-id="props.windowId"
+        @lock-file-tree="lockDirectoryTree()"
+      />
     </div>
   </div>
 </template>
@@ -108,20 +110,26 @@ import { useWorkspaceStore } from 'source/pinia/workspace-store'
 const ipcRenderer = window.ipc
 
 const props = defineProps<{ windowId: string }>()
-const emit = defineEmits<(event: 'jump-to-line', target: { filePath: string, line: number }) => void>()
+
+interface FileManagerChild {
+  navigate: (event: KeyboardEvent) => void
+  stopNavigate: () => void
+  getRootElement: () => HTMLDivElement|null
+}
 
 const previous = ref<'file-list'|'directories'|undefined>(undefined) // Can be "file-list" or "directories"
 const lockedTree = ref<boolean>(false)
 const fileTreeVisible = ref<boolean>(true)
 const fileListVisible = ref<boolean>(false)
 const filterQuery = ref<string>('')
+const markdownOnlyFilter = ref(false)
 
 // Element refs
 const arrowButton = ref<HTMLDivElement|null>(null)
 const quickFilter = ref<HTMLInputElement|null>(null)
 const rootElement = ref<HTMLDivElement|null>(null)
-const fileTreeComponent = ref<typeof FileTree|null>(null)
-const fileListComponent = ref<typeof FileList|null>(null)
+const fileTreeComponent = ref<FileManagerChild|null>(null)
+const fileListComponent = ref<FileManagerChild|null>(null)
 
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
@@ -158,12 +166,12 @@ watch(selectedDirectory, (value, _oldValue) => {
 
 watch(fileManagerMode, () => {
   // Reset all properties from the resize operations.
-  const fileTree = fileTreeComponent.value?.$el
-  const fileList = fileListComponent.value?.$el
-  fileTree.style?.removeProperty('width')
-  fileTree.style?.removeProperty('left')
-  fileList.style.removeProperty('width')
-  fileList.style.removeProperty('left')
+  const fileTree = fileTreeComponent.value?.getRootElement()
+  const fileList = fileListComponent.value?.getRootElement()
+  fileTree?.style.removeProperty('width')
+  fileTree?.style.removeProperty('left')
+  fileList?.style.removeProperty('width')
+  fileList?.style.removeProperty('left')
   fileTreeVisible.value = true
   fileListVisible.value = false
   // Then we want to do some additional
@@ -185,6 +193,7 @@ watch(fileManagerMode, () => {
 onMounted(() => {
   ipcRenderer.on('shortcut', (event, message) => {
     if (message === 'filter-files') {
+      markdownOnlyFilter.value = true
       // Focus the filter on the next tick. Why? Because it might be that
       // the file manager is hidden, or the global search is visible. In both
       // cases we need to wait for the app to display the file manager.
@@ -270,6 +279,14 @@ function handleQuickFilterBlur (_event: Event): void {
   } else {
     fileTreeComponent.value?.stopNavigate()
   }
+
+  // The file-filter shortcut opts into the Markdown-only quick-filter scope.
+  // Leaving the filter returns the file manager to its ordinary visibility rules.
+  window.setTimeout(() => {
+    if (document.activeElement !== quickFilter.value) {
+      markdownOnlyFilter.value = false
+    }
+  }, 0)
 }
 
 /**
@@ -282,7 +299,10 @@ function handleDragOver (evt: DragEvent): void {
   // mouse and keyboard events are suppressed during a drag operation.
   // We need to scroll the tree container probably, and have to check it.
   let y = evt.clientY
-  let elem = fileTreeComponent.value?.$el
+  const elem = fileTreeComponent.value?.getRootElement()
+  if (elem === undefined || elem === null) {
+    return
+  }
   let scroll = elem.scrollTop
   let distanceBottom = elem.offsetHeight - y // The less the value, the closer
   let distanceTop = (scroll > 0) ? y - elem.offsetTop : 0

@@ -1,6 +1,7 @@
 <template>
   <div
     id="file-tree"
+    ref="rootElement"
     role="region"
     aria-label="File Tree"
     :class="{ 'hidden': !isVisible }"
@@ -187,6 +188,7 @@ const ipcRenderer = window.ipc
 const props = defineProps<{
   isVisible: boolean
   filterQuery: string
+  markdownOnlyFilter: boolean
   windowId: string
 }>()
 
@@ -197,6 +199,7 @@ const emit = defineEmits<{
 
 // Can contain the path to a tree item that is focused
 const activeTreeItem = ref<undefined|[string, string]>(undefined)
+const rootElement = ref<HTMLDivElement|null>(null)
 
 const workspacesContextMenuButton = ref<HTMLElement|null>(null)
 const showSortingPopover = ref(false)
@@ -227,14 +230,15 @@ const useH1 = computed(() => configStore.config.fileNameDisplay.includes('headin
 const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
 
 const query = computed(() => props.filterQuery.trim().toLowerCase())
+const filterActive = computed(() => query.value !== '' || props.markdownOnlyFilter)
 
 const filterResults = computed<string[]>(() => {
   const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return []
   }
 
-  const filter = matchQuery(q, useTitle.value, useH1.value)
+  const filter = matchQuery(q, useTitle.value, useH1.value, props.markdownOnlyFilter)
   const results: string[] = []
 
   for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
@@ -249,8 +253,7 @@ const filterResults = computed<string[]>(() => {
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
   const roots = rootDescriptors.value.filter(desc => desc.type === 'file' || desc.type === 'code')
-  const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return roots
   }
 
@@ -259,8 +262,7 @@ const getFiles = computed(() => {
 
 const getDirectories = computed(() => {
   const roots = rootDescriptors.value.filter(desc => desc.type === 'directory')
-  const q = query.value
-  if (q === '') {
+  if (!filterActive.value) {
     return roots
   }
 
@@ -274,7 +276,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
   // Second, filter them if applicable.
     .filter(descriptor => {
-      return query.value === '' ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
+      return !filterActive.value ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
     })
 
   const uncollapsed = windowStateStore.uncollapsedDirectories
@@ -530,6 +532,10 @@ function stopNavigate (): void {
   activeTreeItem.value = undefined
 }
 
+function getRootElement (): HTMLDivElement|null {
+  return rootElement.value
+}
+
 // Dragging for the manual workspaces sort popover
 function startDragging (event: DragEvent): void {
   if (event.currentTarget === null || !(event.currentTarget instanceof HTMLLIElement)) {
@@ -597,7 +603,7 @@ function drop (event: DragEvent): void {
     .catch(e => console.error(e))
 }
 
-defineExpose({ navigate, stopNavigate })
+defineExpose({ navigate, stopNavigate, getRootElement })
 </script>
 
 <style lang="less">

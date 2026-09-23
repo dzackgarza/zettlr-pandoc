@@ -29,11 +29,23 @@ import type { AnyDescriptor } from '@dts/common/fsal'
  *
  * @return  {(item: AnyDescriptor) => boolean}  The filter function. Takes a descriptor as its only argument.
  */
-export default function matchQuery (query: string, includeTitle: boolean, includeH1: boolean): (item: AnyDescriptor) => boolean {
+export default function matchQuery (
+  query: string,
+  includeTitle: boolean,
+  includeH1: boolean,
+  markdownOnly = false
+): (item: AnyDescriptor) => boolean {
   const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
+    // The quick file filter's default scope is authored Markdown. Code files
+    // (.tex/.yml/.json/...) and directories stay available in the ordinary
+    // file manager, but are not candidates while that opt-in scope is active.
+    if (markdownOnly && item.type !== 'file') {
+      return false
+    }
+
     let allQueriesMatched = true
 
     for (const q of queries) {
@@ -63,11 +75,11 @@ export default function matchQuery (query: string, includeTitle: boolean, includ
           }
         }
 
-        const hasFrontmatter = item.frontmatter != null
-        const hasTitle = hasFrontmatter && 'title' in item.frontmatter
+        const frontmatter: unknown = item.frontmatter
+        const hasTitle = typeof frontmatter === 'object' && frontmatter !== null && 'title' in frontmatter
 
         // Does the frontmatter work?
-        if (includeTitle && hasTitle && String(item.frontmatter.title).toLowerCase().includes(q)) {
+        if (includeTitle && hasTitle && String(frontmatter.title).toLowerCase().includes(q)) {
           queryMatched = true
         }
 
