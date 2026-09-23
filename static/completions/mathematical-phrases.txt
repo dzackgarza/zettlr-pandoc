@@ -1,0 +1,350 @@
+# Mathematical vocabulary, with an emphasis on geometry, moduli and algebra.
+# Add one complete phrase per line; the entire line is inserted literally.
+
+abelian category
+abelian scheme
+abelian variety
+absolute Galois group
+adjoint functor
+adjunction formula
+admissible decomposition
+affine algebraic group
+affine scheme
+algebraic closure
+algebraic fundamental group
+algebraic group
+algebraic space
+algebraic stack
+algebraically closed field
+ample cone
+ample line bundle
+arithmetic genus
+arithmetic group
+arithmetic quotient
+associated graded algebra
+associated graded module
+base change
+base change theorem
+base point free theorem
+birational equivalence
+birational geometry
+birational morphism
+birational transformation
+boundary complex
+boundary divisor
+bounded derived category
+branch divisor
+Brauer group
+Bridgeland stability condition
+canonical bundle
+canonical divisor
+canonical model
+canonical ring
+canonical singularities
+Cartier divisor
+Chow group
+Chow ring
+closed immersion
+coarse moduli space
+coherent sheaf
+cohomological dimension
+cohomology and base change
+cohomology with compact support
+compact complex surface
+compact moduli space
+compactly generated category
+complete intersection
+complex multiplication
+complex of sheaves
+complex reflection group
+cone conjecture
+constructible sheaf
+cotangent complex
+Cox ring
+Coxeter diagram
+Coxeter group
+crepant resolution
+crystalline cohomology
+cyclic quotient singularity
+deformation functor
+deformation theory
+degeneration of Hodge structures
+derived algebraic geometry
+derived category
+derived equivalence
+derived functor
+derived intersection
+derived tensor product
+determinant line bundle
+determinantal variety
+differential graded algebra
+differential graded category
+differential graded Lie algebra
+discriminant form
+discriminant group
+discriminant locus
+divisorial log terminal pair
+dominant rational map
+double cover
+dual complex
+dualizing complex
+dualizing sheaf
+effective cone
+effective divisor
+elementary divisors
+elliptic curve
+elliptic fibration
+elliptic surface
+Enriques surface
+equidimensional morphism
+equivariant cohomology
+exact category
+exact functor
+exact sequence
+exceptional collection
+exceptional divisor
+exterior algebra
+exterior power
+faithfully flat descent
+fiber product
+finite flat group scheme
+finite morphism
+flat family
+flat morphism
+formal completion
+formal deformation
+formal group
+formal scheme
+Fourier-Mukai equivalence
+Fourier-Mukai transform
+fundamental group
+fundamental groupoid
+Galois cohomology
+Galois representation
+geometric genus
+geometric invariant theory
+geometric quotient
+geometrically connected
+geometrically irreducible
+geometrically reduced
+global dimension
+good moduli space
+graded commutative algebra
+Grothendieck group
+Grothendieck topology
+Hecke correspondence
+Hermitian symmetric domain
+higher direct image
+Hilbert polynomial
+Hilbert scheme
+Hochschild cohomology
+Hochschild homology
+Hodge filtration
+Hodge structure
+homological algebra
+homological dimension
+homotopy category
+homotopy colimit
+homotopy equivalence
+homotopy fiber
+homotopy limit
+homotopy pushout
+homotopy type
+hyperbolic lattice
+hyperelliptic curve
+hyperkähler manifold
+ideal class group
+indefinite lattice
+infinitesimal lifting criterion
+integral closure
+integral quadratic form
+intersection cohomology
+intersection complex
+intersection form
+intersection multiplicity
+intersection pairing
+invariant theory
+inverse limit
+irreducible component
+isotropic sublattice
+isotypic decomposition
+K3 surface
+Kawamata log terminal pair
+Kodaira dimension
+KSBA compactification
+Kähler cone
+Kähler differentials
+Kähler manifold
+lattice polarization
+lattice polarized K3 surface
+lattice polarized surface
+limit mixed Hodge structure
+line bundle
+local cohomology
+local complete intersection
+local system
+locally closed immersion
+locally free sheaf
+locally symmetric space
+log canonical model
+log canonical pair
+log canonical singularities
+log canonical threshold
+log discrepancy
+log minimal model program
+log resolution
+logarithmic differential
+logarithmic geometry
+long exact sequence
+minimal model
+minimal model program
+mixed characteristic
+mixed Hodge module
+mixed Hodge structure
+moduli functor
+moduli of curves
+moduli of sheaves
+moduli of stable pairs
+moduli of surfaces
+moduli space
+moduli stack
+monodromy group
+monodromy representation
+monodromy weight filtration
+Mori dream space
+Mori fiber space
+Mukai lattice
+Mukai pairing
+Mukai vector
+multiplier ideal
+nef cone
+nef divisor
+nef line bundle
+normal crossings divisor
+normalization morphism
+numerical equivalence
+numerically effective
+numerically polarized Enriques surface
+numerically trivial line bundle
+obstruction theory
+orbifold fundamental group
+orthogonal complement
+orthogonal group
+perfect complex
+period domain
+period map
+perverse sheaf
+Picard functor
+Picard group
+Picard scheme
+Picard variety
+pluricanonical map
+polarized abelian variety
+polarized Hodge structure
+polarized K3 surface
+polarized variety
+polyhedral cone
+primitive embedding
+primitive sublattice
+principal bundle
+principal homogeneous space
+profinite completion
+profinite group
+projective bundle
+projective limit
+projective morphism
+proper base change
+proper birational morphism
+proper morphism
+pseudo-effective cone
+quadratic form
+quasi-coherent sheaf
+quasi-compact morphism
+quasi-projective variety
+quasi-separated scheme
+quotient singularity
+quotient stack
+rational double point
+rational equivalence
+rational map
+rational polyhedral cone
+rational singularities
+rational surface
+rationally connected variety
+reductive algebraic group
+reflexive sheaf
+regular local ring
+relative canonical model
+relative dualizing sheaf
+relative Picard scheme
+representation ring
+resolution of singularities
+root lattice
+root stack
+root system
+saturated sublattice
+semi-abelian variety
+semi-log canonical pair
+semi-log canonical singularities
+semiample divisor
+semiorthogonal decomposition
+semistable degeneration
+semistable reduction
+semistable sheaf
+separated algebraic stack
+Serre functor
+sheaf cohomology
+Shimura variety
+simple normal crossings divisor
+simplicial complex
+slope stability
+smooth morphism
+special fiber
+specialization map
+spectral sequence
+stable curve
+stable degeneration
+stable pair
+stable reduction
+stable surface
+strict transform
+symmetric algebra
+symmetric monoidal category
+symmetric power
+tangent complex
+tangent cone
+tangent sheaf
+tautological bundle
+tautological ring
+tensor product
+terminal singularities
+toric degeneration
+toric variety
+toroidal compactification
+torsion free sheaf
+transcendental lattice
+triangulated category
+unimodular lattice
+unipotent monodromy
+universal covering
+universal deformation
+universal family
+universal property
+variation of geometric invariant theory
+variation of Hodge structure
+vector bundle
+virtual fundamental class
+wall crossing
+weak factorization
+weight filtration
+weighted projective space
+Weil divisor
+Weyl chamber
+Weyl group
+Zariski closure
+Zariski tangent space
+étale cohomology
+étale cover
+étale fundamental group
+étale morphism
+étale topology

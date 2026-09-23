@@ -30,6 +30,7 @@ module.exports = {
         { from: "static/csl-locales", to: "assets/csl-locales" },
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
+        { from: "static/completions", to: "assets/completions" },
         {
           from: "static/mathjax-macros.json",
           to: "assets/mathjax-macros.json",

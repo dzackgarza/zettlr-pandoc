@@ -20,6 +20,7 @@ import type { ToCEntry } from 'source/common/modules/markdown-editor/plugins/toc
 import { ref, type Ref } from 'vue'
 import { type WritingTarget } from '@providers/targets'
 import type { FileSearchResult } from 'source/app/service-providers/search'
+import type { PhraseDictionaryEntry } from 'source/common/util/phrase-dictionary'
 
 const ipcRenderer = window.ipc
 
@@ -44,6 +45,12 @@ async function updateSnippets (snippets: Ref<Array<{ name: string, content: stri
   snippets.value = newSnippets
 }
 
+async function updatePhraseCompletions (phrases: Ref<PhraseDictionaryEntry[]>): Promise<void> {
+  phrases.value = await ipcRenderer.invoke('assets-provider', {
+    command: 'list-phrase-completions'
+  })
+}
+
 export const useWindowStateStore = defineStore('window-state', () => {
   const isFullscreen = ref(false)
   const uncollapsedDirectories = ref<string[]>([])
@@ -51,6 +58,7 @@ export const useWindowStateStore = defineStore('window-state', () => {
   const activeDocumentInfo = ref<undefined|DocumentInfo>(undefined)
   const tableOfContents = ref<ToCEntry[]|undefined>(undefined)
   const snippets = ref<Array<{ name: string, content: string }>>([])
+  const phraseCompletions = ref<PhraseDictionaryEntry[]>([])
   const writingTargets = ref<WritingTarget[]>([])
 
   /**
@@ -70,10 +78,13 @@ export const useWindowStateStore = defineStore('window-state', () => {
   ipcRenderer.on('assets-provider', (event, what: string) => {
     if (what === 'snippets-updated') {
       updateSnippets(snippets).catch(e => console.error(e))
+    } else if (what === 'phrase-completions-updated') {
+      updatePhraseCompletions(phraseCompletions).catch(e => console.error(e))
     }
   })
 
   updateSnippets(snippets).catch(e => console.error(e))
+  updatePhraseCompletions(phraseCompletions).catch(e => console.error(e))
 
   // Writing targets
   ipcRenderer.on('targets-provider', (event, what: string) => {
@@ -102,6 +113,7 @@ export const useWindowStateStore = defineStore('window-state', () => {
     searchResults,
     addSearchResult,
     snippets,
+    phraseCompletions,
     writingTargets,
     isFullscreen
   }

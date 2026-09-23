@@ -17,6 +17,7 @@ import path from 'path'
 import { app, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import YAML from 'yaml'
+import type { FSWatcher } from 'chokidar'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import ProviderContract, { type IPCMessage } from '../provider-contract'
 import type LogProvider from '../log'
@@ -24,6 +25,8 @@ import { getCustomProfiles } from '@providers/commands/exporter'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
+import { createPhraseDictionaryWatcher, loadPhraseDictionaries } from '../../util/load-phrase-dictionaries'
+import type { PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -201,6 +204,14 @@ export type AssetsProviderIPCContract = {
     request: { payload?: undefined }
     response: string[]
   }
+  'list-phrase-completions': {
+    request: { payload?: undefined }
+    response: PhraseDictionaryEntry[]
+  }
+  'open-phrase-completions-directory': {
+    request: { payload?: undefined }
+    response: string
+  }
 }
 
 export type AssetsProviderIPCAPI = IPCMessage<AssetsProviderIPCContract>
@@ -224,6 +235,9 @@ export default class AssetsProvider extends ProviderContract {
    * @var {string}
    */
   private readonly _filterPath: string
+  /** Plain-text mathematical phrase dictionaries, deliberately outside userData. */
+  private readonly _phraseCompletionsPath: string
+  private readonly _phraseCompletionsWatcher: FSWatcher
   /**
    * Holds a list of all protected defaults files. Protected defaults files are
    * those that come by default with the app. Protected simply means here that
@@ -249,6 +263,11 @@ export default class AssetsProvider extends ProviderContract {
     this._defaultsPath = path.join(app.getPath('userData'), '/defaults')
     this._snippetsPath = path.join(app.getPath('userData'), '/snippets')
     this._filterPath = path.join(app.getPath('userData'), '/lua-filter')
+    this._phraseCompletionsPath = path.join(app.getPath('home'), '.pandoc', 'completions')
+    this._phraseCompletionsWatcher = createPhraseDictionaryWatcher()
+    this._phraseCompletionsWatcher.on('all', () => {
+      broadcastIpcMessage('assets-provider', 'phrase-completions-updated')
+    })
     this._protectedDefaults = []
     this._protectedFilters = []
 
@@ -312,12 +331,32 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === 'open-snippets-directory') {
         this._logger.info(`[AssetsProvider] Opening path ${this._snippetsPath}`)
         return await shell.openPath(this._snippetsPath)
+      } else if (command === 'list-phrase-completions') {
+        return await loadPhraseDictionaries(this._phraseCompletionsPath)
+      } else if (command === 'open-phrase-completions-directory') {
+        this._logger.info(`[AssetsProvider] Opening path ${this._phraseCompletionsPath}`)
+        return await shell.openPath(this._phraseCompletionsPath)
       }
     })
   }
 
   async boot (): Promise<void> {
     this._logger.verbose('Assets provider starting up ...')
+    let phraseDirectoryExisted = true
+    try {
+      await fs.access(this._phraseCompletionsPath)
+    } catch {
+      phraseDirectoryExisted = false
+      await fs.mkdir(this._phraseCompletionsPath, { recursive: true })
+    }
+    if (!phraseDirectoryExisted) {
+      const starter = path.join(__dirname, './assets/completions')
+      const files = (await fs.readdir(starter)).filter(file => file.endsWith('.txt'))
+      for (const file of files) {
+        await fs.copyFile(path.join(starter, file), path.join(this._phraseCompletionsPath, file))
+      }
+    }
+    this._phraseCompletionsWatcher.add(this._phraseCompletionsPath)
     // First, ensure all required default files are where they should be.
     // Required are those defaults files which are in the assets/defaults
     // directory
@@ -364,6 +403,7 @@ export default class AssetsProvider extends ProviderContract {
    */
   async shutdown (): Promise<void> {
     this._logger.verbose('Assets provider shutting down ...')
+    await this._phraseCompletionsWatcher.close()
   }
 
   //////////////////////////////////////////////////////////////////////////////

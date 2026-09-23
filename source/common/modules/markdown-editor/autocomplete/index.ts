@@ -21,13 +21,18 @@ import {
   autocompletion,
   CompletionContext
 } from '@codemirror/autocomplete'
-import { type StateField } from '@codemirror/state'
+import { type Extension } from '@codemirror/state'
 import { codeBlocks } from './code-blocks'
 import { atSymbols } from './at-symbols'
 import { snippets } from './snippets'
 import { files } from './files'
 import { tags } from './tags'
 import { headings } from './headings'
+import {
+  phraseCompletionSource,
+  phraseCompletionsField,
+  phraseCompletionsUpdate
+} from './phrases'
 
 export interface AutocompletePlugin {
   /**
@@ -53,7 +58,7 @@ export interface AutocompletePlugin {
    * @return  {Completion[]}              The list of available completions
    */
   entries: (ctx: CompletionContext, query: string) => Completion[]
-  fields?: Array<StateField<any>>
+  fields?: Extension[]
 }
 
 const forbiddenTokens = [
@@ -98,7 +103,8 @@ export function createAutocompleteSource (providers: AutocompletePlugin[]): Comp
     }
 
     if (plugin !== undefined) {
-      const initialOptions = plugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
+      const activePlugin = plugin
+      const initialOptions = activePlugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
       return {
         from: startpos,
         options: initialOptions,
@@ -106,7 +112,7 @@ export function createAutocompleteSource (providers: AutocompletePlugin[]): Comp
         update: (current, from, to, updateContext) => {
           const query = updateContext.state.doc.sliceString(from, to).toLowerCase()
           const context = new CompletionContext(updateContext.state, updateContext.pos, updateContext.explicit, ctx.view)
-          current.options = plugin!.entries(context, query)
+          current.options = activePlugin.entries(context, query)
           return current
         }
       }
@@ -128,7 +134,7 @@ export const autocomplete = [
     selectOnOpen: true, // But never pre-select anything
     closeOnBlur: true,
     maxRenderedOptions: 20,
-    override: [autocompleteSource],
+    override: [autocompleteSource, phraseCompletionSource],
     // Do not include the default keymap. Instead, we re-define it below to
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to
@@ -145,7 +151,8 @@ export const autocomplete = [
   atSymbols.fields ?? [],
   files.fields ?? [],
   tags.fields ?? [],
-  snippets.fields ?? []
+  snippets.fields ?? [],
+  phraseCompletionsField
 ]
 
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
@@ -155,3 +162,4 @@ export { referencesUpdate } from './at-symbols'
 export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'
+export { phraseCompletionsUpdate }

@@ -46,6 +46,7 @@ import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
 
 import { type TagRecord } from '@providers/tags'
+import { type PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
 // Keymaps/Input modes
 import { emacs } from '@replit/codemirror-emacs'
 /**
@@ -58,6 +59,7 @@ import type { ASTNode, Document as MarkdownDocument } from '../markdown-utils/ma
 import {
   citekeyUpdate,
   filesUpdate,
+  phraseCompletionsUpdate,
   referencesUpdate,
   snippetsUpdate,
   tagsUpdate,
@@ -318,6 +320,7 @@ export default class MarkdownEditor extends EventEmitter {
     tags: TagRecord[]
     citations: Array<{ citekey: string; displayText: string }>
     snippets: Array<{ name: string; content: string }>
+    phrases: PhraseDictionaryEntry[]
     files: Array<{ filename: string; displayName: string; id: string }>
     references: ReferenceCompletionEntry[]
   }
@@ -380,6 +383,7 @@ export default class MarkdownEditor extends EventEmitter {
       tags: [],
       citations: [],
       snippets: [],
+      phrases: [],
       files: [],
       references: [],
     }
@@ -623,6 +627,9 @@ export default class MarkdownEditor extends EventEmitter {
     })
     this._instance.dispatch({
       effects: snippetsUpdate.of(this.databaseCache.snippets),
+    })
+    this._instance.dispatch({
+      effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
     })
     this._instance.dispatch({
       effects: filesUpdate.of(this.databaseCache.files),
@@ -959,6 +966,7 @@ export default class MarkdownEditor extends EventEmitter {
     database: Array<{ citekey: string; displayText: string }>,
   ): void
   setCompletionDatabase(type: 'snippets', database: Array<{ name: string; content: string }>): void
+  setCompletionDatabase(type: 'phrases', database: PhraseDictionaryEntry[]): void
   setCompletionDatabase(
     type: 'files',
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -986,6 +994,12 @@ export default class MarkdownEditor extends EventEmitter {
         this.databaseCache.snippets = database as Array<{ name: string; content: string }>
         this._instance.dispatch({
           effects: snippetsUpdate.of(this.databaseCache.snippets),
+        })
+        break
+      case 'phrases':
+        this.databaseCache.phrases = database as PhraseDictionaryEntry[]
+        this._instance.dispatch({
+          effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
         })
         break
       case 'files':

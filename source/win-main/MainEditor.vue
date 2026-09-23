@@ -511,6 +511,7 @@ const useTitle = computed<boolean>(() => configStore.config.fileNameDisplay.incl
 const fontSize = computed<number>(() => configStore.config.editor.fontSize)
 const globalSearchResults = computed(() => windowStateStore.searchResults)
 const snippets = computed(() => windowStateStore.snippets)
+const phraseCompletions = computed(() => windowStateStore.phraseCompletions)
 const tags = computed(() => tagStore.tags)
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path))
 
@@ -827,6 +828,10 @@ watch(snippets, (newValue) => {
   currentEditor?.setCompletionDatabase('snippets', newValue)
 })
 
+watch(phraseCompletions, (newValue) => {
+  currentEditor?.setCompletionDatabase('phrases', newValue)
+})
+
 watch(tags, (newValue) => {
   currentEditor?.setCompletionDatabase('tags', newValue)
 })
@@ -1028,6 +1033,7 @@ async function loadDocument (): Promise<void> {
 
   currentEditor.setCompletionDatabase('tags', tags.value)
   currentEditor.setCompletionDatabase('snippets', snippets.value)
+  currentEditor.setCompletionDatabase('phrases', phraseCompletions.value)
 
   maybeHighlightSearchResults()
 
