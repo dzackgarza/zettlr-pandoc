@@ -47,6 +47,7 @@ import type { AnnotationSet } from '@dts/common/annotation-domain'
 
 import { type TagRecord } from '@providers/tags'
 import { type PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
+import type { TexMacroSource } from '@common/util/tex-context'
 // Keymaps/Input modes
 import { emacs } from '@replit/codemirror-emacs'
 /**
@@ -63,6 +64,7 @@ import {
   referencesUpdate,
   snippetsUpdate,
   tagsUpdate,
+  texMacroSourcesUpdate,
 } from './autocomplete'
 import { addNewFootnote } from './commands/footnotes'
 import {
@@ -321,6 +323,7 @@ export default class MarkdownEditor extends EventEmitter {
     citations: Array<{ citekey: string; displayText: string }>
     snippets: Array<{ name: string; content: string }>
     phrases: PhraseDictionaryEntry[]
+    texMacroSources: TexMacroSource[]
     files: Array<{ filename: string; displayName: string; id: string }>
     references: ReferenceCompletionEntry[]
   }
@@ -384,6 +387,7 @@ export default class MarkdownEditor extends EventEmitter {
       citations: [],
       snippets: [],
       phrases: [],
+      texMacroSources: [],
       files: [],
       references: [],
     }
@@ -630,6 +634,9 @@ export default class MarkdownEditor extends EventEmitter {
     })
     this._instance.dispatch({
       effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
+    })
+    this._instance.dispatch({
+      effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
     })
     this._instance.dispatch({
       effects: filesUpdate.of(this.databaseCache.files),
@@ -967,6 +974,7 @@ export default class MarkdownEditor extends EventEmitter {
   ): void
   setCompletionDatabase(type: 'snippets', database: Array<{ name: string; content: string }>): void
   setCompletionDatabase(type: 'phrases', database: PhraseDictionaryEntry[]): void
+  setCompletionDatabase(type: 'tex-macro-sources', database: TexMacroSource[]): void
   setCompletionDatabase(
     type: 'files',
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -1001,6 +1009,13 @@ export default class MarkdownEditor extends EventEmitter {
         this._instance.dispatch({
           effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
         })
+        break
+      case 'tex-macro-sources':
+        this.databaseCache.texMacroSources = database as TexMacroSource[]
+        this._instance.dispatch({
+          effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+        })
+        forceLinting(this._instance)
         break
       case 'files':
         this.databaseCache.files = database as Array<{

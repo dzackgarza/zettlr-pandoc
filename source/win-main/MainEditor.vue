@@ -56,8 +56,8 @@ import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/
 
 import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
-import { hasMarkdownExt } from '@common/util/file-extention-checks'
-import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
+import { getDocumentTypeForExtension, hasMarkdownExt } from '@common/util/file-extention-checks'
+import { DocumentType, DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/configuration'
@@ -111,6 +111,12 @@ import type { WorkspaceReferenceEdit } from '@dts/common/references'
 import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
+import {
+  declaredTexMacroSources,
+  type TexDocumentKind,
+  type TexMacroSource
+} from '@common/util/tex-context'
+import { resolveTexMacroSourcePaths } from '@common/util/tex-macro-source-resolution'
 
 const ipcRenderer = window.ipc
 
@@ -209,9 +215,67 @@ function closeAnnotationComposer (): void {
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+let texMacroSourceCacheKey = ''
+let texMacroSourceRequestId = 0
+let activeTexMacroSourcePaths = new Set<string>()
 
 function reportDocumentLoadError (error: unknown): void {
   surfaceDocumentLoadError(props.file.path, error)
+}
+
+function texDocumentKindForPath (filePath: string): TexDocumentKind|undefined {
+  switch (getDocumentTypeForExtension(filePath)) {
+    case DocumentType.Markdown:
+      return 'markdown'
+    case DocumentType.LaTeX:
+      return 'latex'
+    case DocumentType.YAML:
+      return 'yaml'
+    case DocumentType.JSON:
+    case undefined:
+      return undefined
+  }
+}
+
+async function updateTexMacroSources (
+  editor: MarkdownEditor|null = currentEditor,
+  force = false
+): Promise<void> {
+  if (editor === null) {
+    return
+  }
+  const kind = texDocumentKindForPath(editor.documentPath)
+  if (kind === undefined) {
+    return
+  }
+
+  const patterns = declaredTexMacroSources(editor.value, kind)
+  const workspacePaths = [...workspaceStore.descriptorMap.values()]
+    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
+    .map(descriptor => descriptor.path)
+  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths)
+  const cacheKey = JSON.stringify([ editor.documentPath, patterns, paths ])
+  if (!force && cacheKey === texMacroSourceCacheKey) {
+    return
+  }
+  texMacroSourceCacheKey = cacheKey
+  activeTexMacroSourcePaths = new Set(paths)
+  const requestId = ++texMacroSourceRequestId
+
+  const sources: TexMacroSource[] = []
+  for (const filePath of paths) {
+    try {
+      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath)
+      sources.push({ path: filePath, content: sourceDocument.content })
+    } catch (error) {
+      console.error('[MainEditor] Could not load TeX macro source ' + filePath, error)
+    }
+  }
+
+  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) {
+    return
+  }
+  editor.setCompletionDatabase('tex-macro-sources', sources)
 }
 
 /**
@@ -441,6 +505,18 @@ const stopDocumentUpdates = ipcRenderer.on('documents-update', (e, payload: { ev
         })
       })
       .catch(err => console.error(err))
+  }
+  if (
+    context.filePath !== undefined &&
+    activeTexMacroSourcePaths.has(context.filePath) &&
+    (
+      event === DP_EVENTS.CHANGE_FILE_STATUS ||
+      event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
+      event === DP_EVENTS.FILE_SAVED
+    )
+  ) {
+    updateTexMacroSources(currentEditor, true)
+      .catch(error => console.error('[MainEditor] Could not refresh TeX macro sources', error))
   }
   // Collaboration state (annotations, review) is not handled here: it
   // reaches this pane through the document-collaboration store and the
@@ -809,11 +885,21 @@ watch(toRef(props.editorCommands, 'insertPandoc'), () => {
 const fsalFiles = computed<MDFileDescriptor[]>(() => {
   return [...workspaceStore.descriptorMap.values()].filter(d => d.type === 'file')
 })
+const texMacroSourceWorkspacePaths = computed<string[]>(() => {
+  return [...workspaceStore.descriptorMap.values()]
+    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
+    .map(descriptor => descriptor.path)
+    .sort()
+})
 
 // WATCHERS
 watch(useH1, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
 watch(useTitle, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
 watch(fsalFiles, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
+watch(texMacroSourceWorkspacePaths, () => {
+  updateTexMacroSources(currentEditor, true)
+    .catch(error => console.error('[MainEditor] Could not refresh TeX macro sources', error))
+})
 
 watch(editorConfiguration, (newValue) => {
   currentEditor?.setOptions(newValue)
@@ -892,12 +978,16 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
       applyPendingNavigation()
+      updateTexMacroSources(editor)
+        .catch(error => console.error('[MainEditor] Could not refresh TeX macro sources', error))
     }
   })
 
   editor.on('change', () => {
     if (currentEditor === editor) {
       windowStateStore.tableOfContents = currentEditor.tableOfContents
+      updateTexMacroSources(editor)
+        .catch(error => console.error('[MainEditor] Could not refresh TeX macro sources', error))
     }
   })
 

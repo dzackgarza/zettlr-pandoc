@@ -17,7 +17,7 @@
 import { DocumentType } from '@dts/common/documents'
 
 export const MD_EXT = [ '.md', '.rmd', '.qmd', '.markdown', '.txt', '.mdx', '.mkd' ]
-export const LATEX_EXT = [ '.tex', '.latex' ]
+export const LATEX_EXT = [ '.tex', '.latex', '.sty', '.cls' ]
 export const YAML_EXT = [ '.yaml', '.yml' ]
 export const JSON_EXT = ['.json']
 export const CODE_EXT = [ ...LATEX_EXT, ...YAML_EXT, ...JSON_EXT, '.dic' ]

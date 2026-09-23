@@ -33,6 +33,10 @@ import {
   phraseCompletionsField,
   phraseCompletionsUpdate
 } from './phrases'
+import {
+  texCommandCompletionSource,
+  texMacroSourcesUpdate
+} from './tex'
 
 export interface AutocompletePlugin {
   /**
@@ -134,7 +138,7 @@ export const autocomplete = [
     selectOnOpen: true, // But never pre-select anything
     closeOnBlur: true,
     maxRenderedOptions: 20,
-    override: [autocompleteSource, phraseCompletionSource],
+    override: [autocompleteSource, texCommandCompletionSource, phraseCompletionSource],
     // Do not include the default keymap. Instead, we re-define it below to
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to
@@ -163,3 +167,4 @@ export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'
 export { phraseCompletionsUpdate }
+export { texMacroSourcesUpdate }

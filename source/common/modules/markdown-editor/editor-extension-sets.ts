@@ -32,6 +32,10 @@ import {
   type DOMEventHandlers
 } from '@codemirror/view'
 import { autocomplete } from './autocomplete'
+import {
+  texCommandAutocomplete,
+  texKnowledgeExtensions
+} from './autocomplete/tex'
 import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from './theme/syntax'
 import markdownParser from './parser/markdown-parser'
 import { defaultContextMenu } from './plugins/default-context-menu'
@@ -44,7 +48,11 @@ import { countField, countPlugin } from './plugins/statistics-fields'
 import { tocField } from './plugins/toc-field'
 import { typewriter } from './plugins/typewriter'
 import { footnoteHover, filePreview, urlHover } from './tooltips'
-import { type EditorConfiguration, configField } from './util/configuration'
+import {
+  type EditorConfiguration,
+  cloneEditorConfiguration,
+  configField
+} from './util/configuration'
 import { highlightRanges } from './plugins/highlight-ranges'
 import { markdownFolding } from './code-folding/markdown'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
@@ -209,7 +217,7 @@ function getCoreExtensions (options: CoreExtensionOptions): Extension[] {
 
     // Add the configuration and preset it with whatever is in the cached
     // config.
-    configField.init(_state => JSON.parse(JSON.stringify(options.initialConfig))),
+    configField.init(_state => cloneEditorConfiguration(options.initialConfig)),
 
     // The updateListener is a custom extension we're using in order to be
     // able to emit events from this main class based on change events.
@@ -325,6 +333,7 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
     markdownParser({
       zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat }
     }),
+    texKnowledgeExtensions('markdown'),
     // ... which can then be styled with a highlighter
     markdownSyntaxHighlighter(),
     renderers(options.initialConfig),
@@ -380,7 +389,9 @@ export function getMarkdownExtensions (options: CoreExtensionOptions): Extension
 export function getTexExtensions (options: CoreExtensionOptions): Extension[] {
   return [
     ...getGenericCodeExtensions(options),
-    StreamLanguage.define(stex)
+    StreamLanguage.define(stex),
+    texKnowledgeExtensions('latex'),
+    texCommandAutocomplete
   ]
 }
 
@@ -396,7 +407,9 @@ export function getTexExtensions (options: CoreExtensionOptions): Extension[] {
 export function getYAMLExtensions (options: CoreExtensionOptions): Extension[] {
   return [
     ...getGenericCodeExtensions(options),
-    yaml()
+    yaml(),
+    texKnowledgeExtensions('yaml'),
+    texCommandAutocomplete
   ]
 }
 
