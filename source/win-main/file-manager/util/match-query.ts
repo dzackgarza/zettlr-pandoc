@@ -36,16 +36,10 @@ function matchesExtension (filePath: string, extension: string): boolean {
 
 export function matchesQuickFileFilter (
   item: AnyDescriptor,
-  rules?: QuickFileFilterRules|boolean
+  rules?: QuickFileFilterRules
 ): boolean {
-  if (rules === undefined || rules === false) {
+  if (rules === undefined) {
     return true
-  }
-
-  // Preserve the original temporary Markdown-only scope contract while the
-  // caller migration to configurable rules settles.
-  if (rules === true) {
-    return item.type === 'file'
   }
 
   if (item.type === 'directory') {
@@ -75,7 +69,7 @@ export default function matchQuery (
   query: string,
   includeTitle: boolean,
   includeH1: boolean,
-  quickFilterRules?: QuickFileFilterRules|boolean
+  quickFilterRules?: QuickFileFilterRules
 ): (item: AnyDescriptor) => boolean {
   const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
 

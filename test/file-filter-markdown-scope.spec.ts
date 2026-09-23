@@ -4,6 +4,8 @@ import type {
   DirDescriptor,
   MDFileDescriptor
 } from 'source/types/common/fsal'
+import { DEFAULT_QUICK_FILTER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
+import { defaultKeybindings } from 'source/app/service-providers/menu/shortcuts'
 import matchQuery from 'source/win-main/file-manager/util/match-query'
 
 const markdown: MDFileDescriptor = {
@@ -66,6 +68,15 @@ const directory: DirDescriptor = {
 }
 
 describe('Ctrl+Shift+P Markdown file-filter scope', function () {
+  const defaultRules = { include: DEFAULT_QUICK_FILTER_INCLUDE, exclude: [] }
+
+  it('keeps Ctrl+Shift+P/Cmd+Shift+P as the file-filter shortcut', function () {
+    assert.deepEqual(defaultKeybindings['filter-files'], {
+      key: 'Ctrl-Shift-p',
+      mac: 'Cmd-Shift-p'
+    })
+  })
+
   it('keeps the ordinary file filter broad when the opt-in scope is inactive', function () {
     const filter = matchQuery('', false, false)
     assert.equal(filter(markdown), true)
@@ -73,16 +84,9 @@ describe('Ctrl+Shift+P Markdown file-filter scope', function () {
     assert.equal(filter(directory), true)
   })
 
-  it('restricts an empty quick-filter query to Markdown descriptors when opted in', function () {
-    const filter = matchQuery('', false, false, true)
-    assert.equal(filter(markdown), true)
-    assert.equal(filter(latex), false)
-    assert.equal(filter(directory), false)
-  })
-
   it('applies text matching inside the Markdown-only scope', function () {
-    const matching = matchQuery('theorem', false, false, true)
-    const missing = matchQuery('lemma', false, false, true)
+    const matching = matchQuery('theorem', false, false, defaultRules)
+    const missing = matchQuery('lemma', false, false, defaultRules)
     assert.equal(matching(markdown), true)
     assert.equal(matching(latex), false)
     assert.equal(missing(markdown), false)
