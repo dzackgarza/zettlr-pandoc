@@ -188,9 +188,9 @@ const ipcRenderer = window.ipc
 const props = defineProps<{
   isVisible: boolean
   filterQuery: string
-  quickFilterActive: boolean
-  quickFilterInclude: string[]
-  quickFilterExclude: string[]
+  filePickerActive: boolean
+  filePickerPaths: string[]
+  filePickerPathSet: Set<string>
   windowId: string
 }>()
 
@@ -232,7 +232,7 @@ const useH1 = computed(() => configStore.config.fileNameDisplay.includes('headin
 const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
 
 const query = computed(() => props.filterQuery.trim().toLowerCase())
-const filterActive = computed(() => query.value !== '' || props.quickFilterActive)
+const filterActive = computed(() => query.value !== '' || props.filePickerActive)
 
 const filterResults = computed<string[]>(() => {
   const q = query.value
@@ -240,19 +240,30 @@ const filterResults = computed<string[]>(() => {
     return []
   }
 
+  if (props.filePickerActive && q === '') {
+    return props.filePickerPaths
+  }
+
   const filter = matchQuery(
     q,
     useTitle.value,
     useH1.value,
-    props.quickFilterActive
-      ? { include: props.quickFilterInclude, exclude: props.quickFilterExclude }
-      : undefined
+    undefined
   )
   const results: string[] = []
 
-  for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
-    if (filter(descriptor)) {
-      results.push(absPath)
+  if (props.filePickerActive) {
+    for (const absPath of props.filePickerPaths) {
+      const descriptor = workspaceStore.descriptorMap.get(absPath)
+      if (descriptor !== undefined && filter(descriptor)) {
+        results.push(absPath)
+      }
+    }
+  } else {
+    for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
+      if (filter(descriptor)) {
+        results.push(absPath)
+      }
     }
   }
 
@@ -264,6 +275,10 @@ const getFiles = computed(() => {
   const roots = rootDescriptors.value.filter(desc => desc.type === 'file' || desc.type === 'code')
   if (!filterActive.value) {
     return roots
+  }
+
+  if (props.filePickerActive && query.value === '') {
+    return roots.filter(root => props.filePickerPathSet.has(root.path))
   }
 
   return roots.filter(root => filterResults.value.includes(root.path))

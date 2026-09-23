@@ -118,9 +118,8 @@ const ipcRenderer = window.ipc
 const props = defineProps<{
   isVisible: boolean
   filterQuery: string
-  quickFilterActive: boolean
-  quickFilterInclude: string[]
-  quickFilterExclude: string[]
+  filePickerActive: boolean
+  filePickerPathSet: Set<string>
   windowId: string
 }>()
 
@@ -225,22 +224,18 @@ const getFilteredDirectoryContents = computed(() => {
 
   const q = props.filterQuery.trim().toLowerCase() // Easy access
 
-  if (q === '' && !props.quickFilterActive) {
+  if (q === '' && !props.filePickerActive) {
     return originalContents
   }
 
-  const filter = matchQuery(
-    q,
-    useTitle.value,
-    useH1.value,
-    props.quickFilterActive
-      ? { include: props.quickFilterInclude, exclude: props.quickFilterExclude }
-      : undefined
-  )
+  const filter = q === '' ? undefined : matchQuery(q, useTitle.value, useH1.value)
 
   // Filter based on the query (remember: there's an ID and a "props" property)
   return originalContents.filter(element => {
-    return filter(element.props)
+    if (props.filePickerActive && !props.filePickerPathSet.has(element.props.path)) {
+      return false
+    }
+    return filter === undefined || filter(element.props)
   })
 })
 
@@ -402,12 +397,12 @@ function scrollIntoView (): void {
 
   let modifier = itemHeight.value
   let position = index * modifier
-  const quickFilterModifier = 40 // Height of the quick filter
+  const fileFilterModifier = 40 // Height of the file filter
 
   if (position < scrollTop) {
     rootElement.value.scrollTo({ top: position, behavior: 'smooth' })
   } else if (position > scrollTop + rootElement.value.offsetHeight - modifier) {
-    const top = position - rootElement.value.offsetHeight + modifier + quickFilterModifier
+    const top = position - rootElement.value.offsetHeight + modifier + fileFilterModifier
     rootElement.value.scrollTo({ top, behavior: 'smooth' })
   }
 }

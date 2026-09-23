@@ -22,7 +22,7 @@ import { type MenuShortcutName } from '../menu/shortcuts'
 import type { SidebarSectionId, SidebarViewId } from '@dts/common/sidebar-views'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
-export const DEFAULT_QUICK_FILTER_INCLUDE = [ ...MD_EXT ]
+export const DEFAULT_FILE_PICKER_INCLUDE = [ ...MD_EXT ]
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
@@ -126,7 +126,7 @@ export interface ConfigOptions {
     twoStepCollapseWorkspaces: boolean
     // If this is true, the config will never attempt to auto-sort workspaces.
     sortWorkspacesManually: boolean
-    quickFilter: {
+    filePicker: {
       include: string[]
       exclude: string[]
     }
@@ -392,8 +392,8 @@ export function getConfigTemplate (): ConfigOptions {
     fileManager: {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
-      quickFilter: {
-        include: [ ...DEFAULT_QUICK_FILTER_INCLUDE ],
+      filePicker: {
+        include: [ ...DEFAULT_FILE_PICKER_INCLUDE ],
         exclude: [],
       },
     },

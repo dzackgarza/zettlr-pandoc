@@ -536,7 +536,10 @@ onMounted(async () => {
     // Now we can be sure that the event pertains to a direct child of this item
     // and we need to handle it. We'll make it easy and simply re-fetch the list
     // of children.
-    fetchChildren().catch(err => console.error(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
+    fetchChildren().catch(err => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[TreeItem] Could not fetch children for item "${props.item.path}": ${message}`, err)
+    })
   })
 
   // Initially scroll into view if this item is selected
@@ -561,7 +564,7 @@ function scrollIntoView () {
       return
     }
 
-    const safetyMargin = 100 // Height of the quick filter + the sticky elements
+    const safetyMargin = 100 // Height of the file filter + the sticky elements
 
     const treeHeight = fileTreeRoot.clientHeight
     const topEdge = fileTreeRoot.scrollTop + safetyMargin
@@ -665,12 +668,21 @@ function handleDrop (event: DragEvent): void {
   // to make sure it's really an element from in here and
   // NOT a file, because these need to be handled by the
   // app itself.
-  let data
+  let data: { path: string }
 
   try {
     const eventData = event.dataTransfer.getData('text/x-zettlr-file')
-    data = JSON.parse(eventData) // Throws error if eventData === ''
-  } catch (err) {
+    const parsed = JSON.parse(eventData) as unknown // Throws error if eventData === ''
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !('path' in parsed) ||
+      typeof parsed.path !== 'string'
+    ) {
+      return
+    }
+    data = { path: parsed.path }
+  } catch {
     // Error in JSON stringifying (either b/c malformed or no text)
     return
   }

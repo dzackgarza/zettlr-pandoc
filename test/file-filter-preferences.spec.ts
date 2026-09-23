@@ -5,9 +5,9 @@ import type {
   MDFileDescriptor,
   OtherFileDescriptor
 } from 'source/types/common/fsal'
-import { DEFAULT_QUICK_FILTER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
+import { DEFAULT_FILE_PICKER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
 import { getFileManagerFields } from 'source/win-preferences/schema/file-manager'
-import matchQuery from 'source/win-main/file-manager/util/match-query'
+import matchQuery, { buildFilePickerCache } from 'source/win-main/file-manager/util/match-query'
 
 const markdown = {
   path: '/notes/theorem.md',
@@ -79,9 +79,21 @@ const directory = {
   isGitRepository: false
 } satisfies DirDescriptor
 
-describe('quick file-filter preferences', function () {
+describe('file-picker preferences', function () {
+  it('precomputes the persistent policy into a path array and membership set', function () {
+    const cache = buildFilePickerCache(
+      [ markdown, latex, pdf, directory ],
+      { include: DEFAULT_FILE_PICKER_INCLUDE, exclude: [] }
+    )
+    assert.deepEqual(cache.paths, [ markdown.path ])
+    assert.equal(cache.pathSet.has(markdown.path), true)
+    assert.equal(cache.pathSet.has(latex.path), false)
+    assert.equal(cache.pathSet.has(pdf.path), false)
+    assert.equal(cache.pathSet.has(directory.path), false)
+  })
+
   it('defaults Include to all Markdown extensions and Exclude to empty', function () {
-    const rules = { include: DEFAULT_QUICK_FILTER_INCLUDE, exclude: [] }
+    const rules = { include: DEFAULT_FILE_PICKER_INCLUDE, exclude: [] }
     const filter = matchQuery('', false, false, rules)
     assert.equal(filter(markdown), true)
     assert.equal(filter(latex), false)
@@ -113,7 +125,7 @@ describe('quick file-filter preferences', function () {
       .flatMap(fieldset => fieldset.fields)
       .flatMap(field => 'model' in field ? [ field.model ] : [])
 
-    assert.ok(models.includes('fileManager.quickFilter.include'))
-    assert.ok(models.includes('fileManager.quickFilter.exclude'))
+    assert.ok(models.includes('fileManager.filePicker.include'))
+    assert.ok(models.includes('fileManager.filePicker.exclude'))
   })
 })

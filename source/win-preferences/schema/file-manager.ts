@@ -79,8 +79,8 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
       ]
     },
     {
-      title: trans('Quick file filter'),
-      infoString: trans('Configure which file types appear when you open the file filter using its shortcut. These rules do not change the ordinary file manager. Include is applied first; Exclude always wins. Leave Include empty to allow every file type.'),
+      title: trans('File picker filters'),
+      infoString: trans('Permanent inclusion and exclusion settings for the Ctrl+Shift+P file picker. These rules do not change the ordinary file manager. Include is applied first; Exclude always wins. Leave Include empty to allow every file type.'),
       group: PreferencesGroups.FileManager,
       help: undefined,
       fields: [
@@ -88,13 +88,13 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
           type: 'token',
           label: trans('Include file extensions'),
           placeholder: trans('Enter an extension, e.g. ".md"'),
-          model: 'fileManager.quickFilter.include'
+          model: 'fileManager.filePicker.include'
         },
         {
           type: 'token',
           label: trans('Exclude file extensions'),
           placeholder: trans('Enter an extension, e.g. ".tex"'),
-          model: 'fileManager.quickFilter.exclude'
+          model: 'fileManager.filePicker.exclude'
         }
       ]
     },

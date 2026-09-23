@@ -19,9 +19,14 @@
 
 import type { AnyDescriptor } from '@dts/common/fsal'
 
-export interface QuickFileFilterRules {
+export interface FilePickerRules {
   include: readonly string[]
   exclude: readonly string[]
+}
+
+export interface FilePickerCache {
+  paths: string[]
+  pathSet: Set<string>
 }
 
 function normalizeExtension (extension: string): string {
@@ -34,9 +39,9 @@ function matchesExtension (filePath: string, extension: string): boolean {
   return normalized !== '' && filePath.toLowerCase().endsWith(normalized)
 }
 
-export function matchesQuickFileFilter (
+export function matchesFilePicker (
   item: AnyDescriptor,
-  rules?: QuickFileFilterRules
+  rules?: FilePickerRules
 ): boolean {
   if (rules === undefined) {
     return true
@@ -55,6 +60,20 @@ export function matchesQuickFileFilter (
   return !rules.exclude.some(extension => matchesExtension(item.path, extension))
 }
 
+/** Precomputes the persistent file-picker policy outside the shortcut hot path. */
+export function buildFilePickerCache (
+  descriptors: Iterable<AnyDescriptor>,
+  rules: FilePickerRules
+): FilePickerCache {
+  const paths: string[] = []
+  for (const descriptor of descriptors) {
+    if (matchesFilePicker(descriptor, rules)) {
+      paths.push(descriptor.path)
+    }
+  }
+  return { paths, pathSet: new Set(paths) }
+}
+
 /**
  * Returns a function that can be used as a filter (i.e. in Array.filter) to match
  * descriptors (Codefiles, Directories, Markdown files) against the given query.
@@ -69,13 +88,13 @@ export default function matchQuery (
   query: string,
   includeTitle: boolean,
   includeH1: boolean,
-  quickFilterRules?: QuickFileFilterRules
+  filePickerRules?: FilePickerRules
 ): (item: AnyDescriptor) => boolean {
   const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
-    if (!matchesQuickFileFilter(item, quickFilterRules)) {
+    if (!matchesFilePicker(item, filePickerRules)) {
       return false
     }
 
