@@ -19,6 +19,48 @@
 
 import type { AnyDescriptor } from '@dts/common/fsal'
 
+export interface QuickFileFilterRules {
+  include: readonly string[]
+  exclude: readonly string[]
+}
+
+function normalizeExtension (extension: string): string {
+  const trimmed = extension.trim().toLowerCase()
+  return trimmed === '' || trimmed.startsWith('.') ? trimmed : `.${trimmed}`
+}
+
+function matchesExtension (filePath: string, extension: string): boolean {
+  const normalized = normalizeExtension(extension)
+  return normalized !== '' && filePath.toLowerCase().endsWith(normalized)
+}
+
+export function matchesQuickFileFilter (
+  item: AnyDescriptor,
+  rules?: QuickFileFilterRules|boolean
+): boolean {
+  if (rules === undefined || rules === false) {
+    return true
+  }
+
+  // Preserve the original temporary Markdown-only scope contract while the
+  // caller migration to configurable rules settles.
+  if (rules === true) {
+    return item.type === 'file'
+  }
+
+  if (item.type === 'directory') {
+    return false
+  }
+
+  const included = rules.include.length === 0 ||
+    rules.include.some(extension => matchesExtension(item.path, extension))
+  if (!included) {
+    return false
+  }
+
+  return !rules.exclude.some(extension => matchesExtension(item.path, extension))
+}
+
 /**
  * Returns a function that can be used as a filter (i.e. in Array.filter) to match
  * descriptors (Codefiles, Directories, Markdown files) against the given query.
@@ -33,13 +75,13 @@ export default function matchQuery (
   query: string,
   includeTitle: boolean,
   includeH1: boolean,
-  markdownOnly = false
+  quickFilterRules?: QuickFileFilterRules|boolean
 ): (item: AnyDescriptor) => boolean {
   const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
-    if (markdownOnly && item.type !== 'file') {
+    if (!matchesQuickFileFilter(item, quickFilterRules)) {
       return false
     }
 
@@ -72,11 +114,11 @@ export default function matchQuery (
           }
         }
 
-        const hasFrontmatter = item.frontmatter != null
-        const hasTitle = hasFrontmatter && 'title' in item.frontmatter
+        const frontmatter: unknown = item.frontmatter
+        const hasTitle = typeof frontmatter === 'object' && frontmatter !== null && 'title' in frontmatter
 
         // Does the frontmatter work?
-        if (includeTitle && hasTitle && String(item.frontmatter.title).toLowerCase().includes(q)) {
+        if (includeTitle && hasTitle && String(frontmatter.title).toLowerCase().includes(q)) {
           queryMatched = true
         }
 

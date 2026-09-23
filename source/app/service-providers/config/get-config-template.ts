@@ -16,11 +16,13 @@ import { app, nativeTheme } from 'electron'
 import * as bcp47 from 'bcp-47'
 import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
+import { MD_EXT } from '@common/util/file-extention-checks'
 import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { type MenuShortcutName } from '../menu/shortcuts'
 import type { SidebarSectionId, SidebarViewId } from '@dts/common/sidebar-views'
 
 export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
+export const DEFAULT_QUICK_FILTER_INCLUDE = [ ...MD_EXT ]
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
@@ -124,6 +126,10 @@ export interface ConfigOptions {
     twoStepCollapseWorkspaces: boolean
     // If this is true, the config will never attempt to auto-sort workspaces.
     sortWorkspacesManually: boolean
+    quickFilter: {
+      include: string[]
+      exclude: string[]
+    }
   }
 
   newFileNamePattern: string
@@ -386,6 +392,10 @@ export function getConfigTemplate (): ConfigOptions {
     fileManager: {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
+      quickFilter: {
+        include: [ ...DEFAULT_QUICK_FILTER_INCLUDE ],
+        exclude: [],
+      },
     },
     newFileNamePattern: '%id.md',
     newFileDontPrompt: false, // If true immediately creates files
