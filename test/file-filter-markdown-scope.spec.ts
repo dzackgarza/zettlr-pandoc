@@ -4,9 +4,12 @@ import type {
   DirDescriptor,
   MDFileDescriptor
 } from 'source/types/common/fsal'
-import { DEFAULT_FILE_PICKER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
 import { defaultKeybindings } from 'source/app/service-providers/menu/shortcuts'
 import matchQuery from 'source/win-main/file-manager/util/match-query'
+import {
+  createFileManagerVisibilityFilter,
+  type FileManagerVisibilityConfig
+} from 'source/win-main/file-manager/util/filter-children'
 
 const markdown: MDFileDescriptor = {
   path: '/notes/theorem.md',
@@ -49,6 +52,19 @@ const latex: CodeFileDescriptor = {
   linefeed: '\n'
 }
 
+const yaml: CodeFileDescriptor = {
+  path: '/notes/project.yaml',
+  dir: '/notes',
+  name: 'project.yaml',
+  type: 'code',
+  size: 1,
+  modtime: 0,
+  creationtime: 0,
+  ext: '.yaml',
+  bom: '',
+  linefeed: '\n'
+}
+
 const directory: DirDescriptor = {
   path: '/notes',
   dir: '/',
@@ -73,8 +89,26 @@ const directory: DirDescriptor = {
   isGitRepository: false
 }
 
-describe('Ctrl+Shift+P persistent file-picker policy', function () {
-  const defaultRules = { include: DEFAULT_FILE_PICKER_INCLUDE, exclude: [] }
+const visibilityConfig: FileManagerVisibilityConfig = {
+  attachmentExtensions: [],
+  fileManager: {
+    filters: {
+      include: [ '.md', '.tex', '.yaml' ],
+      exclude: [ '.yaml' ]
+    }
+  },
+  files: {
+    builtin: { showInFilemanager: true, openWith: 'zettlr' },
+    images: { showInFilemanager: true, openWith: 'system' },
+    pdf: { showInFilemanager: true, openWith: 'system' },
+    msoffice: { showInFilemanager: true, openWith: 'system' },
+    openOffice: { showInFilemanager: true, openWith: 'system' },
+    dataFiles: { showInFilemanager: true, openWith: 'system' },
+    dotFiles: { showInFilemanager: false, openWith: 'system' }
+  }
+}
+
+describe('Ctrl+Shift+P shared file-manager visibility', function () {
 
   it('keeps Ctrl+Shift+P/Cmd+Shift+P as the file-picker shortcut', function () {
     assert.deepEqual(defaultKeybindings['filter-files'], {
@@ -83,18 +117,13 @@ describe('Ctrl+Shift+P persistent file-picker policy', function () {
     })
   })
 
-  it('keeps the ordinary file filter broad when the opt-in scope is inactive', function () {
-    const filter = matchQuery('', false, false)
-    assert.equal(filter(markdown), true)
-    assert.equal(filter(latex), true)
-    assert.equal(filter(directory), true)
-  })
+  it('applies transient text matching only after permanent visibility', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig)
+    const matching = matchQuery('theorem', false, false)
 
-  it('applies transient text matching after the permanent Markdown-only policy', function () {
-    const matching = matchQuery('theorem', false, false, defaultRules)
-    const missing = matchQuery('lemma', false, false, defaultRules)
-    assert.equal(matching(markdown), true)
-    assert.equal(matching(latex), false)
-    assert.equal(missing(markdown), false)
+    assert.equal(visible(markdown) && matching(markdown), true)
+    assert.equal(visible(latex) && matching(latex), true)
+    assert.equal(visible(yaml) && matchQuery('project', false, false)(yaml), false)
+    assert.equal(visible(directory), true)
   })
 })

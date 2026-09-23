@@ -112,6 +112,7 @@ import { nextTick, ref, shallowRef, computed, watch, onMounted, onUnmounted } fr
 import { useConfigStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 import { buildFilePickerCache, type FilePickerCache } from './util/match-query'
+import { filterDescriptorChildren } from './util/filter-children'
 
 const ipcRenderer = window.ipc
 
@@ -137,21 +138,24 @@ const configStore = useConfigStore()
 const windowStateStore = useWindowStateStore()
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
-const filePickerInclude = computed(() => configStore.config.fileManager.filePicker.include)
-const filePickerExclude = computed(() => configStore.config.fileManager.filePicker.exclude)
 const filePickerCache = shallowRef<FilePickerCache>({ paths: [], pathSet: new Set() })
 
 function rebuildFilePickerCache (): void {
   filePickerCache.value = buildFilePickerCache(
     workspaceStore.descriptorMap.values(),
-    { include: filePickerInclude.value, exclude: filePickerExclude.value }
+    filterDescriptorChildren()
   )
 }
 
-// The permanent picker policy is kept warm as workspace/config state changes.
-// Invoking Ctrl+Shift+P only activates this already-computed candidate set.
+// The picker cache is exactly the file-manager-visible file set. Invoking
+// Ctrl+Shift+P only activates this already-computed candidate set.
 watch(
-  [() => workspaceStore.descriptorMap, filePickerInclude, filePickerExclude],
+  [
+    () => workspaceStore.descriptorMap,
+    () => configStore.config.fileManager.filters,
+    () => configStore.config.files,
+    () => configStore.config.attachmentExtensions
+  ],
   rebuildFilePickerCache,
   { deep: true, immediate: true }
 )

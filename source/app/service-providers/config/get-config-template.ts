@@ -23,7 +23,7 @@ import { v4 as uuid4 } from "uuid";
 import { type MenuShortcutName } from "../menu/shortcuts";
 
 export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
-export const DEFAULT_FILE_PICKER_INCLUDE = [...MD_EXT];
+export const DEFAULT_FILE_FILTER_INCLUDE = [...MD_EXT];
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
@@ -144,8 +144,8 @@ export interface ConfigOptions {
     sortWorkspacesManually: boolean;
     /** Expanded directory rows in the Explorer, persisted across restarts. */
     expandedDirectories: string[];
-    /** Permanent inclusion/exclusion policy for the Ctrl+Shift+P file picker. */
-    filePicker: {
+    /** Permanent inclusion/exclusion policy shared by the file manager and file picker. */
+    filters: {
       include: string[];
       exclude: string[];
     };
@@ -424,8 +424,8 @@ export function getConfigTemplate(): ConfigOptions {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
       expandedDirectories: [],
-      filePicker: {
-        include: [...DEFAULT_FILE_PICKER_INCLUDE],
+      filters: {
+        include: [...DEFAULT_FILE_FILTER_INCLUDE],
         exclude: [],
       },
     },

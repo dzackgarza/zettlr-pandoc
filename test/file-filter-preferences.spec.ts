@@ -5,9 +5,14 @@ import type {
   MDFileDescriptor,
   OtherFileDescriptor
 } from 'source/types/common/fsal'
-import { DEFAULT_FILE_PICKER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
+import { DEFAULT_FILE_FILTER_INCLUDE } from 'source/app/service-providers/config/get-config-template'
 import { getFileManagerFields } from 'source/win-preferences/schema/file-manager'
-import matchQuery, { buildFilePickerCache } from 'source/win-main/file-manager/util/match-query'
+import { buildFilePickerCache } from 'source/win-main/file-manager/util/match-query'
+import {
+  createFileManagerVisibilityFilter,
+  type FileManagerFilterRules,
+  type FileManagerVisibilityConfig
+} from 'source/win-main/file-manager/util/filter-children'
 
 const markdown = {
   path: '/notes/theorem.md',
@@ -50,6 +55,19 @@ const latex = {
   linefeed: '\n'
 } satisfies CodeFileDescriptor
 
+const yaml = {
+  path: '/notes/project.yaml',
+  dir: '/notes',
+  name: 'project.yaml',
+  type: 'code',
+  size: 1,
+  modtime: 0,
+  creationtime: 0,
+  ext: '.yaml',
+  bom: '',
+  linefeed: '\n'
+} satisfies CodeFileDescriptor
+
 const pdf = {
   path: '/notes/reference.pdf',
   dir: '/notes',
@@ -85,45 +103,68 @@ const directory = {
   isGitRepository: false
 } satisfies DirDescriptor
 
-describe('file-picker preferences', function () {
-  it('precomputes the persistent policy into a path array and membership set', function () {
-    const cache = buildFilePickerCache(
-      [ markdown, latex, pdf, directory ],
-      { include: DEFAULT_FILE_PICKER_INCLUDE, exclude: [] }
+function visibilityConfig (filters: FileManagerFilterRules): FileManagerVisibilityConfig {
+  return {
+    attachmentExtensions: [],
+    fileManager: { filters },
+    files: {
+      builtin: { showInFilemanager: true, openWith: 'zettlr' },
+      images: { showInFilemanager: true, openWith: 'system' },
+      pdf: { showInFilemanager: true, openWith: 'system' },
+      msoffice: { showInFilemanager: true, openWith: 'system' },
+      openOffice: { showInFilemanager: true, openWith: 'system' },
+      dataFiles: { showInFilemanager: true, openWith: 'system' },
+      dotFiles: { showInFilemanager: false, openWith: 'system' }
+    }
+  }
+}
+
+describe('unified permanent file filters', function () {
+  it('defaults Include to all Markdown extensions and Exclude to empty', function () {
+    assert.deepEqual(
+      DEFAULT_FILE_FILTER_INCLUDE,
+      [ '.md', '.rmd', '.qmd', '.markdown', '.txt', '.mdx', '.mkd' ]
     )
+  })
+
+  it('applies extension exclusions before built-in File Treatment', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig({
+      include: [ '.md', '.yaml' ],
+      exclude: [ '.yaml' ]
+    }))
+
+    assert.equal(visible(markdown), true)
+    assert.equal(visible(yaml), false)
+  })
+
+  it('builds the Ctrl+Shift+P cache from the exact file-manager-visible set', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig({
+      include: [ '.md', '.yaml' ],
+      exclude: [ '.yaml' ]
+    }))
+    const cache = buildFilePickerCache(
+      [ markdown, yaml, latex, pdf, directory ],
+      visible
+    )
+
+    assert.equal(visible(yaml), false)
     assert.deepEqual(cache.paths, [ markdown.path ])
     assert.equal(cache.pathSet.has(markdown.path), true)
-    assert.equal(cache.pathSet.has(latex.path), false)
-    assert.equal(cache.pathSet.has(pdf.path), false)
+    assert.equal(cache.pathSet.has(yaml.path), false)
     assert.equal(cache.pathSet.has(directory.path), false)
   })
 
-  it('defaults Include to all Markdown extensions and Exclude to empty', function () {
-    const rules = { include: DEFAULT_FILE_PICKER_INCLUDE, exclude: [] }
-    const filter = matchQuery('', false, false, rules)
-    assert.equal(filter(markdown), true)
-    assert.equal(filter(latex), false)
-    assert.equal(filter(pdf), false)
-    assert.equal(filter(directory), false)
-  })
+  it('uses an empty Include list as all file types permitted by File Treatment', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig({
+      include: [],
+      exclude: [ '.yaml' ]
+    }))
 
-  it('applies Include first and lets Exclude win', function () {
-    const include = { include: [ '.md', '.tex', 'PDF' ], exclude: [] }
-    assert.equal(matchQuery('', false, false, include)(markdown), true)
-    assert.equal(matchQuery('', false, false, include)(latex), true)
-    assert.equal(matchQuery('', false, false, include)(pdf), true)
-
-    const exclude = { include: [ '.md', '.tex' ], exclude: [ '.md' ] }
-    assert.equal(matchQuery('', false, false, exclude)(markdown), false)
-    assert.equal(matchQuery('', false, false, exclude)(latex), true)
-  })
-
-  it('uses an empty Include list as all file types but never offers folders', function () {
-    const rules = { include: [], exclude: [] }
-    assert.equal(matchQuery('', false, false, rules)(markdown), true)
-    assert.equal(matchQuery('', false, false, rules)(latex), true)
-    assert.equal(matchQuery('', false, false, rules)(pdf), true)
-    assert.equal(matchQuery('', false, false, rules)(directory), false)
+    assert.equal(visible(markdown), true)
+    assert.equal(visible(latex), true)
+    assert.equal(visible(pdf), true)
+    assert.equal(visible(yaml), false)
+    assert.equal(visible(directory), true)
   })
 
   it('exposes both rules in Preferences → File Manager', function () {
@@ -131,7 +172,7 @@ describe('file-picker preferences', function () {
       .flatMap(fieldset => fieldset.fields)
       .flatMap(field => 'model' in field ? [ field.model ] : [])
 
-    assert.ok(models.includes('fileManager.filePicker.include'))
-    assert.ok(models.includes('fileManager.filePicker.exclude'))
+    assert.ok(models.includes('fileManager.filters.include'))
+    assert.ok(models.includes('fileManager.filters.exclude'))
   })
 })

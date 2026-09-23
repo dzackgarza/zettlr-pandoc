@@ -334,9 +334,9 @@ const filterResults = computed<string[]>(() => {
   const filter = matchQuery(
     q,
     useTitle.value,
-    useH1.value,
-    undefined
+    useH1.value
   )
+  const visible = filterDescriptorChildren()
   const results: string[] = []
 
   if (props.filePickerActive) {
@@ -348,7 +348,7 @@ const filterResults = computed<string[]>(() => {
     }
   } else {
     for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
-      if (filter(descriptor)) {
+      if (visible(descriptor) && filter(descriptor)) {
         results.push(absPath)
       }
     }
@@ -359,7 +359,10 @@ const filterResults = computed<string[]>(() => {
 
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
-  const roots = rootDescriptors.value.filter(desc => desc.type === 'file' || desc.type === 'code')
+  const visible = filterDescriptorChildren()
+  const roots = rootDescriptors.value
+    .filter(desc => desc.type === 'file' || desc.type === 'code')
+    .filter(visible)
   if (!filterActive.value) {
     return roots
   }

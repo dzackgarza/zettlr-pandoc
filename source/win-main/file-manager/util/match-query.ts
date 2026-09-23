@@ -19,55 +19,19 @@
 
 import type { AnyDescriptor } from '@dts/common/fsal'
 
-export interface FilePickerRules {
-  include: readonly string[]
-  exclude: readonly string[]
-}
-
 export interface FilePickerCache {
   paths: string[]
   pathSet: Set<string>
 }
 
-function normalizeExtension (extension: string): string {
-  const trimmed = extension.trim().toLowerCase()
-  return trimmed === '' || trimmed.startsWith('.') ? trimmed : `.${trimmed}`
-}
-
-function matchesExtension (filePath: string, extension: string): boolean {
-  const normalized = normalizeExtension(extension)
-  return normalized !== '' && filePath.toLowerCase().endsWith(normalized)
-}
-
-export function matchesFilePicker (
-  item: AnyDescriptor,
-  rules?: FilePickerRules
-): boolean {
-  if (rules === undefined) {
-    return true
-  }
-
-  if (item.type === 'directory') {
-    return false
-  }
-
-  const included = rules.include.length === 0 ||
-    rules.include.some(extension => matchesExtension(item.path, extension))
-  if (!included) {
-    return false
-  }
-
-  return !rules.exclude.some(extension => matchesExtension(item.path, extension))
-}
-
-/** Precomputes the persistent file-picker policy outside the shortcut hot path. */
+/** Precomputes picker candidates from the file manager's visibility authority. */
 export function buildFilePickerCache (
   descriptors: Iterable<AnyDescriptor>,
-  rules: FilePickerRules
+  isVisible: (item: AnyDescriptor) => boolean
 ): FilePickerCache {
   const paths: string[] = []
   for (const descriptor of descriptors) {
-    if (matchesFilePicker(descriptor, rules)) {
+    if (descriptor.type !== 'directory' && isVisible(descriptor)) {
       paths.push(descriptor.path)
     }
   }
@@ -87,17 +51,12 @@ export function buildFilePickerCache (
 export default function matchQuery (
   query: string,
   includeTitle: boolean,
-  includeH1: boolean,
-  filePickerRules?: FilePickerRules
+  includeH1: boolean
 ): (item: AnyDescriptor) => boolean {
   const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
-    if (!matchesFilePicker(item, filePickerRules)) {
-      return false
-    }
-
     let allQueriesMatched = true
 
     for (const q of queries) {

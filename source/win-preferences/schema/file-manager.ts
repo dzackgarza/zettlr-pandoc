@@ -79,8 +79,8 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
       ]
     },
     {
-      title: trans('File picker filters'),
-      infoString: trans('Permanent inclusion and exclusion settings for the Ctrl+Shift+P file picker. These rules do not change the ordinary file manager. Include is applied first; Exclude always wins. Leave Include empty to allow every file type.'),
+      title: trans('File filters'),
+      infoString: trans('Permanent inclusion and exclusion settings for the file manager. Ctrl+Shift+P only searches files that pass these same rules. Include is applied first; Exclude always wins. Leave Include empty to allow every file type permitted by File Treatment.'),
       group: PreferencesGroups.FileManager,
       help: undefined,
       fields: [
@@ -88,13 +88,13 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
           type: 'token',
           label: trans('Include file extensions'),
           placeholder: trans('Enter an extension, e.g. ".md"'),
-          model: 'fileManager.filePicker.include'
+          model: 'fileManager.filters.include'
         },
         {
           type: 'token',
           label: trans('Exclude file extensions'),
           placeholder: trans('Enter an extension, e.g. ".tex"'),
-          model: 'fileManager.filePicker.exclude'
+          model: 'fileManager.filters.exclude'
         }
       ]
     },
