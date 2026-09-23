@@ -5,15 +5,12 @@
     tabindex="1"
     role="region"
     aria-label="File List"
-    :class="{ hidden: !isVisible }"
-    :aria-hidden="!isVisible"
-    @blur="activeDescriptor = undefined"
+    v-bind:class="{ hidden: !isVisible }"
+    v-bind:aria-hidden="!isVisible"
+    v-on:blur="activeDescriptor = undefined"
   >
     <template v-if="getDirectoryContents.length > 1">
-      <div
-        v-if="getFilteredDirectoryContents.length === 0"
-        class="empty-file-list"
-      >
+      <div v-if="getFilteredDirectoryContents.length === 0" class="empty-file-list">
         {{ noResultsMessage }}
       </div>
       <template v-else>
@@ -28,21 +25,21 @@
         <RecycleScroller
           v-slot="{ item }"
           key-field="id"
-          :items="getFilteredDirectoryContents"
-          :item-size="itemHeight"
-          :emit-update="true"
-          :page-mode="true"
-          @update="updateDynamics"
+          v-bind:items="getFilteredDirectoryContents"
+          v-bind:item-size="itemHeight"
+          v-bind:emit-update="true"
+          v-bind:page-mode="true"
+          v-on:update="updateDynamics"
         >
           <FileItem
-            :item="item.props"
-            :active-file="activeDescriptor"
-            :index="0"
-            :window-id="windowId"
-            @create-file="handleOperation('file-new', item.id)"
-            @create-dir="handleOperation('dir-new', item.id)"
-            @begin-dragging="emit('lock-file-tree')"
-          />
+            v-bind:item="item.props"
+            v-bind:active-file="activeDescriptor"
+            v-bind:index="0"
+            v-bind:window-id="windowId"
+            v-on:create-file="handleOperation('file-new', item.id)"
+            v-on:create-dir="handleOperation('dir-new', item.id)"
+            v-on:begin-dragging="emit('lock-file-tree')"
+          ></FileItem>
         </RecycleScroller>
       </template>
     </template>
@@ -53,14 +50,15 @@
       -->
       <FileItem
         v-for="item in getDirectoryContents"
-        :key="item.id"
-        :index="0"
-        :item="item.props"
-        :window-id="windowId"
-        :active-file="activeDescriptor"
-        @create-file="handleOperation('file-new', item.id)"
-        @create-dir="handleOperation('dir-new', item.id)"
-      />
+        v-bind:key="item.id"
+        v-bind:index="0"
+        v-bind:item="item.props"
+        v-bind:window-id="windowId"
+        v-bind:active-file="activeDescriptor"
+        v-on:create-file="handleOperation('file-new', item.id)"
+        v-on:create-dir="handleOperation('dir-new', item.id)"
+      >
+      </FileItem>
       <div
         v-if="getDirectoryContents[0].props.type === 'directory'"
         class="empty-directory"
@@ -364,10 +362,6 @@ function stopNavigate (): void {
   activeDescriptor.value = undefined
 }
 
-function getRootElement (): HTMLDivElement|null {
-  return rootElement.value
-}
-
 function scrollIntoView (): void {
   if (rootElement.value === null) {
     return
@@ -451,7 +445,7 @@ async function handleOperation (type: 'dir-new'|'file-new', idx: number): Promis
   })
 }
 
-defineExpose({ navigate, stopNavigate, getRootElement })
+defineExpose({ navigate, stopNavigate })
 </script>
 
 <style lang="less">

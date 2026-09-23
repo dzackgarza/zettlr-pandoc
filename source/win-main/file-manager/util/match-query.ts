@@ -39,9 +39,6 @@ export default function matchQuery (
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
-    // The quick file filter's default scope is authored Markdown. Code files
-    // (.tex/.yml/.json/...) and directories stay available in the ordinary
-    // file manager, but are not candidates while that opt-in scope is active.
     if (markdownOnly && item.type !== 'file') {
       return false
     }
@@ -75,11 +72,11 @@ export default function matchQuery (
           }
         }
 
-        const frontmatter: unknown = item.frontmatter
-        const hasTitle = typeof frontmatter === 'object' && frontmatter !== null && 'title' in frontmatter
+        const hasFrontmatter = item.frontmatter != null
+        const hasTitle = hasFrontmatter && 'title' in item.frontmatter
 
         // Does the frontmatter work?
-        if (includeTitle && hasTitle && String(frontmatter.title).toLowerCase().includes(q)) {
+        if (includeTitle && hasTitle && String(item.frontmatter.title).toLowerCase().includes(q)) {
           queryMatched = true
         }
 

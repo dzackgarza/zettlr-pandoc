@@ -1,7 +1,6 @@
 <template>
   <div
     id="file-tree"
-    ref="rootElement"
     role="region"
     aria-label="File Tree"
     :class="{ 'hidden': !isVisible }"
@@ -199,7 +198,6 @@ const emit = defineEmits<{
 
 // Can contain the path to a tree item that is focused
 const activeTreeItem = ref<undefined|[string, string]>(undefined)
-const rootElement = ref<HTMLDivElement|null>(null)
 
 const workspacesContextMenuButton = ref<HTMLElement|null>(null)
 const showSortingPopover = ref(false)
@@ -532,10 +530,6 @@ function stopNavigate (): void {
   activeTreeItem.value = undefined
 }
 
-function getRootElement (): HTMLDivElement|null {
-  return rootElement.value
-}
-
 // Dragging for the manual workspaces sort popover
 function startDragging (event: DragEvent): void {
   if (event.currentTarget === null || !(event.currentTarget instanceof HTMLLIElement)) {
@@ -603,7 +597,7 @@ function drop (event: DragEvent): void {
     .catch(e => console.error(e))
 }
 
-defineExpose({ navigate, stopNavigate, getRootElement })
+defineExpose({ navigate, stopNavigate })
 </script>
 
 <style lang="less">

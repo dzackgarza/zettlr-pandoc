@@ -67,7 +67,7 @@ const directory: DirDescriptor = {
 }
 
 describe('Ctrl+Shift+P Markdown file-filter scope', function () {
-  it('uses the intended file-filter shortcut by default', function () {
+  it('keeps the explicit file-filter shortcut', function () {
     assert.deepEqual(defaultKeybindings['filter-files'], {
       key: 'Ctrl-Shift-p',
       mac: 'Cmd-Shift-p'
