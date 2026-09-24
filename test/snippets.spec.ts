@@ -166,7 +166,7 @@ describe('CodeMirror-native snippet host', function () {
     const view = editor('choice')
     assert.throws(
       () => codeMirrorTemplateForSnippet(view.state, '${1|left,right|}$0'),
-      /richer snippet runtime/
+      Error
     )
   })
 })

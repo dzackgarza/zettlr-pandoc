@@ -26,7 +26,8 @@ import path from 'path'
 import type {
   FlowmarkLintDiagnostic,
   FlowmarkLintResult,
-  FlowmarkLintSeverity
+  FlowmarkLintSeverity,
+  FlowmarkLintSuggestion
 } from '@dts/common/flowmark-lint'
 
 const FLOWMARK_LINT_TIMEOUT_MS = 60_000
@@ -60,9 +61,16 @@ function diagnostic (value: unknown): value is FlowmarkLintDiagnostic {
     typeof candidate.end_column === 'number' &&
     (candidate.data === undefined ||
       (typeof candidate.data === 'object' && candidate.data !== null && !Array.isArray(candidate.data))) &&
-    (candidate.replacement === undefined ||
-      candidate.replacement === null ||
-      typeof candidate.replacement === 'string')
+    Array.isArray(candidate.suggestions) &&
+    candidate.suggestions.every(suggestion)
+}
+
+function suggestion (value: unknown): value is FlowmarkLintSuggestion {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as Partial<FlowmarkLintSuggestion>
+  return typeof candidate.title === 'string' && typeof candidate.replacement === 'string'
 }
 
 interface FlowmarkLintWireFile {

@@ -100,4 +100,26 @@ describe("main-process document lint", function () {
       );
     assert.deepEqual(structuralFailures, []);
   });
+
+  it("carries a Flowmark fix to the source range it replaces", async function () {
+    const repositoryRoot = path.join(__dirname, "..");
+    const context = await createDocumentLintContext({
+      homeDirectory: home,
+      env: process.env,
+      citationKeys: null,
+      tikzRenderConfig: {
+        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
+        templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
+        cacheDir,
+        env: process.env,
+      },
+    });
+    const markdown = "Let $sin x = 0$.\n";
+
+    const diagnostics = await lintDocumentText(markdown, path.join(root, "operator.md"), context);
+    const operator = diagnostics.find((diagnostic) => diagnostic.rule === "math/bare-operator");
+    assert.ok(operator !== undefined);
+    assert.equal(markdown.slice(operator.from, operator.to), "sin");
+    assert.deepEqual(operator.suggestions, [{ title: "Use `\\sin`", replacement: "\\sin" }]);
+  });
 });

@@ -77,8 +77,9 @@ export async function lintDocumentText(
         to: offsetForLineColumn(text, diagnostic.end_line, diagnostic.end_column),
         severity: diagnostic.severity,
         message: diagnostic.message,
-        source: "Markdown",
+        source: "Flowmark",
         rule: diagnostic.rule,
+        suggestions: diagnostic.suggestions,
         data: diagnostic.data,
       });
     }
@@ -87,8 +88,8 @@ export async function lintDocumentText(
       from: 0,
       to: Math.min(1, text.length),
       severity: "error",
-      message: `Markdown linting is unavailable: ${flowmark.message}`,
-      source: "Markdown linter",
+      message: `Flowmark could not lint this document: ${flowmark.message}`,
+      source: "Flowmark",
       rule: flowmark.kind,
     });
   }

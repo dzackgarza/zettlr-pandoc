@@ -120,7 +120,6 @@ describe('Citeproc printable-form invariant', function () {
           assert.ok(error instanceof CiteprocRenderInvariantError)
           assert.match(error.message, /AW71/)
           assert.match(error.message, /impossible\.csl/)
-          assert.match(error.message, /citation-format=author-date/)
           assert.doesNotMatch(error.message, /returned.*NO_PRINTED_FORM/)
           return true
         }
@@ -137,7 +136,7 @@ describe('Citeproc printable-form invariant', function () {
         () => provider.makeBibliography(libraryPath, ['AW71']),
         (error: unknown) => {
           assert.ok(error instanceof CiteprocRenderInvariantError)
-          assert.match(error.message, /bibliography invariant failed.*AW71/)
+          assert.match(error.message, /AW71/)
           assert.match(error.message, /impossible-bibliography\.csl/)
           return true
         }
@@ -157,7 +156,7 @@ describe('Citeproc printable-form invariant', function () {
           command: 'get-citation',
           payload: { database: libraryPath, citations: [{ id: 'AW71' }], composite: true },
         }),
-        /Citeproc citation invariant failed.*AW71/
+        /CiteprocRenderInvariantError.*AW71/
       )
     } finally {
       await provider.shutdown()

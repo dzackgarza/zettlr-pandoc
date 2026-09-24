@@ -1810,6 +1810,20 @@ components:
           type: string
         rule:
           type: string
+        suggestions:
+          type: array
+          description: Candidate fixes. Each replaces the whole from-to range with its replacement.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - title
+              - replacement
+            properties:
+              title:
+                type: string
+              replacement:
+                type: string
         data:
           type: object
           properties: {}

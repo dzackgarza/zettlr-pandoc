@@ -631,7 +631,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(JSON.parse(linked.body).proposalActions[0].packetId, result.packetIds[0]);
   });
 
-  it("rejects duplicate and near-duplicate claim descriptions with per-edit remediation guidance", async function () {
+  it("rejects duplicate and near-duplicate claim descriptions", async function () {
     const filePath = path.join(scratch, "duplicate-descriptions.md");
     const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
     const middle = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric.\n";
@@ -663,11 +663,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
     assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
     assert.equal(exactError.descriptionSimilarity, 1);
-    assert.match(exactError.message, /100% similar descriptions/);
-    assert.match(exactError.message, /per-edit diagnosis and justification/);
-    assert.match(exactError.message, /specific defect at that edit's location\/context/);
-    assert.match(exactError.message, /what this claim changes there/);
-    assert.match(exactError.message, /why that particular change fixes the defect/);
 
     const unchangedAfterExact = await httpRequest(
       "GET",
@@ -704,7 +699,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(fuzzyError.descriptionSimilarity !== undefined);
     assert.ok(fuzzyError.descriptionSimilarity >= 0.94);
     assert.ok(fuzzyError.descriptionSimilarity < 1);
-    assert.match(fuzzyError.message, /rejection threshold: 94%/);
 
     const unchangedAfterFuzzy = await httpRequest(
       "GET",

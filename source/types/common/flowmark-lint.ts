@@ -13,8 +13,15 @@ export interface FlowmarkLintDiagnostic {
   column: number
   end_line: number
   end_column: number
-  replacement?: string | null
+  /** Candidate fixes; each replaces the diagnostic's whole range. */
+  suggestions: FlowmarkLintSuggestion[]
   data?: Record<string, unknown>
+}
+
+export interface FlowmarkLintSuggestion {
+  /** Short imperative shown on the fix button, e.g. "Use `\sin`". */
+  title: string
+  replacement: string
 }
 
 export type FlowmarkLintResult =

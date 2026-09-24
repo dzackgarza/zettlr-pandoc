@@ -1,6 +1,7 @@
 import { app as electronApp } from 'electron'
 import type {
   ExternalDiagnostic,
+  ExternalDiagnosticAction,
   ExternalLinterRunRequest,
   ExternalLinterRunResponse
 } from '@common/diagnostics/external-linter'
@@ -70,8 +71,13 @@ async function runFlowmarkBackend (
       message: diagnostic.message,
       source: diagnostic.rule === undefined
         ? diagnostic.source
-        : 'Markdown (' + diagnostic.rule + ')',
-      data: diagnostic.data
+        : diagnostic.source + ' (' + diagnostic.rule + ')',
+      data: diagnostic.data,
+      actions: diagnostic.suggestions?.map((suggestion): ExternalDiagnosticAction => ({
+        kind: 'replace',
+        name: suggestion.title,
+        replacement: suggestion.replacement
+      }))
     }))
   }
 }

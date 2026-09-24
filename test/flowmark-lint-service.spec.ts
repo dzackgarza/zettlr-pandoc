@@ -32,7 +32,7 @@ describe('Flowmark lint service', function () {
           column: 3,
           end_line: 2,
           end_column: 8,
-          replacement: null
+          suggestions: [ { title: 'Use `\\sin`', replacement: '\\sin' } ]
         }]
       }]
     })
@@ -51,7 +51,7 @@ describe('Flowmark lint service', function () {
         column: 3,
         end_line: 2,
         end_column: 8,
-        replacement: null
+        suggestions: [ { title: 'Use `\\sin`', replacement: '\\sin' } ]
       }])
     }
   })

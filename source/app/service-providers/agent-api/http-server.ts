@@ -2144,6 +2144,9 @@ export default class AgentHTTPProvider extends ProviderContract {
               message: diagnostic.message,
               source: diagnostic.source,
               ...(diagnostic.rule === undefined ? {} : { rule: diagnostic.rule }),
+              ...(diagnostic.suggestions === undefined
+                ? {}
+                : { suggestions: diagnostic.suggestions }),
               ...(diagnostic.data === undefined ? {} : { data: diagnostic.data }),
             };
           });

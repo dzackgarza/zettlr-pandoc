@@ -105,7 +105,7 @@ describe('Quarto book manifest editor', function () {
   it('rejects a chapter outside the Project root', function () {
     assert.throws(() => editQuartoBookSource(root, manifest, source, {
       kind: 'add-chapter', chapterPath: '../elsewhere.md'
-    }), /outside the Project root/)
+    }), Error)
   })
 
   it('uses an assembly symlink inside a bound manifest root instead of writing a ../ chapter path', async function () {

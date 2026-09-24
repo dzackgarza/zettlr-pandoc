@@ -40,6 +40,14 @@ import {
   CollaborationSidecarStore,
   collaborationSidecarFilePath,
 } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import {
+  AnnotationDomainValidationError,
+  type AnnotationDomainValidationCode,
+} from "source/app/service-providers/documents/annotation-domain-validation";
+
+function annotationIssue(code: AnnotationDomainValidationCode): (error: unknown) => boolean {
+  return (error) => error instanceof AnnotationDomainValidationError && error.issue.code === code;
+}
 
 const FINGERPRINT =
   "1111111111111111111111111111111111111111111111111111111111111111";
@@ -417,7 +425,7 @@ describe("CollaborationSidecarStore", function () {
       review: null,
       annotations: { generation: 1, items: [annotation("annotation-1"), annotation("annotation-1")] },
     });
-    await assert.rejects(store.read(documentPath), /duplicate annotation id annotation-1/);
+    await assert.rejects(store.read(documentPath), annotationIssue("DUPLICATE_ANNOTATION_ID"));
   });
 
   it("rejects distinct annotations with the same normalized creation instruction", async function () {
@@ -441,7 +449,7 @@ describe("CollaborationSidecarStore", function () {
     });
     await assert.rejects(
       store.read(documentPath),
-      /same creation instruction.*Each annotation must state a distinct reason/s,
+      annotationIssue("DUPLICATE_ANNOTATION_INSTRUCTION"),
     );
   });
 
