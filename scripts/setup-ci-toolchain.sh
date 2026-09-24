@@ -3,6 +3,8 @@ set -euo pipefail
 
 readonly pandoc_version='3.9.0.2'
 readonly pandoc_sha256='ce4ac48f48aa7eadc1f5dbdf3449a1739f188ecb8c5421c5adc070fe7479e567'
+readonly pandoc_reference_version='3.10.2'
+readonly pandoc_reference_sha256='6c06b69b49ae95087573631a6fcafb233ab7ab51e5cfa73f7539d6c964a2640d'
 readonly crossref_release='0.3.24a'
 readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
 readonly pandoc_config_dir="${HOME}/.pandoc"
@@ -12,7 +14,7 @@ if [[ "$(uname -m)" != 'x86_64' ]]; then
   exit 1
 fi
 
-for command_name in curl git sha256sum sudo tar; do
+for command_name in curl dpkg-deb git sha256sum sudo tar; do
   command -v "${command_name}" >/dev/null
 done
 
@@ -35,6 +37,20 @@ curl --fail --location --silent --show-error \
 printf '%s  %s\n' "${pandoc_sha256}" "${pandoc_package}" | sha256sum --check
 sudo dpkg --install "${pandoc_package}"
 
+# Parser differential tests are locked to the vendored grammar's exact Pandoc
+# reference release. Keep that oracle separate from the export toolchain above:
+# pandoc-crossref must match the runtime pandoc ABI, while grammar tests must not
+# silently change meaning when the export toolchain changes.
+readonly pandoc_reference_package="${setup_dir}/pandoc-reference.deb"
+readonly pandoc_reference_root="${setup_dir}/pandoc-reference"
+curl --fail --location --silent --show-error \
+  "https://github.com/jgm/pandoc/releases/download/${pandoc_reference_version}/pandoc-${pandoc_reference_version}-1-amd64.deb" \
+  --output "${pandoc_reference_package}"
+printf '%s  %s\n' "${pandoc_reference_sha256}" "${pandoc_reference_package}" | sha256sum --check
+mkdir --parents "${pandoc_reference_root}"
+dpkg-deb --extract "${pandoc_reference_package}" "${pandoc_reference_root}"
+sudo install --mode 0755 "${pandoc_reference_root}/usr/bin/pandoc" /usr/local/bin/pandoc-reference
+
 readonly crossref_archive="${setup_dir}/pandoc-crossref.tar.xz"
 curl --fail --location --silent --show-error \
   "https://github.com/lierdakil/pandoc-crossref/releases/download/v${crossref_release}/pandoc-crossref-Linux-X64.tar.xz" \
@@ -46,9 +62,12 @@ git clone --depth 1 https://github.com/dzackgarza/pandoc-config.git "${pandoc_co
 
 actual_pandoc_version="$(pandoc --version | head -1 | cut -d ' ' -f2)"
 readonly actual_pandoc_version
+actual_pandoc_reference_version="$(pandoc-reference --version | head -1 | cut -d ' ' -f2)"
+readonly actual_pandoc_reference_version
 actual_crossref_version="$(pandoc-crossref --version | sed -nE 's/.*built with Pandoc v([^,]+),.*/\1/p')"
 readonly actual_crossref_version
 test "${actual_pandoc_version}" = "${pandoc_version}"
+test "${actual_pandoc_reference_version}" = "${pandoc_reference_version}"
 test "${actual_crossref_version}" = "${pandoc_version}"
 command -v just >/dev/null
 command -v latexmk >/dev/null

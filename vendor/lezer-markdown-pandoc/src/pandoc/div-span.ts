@@ -249,7 +249,7 @@ export function pandocDivComposite (ctx: BlockContext, line: Line, value: number
   // Add the closing marker and move the line position
   // up so that we do not re-parse the text.
   line.addMarker(ctx.elt('PandocDivMark', from, to))
-  line.moveBase(to)
+  line.moveBase(markTo)
 
   return false
 }

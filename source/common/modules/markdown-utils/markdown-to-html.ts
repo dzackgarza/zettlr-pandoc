@@ -241,8 +241,20 @@ export function nodeToHTML(
     const attr = renderNodeAttributes(node);
     return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`;
   } else if (node.type === "Heading") {
+    let body = nodeToHTML(node.children, options, indent);
+    if (node.name === "ATXHeading") {
+      body = body.replace(/^[ \t]+/u, "");
+    }
+    if (node.level > 6) {
+      // Pandoc's HTML writer represents Header levels beyond HTML's h1-h6
+      // range as a paragraph with class="heading", while preserving the
+      // semantic level in the Pandoc AST. Never emit non-standard <h7>, <h8>, …
+      addAttribute(node, "class", "heading");
+      const attr = renderNodeAttributes(node);
+      return `${node.whitespaceBefore}<p${attr}>${body}</p>`;
+    }
     const attr = renderNodeAttributes(node);
-    return `${node.whitespaceBefore}<h${node.level}${attr}>${nodeToHTML(node.children, options, indent)}</h${node.level}>`;
+    return `${node.whitespaceBefore}<h${node.level}${attr}>${body}</h${node.level}>`;
   } else if (node.type === "Highlight") {
     const attr = renderNodeAttributes(node);
     return `${node.whitespaceBefore}<mark${attr}>${nodeToHTML(node.children, options, indent)}</mark>`;

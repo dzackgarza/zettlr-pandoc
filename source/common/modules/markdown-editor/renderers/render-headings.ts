@@ -32,6 +32,7 @@ import {
   reviewSuppressionChanged,
 } from "../util/range-in-preview-suppression";
 import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+import { markdownHeadingLevel } from "../util/heading-level";
 
 function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
@@ -46,7 +47,7 @@ function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
       return;
     }
 
-    if (!node.name.startsWith("ATXHeading")) {
+    if (node.name !== "ATXHeading") {
       return;
     }
 
@@ -66,6 +67,47 @@ function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
 
   return Decoration.set(ranges, true);
 }
+
+/**
+ * Font sizing is presentation, not syntax. HTML/editor themes have six native
+ * heading size slots, so levels above six deliberately reuse the h6 size while
+ * retaining their exact semantic level in `data-heading-level`.
+ */
+function headingLevelDecorations(view: EditorView): DecorationSet {
+  const ranges: Array<Range<Decoration>> = [];
+  visitVisibleSyntaxNodes(view, (node) => {
+    const level = markdownHeadingLevel(node.node);
+    if (level === null) return;
+    const sizeClass = level < 6 ? `cm-pandoc-heading-size-${level}` : "cm-pandoc-heading-size-6";
+    ranges.push(
+      Decoration.line({
+        attributes: {
+          class: `cm-pandoc-heading-line ${sizeClass}`,
+          "data-heading-level": String(level),
+        },
+      }).range(view.state.doc.lineAt(node.from).from),
+    );
+    return false;
+  });
+  return Decoration.set(ranges, true);
+}
+
+const headingLevelPresentation = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = headingLevelDecorations(view);
+    }
+
+    update(update: ViewUpdate): void {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = headingLevelDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (view) => view.decorations },
+);
 
 export const renderHeadings = ViewPlugin.fromClass(
   class {
@@ -106,6 +148,7 @@ class HeadingMarkGutter extends GutterMarker {
 }
 
 export const headingGutter: Extension[] = [
+  headingLevelPresentation,
   gutter({
     class: "cm-heading-gutter",
     renderEmptyElements: false,
@@ -117,12 +160,12 @@ export const headingGutter: Extension[] = [
       }
 
       const parent = node.parent;
-      if (parent === null || !parent.name.startsWith("ATXHeading")) {
+      if (parent === null || parent.name !== "ATXHeading") {
         return null;
       }
 
-      const level = parseInt(parent.name.slice(10), 10);
-      if (Number.isNaN(level)) {
+      const level = markdownHeadingLevel(parent);
+      if (level === null) {
         return null;
       }
 

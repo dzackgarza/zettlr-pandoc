@@ -1,9 +1,9 @@
 /** Differential oracle for editor-side Pandoc RawBlock(tex) structure. */
 
 import { strict as assert } from "assert";
-import { execFileSync } from "child_process";
 import { markdownToAST } from "source/common/modules/markdown-utils";
 import type { ASTNode } from "source/common/modules/markdown-utils/markdown-ast";
+import { execPandocReference } from "./pandoc-reference";
 
 const PANDOC_READER = [
   "markdown",
@@ -59,10 +59,7 @@ function editorRawInlines(source: string): string[] {
 }
 
 function pandocRawBlocks(source: string): string[] {
-  const raw = execFileSync("pandoc", ["-f", PANDOC_READER, "-t", "json"], {
-    input: source,
-    encoding: "utf-8",
-  });
+  const raw = execPandocReference(["-f", PANDOC_READER, "-t", "json"], { input: source });
   const document = JSON.parse(raw) as unknown;
   const blocks: string[] = [];
   const visit = (value: unknown): void => {
@@ -93,10 +90,7 @@ function pandocRawBlocks(source: string): string[] {
 }
 
 function pandocRawInlines(source: string): string[] {
-  const raw = execFileSync("pandoc", ["-f", PANDOC_READER, "-t", "json"], {
-    input: source,
-    encoding: "utf-8",
-  });
+  const raw = execPandocReference(["-f", PANDOC_READER, "-t", "json"], { input: source });
   const document = JSON.parse(raw) as unknown;
   const inlines: string[] = [];
   const visit = (value: unknown): void => {
@@ -266,7 +260,7 @@ describe("Pandoc raw-LaTeX block differential oracle", function () {
   this.timeout(30000);
 
   it("has a working Pandoc oracle", function () {
-    assert.match(execFileSync("pandoc", ["--version"], { encoding: "utf-8" }), /^pandoc \d+/);
+    assert.match(execPandocReference(["--version"]), /^pandoc 3\.10\.2\b/);
   });
 
   for (const testCase of cases) {

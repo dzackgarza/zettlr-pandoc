@@ -10,10 +10,10 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { execFileSync } from 'node:child_process'
 import { syntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import { execPandocReference } from './pandoc-reference'
 
 const READER = [
   'markdown',
@@ -24,10 +24,7 @@ const READER = [
 ].join('')
 
 function pandocDocument (source: string): unknown {
-  return JSON.parse(execFileSync('pandoc', ['-f', READER, '-t', 'json'], {
-    input: source,
-    encoding: 'utf8'
-  })) as unknown
+  return JSON.parse(execPandocReference(['-f', READER, '-t', 'json'], { input: source })) as unknown
 }
 
 function pandocTypeCount (document: unknown, type: string): number {

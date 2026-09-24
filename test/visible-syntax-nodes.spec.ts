@@ -50,7 +50,7 @@ describe("shared visible syntax traversal", function () {
       // Tree.iterate passes a mutable TreeCursor. The cache must hold stable
       // snapshots, not repeated aliases to that cursor's final node.
       const names = first.map(node => node.name);
-      assert.ok(names.includes("ATXHeading1"), `missing heading from cached stream: ${names.join(", ")}`);
+      assert.ok(names.includes("ATXHeading"), `missing heading from cached stream: ${names.join(", ")}`);
       assert.ok(names.includes("Emphasis"), `missing emphasis from cached stream: ${names.join(", ")}`);
       assert.ok(names.includes("Link"), `missing link from cached stream: ${names.join(", ")}`);
       assert.ok(new Set(first.map(node => `${node.name}:${node.from}:${node.to}`)).size > 3);

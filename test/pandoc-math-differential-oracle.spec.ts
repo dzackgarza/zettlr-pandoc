@@ -1,21 +1,18 @@
 /** Differential oracle for Pandoc Markdown TeX-math delimiters. */
 
 import { strict as assert } from 'node:assert'
-import { execFileSync } from 'node:child_process'
 import { ensureSyntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { stripMathDelimiters } from 'source/common/util/math-delimiters'
+import { execPandocReference } from './pandoc-reference'
 
 const READER = 'markdown+tex_math_dollars+tex_math_single_backslash'
 
 type MathKind = 'inline'|'display'
 
 function pandocMathKinds (source: string): MathKind[] {
-  const raw = execFileSync('pandoc', ['-f', READER, '-t', 'json'], {
-    input: source,
-    encoding: 'utf8'
-  })
+  const raw = execPandocReference(['-f', READER, '-t', 'json'], { input: source })
   const document = JSON.parse(raw) as unknown
   const kinds: MathKind[] = []
   const visit = (value: unknown): void => {
@@ -128,6 +125,6 @@ describe('Pandoc math differential oracle', function () {
     const state = EditorState.create({ doc: source, extensions: [markdownParser()] })
     const tree = ensureSyntaxTree(state, source.length, 5000)
     assert.ok(tree !== null)
-    assert.match(tree.toString(), /ATXHeading2/u)
+    assert.match(tree.toString(), /ATXHeading/u)
   })
 })

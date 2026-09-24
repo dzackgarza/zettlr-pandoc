@@ -53,12 +53,7 @@ export enum Type {
   BulletList,
   OrderedList,
   ListItem,
-  ATXHeading1,
-  ATXHeading2,
-  ATXHeading3,
-  ATXHeading4,
-  ATXHeading5,
-  ATXHeading6,
+  ATXHeading,
   SetextHeading1,
   SetextHeading2,
   HTMLBlock,
@@ -362,8 +357,7 @@ function isAtxHeading(line: Line) {
   let pos = line.pos + 1
   while (pos < line.text.length && line.text.charCodeAt(pos) == 35) pos++
   if (pos < line.text.length && line.text.charCodeAt(pos) != 32) return -1
-  let size = pos - line.pos
-  return size > 6 ? -1 : size
+  return pos - line.pos
 }
 
 function isSetextUnderline(line: Line) {
@@ -562,7 +556,7 @@ const DefaultBlockParsers: {[name: string]: ((cx: BlockContext, line: Line) => B
       .write(Type.HeaderMark, 0, size)
       .writeElements(cx.parser.parseInline(line.text.slice(off + size + 1, after), from + size + 1), -from)
     if (after < line.text.length) buf.write(Type.HeaderMark, after - off, endOfSpace - off)
-    let node = buf.finish(Type.ATXHeading1 - 1 + size, line.text.length - off)
+    let node = buf.finish(Type.ATXHeading, line.text.length - off)
     cx.nextLine()
     cx.addNode(node, from)
     return true
@@ -1291,7 +1285,9 @@ export class MarkdownParser extends Parser {
           (bl: CompositeBlock, cx: BlockContext, line: Line) => composite!(cx, line, bl.value)
         let id = nodeTypes.length
         let group = composite ? ["Block", "BlockContext"] : !block ? undefined
-          : id >= Type.ATXHeading1 && id <= Type.SetextHeading2 ? ["Block", "LeafBlock", "Heading"] : ["Block", "LeafBlock"]
+          : name == "ATXHeading" || name == "SetextHeading1" || name == "SetextHeading2"
+            ? ["Block", "LeafBlock", "Heading"]
+            : ["Block", "LeafBlock"]
         nodeTypes.push(NodeType.define({
           id,
           name,
@@ -1437,7 +1433,11 @@ for (let i = 1, name; name = Type[i]; i++) {
   nodeTypes[i] = NodeType.define({
     id: i,
     name,
-    props: i >= Type.Escape ? [] : [[NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
+    props: i == Type.ATXHeading
+      ? [[NodeProp.group, ["Block", "LeafBlock", "Heading"]]]
+      : i >= Type.Escape
+        ? []
+        : [[NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
     top: name == "Document"
   })
 }
@@ -2182,12 +2182,9 @@ function toRelative(abs: number, ranges: readonly {from: number, to: number}[]) 
 const markdownHighlighting = styleTags({
   "Blockquote/...": t.quote,
   HorizontalRule: t.contentSeparator,
-  "ATXHeading1/... SetextHeading1/...": t.heading1,
-  "ATXHeading2/... SetextHeading2/...": t.heading2,
-  "ATXHeading3/...": t.heading3,
-  "ATXHeading4/...": t.heading4,
-  "ATXHeading5/...": t.heading5,
-  "ATXHeading6/...": t.heading6,
+  "SetextHeading1/...": t.heading1,
+  "SetextHeading2/...": t.heading2,
+  "ATXHeading/...": t.heading,
   "Comment CommentBlock": t.comment,
   Escape: t.escape,
   Entity: t.character,

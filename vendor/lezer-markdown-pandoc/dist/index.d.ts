@@ -456,7 +456,7 @@ interface DelimiterType {
     [open and close](#InlineContext.addDelimiter) properties. When a
     match is found, the content between the delimiters is wrapped in
     a node whose name is given by the value of this property.
-
+    
     When this isn't given, you need to match the delimiter eagerly
     using the [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter)
     and [`takeContent`](#InlineContext.takeContent) methods.
@@ -862,13 +862,13 @@ declare function rawLatexEnvironmentEnd(text: string, environment: string): numb
  */
 declare function pandocLatexMathEnvironmentAtStart(text: string): PandocLatexMathEnvironment | null;
 /**
- * End offset for the subset of Pandoc RawInline(tex) syntax that begins with a
- * control sequence or one of Pandoc's LaTeX inline environments.
+ * End offset for Pandoc RawInline(tex) syntax beginning with a LaTeX control
+ * word or one of Pandoc's LaTeX inline environments.
  *
  * Reference implementation: Pandoc 3.10.2 `rawLaTeXInline` in
- * Text/Pandoc/Readers/LaTeX.hs (lines 196-207), using `inline` and
- * `inlineEnvironment`. The executable Pandoc JSON reader is the differential
- * oracle for the admitted shapes.
+ * Text/Pandoc/Readers/LaTeX.hs (lines 196-207). Control-word consumption is
+ * driven by the generated upstream strategy table rather than a local arity
+ * heuristic.
  */
 declare function rawLatexInlineEndAtStart(text: string): number | null;
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */

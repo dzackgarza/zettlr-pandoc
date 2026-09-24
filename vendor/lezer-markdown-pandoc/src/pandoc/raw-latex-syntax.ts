@@ -8,6 +8,11 @@
  */
 
 import { PANDOC_INLINE_COMMAND_NAMES } from './pandoc-inline-commands'
+import { PANDOC_BLOCK_COMMAND_NAMES } from './pandoc-block-commands'
+import {
+  PANDOC_INLINE_COMMAND_STRATEGIES,
+  type PandocInlineCommandStrategy,
+} from './pandoc-inline-command-strategies'
 
 /**
  * Pure recognition of Pandoc-style raw LaTeX environment blocks.
@@ -42,103 +47,7 @@ export interface PandocLatexMathEnvironment {
 
 const ENVIRONMENT_OPEN_RE = /^\\begin\{([A-Za-z@]+\*?)\}/u;
 const CONTROL_SEQUENCE_RE = /^\\([A-Za-z@]+)(\*)?/u;
-
-/** Pandoc 3.10.2 Text.Pandoc.Readers.LaTeX blockCommands + treatAsBlock. */
-const PANDOC_BLOCK_COMMANDS: ReadonlySet<string> = new Set([
-  "PackageError",
-  "addbibresource",
-  "addcontentsline",
-  "address",
-  "addtocontents",
-  "addtocounter",
-  "author",
-  "bibliography",
-  "bibliographystyle",
-  "blockcquote",
-  "blockquote",
-  "caption",
-  "centerline",
-  "chapter",
-  "clearpage",
-  "closing",
-  "colorbox",
-  "date",
-  "dedication",
-  "documentclass",
-  "endinput",
-  "epigraph",
-  "extratitle",
-  "fancybreak",
-  "foreignblockcquote",
-  "foreignblockquote",
-  "framesubtitle",
-  "frametitle",
-  "frontispiece",
-  "graphicspath",
-  "hrule",
-  "hspace",
-  "hyperdef",
-  "hypertarget",
-  "hyphenblockcquote",
-  "hyphenblockquote",
-  "iftoggle",
-  "ignore",
-  "include",
-  "input",
-  "inputminted",
-  "item",
-  "listoffigures",
-  "listoftables",
-  "lowertitleback",
-  "lstinputlisting",
-  "makeglossary",
-  "makeindex",
-  "maketitle",
-  "markboth",
-  "markleft",
-  "markright",
-  "minisec",
-  "newpage",
-  "newtheorem",
-  "newtoggle",
-  "opening",
-  "pagebreak",
-  "par",
-  "paragraph",
-  "parbox",
-  "part",
-  "pdfannot",
-  "pdfstringdef",
-  "pfbreak",
-  "plainbreak",
-  "plainfancybreak",
-  "publishers",
-  "raggedright",
-  "rule",
-  "section",
-  "setdefaultlanguage",
-  "setmainlanguage",
-  "signature",
-  "special",
-  "strut",
-  "subfile",
-  "subject",
-  "subparagraph",
-  "subsection",
-  "subsubsection",
-  "subtitle",
-  "textcolor",
-  "theoremstyle",
-  "title",
-  "titleformat",
-  "titlehead",
-  "togglefalse",
-  "toggletrue",
-  "uppertitleback",
-  "usepackage",
-  "vspace",
-  "write",
-]);
+const RAW_INLINE_CONTROL_WORD_RE = /^\\([\p{L}][\p{L}@]*)(\*)?/u;
 
 const NEW_COMMAND_DEFINITIONS = new Set([
   "newcommand",
@@ -181,7 +90,7 @@ export function rawLatexBlockStartsAt(text: string): boolean {
   const command = CONTROL_SEQUENCE_RE.exec(text);
   if (
     command !== null &&
-    (PANDOC_BLOCK_COMMANDS.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))
+    (PANDOC_BLOCK_COMMAND_NAMES.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))
   ) {
     return true;
   }
@@ -246,6 +155,322 @@ function balancedGroupEnd(
     }
   }
   return null;
+}
+
+function bracketedGroupEnd(text: string, from: number): number | null {
+  return balancedGroupEnd(text, from, '[', ']')
+}
+
+function skipPandocSp(text: string, from: number): number {
+  let cursor = from
+  while (text[cursor] === ' ' || text[cursor] === '\t') cursor++
+  if (text.startsWith('\r\n', cursor)) {
+    cursor += 2
+  } else if (text[cursor] === '\n' || text[cursor] === '\r') {
+    cursor++
+  } else {
+    return cursor
+  }
+  while (text[cursor] === ' ' || text[cursor] === '\t') cursor++
+  return cursor
+}
+
+function controlWordEnd(text: string, from: number): number | null {
+  const match = /^\\[\p{L}][\p{L}@]*/u.exec(text.slice(from))
+  if (match === null) return null
+  let cursor = from + match[0].length
+  while (text[cursor] === ' ' || text[cursor] === '\t') cursor++
+  return cursor
+}
+
+/**
+ * Port of LaTeX.Parsing `tokWith`: after optional whitespace, consume either a
+ * balanced group, one following control sequence, or exactly one character of
+ * ordinary text.
+ */
+function pandocTokEnd(text: string, from: number): number | null {
+  let cursor = from
+  while (/\s/u.test(text[cursor] ?? '')) cursor++
+  if (text[cursor] === '{') return balancedGroupEnd(text, cursor, '{', '}')
+  if (text[cursor] === '\\') return controlWordEnd(text, cursor)
+  if (cursor >= text.length) return null
+  if ('#$%&~_^\\{}'.includes(text[cursor])) return null
+  return cursor + [...text.slice(cursor)][0].length
+}
+
+function pandocInlineTokenEnd(text: string, from: number): number | null {
+  if (from >= text.length) return null
+  if (text[from] === ' ' || text[from] === '\t') {
+    let cursor = from
+    while (text[cursor] === ' ' || text[cursor] === '\t') cursor++
+    return cursor
+  }
+  if (/\p{L}|\p{N}/u.test(text[from])) {
+    const match = /^[\p{L}\p{N}]+/u.exec(text.slice(from))
+    return match === null ? null : from + match[0].length
+  }
+  if (text[from] === '\\') {
+    return controlWordEnd(text, from)
+  }
+  return from + [...text.slice(from)][0].length
+}
+
+function optionalRawoptEnd(text: string, from: number): number {
+  const start = skipPandocSp(text, from)
+  if (text[start] !== '[') return from
+  const end = bracketedGroupEnd(text, start)
+  return end === null ? from : skipPandocSp(text, end)
+}
+
+function skipRawoptsEnd(text: string, from: number): number {
+  let cursor = from
+  for (;;) {
+    const next = optionalRawoptEnd(text, cursor)
+    if (next === cursor) return cursor
+    cursor = next
+  }
+}
+
+function bracedEnd(text: string, from: number): number | null {
+  const cursor = skipPandocSp(text, from)
+  return text[cursor] === '{' ? balancedGroupEnd(text, cursor, '{', '}') : null
+}
+
+function optionalBracketEnd(text: string, from: number): number {
+  const cursor = skipPandocSp(text, from)
+  if (text[cursor] !== '[') return from
+  const end = bracketedGroupEnd(text, cursor)
+  return end ?? from
+}
+
+function verbatimEnd(text: string, from: number, bracePair = false): number | null {
+  if (from >= text.length) return null
+  const marker = text[from]
+  if (/\s/u.test(marker)) return null
+  const stop = bracePair && marker === '{' ? '}' : marker
+  const end = text.indexOf(stop, from + 1)
+  return end < 0 ? null : end + 1
+}
+
+function consumeCitationArgs(text: string, from: number, multi: boolean): number | null {
+  let cursor = from
+  let consumed = 0
+  do {
+    const before = cursor
+    const firstOpt = optionalRawoptEnd(text, cursor)
+    cursor = firstOpt
+    const secondOpt = optionalRawoptEnd(text, cursor)
+    cursor = secondOpt
+    const groupStart = skipPandocSp(text, cursor)
+    if (text[groupStart] !== '{') {
+      cursor = before
+      break
+    }
+    const groupEnd = balancedGroupEnd(text, groupStart, '{', '}')
+    if (groupEnd === null) return null
+    cursor = groupEnd
+    consumed++
+  } while (multi)
+  return consumed > 0 ? cursor : null
+}
+
+function strategyEnd(
+  strategy: PandocInlineCommandStrategy,
+  text: string,
+  from: number,
+): number | null {
+  switch (strategy) {
+    case 'zero':
+    case 'optional-numeric-bracket':
+      return strategy === 'zero' ? from : optionalBracketEnd(text, from)
+    case 'tok':
+      return pandocTokEnd(text, from)
+    case 'optional-tok':
+      return pandocTokEnd(text, from) ?? from
+    case 'two-tok': {
+      const first = pandocTokEnd(text, from)
+      return first === null ? null : pandocTokEnd(text, first)
+    }
+    case 'braced':
+    case 'skipopts-braced':
+    case 'rawopts-braced': {
+      const cursor = strategy === 'braced' ? from : skipRawoptsEnd(text, from)
+      return bracedEnd(text, cursor)
+    }
+    case 'rawopts-one-braced': {
+      const cursor = skipRawoptsEnd(text, from)
+      return bracedEnd(text, cursor)
+    }
+    case 'braced-tok': {
+      const first = bracedEnd(text, from)
+      return first === null ? null : pandocTokEnd(text, first)
+    }
+    case 'braced-sp-tok': {
+      const first = bracedEnd(text, from)
+      return first === null ? null : pandocTokEnd(text, skipPandocSp(text, first))
+    }
+    case 'skipopts-tok': {
+      const cursor = skipRawoptsEnd(text, from)
+      return pandocTokEnd(text, cursor)
+    }
+    case 'optional-rawopt-tok': {
+      const cursor = optionalRawoptEnd(text, from)
+      return pandocTokEnd(text, cursor)
+    }
+    case 'optional-rawopt-two-tok': {
+      let cursor = optionalRawoptEnd(text, from)
+      const first = pandocTokEnd(text, cursor)
+      if (first === null) return null
+      cursor = first
+      return pandocTokEnd(text, cursor)
+    }
+    case 'skipopts-braced-tok': {
+      let cursor = skipRawoptsEnd(text, from)
+      const group = bracedEnd(text, cursor)
+      if (group === null) return null
+      return pandocTokEnd(text, group)
+    }
+    case 'braced-skipopts-tok': {
+      const group = bracedEnd(text, from)
+      if (group === null) return null
+      return pandocTokEnd(text, skipRawoptsEnd(text, group))
+    }
+    case 'three-braced': {
+      let cursor = from
+      for (let i = 0; i < 3; i++) {
+        const end = bracedEnd(text, cursor)
+        if (end === null) return null
+        cursor = end
+      }
+      return cursor
+    }
+    case 'three-braced-inline': {
+      let cursor = from
+      for (let i = 0; i < 3; i++) {
+        const end = bracedEnd(text, cursor)
+        if (end === null) return null
+        cursor = end
+      }
+      return pandocInlineTokenEnd(text, cursor)
+    }
+    case 'optional-numeric-bracket-group': {
+      const cursor = optionalBracketEnd(text, from)
+      return bracedEnd(text, cursor)
+    }
+    case 'optional-bracket-braced': {
+      const cursor = optionalRawoptEnd(text, from)
+      return bracedEnd(text, cursor)
+    }
+    case 'verbatim':
+      return verbatimEnd(text, from)
+    case 'optional-bracket-verbatim': {
+      const cursor = optionalRawoptEnd(text, from)
+      return verbatimEnd(text, cursor, true)
+    }
+    case 'skipopts-braced-verbatim': {
+      const cursor = skipRawoptsEnd(text, from)
+      const group = bracedEnd(text, cursor)
+      return group === null ? null : verbatimEnd(text, group, true)
+    }
+    case 'citation-single':
+      return consumeCitationArgs(text, from, false)
+    case 'citation-multi':
+      return consumeCitationArgs(text, from, true)
+    case 'citation-text': {
+      const end = bracedEnd(text, from)
+      if (end === null) return null
+      const start = skipPandocSp(text, from)
+      const body = text.slice(start + 1, end - 1)
+      const hasCitation = [...body.matchAll(/\\([A-Za-z@]+)(\*)?/gu)].some(match => {
+        const key = match[2] === '*' ? match[1] + '*' : match[1]
+        const nested = PANDOC_INLINE_COMMAND_STRATEGIES[key] ??
+          PANDOC_INLINE_COMMAND_STRATEGIES[match[1]]
+        return nested === 'citation-single' || nested === 'citation-multi' ||
+          nested === 'citation-author'
+      })
+      return hasCitation ? end : null
+    }
+    case 'citation-author':
+      return consumeCitationArgs(text, from, false)
+    case 'skipopts-group': {
+      const cursor = skipRawoptsEnd(text, from)
+      return bracedEnd(text, cursor)
+    }
+    case 'roman': {
+      let cursor = from
+      while (/\s/u.test(text[cursor] ?? '')) cursor++
+      if (text[cursor] === '{') return bracedEnd(text, cursor)
+      const match = /^\d+/u.exec(text.slice(cursor))
+      return match === null ? null : cursor + match[0].length
+    }
+    case 'hyperref': {
+      const option = optionalRawoptEnd(text, from)
+      if (option !== from) {
+        return pandocTokEnd(text, option)
+      }
+      let cursor = from
+      for (let i = 0; i < 3; i++) {
+        const group = bracedEnd(text, cursor)
+        if (group === null) return null
+        cursor = group
+      }
+      return pandocTokEnd(text, cursor)
+    }
+    case 'si-unit': {
+      let cursor = optionalRawoptEnd(text, from)
+      const group = bracedEnd(text, cursor)
+      if (group !== null) return group
+      return pandocTokEnd(text, cursor)
+    }
+    case 'si-value-unit': {
+      let cursor = skipRawoptsEnd(text, from)
+      const value = bracedEnd(text, cursor)
+      if (value === null) return null
+      cursor = optionalRawoptEnd(text, value)
+      const unit = bracedEnd(text, cursor)
+      return unit ?? pandocTokEnd(text, cursor)
+    }
+    case 'si-list-unit': {
+      let cursor = optionalRawoptEnd(text, from)
+      const values = bracedEnd(text, cursor)
+      if (values === null) return null
+      cursor = values
+      return bracedEnd(text, cursor) ?? pandocTokEnd(text, cursor)
+    }
+    case 'si-range':
+    case 'si-range-unit': {
+      let cursor = skipRawoptsEnd(text, from)
+      for (let i = 0; i < 2; i++) {
+        const value = bracedEnd(text, cursor)
+        if (value === null) return null
+        cursor = optionalRawoptEnd(text, value)
+      }
+      if (strategy === 'si-range') return cursor
+      return bracedEnd(text, cursor) ?? pandocTokEnd(text, cursor)
+    }
+    case 'until-fi': {
+      const match = /\\fi\b/u.exec(text.slice(from))
+      return match === null
+        ? null
+        : skipHorizontalSpace(text, from + match.index + match[0].length)
+    }
+    case 'inlines':
+      return text.length
+    case 'raw-command':
+      return rawCommandArgsEnd(text, from)
+  }
+}
+
+/** Port of the default branch of LaTeX.Parsing `getRawCommand`. */
+function rawCommandArgsEnd(text: string, from: number): number {
+  let cursor = skipRawoptsEnd(text, from)
+  const dimen = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*[A-Za-z]+/u.exec(text.slice(cursor))
+  if (dimen !== null) cursor += dimen[0].length
+  for (;;) {
+    const group = bracedEnd(text, cursor)
+    if (group === null) return cursor
+    cursor = group
+  }
 }
 
 function controlSequenceEnd(text: string, from: number): number | null {
@@ -388,7 +613,7 @@ function rawLatexCommandEndAtStart(text: string): number | null {
   if (name === "let" || name === "newif") {
     return lineEnd(text, initialEnd);
   }
-  if (!PANDOC_BLOCK_COMMANDS.has(name)) {
+  if (!PANDOC_BLOCK_COMMAND_NAMES.has(name)) {
     return null;
   }
   return genericBlockCommandEnd(text, initialEnd);
@@ -567,13 +792,13 @@ export function pandocLatexMathEnvironmentAtStart(
 }
 
 /**
- * End offset for the subset of Pandoc RawInline(tex) syntax that begins with a
- * control sequence or one of Pandoc's LaTeX inline environments.
+ * End offset for Pandoc RawInline(tex) syntax beginning with a LaTeX control
+ * word or one of Pandoc's LaTeX inline environments.
  *
  * Reference implementation: Pandoc 3.10.2 `rawLaTeXInline` in
- * Text/Pandoc/Readers/LaTeX.hs (lines 196-207), using `inline` and
- * `inlineEnvironment`. The executable Pandoc JSON reader is the differential
- * oracle for the admitted shapes.
+ * Text/Pandoc/Readers/LaTeX.hs (lines 196-207). Control-word consumption is
+ * driven by the generated upstream strategy table rather than a local arity
+ * heuristic.
  */
 export function rawLatexInlineEndAtStart(text: string): number | null {
   const environment = latexEnvironmentAtStart(text);
@@ -584,65 +809,25 @@ export function rawLatexInlineEndAtStart(text: string): number | null {
     return rawLatexEnvironmentEnd(text, environment);
   }
 
-  const command = CONTROL_SEQUENCE_RE.exec(text);
+  const command = RAW_INLINE_CONTROL_WORD_RE.exec(text);
   if (command === null) {
     return null;
   }
 
   const name = command[1];
-  let cursor = command[0].length;
+  const starredName = command[2] === '*' ? name + '*' : name;
+  const strategy = PANDOC_INLINE_COMMAND_STRATEGIES[starredName] ??
+    PANDOC_INLINE_COMMAND_STRATEGIES[name];
 
-  // Pandoc's LaTeX reader does not greedily absorb arbitrary following groups.
-  // `rawLaTeXInline` delegates to the actual command parser (`inlineCommands`)
-  // and therefore consumes exactly the argument shape owned by that command.
-  // Unknown commands accept optional [] groups followed by at most one braced
-  // group; known multi-argument commands below mirror their literal entries in
-  // LaTeX.hs `inlineCommands` (textcolor/colorbox, href, texorpdfstring, etc.).
-  // This keeps `\textbf{raw} [label](...)` from swallowing the Markdown link.
-  const MULTI_BRACED_ARGS: Readonly<Record<string, number>> = {
-    href: 2,
-    hyperlink: 2,
-    texorpdfstring: 2,
-    textcolor: 2,
-    colorbox: 2,
-  };
-  const requiredBraces = MULTI_BRACED_ARGS[name] ?? 1;
+  const cursor = skipHorizontalSpace(text, command[0].length);
+  const end = strategy === undefined
+    ? (PANDOC_BLOCK_COMMAND_NAMES.has(name) ? null : rawCommandArgsEnd(text, cursor))
+    : strategyEnd(strategy, text, cursor);
+  if (end === null) return null;
 
-  let consumedAny = false;
-  let beforeSpace = cursor;
-  cursor = skipHorizontalSpace(text, cursor);
-
-  // TeX optional arguments precede the main braced argument(s). Pandoc's
-  // command parsers use `option`/`skipopts` in these positions.
-  while (text[cursor] === "[") {
-    const end = balancedGroupEnd(text, cursor, "[", "]");
-    if (end === null) return null;
-    consumedAny = true;
-    cursor = end;
-    beforeSpace = cursor;
-    cursor = skipHorizontalSpace(text, cursor);
-  }
-
-  let braces = 0;
-  while (braces < requiredBraces && text[cursor] === "{") {
-    const end = balancedGroupEnd(text, cursor, "{", "}");
-    if (end === null) return null;
-    consumedAny = true;
-    braces++;
-    cursor = end;
-    if (braces < requiredBraces) {
-      cursor = skipHorizontalSpace(text, cursor);
-    }
-  }
-
-  if (consumedAny) {
-    // Space after the final owned argument belongs back to Markdown.
-    return cursor;
-  }
-
-  // A bare TeX control word gobbles following horizontal space. Pandoc keeps
-  // those spaces in RawInline(tex), e.g. `\LaTeX   text`.
-  return cursor > beforeSpace ? cursor : command[0].length;
+  let finalEnd = end;
+  while (text.startsWith('{}', finalEnd)) finalEnd += 2;
+  return finalEnd;
 }
 
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */

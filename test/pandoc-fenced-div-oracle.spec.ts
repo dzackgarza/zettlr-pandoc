@@ -7,11 +7,11 @@
  */
 
 import { strict as assert } from 'assert'
-import { execFileSync } from 'child_process'
 import { EditorState } from '@codemirror/state'
-import { syntaxTree } from '@codemirror/language'
+import { ensureSyntaxTree } from '@codemirror/language'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { divModelFromNode } from 'source/common/pandoc-util/pandoc-div-model'
+import { execPandocReference } from './pandoc-reference'
 
 interface OracleAttr {
   id: string
@@ -20,10 +20,7 @@ interface OracleAttr {
 }
 
 function pandocDivAttr (source: string): OracleAttr|undefined {
-  const raw = execFileSync('pandoc', [ '-f', 'markdown', '-t', 'json' ], {
-    input: source,
-    encoding: 'utf-8',
-  })
+  const raw = execPandocReference([ '-f', 'markdown', '-t', 'json' ], { input: source })
   const document = JSON.parse(raw) as { blocks: Array<{ t: string, c?: unknown }> }
   const block = document.blocks[0]
   if (block?.t !== 'Div' || !Array.isArray(block.c)) {
@@ -39,7 +36,9 @@ function pandocDivAttr (source: string): OracleAttr|undefined {
 
 function editorDivAttr (source: string): OracleAttr|undefined {
   const state = EditorState.create({ doc: source, extensions: [ markdownParser() ] })
-  const node = syntaxTree(state).topNode.getChild('PandocDiv')
+  const tree = ensureSyntaxTree(state, source.length, 5000)
+  assert.ok(tree !== null, 'editor document must parse fully before differential comparison')
+  const node = tree.topNode.getChild('PandocDiv')
   if (node === null) {
     return undefined
   }
@@ -68,6 +67,14 @@ Body.
   {
     name: 'ordinary single-line attributes',
     source: '::: {.definition #def-core title="Core object"}\nBody.\n:::\n',
+  },
+  {
+    name: 'definition title braces and colon-qualified identifier',
+    source: ':::{.definition title="{Symmetric Bilinear Form}" #def:symmetric-bilinear-form}\n\nBody.\n:::\n',
+  },
+  {
+    name: 'definition ending directly after a bullet list',
+    source: ':::{.definition title="{Symmetric Bilinear Form}" #def:symmetric-bilinear-form}\n\nIntro.\n\n- one\n- two\n:::\n',
   },
   {
     name: 'quoted character references and escaped ampersands',
@@ -103,8 +110,7 @@ describe('Pandoc fenced-div parser differential oracle', function () {
   this.timeout(30000)
 
   it('has a working Pandoc oracle', function () {
-    const version = execFileSync('pandoc', [ '--version' ], { encoding: 'utf-8' })
-    assert.match(version, /^pandoc \d+/)
+    assert.match(execPandocReference([ '--version' ]), /^pandoc 3\.10\.2\b/)
   })
 
   for (const testCase of cases) {

@@ -16,6 +16,7 @@
 import { StateField, type EditorState } from '@codemirror/state'
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
+import { markdownHeadingLevel } from '../util/heading-level'
 
 /**
  * Takes a heading (the full line) and transforms it into an ID. This function
@@ -88,7 +89,7 @@ export interface ToCEntry {
    */
   text: string
   /**
-   * The level of the heading (1-6)
+   * The level of the heading. Pandoc permits ATX heading levels above six.
    */
   level: number
   /**
@@ -110,12 +111,7 @@ export interface ToCEntry {
  */
 function generateToc (state: EditorState): ToCEntry[] {
   const toc: ToCEntry[] = []
-  let h1 = 0
-  let h2 = 0
-  let h3 = 0
-  let h4 = 0
-  let h5 = 0
-  let h6 = 0
+  const counters: number[] = []
 
   // We try to retrieve the full syntax tree, and if that fails, fall back to
   // the (possibly incomplete) syntax tree. For the ToC we definitely want to
@@ -131,87 +127,37 @@ function generateToc (state: EditorState): ToCEntry[] {
         return
       }
 
-      switch (node.type.name) {
-        case 'ATXHeading1':
-        case 'SetextHeading1': {
-          h1++
-          h2 = h3 = h4 = h5 = h6 = 0
-          const from = node.type.name === 'ATXHeading1' ? node.from + 2 : node.from
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(from, node.to),
-            level: 1,
-            renderedLevel: [h1].join('.'),
-            id: headingToID(state.doc.sliceString(from, node.to))
-          })
-          return false
-        }
-        case 'ATXHeading2':
-        case 'SetextHeading2': {
-          h2++
-          h3 = h4 = h5 = h6 = 0
-          const from = node.type.name === 'ATXHeading2' ? node.from + 3 : node.from
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(from, node.to),
-            level: 2,
-            renderedLevel: [ h1, h2 ].join('.'),
-            id: headingToID(state.doc.sliceString(from, node.to))
-          })
-          return false
-        }
-        case 'ATXHeading3':
-          h3++
-          h4 = h5 = h6 = 0
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(node.from + 4, node.to),
-            level: 3,
-            renderedLevel: [ h1, h2, h3 ].join('.'),
-            id: headingToID(state.doc.sliceString(node.from + 4, node.to))
-          })
-          return false
-        case 'ATXHeading4':
-          h4++
-          h5 = h6 = 0
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(node.from + 5, node.to),
-            level: 4,
-            renderedLevel: [ h1, h2, h3, h4 ].join('.'),
-            id: headingToID(state.doc.sliceString(node.from + 5, node.to))
-          })
-          return false
-        case 'ATXHeading5':
-          h5++
-          h6 = 0
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(node.from + 6, node.to),
-            level: 5,
-            renderedLevel: [ h1, h2, h3, h4, h5 ].join('.'),
-            id: headingToID(state.doc.sliceString(node.from + 6, node.to))
-          })
-          return false
-        case 'ATXHeading6':
-          h6++
-          toc.push({
-            line: state.doc.lineAt(node.from).number,
-            pos: node.from,
-            text: state.doc.sliceString(node.from + 7, node.to),
-            level: 6,
-            renderedLevel: [ h1, h2, h3, h4, h5, h6 ].join('.'),
-            id: headingToID(state.doc.sliceString(node.from + 7, node.to))
-          })
-          return false
-        default:
-          return false
+      const level = markdownHeadingLevel(node.node)
+      if (level === null) {
+        return false
       }
+
+      while (counters.length < level) counters.push(0)
+      counters[level - 1]++
+      for (let i = level; i < counters.length; i++) counters[i] = 0
+
+      let from = node.from
+      let to = node.to
+      if (node.type.name === 'ATXHeading') {
+        const mark = node.node.getChild('HeaderMark')
+        if (mark === null) return false
+        from = mark.to
+        while (from < node.to && /[ \t]/u.test(state.doc.sliceString(from, from + 1))) from++
+      } else {
+        const mark = node.node.getChild('HeaderMark')
+        if (mark === null) return false
+        to = mark.from
+      }
+      const text = state.doc.sliceString(from, to).trimEnd()
+      toc.push({
+        line: state.doc.lineAt(node.from).number,
+        pos: node.from,
+        text,
+        level,
+        renderedLevel: counters.slice(0, level).join('.'),
+        id: headingToID(text)
+      })
+      return false
     }
   })
 

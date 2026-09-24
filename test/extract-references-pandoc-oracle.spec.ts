@@ -4,11 +4,11 @@
 // Pandoc ever becoming an authoring-time subprocess.
 
 import assert from 'assert'
-import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { REFERENCE_FAMILIES } from 'source/types/common/references'
+import { execPandocReference } from './pandoc-reference'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
 
@@ -141,7 +141,7 @@ function collectReferenceableIdentifiers (node: unknown, into: string[]): void {
 }
 
 function pandocIdentifiers (documentPath: string): string[] {
-  const json = execFileSync('pandoc', [ '-f', 'markdown', '-t', 'json', documentPath ], { encoding: 'utf-8' })
+  const json = execPandocReference([ '-f', 'markdown', '-t', 'json', documentPath ])
   const ast = JSON.parse(json) as { blocks: unknown }
   const identifiers: string[] = []
   collectReferenceableIdentifiers(ast.blocks, identifiers)
@@ -149,10 +149,8 @@ function pandocIdentifiers (documentPath: string): string[] {
 }
 
 describe('extractReferences() against the real Pandoc AST oracle', function () {
-  it('has a working system pandoc (hard requirement, never skipped)', function () {
-    // If pandoc is absent this fails loudly; there is deliberately no skip.
-    const version = execFileSync('pandoc', ['--version'], { encoding: 'utf-8' })
-    assert.match(version, /^pandoc \d/)
+  it('has the exact pinned Pandoc reference reader (hard requirement, never skipped)', function () {
+    assert.match(execPandocReference(['--version']), /^pandoc 3\.10\.2\b/)
   })
 
   // EVERY fixture file participates in the oracle (issue #5, C9): the five

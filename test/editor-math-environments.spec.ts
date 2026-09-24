@@ -26,7 +26,6 @@
  */
 
 import { strict as assert } from 'assert'
-import { execFileSync } from 'node:child_process'
 import { ensureSyntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
@@ -34,16 +33,14 @@ import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 import { md2html } from 'source/common/modules/markdown-utils/markdown-to-html'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { stripMathDelimiters } from 'source/common/util/math-delimiters'
+import { execPandocReference } from './pandoc-reference'
 
 const RENDER_OPTS = { onCitation: () => undefined, zknLinkFormat: 'link|title' as const }
 const PANDOC_READER = 'markdown+raw_tex+tex_math_dollars+tex_math_single_backslash'
 
 function pandocTreatsEnvironmentAsMath (environment: string): boolean {
   const source = `\\begin{${environment}}\nx = y\n\\end{${environment}}`
-  const raw = execFileSync('pandoc', [ '-f', PANDOC_READER, '-t', 'json' ], {
-    input: source,
-    encoding: 'utf8'
-  })
+  const raw = execPandocReference([ '-f', PANDOC_READER, '-t', 'json' ], { input: source })
   const document = JSON.parse(raw) as { blocks: Array<{ t: string, c?: unknown }> }
   const first = document.blocks[0]
   if (first?.t !== 'Para' || !Array.isArray(first.c)) {

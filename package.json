@@ -40,6 +40,8 @@
     "shortcut:uninstall": "node scripts/develop-shortcut.mjs uninstall",
     "typecheck": "vue-tsc --noEmit",
     "build:pandoc-parser": "node vendor/lezer-markdown-pandoc/build.js",
+    "generate:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs",
+    "check:pandoc-reference-data": "node scripts/generate-pandoc-parser-reference-data.mjs --check",
     "generate:agent-api-types": "openapi-typescript source/app/service-providers/agent-api/openapi.yaml -o source/types/generated/agent-api.ts",
     "generate:texstudio-command-index": "node scripts/generate-texstudio-command-index.mjs",
     "check:agent-api-types": "bun run generate:agent-api-types && git diff --exit-code -- source/types/generated/agent-api.ts",

@@ -9,9 +9,9 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { execFileSync } from 'node:child_process'
 import { markdownToAST } from 'source/common/modules/markdown-utils'
 import type { ASTNode, Table } from 'source/common/modules/markdown-utils/markdown-ast'
+import { execPandocReference } from './pandoc-reference'
 
 const READER = [
   'markdown',
@@ -56,10 +56,7 @@ function pandocRows (rows: unknown): string[][] {
 }
 
 function pandocSummary (source: string): TableSummary|undefined {
-  const raw = execFileSync('pandoc', ['-f', READER, '-t', 'json'], {
-    input: source,
-    encoding: 'utf8'
-  })
+  const raw = execPandocReference(['-f', READER, '-t', 'json'], { input: source })
   const document = JSON.parse(raw) as { blocks?: Array<{ t?: string, c?: unknown }> }
   const table = document.blocks?.find(block => block.t === 'Table')
   if (table === undefined || !Array.isArray(table.c)) return undefined

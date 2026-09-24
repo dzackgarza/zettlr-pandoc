@@ -558,29 +558,30 @@ export const editorTheme = EditorView.baseTheme({
   '.cm-heading': {
     textDecoration: 'var(--zettlr-editor-line-decoration)',
   },
-  // Don't increase font-size within blockquotes
-  '.cm-line:has(:not(.cm-quote).cm-header-1)': {
+  // ATX heading level is semantic data. These six classes are only the six
+  // editor presentation sizes; deeper Pandoc headings reuse size 6.
+  '.cm-line.cm-pandoc-heading-size-1:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-1-size) var(--zettlr-editor-font)',
     // TODO: find a better way to override the `cm-code-mark` styling above
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-2)': {
+  '.cm-line.cm-pandoc-heading-size-2:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-2-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-3)': {
+  '.cm-line.cm-pandoc-heading-size-3:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-3-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-4)': {
+  '.cm-line.cm-pandoc-heading-size-4:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-4-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-5)': {
+  '.cm-line.cm-pandoc-heading-size-5:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-5-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-6)': {
+  '.cm-line.cm-pandoc-heading-size-6:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-6-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },

@@ -26,8 +26,12 @@ following before it is admitted:
 
 In either case, behavior is covered by a differential test that invokes the
 real Pandoc reader and asserts the corresponding Pandoc JSON AST shape before
-asserting the Lezer tree shape. A locally invented regex plus an editor-only
-fixture is not sufficient evidence for a Pandoc grammar rule.
+asserting the Lezer tree shape. These tests use `test/pandoc-reference.ts`,
+which rejects any executable other than Pandoc 3.10.2. CI installs that exact
+reader separately as `/usr/local/bin/pandoc-reference`; it is deliberately
+independent of the Pandoc/pandoc-crossref pair used by export tests. A locally
+invented regex plus an editor-only fixture, or a differential test against a
+different Pandoc release, is not sufficient evidence for a Pandoc grammar rule.
 
 ## Current rule map
 

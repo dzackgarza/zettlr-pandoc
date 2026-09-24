@@ -13,7 +13,6 @@
  */
 
 import { strict as assert } from 'node:assert'
-import { execFileSync } from 'node:child_process'
 import { markdownToAST } from 'source/common/modules/markdown-utils'
 import type {
   ASTNode,
@@ -21,6 +20,12 @@ import type {
   Table,
 } from 'source/common/modules/markdown-utils/markdown-ast'
 import { mathFromCodeNode } from 'source/common/util/math-delimiters'
+import { PANDOC_INLINE_COMMAND_NAMES } from '../vendor/lezer-markdown-pandoc/src/pandoc/pandoc-inline-commands'
+import {
+  PANDOC_INLINE_COMMAND_STRATEGIES,
+  type PandocInlineCommandStrategy,
+} from '../vendor/lezer-markdown-pandoc/src/pandoc/pandoc-inline-command-strategies'
+import { execPandocReference } from './pandoc-reference'
 
 const PANDOC_READER = [
   'markdown',
@@ -581,9 +586,8 @@ function editorBlocksCanon (nodes: ASTNode[], source: string): Canon[] {
 }
 
 function pandocJson (source: string): { meta: Record<string, unknown>, blocks: PandocNode[] } {
-  return JSON.parse(execFileSync('pandoc', ['-f', PANDOC_READER, '-t', 'json'], {
+  return JSON.parse(execPandocReference(['-f', PANDOC_READER, '-t', 'json'], {
     input: source,
-    encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
   })) as { meta: Record<string, unknown>, blocks: PandocNode[] }
 }
@@ -642,6 +646,96 @@ function generatedCases (): TortureCase[] {
     }
   }
 
+  const rawInlineForms = (
+    name: string,
+    strategy: PandocInlineCommandStrategy,
+  ): ReadonlyArray<[string, string]> => {
+    const command = `\\${name}`
+    switch (strategy) {
+      case 'zero': return [
+        [ 'bare', `before ${command} after stop` ],
+        [ 'does-not-own-following-group', `before ${command}{x} after stop` ],
+      ]
+      case 'raw-command': return [
+        [ 'bare', `before ${command} after stop` ],
+        [ 'raw-groups', `before ${command}{x}{y} after stop` ],
+      ]
+      case 'tok': return [[ 'tok', `before ${command}{x} after stop` ]]
+      case 'optional-tok': return [
+        [ 'empty', `before ${command} after stop` ],
+        [ 'tok', `before ${command}{x} after stop` ],
+      ]
+      case 'two-tok': return [[ 'two-tok', `before ${command}{x}{y} after stop` ]]
+      case 'braced':
+      case 'skipopts-braced':
+      case 'rawopts-one-braced':
+        return [[ 'braced', `before ${command}{x} after stop` ]]
+      case 'braced-tok':
+      case 'braced-sp-tok':
+        return [[ 'braced-tok', `before ${command}{x}{y} after stop` ]]
+      case 'skipopts-tok':
+        return [[ 'skipopts-tok', `before ${command}[opt]{x} after stop` ]]
+      case 'optional-rawopt-tok':
+        return [[ 'optional-rawopt-tok', `before ${command}[opt]{x} after stop` ]]
+      case 'skipopts-braced-tok':
+        return [[ 'skipopts-braced-tok', `before ${command}[opt]{x}{y} after stop` ]]
+      case 'braced-skipopts-tok':
+        return [[ 'braced-skipopts-tok', `before ${command}{en}[opt]{x} after stop` ]]
+      case 'three-braced-inline':
+        return [[ 'three-braced-inline', `before ${command}{x}{y}{z} after stop` ]]
+      case 'optional-numeric-bracket':
+        return [[ 'optional-number', `before ${command}[1] after stop` ]]
+      case 'optional-numeric-bracket-group':
+        return [[ 'optional-number-group', `before ${command}[1]{x} after stop` ]]
+      case 'optional-bracket-braced':
+        return [[ 'option-braced', `before ${command}[opt]{x} after stop` ]]
+      case 'verbatim':
+        return [[ 'verbatim', `before ${command}|x| after stop` ]]
+      case 'optional-bracket-verbatim':
+        return [[ 'option-verbatim', `before ${command}[language=tex]|x| after stop` ]]
+      case 'skipopts-braced-verbatim':
+        return [[ 'options-language-verbatim', `before ${command}[opt]{tex}|x| after stop` ]]
+      case 'citation-single':
+        return [[ 'citation', `before ${command}{Key} after stop` ]]
+      case 'citation-multi':
+        return [[ 'citations', `before ${command}{Key}{Other} after stop` ]]
+      case 'citation-text':
+        return [[ 'citation-text', `before ${command}{\\cite{Key}} after stop` ]]
+      case 'citation-author':
+        return [[ 'citation-author', `before ${command}{Key} after stop` ]]
+      case 'skipopts-group':
+        return [[ 'group', `before ${command}[opt]{x} after stop` ]]
+      case 'roman':
+        return [[ 'roman', `before ${command}{4} after stop` ]]
+      case 'hyperref':
+        return [[ 'hyperref', `before ${command}[target]{x} after stop` ]]
+      case 'si-unit':
+        return [[ 'si-unit', `before ${command}{m} after stop` ]]
+      case 'si-value-unit':
+        return [[ 'si-value-unit', `before ${command}{1}{m} after stop` ]]
+      case 'si-list-unit':
+        return [[ 'si-list-unit', `before ${command}{1;2}{m} after stop` ]]
+      case 'si-range':
+        return [[ 'si-range', `before ${command}{1}{2} after stop` ]]
+      case 'si-range-unit':
+        return [[ 'si-range-unit', `before ${command}{1}{2}{m} after stop` ]]
+      case 'until-fi':
+        return [[ 'until-fi', `before ${command} 1pt=1pt x\\fi after stop` ]]
+      case 'inlines':
+        return [[ 'inlines', `before ${command} text after stop` ]]
+    }
+  }
+  for (const name of PANDOC_INLINE_COMMAND_NAMES) {
+    const strategy = PANDOC_INLINE_COMMAND_STRATEGIES[name]
+    assert.ok(strategy !== undefined, `missing generated strategy for ${name}`)
+    for (const [ formName, source ] of rawInlineForms(name, strategy)) {
+      cases.push({
+        name: `raw-inline-control-word/${name}/${formName}`,
+        source,
+      })
+    }
+  }
+
   cases.push(
     {
       name: 'display-math/cases/no-blank-before',
@@ -666,6 +760,25 @@ function generatedCases (): TortureCase[] {
     {
       name: 'multiline-div-attributes',
       source: '::: {.definition\n#def-multiline\ntitle="A {nested} title"\ndata-x="a &amp; b"}\nBody $x$.\n:::',
+    },
+    {
+      // Markdown.hs `listLine` and `listContinuation` both apply
+      // `notFollowedByDivCloser`. A div closer immediately after a compact
+      // list therefore belongs to `divFenceEnd`, never to the final list
+      // item's paragraph.
+      name: 'fenced-div/compact-list/direct-close',
+      source: '::: {.definition #def-list-close}\nIntro.\n\n- one\n- two\n:::',
+    },
+    {
+      // The same ownership rule applies after a loose list continuation.
+      name: 'fenced-div/loose-list/direct-close',
+      source: '::: {.definition #def-loose-list-close}\n- one\n\n  continuation\n\n- two\n:::',
+    },
+    {
+      // An inner fenced div closing directly after a list must close the inner
+      // div only; the outer div remains active until its own fence.
+      name: 'nested-fenced-div/list/direct-close',
+      source: '::: {.theorem #outer-list-close}\n::: {.proof #inner-list-close}\n- one\n- two\n:::\nOuter tail.\n:::',
     },
   )
   return cases

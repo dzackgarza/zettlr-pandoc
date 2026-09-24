@@ -165,7 +165,7 @@ export interface Heading extends MDNode {
    */
   children: ASTNode[];
   /**
-   * Level from 1-6
+   * Positive heading level. Pandoc ATX headings are not capped at six.
    */
   level: number;
 }
@@ -673,12 +673,7 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       };
       return astNode;
     }
-    case "ATXHeading1":
-    case "ATXHeading2":
-    case "ATXHeading3":
-    case "ATXHeading4":
-    case "ATXHeading5":
-    case "ATXHeading6": {
+    case "ATXHeading": {
       const mark = node.getChild("HeaderMark");
       const level = mark !== null ? mark.to - mark.from : 0;
       const astNode: Heading = {

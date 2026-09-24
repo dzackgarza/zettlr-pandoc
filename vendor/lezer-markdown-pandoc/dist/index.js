@@ -7,7 +7,7 @@ class CompositeBlock {
         let hash = (parentHash + (parentHash << 8) + type + (value << 4)) | 0;
         return new CompositeBlock(type, value, from, hash, end, [], []);
     }
-    constructor(type,
+    constructor(type, 
     // Used for indentation in list items, markup character in lists
     value, from, hash, end, children, positions) {
         this.type = type;
@@ -51,44 +51,39 @@ var Type;
     Type[Type["BulletList"] = 6] = "BulletList";
     Type[Type["OrderedList"] = 7] = "OrderedList";
     Type[Type["ListItem"] = 8] = "ListItem";
-    Type[Type["ATXHeading1"] = 9] = "ATXHeading1";
-    Type[Type["ATXHeading2"] = 10] = "ATXHeading2";
-    Type[Type["ATXHeading3"] = 11] = "ATXHeading3";
-    Type[Type["ATXHeading4"] = 12] = "ATXHeading4";
-    Type[Type["ATXHeading5"] = 13] = "ATXHeading5";
-    Type[Type["ATXHeading6"] = 14] = "ATXHeading6";
-    Type[Type["SetextHeading1"] = 15] = "SetextHeading1";
-    Type[Type["SetextHeading2"] = 16] = "SetextHeading2";
-    Type[Type["HTMLBlock"] = 17] = "HTMLBlock";
-    Type[Type["LinkReference"] = 18] = "LinkReference";
-    Type[Type["Paragraph"] = 19] = "Paragraph";
-    Type[Type["CommentBlock"] = 20] = "CommentBlock";
-    Type[Type["ProcessingInstructionBlock"] = 21] = "ProcessingInstructionBlock";
+    Type[Type["ATXHeading"] = 9] = "ATXHeading";
+    Type[Type["SetextHeading1"] = 10] = "SetextHeading1";
+    Type[Type["SetextHeading2"] = 11] = "SetextHeading2";
+    Type[Type["HTMLBlock"] = 12] = "HTMLBlock";
+    Type[Type["LinkReference"] = 13] = "LinkReference";
+    Type[Type["Paragraph"] = 14] = "Paragraph";
+    Type[Type["CommentBlock"] = 15] = "CommentBlock";
+    Type[Type["ProcessingInstructionBlock"] = 16] = "ProcessingInstructionBlock";
     // Inline
-    Type[Type["Escape"] = 22] = "Escape";
-    Type[Type["Entity"] = 23] = "Entity";
-    Type[Type["HardBreak"] = 24] = "HardBreak";
-    Type[Type["Emphasis"] = 25] = "Emphasis";
-    Type[Type["StrongEmphasis"] = 26] = "StrongEmphasis";
-    Type[Type["Link"] = 27] = "Link";
-    Type[Type["Image"] = 28] = "Image";
-    Type[Type["InlineCode"] = 29] = "InlineCode";
-    Type[Type["HTMLTag"] = 30] = "HTMLTag";
-    Type[Type["Comment"] = 31] = "Comment";
-    Type[Type["ProcessingInstruction"] = 32] = "ProcessingInstruction";
-    Type[Type["Autolink"] = 33] = "Autolink";
+    Type[Type["Escape"] = 17] = "Escape";
+    Type[Type["Entity"] = 18] = "Entity";
+    Type[Type["HardBreak"] = 19] = "HardBreak";
+    Type[Type["Emphasis"] = 20] = "Emphasis";
+    Type[Type["StrongEmphasis"] = 21] = "StrongEmphasis";
+    Type[Type["Link"] = 22] = "Link";
+    Type[Type["Image"] = 23] = "Image";
+    Type[Type["InlineCode"] = 24] = "InlineCode";
+    Type[Type["HTMLTag"] = 25] = "HTMLTag";
+    Type[Type["Comment"] = 26] = "Comment";
+    Type[Type["ProcessingInstruction"] = 27] = "ProcessingInstruction";
+    Type[Type["Autolink"] = 28] = "Autolink";
     // Smaller tokens
-    Type[Type["HeaderMark"] = 34] = "HeaderMark";
-    Type[Type["QuoteMark"] = 35] = "QuoteMark";
-    Type[Type["ListMark"] = 36] = "ListMark";
-    Type[Type["LinkMark"] = 37] = "LinkMark";
-    Type[Type["EmphasisMark"] = 38] = "EmphasisMark";
-    Type[Type["CodeMark"] = 39] = "CodeMark";
-    Type[Type["CodeText"] = 40] = "CodeText";
-    Type[Type["CodeInfo"] = 41] = "CodeInfo";
-    Type[Type["LinkTitle"] = 42] = "LinkTitle";
-    Type[Type["LinkLabel"] = 43] = "LinkLabel";
-    Type[Type["URL"] = 44] = "URL";
+    Type[Type["HeaderMark"] = 29] = "HeaderMark";
+    Type[Type["QuoteMark"] = 30] = "QuoteMark";
+    Type[Type["ListMark"] = 31] = "ListMark";
+    Type[Type["LinkMark"] = 32] = "LinkMark";
+    Type[Type["EmphasisMark"] = 33] = "EmphasisMark";
+    Type[Type["CodeMark"] = 34] = "CodeMark";
+    Type[Type["CodeText"] = 35] = "CodeText";
+    Type[Type["CodeInfo"] = 36] = "CodeInfo";
+    Type[Type["LinkTitle"] = 37] = "LinkTitle";
+    Type[Type["LinkLabel"] = 38] = "LinkLabel";
+    Type[Type["URL"] = 39] = "URL";
 })(Type || (Type = {}));
 /**
 Data structure used to accumulate a block's content during [leaf
@@ -102,7 +97,7 @@ class LeafBlock {
     /**
     The start position of the block.
     */
-    start,
+    start, 
     /**
     The block's text content.
     */
@@ -418,8 +413,7 @@ function isAtxHeading(line) {
         pos++;
     if (pos < line.text.length && line.text.charCodeAt(pos) != 32)
         return -1;
-    let size = pos - line.pos;
-    return size > 6 ? -1 : size;
+    return pos - line.pos;
 }
 function isSetextUnderline(line) {
     if (line.next != 45 && line.next != 61 /* '-=' */ || line.indent >= line.baseIndent + 4)
@@ -630,7 +624,7 @@ const DefaultBlockParsers = {
             .writeElements(cx.parser.parseInline(line.text.slice(off + size + 1, after), from + size + 1), -from);
         if (after < line.text.length)
             buf.write(Type.HeaderMark, after - off, endOfSpace - off);
-        let node = buf.finish(Type.ATXHeading1 - 1 + size, line.text.length - off);
+        let node = buf.finish(Type.ATXHeading, line.text.length - off);
         cx.nextLine();
         cx.addNode(node, from);
         return true;
@@ -794,11 +788,11 @@ class BlockContext {
     /**
     The parser configuration used.
     */
-    parser,
+    parser, 
     /**
     @internal
     */
-    input, fragments,
+    input, fragments, 
     /**
     @internal
     */
@@ -1172,47 +1166,47 @@ class MarkdownParser extends Parser {
     The parser's syntax [node
     types](https://lezer.codemirror.net/docs/ref/#common.NodeSet).
     */
-    nodeSet,
+    nodeSet, 
     /**
     @internal
     */
-    blockParsers,
+    blockParsers, 
     /**
     @internal
     */
-    leafBlockParsers,
+    leafBlockParsers, 
     /**
     @internal
     */
-    blockNames,
+    blockNames, 
     /**
     @internal
     */
-    endLeafBlock,
+    endLeafBlock, 
     /**
     @internal
     */
-    skipContextMarkup,
+    skipContextMarkup, 
     /**
     @internal
     */
-    inlineParsers,
+    inlineParsers, 
     /**
     @internal
     */
-    inlineNames,
+    inlineNames, 
     /**
     @internal
     */
-    referenceLabelBlockers,
+    referenceLabelBlockers, 
     /**
     @internal
     */
-    lazyBlockquotes,
+    lazyBlockquotes, 
     /**
     @internal
     */
-    pandocParagraphContinuation,
+    pandocParagraphContinuation, 
     /**
     @internal
     */
@@ -1264,7 +1258,9 @@ class MarkdownParser extends Parser {
                         (bl, cx, line) => composite(cx, line, bl.value);
                 let id = nodeTypes.length;
                 let group = composite ? ["Block", "BlockContext"] : !block ? undefined
-                    : id >= Type.ATXHeading1 && id <= Type.SetextHeading2 ? ["Block", "LeafBlock", "Heading"] : ["Block", "LeafBlock"];
+                    : name == "ATXHeading" || name == "SetextHeading1" || name == "SetextHeading2"
+                        ? ["Block", "LeafBlock", "Heading"]
+                        : ["Block", "LeafBlock"];
                 nodeTypes.push(NodeType.define({
                     id,
                     name,
@@ -1419,7 +1415,11 @@ for (let i = 1, name; name = Type[i]; i++) {
     nodeTypes[i] = NodeType.define({
         id: i,
         name,
-        props: i >= Type.Escape ? [] : [[NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
+        props: i == Type.ATXHeading
+            ? [[NodeProp.group, ["Block", "LeafBlock", "Heading"]]]
+            : i >= Type.Escape
+                ? []
+                : [[NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
         top: name == "Document"
     });
 }
@@ -1461,15 +1461,15 @@ class Element {
     The node's
     [id](https://lezer.codemirror.net/docs/ref/#common.NodeType.id).
     */
-    type,
+    type, 
     /**
     The start of the node, as an offset from the start of the document.
     */
-    from,
+    from, 
     /**
     The end of the node.
     */
-    to,
+    to, 
     /**
     The node's child nodes @internal
     */
@@ -1867,11 +1867,11 @@ class InlineContext {
     /**
     The parser that is being used.
     */
-    parser,
+    parser, 
     /**
     The text of this inline section.
     */
-    text,
+    text, 
     /**
     The starting offset of the section in the document.
     */
@@ -2231,12 +2231,9 @@ function toRelative(abs, ranges) {
 const markdownHighlighting = styleTags({
     "Blockquote/...": tags.quote,
     HorizontalRule: tags.contentSeparator,
-    "ATXHeading1/... SetextHeading1/...": tags.heading1,
-    "ATXHeading2/... SetextHeading2/...": tags.heading2,
-    "ATXHeading3/...": tags.heading3,
-    "ATXHeading4/...": tags.heading4,
-    "ATXHeading5/...": tags.heading5,
-    "ATXHeading6/...": tags.heading6,
+    "SetextHeading1/...": tags.heading1,
+    "SetextHeading2/...": tags.heading2,
+    "ATXHeading/...": tags.heading,
     "Comment CommentBlock": tags.comment,
     Escape: tags.escape,
     Entity: tags.character,
@@ -3909,7 +3906,7 @@ function pandocDivComposite(ctx, line, value) {
     // Add the closing marker and move the line position
     // up so that we do not re-parse the text.
     line.addMarker(ctx.elt('PandocDivMark', from, to));
-    line.moveBase(to);
+    line.moveBase(markTo);
     return false;
 }
 
@@ -4425,462 +4422,431 @@ const singleBackslashMathParser = {
 };
 
 /**
- * Generated from Pandoc 3.10.2 commit
- * f2ee5dfee866aab007a33552acc6bc01810c6918.
+ * GENERATED FILE. Do not hand-edit.
  *
- * This is the exact control-sequence name set used by LaTeX.hs `isInlineCommand`:
- * keys of `inlineCommands` (including the imported command maps and generated
- * `text<polyglossia-language>` family) plus `treatAsInline`, normalized to the
- * unstarred name because `blockCommand` checks `isInlineCommand name` before
- * considering its optional star. Do not hand-edit this list; differential tests
- * against the real Pandoc JSON reader are the acceptance oracle.
+ * Source: Pandoc 3.10.2, commit f2ee5dfee866aab007a33552acc6bc01810c6918
+ * Text/Pandoc/Readers/LaTeX.hs inlineCommands and its imported command maps.
+ * Generator: scripts/generate-pandoc-parser-reference-data.mjs
  */
 const PANDOC_INLINE_COMMAND_NAMES = new Set([
-    '@',
-    'AA',
-    'AE',
-    'Ac',
-    'Acf',
-    'Acfp',
-    'Acl',
-    'Aclp',
-    'Acp',
-    'Acrfull',
-    'Acrlong',
-    'Acrshort',
-    'Acs',
-    'Acsp',
-    'Autocite',
-    'Autocites',
-    'Cite',
-    'Cites',
-    'Citeyear',
-    'Citeyearpar',
-    'Cref',
-    'Footcite',
-    'Footcites',
-    'Footcitetext',
-    'Footcitetexts',
-    'G',
-    'GLSdesc',
-    'GLSdescplural',
-    'Gls',
-    'Glsdesc',
-    'Glsdescplural',
-    'Glspl',
-    'H',
-    'L',
-    'LaTeX',
-    'MakeLowercase',
-    'MakeTextLowercase',
-    'MakeTextUppercase',
-    'MakeUppercase',
-    'O',
-    'OE',
-    'P',
-    'Parencite',
-    'Parencites',
-    'RN',
-    'Rn',
-    'S',
-    'SI',
-    'SIlist',
-    'SIrange',
-    'Smartcite',
-    'Supercite',
-    'Supercites',
-    'TeX',
-    'Textcite',
-    'Textcites',
-    'U',
-    'Verb',
-    'aa',
-    'abstractname',
-    'ac',
-    'acf',
-    'acfp',
-    'acl',
-    'aclp',
-    'acp',
-    'acrfull',
-    'acrlong',
-    'acrshort',
-    'acs',
-    'acsp',
-    'addabbrvspace',
-    'adddot',
-    'adddotspace',
-    'ae',
-    'alert',
-    'ang',
-    'autocap',
-    'autocite',
-    'autocites',
-    'autoref',
-    'b',
-    'backslash',
-    'bar',
-    'bf',
-    'bfseries',
-    'bibname',
-    'bibstring',
-    'bshyp',
-    'c',
-    'ccname',
-    'chaptername',
-    'cite',
-    'citeal',
-    'citealp',
-    'citealt',
-    'citeauthor',
-    'citep',
-    'cites',
-    'citet',
-    'citetext',
-    'citeyear',
-    'citeyearpar',
-    'clearpage',
-    'colonhyp',
-    'colorbox',
-    'contentsname',
-    'copyright',
-    'cref',
-    'd',
-    'dothyp',
-    'dots',
-    'dq',
-    'em',
-    'emph',
-    'enclname',
-    'enquote',
-    'ensuremath',
-    'eqref',
-    'euro',
-    'f',
-    'faCheck',
-    'faClose',
-    'figurename',
-    'flq',
-    'flqq',
-    'footcite',
-    'footcites',
-    'footcitetext',
-    'footcitetexts',
-    'footnote',
-    'footnotemark',
-    'footnotetext',
-    'foreignlanguage',
-    'foreignquote',
-    'frq',
-    'frqq',
-    'fshyp',
-    'glossaryname',
-    'glq',
-    'glqq',
-    'gls',
-    'glsdesc',
-    'glsdescplural',
-    'glspl',
-    'grq',
-    'grqq',
-    'guillemetleft',
-    'guillemetright',
-    'guillemotleft',
-    'guillemotright',
-    'guilsinglleft',
-    'guilsinglright',
-    'h',
-    'hbox',
-    'headtoname',
-    'hl',
-    'href',
-    'hspace',
-    'hyp',
-    'hyperlink',
-    'hyperref',
-    'hypertarget',
-    'hyphen',
-    'hyphenquote',
-    'i',
-    'ifdim',
-    'iftoggle',
-    'includegraphics',
-    'includesvg',
-    'index',
-    'indexname',
-    'input',
-    'it',
-    'itshape',
-    'j',
-    'k',
-    'l',
-    'label',
-    'ldots',
-    'lettrine',
-    'listfigurename',
-    'listtablename',
-    'lowercase',
-    'lq',
-    'lstinline',
-    'lstlistingname',
-    'mbox',
-    'mdots',
-    'mintinline',
-    'mkbibbold',
-    'mkbibbrackets',
-    'mkbibemph',
-    'mkbibitalic',
-    'mkbibparens',
-    'mkbibquote',
-    'newline',
-    'newpage',
-    'newtie',
-    'newtoggle',
-    'nhttfamily',
-    'nocite',
-    'nohyphens',
-    'noindent',
-    'nolinkurl',
-    'num',
-    'numlist',
-    'numrange',
-    'o',
-    'oe',
-    'pagebreak',
-    'pagename',
-    'pandocbounded',
-    'parencite',
-    'parencites',
-    'partname',
-    'passthrough',
-    'pounds',
-    'prefacename',
-    'proofname',
-    'ps',
-    'qed',
-    'qty',
-    'qtylist',
-    'qtyrange',
-    'quotedblbase',
-    'quotesinglbase',
-    'r',
-    'ref',
-    'refname',
-    'rm',
-    'rq',
-    'scshape',
-    'seealsoname',
-    'seename',
-    'sep',
-    'si',
-    'sim',
-    'sl',
-    'slash',
-    'slshape',
-    'smartcite',
-    'sout',
-    'ss',
-    'st',
-    'supercite',
-    'supercites',
-    't',
-    'tablename',
-    'texorpdfstring',
-    'textafrikaans',
-    'textalbanian',
-    'textamharic',
-    'textarabic',
-    'textarmenian',
-    'textasciicircum',
-    'textasciitilde',
-    'textassamese',
-    'textasturian',
-    'textbackslash',
-    'textbaht',
-    'textbasque',
-    'textbengali',
-    'textbf',
-    'textbigcircle',
-    'textblank',
-    'textbreton',
-    'textbrokenbar',
-    'textbulgarian',
-    'textbullet',
-    'textcatalan',
-    'textcentoldstyle',
-    'textcircled',
-    'textcite',
-    'textcites',
-    'textcolor',
-    'textcoptic',
-    'textcopyright',
-    'textcroatian',
-    'textczech',
-    'textdagger',
-    'textdanish',
-    'textdegree',
-    'textdivehi',
-    'textdollar',
-    'textdong',
-    'textdutch',
-    'textenglish',
-    'textesperanto',
-    'textestonian',
-    'textethiopic',
-    'textfarsi',
-    'textfinnish',
-    'textfrench',
-    'textfriulan',
-    'textgalician',
-    'textgerman',
-    'textgreater',
-    'textgreek',
-    'textgujarati',
-    'texthebrew',
-    'texthindi',
-    'texticelandic',
-    'textindonesian',
-    'textinterlingua',
-    'textirish',
-    'textit',
-    'textitalian',
-    'textjapanese',
-    'textkannada',
-    'textkhmer',
-    'textkorean',
-    'textkurmanji',
-    'textlao',
-    'textlatin',
-    'textlatvian',
-    'textless',
-    'textlira',
-    'textlithuanian',
-    'textlsorbian',
-    'textmagyar',
-    'textmalayalam',
-    'textmarathi',
-    'textmd',
-    'textmongolian',
-    'textmu',
-    'textmusicalnote',
-    'textnhtt',
-    'textnko',
-    'textnormal',
-    'textnorsk',
-    'textnynorsk',
-    'textoccitan',
-    'textogonekcentered',
-    'textonehalf',
-    'textonequarter',
-    'textoriya',
-    'textparagraph',
-    'textpertenthousand',
-    'textpeso',
-    'textpiedmontese',
-    'textpinyin',
-    'textpolish',
-    'textportuguese',
-    'textpunjabi',
-    'textquotedbl',
-    'textquotedblleft',
-    'textquotedblright',
-    'textquoteleft',
-    'textquoteright',
-    'textquotesingle',
-    'textregistered',
-    'textrm',
-    'textromanian',
-    'textromansh',
-    'textrussian',
-    'textsamin',
-    'textsanskrit',
-    'textsc',
-    'textscottish',
-    'textsection',
-    'textserbian',
-    'textserbianc',
-    'textsf',
-    'textsl',
-    'textslovak',
-    'textslovenian',
-    'textspanish',
-    'textsterling',
-    'textsubscript',
-    'textsuperscript',
-    'textswedish',
-    'textsyriac',
-    'texttamil',
-    'texttelugu',
-    'textthai',
-    'textthreequarters',
-    'textthreesuperior',
-    'texttibetan',
-    'texttt',
-    'textturkish',
-    'textturkmen',
-    'texttwosuperior',
-    'textukrainian',
-    'textup',
-    'texturdu',
-    'textusorbian',
-    'textvietnamese',
-    'textwelsh',
-    'textyen',
-    'thanks',
-    'today',
-    'togglefalse',
-    'toggletrue',
-    'tt',
-    'u',
-    'ul',
-    'uline',
-    'underline',
-    'unit',
-    'uppercase',
-    'url',
-    'v',
-    'vbox',
-    'vdots',
-    'verb',
-    'vref',
-    'vspace',
+    "@",
+    "AA",
+    "AE",
+    "Ac",
+    "Acf",
+    "Acfp",
+    "Acl",
+    "Aclp",
+    "Acp",
+    "Acrfull",
+    "Acrlong",
+    "Acrshort",
+    "Acs",
+    "Acsp",
+    "Autocite",
+    "Autocites",
+    "Cite",
+    "Cites",
+    "Citeyear",
+    "Citeyearpar",
+    "Cref",
+    "Footcite",
+    "Footcites",
+    "Footcitetext",
+    "Footcitetexts",
+    "G",
+    "GLSdesc",
+    "GLSdescplural",
+    "Gls",
+    "Glsdesc",
+    "Glsdescplural",
+    "Glspl",
+    "H",
+    "L",
+    "LaTeX",
+    "MakeLowercase",
+    "MakeTextLowercase",
+    "MakeTextUppercase",
+    "MakeUppercase",
+    "O",
+    "OE",
+    "P",
+    "Parencite",
+    "Parencites",
+    "RN",
+    "Rn",
+    "S",
+    "SI",
+    "SIlist",
+    "SIrange",
+    "Smartcite",
+    "Supercite",
+    "Supercites",
+    "TeX",
+    "Textcite",
+    "Textcites",
+    "U",
+    "Verb",
+    "aa",
+    "abstractname",
+    "ac",
+    "acf",
+    "acfp",
+    "acl",
+    "aclp",
+    "acp",
+    "acrfull",
+    "acrlong",
+    "acrshort",
+    "acs",
+    "acsp",
+    "addabbrvspace",
+    "adddot",
+    "adddotspace",
+    "ae",
+    "alert",
+    "ang",
+    "autocap",
+    "autocite",
+    "autocites",
+    "autoref",
+    "b",
+    "backslash",
+    "bar",
+    "bf",
+    "bfseries",
+    "bibname",
+    "bibstring",
+    "bshyp",
+    "c",
+    "ccname",
+    "chaptername",
+    "cite",
+    "citeal",
+    "citealp",
+    "citealt",
+    "citeauthor",
+    "citep",
+    "cites",
+    "citet",
+    "citetext",
+    "citeyear",
+    "citeyearpar",
+    "clearpage",
+    "colonhyp",
+    "colorbox",
+    "contentsname",
+    "copyright",
+    "cref",
+    "d",
+    "dothyp",
+    "dots",
+    "dq",
+    "em",
+    "emph",
+    "enclname",
+    "enquote",
+    "ensuremath",
+    "eqref",
+    "euro",
+    "f",
+    "faCheck",
+    "faClose",
+    "figurename",
+    "flq",
+    "flqq",
+    "footcite",
+    "footcites",
+    "footcitetext",
+    "footcitetexts",
+    "footnote",
+    "footnotemark",
+    "footnotetext",
+    "foreignlanguage",
+    "foreignquote",
+    "frq",
+    "frqq",
+    "fshyp",
+    "glossaryname",
+    "glq",
+    "glqq",
+    "gls",
+    "glsdesc",
+    "glsdescplural",
+    "glspl",
+    "grq",
+    "grqq",
+    "guillemetleft",
+    "guillemetright",
+    "guillemotleft",
+    "guillemotright",
+    "guilsinglleft",
+    "guilsinglright",
+    "h",
+    "hbox",
+    "headtoname",
+    "hl",
+    "href",
+    "hspace",
+    "hyp",
+    "hyperlink",
+    "hyperref",
+    "hypertarget",
+    "hyphen",
+    "hyphenquote",
+    "i",
+    "ifdim",
+    "iftoggle",
+    "includegraphics",
+    "includesvg",
+    "index",
+    "indexname",
+    "input",
+    "it",
+    "itshape",
+    "j",
+    "k",
+    "l",
+    "label",
+    "ldots",
+    "lettrine",
+    "listfigurename",
+    "listtablename",
+    "lowercase",
+    "lq",
+    "lstinline",
+    "lstlistingname",
+    "mbox",
+    "mdots",
+    "mintinline",
+    "mkbibbold",
+    "mkbibbrackets",
+    "mkbibemph",
+    "mkbibitalic",
+    "mkbibparens",
+    "mkbibquote",
+    "newline",
+    "newpage",
+    "newtie",
+    "newtoggle",
+    "nhttfamily",
+    "nocite",
+    "nohyphens",
+    "noindent",
+    "nolinkurl",
+    "num",
+    "numlist",
+    "numrange",
+    "o",
+    "oe",
+    "pagebreak",
+    "pagename",
+    "pandocbounded",
+    "parencite",
+    "parencites",
+    "partname",
+    "passthrough",
+    "pounds",
+    "prefacename",
+    "proofname",
+    "ps",
+    "qed",
+    "qty",
+    "qtylist",
+    "qtyrange",
+    "quotedblbase",
+    "quotesinglbase",
+    "r",
+    "ref",
+    "refname",
+    "rm",
+    "rq",
+    "scshape",
+    "seealsoname",
+    "seename",
+    "sep",
+    "si",
+    "sim",
+    "sl",
+    "slash",
+    "slshape",
+    "smartcite",
+    "sout",
+    "ss",
+    "st",
+    "supercite",
+    "supercites",
+    "t",
+    "tablename",
+    "texorpdfstring",
+    "textafrikaans",
+    "textalbanian",
+    "textamharic",
+    "textarabic",
+    "textarmenian",
+    "textasciicircum",
+    "textasciitilde",
+    "textassamese",
+    "textasturian",
+    "textbackslash",
+    "textbaht",
+    "textbasque",
+    "textbengali",
+    "textbf",
+    "textbigcircle",
+    "textblank",
+    "textbreton",
+    "textbrokenbar",
+    "textbulgarian",
+    "textbullet",
+    "textcatalan",
+    "textcentoldstyle",
+    "textcircled",
+    "textcite",
+    "textcites",
+    "textcolor",
+    "textcoptic",
+    "textcopyright",
+    "textcroatian",
+    "textczech",
+    "textdagger",
+    "textdanish",
+    "textdegree",
+    "textdivehi",
+    "textdollar",
+    "textdong",
+    "textdutch",
+    "textenglish",
+    "textesperanto",
+    "textestonian",
+    "textethiopic",
+    "textfarsi",
+    "textfinnish",
+    "textfrench",
+    "textfriulan",
+    "textgalician",
+    "textgerman",
+    "textgreater",
+    "textgreek",
+    "textgujarati",
+    "texthebrew",
+    "texthindi",
+    "texticelandic",
+    "textindonesian",
+    "textinterlingua",
+    "textirish",
+    "textit",
+    "textitalian",
+    "textjapanese",
+    "textkannada",
+    "textkhmer",
+    "textkorean",
+    "textkurmanji",
+    "textlao",
+    "textlatin",
+    "textlatvian",
+    "textless",
+    "textlira",
+    "textlithuanian",
+    "textlsorbian",
+    "textmagyar",
+    "textmalayalam",
+    "textmarathi",
+    "textmd",
+    "textmongolian",
+    "textmu",
+    "textmusicalnote",
+    "textnhtt",
+    "textnko",
+    "textnormal",
+    "textnorsk",
+    "textnynorsk",
+    "textoccitan",
+    "textogonekcentered",
+    "textonehalf",
+    "textonequarter",
+    "textoriya",
+    "textparagraph",
+    "textpertenthousand",
+    "textpeso",
+    "textpiedmontese",
+    "textpinyin",
+    "textpolish",
+    "textportuguese",
+    "textpunjabi",
+    "textquotedbl",
+    "textquotedblleft",
+    "textquotedblright",
+    "textquoteleft",
+    "textquoteright",
+    "textquotesingle",
+    "textregistered",
+    "textrm",
+    "textromanian",
+    "textromansh",
+    "textrussian",
+    "textsamin",
+    "textsanskrit",
+    "textsc",
+    "textscottish",
+    "textsection",
+    "textserbian",
+    "textserbianc",
+    "textsf",
+    "textsl",
+    "textslovak",
+    "textslovenian",
+    "textspanish",
+    "textsterling",
+    "textsubscript",
+    "textsuperscript",
+    "textswedish",
+    "textsyriac",
+    "texttamil",
+    "texttelugu",
+    "textthai",
+    "textthreequarters",
+    "textthreesuperior",
+    "texttibetan",
+    "texttt",
+    "textturkish",
+    "textturkmen",
+    "texttwosuperior",
+    "textukrainian",
+    "textup",
+    "texturdu",
+    "textusorbian",
+    "textvietnamese",
+    "textwelsh",
+    "textyen",
+    "thanks",
+    "today",
+    "togglefalse",
+    "toggletrue",
+    "tt",
+    "u",
+    "ul",
+    "uline",
+    "underline",
+    "unit",
+    "uppercase",
+    "url",
+    "v",
+    "vbox",
+    "vdots",
+    "verb",
+    "vref",
+    "vspace",
 ]);
 
 /**
- * Pandoc reference: Pandoc 3.10.2 commit
- * f2ee5dfee866aab007a33552acc6bc01810c6918,
- * src/Text/Pandoc/Readers/LaTeX.hs `rawLaTeXBlock` (line 153),
- * `rawLaTeXInline` (line 196), `blockCommands`, and `treatAsBlock`;
- * Markdown integration is src/Text/Pandoc/Readers/Markdown.hs
- * `rawLaTeXInline'` (line 2113) under Ext_raw_tex.
- */
-/**
- * Pure recognition of Pandoc-style raw LaTeX environment blocks.
+ * GENERATED FILE. Do not hand-edit.
  *
- * This module deliberately knows nothing about CodeMirror. The editor parser,
- * custom Markdown AST, linting, and renderer adapters all use the same rules so
- * structural recognition cannot drift between surfaces.
+ * Source: Pandoc 3.10.2, commit f2ee5dfee866aab007a33552acc6bc01810c6918
+ * Text/Pandoc/Readers/LaTeX.hs: blockCommands + treatAsBlock.
+ * Generator: scripts/generate-pandoc-parser-reference-data.mjs
  */
-/**
- * Environments consumed by Pandoc's LaTeX `inlineEnvironment` parser. When
- * raw TeX is enabled in the Markdown reader these become RawInline(tex), not
- * RawBlock and not Math.
- *
- * Reference: Pandoc 3.10.2 commit f2ee5dfee866aab007a33552acc6bc01810c6918,
- * Text/Pandoc/Readers/LaTeX/Math.hs `inlineEnvironments` (lines 97-123),
- * reached from Text/Pandoc/Readers/LaTeX.hs `inline` / `rawLaTeXInline`.
- */
-const PANDOC_INLINE_ENVIRONMENTS = new Set([
-    "displaymath", "math",
-    "equation", "equation*", "gather", "gather*", "multline", "multline*",
-    "eqnarray", "eqnarray*", "align", "align*", "alignat", "alignat*",
-    "flalign", "flalign*", "dmath", "dmath*", "dgroup", "dgroup*",
-    "darray", "darray*", "subequations",
-]);
-const ENVIRONMENT_OPEN_RE = /^\\begin\{([A-Za-z@]+\*?)\}/u;
-const CONTROL_SEQUENCE_RE = /^\\([A-Za-z@]+)(\*)?/u;
-/** Pandoc 3.10.2 Text.Pandoc.Readers.LaTeX blockCommands + treatAsBlock. */
-const PANDOC_BLOCK_COMMANDS = new Set([
+const PANDOC_BLOCK_COMMAND_NAMES = new Set([
     "PackageError",
     "addbibresource",
     "addcontentsline",
@@ -4975,6 +4941,472 @@ const PANDOC_BLOCK_COMMANDS = new Set([
     "vspace",
     "write",
 ]);
+
+/**
+ * GENERATED FILE. Do not hand-edit.
+ *
+ * Source: Pandoc 3.10.2, commit f2ee5dfee866aab007a33552acc6bc01810c6918
+ * Text/Pandoc/Readers/LaTeX.hs inlineCommands and imported parser maps.
+ * Generator: scripts/generate-pandoc-parser-reference-data.mjs
+ */
+const PANDOC_INLINE_COMMAND_STRATEGIES = {
+    "@": "zero",
+    "aa": "zero",
+    "AA": "zero",
+    "abstractname": "zero",
+    "ac": "braced",
+    "Ac": "braced",
+    "acf": "braced",
+    "Acf": "braced",
+    "acfp": "braced",
+    "Acfp": "braced",
+    "acl": "braced",
+    "Acl": "braced",
+    "aclp": "braced",
+    "Aclp": "braced",
+    "acp": "braced",
+    "Acp": "braced",
+    "acrfull": "braced",
+    "Acrfull": "braced",
+    "acrlong": "braced",
+    "Acrlong": "braced",
+    "acrshort": "braced",
+    "Acrshort": "braced",
+    "acs": "braced",
+    "Acs": "braced",
+    "acsp": "braced",
+    "Acsp": "braced",
+    "addabbrvspace": "zero",
+    "adddot": "zero",
+    "adddotspace": "zero",
+    "ae": "zero",
+    "AE": "zero",
+    "alert": "skipopts-tok",
+    "ang": "skipopts-braced",
+    "autocap": "tok",
+    "autocite": "citation-single",
+    "Autocite": "citation-single",
+    "autocite*": "citation-single",
+    "Autocite*": "citation-single",
+    "autocites": "citation-multi",
+    "Autocites": "citation-multi",
+    "autoref": "raw-command",
+    "b": "optional-tok",
+    "backslash": "zero",
+    "bar": "zero",
+    "bf": "inlines",
+    "bfseries": "inlines",
+    "bibname": "zero",
+    "bibstring": "braced",
+    "bshyp": "zero",
+    "c": "optional-tok",
+    "ccname": "zero",
+    "chaptername": "zero",
+    "cite": "citation-single",
+    "Cite": "citation-single",
+    "cite*": "citation-single",
+    "Cite*": "citation-single",
+    "citeal": "citation-single",
+    "citealp": "citation-single",
+    "citealp*": "citation-single",
+    "citealt": "citation-single",
+    "citealt*": "citation-single",
+    "citeauthor": "citation-author",
+    "citep": "citation-single",
+    "citep*": "citation-single",
+    "cites": "citation-multi",
+    "Cites": "citation-multi",
+    "citet": "citation-single",
+    "citet*": "citation-single",
+    "citetext": "citation-text",
+    "citeyear": "citation-single",
+    "Citeyear": "citation-single",
+    "citeyearpar": "citation-single",
+    "Citeyearpar": "citation-single",
+    "clearpage": "raw-command",
+    "colonhyp": "zero",
+    "colorbox": "skipopts-braced-tok",
+    "contentsname": "zero",
+    "copyright": "zero",
+    "cref": "raw-command",
+    "Cref": "raw-command",
+    "d": "optional-tok",
+    "dothyp": "zero",
+    "dots": "zero",
+    "dq": "zero",
+    "em": "inlines",
+    "emph": "tok",
+    "enclname": "zero",
+    "enquote": "skipopts-tok",
+    "enquote*": "skipopts-tok",
+    "ensuremath": "braced",
+    "eqref": "raw-command",
+    "euro": "zero",
+    "f": "optional-tok",
+    "faCheck": "zero",
+    "faClose": "zero",
+    "figurename": "zero",
+    "flq": "zero",
+    "flqq": "zero",
+    "footcite": "citation-single",
+    "Footcite": "citation-single",
+    "footcites": "citation-multi",
+    "Footcites": "citation-multi",
+    "footcitetext": "citation-single",
+    "Footcitetext": "citation-single",
+    "footcitetexts": "citation-multi",
+    "Footcitetexts": "citation-multi",
+    "footnote": "skipopts-group",
+    "footnotemark": "optional-numeric-bracket",
+    "footnotetext": "optional-numeric-bracket-group",
+    "foreignlanguage": "braced-tok",
+    "foreignquote": "braced-skipopts-tok",
+    "foreignquote*": "braced-skipopts-tok",
+    "frq": "zero",
+    "frqq": "zero",
+    "fshyp": "zero",
+    "G": "optional-tok",
+    "glossaryname": "zero",
+    "glq": "zero",
+    "glqq": "zero",
+    "gls": "braced",
+    "Gls": "braced",
+    "glsdesc": "braced",
+    "Glsdesc": "braced",
+    "GLSdesc": "braced",
+    "glsdescplural": "braced",
+    "Glsdescplural": "braced",
+    "GLSdescplural": "braced",
+    "glspl": "braced",
+    "Glspl": "braced",
+    "grq": "zero",
+    "grqq": "zero",
+    "guillemetleft": "zero",
+    "guillemetright": "zero",
+    "guillemotleft": "zero",
+    "guillemotright": "zero",
+    "guilsinglleft": "zero",
+    "guilsinglright": "zero",
+    "h": "optional-tok",
+    "H": "optional-tok",
+    "hbox": "raw-command",
+    "headtoname": "zero",
+    "hl": "tok",
+    "href": "braced-sp-tok",
+    "hspace": "raw-command",
+    "hyp": "zero",
+    "hyperlink": "braced-tok",
+    "hyperref": "hyperref",
+    "hypertarget": "braced-tok",
+    "hyphen": "zero",
+    "hyphenquote": "braced-skipopts-tok",
+    "hyphenquote*": "braced-skipopts-tok",
+    "i": "zero",
+    "ifdim": "until-fi",
+    "iftoggle": "three-braced-inline",
+    "includegraphics": "optional-bracket-braced",
+    "includesvg": "optional-bracket-braced",
+    "index": "raw-command",
+    "indexname": "zero",
+    "input": "rawopts-one-braced",
+    "it": "inlines",
+    "itshape": "inlines",
+    "j": "zero",
+    "k": "optional-tok",
+    "l": "zero",
+    "L": "zero",
+    "label": "raw-command",
+    "LaTeX": "zero",
+    "ldots": "zero",
+    "lettrine": "raw-command",
+    "listfigurename": "zero",
+    "listtablename": "zero",
+    "lowercase": "tok",
+    "lq": "zero",
+    "lstinline": "optional-bracket-verbatim",
+    "lstlistingname": "zero",
+    "MakeLowercase": "tok",
+    "MakeTextLowercase": "tok",
+    "MakeTextUppercase": "tok",
+    "MakeUppercase": "tok",
+    "mbox": "raw-command",
+    "mdots": "zero",
+    "mintinline": "skipopts-braced-verbatim",
+    "mkbibbold": "tok",
+    "mkbibbrackets": "tok",
+    "mkbibemph": "tok",
+    "mkbibitalic": "tok",
+    "mkbibparens": "tok",
+    "mkbibquote": "tok",
+    "newline": "zero",
+    "newpage": "raw-command",
+    "newtie": "optional-tok",
+    "newtoggle": "braced",
+    "nhttfamily": "tok",
+    "nocite": "citation-single",
+    "nohyphens": "tok",
+    "noindent": "raw-command",
+    "nolinkurl": "braced",
+    "num": "skipopts-braced",
+    "numlist": "skipopts-braced",
+    "numrange": "si-range",
+    "o": "zero",
+    "O": "zero",
+    "oe": "zero",
+    "OE": "zero",
+    "P": "zero",
+    "pagebreak": "raw-command",
+    "pagename": "zero",
+    "pandocbounded": "tok",
+    "parencite": "citation-single",
+    "Parencite": "citation-single",
+    "parencite*": "citation-single",
+    "Parencite*": "citation-single",
+    "parencites": "citation-multi",
+    "Parencites": "citation-multi",
+    "partname": "zero",
+    "passthrough": "tok",
+    "pounds": "zero",
+    "prefacename": "zero",
+    "proofname": "zero",
+    "ps": "zero",
+    "qed": "zero",
+    "qty": "si-value-unit",
+    "qtylist": "si-list-unit",
+    "qtyrange": "si-range-unit",
+    "quotedblbase": "zero",
+    "quotesinglbase": "zero",
+    "r": "optional-tok",
+    "ref": "raw-command",
+    "refname": "zero",
+    "rm": "inlines",
+    "Rn": "roman",
+    "RN": "roman",
+    "rq": "zero",
+    "S": "zero",
+    "scshape": "inlines",
+    "seealsoname": "zero",
+    "seename": "zero",
+    "sep": "zero",
+    "si": "si-unit",
+    "SI": "si-value-unit",
+    "SIlist": "si-list-unit",
+    "sim": "zero",
+    "SIrange": "si-range-unit",
+    "sl": "inlines",
+    "slash": "zero",
+    "slshape": "inlines",
+    "smartcite": "citation-single",
+    "Smartcite": "citation-single",
+    "sout": "tok",
+    "ss": "zero",
+    "st": "tok",
+    "supercite": "citation-single",
+    "Supercite": "citation-single",
+    "supercites": "citation-multi",
+    "Supercites": "citation-multi",
+    "t": "optional-tok",
+    "tablename": "zero",
+    "TeX": "zero",
+    "texorpdfstring": "two-tok",
+    "textafrikaans": "optional-rawopt-tok",
+    "textalbanian": "optional-rawopt-tok",
+    "textamharic": "optional-rawopt-tok",
+    "textarabic": "optional-rawopt-tok",
+    "textarmenian": "optional-rawopt-tok",
+    "textasciicircum": "zero",
+    "textasciitilde": "zero",
+    "textassamese": "optional-rawopt-tok",
+    "textasturian": "optional-rawopt-tok",
+    "textbackslash": "zero",
+    "textbaht": "zero",
+    "textbasque": "optional-rawopt-tok",
+    "textbengali": "optional-rawopt-tok",
+    "textbf": "tok",
+    "textbigcircle": "zero",
+    "textblank": "zero",
+    "textbreton": "optional-rawopt-tok",
+    "textbrokenbar": "zero",
+    "textbulgarian": "optional-rawopt-tok",
+    "textbullet": "zero",
+    "textcatalan": "optional-rawopt-tok",
+    "textcentoldstyle": "zero",
+    "textcircled": "optional-tok",
+    "textcite": "citation-single",
+    "Textcite": "citation-single",
+    "textcites": "citation-multi",
+    "Textcites": "citation-multi",
+    "textcolor": "skipopts-braced-tok",
+    "textcoptic": "optional-rawopt-tok",
+    "textcopyright": "zero",
+    "textcroatian": "optional-rawopt-tok",
+    "textczech": "optional-rawopt-tok",
+    "textdagger": "zero",
+    "textdanish": "optional-rawopt-tok",
+    "textdegree": "zero",
+    "textdivehi": "optional-rawopt-tok",
+    "textdollar": "zero",
+    "textdong": "zero",
+    "textdutch": "optional-rawopt-tok",
+    "textenglish": "optional-rawopt-tok",
+    "textesperanto": "optional-rawopt-tok",
+    "textestonian": "optional-rawopt-tok",
+    "textethiopic": "optional-rawopt-tok",
+    "textfarsi": "optional-rawopt-tok",
+    "textfinnish": "optional-rawopt-tok",
+    "textfrench": "optional-rawopt-tok",
+    "textfriulan": "optional-rawopt-tok",
+    "textgalician": "optional-rawopt-tok",
+    "textgerman": "optional-rawopt-tok",
+    "textgreater": "zero",
+    "textgreek": "optional-rawopt-tok",
+    "textgujarati": "optional-rawopt-tok",
+    "texthebrew": "optional-rawopt-tok",
+    "texthindi": "optional-rawopt-tok",
+    "texticelandic": "optional-rawopt-tok",
+    "textindonesian": "optional-rawopt-tok",
+    "textinterlingua": "optional-rawopt-tok",
+    "textirish": "optional-rawopt-tok",
+    "textit": "tok",
+    "textitalian": "optional-rawopt-tok",
+    "textjapanese": "optional-rawopt-tok",
+    "textkannada": "optional-rawopt-tok",
+    "textkhmer": "optional-rawopt-tok",
+    "textkorean": "optional-rawopt-tok",
+    "textkurmanji": "optional-rawopt-tok",
+    "textlao": "optional-rawopt-tok",
+    "textlatin": "optional-rawopt-tok",
+    "textlatvian": "optional-rawopt-tok",
+    "textless": "zero",
+    "textlira": "zero",
+    "textlithuanian": "optional-rawopt-tok",
+    "textlsorbian": "optional-rawopt-tok",
+    "textmagyar": "optional-rawopt-tok",
+    "textmalayalam": "optional-rawopt-tok",
+    "textmarathi": "optional-rawopt-tok",
+    "textmd": "tok",
+    "textmongolian": "optional-rawopt-tok",
+    "textmu": "zero",
+    "textmusicalnote": "zero",
+    "textnhtt": "tok",
+    "textnko": "optional-rawopt-tok",
+    "textnormal": "tok",
+    "textnorsk": "optional-rawopt-tok",
+    "textnynorsk": "optional-rawopt-tok",
+    "textoccitan": "optional-rawopt-tok",
+    "textogonekcentered": "optional-tok",
+    "textonehalf": "zero",
+    "textonequarter": "zero",
+    "textoriya": "optional-rawopt-tok",
+    "textparagraph": "zero",
+    "textpertenthousand": "zero",
+    "textpeso": "zero",
+    "textpiedmontese": "optional-rawopt-tok",
+    "textpinyin": "optional-rawopt-tok",
+    "textpolish": "optional-rawopt-tok",
+    "textportuguese": "optional-rawopt-tok",
+    "textpunjabi": "optional-rawopt-tok",
+    "textquotedbl": "zero",
+    "textquotedblleft": "zero",
+    "textquotedblright": "zero",
+    "textquoteleft": "zero",
+    "textquoteright": "zero",
+    "textquotesingle": "zero",
+    "textregistered": "zero",
+    "textrm": "tok",
+    "textromanian": "optional-rawopt-tok",
+    "textromansh": "optional-rawopt-tok",
+    "textrussian": "optional-rawopt-tok",
+    "textsamin": "optional-rawopt-tok",
+    "textsanskrit": "optional-rawopt-tok",
+    "textsc": "tok",
+    "textscottish": "optional-rawopt-tok",
+    "textsection": "zero",
+    "textserbian": "optional-rawopt-tok",
+    "textserbianc": "optional-rawopt-tok",
+    "textsf": "tok",
+    "textsl": "tok",
+    "textslovak": "optional-rawopt-tok",
+    "textslovenian": "optional-rawopt-tok",
+    "textspanish": "optional-rawopt-tok",
+    "textsterling": "zero",
+    "textsubscript": "tok",
+    "textsuperscript": "tok",
+    "textswedish": "optional-rawopt-tok",
+    "textsyriac": "optional-rawopt-tok",
+    "texttamil": "optional-rawopt-tok",
+    "texttelugu": "optional-rawopt-tok",
+    "textthai": "optional-rawopt-tok",
+    "textthreequarters": "zero",
+    "textthreesuperior": "zero",
+    "texttibetan": "optional-rawopt-tok",
+    "texttt": "tok",
+    "textturkish": "optional-rawopt-tok",
+    "textturkmen": "optional-rawopt-tok",
+    "texttwosuperior": "zero",
+    "textukrainian": "optional-rawopt-tok",
+    "textup": "tok",
+    "texturdu": "optional-rawopt-tok",
+    "textusorbian": "optional-rawopt-tok",
+    "textvietnamese": "optional-rawopt-tok",
+    "textwelsh": "optional-rawopt-tok",
+    "textyen": "zero",
+    "thanks": "skipopts-group",
+    "today": "zero",
+    "togglefalse": "braced",
+    "toggletrue": "braced",
+    "tt": "inlines",
+    "u": "optional-tok",
+    "U": "optional-tok",
+    "ul": "tok",
+    "uline": "tok",
+    "underline": "tok",
+    "unit": "si-unit",
+    "uppercase": "tok",
+    "url": "braced",
+    "v": "optional-tok",
+    "vbox": "raw-command",
+    "vdots": "zero",
+    "verb": "verbatim",
+    "Verb": "verbatim",
+    "vref": "raw-command",
+    "vspace": "raw-command",
+};
+
+/**
+ * Pandoc reference: Pandoc 3.10.2 commit
+ * f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * src/Text/Pandoc/Readers/LaTeX.hs `rawLaTeXBlock` (line 153),
+ * `rawLaTeXInline` (line 196), `blockCommands`, and `treatAsBlock`;
+ * Markdown integration is src/Text/Pandoc/Readers/Markdown.hs
+ * `rawLaTeXInline'` (line 2113) under Ext_raw_tex.
+ */
+/**
+ * Pure recognition of Pandoc-style raw LaTeX environment blocks.
+ *
+ * This module deliberately knows nothing about CodeMirror. The editor parser,
+ * custom Markdown AST, linting, and renderer adapters all use the same rules so
+ * structural recognition cannot drift between surfaces.
+ */
+/**
+ * Environments consumed by Pandoc's LaTeX `inlineEnvironment` parser. When
+ * raw TeX is enabled in the Markdown reader these become RawInline(tex), not
+ * RawBlock and not Math.
+ *
+ * Reference: Pandoc 3.10.2 commit f2ee5dfee866aab007a33552acc6bc01810c6918,
+ * Text/Pandoc/Readers/LaTeX/Math.hs `inlineEnvironments` (lines 97-123),
+ * reached from Text/Pandoc/Readers/LaTeX.hs `inline` / `rawLaTeXInline`.
+ */
+const PANDOC_INLINE_ENVIRONMENTS = new Set([
+    "displaymath", "math",
+    "equation", "equation*", "gather", "gather*", "multline", "multline*",
+    "eqnarray", "eqnarray*", "align", "align*", "alignat", "alignat*",
+    "flalign", "flalign*", "dmath", "dmath*", "dgroup", "dgroup*",
+    "darray", "darray*", "subequations",
+]);
+const ENVIRONMENT_OPEN_RE = /^\\begin\{([A-Za-z@]+\*?)\}/u;
+const CONTROL_SEQUENCE_RE = /^\\([A-Za-z@]+)(\*)?/u;
+const RAW_INLINE_CONTROL_WORD_RE = /^\\([\p{L}][\p{L}@]*)(\*)?/u;
 const NEW_COMMAND_DEFINITIONS = new Set([
     "newcommand",
     "renewcommand",
@@ -5013,7 +5445,7 @@ function rawLatexBlockStartsAt(text) {
     }
     const command = CONTROL_SEQUENCE_RE.exec(text);
     if (command !== null &&
-        (PANDOC_BLOCK_COMMANDS.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))) {
+        (PANDOC_BLOCK_COMMAND_NAMES.has(command[1]) || RAW_DEFINITION_COMMANDS.has(command[1]))) {
         return true;
     }
     return genericRawMaybeBlockEndAtStart(text) !== null;
@@ -5068,6 +5500,342 @@ function balancedGroupEnd(text, from, open, close) {
         }
     }
     return null;
+}
+function bracketedGroupEnd(text, from) {
+    return balancedGroupEnd(text, from, '[', ']');
+}
+function skipPandocSp(text, from) {
+    let cursor = from;
+    while (text[cursor] === ' ' || text[cursor] === '\t')
+        cursor++;
+    if (text.startsWith('\r\n', cursor)) {
+        cursor += 2;
+    }
+    else if (text[cursor] === '\n' || text[cursor] === '\r') {
+        cursor++;
+    }
+    else {
+        return cursor;
+    }
+    while (text[cursor] === ' ' || text[cursor] === '\t')
+        cursor++;
+    return cursor;
+}
+function controlWordEnd(text, from) {
+    const match = /^\\[\p{L}][\p{L}@]*/u.exec(text.slice(from));
+    if (match === null)
+        return null;
+    let cursor = from + match[0].length;
+    while (text[cursor] === ' ' || text[cursor] === '\t')
+        cursor++;
+    return cursor;
+}
+/**
+ * Port of LaTeX.Parsing `tokWith`: after optional whitespace, consume either a
+ * balanced group, one following control sequence, or exactly one character of
+ * ordinary text.
+ */
+function pandocTokEnd(text, from) {
+    var _a;
+    let cursor = from;
+    while (/\s/u.test((_a = text[cursor]) !== null && _a !== void 0 ? _a : ''))
+        cursor++;
+    if (text[cursor] === '{')
+        return balancedGroupEnd(text, cursor, '{', '}');
+    if (text[cursor] === '\\')
+        return controlWordEnd(text, cursor);
+    if (cursor >= text.length)
+        return null;
+    if ('#$%&~_^\\{}'.includes(text[cursor]))
+        return null;
+    return cursor + [...text.slice(cursor)][0].length;
+}
+function pandocInlineTokenEnd(text, from) {
+    if (from >= text.length)
+        return null;
+    if (text[from] === ' ' || text[from] === '\t') {
+        let cursor = from;
+        while (text[cursor] === ' ' || text[cursor] === '\t')
+            cursor++;
+        return cursor;
+    }
+    if (/\p{L}|\p{N}/u.test(text[from])) {
+        const match = /^[\p{L}\p{N}]+/u.exec(text.slice(from));
+        return match === null ? null : from + match[0].length;
+    }
+    if (text[from] === '\\') {
+        return controlWordEnd(text, from);
+    }
+    return from + [...text.slice(from)][0].length;
+}
+function optionalRawoptEnd(text, from) {
+    const start = skipPandocSp(text, from);
+    if (text[start] !== '[')
+        return from;
+    const end = bracketedGroupEnd(text, start);
+    return end === null ? from : skipPandocSp(text, end);
+}
+function skipRawoptsEnd(text, from) {
+    let cursor = from;
+    for (;;) {
+        const next = optionalRawoptEnd(text, cursor);
+        if (next === cursor)
+            return cursor;
+        cursor = next;
+    }
+}
+function bracedEnd(text, from) {
+    const cursor = skipPandocSp(text, from);
+    return text[cursor] === '{' ? balancedGroupEnd(text, cursor, '{', '}') : null;
+}
+function optionalBracketEnd(text, from) {
+    const cursor = skipPandocSp(text, from);
+    if (text[cursor] !== '[')
+        return from;
+    const end = bracketedGroupEnd(text, cursor);
+    return end !== null && end !== void 0 ? end : from;
+}
+function verbatimEnd(text, from, bracePair = false) {
+    if (from >= text.length)
+        return null;
+    const marker = text[from];
+    if (/\s/u.test(marker))
+        return null;
+    const stop = bracePair && marker === '{' ? '}' : marker;
+    const end = text.indexOf(stop, from + 1);
+    return end < 0 ? null : end + 1;
+}
+function consumeCitationArgs(text, from, multi) {
+    let cursor = from;
+    let consumed = 0;
+    do {
+        const before = cursor;
+        const firstOpt = optionalRawoptEnd(text, cursor);
+        cursor = firstOpt;
+        const secondOpt = optionalRawoptEnd(text, cursor);
+        cursor = secondOpt;
+        const groupStart = skipPandocSp(text, cursor);
+        if (text[groupStart] !== '{') {
+            cursor = before;
+            break;
+        }
+        const groupEnd = balancedGroupEnd(text, groupStart, '{', '}');
+        if (groupEnd === null)
+            return null;
+        cursor = groupEnd;
+        consumed++;
+    } while (multi);
+    return consumed > 0 ? cursor : null;
+}
+function strategyEnd(strategy, text, from) {
+    var _a, _b, _c, _d;
+    switch (strategy) {
+        case 'zero':
+        case 'optional-numeric-bracket':
+            return strategy === 'zero' ? from : optionalBracketEnd(text, from);
+        case 'tok':
+            return pandocTokEnd(text, from);
+        case 'optional-tok':
+            return (_a = pandocTokEnd(text, from)) !== null && _a !== void 0 ? _a : from;
+        case 'two-tok': {
+            const first = pandocTokEnd(text, from);
+            return first === null ? null : pandocTokEnd(text, first);
+        }
+        case 'braced':
+        case 'skipopts-braced':
+        case 'rawopts-braced': {
+            const cursor = strategy === 'braced' ? from : skipRawoptsEnd(text, from);
+            return bracedEnd(text, cursor);
+        }
+        case 'rawopts-one-braced': {
+            const cursor = skipRawoptsEnd(text, from);
+            return bracedEnd(text, cursor);
+        }
+        case 'braced-tok': {
+            const first = bracedEnd(text, from);
+            return first === null ? null : pandocTokEnd(text, first);
+        }
+        case 'braced-sp-tok': {
+            const first = bracedEnd(text, from);
+            return first === null ? null : pandocTokEnd(text, skipPandocSp(text, first));
+        }
+        case 'skipopts-tok': {
+            const cursor = skipRawoptsEnd(text, from);
+            return pandocTokEnd(text, cursor);
+        }
+        case 'optional-rawopt-tok': {
+            const cursor = optionalRawoptEnd(text, from);
+            return pandocTokEnd(text, cursor);
+        }
+        case 'optional-rawopt-two-tok': {
+            let cursor = optionalRawoptEnd(text, from);
+            const first = pandocTokEnd(text, cursor);
+            if (first === null)
+                return null;
+            cursor = first;
+            return pandocTokEnd(text, cursor);
+        }
+        case 'skipopts-braced-tok': {
+            let cursor = skipRawoptsEnd(text, from);
+            const group = bracedEnd(text, cursor);
+            if (group === null)
+                return null;
+            return pandocTokEnd(text, group);
+        }
+        case 'braced-skipopts-tok': {
+            const group = bracedEnd(text, from);
+            if (group === null)
+                return null;
+            return pandocTokEnd(text, skipRawoptsEnd(text, group));
+        }
+        case 'three-braced': {
+            let cursor = from;
+            for (let i = 0; i < 3; i++) {
+                const end = bracedEnd(text, cursor);
+                if (end === null)
+                    return null;
+                cursor = end;
+            }
+            return cursor;
+        }
+        case 'three-braced-inline': {
+            let cursor = from;
+            for (let i = 0; i < 3; i++) {
+                const end = bracedEnd(text, cursor);
+                if (end === null)
+                    return null;
+                cursor = end;
+            }
+            return pandocInlineTokenEnd(text, cursor);
+        }
+        case 'optional-numeric-bracket-group': {
+            const cursor = optionalBracketEnd(text, from);
+            return bracedEnd(text, cursor);
+        }
+        case 'optional-bracket-braced': {
+            const cursor = optionalRawoptEnd(text, from);
+            return bracedEnd(text, cursor);
+        }
+        case 'verbatim':
+            return verbatimEnd(text, from);
+        case 'optional-bracket-verbatim': {
+            const cursor = optionalRawoptEnd(text, from);
+            return verbatimEnd(text, cursor, true);
+        }
+        case 'skipopts-braced-verbatim': {
+            const cursor = skipRawoptsEnd(text, from);
+            const group = bracedEnd(text, cursor);
+            return group === null ? null : verbatimEnd(text, group, true);
+        }
+        case 'citation-single':
+            return consumeCitationArgs(text, from, false);
+        case 'citation-multi':
+            return consumeCitationArgs(text, from, true);
+        case 'citation-text': {
+            const end = bracedEnd(text, from);
+            if (end === null)
+                return null;
+            const start = skipPandocSp(text, from);
+            const body = text.slice(start + 1, end - 1);
+            const hasCitation = [...body.matchAll(/\\([A-Za-z@]+)(\*)?/gu)].some(match => {
+                var _a;
+                const key = match[2] === '*' ? match[1] + '*' : match[1];
+                const nested = (_a = PANDOC_INLINE_COMMAND_STRATEGIES[key]) !== null && _a !== void 0 ? _a : PANDOC_INLINE_COMMAND_STRATEGIES[match[1]];
+                return nested === 'citation-single' || nested === 'citation-multi' ||
+                    nested === 'citation-author';
+            });
+            return hasCitation ? end : null;
+        }
+        case 'citation-author':
+            return consumeCitationArgs(text, from, false);
+        case 'skipopts-group': {
+            const cursor = skipRawoptsEnd(text, from);
+            return bracedEnd(text, cursor);
+        }
+        case 'roman': {
+            let cursor = from;
+            while (/\s/u.test((_b = text[cursor]) !== null && _b !== void 0 ? _b : ''))
+                cursor++;
+            if (text[cursor] === '{')
+                return bracedEnd(text, cursor);
+            const match = /^\d+/u.exec(text.slice(cursor));
+            return match === null ? null : cursor + match[0].length;
+        }
+        case 'hyperref': {
+            const option = optionalRawoptEnd(text, from);
+            if (option !== from) {
+                return pandocTokEnd(text, option);
+            }
+            let cursor = from;
+            for (let i = 0; i < 3; i++) {
+                const group = bracedEnd(text, cursor);
+                if (group === null)
+                    return null;
+                cursor = group;
+            }
+            return pandocTokEnd(text, cursor);
+        }
+        case 'si-unit': {
+            let cursor = optionalRawoptEnd(text, from);
+            const group = bracedEnd(text, cursor);
+            if (group !== null)
+                return group;
+            return pandocTokEnd(text, cursor);
+        }
+        case 'si-value-unit': {
+            let cursor = skipRawoptsEnd(text, from);
+            const value = bracedEnd(text, cursor);
+            if (value === null)
+                return null;
+            cursor = optionalRawoptEnd(text, value);
+            const unit = bracedEnd(text, cursor);
+            return unit !== null && unit !== void 0 ? unit : pandocTokEnd(text, cursor);
+        }
+        case 'si-list-unit': {
+            let cursor = optionalRawoptEnd(text, from);
+            const values = bracedEnd(text, cursor);
+            if (values === null)
+                return null;
+            cursor = values;
+            return (_c = bracedEnd(text, cursor)) !== null && _c !== void 0 ? _c : pandocTokEnd(text, cursor);
+        }
+        case 'si-range':
+        case 'si-range-unit': {
+            let cursor = skipRawoptsEnd(text, from);
+            for (let i = 0; i < 2; i++) {
+                const value = bracedEnd(text, cursor);
+                if (value === null)
+                    return null;
+                cursor = optionalRawoptEnd(text, value);
+            }
+            if (strategy === 'si-range')
+                return cursor;
+            return (_d = bracedEnd(text, cursor)) !== null && _d !== void 0 ? _d : pandocTokEnd(text, cursor);
+        }
+        case 'until-fi': {
+            const match = /\\fi\b/u.exec(text.slice(from));
+            return match === null
+                ? null
+                : skipHorizontalSpace$1(text, from + match.index + match[0].length);
+        }
+        case 'inlines':
+            return text.length;
+        case 'raw-command':
+            return rawCommandArgsEnd(text, from);
+    }
+}
+/** Port of the default branch of LaTeX.Parsing `getRawCommand`. */
+function rawCommandArgsEnd(text, from) {
+    let cursor = skipRawoptsEnd(text, from);
+    const dimen = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*[A-Za-z]+/u.exec(text.slice(cursor));
+    if (dimen !== null)
+        cursor += dimen[0].length;
+    for (;;) {
+        const group = bracedEnd(text, cursor);
+        if (group === null)
+            return cursor;
+        cursor = group;
+    }
 }
 function controlSequenceEnd(text, from) {
     if (text[from] !== "\\") {
@@ -5203,7 +5971,7 @@ function rawLatexCommandEndAtStart(text) {
     if (name === "let" || name === "newif") {
         return lineEnd(text, initialEnd);
     }
-    if (!PANDOC_BLOCK_COMMANDS.has(name)) {
+    if (!PANDOC_BLOCK_COMMAND_NAMES.has(name)) {
         return null;
     }
     return genericBlockCommandEnd(text, initialEnd);
@@ -5359,13 +6127,13 @@ function pandocLatexMathEnvironmentAtStart(text) {
         : { environment, display: environment !== "math", end };
 }
 /**
- * End offset for the subset of Pandoc RawInline(tex) syntax that begins with a
- * control sequence or one of Pandoc's LaTeX inline environments.
+ * End offset for Pandoc RawInline(tex) syntax beginning with a LaTeX control
+ * word or one of Pandoc's LaTeX inline environments.
  *
  * Reference implementation: Pandoc 3.10.2 `rawLaTeXInline` in
- * Text/Pandoc/Readers/LaTeX.hs (lines 196-207), using `inline` and
- * `inlineEnvironment`. The executable Pandoc JSON reader is the differential
- * oracle for the admitted shapes.
+ * Text/Pandoc/Readers/LaTeX.hs (lines 196-207). Control-word consumption is
+ * driven by the generated upstream strategy table rather than a local arity
+ * heuristic.
  */
 function rawLatexInlineEndAtStart(text) {
     var _a;
@@ -5376,60 +6144,23 @@ function rawLatexInlineEndAtStart(text) {
         }
         return rawLatexEnvironmentEnd(text, environment);
     }
-    const command = CONTROL_SEQUENCE_RE.exec(text);
+    const command = RAW_INLINE_CONTROL_WORD_RE.exec(text);
     if (command === null) {
         return null;
     }
     const name = command[1];
-    let cursor = command[0].length;
-    // Pandoc's LaTeX reader does not greedily absorb arbitrary following groups.
-    // `rawLaTeXInline` delegates to the actual command parser (`inlineCommands`)
-    // and therefore consumes exactly the argument shape owned by that command.
-    // Unknown commands accept optional [] groups followed by at most one braced
-    // group; known multi-argument commands below mirror their literal entries in
-    // LaTeX.hs `inlineCommands` (textcolor/colorbox, href, texorpdfstring, etc.).
-    // This keeps `\textbf{raw} [label](...)` from swallowing the Markdown link.
-    const MULTI_BRACED_ARGS = {
-        href: 2,
-        hyperlink: 2,
-        texorpdfstring: 2,
-        textcolor: 2,
-        colorbox: 2,
-    };
-    const requiredBraces = (_a = MULTI_BRACED_ARGS[name]) !== null && _a !== void 0 ? _a : 1;
-    let consumedAny = false;
-    let beforeSpace = cursor;
-    cursor = skipHorizontalSpace$1(text, cursor);
-    // TeX optional arguments precede the main braced argument(s). Pandoc's
-    // command parsers use `option`/`skipopts` in these positions.
-    while (text[cursor] === "[") {
-        const end = balancedGroupEnd(text, cursor, "[", "]");
-        if (end === null)
-            return null;
-        consumedAny = true;
-        cursor = end;
-        beforeSpace = cursor;
-        cursor = skipHorizontalSpace$1(text, cursor);
-    }
-    let braces = 0;
-    while (braces < requiredBraces && text[cursor] === "{") {
-        const end = balancedGroupEnd(text, cursor, "{", "}");
-        if (end === null)
-            return null;
-        consumedAny = true;
-        braces++;
-        cursor = end;
-        if (braces < requiredBraces) {
-            cursor = skipHorizontalSpace$1(text, cursor);
-        }
-    }
-    if (consumedAny) {
-        // Space after the final owned argument belongs back to Markdown.
-        return cursor;
-    }
-    // A bare TeX control word gobbles following horizontal space. Pandoc keeps
-    // those spaces in RawInline(tex), e.g. `\LaTeX   text`.
-    return cursor > beforeSpace ? cursor : command[0].length;
+    const starredName = command[2] === '*' ? name + '*' : name;
+    const strategy = (_a = PANDOC_INLINE_COMMAND_STRATEGIES[starredName]) !== null && _a !== void 0 ? _a : PANDOC_INLINE_COMMAND_STRATEGIES[name];
+    const cursor = skipHorizontalSpace$1(text, command[0].length);
+    const end = strategy === undefined
+        ? (PANDOC_BLOCK_COMMAND_NAMES.has(name) ? null : rawCommandArgsEnd(text, cursor))
+        : strategyEnd(strategy, text, cursor);
+    if (end === null)
+        return null;
+    let finalEnd = end;
+    while (text.startsWith('{}', finalEnd))
+        finalEnd += 2;
+    return finalEnd;
 }
 /** Exact end of one editor-supported Pandoc RawBlock(tex) source unit. */
 function rawLatexBlockEndAtStart(text) {

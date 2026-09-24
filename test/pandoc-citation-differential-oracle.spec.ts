@@ -17,7 +17,6 @@
 
 import { EditorState } from "@codemirror/state";
 import { strict as assert } from "assert";
-import { execFileSync } from "child_process";
 import {
   type Citation,
   type CiteItem,
@@ -25,6 +24,7 @@ import {
   nodeToCiteItem,
 } from "source/common/modules/markdown-editor/parser/citation-parser";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { execPandocReference } from "./pandoc-reference";
 
 interface PandocCitation {
   citationId: string;
@@ -39,10 +39,7 @@ interface PandocCitation {
  * Extracts all citations from Pandoc's official JSON AST.
  */
 function extractPandocASTCitations(markdown: string): PandocCitation[][] {
-  const stdout = execFileSync("pandoc", ["-f", "markdown", "-t", "json"], {
-    input: markdown,
-    encoding: "utf8",
-  });
+  const stdout = execPandocReference(["-f", "markdown", "-t", "json"], { input: markdown });
   const ast = JSON.parse(stdout);
 
   const clusters: PandocCitation[][] = [];
