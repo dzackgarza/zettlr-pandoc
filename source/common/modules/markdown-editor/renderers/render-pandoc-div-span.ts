@@ -15,8 +15,8 @@
  * END HEADER
  */
 
-import { syntaxTree } from "@codemirror/language";
-import type { EditorSelection, Range, RangeSet } from "@codemirror/state";
+import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
+import { StateField, type EditorSelection, type EditorState, type Range, type RangeSet } from "@codemirror/state";
 import {
   BlockWrapper,
   Decoration,
@@ -24,11 +24,15 @@ import {
   EditorView,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from "@codemirror/view";
 import { divModelFromNode, type PandocDivModel } from "source/common/pandoc-util/pandoc-div-model";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
+import { reportError } from "source/common/util/error-reporting";
+import { mathJaxToElem } from "source/common/util/mathtex-to-html";
 import { VISUAL_INDENT_EXEMPT_CLASS } from "../plugins/visual-indent";
 import { configField } from "../util/configuration";
+import { placeCursorFromRenderedPoint, selectRenderedSourceRange } from "./reveal-rendered-source";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -93,6 +97,116 @@ function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
 
 type PandocDivState = "active" | "ancestor" | "inactive";
 
+interface InlineTitlePart {
+  kind: "text" | "math";
+  value: string;
+}
+
+function isEscapedAt(text: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor--) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
+}
+
+/** Split the small inline-math subset useful in authored div titles. */
+function inlineTitleParts(title: string): InlineTitlePart[] {
+  const parts: InlineTitlePart[] = [];
+  let textStart = 0;
+  let cursor = 0;
+
+  const pushText = (to: number): void => {
+    if (to > textStart) {
+      parts.push({ kind: "text", value: title.slice(textStart, to) });
+    }
+  };
+
+  while (cursor < title.length) {
+    let open = "";
+    let close = "";
+    if (title.startsWith("\\(", cursor) && !isEscapedAt(title, cursor)) {
+      open = "\\(";
+      close = "\\)";
+    } else if (title[cursor] === "$" && !isEscapedAt(title, cursor) && title[cursor + 1] !== "$") {
+      open = "$";
+      close = "$";
+    } else {
+      cursor++;
+      continue;
+    }
+
+    let closing = cursor + open.length;
+    while (closing < title.length) {
+      const matchesClose = title.startsWith(close, closing) && !isEscapedAt(title, closing);
+      if (matchesClose && (close !== "$" || title[closing + 1] !== "$")) {
+        break;
+      }
+      closing++;
+    }
+    if (closing >= title.length) {
+      cursor += open.length;
+      continue;
+    }
+
+    pushText(cursor);
+    parts.push({
+      kind: "math",
+      value: title.slice(cursor + open.length, closing),
+    });
+    cursor = closing + close.length;
+    textStart = cursor;
+  }
+
+  pushText(title.length);
+  return parts;
+}
+
+function appendRenderedTitle(target: HTMLElement, title: string): void {
+  for (const part of inlineTitleParts(title)) {
+    if (part.kind === "text") {
+      target.append(document.createTextNode(part.value));
+      continue;
+    }
+    const math = document.createElement("span");
+    math.classList.add("pandoc-div-header-math");
+    mathJaxToElem(part.value, math, "inline");
+    target.append(math);
+  }
+}
+
+class PandocDivHeaderWidget extends WidgetType {
+  constructor(
+    readonly label: string,
+    readonly title: string | undefined,
+  ) {
+    super();
+  }
+
+  eq(other: PandocDivHeaderWidget): boolean {
+    return other.label === this.label && other.title === this.title;
+  }
+
+  toDOM(): HTMLElement {
+    const header = document.createElement("span");
+    header.classList.add("pandoc-div-header");
+
+    const label = document.createElement("span");
+    label.classList.add("pandoc-div-header-label");
+    label.textContent = this.label;
+    header.append(label);
+
+    if (this.title !== undefined && this.title.trim() !== "") {
+      const title = document.createElement("span");
+      title.classList.add("pandoc-div-header-title");
+      appendRenderedTitle(title, this.title);
+      header.append(title);
+    }
+
+    return header;
+  }
+}
+
 function collectVisibleDivs(view: EditorView): PandocDivModel[] {
   const divs = new Map<string, PandocDivModel>();
 
@@ -106,6 +220,12 @@ function collectVisibleDivs(view: EditorView): PandocDivModel[] {
       const model = divModelFromNode(view.state.doc, node.node);
       if (model !== undefined) {
         divs.set(key, model);
+      } else if (syntaxTreeAvailable(view.state, view.state.doc.length)) {
+        reportError(
+          "Pandoc fenced div at " + String(node.from) + ":" + String(node.to) +
+          " was recognized by the live parser but could not be modeled by the renderer; " +
+          "raw source remains visible.",
+        );
       }
     }
   });
@@ -221,6 +341,62 @@ function addFenceWrappers(
   ranges.push(closeWrapper.range(div.closeFrom, div.closeTo));
 }
 
+function collectDocumentDivs(state: EditorState): PandocDivModel[] {
+  const divs: PandocDivModel[] = [];
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name !== "PandocDiv") {
+        return;
+      }
+      const model = divModelFromNode(state.doc, node.node);
+      if (model !== undefined) {
+        divs.push(model);
+      } else if (syntaxTreeAvailable(state, state.doc.length)) {
+        reportError(
+          "Pandoc fenced div at " + String(node.from) + ":" + String(node.to) +
+          " was recognized by the live parser but could not be modeled by the renderer; " +
+          "raw source remains visible.",
+        );
+      }
+    },
+  });
+  return divs;
+}
+
+function createDivHeaderDecorations(state: EditorState): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  const includeAdjacent =
+    state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const divs = collectDocumentDivs(state);
+  const active = activeDivs(divs, state.selection, includeAdjacent);
+
+  for (const div of divs) {
+    if (stateForDiv(div, active) !== "inactive") {
+      continue;
+    }
+    ranges.push(
+      Decoration.replace({
+        widget: new PandocDivHeaderWidget(div.label, div.properties.title),
+        block: true,
+      }).range(div.openFrom, div.contentFrom),
+    );
+  }
+  return Decoration.set(ranges, true);
+}
+
+const pandocDivHeaderField = StateField.define<DecorationSet>({
+  create: createDivHeaderDecorations,
+  update(value, transaction) {
+    const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState);
+    const selectionChanged = !transaction.startState.selection.eq(transaction.state.selection);
+    if (!transaction.docChanged && !selectionChanged && !treeChanged) {
+      return value;
+    }
+    return createDivHeaderDecorations(transaction.state);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 function createDivDecorations(view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = [];
   const includeAdjacent =
@@ -263,20 +439,47 @@ function createDivDecorations(view: EditorView): RangeSet<BlockWrapper> {
  * Handles activating an inactive div's source from its rendered open-fence
  * label. Shared by the mousedown and keydown plugin event handlers.
  */
-function revealDivSource(target: EventTarget | null, view: EditorView): boolean {
+function revealDivSource(event: MouseEvent | KeyboardEvent, view: EditorView): boolean {
+  const { target } = event;
   if (!(target instanceof Element)) {
     return false;
   }
 
   const label = target.closest('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]');
   const from = label?.getAttribute("data-pandoc-div-from");
-  if (from === null || from === undefined) {
+  if (from !== null && from !== undefined) {
+    const anchor = Number(from);
+    if (event instanceof MouseEvent) {
+      return selectRenderedSourceRange(view, event, anchor, anchor);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    view.dispatch({ selection: { anchor }, scrollIntoView: true });
+    view.focus();
+    return true;
+  }
+
+  if (!(event instanceof MouseEvent)) {
     return false;
   }
 
-  view.dispatch({ selection: { anchor: Number(from) }, scrollIntoView: true });
-  view.focus();
-  return true;
+  // Replacement widgets (math, citations, images, diagrams...) own their
+  // activation and exact source range. Do not turn their click into a generic
+  // div-body click.
+  if (target.closest('[data-preview-source-from][data-preview-source-to]') !== null) {
+    return false;
+  }
+
+  const panel = target.closest<HTMLElement>('pandoc-div-wrapper[data-pandoc-div-state="inactive"]');
+  if (panel === null) {
+    return false;
+  }
+  const panelFrom = Number(panel.dataset.pandocDivFrom);
+  const panelModel = collectVisibleDivs(view).find(div => div.from === panelFrom);
+  if (panelModel === undefined) {
+    return false;
+  }
+  return placeCursorFromRenderedPoint(view, event, panelModel.contentFrom, panelModel.contentTo);
 }
 
 const pandocDivSpanPlugin = ViewPlugin.fromClass(
@@ -315,11 +518,9 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(
       }),
     eventHandlers: {
       mousedown: (event, view) => {
-        if (!revealDivSource(event.target, view)) {
+        if (!revealDivSource(event, view)) {
           return false;
         }
-
-        event.preventDefault();
         return true;
       },
       keydown: (event, view) => {
@@ -327,11 +528,9 @@ const pandocDivSpanPlugin = ViewPlugin.fromClass(
           return false;
         }
 
-        if (!revealDivSource(event.target, view)) {
+        if (!revealDivSource(event, view)) {
           return false;
         }
-
-        event.preventDefault();
         return true;
       },
     },
@@ -349,6 +548,7 @@ const SEMANTIC_FAMILY_ACCENTS = Object.fromEntries(
 );
 
 export const renderPandoc = [
+  pandocDivHeaderField,
   pandocDivSpanPlugin,
   EditorView.baseTheme({
     // This must be set to `display: block` so that the
@@ -405,12 +605,21 @@ export const renderPandoc = [
       {
         visibility: "hidden",
       },
-    'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]::before': {
-      content: "attr(data-pandoc-div-label)",
-      position: "absolute",
-      inset: "0 auto 0 0",
+    ".pandoc-div-header": {
       display: "flex",
       alignItems: "center",
+      gap: "0.5em",
+      width: "fit-content",
+      maxWidth: "100%",
+      height: "1.55em",
+      pointerEvents: "none",
+      visibility: "visible",
+      whiteSpace: "nowrap",
+    },
+    ".pandoc-div-header-label": {
+      display: "inline-flex",
+      alignItems: "center",
+      height: "100%",
       padding: "0 0.55em",
       boxSizing: "border-box",
       border: "1px solid color-mix(in srgb, var(--pandoc-div-accent) 35%, transparent)",
@@ -423,14 +632,31 @@ export const renderPandoc = [
       lineHeight: "inherit",
       textTransform: "uppercase",
     },
+    ".pandoc-div-header-title": {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "0.15em",
+      minWidth: "0",
+      overflow: "hidden",
+      color: "inherit",
+      fontSize: "0.9em",
+      fontWeight: "550",
+      lineHeight: "1.2",
+      textOverflow: "ellipsis",
+      textTransform: "none",
+    },
+    ".pandoc-div-header-math mjx-container": {
+      margin: "0 !important",
+      fontSize: "1em !important",
+    },
     "pandoc-div-open-wrapper": { "--pandoc-div-accent": "var(--zettlr-editor-pandoc-div-generic)" },
-    "pandoc-div-open-wrapper.pandoc-div--generic::before": {
+    "pandoc-div-open-wrapper.pandoc-div--generic .pandoc-div-header-label": {
       fontFamily: "var(--zettlr-editor-code-font)",
       fontWeight: "500",
       letterSpacing: "normal",
       textTransform: "none",
     },
-    'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]:focus-visible::before': {
+    'pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]:focus-visible .pandoc-div-header-label': {
       outline: "2px solid var(--pandoc-div-accent)",
       outlineOffset: "2px",
     },
@@ -444,7 +670,7 @@ export const renderPandoc = [
         borderLeftWidth: "2px",
         backgroundColor: "transparent",
       },
-    'pandoc-div-open-wrapper[data-pandoc-div-depth="1"]::before, pandoc-div-open-wrapper[data-pandoc-div-depth="2"]::before, pandoc-div-open-wrapper[data-pandoc-div-depth="3"]::before':
+    'pandoc-div-open-wrapper[data-pandoc-div-depth="1"] .pandoc-div-header-label, pandoc-div-open-wrapper[data-pandoc-div-depth="2"] .pandoc-div-header-label, pandoc-div-open-wrapper[data-pandoc-div-depth="3"] .pandoc-div-header-label':
       {
         fontSize: "0.68rem",
         fontWeight: "550",

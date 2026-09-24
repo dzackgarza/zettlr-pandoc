@@ -96,7 +96,10 @@ class MermaidWidget extends WidgetType {
   }
 
   ignoreEvent (event: Event): boolean {
-    return false // By default ignore all events
+    // The rendered chart owns its mouse gesture. Letting CodeMirror process
+    // mousedown first can move the document selection, de-render the chart,
+    // and make the later click resolve against different DOM geometry.
+    return event instanceof MouseEvent
   }
 }
 

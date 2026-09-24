@@ -17,6 +17,7 @@ const targets = [
   { kind: 'text', text: 'After outside target.' },
   { kind: 'label', text: 'Definition' },
   { kind: 'label', text: 'Warning' },
+  { kind: 'widget', text: '\\(x+y\\)', selector: '.preview-math' },
   ...contentLines.flatMap(text => [
     { kind: 'gutter', side: 'left', text },
     { kind: 'gutter', side: 'right', text }
@@ -48,6 +49,7 @@ async function probeTarget (targetSpec) {
   const target = await view.page.evaluate(spec => {
     if (spec.kind === 'gutter') return window.clickProbePanelGutterTarget(spec.text, spec.side)
     if (spec.kind === 'label') return window.clickProbeLabelTarget(spec.text)
+    if (spec.kind === 'widget') return window.clickProbeWidgetTarget(spec.selector, spec.text)
     return window.clickProbeTarget(spec.text)
   }, targetSpec)
 
@@ -61,7 +63,9 @@ async function probeTarget (targetSpec) {
     expectedTo: target.expectedTo,
     expectedAtCoords: target.expectedAtCoords,
     hitTag: target.hitTag,
-    actual: await view.page.evaluate(() => window.clickProbeAnchor())
+    rectHeight: target.rectHeight,
+    actual: await view.page.evaluate(() => window.clickProbeAnchor()),
+    actualHead: await view.page.evaluate(() => window.clickProbeHead())
   }
 }
 

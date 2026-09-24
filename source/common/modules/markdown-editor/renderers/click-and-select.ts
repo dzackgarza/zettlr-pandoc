@@ -14,11 +14,12 @@
  */
 
 import { type EditorView } from '@codemirror/view'
+import { selectRenderedSourceRange } from './reveal-rendered-source'
 
 /**
- * A helper function that returns a click-callback that can be used to set a
- * selection encompassing the full node (in effect removing the widget and
- * selecting all of its replaced text).
+ * A helper function that returns a click-callback that selects the exact source
+ * range owned by a rendered replacement widget. The base renderer stamps that
+ * range onto the widget DOM when it creates the Decoration.replace range.
  *
  * @param   {EditorView}  view   The editor view
  *
@@ -27,53 +28,21 @@ import { type EditorView } from '@codemirror/view'
 export default function clickAndSelect (view: EditorView): (event: MouseEvent) => void {
   return function (event: MouseEvent) {
     const { target } = event
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
       return
     }
 
-    // The thing we're clicking on may span multiple lines in the editor; for
-    // example, clicking on a citation that has a (soft) line-wrap in the middle
-    // of the rendered text.
-    //
-    // Grabbing the `getBoundingClientRect` is too coarse in such cases because
-    // the selection will span the *entirety* of both lines rather than just the
-    // text of the rendered citation (in this example).
-    //
-    // Clicking on a citation that has a (soft) line-wrap in the middle of the
-    // rendered text *must* only select (highlight) the rectangle of the
-    // citation text itself.
-
-    const rects = Array.from(target.getClientRects())
-
-    if (rects.length === 0) {
+    const sourceOwner = target.closest<HTMLElement>('[data-preview-source-from][data-preview-source-to]')
+    if (sourceOwner === null) {
       return
     }
 
-    const { top, left, bottom, right } = (rects.length === 1)
-      // when there's just the one rectangle, use it's coords
-      ? {
-        top: rects.at(0).top,
-        left: rects.at(0).left,
-        bottom: rects.at(0).bottom,
-        right: rects.at(0).right
-      }
-      // when there are multiple rectangles, use the first and last for the coords
-      : {
-        top: rects.at(0).top,
-        left: rects.at(0).left,
-        bottom: rects.at(-1).bottom,
-        right: rects.at(-1).right
-      }
-
-    const fromPos = view.posAtCoords({ x: left, y: top })
-    const toPos = view.posAtCoords({ x: right, y: bottom })
-
-    if (fromPos === null || toPos === null) {
+    const from = Number(sourceOwner.dataset.previewSourceFrom)
+    const to = Number(sourceOwner.dataset.previewSourceTo)
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > view.state.doc.length) {
       return
     }
 
-    event.stopPropagation()
-    event.preventDefault()
-    view.dispatch({ selection: { anchor: fromPos, head: toPos } })
+    selectRenderedSourceRange(view, event, from, to)
   }
 }

@@ -15,6 +15,11 @@ const captures = {
     bundle: "pandoc-div-visual-bundle.js",
     driver: "test/editor-pandoc-div-visual-capture.mjs",
   },
+  "yaml-frontmatter": {
+    entry: "test/editor-yaml-frontmatter-visual-entry.ts",
+    bundle: "yaml-frontmatter-visual-bundle.js",
+    driver: "test/editor-yaml-frontmatter-visual-capture.mjs",
+  },
   "widget-indent": {
     entry: "test/editor-widget-indent-visual-entry.ts",
     bundle: "widget-indent-visual-bundle.js",

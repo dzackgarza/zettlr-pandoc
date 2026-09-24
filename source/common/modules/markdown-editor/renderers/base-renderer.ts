@@ -67,17 +67,26 @@ const widgetLineStyleResetTheme = EditorView.baseTheme({
  * to the wrapped widget.
  */
 class LineStyleResetWidget extends WidgetType {
-  constructor(readonly inner: WidgetType) {
+  constructor(
+    readonly inner: WidgetType,
+    readonly sourceFrom: number,
+    readonly sourceTo: number,
+  ) {
     super();
   }
 
   eq(other: LineStyleResetWidget): boolean {
-    return other.inner.constructor === this.inner.constructor && this.inner.eq(other.inner);
+    return other.sourceFrom === this.sourceFrom &&
+      other.sourceTo === this.sourceTo &&
+      other.inner.constructor === this.inner.constructor &&
+      this.inner.eq(other.inner);
   }
 
   toDOM(view: EditorView): HTMLElement {
     const dom = this.inner.toDOM(view);
     dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
+    dom.dataset.previewSourceFrom = String(this.sourceFrom);
+    dom.dataset.previewSourceTo = String(this.sourceTo);
     return dom;
   }
 
@@ -97,6 +106,8 @@ class LineStyleResetWidget extends WidgetType {
     const updated = this.inner.updateDOM(dom, view, from.inner);
     if (updated) {
       dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
+      dom.dataset.previewSourceFrom = String(this.sourceFrom);
+      dom.dataset.previewSourceTo = String(this.sourceTo);
     }
     return updated;
   }
@@ -198,7 +209,7 @@ function renderWidgets(
         continue;
       }
       const widget = Decoration.replace({
-        widget: new LineStyleResetWidget(renderedWidget),
+        widget: new LineStyleResetWidget(renderedWidget, node.from, node.to),
         inclusive: false,
       });
       widgets.push(widget.range(node.from, node.to));
