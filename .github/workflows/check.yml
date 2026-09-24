@@ -30,6 +30,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Setup just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b
+      # Flowmark runs from the vendored submodule through `uv run --project`,
+      # both in `just test-flowmark-lint` and in the app code the unit tests call.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
       - name: Provision real export toolchain
         run: just setup-ci
       - name: Install packages
