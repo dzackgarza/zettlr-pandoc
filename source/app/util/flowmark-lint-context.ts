@@ -17,12 +17,11 @@ export interface FlowmarkLintContextSource {
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
-  citationKeys: ReadonlySet<string> | null;
   tikzRenderConfig: TikzRenderConfig;
 }
 
 export interface FlowmarkLintDocumentOptions {
-  citationKeys?: ReadonlySet<string> | null;
+  bibliographies?: string[];
   projectRoots?: string[];
 }
 
@@ -50,7 +49,6 @@ export async function buildFlowmarkLintContext(
   source: FlowmarkLintContextSource,
   options: FlowmarkLintDocumentOptions = {},
 ): Promise<Record<string, unknown>> {
-  const citationKeys = options.citationKeys ?? source.citationKeys;
   const references = exactReferenceContext(documentPath, text, source.referenceState);
   const proofDivClasses = Object.entries(SEMANTIC_DIV_CLASSES)
     .filter(([, family]) => family === "proof")
@@ -81,7 +79,7 @@ export async function buildFlowmarkLintContext(
       referenceable_div_classes: [...REFERENCEABLE_DIV_CLASSES],
       proof_div_classes: proofDivClasses,
       theorem_class_to_prefix: { ...THEOREM_CLASS_TO_PREFIX },
-      citation_keys: citationKeys === null ? null : [...citationKeys],
+      ...(options.bibliographies === undefined ? {} : { bibliographies: options.bibliographies }),
       ...(references === undefined ? {} : references),
     },
     compiler: {

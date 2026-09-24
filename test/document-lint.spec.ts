@@ -36,7 +36,6 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
-      citationKeys: null,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(
@@ -69,7 +68,6 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
-      citationKeys: null,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(
@@ -106,7 +104,6 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
-      citationKeys: null,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
@@ -121,5 +118,34 @@ describe("main-process document lint", function () {
     assert.ok(operator !== undefined);
     assert.equal(markdown.slice(operator.from, operator.to), "sin");
     assert.deepEqual(operator.suggestions, [{ title: "Use `\\sin`", replacement: "\\sin" }]);
+  });
+
+  it("checks citations against the bibliography files it is given", async function () {
+    const repositoryRoot = path.join(__dirname, "..");
+    const context = await createDocumentLintContext({
+      homeDirectory: home,
+      env: process.env,
+      tikzRenderConfig: {
+        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
+        templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
+        cacheDir,
+        env: process.env,
+      },
+    });
+    const bibliography = path.join(root, "references.bib");
+    await writeFile(
+      bibliography,
+      "@article{FS86, author={Friedman, Robert and Scattone, Francesco}, " +
+        "title={Type III degenerations of K3 surfaces}, journal={Invent. Math.}, year={1986}}\n",
+    );
+    const markdown = "Following @FS86 and @FS87.\n";
+
+    const diagnostics = await lintDocumentText(markdown, path.join(root, "chapter.md"), context, {
+      bibliographies: [bibliography],
+    });
+    const missing = diagnostics
+      .filter((diagnostic) => diagnostic.rule === "citation/missing-bibliography-entry")
+      .map((diagnostic) => markdown.slice(diagnostic.from, diagnostic.to));
+    assert.deepEqual(missing, ["@FS87"]);
   });
 });

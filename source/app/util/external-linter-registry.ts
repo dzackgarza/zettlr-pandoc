@@ -10,6 +10,7 @@ import {
   createDocumentLintContext,
   lintDocumentText
 } from './document-lint'
+import { documentLintAuthority } from './document-bibliographies'
 import { resolveTikzRenderConfig } from './resolve-tikz-render-config'
 import {
   externalLinterPluginPath,
@@ -38,17 +39,16 @@ async function runFlowmarkBackend (
   const sourcePath = typeof request.context?.sourcePath === 'string'
     ? request.context.sourcePath
     : ''
-  const citationValue = request.context?.citationKeys
-  const citationKeys = citationValue === null
-    ? null
-    : new Set(strings(citationValue))
+  const mainLibrary = app.config.get().export.cslLibrary
+  const bibliographies = sourcePath === ''
+    ? (mainLibrary === '' ? [] : [mainLibrary])
+    : (await documentLintAuthority(app.fsal, mainLibrary, sourcePath)).bibliographies
   const projectRoots = strings(request.context?.projectRoots)
   const tikz = app.config.get().tikz
   const shared = await createDocumentLintContext({
     homeDirectory: electronApp.getPath('home'),
     env: process.env,
     referenceState: app.references.getSnapshot(),
-    citationKeys,
     tikzRenderConfig: resolveTikzRenderConfig(
       tikz?.dataDir ?? '',
       tikz?.figuresDir ?? '',
@@ -61,7 +61,7 @@ async function runFlowmarkBackend (
     request.text,
     sourcePath,
     shared,
-    { citationKeys, projectRoots }
+    { bibliographies, projectRoots }
   )
   return {
     diagnostics: diagnostics.map((diagnostic): ExternalDiagnostic => ({

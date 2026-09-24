@@ -263,7 +263,8 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   Flowmark CLI. Rule enablement/severity/options belong to Flowmark config.
   Zettlr supplies only context data (`source/app/util/flowmark-lint-context.ts`:
   macro source paths, active packages, workspace reference resolutions,
-  citation keys, compiler findings) and must not own any rule decision or run
+  bibliography file paths (`document-bibliographies.ts`, the same files citeproc
+  uses), compiler findings) and must not own any rule decision or run
   a CodeMirror linter of its own. Macro-sensitive rules load the declared macro
   sources themselves, so the same checks run from `flowmark-lint`; do not
   precompute a GUI-owned macro inventory for linting. The

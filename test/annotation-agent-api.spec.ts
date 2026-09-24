@@ -245,6 +245,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       config: {
         get: () => ({
           app: { openWorkspaces },
+          export: { cslLibrary: "" },
           agentApi: { enabled: true, port: 0 },
         }),
       },

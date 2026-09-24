@@ -12,7 +12,6 @@ export interface DocumentLintSharedContext {
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
-  citationKeys: ReadonlySet<string> | null;
   tikzRenderConfig: TikzRenderConfig;
 }
 
@@ -20,12 +19,12 @@ export interface CreateDocumentLintContextOptions {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   referenceState?: WorkspaceReferenceState;
-  citationKeys?: ReadonlySet<string> | null;
   tikzRenderConfig: TikzRenderConfig;
 }
 
+/** Omitting `bibliographies` lets Flowmark use the document's own `bibliography` metadata. */
 export interface DocumentLintDocumentOptions {
-  citationKeys?: ReadonlySet<string> | null;
+  bibliographies?: string[];
   projectRoots?: string[];
 }
 
@@ -48,7 +47,6 @@ export async function createDocumentLintContext(
       path.join(options.homeDirectory, ".pandoc", "styles", "macros"),
       path.join(options.homeDirectory, ".pandoc", "templates", "css", "mathjax-macros.json"),
     ],
-    citationKeys: options.citationKeys ?? null,
   };
 }
 

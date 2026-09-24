@@ -24,24 +24,18 @@ import { type AutocompletePlugin } from ".";
  */
 export const citekeyUpdate = StateEffect.define<Array<{ citekey: string; displayText: string }>>();
 interface CitekeySnapshot {
-  ready: boolean;
   entries: Completion[];
 }
 
 export const citekeyUpdateField = StateField.define<CitekeySnapshot>({
   create(_state) {
-    // Empty and not-yet-loaded are semantically different for diagnostics. A
-    // document whose bibliography is genuinely empty should report authored
-    // citations as missing, but the editor must stay silent before main has
-    // supplied the first database snapshot.
-    return { ready: false, entries: [] };
+    return { entries: [] };
   },
   update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(citekeyUpdate)) {
         // Convert the citationentries into completion objects
         return {
-          ready: true,
           entries: effect.value.map((entry) => ({
             label: entry.citekey,
             info: entry.displayText,
@@ -55,18 +49,6 @@ export const citekeyUpdateField = StateField.define<CitekeySnapshot>({
   },
 });
 
-/**
- * The bibliography keys known to this editor, or null until the initial
- * database snapshot has arrived. This is the shared semantic source for
- * completion and undefined-citation diagnostics.
- */
-export function availableCitationKeys(state: EditorState): ReadonlySet<string> | null {
-  const snapshot = state.field(citekeyUpdateField, false);
-  if (snapshot === undefined || !snapshot.ready) {
-    return null;
-  }
-  return new Set(snapshot.entries.map((entry) => entry.label));
-}
 
 /**
  * This function takes the citations from the corresponding database and returns

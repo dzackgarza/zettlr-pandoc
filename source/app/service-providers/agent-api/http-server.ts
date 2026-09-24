@@ -22,10 +22,6 @@
  */
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
-import {
-  getBibliographyForDescriptor,
-  resolveProjectContextForDescriptor,
-} from "@common/util/get-bibliography-for-descriptor";
 import { sha256Text } from "@common/util/sha256";
 import type {
   AddAnnotationMessageRequest,
@@ -55,8 +51,6 @@ import type {
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
-import type { CitationDatabase } from "@dts/common/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
@@ -95,7 +89,12 @@ import {
   searchCentralFigures,
   writeCentralFigure,
 } from "../../util/central-figures-store";
-import { createDocumentLintContext, lintDocumentText } from "../../util/document-lint";
+import {
+  createDocumentLintContext,
+  lintDocumentText,
+  type DocumentLintDocumentOptions,
+} from "../../util/document-lint";
+import { documentLintAuthority } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
@@ -267,11 +266,11 @@ export interface AgentApiHost {
     get: () => {
       agentApi?: { enabled: boolean; port: number };
       app: { openWorkspaces: string[] };
+      export: { cslLibrary: string };
       tikz?: { dataDir?: string; figuresDir?: string };
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
-  citeproc?: Pick<CiteprocProvider, "getItems">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
 }
 
@@ -1927,35 +1926,17 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private async lintDocumentAuthorityContext(
     documentPath: string,
-  ): Promise<{ citationKeys: ReadonlySet<string> | null; projectRoots: string[] }> {
-    const provider = this._citeproc ?? this._app.citeproc;
-    let projectRoots: string[] = [];
-    let database: CitationDatabase = CITEPROC_MAIN_DB;
-    try {
-      if (this._app.fsal !== undefined) {
-        const descriptor = await this._app.fsal.getDescriptorFor(documentPath);
-        if (descriptor?.type === "file") {
-          const projectContext = await resolveProjectContextForDescriptor(
-            descriptor,
-            new Map(),
-            async (dirPath) => await this._app.fsal!.getAnyDirectoryDescriptor(dirPath),
-          );
-          if (projectContext !== null) {
-            projectRoots = [projectContext.rootPath];
-          }
-          database = getBibliographyForDescriptor(descriptor, projectContext?.project ?? null);
-        }
-      }
-      return {
-        citationKeys:
-          provider === undefined
-            ? null
-            : new Set(provider.getItems(database).map((item) => item.id)),
-        projectRoots,
-      };
-    } catch {
-      return { citationKeys: null, projectRoots };
+  ): Promise<DocumentLintDocumentOptions> {
+    if (this._app.fsal === undefined) {
+      // Without the file system layer there is no workspace to resolve a
+      // bibliography from; Flowmark then reads the document's own metadata.
+      return {};
     }
+    return await documentLintAuthority(
+      this._app.fsal,
+      this._app.config.get().export.cslLibrary,
+      documentPath,
+    );
   }
 
   private static lintCounts(diagnostics: readonly LintDiagnostic[]): LintSeverityCounts {
@@ -2098,7 +2079,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         homeDirectory: this.authoringHomeDirectory(),
         env: runtimeEnv,
         referenceState: this._app.references?.getSnapshot(),
-        citationKeys: null,
         tikzRenderConfig: resolveTikzRenderConfig(
           tikzConfig?.dataDir ?? "",
           tikzConfig?.figuresDir ?? "",

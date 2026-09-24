@@ -454,6 +454,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       {
         config: {
           get: () => ({
+            export: { cslLibrary: "" },
             app: {
               openWorkspaces,
             },
@@ -721,6 +722,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       config: {
         get: () => ({
           app: { openWorkspaces: [scratch] },
+          export: { cslLibrary: "" },
           agentApi: {
             enabled: true,
             port: takenPort,
@@ -1611,6 +1613,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           config: {
             get: () => ({
               app: { openWorkspaces: [scratch] },
+              export: { cslLibrary: "" },
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,

@@ -1,5 +1,5 @@
 import type { Extension } from '@codemirror/state'
-import { availableCitationKeys } from '../autocomplete/citations'
+import { citekeyUpdate } from '../autocomplete/citations'
 import { workspaceReferencesField } from '../plugins/workspace-references-field'
 import { configField } from '../util/configuration'
 import { flowmarkDiagnosticProvider } from '@common/diagnostics/providers/flowmark'
@@ -38,12 +38,17 @@ registerMarkdownDiagnosticPlugin({
     context: view => {
       const config = view.state.field(configField, false)
       const references = view.state.field(workspaceReferencesField, false)
-      const citationKeys = availableCitationKeys(view.state)
       return {
         sourcePath: config?.metadata.path || undefined,
-        citationKeys: citationKeys === null ? null : [...citationKeys],
         projectRoots: references?.projectRoots?.map(root => root.rootPath) ?? []
       }
+    },
+    // Flowmark reads the bibliography files itself. MainEditor dispatches
+    // citekeyUpdate whenever citeproc reports a bibliography change, so that
+    // is when the missing-citation check has new input.
+    config: {
+      needsRefresh: update => update.transactions.some(transaction =>
+        transaction.effects.some(effect => effect.is(citekeyUpdate)))
     }
   })
 
