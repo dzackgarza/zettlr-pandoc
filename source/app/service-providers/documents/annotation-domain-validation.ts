@@ -171,7 +171,7 @@ function schemaIssue(): AnnotationDomainValidationIssue {
   return {
     code: "ANNOTATION_SCHEMA_INVALID",
     message:
-      "Annotation state does not match the annotation schema: " +
+      "Stored annotation data is invalid: " +
       (validateAnnotationSetShape.errors ?? [])
         .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
         .join("; "),
@@ -193,7 +193,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
     if (annotationIds.has(annotation.annotationId)) {
       return {
         code: "DUPLICATE_ANNOTATION_ID",
-        message: `Annotation state has duplicate annotation id ${annotation.annotationId}.`,
+        message: `Annotation ID ${annotation.annotationId} is duplicated.`,
         annotationIds: [annotation.annotationId],
       };
     }
@@ -203,7 +203,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
     if (first.author !== "owner") {
       return {
         code: "INVALID_ANNOTATION_FIRST_MESSAGE",
-        message: `Annotation ${annotation.annotationId} must begin with an owner-authored instruction.`,
+        message: `Annotation ${annotation.annotationId} must begin with an instruction from the document owner.`,
         annotationIds: [annotation.annotationId],
       };
     }
@@ -212,7 +212,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
     if (normalizedInstruction === "") {
       return {
         code: "INVALID_ANNOTATION_INSTRUCTION",
-        message: `Annotation ${annotation.annotationId} has an empty creation instruction.`,
+        message: `Annotation ${annotation.annotationId} has an empty first instruction.`,
         annotationIds: [annotation.annotationId],
       };
     }
@@ -222,7 +222,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
         code: "DUPLICATE_ANNOTATION_INSTRUCTION",
         message:
           `Annotations ${existing} and ${annotation.annotationId} have the same creation instruction. ` +
-          "Each annotation must state a distinct reason for its own target.",
+          "Give each annotation a different instruction.",
         annotationIds: [existing, annotation.annotationId],
       };
     }
@@ -232,7 +232,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
       if (messageIds.has(message.messageId)) {
         return {
           code: "DUPLICATE_ANNOTATION_MESSAGE_ID",
-          message: `Annotation state has duplicate message id ${message.messageId}.`,
+          message: `Message ID ${message.messageId} is duplicated.`,
           annotationIds: [annotation.annotationId],
         };
       }
@@ -243,7 +243,7 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
       if (actionIds.has(action.actionId)) {
         return {
           code: "DUPLICATE_ANNOTATION_ACTION_ID",
-          message: `Annotation state has duplicate proposal action id ${action.actionId}.`,
+          message: `Proposal action ID ${action.actionId} is duplicated.`,
           annotationIds: [annotation.annotationId],
         };
       }

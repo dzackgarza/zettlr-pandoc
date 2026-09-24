@@ -60,7 +60,7 @@ export function tikzRenderProtocolVersion(dataDir: string): number | undefined {
 
 function assertSupportedTikzDataDir(dataDir: string, label: string): void {
   if (!hasTikzDataFiles(dataDir)) {
-    throw new Error(`${label} ${dataDir} must contain ` + REQUIRED_TIKZ_DATA_FILES.join(" and "));
+    throw new Error(`${label} ${dataDir} is missing ` + REQUIRED_TIKZ_DATA_FILES.join(" or "));
   }
   const protocol = tikzRenderProtocolVersion(dataDir);
   if (protocol !== TIKZ_RENDER_PROTOCOL) {

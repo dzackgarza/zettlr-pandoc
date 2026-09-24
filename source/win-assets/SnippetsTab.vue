@@ -65,7 +65,7 @@ const codeEditor = ref<CodeEditorAPI | null>(null)
 
 const saveButtonLabel = trans('Save')
 const openSnippetFileLabel = trans('Open snippet file')
-const snippetsExplanation = trans('This editor reads and writes the single portable VS Code .code-snippets file selected in Preferences → Snippets.')
+const snippetsExplanation = trans('Edit the .code-snippets file selected in Preferences → Snippets.')
 
 const sourcePath = ref('')
 const editorContents = ref('')

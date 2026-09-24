@@ -59,7 +59,7 @@ export async function runRecipeExport (
   let argv: string[]
   if (isProjectExport) {
     if (options.cwd === undefined) {
-      throw new Error('Cannot export Project: no Project root was provided (options.cwd)')
+      throw new Error('Cannot export the Project because its folder was not provided')
     }
     runDir = options.cwd
     // The ordered inputs, exactly as dir-project-export.ts builds them from

@@ -28,7 +28,7 @@ export interface TikzQuiverSourceSession {
 
 export function quiverSessionForBlock(block: TikzSourceBlock): TikzQuiverSourceSession {
   if (block.language !== "tikzcd") {
-    throw new Error(`Quiver sessions require tikzcd source, received ${block.language}`);
+    throw new Error(`Quiver can only edit tikzcd diagrams, not ${block.language}`);
   }
   if (!tikzBlockHasContiguousSource(block)) {
     throw new Error(

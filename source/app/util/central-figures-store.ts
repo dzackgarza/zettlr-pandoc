@@ -98,7 +98,7 @@ function assertContained(root: string, candidate: string): void {
   const relative = path.relative(root, candidate);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new CentralFigureInputError(
-      "Figure path escapes the configured centralized figures directory",
+      "Figure path is outside the configured figures directory",
     );
   }
 }
@@ -154,7 +154,7 @@ async function prepareWritableFile(
       const stats = await fs.lstat(next);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new CentralFigureInputError(
-          `Figure parent component ${segment} is not a real directory`,
+          `Figure folder ${segment} is not a directory`,
         );
       }
     } catch (error) {

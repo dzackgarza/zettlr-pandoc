@@ -48,7 +48,7 @@
         <div class="convention-note">
           <strong>{{ trans('Use pandoc-crossref labels.') }}</strong>
           <span>
-            {{ trans('The editor recognizes the lower-case prefixes fig:, tbl:, eq:, sec:, and lst:, plus the theorem-environment prefixes below. Use tbl:, not tab:.') }}
+            {{ trans('Use lowercase prefixes fig:, tbl:, eq:, sec:, and lst:, plus the theorem prefixes below. Tables use tbl:, not tab:.') }}
           </span>
         </div>
 
@@ -68,7 +68,7 @@
               <span class="section-number">01</span>
               <div>
                 <h2>{{ trans('Cite sources') }}</h2>
-                <p>{{ trans('Type @ to autocomplete citekeys from the configured bibliography.') }}</p>
+                <p>{{ trans('Type @ to autocomplete citation keys from the configured bibliography.') }}</p>
               </div>
             </div>
             <dl class="example-list">
@@ -78,7 +78,7 @@
               </template>
             </dl>
             <p class="fine-print">
-              {{ trans('Common locator terms include p., pp., chap., sec., fig., and §. Text after a citekey that is not a recognized locator remains a suffix.') }}
+              {{ trans('Common locators include p., pp., chap., sec., fig., and §. Other text after a citekey is treated as a suffix.') }}
             </p>
           </section>
 
@@ -90,7 +90,7 @@
               <span class="section-number">02</span>
               <div>
                 <h2>{{ trans('Label and reference') }}</h2>
-                <p>{{ trans('Give each object a unique prefixed identifier, then cite that identifier with @.') }}</p>
+                <p>{{ trans('Give each object a unique ID with the correct prefix, then reference it with @.') }}</p>
               </div>
             </div>
             <div class="crossref-table" role="table" v-bind:aria-label="trans('Cross-reference syntax')">
@@ -208,7 +208,7 @@
         <footer>
           <strong>{{ trans('Editor behavior') }}</strong>
           <span>
-            {{ trans('Rendered citations and cross-references reveal their source while the cursor is inside them.') }}
+            {{ trans('Move the cursor into a rendered citation or reference to edit its source.') }}
           </span>
         </footer>
       </section>

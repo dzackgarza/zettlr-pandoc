@@ -1,5 +1,5 @@
 <template>
-  <div class="image-viewer-container" role="region" v-bind:aria-label="`ImageViewer: Currently viewing file ${pathBasename(props.file.path)}`">
+  <div class="image-viewer-container" role="region" v-bind:aria-label="`Viewing image ${pathBasename(props.file.path)}`">
     <div class="image-toolbar">
       <ButtonControl
         v-bind:label="'+'"

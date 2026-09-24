@@ -8,7 +8,7 @@
     v-bind:reset-search-term-on-select="false"
     model-value=""
     v-bind:data-search-mode="mode"
-    v-bind:aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
+    v-bind:aria-label="mode === 'citing-locations' ? trans('Reference uses') : trans('Search references')"
   >
     <div class="launcher-query-row">
       <span class="launcher-breadcrumb">{{ breadcrumbLabel }}</span>
@@ -17,8 +17,8 @@
         data-command-launcher-input
         v-bind:auto-focus="true"
         v-bind:model-value="query"
-        v-bind:placeholder="trans('Search workspace definitions…')"
-        v-bind:aria-label="trans('Definition search query')"
+        v-bind:placeholder="trans('Search references…')"
+        v-bind:aria-label="trans('Reference search')"
         v-on:update:model-value="query = $event"
         v-on:keydown.backspace="onBackspace"
       ></ComboboxInput>
@@ -54,7 +54,7 @@
             <span class="path">{{ occurrence.documentPath }}</span>
           </LauncherRow>
           <ComboboxEmpty class="launcher-empty">
-            {{ trans('No citing locations in the workspace') }}
+            {{ trans('No uses of this reference were found') }}
           </ComboboxEmpty>
         </template>
         <template v-else>
@@ -80,7 +80,7 @@
             <span class="path">{{ definition.documentPath }}</span>
           </LauncherRow>
           <ComboboxEmpty class="launcher-empty">
-            {{ trans('No matching definitions') }}
+            {{ trans('No matching references') }}
           </ComboboxEmpty>
         </template>
       </ComboboxViewport>
@@ -192,7 +192,7 @@ const mode = computed<'definitions'|'citing-locations'>(() => {
 })
 
 const breadcrumbLabel = computed(() => mode.value === 'citing-locations'
-  ? trans('Citing locations')
+  ? trans('Reference uses')
   : trans('Search references'))
 
 const query = ref<string>(props.initialRequest?.key ?? '')

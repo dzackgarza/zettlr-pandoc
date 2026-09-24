@@ -207,19 +207,19 @@ export interface ReferenceAuthoringTopic {
 export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = [
   {
     kind: 'completion',
-    title: 'Combined completion',
+    title: 'Autocomplete',
     detail: 'Typing @ suggests bibliography entries and reference IDs together.',
     syntax: '@'
   },
   {
     kind: 'hover-preview',
-    title: 'Target previews',
+    title: 'Preview targets',
     detail: 'Hover a reference to preview the text it points to.',
     syntax: 'Hover'
   },
   {
     kind: 'definition-search',
-    title: 'Definition search',
+    title: 'Find reference targets',
     detail: 'Search reference targets and jump to the selected one.',
     syntax: 'Mod-P'
   },
@@ -231,13 +231,13 @@ export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic
   },
   {
     kind: 'rename',
-    title: 'Workspace rename',
+    title: 'Rename references',
     detail: 'Editing a reference ID can rename every use of it across the workspace.',
     syntax: 'Edit #key'
   },
   {
     kind: 'project-warnings',
-    title: 'Project warnings',
+    title: 'Project export warnings',
     detail: 'References to files outside the current Project are flagged before export.',
     syntax: '⚠ Project'
   },

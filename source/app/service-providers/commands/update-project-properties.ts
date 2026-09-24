@@ -34,7 +34,7 @@ export default class UpdateProjectProperties extends ZettlrCommand {
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path)
     if (dir !== undefined) {
       if (dir.settings.project?.manifest.kind === 'quarto') {
-        throw new Error(`Project settings for ${arg.path} are owned by ${dir.settings.project.manifest.path}`)
+        throw new Error(`Edit the Quarto book file ${dir.settings.project.manifest.path} to change settings for ${arg.path}`)
       }
       await this._app.fsal.updateProject(dir, arg.properties)
     } else {

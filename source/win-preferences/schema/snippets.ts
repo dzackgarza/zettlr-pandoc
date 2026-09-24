@@ -24,7 +24,7 @@ export function getSnippetsFields (): PreferencesFieldset[] {
     {
       title: trans('Snippets'),
       group: PreferencesGroups.Snippets,
-      infoString: trans('Snippets use a portable VS Code .code-snippets file. QuickTeX is configured separately and keeps its own Vimscript format.'),
+      infoString: trans('Use a VS Code .code-snippets file for snippets. QuickTeX uses a separate Vimscript configuration.'),
       help: undefined, // TODO
       fields: [
         {

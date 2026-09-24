@@ -1,47 +1,38 @@
-In this Zettlr fork, write figures with Pandoc Markdown and `pandoc-crossref` attributes.
+# Figure authoring
 
-### 1. Standard Figures
+Use Pandoc Markdown attributes for figures and references.
 
-Write figures as Markdown images followed by attribute braces:
-
-```markdown
-![Figure caption text](path/to/image.png){#fig:example-key}
-```
-
-Add optional size attributes inside the braces:
+## Images
 
 ```markdown
-![Figure caption text](path/to/image.png){#fig:example-key width=80%}
+![Figure caption](path/to/image.png){#fig:example}
 ```
 
-Key rules:
-- The identifier must start with the `#fig:` prefix.
-- The editor live preview renders the image and the caption via [`renderImages`](file:///home/dzack/gitclones/Zettlr-pandoc-mathjax/source/common/modules/markdown-editor/renderers/render-images.ts#L349-L404).
-- Defined cross-reference conventions live in [pandoc-quick-reference.ts](file:///home/dzack/gitclones/Zettlr-pandoc-mathjax/source/common/util/pandoc-quick-reference.ts#L17-L25).
+Optional attributes go in the same braces:
 
-### 2. Subfigure Panels
+```markdown
+![Figure caption](path/to/image.png){#fig:example width=80%}
+```
 
-Group multiple subfigures in a fenced div with a parent `#fig:` identifier:
+Figure IDs use the `fig:` prefix.
+
+## Figure groups
 
 ```markdown
 ::: {#fig:comparison}
-![Left subfigure caption](left.png){#fig:comp-left}
+![Left caption](left.png){#fig:left}
 
-![Right subfigure caption](right.png){#fig:comp-right}
+![Right caption](right.png){#fig:right}
 
-Overall caption text for the entire figure group.
+Caption for the complete group.
 :::
 ```
 
-Key rules:
-- Put the group identifier on the fenced div: `::: {#fig:group-id}`.
-- Put individual `#fig:` identifiers on each nested image.
-- Put the overall caption as the final text paragraph in the div.
-- [`extractReferences`](file:///home/dzack/gitclones/Zettlr-pandoc-mathjax/source/common/pandoc-util/extract-references.ts#L249-L330) indexes both the group identifier and the subfigure identifiers.
+Give the group and each subfigure its own `fig:` ID. Put the group caption in the final paragraph.
 
-### 3. TikZ Diagrams and Diagram Figures
+## TikZ
 
-You can write embedded TikZ diagrams in code blocks:
+Use a `tikz` fence for ordinary TikZ:
 
 ````markdown
 ```tikz
@@ -49,7 +40,7 @@ You can write embedded TikZ diagrams in code blocks:
 ```
 ````
 
-For commutative diagrams, use `tikzcd`:
+Use `tikzcd` for commutative diagrams:
 
 ````markdown
 ```tikzcd
@@ -57,7 +48,7 @@ A \arrow[r, "f"] & B
 ```
 ````
 
-You can also use raw LaTeX blocks:
+Raw environments are also supported:
 
 ```latex
 \begin{tikzpicture}
@@ -65,20 +56,16 @@ You can also use raw LaTeX blocks:
 \end{tikzpicture}
 ```
 
-To use a shared diagram file from the central figure store, use `\input`:
+Shared figure files can be included with `\input`:
 
 ```latex
 \input{diagrams/example.tikz}
 ```
 
-The parser detects these blocks using [`tikzSourceBlocksInMarkdown`](file:///home/dzack/gitclones/Zettlr-pandoc-mathjax/source/common/util/tikz-source-blocks.ts#L133-L177) and resolves files through [`resolveCentralFiguresDirectory`](file:///home/dzack/gitclones/Zettlr-pandoc-mathjax/source/app/util/central-figures-store.ts#L59-L80).
+## References
 
-### 4. Cross-Referencing Figures
-
-Reference figures with the `@` symbol:
-
-- Narrative citation: `@fig:example-key`
-- Parenthetical citation: `[@fig:example-key]`
-- Group citation: `[@fig:comp-left; @fig:comp-right]`
-- Custom prefix: `[See @fig:example-key]`
-- Suppress prefix: `[-@fig:example-key]`
+- `@fig:example` — normal reference
+- `[@fig:example]` — parenthesized reference
+- `[@fig:left; @fig:right]` — multiple references
+- `[See @fig:example]` — text before the reference
+- `[-@fig:example]` — suppress the automatic figure label

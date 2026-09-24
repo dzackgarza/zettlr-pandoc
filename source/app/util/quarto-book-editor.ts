@@ -33,7 +33,7 @@ function absoluteChapterPath (rootPath: string, chapterPath: string): string {
   const absolute = resolveRealPath(path.resolve(root, chapterPath))
   const relative = path.relative(root, absolute)
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`Cannot add ${chapterPath}: the chapter is outside the Project root`)
+    throw new Error(`Can't add ${chapterPath}: it is outside this Project`)
   }
   return absolute
 }
@@ -55,7 +55,7 @@ function authoredPathFor (rootPath: string, manifestPath: string, chapterPath: s
   const relative = path.relative(manifestDirectory, absolute)
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error(
-      `Cannot add ${chapterPath}: the bound Quarto manifest has no in-project path to that file`
+      `Can't add ${chapterPath}: Quarto cannot reach that file from this book`
     )
   }
   return unixPath(relative)
@@ -72,7 +72,7 @@ function chapterIdentity (rootPath: string, manifestPath: string, authoredPath: 
 function chaptersSequence (document: Document<Node>): YAMLSeq<unknown> {
   const chapters = document.getIn([ 'book', 'chapters' ], true)
   if (!isSeq(chapters)) {
-    throw new Error('The Quarto manifest has no book.chapters sequence')
+    throw new Error('This Quarto book has no chapter list')
   }
   return chapters
 }
@@ -117,7 +117,7 @@ function findChapter (
 function removeChapter (location: ChapterLocation): unknown {
   const [ node ] = location.container.items.splice(location.index, 1)
   if (node === undefined) {
-    throw new Error('The chapter disappeared while editing the Quarto manifest')
+    throw new Error('The chapter was removed while the book was being edited')
   }
   return node
 }
@@ -138,7 +138,7 @@ function insertAtPlacement (
     const part = chapters.items[placement.partIndex]
     const nested = partChapters(part)
     if (nested === undefined) {
-      throw new Error(`Book item ${placement.partIndex + 1} is not a part with chapters`)
+      throw new Error(`Book item ${placement.partIndex + 1} is not a part that can contain chapters`)
     }
     nested.items.push(node)
     return
@@ -146,7 +146,7 @@ function insertAtPlacement (
 
   const target = findChapter(rootPath, manifestPath, chapters, placement.chapterPath)
   if (target === undefined) {
-    throw new Error(`Cannot place a chapter relative to ${placement.chapterPath}: it is not in the book`)
+    throw new Error(`Can't place the chapter next to ${placement.chapterPath} because that chapter is not in the book`)
   }
   target.container.items.splice(
     target.index + (placement.kind === 'after-chapter' ? 1 : 0),
@@ -169,14 +169,14 @@ export function editQuartoBookSource (
 ): string {
   const document = parseDocument(source)
   if (document.errors.length > 0) {
-    throw new Error(`Cannot edit the Quarto manifest: ${document.errors[0].message}`)
+    throw new Error(`Can't edit the Quarto book: ${document.errors[0].message}`)
   }
   const chapters = chaptersSequence(document)
 
   if (edit.kind === 'add-chapter') {
     absoluteChapterPath(rootPath, edit.chapterPath)
     if (findChapter(rootPath, manifestPath, chapters, edit.chapterPath) !== undefined) {
-      throw new Error(`${edit.chapterPath} is already included in the book`)
+      throw new Error(`${edit.chapterPath} is already in the book`)
     }
     const node = document.createNode(authoredPathFor(rootPath, manifestPath, edit.chapterPath))
     insertAtPlacement(rootPath, manifestPath, chapters, node, edit.placement ?? { kind: 'book-end' })
@@ -186,7 +186,7 @@ export function editQuartoBookSource (
   if (edit.kind === 'move-chapter') {
     const sourceLocation = findChapter(rootPath, manifestPath, chapters, edit.chapterPath)
     if (sourceLocation === undefined) {
-      throw new Error(`Cannot move ${edit.chapterPath}: it is not included in the book`)
+      throw new Error(`Can't move ${edit.chapterPath}: it is not in the book`)
     }
     const node = removeChapter(sourceLocation)
     insertAtPlacement(rootPath, manifestPath, chapters, node, edit.placement)

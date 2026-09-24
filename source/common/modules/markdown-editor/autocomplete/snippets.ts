@@ -128,13 +128,13 @@ function renderMarker (marker: Marker, synthetic: { next: number }): string {
 
   if (marker instanceof Placeholder) {
     if (marker.transform !== undefined) {
-      throw new Error('placeholder transforms require a richer snippet runtime than CodeMirror provides')
+      throw new Error('This snippet uses placeholder transformations, which are not supported.')
     }
     if (marker.choice instanceof Choice) {
-      throw new Error('choice placeholders require a richer snippet runtime than CodeMirror provides')
+      throw new Error('This snippet uses choice placeholders, which are not supported.')
     }
     if (containsPlaceholder(marker)) {
-      throw new Error('nested placeholders require a richer snippet runtime than CodeMirror provides')
+      throw new Error('This snippet uses nested placeholders, which are not supported.')
     }
     if (marker.children.length === 0) {
       return `\${${marker.index}}`

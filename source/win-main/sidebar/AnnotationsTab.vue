@@ -17,7 +17,7 @@
       v-if="groups.length === 0"
       class="annotation-workspace-empty annotation-muted"
     >
-      {{ trans('No outstanding annotations or proposed changes in this workspace.') }}
+      {{ trans('No pending annotations or proposed changes in this workspace.') }}
     </p>
 
     <section
@@ -34,7 +34,7 @@
           v-on:click="navigate(group.documentPath)"
         >{{ group.documentName }}</button>
         <span class="annotation-document-count annotation-muted">
-          {{ trans('%s outstanding', String(group.annotations.length + group.suggestions.length)) }}
+          {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
         </span>
         <button
           v-if="group.suggestions.length > 0"
@@ -219,7 +219,9 @@ async function acceptAllWorkspace (): Promise<void> {
     const failures = results.filter(({ result }) => !result.ok)
     if (failures.length > 0) {
       showToast(
-        trans('Could not accept all changes in %s document(s).', String(failures.length)),
+        failures.length === 1
+          ? trans('Could not accept all changes in 1 document.')
+          : trans('Could not accept all changes in %s documents.', String(failures.length)),
         'error'
       )
     }

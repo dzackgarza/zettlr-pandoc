@@ -318,9 +318,7 @@ function persistenceFailure(action: string, error: unknown): ReviewFailure {
   return {
     ok: false,
     code: "PERSISTENCE_FAILED",
-    message:
-      `The collaboration state could not be persisted, so ${action} was not applied: ` +
-      (error instanceof Error ? error.message : String(error)),
+    message: `Couldn't save the review state, so ${action} was not applied.`,
   };
 }
 
@@ -1125,10 +1123,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message:
-          `The review is at generation ${context.review.generation}, not ` +
-          `${precondition.expectedReviewGeneration}: something was decided ` +
-          "after this one was read. Re-read the review and decide again.",
+        message: "This review changed after it was opened. Reload it and try again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1140,10 +1135,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message:
-          "The document text changed after this decision was formed, so the " +
-          "chunk it names is not the chunk that would be decided. Re-read " +
-          "the chunks and decide again.",
+        message: "The document changed after this decision was prepared. Reload the review and try again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1164,7 +1156,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_INVALIDATED",
-        message: "The review was invalidated by external disk drift.",
+        message: "The file changed on disk, so this review is no longer current.",
       };
     }
     let diskText: string;
@@ -1173,7 +1165,7 @@ export class CollaborationApplicationService {
     } catch {
       return await this.commitInvalidation(
         context,
-        "The reviewed document could not be read from disk; the review was invalidated.",
+        "Couldn't read the reviewed file from disk, so this review is no longer current.",
       );
     }
     if (sha256Text(normalizeText(diskText)) === context.review.diskFenceSha256) {
@@ -1181,7 +1173,7 @@ export class CollaborationApplicationService {
     }
     return await this.commitInvalidation(
       context,
-      "The document changed on disk after this review opened; the review was invalidated.",
+      "The file changed on disk after this review opened, so this review is no longer current.",
     );
   }
 
@@ -1284,7 +1276,7 @@ export class CollaborationApplicationService {
         : {
             ok: false,
             code: "IDEMPOTENCY_CONFLICT",
-            message: "clientRequestId was already used for a different proposal request.",
+            message: "This request ID was already used for a different proposal.",
           };
     }
 
@@ -1301,7 +1293,7 @@ export class CollaborationApplicationService {
         ok: false,
         code: "INTERNAL_ERROR",
         message:
-          "Could not read the document from disk to fence the review: " +
+          "Couldn't read the document from disk: " +
           (err instanceof Error ? err.message : String(err)),
       };
     }
@@ -1313,7 +1305,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: "The document changed after the baseline content was read.",
+        message: "The document changed after this proposal was prepared.",
       };
     }
 
@@ -1328,7 +1320,7 @@ export class CollaborationApplicationService {
         return {
           ok: false,
           code: "REVISION_MISMATCH",
-          message: "The document changed on disk after the last saved editor baseline.",
+          message: "The file on disk changed since the editor last saved it.",
         };
       }
     } else if (diskSha256 !== activeReview.diskFenceSha256) {
@@ -1339,7 +1331,7 @@ export class CollaborationApplicationService {
           review: activeReview,
           workingText,
         },
-        "The document changed on disk after this review opened; the review was invalidated.",
+        "The file changed on disk after this review opened, so this review is no longer current.",
       );
     }
 
@@ -1348,7 +1340,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "The review generation no longer matches.",
+        message: "This review changed. Reload it and try again.",
       };
     }
 
@@ -1569,7 +1561,7 @@ export class CollaborationApplicationService {
         workingText: sidecar.workingText,
       };
       if (review.invalidated) {
-        return { ok: false, code: "REVIEW_INVALIDATED", message: "The review was invalidated by external disk drift." };
+        return { ok: false, code: "REVIEW_INVALIDATED", message: "The file changed on disk, so this review is no longer current." };
       }
 
       let diskText: string;
@@ -1684,7 +1676,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "PACKET_NOT_RETRACTABLE",
-        message: "The packet was not found.",
+        message: "Proposal not found.",
         reviewId: "",
         canClearUnresolved: true,
       };
@@ -1748,7 +1740,7 @@ export class CollaborationApplicationService {
         return {
           ok: false as const,
           code: "DOCUMENT_CLOSED" as const,
-          message: "The annotated document is no longer open.",
+          message: "The document containing this annotation is no longer open.",
         };
       }
       const normalized = normalizeText(workingText);

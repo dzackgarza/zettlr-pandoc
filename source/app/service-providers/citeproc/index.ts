@@ -661,16 +661,9 @@ export default class CiteprocProvider extends ProviderContract {
     if (cause instanceof CiteprocRenderInvariantError) {
       return cause
     }
-    const itemContext = citekeys.map(key => {
-      const item = this._items[key]
-      if (item === undefined) return `${key} (missing)`
-      const title = typeof item.title === 'string' ? item.title.replace(/<[^>]+>/g, '').slice(0, 120) : '(untitled)'
-      return `${key} (${String(item.type)}): ${title}`
-    }).join('; ')
     const causeText = cause instanceof Error ? cause.message : String(cause)
     return new CiteprocRenderInvariantError(
-      `Citeproc ${kind} invariant failed for [${citekeys.join(', ')}] using style ${JSON.stringify(this.stylePath)} ` +
-      `(citation-format=${this.citationFormat ?? 'unspecified'}). ${causeText}. Items: ${itemContext}`
+      `Could not render ${kind} for [${citekeys.join(', ')}] with style ${JSON.stringify(this.stylePath)}: ${causeText}`
     )
   }
 

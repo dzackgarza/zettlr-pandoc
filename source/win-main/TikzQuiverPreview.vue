@@ -125,7 +125,7 @@ watch(
   () => props.target,
   target => {
     if (target.language !== 'tikzcd') {
-      throw new Error(`TikzQuiverPreview requires tikzcd source, received ${target.language}`)
+      throw new Error(`Quiver can only edit tikzcd diagrams, not ${target.language}`)
     }
     const next = quiverSessionForBlock(target)
     const active = session.value

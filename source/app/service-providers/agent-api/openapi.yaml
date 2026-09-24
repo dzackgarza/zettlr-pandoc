@@ -3,24 +3,13 @@ info:
   title: Zettlr-Pandoc Editor Agent API
   version: 1.0.0
   description: >-
-    HTTP REST API for the Zettlr-Pandoc editor agent. Provides live document
-    reads, proposal submission, review inspection, and Server-Sent Events. The
-    Electron main process owns all agent-visible state.
-
-
-    The working loop: orient (workspace files -> documents -> reviews ->
-    chunks), submit claim-sized proposals against a freshly read content
-    hash, then next turn read the review's chunk comments and comments and
-    answer them with new claims. Accepted material is already in the working
-    text — never resubmit it. A PATCH_NOT_APPLICABLE refusal means the text
-    moved under you: re-read
-    the working side and rebuild against it, because a retry fails the same
-    way.
-
-
-    You never accept, reject, or discard a chunk: the reviewer disposes
-    of your proposals in the editor. Your moves are a revision, a comment,
-    and retracting a packet of your own the reviewer has not touched yet.
+    REST API for reading editor documents, submitting proposed edits, and
+    inspecting reviews. Read the current document before submitting a proposal
+    and use the returned revision hash. If a patch no longer applies, read the
+    document again and rebuild the patch. Accepted edits already appear in the
+    working text. The reviewer accepts or rejects changes in the editor; an
+    agent may submit new proposals, add comments, or retract its newest
+    untouched proposal.
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -167,7 +156,7 @@ components:
           type: string
         attached:
           type: boolean
-          description: Whether the document currently has a live authority buffer.
+          description: Whether the document is currently open in the editor.
         side:
           type: string
           enum:
@@ -198,8 +187,7 @@ components:
     ProposalClaim:
       type: object
       description: >-
-        One logical decision — the smallest change a reviewer can accept or
-        reject on its own. Do not bundle unrelated edits into one claim.
+        One independently reviewable edit. Keep unrelated edits in separate claims.
       required:
         - description
         - patch
@@ -208,17 +196,10 @@ components:
           type: string
           minLength: 1
           description: >-
-            Self-contained prose shown to the reviewer at the chunks this
-            claim produced: what is wrong, what the patch changes, and why —
-            enough to adjudicate without re-deriving the diagnosis. Each
-            claim in a batch must carry a distinct, non-redundant description
-            naming the edit-specific defect/location or context, what this
-            claim changes there, and why that particular change fixes it.
-            Duplicate or near-duplicate descriptions across claims are
-            rejected as DUPLICATE_CLAIM_DESCRIPTION. Comparison applies NFKC
-            normalization, case-folding, and whitespace removal, then uses
-            normalized Levenshtein similarity; 0.94 or greater is rejected
-            and an exact match reports 1.0.
+            Explain what is wrong, what this edit changes, and why. Each claim
+            in one submission needs a distinct description; duplicate or
+            near-duplicate descriptions are rejected as
+            DUPLICATE_CLAIM_DESCRIPTION.
         patch:
           type: string
           minLength: 1
@@ -233,13 +214,9 @@ components:
           items:
             type: string
           description: >-
-            Annotation ids this claim answers. Each must belong to the target
-            document, be open, and not be orphaned; otherwise the whole
-            submission is refused — ANNOTATION_NOT_FOUND, ANNOTATION_RESOLVED,
-            or ANNOTATION_ORPHANED — with nothing committed, not this claim's
-            patch and not any other claim in the same submission. On success,
-            each addressed annotation records this claim's packet as a linked
-            proposal action, visible on GET /v1/annotations/{annotationId}.
+            Open annotation IDs this claim answers. If any ID is missing,
+            resolved, or no longer points to text, the submission is rejected.
+            Successful proposals appear on the addressed annotations.
     SubmitProposalRequest:
       type: object
       additionalProperties: false
@@ -275,14 +252,9 @@ components:
           items:
             $ref: '#/components/schemas/ProposalClaim'
           description: >-
-            Ordered claim sequence applied against the ONE baseline,
-            sequentially and atomically: claim k applies with zero fuzz to
-            the text claim k-1 produced, all-or-nothing, and each claim
-            becomes its own packet. Send one entry per logical decision —
-            that gives the reviewer separately decidable packets. Descriptions
-            are per-edit review justifications, not a reusable batch reason;
-            each must identify that claim's specific defect/context, change,
-            and justification.
+            Claims are applied in order against the supplied revision. All
+            claims succeed or none are applied. Each claim becomes a separate
+            review proposal that the reviewer can decide independently.
     SubmitProposalResponse:
       type: object
       required:
@@ -298,15 +270,14 @@ components:
         packetId:
           type: string
           description: >-
-            The newest packet of this submission (the retractable one) —
-            the last element of packetIds.
+            ID of the newest proposal in this submission; it is the last
+            element of packetIds.
         packetIds:
           type: array
           items:
             type: string
           description: >-
-            One packet per claim, in claim order; a single-patch submission
-            has exactly one.
+            One proposal ID per claim, in claim order.
         reviewId:
           type: string
         documentId:
@@ -447,11 +418,11 @@ components:
         annotationGeneration:
           type: integer
           description: >-
-            annotation.*: the document's annotation generation after the event.
+            annotation.*: annotation version after the event.
         packetId:
           type: string
           description: >-
-            proposal.applied and proposal.retracted: the packet affected by the event.
+            proposal.applied and proposal.retracted: proposal ID affected by the event.
         chunkId:
           type: string
           description: >-
@@ -464,7 +435,7 @@ components:
             event when the reviewer removed the chunk's note.
         message:
           type: string
-          description: 'review.sidecar-error: what failed and why.'
+          description: Error detail for review.sidecar-error events.
         id:
           type: string
           description: Server-generated event sequence identifier.
@@ -761,14 +732,12 @@ components:
         attached:
           type: boolean
           description: >-
-            True while the reviewed document is open. A detached review is
-            served from its sidecar: readable, but not decidable until its
-            documentPath is opened again.
+            True while the reviewed document is open. Reviews for closed files
+            remain readable but cannot be changed until the file is reopened.
         documentRevision:
           $ref: '#/components/schemas/DocumentRevision'
           description: >-
-            The open document's revision. Absent for a detached review —
-            there is no open document to revise.
+            Current document revision. Absent while the reviewed file is closed.
     ReviewDiffResponse:
       type: object
       required:
@@ -780,7 +749,7 @@ components:
           type: string
         documentId:
           type: string
-          description: Absent for a detached review, whose file is closed.
+          description: Absent while the reviewed file is closed.
         patch:
           type: string
         generation:
@@ -796,18 +765,16 @@ components:
           type: string
         documentId:
           type: string
-          description: Absent for a detached review, whose file is closed.
+          description: Absent while the reviewed file is closed.
         generation:
           type: integer
         workingSha256:
           type: string
           pattern: '^[0-9a-f]{64}$'
           description: >-
-            SHA-256 of the working text that contains these suggestions —
-            the `expectedWorkingSha256` a retraction of one of the packets
-            behind them must carry. Absent for a detached review, which has
-            no live buffer and accepts no mutation until its file is
-            reopened.
+            SHA-256 of the current text containing these changes. Use it as
+            expectedWorkingSha256 when retracting a related proposal. Absent
+            while the reviewed file is closed.
         chunks:
           type: array
           items:
@@ -822,7 +789,7 @@ components:
           type: string
         documentId:
           type: string
-          description: Absent for a detached review, whose file is closed.
+          description: Absent while the reviewed file is closed.
         packets:
           type: array
           items:
@@ -867,19 +834,18 @@ components:
         chunkId:
           type: string
           description: >-
-            Stable suggestion identity. Owner edits map its anchors without
-            changing this id. Deciding another suggestion does not change it.
+            Stable ID for this proposed change.
         referenceText:
           type: string
-          description: The reference-side lines, newline-joined; empty for a pure insertion.
+          description: Original text; empty for a pure insertion.
         workingText:
           type: string
-          description: The working-side lines, newline-joined; empty for a pure deletion.
+          description: Proposed text; empty for a pure deletion.
         workingSpans:
           type: array
           description: >-
-            Disjoint half-open character ranges containing only agent-authored
-            bytes. Owner text inserted inside a suggestion is not included.
+            Character ranges belonging to this proposed change. Text added by
+            the document owner is excluded.
           items:
             type: object
             required:
@@ -895,18 +861,17 @@ components:
           items:
             type: string
           description: >-
-            The one packet that owns this suggestion.
+            Proposal ID associated with this change.
         descriptions:
           type: array
           items:
             type: string
           description: >-
-            The owning packet's description.
+            Description of the associated proposal.
         comment:
           type: string
           description: >-
-            The reviewer's note attached to this chunk without deciding it —
-            a question or objection. Address it in your next claims batch.
+            Reviewer's note on this change. Address it in a later proposal.
         patch:
           type: string
           description: Focused zero-context unified diff of exactly this chunk.
@@ -921,21 +886,14 @@ components:
           type: integer
           minimum: 0
           description: >-
-            The review generation this request was formed against — the
-            `generation` of the chunk list, diff, or status you read. Every
-            review mutation advances it, including the reviewer's decisions,
-            so a request that carries a stale one was formed before somebody
-            else's mutation landed and is refused as
-            REVIEW_GENERATION_MISMATCH.
+            generation from the latest review read. A stale value is rejected
+            as REVIEW_GENERATION_MISMATCH.
         expectedWorkingSha256:
           type: string
           pattern: '^[0-9a-f]{64}$'
           description: >-
-            SHA-256 of the working text this request was formed against —
-            `workingSha256` from GET /v1/reviews/{reviewId}?view=chunks. Binding
-            the request to the exact bytes makes an edit between the read and
-            the request a REVISION_MISMATCH refusal instead of a retraction
-            landing on text the caller never saw.
+            workingSha256 from the latest chunk read. A stale hash is rejected
+            as REVISION_MISMATCH.
     AddReviewCommentRequest:
       type: object
       additionalProperties: false
@@ -995,7 +953,7 @@ components:
           type: string
         applicationGeneration:
           type: integer
-          description: The review generation this packet's application produced.
+          description: Review generation after this proposal was applied.
     HelpResponse:
       type: object
       required:
@@ -1003,7 +961,7 @@ components:
       properties:
         help:
           type: string
-          description: Verbatim Markdown authoring help documentation.
+          description: Markdown authoring help.
     PingResponse:
       type: object
       required:
@@ -1068,19 +1026,15 @@ components:
             documentId:
               type: string
               description: >-
-                Present for a review attached to an open document; absent
-                for a detached (sidecar-backed) review whose file is
-                closed.
+                Present while the reviewed file is open; absent while it is closed.
             documentPath:
               type: string
               description: The absolute path of the reviewed file.
             attached:
               type: boolean
               description: >-
-                True while the reviewed document is open; false for a
-                review persisted in its sidecar after the file closed.
-                There is no reattach API — opening the file is the
-                reattachment.
+                True while the reviewed file is open. Open a closed reviewed
+                file before changing its review.
     ReviewListResponse:
       type: object
       required:
@@ -1110,7 +1064,7 @@ components:
             - orphaned
         quotedText:
           type: string
-          description: The text the annotation was created against. Never rewritten (I1).
+          description: Text selected when the annotation was created.
         from:
           type: integer
           description: UTF-16 offset where the target starts. Present when state is range.
@@ -1167,7 +1121,7 @@ components:
           type: string
         clientRequestId:
           type: string
-          description: Present when author is agent — the id that made posting this message idempotent.
+          description: Client request ID for an agent-authored message, when present.
     AnnotationProposalAction:
       type: object
       additionalProperties: false
@@ -1197,9 +1151,9 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        A durable comment on a stretch of one document. Lifecycle (resolve,
-        reopen, reattach, delete, create) is owner-only (I3) and has no
-        operation in this API — only its thread accepts an agent reply.
+        A comment thread attached to part of a document. Only the document
+        owner can create, resolve, reopen, reattach, or delete annotations;
+        agents may only reply to an open thread.
       required:
         - annotationId
         - documentId
@@ -1235,8 +1189,8 @@ components:
         annotationGeneration:
           type: integer
           description: >-
-            The document's annotation generation this read reflects — send it
-            back as expectedAnnotationGeneration on the next message.
+            Annotation version returned by this read. Send it back as
+            expectedAnnotationGeneration on the next message.
         createdAt:
           type: string
         updatedAt:
@@ -1268,18 +1222,14 @@ components:
           type: string
           minLength: 1
           description: >-
-            Client-chosen unique string. Replaying it returns the original
-            message rather than posting a second one.
+            Client-chosen request ID. Repeating the same request returns the
+            original message instead of posting it twice.
         expectedAnnotationGeneration:
           type: integer
           minimum: 0
           description: >-
-            The annotationGeneration this request was formed against — the
-            most recent AnnotationResponse or AnnotationListResponse read. A
-            stale value is refused as ANNOTATION_GENERATION_MISMATCH; a
-            replayed clientRequestId is answered before this check runs, so a
-            retry against a generation the first post already advanced still
-            succeeds.
+            annotationGeneration from the latest annotation read. A stale
+            value is rejected as ANNOTATION_GENERATION_MISMATCH.
     AddAnnotationMessageResponse:
       type: object
       additionalProperties: false
@@ -1323,25 +1273,20 @@ components:
             sha256:
               type: string
               pattern: ^[0-9a-f]{64}$
-              description: SHA-256 of the expected working text. A stale baseline is refused
-                as BASELINE_MISMATCH.
+              description: SHA-256 of the document text this submission was built against.
         clientRequestId:
           type: string
           minLength: 1
-          description: Client-chosen unique request key. Reuse after mutation is refused;
-            use a new key for rebased claims.
+          description: Client-chosen request ID. Use a new ID after rebuilding a submission.
         claims:
           type: array
           minItems: 1
           items:
             $ref: '#/components/schemas/ProposalClaim'
-          description: "Ordered claim sequence applied against the ONE baseline,
-            sequentially and atomically: claim k applies with zero fuzz to the text
-            claim k-1 produced, all-or-nothing, and each claim becomes its own
-            packet. Send one entry per logical decision — that gives the reviewer
-            separately decidable packets. Descriptions are per-edit review
-            justifications, not a reusable batch reason; each must identify that
-            claim's specific defect/context, change, and justification."
+          description: >-
+            Ordered edits built against the same document revision. All
+            claims succeed or none are applied. Each claim becomes a separate
+            review proposal.
         patch:
           type: string
           minLength: 1
@@ -1361,13 +1306,10 @@ components:
               minItems: 1
               items:
                 $ref: '#/components/schemas/ProposalClaim'
-              description: "Ordered claim sequence applied against the ONE baseline,
-                sequentially and atomically: claim k applies with zero fuzz to the
-                text claim k-1 produced, all-or-nothing, and each claim becomes its
-                own packet. Send one entry per logical decision — that gives the
-                reviewer separately decidable packets. Descriptions are per-edit
-                review justifications, not a reusable batch reason; each must identify
-                that claim's specific defect/context, change, and justification."
+              description: >-
+                Ordered edits built against the same document revision. All
+                claims succeed or none are applied. Each claim becomes a
+                separate review proposal.
         - type: object
           required:
             - patch
@@ -1394,14 +1336,12 @@ components:
       properties:
         packetId:
           type: string
-          description: The newest packet of this submission (the retractable one) — the
-            last element of packetIds.
+          description: ID of the newest proposal in this submission; the last element of packetIds.
         packetIds:
           type: array
           items:
             type: string
-          description: One packet per claim, in claim order; a single-patch submission has
-            exactly one.
+          description: One proposal ID per claim, in claim order.
         reviewId:
           type: string
         documentId:
@@ -1594,7 +1534,7 @@ components:
       properties:
         sourcePath:
           type: string
-          description: Path relative to the canonical ~/.pandoc/styles/macros tree.
+          description: Path relative to ~/.pandoc/styles/macros.
         line:
           type: integer
           minimum: 1
@@ -1630,7 +1570,7 @@ components:
       properties:
         root:
           type: string
-          description: Absolute canonical macro-tree root.
+          description: Absolute TeX macro directory.
         count:
           type: integer
           minimum: 0
@@ -1649,7 +1589,7 @@ components:
       properties:
         path:
           type: string
-          description: Path relative to the configured centralized figures directory.
+          description: Path relative to the configured figures directory.
         kind:
           type: string
           enum:
@@ -1671,7 +1611,7 @@ components:
       properties:
         root:
           type: string
-          description: Absolute effective centralized figures directory.
+          description: Absolute figures directory.
         count:
           type: integer
           minimum: 0
@@ -1734,7 +1674,7 @@ components:
           maxLength: 4096
           pattern: '^.+\.tikz$'
           description: >-
-            Relative destination under the configured centralized figures directory.
+            Relative destination under the configured figures directory.
             The filename must end in the lowercase `.tikz` extension; `.tikzcd` and
             every other extension are refused.
         content:
@@ -1751,7 +1691,7 @@ components:
           type: string
           minLength: 1
           maxLength: 4096
-          description: Relative destination under the configured centralized figures directory.
+          description: Relative destination under the configured figures directory.
         content:
           type: string
           description: File content as UTF-8 or base64.
@@ -1870,6 +1810,11 @@ components:
           type: string
         rule:
           type: string
+        data:
+          type: object
+          properties: {}
+          additionalProperties: true
+          description: Structured rule-specific facts. Human-facing message text is not an API identifier.
     DocumentLintResult:
       type: object
       additionalProperties: false
@@ -2090,7 +2035,7 @@ paths:
       summary: Document metadata and optional text content
       description: >-
         Returns document metadata by default. Set includeContent=true to read
-        working or reference text lines with ETag revision header.
+        current or pre-review text with an ETag revision header.
       parameters:
         - name: documentId
           in: path
@@ -2112,7 +2057,7 @@ paths:
               - working
               - reference
             default: working
-          description: working is the live text; reference is the review baseline.
+          description: working is the current text; reference is the text before proposed changes.
         - name: startLine
           in: query
           schema:
@@ -2291,8 +2236,9 @@ paths:
       x-openai-isConsequential: false
       summary: Submit a review by file path
       description: >-
-        Resolve a workspace file, validate an optional baseline, submit
-        ordered claims or a patch atomically, and focus unless disabled.
+        Resolve a workspace file, verify an optional revision hash, submit
+        ordered claims or one patch as an all-or-nothing change, and focus the
+        document unless disabled.
       requestBody:
         required: true
         content:
@@ -2340,7 +2286,7 @@ paths:
     get:
       operationId: listAnnotations
       x-openai-isConsequential: false
-      summary: List durable annotations across workspace or for one document
+      summary: List annotations across the workspace or for one document
       parameters:
         - name: documentId
           in: query
@@ -2433,7 +2379,7 @@ paths:
     get:
       operationId: listReviews
       x-openai-isConsequential: false
-      summary: List all active and detached reviews across the workspace
+      summary: List reviews for open and closed workspace files
       responses:
         '200':
           description: Review summaries.
@@ -2445,7 +2391,7 @@ paths:
     get:
       operationId: getReview
       x-openai-isConsequential: false
-      summary: Inspect a review and its diff, chunks, or packet ledger
+      summary: Inspect review details, its diff, pending changes, or proposals
       parameters:
         - name: reviewId
           in: path
@@ -2491,7 +2437,7 @@ paths:
     post:
       operationId: addReviewComment
       x-openai-isConsequential: false
-      summary: Attach a review-level comment
+      summary: Add a comment to a review
       parameters:
         - name: reviewId
           in: path
@@ -2527,7 +2473,7 @@ paths:
     post:
       operationId: retractProposal
       x-openai-isConsequential: false
-      summary: Retract an untouched, most-recent packet
+      summary: Retract the newest untouched proposal
       parameters:
         - name: packetId
           in: path
@@ -2536,7 +2482,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Packet retracted
+          description: Proposal retracted
           headers:
             ETag:
               schema:
@@ -2546,13 +2492,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RetractProposalResponse'
         '404':
-          description: Packet not found
+          description: Proposal not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '409':
-          description: Packet is not the most recent or document closed
+          description: Proposal cannot be retracted or document is closed
           content:
             application/json:
               schema:
@@ -2561,7 +2507,7 @@ paths:
     get:
       operationId: waitForReviewEvents
       x-openai-isConsequential: false
-      summary: Poll review events and status after a generation advance
+      summary: Wait for review changes after a generation
       parameters:
         - name: reviewId
           in: path
@@ -2701,7 +2647,7 @@ paths:
     get:
       operationId: queryFigures
       x-openai-isConsequential: false
-      summary: List, search, or read centralized figures
+      summary: List, search, or read figure files
       parameters:
         - name: action
           in: query
@@ -2758,7 +2704,7 @@ paths:
     post:
       operationId: saveFigure
       x-openai-isConsequential: false
-      summary: Create or write a centralized figure file
+      summary: Create or update a figure file
       requestBody:
         required: true
         content:

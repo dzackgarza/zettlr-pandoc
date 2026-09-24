@@ -8,7 +8,7 @@ export interface QuartoBookEditRequest {
   edit: QuartoBookEdit
 }
 
-/** Mutates the authoritative Quarto manifest and returns its fresh projection. */
+/** Edits the Quarto book file and returns the refreshed project settings. */
 export default class QuartoBookEditCommand extends ZettlrCommand {
   constructor (app: AppServiceContainer) {
     super(app, 'quarto-book-edit')
@@ -17,11 +17,11 @@ export default class QuartoBookEditCommand extends ZettlrCommand {
   async run (_evt: string, arg: QuartoBookEditRequest): Promise<ProjectSettings> {
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.rootPath)
     if (dir === undefined) {
-      throw new Error(`Cannot edit Quarto book: ${arg.rootPath} is not a loaded workspace directory`)
+      throw new Error(`Can't edit the Quarto book because ${arg.rootPath} is not open`)
     }
     const project = dir.settings.project
     if (project?.manifest.kind !== 'quarto') {
-      throw new Error(`Cannot edit Quarto book: ${arg.rootPath} is not a Quarto project`)
+      throw new Error(`${arg.rootPath} is not a Quarto book project`)
     }
 
     await editQuartoBookManifest(dir.path, project.manifest.path, arg.edit)
@@ -29,7 +29,7 @@ export default class QuartoBookEditCommand extends ZettlrCommand {
 
     const refreshed = dir.settings.project
     if (refreshed?.manifest.kind !== 'quarto') {
-      throw new Error(`Quarto manifest edit left ${arg.rootPath} without a readable book project`)
+      throw new Error(`Couldn't reload the Quarto book after saving changes`)
     }
     return refreshed
   }

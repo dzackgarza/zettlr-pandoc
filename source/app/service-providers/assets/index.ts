@@ -476,7 +476,7 @@ export default class AssetsProvider extends ProviderContract {
     const configured = String(this._config.get('editor.snippetsFile') ?? '').trim()
     const filePath = configured === '' ? this._defaultSnippetsFile : path.resolve(configured)
     if (!isSnippetFileName(path.basename(filePath))) {
-      throw new Error(`Snippets source must be a .code-snippets file: ${filePath}`)
+      throw new Error(`Snippet file must use the .code-snippets extension: ${filePath}`)
     }
     return filePath
   }
@@ -738,7 +738,7 @@ export default class AssetsProvider extends ProviderContract {
       // list, but this reads it again, and the user can have saved a broken
       // file in between. The message therefore goes to the user, who is the
       // only one who can fix it.
-      throw new Error(`Defaults file ${filename} holds ${describeValue(parsed)} where a YAML mapping was expected. Repair the profile in the Assets Manager.`)
+      throw new Error(`Defaults file ${filename} must contain a YAML object, not ${describeValue(parsed)}. Edit the profile in Assets Manager.`)
     }
     return parsed
   }

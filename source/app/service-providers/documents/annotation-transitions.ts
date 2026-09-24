@@ -109,10 +109,7 @@ function checkGeneration(
   return {
     ok: false,
     code: "ANNOTATION_GENERATION_MISMATCH",
-    message:
-      `The document is at annotation generation ${annotations.generation}, not ` +
-      `${expected}: something changed after this one was read. Re-read the ` +
-      "annotations and try again.",
+    message: "The annotations changed after they were opened. Reload them and try again.",
   };
 }
 
@@ -139,7 +136,7 @@ function locate(
     found ?? {
       ok: false,
       code: "ANNOTATION_NOT_FOUND",
-      message: `No annotation ${annotationId} on this document.`,
+      message: `Annotation ${annotationId} was not found in this document.`,
     }
   );
 }
@@ -609,21 +606,21 @@ export function prepareAnnotationProposalLinkage(input: {
         return {
           ok: false,
           code: "ANNOTATION_NOT_FOUND",
-          message: `The proposal addresses annotation ${annotationId}, which is not on this document.`,
+          message: `Annotation ${annotationId} was not found in this document.`,
         };
       }
       if (target.state === "resolved") {
         return {
           ok: false,
           code: "ANNOTATION_RESOLVED",
-          message: `The proposal addresses annotation ${annotationId}, which is resolved.`,
+          message: `Annotation ${annotationId} is resolved. Reopen it before applying a proposal.`,
         };
       }
       if (target.anchor.state === "orphaned") {
         return {
           ok: false,
           code: "ANNOTATION_ORPHANED",
-          message: `The proposal addresses annotation ${annotationId}, whose target is orphaned.`,
+          message: `The selected text for annotation ${annotationId} no longer exists. Reattach the annotation before applying a proposal.`,
         };
       }
       target.proposalActions = [

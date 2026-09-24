@@ -1171,6 +1171,10 @@ export interface components {
       message: string;
       source: string;
       rule?: string;
+      /** @description Structured rule-specific facts. Human-facing message text is not an API identifier. */
+      data?: {
+        [key: string]: unknown;
+      };
     };
     DocumentLintResult: {
       documentId: string;

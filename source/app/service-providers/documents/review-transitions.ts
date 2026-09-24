@@ -761,7 +761,7 @@ export function prepareProposalSubmission(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The review was invalidated by external disk drift.",
+      message: "The file changed on disk, so this review is no longer current.",
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -886,7 +886,7 @@ export function prepareChunkDecision(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The review was invalidated by external disk drift.",
+      message: "The file changed on disk, so this review is no longer current.",
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -898,7 +898,7 @@ export function prepareChunkDecision(input: {
     return {
       ok: false,
       code: "CHUNK_NOT_FOUND",
-      message: `No unresolved chunk ${input.chunkId} exists at review generation ${next.generation}.`,
+      message: `Change ${input.chunkId} is no longer pending in this review.`,
     };
   }
   let nextWorkingText = workingText;
@@ -971,7 +971,7 @@ export function prepareChunkComment(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The review was invalidated by external disk drift.",
+      message: "The file changed on disk, so this review is no longer current.",
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -983,7 +983,7 @@ export function prepareChunkComment(input: {
     return {
       ok: false,
       code: "CHUNK_NOT_FOUND",
-      message: `No unresolved chunk ${input.chunkId} exists at review generation ${next.generation}.`,
+      message: `Change ${input.chunkId} is no longer pending in this review.`,
     };
   }
   const response = (): ChunkCommentResponse => ({
@@ -1034,7 +1034,7 @@ export function prepareAcceptAll(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The review was invalidated by external disk drift.",
+      message: "The file changed on disk, so this review is no longer current.",
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -1181,14 +1181,14 @@ export function prepareRetraction(input: {
     (packet) => packet.packetId === input.packetId,
   );
   if (packetIndex === -1) {
-    return refuse("The packet was not found in its review.");
+    return refuse("Proposal not found.");
   }
   if (packetIndex !== input.review.packets.length - 1) {
-    return refuse("A later packet has been applied after this one.");
+    return refuse("A newer proposal was applied after this one.");
   }
   const packet = input.review.packets[packetIndex];
   if (packet.applicationGeneration !== input.review.generation) {
-    return refuse("A review decision was recorded after this proposal was applied.");
+    return refuse("This proposal can no longer be retracted because the review changed after it was applied.");
   }
 
   const workingText = normalizeText(input.workingText);
@@ -1198,7 +1198,7 @@ export function prepareRetraction(input: {
   });
   if (reverted === false) {
     return refuse(
-      "The proposal has been modified or overlapped by later review activity.",
+      "This proposal can no longer be retracted because later changes overlap it.",
     );
   }
 
@@ -1212,7 +1212,7 @@ export function prepareRetraction(input: {
   );
   const exactReverted = applyChangeSet(workingText, retractionChanges);
   if (exactReverted !== normalizeText(reverted)) {
-    return refuse("The proposal no longer matches its stored suggestion entities.");
+    return refuse("This proposal no longer matches the current review.");
   }
   next.packets.pop();
   const retractedSuggestionIds = new Set(
