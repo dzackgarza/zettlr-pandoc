@@ -103,10 +103,36 @@ const directory = {
   isGitRepository: false
 } satisfies DirDescriptor
 
-function visibilityConfig (filters: FileManagerFilterRules): FileManagerVisibilityConfig {
+const hiddenDirectory = {
+  ...directory,
+  path: '/notes/build',
+  dir: '/notes',
+  name: 'build'
+} satisfies DirDescriptor
+
+const nestedMarkdown = {
+  ...markdown,
+  path: '/notes/build/hidden.md',
+  dir: '/notes/build',
+  name: 'hidden.md',
+  references: {
+    ...markdown.references,
+    documentPath: '/notes/build/hidden.md'
+  }
+} satisfies MDFileDescriptor
+
+function visibilityConfig (
+  filters: FileManagerFilterRules,
+  hiddenDirectories: string[] = [],
+  showHiddenDirectories = false
+): FileManagerVisibilityConfig {
   return {
     attachmentExtensions: [],
-    fileManager: { filters },
+    fileManager: {
+      filters,
+      hiddenDirectories,
+      showHiddenDirectories
+    },
     files: {
       builtin: { showInFilemanager: true, openWith: 'zettlr' },
       images: { showInFilemanager: true, openWith: 'system' },
@@ -167,6 +193,41 @@ describe('unified permanent file filters', function () {
     assert.equal(visible(directory), true)
   })
 
+  it('hides an explicitly hidden folder and every descendant', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig(
+      { include: [], exclude: [] },
+      [ hiddenDirectory.path ]
+    ))
+
+    assert.equal(visible(hiddenDirectory), false)
+    assert.equal(visible(nestedMarkdown), false)
+    assert.equal(visible(markdown), true)
+  })
+
+  it('reveals all hidden folders without clearing their flags', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig(
+      { include: [], exclude: [] },
+      [ hiddenDirectory.path ],
+      true
+    ))
+
+    assert.equal(visible(hiddenDirectory), true)
+    assert.equal(visible(nestedMarkdown), true)
+  })
+
+  it('keeps hidden subtrees out of the Ctrl+Shift+P cache', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig(
+      { include: [], exclude: [] },
+      [ hiddenDirectory.path ]
+    ))
+    const cache = buildFilePickerCache(
+      [ markdown, hiddenDirectory, nestedMarkdown ],
+      visible
+    )
+
+    assert.deepEqual(cache.paths, [ markdown.path ])
+  })
+
   it('exposes both rules in Preferences → File Manager', function () {
     const models = getFileManagerFields({ fileNameDisplay: 'filename' })
       .flatMap(fieldset => fieldset.fields)
@@ -174,5 +235,7 @@ describe('unified permanent file filters', function () {
 
     assert.ok(models.includes('fileManager.filters.include'))
     assert.ok(models.includes('fileManager.filters.exclude'))
+    assert.ok(models.includes('fileManager.hiddenDirectories'))
+    assert.ok(models.includes('fileManager.showHiddenDirectories'))
   })
 })

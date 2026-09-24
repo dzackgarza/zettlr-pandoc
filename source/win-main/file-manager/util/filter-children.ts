@@ -20,6 +20,7 @@ import { isDotFile } from 'source/common/util/ignore-path'
 import { useConfigStore } from 'source/pinia'
 import type { AnyDescriptor } from 'source/types/common/fsal'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
+import { isInsideRoot } from '@common/util/renderer-path-polyfill'
 
 export interface FileManagerFilterRules {
   include: readonly string[]
@@ -31,7 +32,18 @@ export interface FileManagerVisibilityConfig {
   files: ConfigOptions['files']
   fileManager: {
     filters: FileManagerFilterRules
+    hiddenDirectories: readonly string[]
+    showHiddenDirectories: boolean
   }
+}
+
+export function isPathHiddenByDirectory (
+  path: string,
+  hiddenDirectories: readonly string[]
+): boolean {
+  return hiddenDirectories.some(hiddenPath => {
+    return path === hiddenPath || isInsideRoot(path, hiddenPath)
+  })
 }
 
 function normalizeExtension (extension: string): string {
@@ -73,6 +85,13 @@ export function createFileManagerVisibilityFilter (
 ): (item: AnyDescriptor) => boolean {
   const { files, attachmentExtensions, fileManager } = config
   return (child: AnyDescriptor) => {
+    if (
+      !fileManager.showHiddenDirectories &&
+      isPathHiddenByDirectory(child.path, fileManager.hiddenDirectories)
+    ) {
+      return false
+    }
+
     // Permanent include/exclude rules are the first authority for file
     // visibility. Everything else, including File Treatment, can only further
     // narrow this set.

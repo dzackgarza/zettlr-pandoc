@@ -153,6 +153,8 @@ watch(
   [
     () => workspaceStore.descriptorMap,
     () => configStore.config.fileManager.filters,
+    () => configStore.config.fileManager.hiddenDirectories,
+    () => configStore.config.fileManager.showHiddenDirectories,
     () => configStore.config.files,
     () => configStore.config.attachmentExtensions
   ],

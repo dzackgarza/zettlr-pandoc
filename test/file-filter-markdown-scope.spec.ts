@@ -95,7 +95,9 @@ const visibilityConfig: FileManagerVisibilityConfig = {
     filters: {
       include: [ '.md', '.tex', '.yaml' ],
       exclude: [ '.yaml' ]
-    }
+    },
+    hiddenDirectories: [],
+    showHiddenDirectories: false
   },
   files: {
     builtin: { showInFilemanager: true, openWith: 'zettlr' },

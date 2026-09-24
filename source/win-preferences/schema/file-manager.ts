@@ -17,6 +17,8 @@ import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 
+const ipcRenderer = window.ipc
+
 export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDisplay'>): PreferencesFieldset[] {
   return [
     {
@@ -95,6 +97,43 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
           label: trans('Exclude file extensions'),
           placeholder: trans('Enter an extension, e.g. ".tex"'),
           model: 'fileManager.filters.exclude'
+        }
+      ]
+    },
+    {
+      title: trans('Hidden folders'),
+      infoString: trans('Folders hidden here are removed together with their descendants from the file manager and Ctrl+Shift+P. Revealing hidden folders does not clear their hidden flags.'),
+      group: PreferencesGroups.FileManager,
+      help: undefined,
+      fields: [
+        {
+          type: 'checkbox',
+          label: trans('Show hidden folders'),
+          model: 'fileManager.showHiddenDirectories'
+        },
+        {
+          type: 'list',
+          valueType: 'simpleArray',
+          model: 'fileManager.hiddenDirectories',
+          columnLabels: [ trans('Hidden path') ],
+          deletable: true,
+          editable: false,
+          searchable: true,
+          searchLabel: trans('Filter hidden paths…'),
+          emptyMessage: trans('No hidden folders')
+        },
+        {
+          type: 'button',
+          label: trans('Clear hidden folders'),
+          onClick: () => {
+            ipcRenderer.sendSync('config-provider', {
+              command: 'set-config-single',
+              payload: {
+                key: 'fileManager.hiddenDirectories',
+                val: []
+              }
+            })
+          }
         }
       ]
     },

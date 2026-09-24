@@ -11,6 +11,7 @@
         selected: isSelected,
         active: activeItem === item.path,
         project: item.type === 'directory' && item.settings.project != null,
+        'is-hidden-directory': isExplicitlyHidden,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
@@ -208,7 +209,6 @@ import {
   hasPDFExt,
   hasExt
 } from 'source/common/util/file-extention-checks'
-import { isDotFile } from 'source/common/util/ignore-path'
 import type { FSALEventPayload, FSALEventPayloadChange } from 'source/app/service-providers/fsal'
 import type { WritingTarget } from 'source/app/service-providers/targets'
 import { filterDescriptorChildren } from './util/filter-children'
@@ -373,6 +373,10 @@ const writingTargetPercent = computed(() => {
  * Returns true if this item is a root item
  */
 const isRoot = computed(() => workspaceStore.rootDescriptors.find(rd => rd.path === props.item.path) !== undefined)
+const isExplicitlyHidden = computed(() => {
+  return props.item.type === 'directory' &&
+    configStore.config.fileManager.hiddenDirectories.includes(props.item.path)
+})
 
 /**
  * Returns true if the file manager mode is set to "combined"
@@ -392,7 +396,6 @@ const filteredChildren = computed(() => {
     return []
   }
 
-  const { files } = configStore.config
   const filter = filterDescriptorChildren()
 
   return children.value
@@ -407,7 +410,7 @@ const filteredChildren = computed(() => {
     // Filter based on our rules
     .filter(child => {
       if (!combined.value) {
-        return child.type === 'directory' && (files.dotFiles.showInFilemanager || !isDotFile(child.name))
+        return child.type === 'directory' && filter(child)
       }
 
       return filter(child)
@@ -808,6 +811,7 @@ body {
       &.orange { color: var(--accent-orange); }
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
+      &.is-hidden-directory { opacity: 0.58; }
 
       .item-icon, .toggle-icon {
         display: flex;

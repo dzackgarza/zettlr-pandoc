@@ -62,7 +62,7 @@
         </template>
       </template>
 
-      <template v-if="getDirectories.length > 0">
+      <template v-if="hasWorkspaceRoots">
         <div
           id="directories-dirs-header"
           :title="showWorkspacesSection ? hideWorkspacesLabel : showWorkspacesLabel"
@@ -252,6 +252,9 @@ const documentTreeStore = useDocumentTreeStore()
 const configStore = useConfigStore()
 
 const rootDescriptors = computed(() => workspaceStore.rootDescriptors)
+const hasWorkspaceRoots = computed(() => {
+  return rootDescriptors.value.some(desc => desc.type === 'directory')
+})
 
 const showFilesSection = computed(() => configStore.config.fileManagerShowFiles)
 const showWorkspacesSection = computed(() => configStore.config.fileManagerShowWorkspaces)
@@ -375,7 +378,10 @@ const getFiles = computed(() => {
 })
 
 const getDirectories = computed(() => {
-  const roots = rootDescriptors.value.filter(desc => desc.type === 'directory')
+  const visible = filterDescriptorChildren()
+  const roots = rootDescriptors.value
+    .filter(desc => desc.type === 'directory')
+    .filter(visible)
   if (!filterActive.value) {
     return roots
   }
@@ -399,6 +405,7 @@ const directoryNameCounts = computed(() => nameCounts(getDirectories.value))
 const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, string]>>(() => {
   // First, get all descriptors.
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
+    .filter(filterDescriptorChildren())
   // Second, filter them if applicable.
     .filter(descriptor => {
       return !filterActive.value ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
@@ -547,6 +554,18 @@ function workspaceRootContextMenu (event: MouseEvent): void {
       label: collapseRoots ? trans('Collapse workspaces') : trans('Collapse subfolders'),
       type: 'normal',
       action () { collapseAll(collapseRoots) }
+    },
+    {
+      id: 'explorer-show-hidden-directories',
+      label: trans('Show hidden folders'),
+      type: 'checkbox',
+      checked: configStore.config.fileManager.showHiddenDirectories,
+      action () {
+        configStore.setConfigValue(
+          'fileManager.showHiddenDirectories',
+          !configStore.config.fileManager.showHiddenDirectories
+        )
+      }
     },
     {
       label: trans('Sort workspaces…'),

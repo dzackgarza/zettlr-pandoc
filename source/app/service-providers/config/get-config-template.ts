@@ -144,6 +144,10 @@ export interface ConfigOptions {
     sortWorkspacesManually: boolean;
     /** Expanded directory rows in the Explorer, persisted across restarts. */
     expandedDirectories: string[];
+    /** Explicitly hidden directory paths. Descendants are hidden by containment. */
+    hiddenDirectories: string[];
+    /** Temporarily reveal every hidden directory without clearing hidden flags. */
+    showHiddenDirectories: boolean;
     /** Permanent inclusion/exclusion policy shared by the file manager and file picker. */
     filters: {
       include: string[];
@@ -424,6 +428,8 @@ export function getConfigTemplate(): ConfigOptions {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
       expandedDirectories: [],
+      hiddenDirectories: [],
+      showHiddenDirectories: false,
       filters: {
         include: [...DEFAULT_FILE_FILTER_INCLUDE],
         exclude: [],

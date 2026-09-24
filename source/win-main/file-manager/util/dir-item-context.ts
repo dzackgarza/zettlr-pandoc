@@ -25,11 +25,17 @@ export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, 
   const configStore = useConfigStore()
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
+  const isExplicitlyHidden = configStore.config.fileManager.hiddenDirectories.includes(dirObject.path)
 
   const TEMPLATE: AnyMenuItem[] = [
     {
       label: trans('Properties'),
       id: 'menu.properties',
+      type: 'normal'
+    },
+    {
+      label: isExplicitlyHidden ? trans('Unhide folder') : trans('Hide folder'),
+      id: 'menu.toggle_hidden_dir',
       type: 'normal'
     },
     {

@@ -23,6 +23,7 @@ import { ref, computed, type Ref, watch, nextTick } from 'vue'
 import { hasImageExt, hasPDFExt } from 'source/common/util/file-extention-checks'
 import makeValidUri from 'source/common/util/make-valid-uri'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import { isPathHiddenByDirectory } from './filter-children'
 
 const ipcRenderer = window.ipc
 
@@ -105,6 +106,7 @@ export function useItemComposable (
   const configStore = useConfigStore()
   const documentTreeStore = useDocumentTreeStore()
   const windowStateStore = useWindowStateStore()
+  const workspaceStore = useWorkspaceStore()
 
   const isDirectory = computed(() => obj.value.type === 'directory')
   const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile)
@@ -242,6 +244,28 @@ export function useItemComposable (
             .catch(err => reportError(err))
         } else if (clickedID === 'menu.close_workspace') {
           closeWorkspace(obj.value.path)
+        } else if (clickedID === 'menu.toggle_hidden_dir') {
+          const hiddenDirectories = configStore.config.fileManager.hiddenDirectories
+          const isExplicitlyHidden = hiddenDirectories.includes(obj.value.path)
+          const nextHiddenDirectories = isExplicitlyHidden
+            ? hiddenDirectories.filter(path => path !== obj.value.path)
+            : [...hiddenDirectories, obj.value.path]
+
+          configStore.setConfigValue('fileManager.hiddenDirectories', nextHiddenDirectories)
+
+          if (!isExplicitlyHidden) {
+            const selectedDirectory = configStore.config.openDirectory
+            if (
+              selectedDirectory !== null &&
+              isPathHiddenByDirectory(selectedDirectory, [ obj.value.path ])
+            ) {
+              const parent = workspaceStore.descriptorMap.get(obj.value.dir)
+              configStore.setConfigValue(
+                'openDirectory',
+                parent?.type === 'directory' ? parent.path : null
+              )
+            }
+          }
         } else if (clickedID === 'menu.project_build') {
           // We should trigger an export of this project.
           ipcRenderer.invoke('application', {
