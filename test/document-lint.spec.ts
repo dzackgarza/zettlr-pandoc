@@ -58,11 +58,10 @@ describe("main-process document lint", function () {
     ].join("\n");
 
     const diagnostics = await lintDocumentText(markdown, path.join(root, "broken.md"), context);
-    const compile = diagnostics.find((diagnostic) => diagnostic.source === "tikz-compile");
+    const compile = diagnostics.find((diagnostic) => diagnostic.rule === "tikz/compile-error");
     assert.ok(compile !== undefined);
     assert.equal(compile.severity, "error");
     assert.equal(compile.rule, "tikz/compile-error");
-    assert.match(compile.message, /Undefined control sequence/u);
   });
 
   it("keeps Pandoc multiline inline math intact through the real Flowmark lint subprocess", async function () {
@@ -90,7 +89,15 @@ describe("main-process document lint", function () {
     ].join("\n");
 
     const diagnostics = await lintDocumentText(markdown, path.join(root, "math.md"), context);
-    const flowmark = diagnostics.filter((diagnostic) => diagnostic.source === "flowmark");
-    assert.deepEqual(flowmark, []);
+    const structuralFailures = diagnostics
+      .map((diagnostic) => diagnostic.rule)
+      .filter((rule) =>
+        rule === "pandoc/parse-error" ||
+        rule === "math/unclosed-group" ||
+        rule === "math/unmatched-group-close" ||
+        rule === "math/unclosed-left" ||
+        rule === "math/unmatched-right",
+      );
+    assert.deepEqual(structuralFailures, []);
   });
 });

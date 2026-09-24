@@ -19,7 +19,7 @@
  *                    render-citations byte-identically; mixed
  *                    bibliography/reference clusters are handled by NEITHER
  *                    renderer — they stay raw and receive an advisory
- *                    diagnostic from linters/reference-lint.ts.
+ *                    diagnostic from the standalone Flowmark reference rules.
  *                  - Each resolved item renders as one independent chip
  *                    (span.reference-chip with data-reference-key and
  *                    data-reference-family) whose text is `<Type> N.N.N`.

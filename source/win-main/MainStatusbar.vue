@@ -234,8 +234,8 @@ const windowStateStore = useWindowStateStore()
 
 const pomodoroLabel = trans('Pomodoro timer')
 const updateLabel = trans('Update available')
-const diagnosticsTitle = trans('Toggle diagnostics panel')
-const renderingModeTitle = trans('Enable or disable the preview mode for Markdown files by clicking')
+const diagnosticsTitle = trans('Show or hide diagnostics')
+const renderingModeTitle = trans('Toggle Markdown preview')
 
 const info = computed(() => windowStateStore.activeDocumentInfo)
 const activePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)

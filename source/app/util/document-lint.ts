@@ -1,25 +1,16 @@
-/** Main-process document lint composition for API/workspace consumers. */
+/** Main-process context producer + Flowmark lint adapter for API/workspace consumers. */
 
-import { extractReferences } from "@common/pandoc-util/extract-references";
-import { resolveWorkspace } from "@common/pandoc-util/resolve-references";
-import type { MathJaxMacro } from "@common/util/mathjax-config";
-import { referenceLintText } from "@common/util/reference-lint-core";
-import { scholarlyLintText } from "@common/util/scholarly-lint-core";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
-import { standardTexControlWords } from "@common/util/standard-tex-control-words";
-import { tikzCompileLintText } from "@common/util/tikz-compile-lint-core";
-import type { DocumentReferenceSnapshot, Resolution } from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import path from "node:path";
 import { lintMarkdownText } from "./flowmark-lint";
-import { loadCanonicalMathJaxMacros, loadCanonicalTexMacroCommands } from "./load-mathjax-macros";
-import { resolveTexResources } from "./tex-resource-resolver";
-import { renderTikz, type TikzRenderConfig } from "./tikz-render";
+import type { TikzRenderConfig } from "./tikz-render";
+import { buildFlowmarkLintContext } from "./flowmark-lint-context";
 
 export interface DocumentLintSharedContext {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
-  knownCommands: ReadonlySet<string>;
-  configuredMacros: ReadonlyMap<string, MathJaxMacro>;
+  macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
   citationKeys: ReadonlySet<string> | null;
   tikzRenderConfig: TikzRenderConfig;
@@ -48,44 +39,15 @@ function offsetForLineColumn(text: string, line: number, column: number): number
   return Math.min(offset + lines[lineIndex].length, offset + Math.max(0, Math.trunc(column) - 1));
 }
 
-function exactReferenceContext(
-  documentPath: string,
-  text: string,
-  referenceState: WorkspaceReferenceState | undefined,
-):
-  | { snapshot: DocumentReferenceSnapshot; resolutions: ReadonlyMap<string, Resolution> }
-  | undefined {
-  if (referenceState === undefined) {
-    return undefined;
-  }
-  const snapshot = extractReferences(documentPath, text);
-  const snapshots = referenceState.snapshots
-    .filter((candidate) => candidate.documentPath !== documentPath)
-    .concat(snapshot);
-  return { snapshot, resolutions: resolveWorkspace(snapshots) };
-}
-
 export async function createDocumentLintContext(
   options: CreateDocumentLintContextOptions,
 ): Promise<DocumentLintSharedContext> {
-  const [mathJaxMacros, compilerCommands] = await Promise.all([
-    loadCanonicalMathJaxMacros(options.homeDirectory),
-    loadCanonicalTexMacroCommands(options.homeDirectory),
-  ]);
-  const knownCommands = new Set(standardTexControlWords());
-  for (const name of Object.keys(mathJaxMacros)) {
-    knownCommands.add(`\\${name}`);
-  }
-  for (const command of compilerCommands) {
-    knownCommands.add(command);
-  }
-  const configuredMacros = new Map<string, MathJaxMacro>(
-    Object.entries(mathJaxMacros).map(([name, definition]) => [`\\${name}`, definition]),
-  );
   return {
     ...options,
-    knownCommands,
-    configuredMacros,
+    macroSources: [
+      path.join(options.homeDirectory, ".pandoc", "styles", "macros"),
+      path.join(options.homeDirectory, ".pandoc", "templates", "css", "mathjax-macros.json"),
+    ],
     citationKeys: options.citationKeys ?? null,
   };
 }
@@ -96,10 +58,18 @@ export async function lintDocumentText(
   context: DocumentLintSharedContext,
   options: DocumentLintDocumentOptions = {},
 ): Promise<SourceLintDiagnostic[]> {
-  const citationKeys = options.citationKeys ?? context.citationKeys;
   const diagnostics: SourceLintDiagnostic[] = [];
+  const flowmarkContext = await buildFlowmarkLintContext(
+    text,
+    documentPath,
+    context,
+    options,
+  );
 
-  const flowmark = await lintMarkdownText(text, { sourcePath: documentPath });
+  const flowmark = await lintMarkdownText(text, {
+    sourcePath: documentPath,
+    context: flowmarkContext,
+  });
   if (flowmark.ok) {
     for (const diagnostic of flowmark.diagnostics) {
       diagnostics.push({
@@ -107,8 +77,9 @@ export async function lintDocumentText(
         to: offsetForLineColumn(text, diagnostic.end_line, diagnostic.end_column),
         severity: diagnostic.severity,
         message: diagnostic.message,
-        source: "flowmark",
+        source: "Markdown",
         rule: diagnostic.rule,
+        data: diagnostic.data,
       });
     }
   } else {
@@ -116,46 +87,17 @@ export async function lintDocumentText(
       from: 0,
       to: Math.min(1, text.length),
       severity: "error",
-      message: `Flowmark linter unavailable: ${flowmark.message}`,
-      source: "flowmark-lint",
+      message: `Markdown linting is unavailable: ${flowmark.message}`,
+      source: "Markdown linter",
       rule: flowmark.kind,
     });
   }
-
-  diagnostics.push(
-    ...(await scholarlyLintText(text, {
-      knownCommands: context.knownCommands,
-      configuredMacros: context.configuredMacros,
-      sourcePath: documentPath,
-      projectRoots: options.projectRoots ?? [],
-      resolveResources: async (request) =>
-        await resolveTexResources(request, context.homeDirectory, context.env),
-    })),
-  );
-
-  const references = exactReferenceContext(documentPath, text, context.referenceState);
-  if (references !== undefined) {
-    diagnostics.push(
-      ...referenceLintText(text, {
-        ...references,
-        citationKeys,
-      }),
-    );
-  }
-
-  diagnostics.push(
-    ...(await tikzCompileLintText(
-      text,
-      documentPath,
-      async (request) => await renderTikz(request, context.tikzRenderConfig),
-    )),
-  );
 
   return diagnostics.sort(
     (a, b) =>
       a.from - b.from ||
       a.to - b.to ||
       a.severity.localeCompare(b.severity) ||
-      a.message.localeCompare(b.message),
+      (a.rule ?? "").localeCompare(b.rule ?? ""),
   );
 }

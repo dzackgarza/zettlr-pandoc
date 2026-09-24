@@ -240,10 +240,34 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   regenerates that central projection before launch.
 - **Logs:** launcher `~/.cache/zettlr-pandoc-dev.log`; app `~/.config/Zettlr-Pandoc/logs/`.
 - **In-editor Markdown linter** is the standalone Flowmark linter pinned at
-  `vendor/flowmark` (`flowmark-lint`). Zettlr's
-  `source/common/modules/markdown-editor/linters/md-lint.ts` is only a
-  CodeMirror/IPC adapter; Markdown/Pandoc parsing and lint semantics belong in
-  Flowmark. The project's own source-code linter is ESLint
+  `vendor/flowmark` (`flowmark-lint`). The editor has no rule/linter layer of
+  its own: external providers implement the editor-neutral contract in
+  `source/common/diagnostics/external-linter.ts`, and exactly one
+  CodeMirror bridge exists at
+  `source/common/modules/markdown-editor/diagnostics/external-linter-adapter.ts`.
+  External process execution likewise has one IPC seam,
+  `run-external-linter`, backed by registrations in
+  `source/app/util/external-linter-registry.ts`; do not create provider-specific
+  lint IPC commands. Editor integration is registration-only through
+  `markdown-editor/diagnostics/markdown-diagnostic-plugins.ts`.
+  Provider-specific code must not call CodeMirror's `linter(...)` or define
+  editor-owned lint semantics. If a provider needs a source projection (for
+  example LanguageTool's Pandoc/math projection), that transformation belongs
+  inside the provider/plugin and must return diagnostics mapped to the original
+  source offsets. Flowmark owns the whole lint surface for Pandoc mathematics:
+  Markdown structure, the TeX inside math and raw TeX (commands, macros,
+  packages, resources), notation, cross-references, citations and TikZ
+  compiler findings. Those rules live in the Flowmark package itself
+  (`vendor/flowmark/src/flowmark/lint_authoring.py`), not in this repository.
+  Every Flowmark rule has a stable rule id and must be runnable from the
+  Flowmark CLI. Rule enablement/severity/options belong to Flowmark config.
+  Zettlr supplies only context data (`source/app/util/flowmark-lint-context.ts`:
+  macro source paths, active packages, workspace reference resolutions,
+  citation keys, compiler findings) and must not own any rule decision or run
+  a CodeMirror linter of its own. Macro-sensitive rules load the declared macro
+  sources themselves, so the same checks run from `flowmark-lint`; do not
+  precompute a GUI-owned macro inventory for linting. The
+  project's own source-code linter is ESLint
   (`eslint.config.mjs`).
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)

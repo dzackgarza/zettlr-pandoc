@@ -180,18 +180,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Markdown Style'),
-      infoString: trans('Check your Markdown documents for style issues'),
-      group: PreferencesGroups.Editor,
-      fields: [
-        {
-          type: 'checkbox',
-          label: trans('Enable Markdown Linter'),
-          model: 'editor.lint.markdown'
-        }
-      ]
-    },
-    {
       title: trans('Table Editor'),
       group: PreferencesGroups.Editor,
       titleField: {
@@ -318,7 +306,7 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       title: trans('Snippets'),
       group: PreferencesGroups.Editor,
       help: undefined, // TODO
-      infoString: trans('Snippets participate in the normal ranked autocomplete menu. QuickTeX expansion is configured separately under Snippets and owns exact-prefix Space expansion.'),
+      infoString: trans('Snippets appear in autocomplete. QuickTeX is configured separately and expands exact prefixes when you press Space.'),
       fields: [
         {
           type: 'checkbox',

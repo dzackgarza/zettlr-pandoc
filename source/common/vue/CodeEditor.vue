@@ -33,8 +33,12 @@ import { lua } from '@codemirror/legacy-modes/mode/lua'
 import { EditorState, type Extension } from '@codemirror/state'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
-import { yamlLint } from '@common/modules/markdown-editor/linters/yaml-lint'
 import { lintGutter } from '@codemirror/lint'
+import { externalLinterExtension } from '@common/modules/markdown-editor/diagnostics/external-linter-adapter'
+import {
+  jsonDiagnosticProvider,
+  yamlDiagnosticProvider
+} from '@common/diagnostics/providers/structured-data'
 import { showStatusbarEffect, statusbar } from '@common/modules/markdown-editor/statusbar'
 import { search } from '@codemirror/search'
 import { history } from '@codemirror/commands'
@@ -115,7 +119,10 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
       return [
         ...extensions,
         yaml(),
-        yamlLint
+        externalLinterExtension({
+          provider: yamlDiagnosticProvider,
+          context: () => undefined
+        })
       ]
     case 'css':
       return [
@@ -125,7 +132,14 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
     case 'jsonc':
       return [
         ...extensions,
-        json()
+        json(),
+        externalLinterExtension({
+          provider: jsonDiagnosticProvider,
+          context: () => ({
+            allowComments: true,
+            allowTrailingComma: true
+          })
+        })
       ]
     case 'lua':
       return [

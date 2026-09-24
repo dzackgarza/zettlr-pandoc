@@ -3,7 +3,7 @@
     ref="mainEditorWrapper"
     class="main-editor-wrapper"
     role="region"
-    :aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
+    :aria-label="`Editing ${pathBasename(props.file.path)}`"
     :style="{ 'font-size': `${fontSize}px` }"
     :class="{
       'code-file': !isMarkdown,
@@ -680,7 +680,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     zknAddFileTitle: zkn.linkAddFileTitle,
     linkWithIDIfPossible: zkn.linkWithIDIfPossible,
     inputMode: editor.inputMode,
-    lintMarkdown: editor.lint.markdown,
     // The editor only needs to know if it should use languageTool
     lintLanguageTool: editor.lint.languageTool.active,
     distractionFree: props.distractionFree.valueOf(),

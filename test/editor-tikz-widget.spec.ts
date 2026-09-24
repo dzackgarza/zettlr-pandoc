@@ -31,14 +31,15 @@ import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
+import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
 import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
-import { tikzCompileLintSource } from "source/common/modules/markdown-editor/linters/tikz-compile-lint";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetTikzRenderMemoForTests,
   renderTikzFigures,
 } from "source/common/modules/markdown-editor/renderers/render-tikz";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
+import { requestTikzRender } from "source/common/modules/markdown-editor/tikz-render-client";
 import {
   configField,
   type EditorConfiguration,
@@ -552,7 +553,7 @@ describe("TikZ editor widgets (issue #14)", function () {
     );
   });
 
-  it("reports a failed TikZ compilation as an immediate CodeMirror lint error", async function () {
+  it("maps a failed TikZ compilation to standalone compiler context for Flowmark", async function () {
     respond = (request) =>
       request.kind === "raw"
         ? {
@@ -575,10 +576,13 @@ describe("TikZ editor widgets (issue #14)", function () {
             texFontSizePt: 10,
           };
     const view = createEditor();
-    const diagnostics = await tikzCompileLintSource(view);
-    const compile = diagnostics.find((diagnostic) => diagnostic.source === "tikz-compile");
+    const diagnostics = await collectTikzCompilerFindings(
+      view.state.doc.toString(),
+      view.state.field(configField).metadata.path,
+      requestTikzRender,
+    );
+    const compile = diagnostics[0];
     assert.ok(compile !== undefined);
-    assert.equal(compile.severity, "error");
     assert.match(compile.message, /Undefined control sequence/u);
     assert.equal(view.state.doc.lineAt(compile.from).number, 4);
   });

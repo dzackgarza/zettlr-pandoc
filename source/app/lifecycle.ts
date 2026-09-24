@@ -36,11 +36,6 @@ import {
 import { projectQuiverMacros, type QuiverMacrosIPCResponse } from "./util/quiver-macros";
 import resolveTimespanMs from "./util/resolve-timespan-ms";
 import {
-  resolveTexResources,
-  type TexResourceProbeRequest,
-  type TexResourceProbeResult,
-} from "./util/tex-resource-resolver";
-import {
   resolveTikzTemplatePath,
   type TikzCompletionIPCResponse,
   tikzTemplateCompletions,
@@ -54,10 +49,6 @@ import {
  */
 export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
 export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
-export interface TexResourceProbeIPCContract {
-  request: TexResourceProbeRequest;
-  response: TexResourceProbeResult[];
-}
 export type { QuiverMacrosIPCResponse, TikzCompletionIPCResponse };
 
 // Statistics: Record the uptime of the application
@@ -114,12 +105,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   ipcMain.handle("tex-macro-commands", async (): Promise<TexMacroCommandsIPCResponse> => {
     return await loadCanonicalTexMacroCommands(app.getPath("home"));
   });
-  ipcMain.handle(
-    "tex-resource-probe",
-    async (_event, request: TexResourceProbeRequest): Promise<TexResourceProbeResult[]> => {
-      return await resolveTexResources(request, app.getPath("home"));
-    },
-  );
   ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
   });

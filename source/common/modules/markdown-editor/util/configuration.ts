@@ -75,7 +75,6 @@ export interface EditorConfiguration {
   readabilityMode: boolean
   typewriterMode: boolean
   distractionFree: boolean
-  lintMarkdown: boolean
   lintLanguageTool: boolean
   darkMode: boolean
   darkModeEditor: 'match'|'light'|'dark'
@@ -141,7 +140,6 @@ export function getDefaultConfig (): EditorConfiguration {
     readabilityMode: false,
     typewriterMode: false,
     distractionFree: false,
-    lintMarkdown: false,
     lintLanguageTool: false,
     darkMode: false,
     darkModeEditor: 'match',

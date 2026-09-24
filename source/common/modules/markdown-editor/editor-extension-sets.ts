@@ -18,7 +18,7 @@
 
 import { closeBrackets } from "@codemirror/autocomplete";
 import { history } from "@codemirror/commands";
-import { json, jsonParseLinter } from "@codemirror/lang-json";
+import { json } from "@codemirror/lang-json";
 import { yaml } from "@codemirror/lang-yaml";
 import {
   bracketMatching,
@@ -29,7 +29,7 @@ import {
   StreamLanguage,
 } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
-import { linter, lintGutter } from "@codemirror/lint";
+import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
 import { Compartment, EditorState, type Extension, Prec } from "@codemirror/state";
 import {
@@ -48,14 +48,13 @@ import {
   texKnowledgeExtensions,
 } from "./autocomplete/tex";
 import { markdownFolding } from "./code-folding/markdown";
+import { externalLinterExtension } from "./diagnostics/external-linter-adapter";
+import { markdownDiagnosticExtensions } from "./diagnostics/markdown-diagnostic-plugins";
 import { zettlrKeymap } from "./keymaps";
-import { languageTool } from "./linters/language-tool";
-import { mdLint } from "./linters/md-lint";
-import { referenceLint } from "./linters/reference-lint";
-import { scholarlyLint } from "./linters/scholarly-lint";
-import { spellcheck } from "./linters/spellcheck";
-import { tikzCompileLint } from "./linters/tikz-compile-lint";
-import { yamlFrontmatterLint } from "./linters/yaml-frontmatter-lint";
+import {
+  jsonDiagnosticProvider,
+  yamlDiagnosticProvider
+} from "@common/diagnostics/providers/structured-data";
 import markdownParser from "./parser/markdown-parser";
 import { backgroundLayers } from "./plugins/code-background";
 import { defaultContextMenu } from "./plugins/default-context-menu";
@@ -313,33 +312,11 @@ function getGenericCodeExtensions(options: CoreExtensionOptions): Extension[] {
  * @return  {Extension[]}                    An array of Markdown extensions
  */
 export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[] {
-  // The following linters are always active: The spellcheck because that is
-  // turned on and off with the dictionary settings, and the yamlFrontmatterNode
-  // because if that thing has an error, that thing has an error.
-  const mdLinterExtensions = [
-    spellcheck,
-    yamlFrontmatterLint,
-    // Reference contradictions (duplicate keys, missing references,
-    // class/prefix mismatches) are correctness findings like a broken
-    // frontmatter, so the linter is always active (issue #1 Phase 4). It
-    // reports nothing until the workspace reference view arrives.
-    referenceLint,
-    // A source block which the live renderer cannot compile is a document
-    // correctness error at the authored TikZ line. The renderer and this lint
-    // source share one request memo, so immediate feedback does not duplicate
-    // compilation work while the figure widget is rendering.
-    tikzCompileLint,
-  ];
+  const diagnosticExtensions = markdownDiagnosticExtensions();
 
-  if (options.initialConfig.lintMarkdown) {
-    mdLinterExtensions.push(mdLint, scholarlyLint);
-  }
-
-  // The correctness linters above report whatever the user's lint settings
-  // say, so the gutter they report INTO cannot be optional either — without
-  // it their findings have nowhere to appear. The gutter draws nothing while
-  // no diagnostic exists.
-  mdLinterExtensions.push(
+  // The gutter is presentation-only. Provider semantics and configuration do
+  // not live in the editor.
+  diagnosticExtensions.push(
     lintGutter({
       markerFilter(diagnostics) {
         // Show any linter warnings and errors in the gutter *except* wrongly
@@ -367,9 +344,8 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     markdownSyntaxHighlighter(),
     renderers(options.initialConfig),
     showLineNumbers(options.initialConfig.showMarkdownLineNumbers),
-    mdLinterExtensions,
+    diagnosticExtensions,
     headingGutter,
-    languageTool,
     // Some statistics we need for Markdown documents
     countPlugin,
     countField,
@@ -439,6 +415,10 @@ export function getYAMLExtensions(options: CoreExtensionOptions): Extension[] {
     yaml(),
     texKnowledgeExtensions("yaml"),
     texCommandAutocomplete,
+    externalLinterExtension({
+      provider: yamlDiagnosticProvider,
+      context: () => undefined
+    }),
   ];
 }
 
@@ -452,5 +432,15 @@ export function getYAMLExtensions(options: CoreExtensionOptions): Extension[] {
  * @return  {Extension[]}                    An array of options for JSON files
  */
 export function getJSONExtensions(options: CoreExtensionOptions): Extension[] {
-  return [...getGenericCodeExtensions(options), json(), linter(jsonParseLinter())];
+  return [
+    ...getGenericCodeExtensions(options),
+    json(),
+    externalLinterExtension({
+      provider: jsonDiagnosticProvider,
+      context: () => ({
+        allowComments: false,
+        allowTrailingComma: false
+      })
+    })
+  ];
 }

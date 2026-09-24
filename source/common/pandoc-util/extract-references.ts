@@ -51,7 +51,7 @@ export interface LocatedAttribute {
 /**
  * Parses an authored attribute block and locates the full id token.
  *
- * This is the single id-token locator (review B6): reference-lint imports it
+ * This is the single id-token locator for reference extraction consumers
  * instead of keeping a parallel copy. It fails LOUD on an inconsistent
  * attribute block (an id the parser reported but the authored text does not
  * contain is a parser bug, not an authorable state) — callers must not

@@ -35,8 +35,8 @@ import FileFindAndReturnMetaData from './file-find-and-return-meta-data'
 import ImportLangFile from './import-lang-file'
 import ImportFiles from './import'
 import IncreasePomodoro from './increase-pomodoro'
-import LanguageTool from './language-tool'
-import LintMarkdown from './lint-markdown'
+import AddLanguageToolIgnoreRule from './add-language-tool-ignore-rule'
+import RunExternalLinter from './run-external-linter'
 import OpenAttachment from './open-attachment'
 import OpenAuxWindow from './open-aux-window'
 import Print from './print'
@@ -65,7 +65,6 @@ import type { SaveImageFromClipboardAPI } from './save-image-from-clipboard'
 import type { DirBindQuartoManifestAPI, DirBindQuartoManifestOutcome } from './dir-bind-quarto-manifest'
 import type { DirSettingsCommandAPI } from './dir-settings'
 import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
-import type { LanguageToolLinterRequest, LanguageToolLinterResponse } from './language-tool'
 import type { LanguageToolIgnoredRuleEntry } from '../config/get-config-template'
 import type { ProgrammaticallyOpenableWindows } from './open-aux-window'
 import type { FindFileAndReturnMetadataResult } from './file-find-and-return-meta-data'
@@ -78,13 +77,16 @@ import type {
   UndoRenameOutcome
 } from '@common/pandoc-util/compute-reference-edits'
 import type { FormatResult } from '@common/modules/markdown-editor/commands/format-document'
-import type { FlowmarkLintRequest, FlowmarkLintResult } from '@dts/common/flowmark-lint'
 import type { LinkPreviewResult } from '@common/util/fetch-link-preview'
 import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
 import { discoverJustfileCommands } from 'source/app/util/justfile-commands'
 import { justRecipeCommand, launchKitty } from 'source/app/util/kitty-launch'
 import path from 'node:path'
 import type { PreferenceNavigationTarget } from '@dts/common/preferences'
+import type {
+  ExternalLinterRunRequest,
+  ExternalLinterRunResponse
+} from '@common/diagnostics/external-linter'
 
 export const commands = [
   DirBindQuartoManifest,
@@ -109,8 +111,8 @@ export const commands = [
   ImportFiles,
   ImportLangFile,
   IncreasePomodoro,
-  LanguageTool,
-  LintMarkdown,
+  AddLanguageToolIgnoreRule,
+  RunExternalLinter,
   OpenAttachment,
   OpenAuxWindow,
   Print,
@@ -228,10 +230,6 @@ export type ApplicationIPCContract = {
     request: { payload: string }
     response: FormatResult
   }
-  'lint-markdown': {
-    request: { payload: FlowmarkLintRequest }
-    response: FlowmarkLintResult
-  }
   // Answered inline by run(): enumDictFiles().map(elem => elem.tag).
   'get-available-dictionaries': {
     request: { payload?: undefined }
@@ -337,9 +335,9 @@ export type ApplicationIPCContract = {
     request: { payload: string[] }
     response: unknown
   }
-  'run-language-tool': {
-    request: { payload: LanguageToolLinterRequest }
-    response: LanguageToolLinterResponse
+  'run-external-linter': {
+    request: { payload: ExternalLinterRunRequest }
+    response: ExternalLinterRunResponse
   }
   'save-image-from-clipboard': {
     request: { payload: SaveImageFromClipboardAPI | { startPath: string } }

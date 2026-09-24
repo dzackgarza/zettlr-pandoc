@@ -34,6 +34,10 @@ jobs:
         run: just setup-ci
       - name: Install packages
         run: bun ci
+      - name: Verify pinned Pandoc parser reference data
+        run: bun run check:pandoc-reference-data
+      - name: Test standalone Flowmark lint engine and plugins
+        run: just test-flowmark-lint
       - name: Configure Electron SUID sandbox
         run: |
           bash scripts/configure-electron-sandbox-ci.sh

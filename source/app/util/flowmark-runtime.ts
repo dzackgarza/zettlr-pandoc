@@ -53,6 +53,18 @@ export function vendoredFlowmarkProjectPath (): string {
   return path.resolve('vendor', 'flowmark')
 }
 
+/** Locate a packaged/development external-linter process plugin. */
+export function externalLinterPluginPath (filename: string): string {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+  if (resourcesPath !== undefined) {
+    const packaged = path.join(resourcesPath, 'linter-plugins', filename)
+    if (existsSync(packaged)) {
+      return packaged
+    }
+  }
+  return path.resolve('linter-plugins', filename)
+}
+
 /** `uv run` argv that runs an entry point from the pinned local submodule. */
 export function vendoredFlowmarkArgs (
   entrypoint: 'flowmark' | 'flowmark-lint',
@@ -131,7 +143,7 @@ export async function runFlowmarkProcess (
         settle({
           ok: false,
           kind: 'flowmark-timeout',
-          message: `Flowmark did not complete within ${String(options.timeoutMs)}ms and was terminated`
+          message: `Markdown processing did not complete within ${String(options.timeoutMs)} ms`
         })
       } else if (code === 0) {
         settle({ ok: true, stdout: stdout.join(''), stderr: stderr.join('') })
@@ -139,7 +151,7 @@ export async function runFlowmarkProcess (
         settle({
           ok: false,
           kind: 'flowmark-error',
-          message: stderr.join('').trim() || `Flowmark exited with code ${String(code)}`
+          message: stderr.join('').trim() || `Markdown processing failed with exit code ${String(code)}`
         })
       }
     })

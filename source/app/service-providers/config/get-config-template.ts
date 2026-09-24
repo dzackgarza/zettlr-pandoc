@@ -261,7 +261,6 @@ export interface ConfigOptions {
     highlightFormatting: "span" | "==";
     readabilityAlgorithm: "dale-chall" | "gunning-fog" | "coleman-liau" | "automated-readability";
     lint: {
-      markdown: boolean;
       languageTool: {
         active: boolean;
         level: "picky" | "default";
@@ -273,7 +272,7 @@ export interface ConfigOptions {
           ca: string;
         };
         ignoredRules: LanguageToolIgnoredRuleEntry[];
-        provider: "official" | "custom";
+        provider: "cli" | "official" | "custom";
         customServer: string;
         username: string;
         apiKey: string;
@@ -496,7 +495,6 @@ export function getConfigTemplate(): ConfigOptions {
       highlightFormatting: "==", // Can be 'span' or ==
       readabilityAlgorithm: "dale-chall", // The algorithm to use with readability mode.
       lint: {
-        markdown: true, // Should Markdown be linted?
         languageTool: {
           active: false, // Utilize languageTool?
           level: "default", // API: https://languagetool.org/http-api/#!/default/post_check
@@ -511,7 +509,7 @@ export function getConfigTemplate(): ConfigOptions {
           // This is an (initially empty) array of rules the user chose to
           // ignore globally.
           ignoredRules: [],
-          provider: "official",
+          provider: "cli",
           customServer: "",
           username: "",
           apiKey: "",

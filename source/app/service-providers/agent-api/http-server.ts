@@ -885,7 +885,7 @@ export default class AgentHTTPProvider extends ProviderContract {
             .map((error) =>
               typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
             )
-            .join("; ") || "Request does not match the published schema",
+            .join("; ") || "Request fields are invalid",
         ),
 
       notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
@@ -1202,14 +1202,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         res,
         STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
         "DUPLICATE_CLAIM_DESCRIPTION",
-        `claims[${firstIndex}] and claims[${secondIndex}] have ${similarityPercent}% similar descriptions ` +
-          `(rejection threshold: ${Math.round(CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD * 100)}%). ` +
-          "A claim description is the per-edit diagnosis and justification shown to the reviewer, not a batch label. " +
-          "Repeating the same reason across multiple edits hides whether each edit was independently analyzed and " +
-          "forces the reviewer to reconstruct the rationale from the diff. Rewrite each conflicting description so it " +
-          "uniquely states: (1) the specific defect at that edit's location/context, (2) what this claim changes there, " +
-          "and (3) why that particular change fixes the defect. Shared background may repeat, but the edit-specific " +
-          "diagnosis, change, and justification must be distinct.",
+        `claims[${firstIndex}] and claims[${secondIndex}] have descriptions that are ${similarityPercent}% similar ` +
+          `(limit: ${Math.round(CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD * 100)}%). ` +
+          "Give each claim its own description of the specific problem, change, and reason.",
         {
           conflictingClaimIndices: [firstIndex, secondIndex],
           descriptionSimilarity: similarity,
@@ -1437,8 +1432,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         res,
         409,
         "DOCUMENT_CLOSED",
-        `The reviewed document ${query.sidecar.documentPath} is not open. ` +
-          "Open it to reattach this review, then decide its chunks.",
+        `The reviewed document ${query.sidecar.documentPath} is closed. Open it before changing this review.`,
       );
       return;
     }
@@ -1660,7 +1654,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private handleListCitationDatabases(res: http.ServerResponse): void {
     if (this._citeproc === undefined) {
-      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
@@ -1668,7 +1662,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private handleListCitationItems(res: http.ServerResponse, database: string | undefined): void {
     if (this._citeproc === undefined) {
-      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     const db = database ?? "main";
@@ -1691,7 +1685,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     database: string | undefined,
   ): void {
     if (this._citeproc === undefined) {
-      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     const db = database ?? "main";
@@ -1714,7 +1708,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
     if (this._citeproc === undefined) {
-      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     const db = body.database ?? "main";
@@ -1747,7 +1741,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     body: RenderBibliographyRequest,
   ): void {
     if (this._citeproc === undefined) {
-      this.sendError(res, 503, "APP_NOT_RUNNING", "Citation provider is not available");
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     const db = body.database ?? "main";
@@ -2150,6 +2144,7 @@ export default class AgentHTTPProvider extends ProviderContract {
               message: diagnostic.message,
               source: diagnostic.source,
               ...(diagnostic.rule === undefined ? {} : { rule: diagnostic.rule }),
+              ...(diagnostic.data === undefined ? {} : { data: diagnostic.data }),
             };
           });
         documents.push({

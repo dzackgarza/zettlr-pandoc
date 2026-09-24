@@ -261,6 +261,7 @@ module.exports = {
       // linter syntax authority. Keep the complete Python project outside the
       // asar so uvx can install/run this exact local source in production.
       path.join(__dirname, 'vendor', 'flowmark'),
+      path.join(__dirname, 'linter-plugins'),
       ...(process.platform === 'darwin'
         ? [
             'resources/icons/icon.code.icns',

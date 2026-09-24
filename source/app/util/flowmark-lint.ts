@@ -20,6 +20,9 @@ import {
   vendoredFlowmarkArgs,
   type FlowmarkProcessFailureKind
 } from './flowmark-runtime'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import os from 'os'
+import path from 'path'
 import type {
   FlowmarkLintDiagnostic,
   FlowmarkLintResult,
@@ -35,10 +38,12 @@ export interface FlowmarkLintOptions {
   timeoutMs?: number
   /** Real document path used by Flowmark to resolve relative links. */
   sourcePath?: string
+  /** JSON-serializable data Flowmark's rules read as lint context. */
+  context?: Record<string, unknown>
 }
 
 function severity (value: unknown): value is FlowmarkLintSeverity {
-  return value === 'error' || value === 'warning'
+  return value === 'error' || value === 'warning' || value === 'info'
 }
 
 function diagnostic (value: unknown): value is FlowmarkLintDiagnostic {
@@ -53,6 +58,8 @@ function diagnostic (value: unknown): value is FlowmarkLintDiagnostic {
     typeof candidate.column === 'number' &&
     typeof candidate.end_line === 'number' &&
     typeof candidate.end_column === 'number' &&
+    (candidate.data === undefined ||
+      (typeof candidate.data === 'object' && candidate.data !== null && !Array.isArray(candidate.data))) &&
     (candidate.replacement === undefined ||
       candidate.replacement === null ||
       typeof candidate.replacement === 'string')
@@ -113,18 +120,32 @@ export async function lintMarkdownText (
   if (options.sourcePath !== undefined && options.sourcePath !== '') {
     lintArgs.push('--source-path', options.sourcePath)
   }
+  let contextDirectory: string | undefined
+  if (options.context !== undefined) {
+    contextDirectory = await mkdtemp(path.join(os.tmpdir(), 'zettlr-flowmark-lint-'))
+    const contextPath = path.join(contextDirectory, 'context.json')
+    await writeFile(contextPath, JSON.stringify(options.context), 'utf8')
+    lintArgs.push('--context', contextPath)
+  }
   lintArgs.push('-')
 
-  const result = await runFlowmarkProcess({
-    command: options.command,
-    argv: options.args ?? vendoredFlowmarkArgs(
-      'flowmark-lint',
-      lintArgs
-    ),
-    input: text,
-    env: options.env,
-    timeoutMs: options.timeoutMs ?? FLOWMARK_LINT_TIMEOUT_MS
-  })
+  let result
+  try {
+    result = await runFlowmarkProcess({
+      command: options.command,
+      argv: options.args ?? vendoredFlowmarkArgs(
+        'flowmark-lint',
+        lintArgs
+      ),
+      input: text,
+      env: options.env,
+      timeoutMs: options.timeoutMs ?? FLOWMARK_LINT_TIMEOUT_MS
+    })
+  } finally {
+    if (contextDirectory !== undefined) {
+      await rm(contextDirectory, { recursive: true, force: true })
+    }
+  }
   if (!result.ok) {
     return {
       ok: false,
@@ -140,7 +161,7 @@ export async function lintMarkdownText (
     return {
       ok: false,
       kind: 'flowmark-invalid-output',
-      message: 'Flowmark linter returned invalid JSON output.'
+      message: 'Markdown linting returned invalid output.'
     }
   }
 

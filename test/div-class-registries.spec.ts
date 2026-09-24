@@ -11,7 +11,7 @@
  *                  referenceable half from THEOREM_FAMILY_METADATA, so a
  *                  referenceable class can no longer be missing a semantic
  *                  family. What derivation does NOT settle is which family it
- *                  gets: reference-lint warns on every labeled proof-family
+ *                  gets: Flowmark reference rules warn on every labeled proof-family
  *                  div, so a referenceable class mapped to the proof family
  *                  would make that warning contradict the completion surface
  *                  offering the same class as a label target.

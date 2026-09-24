@@ -1,8 +1,8 @@
 /**
- * The editor-neutral diagnostic contract emitted by the standalone Flowmark
- * linter and transported into renderer CodeMirror instances.
+ * Wire types emitted by the standalone Flowmark CLI and consumed by the
+ * main-process Flowmark backend.
  */
-export type FlowmarkLintSeverity = 'error' | 'warning'
+export type FlowmarkLintSeverity = 'error' | 'warning' | 'info'
 
 export interface FlowmarkLintDiagnostic {
   rule: string
@@ -14,12 +14,7 @@ export interface FlowmarkLintDiagnostic {
   end_line: number
   end_column: number
   replacement?: string | null
-}
-
-export interface FlowmarkLintRequest {
-  text: string
-  /** Real document path, when known, for relative-link/fragment validation. */
-  sourcePath?: string
+  data?: Record<string, unknown>
 }
 
 export type FlowmarkLintResult =

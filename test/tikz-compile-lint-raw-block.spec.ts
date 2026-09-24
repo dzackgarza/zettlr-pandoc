@@ -1,8 +1,8 @@
 /** Raw-block compiler diagnostics map through parser-owned authored line ranges. */
 
 import { strict as assert } from "assert";
+import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
 import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
-import { tikzCompileLintText } from "source/common/util/tikz-compile-lint-core";
 
 const failure: TikzRenderResult = {
   ok: false,
@@ -17,10 +17,10 @@ const failure: TikzRenderResult = {
   log: "! Undefined control sequence.\n",
 };
 
-async function lint(
+async function compilerFindings(
   markdown: string,
-): Promise<ReturnType<typeof tikzCompileLintText> extends Promise<infer T> ? T : never> {
-  return await tikzCompileLintText(
+): Promise<Awaited<ReturnType<typeof collectTikzCompilerFindings>>> {
+  return await collectTikzCompilerFindings(
     markdown,
     "/notes/example.md",
     async (_request: TikzRenderRequest) => failure,
@@ -37,7 +37,7 @@ describe("TikZ compile diagnostics for structural raw blocks", function () {
       "> \\end{tikzpicture}",
       "",
     ].join("\n");
-    const [diagnostic] = await lint(doc);
+    const [diagnostic] = await compilerFindings(doc);
     assert.ok(diagnostic !== undefined);
     assert.strictEqual(doc.slice(diagnostic.from, diagnostic.to), "  \\draw \\nope;");
   });
@@ -51,7 +51,7 @@ describe("TikZ compile diagnostics for structural raw blocks", function () {
       "  \\end{tikzpicture}",
       "",
     ].join("\n");
-    const [diagnostic] = await lint(doc);
+    const [diagnostic] = await compilerFindings(doc);
     assert.ok(diagnostic !== undefined);
     assert.strictEqual(doc.slice(diagnostic.from, diagnostic.to), "  \\draw \\nope;");
   });

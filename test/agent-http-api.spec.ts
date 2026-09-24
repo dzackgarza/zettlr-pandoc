@@ -1513,8 +1513,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(
       focusedPayload.documents[0].diagnostics.some(
         (diagnostic) =>
-          diagnostic.source === "scholarly-lint" &&
-          diagnostic.message.includes("DefinitelyMissing"),
+          diagnostic.rule === "tex/unknown-command" &&
+          diagnostic.data?.command === "\\DefinitelyMissing",
       ),
       focused.body,
     );
@@ -1543,7 +1543,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(documentPayload.documents[0].open, false);
     assert.ok(
       documentPayload.documents[0].diagnostics.some((diagnostic) =>
-        diagnostic.message.includes("???"),
+        diagnostic.rule === "document/authorial-residue" &&
+        diagnostic.data?.marker === "???",
       ),
     );
 

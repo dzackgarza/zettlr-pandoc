@@ -9,4 +9,5 @@ export interface SourceLintDiagnostic {
   message: string;
   source: string;
   rule?: string;
+  data?: Record<string, unknown>;
 }

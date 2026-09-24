@@ -1,19 +1,30 @@
-import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import { tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
 import { type TikzSourceBlock, tikzSourceBlocksInMarkdown } from "@common/util/tikz-source-blocks";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderRequest, TikzRenderResult } from "./tikz-render";
+
+export interface TikzCompilerFinding {
+  from: number;
+  to: number;
+  message: string;
+}
 
 function lineRange(block: TikzSourceBlock, lineNumber: number): { from: number; to: number } {
   const index = Math.max(0, Math.min(block.sourceLineRanges.length - 1, lineNumber - 1));
   return block.sourceLineRanges[index];
 }
 
-export async function tikzCompileLintText(
+/**
+ * Run the TikZ compiler and return compiler facts only.
+ *
+ * This is deliberately not a linter: Flowmark's tikz/compile-error extension
+ * rule owns whether and how these compiler findings become lint diagnostics.
+ */
+export async function collectTikzCompilerFindings(
   markdown: string,
   docPath: string,
   render: (request: TikzRenderRequest) => Promise<TikzRenderResult>,
-): Promise<SourceLintDiagnostic[]> {
-  const diagnostics: SourceLintDiagnostic[] = [];
+): Promise<TikzCompilerFinding[]> {
+  const findings: TikzCompilerFinding[] = [];
   for (const block of tikzSourceBlocksInMarkdown(markdown)) {
     const result = await render({
       source: block.source,
@@ -26,26 +37,21 @@ export async function tikzCompileLintText(
     }
     if (result.errors.length > 0) {
       for (const error of result.errors) {
-        diagnostics.push({
+        findings.push({
           ...lineRange(block, error.line),
-          severity: "error",
-          message: `TikZ compilation failed: ${error.message}${error.sourceLine === "" ? "" : ` — ${error.sourceLine}`}`,
-          source: "tikz-compile",
-          rule: "tikz/compile-error",
+          message: "TikZ compilation failed: " + error.message +
+            (error.sourceLine === "" ? "" : " — " + error.sourceLine),
         });
       }
     } else {
       const headline = tikzCompilerLogHeadline(result.log);
-      diagnostics.push({
+      findings.push({
         from: block.sourceFrom,
         to: Math.max(block.sourceFrom, block.sourceTo),
-        severity: "error",
         message:
-          headline === "" ? "TikZ compilation failed." : `TikZ compilation failed: ${headline}`,
-        source: "tikz-compile",
-        rule: "tikz/compile-error",
+          headline === "" ? "TikZ compilation failed." : "TikZ compilation failed: " + headline,
       });
     }
   }
-  return diagnostics.sort((a, b) => a.from - b.from || a.to - b.to);
+  return findings.sort((a, b) => a.from - b.from || a.to - b.to);
 }

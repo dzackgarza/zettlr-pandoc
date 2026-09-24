@@ -24,7 +24,6 @@ import type {
   MathJaxMacrosIPCResponse,
   QuiverMacrosIPCResponse,
   TexMacroCommandsIPCResponse,
-  TexResourceProbeIPCContract,
   TikzCompletionIPCResponse,
 } from "source/app/lifecycle";
 import type { AppearanceProviderIPCContract } from "source/app/service-providers/appearance/ipc-contract";
@@ -91,7 +90,6 @@ export interface IpcInvokeContracts {
 export interface IpcFixedChannelContracts {
   "request-files": RequestFilesIPCContract;
   "close-all": CloseAllIPCContract;
-  "tex-resource-probe": TexResourceProbeIPCContract;
 }
 
 /**

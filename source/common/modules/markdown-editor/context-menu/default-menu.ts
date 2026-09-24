@@ -22,7 +22,7 @@ import { forEachDiagnostic, type Diagnostic, forceLinting, setDiagnostics } from
 import { applyBold, applyItalic, insertLink, applyBlockquote, applyOrderedList, applyBulletList, applyTaskList } from '../commands/markdown'
 import { cut, copyAsPlain, copyAsHTML, paste, pasteAsPlain } from '../util/copy-paste-cut'
 import { getTransformSubmenu } from './transform-items'
-import { extractLTSpellcheckSuggestionsFrom, isLanguageToolMisspelling } from '../linters/language-tool'
+import { extractLTSpellcheckSuggestionsFrom, isLanguageToolMisspelling } from '../diagnostics/language-tool-state'
 import { isProseCompletionPosition } from '../autocomplete/prose-dictionary'
 
 const ipcRenderer = window.ipc
@@ -209,7 +209,7 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
         )
           .then(() => {
             // After we've added the word to the dictionary, we have to invalidate
-            // the spellcheck linter errors that mark this specific word as wrong.
+            // the external spelling diagnostics that mark this word as wrong.
             const filteredDiagnostics: Diagnostic[] = []
             forEachDiagnostic(view.state, (d, from, to) => {
               if (d.source !== 'spellcheck' && !isLanguageToolMisspelling(d)) {

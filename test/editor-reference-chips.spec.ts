@@ -294,7 +294,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'the mixed cluster must not render through the citation widget')
       assert.ok(
         view.contentDOM.textContent.includes('[@thm:torelli; @Ols04, Lem. 7.1]'),
-        'the authored mixed cluster must stay raw (the advisory is a reference-lint diagnostic)'
+        'the authored mixed cluster must stay raw (the advisory is a Flowmark diagnostic)'
       )
     })
   })
