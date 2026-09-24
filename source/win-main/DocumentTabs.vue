@@ -36,7 +36,7 @@
             v-if="file.pinned"
             shape="pin"
           />
-          {{ getDocumentTitle(file) }}
+          {{ getSemanticDocumentTitle(file) }}
         </span>
         <span
           v-if="hasDuplicate(file)"
@@ -100,7 +100,7 @@ import type { AnyMenuItem } from 'source/common/modules/window-register/applicat
 import { trans } from 'source/common/i18n-renderer'
 import showPopupMenu from 'source/common/modules/window-register/application-menu-helper'
 import { closeFile } from './file-manager/util/item-composable'
-import getDocumentTitle from './util/get-document-title'
+import { getSemanticDocumentTitle } from './util/get-document-title'
 
 const ipcRenderer = window.ipc
 
@@ -264,9 +264,9 @@ function scrollActiveFileIntoView (): void {
 
 
 function hasDuplicate (doc: OpenDocument): boolean {
-  const focalTabname = getDocumentTitle(doc).toLowerCase()
+  const focalTabname = getSemanticDocumentTitle(doc).toLowerCase()
   const duplicates = openFiles.value.filter(doc => {
-    return getDocumentTitle(doc).toLowerCase() === focalTabname
+    return getSemanticDocumentTitle(doc).toLowerCase() === focalTabname
   })
 
   // NOTE that `doc` is also contained in `openFiles`, i.e. we should have 1
@@ -278,7 +278,7 @@ function getDirBasename (doc: OpenDocument): string {
 }
 
 function getAccessibleTabLabel (doc: OpenDocument): string {
-  const title = getDocumentTitle(doc)
+  const title = getSemanticDocumentTitle(doc)
   return modifiedPaths.value.includes(doc.path)
     ? `${title} — ${unsavedChangesLabel}`
     : title

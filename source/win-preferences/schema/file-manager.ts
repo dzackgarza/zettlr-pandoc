@@ -66,8 +66,8 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
           options: {
             filename: trans('Filename only'),
             title: trans('Title if applicable'),
-            heading: trans('First heading level 1 if applicable'),
-            'title+heading': trans('Title or first heading level 1 if applicable')
+            heading: trans('First heading if applicable'),
+            'title+heading': trans('Title or first heading if applicable')
           }
         },
         {

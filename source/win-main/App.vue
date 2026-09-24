@@ -245,7 +245,7 @@ import chimeFile from './assets/chime.mp3'
 import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
-import getDocumentTitle from './util/get-document-title'
+import { getSemanticDocumentTitle } from './util/get-document-title'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
@@ -793,7 +793,7 @@ const windowTitle = computed<string>(() => {
     return 'Zettlr'
   }
 
-  return `Zettlr - ${getDocumentTitle(activeFile.value)}`
+  return `Zettlr - ${getSemanticDocumentTitle(activeFile.value)}`
 })
 
 // Simple state machine to trigger which of the three shows up when. Below's the

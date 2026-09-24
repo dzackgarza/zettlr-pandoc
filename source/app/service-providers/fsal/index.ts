@@ -898,7 +898,13 @@ export default class FSAL extends ProviderContract {
     if (avoidDiskAccess) {
       const cacheHit = await this._cache.get(absPath)
       if (cacheHit !== undefined) {
-        return cacheHit
+        if (cacheHit.type !== 'file') {
+          return cacheHit
+        }
+        if (cacheHit.titleMetadataVersion === FSALFile.TITLE_METADATA_VERSION) {
+          return cacheHit
+        }
+        return await FSALFile.refreshTitleMetadata(cacheHit, this._cache)
       }
     }
 

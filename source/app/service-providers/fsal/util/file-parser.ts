@@ -20,16 +20,15 @@ import extractFileId from './extract-file-id'
 import { parse as parseYAML } from 'yaml'
 import {
   markdownToAST,
-  extractASTNodes,
-  extractTextnodes
+  extractASTNodes
 } from '@common/modules/markdown-utils'
 import type {
   CitationNode,
-  Heading,
   YAMLFrontmatter,
   ZettelkastenLink,
   ZettelkastenTag
 } from '@common/modules/markdown-utils/markdown-ast'
+import { documentTitleMetadataFromAST } from '@common/util/document-title-metadata'
 import { extractLinefeed } from './extract-linefeed'
 import { extractReferencesFromAST } from '@common/pandoc-util/extract-references'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../../app-service-container'
@@ -85,13 +84,9 @@ export default function getMarkdownFileParser (
     // extractor's output over identical content.
     file.references = extractReferencesFromAST(file.path, content, ast)
 
-    file.firstHeading = null
-    const headings = extractASTNodes(ast, 'Heading') as Heading[]
-    const firstH1 = headings.find(h => h.level === 1)
-    if (firstH1 !== undefined) {
-      const content = extractTextnodes(firstH1)
-      file.firstHeading = content.map(node => node.whitespaceBefore + node.value).join('').trim()
-    }
+    const titleMetadata = documentTitleMetadataFromAST(ast)
+    file.firstHeading = titleMetadata.firstHeading
+    file.firstSentence = titleMetadata.firstSentence
 
     const locale: string | undefined = isAppServiceContainerReady() ? getAppServiceContainer().config.get('appLang') : undefined
 

@@ -22,6 +22,9 @@ import type FSALCache from './fsal-cache'
 import type { SearchResult, SearchTerm } from '@dts/common/search'
 import { getFilesystemMetadata } from './util/get-fs-metadata'
 import { getAppServiceContainer, isAppServiceContainerReady } from '../../app-service-container'
+import { documentTitleMetadata } from '@common/util/document-title-metadata'
+
+export const TITLE_METADATA_VERSION = 1
 
 /**
  * Applies a cached file, saving time where the file is not being parsed.
@@ -38,6 +41,25 @@ function applyCache (cachedFile: MDFileDescriptor, origFile: MDFileDescriptor): 
  */
 async function cacheFile (origFile: MDFileDescriptor, cacheAdapter: FSALCache): Promise<void> {
   await cacheAdapter.set(origFile.path, structuredClone(origFile))
+}
+
+export async function refreshTitleMetadata (
+  file: MDFileDescriptor,
+  cacheAdapter: FSALCache|null
+): Promise<MDFileDescriptor> {
+  const content = await fs.readFile(file.path, { encoding: 'utf8' })
+  const metadata = documentTitleMetadata(content)
+  const refreshed: MDFileDescriptor = {
+    ...file,
+    firstHeading: metadata.firstHeading,
+    firstSentence: metadata.firstSentence,
+    titleMetadataVersion: TITLE_METADATA_VERSION
+  }
+
+  if (cacheAdapter !== null) {
+    await cacheFile(refreshed, cacheAdapter)
+  }
+  return refreshed
 }
 
 /**
@@ -72,7 +94,9 @@ export async function parse (
     modtime: 0, // Modification time
     creationtime: 0, // Creation time
     linefeed: '\n',
-    firstHeading: null, // May contain the first heading level 1
+    firstHeading: null,
+    firstSentence: null,
+    titleMetadataVersion: TITLE_METADATA_VERSION,
     yamlTitle: undefined,
     frontmatter: null, // May contain frontmatter variables
     // DELIBERATELY NON-AUTHORITATIVE placeholder (review B21): the parser
@@ -111,7 +135,10 @@ export async function parse (
     const cachedFile = await cache?.get(file.path)
     // If the modtime is still the same, we can apply the cache
     if (cachedFile !== undefined && cachedFile.modtime === file.modtime && cachedFile.type === 'file') {
-      file = applyCache(cachedFile, file)
+      const currentCache = cachedFile.titleMetadataVersion === TITLE_METADATA_VERSION
+        ? cachedFile
+        : await refreshTitleMetadata(cachedFile, cache)
+      file = applyCache(currentCache, file)
       hasCache = true
     }
   }

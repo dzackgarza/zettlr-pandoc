@@ -150,7 +150,12 @@ export interface MDFileDescriptor extends FSMetaInfo {
   bom: string // An optional BOM
   wordCount: number
   charCount: number
+  /** First authored Markdown heading, regardless of heading depth. */
   firstHeading: string|null
+  /** First prose sentence, used only when no authored heading exists. */
+  firstSentence?: string|null
+  /** Version of the cached title metadata extraction contract. */
+  titleMetadataVersion?: number
   yamlTitle: string|undefined
   frontmatter: any|null
   linefeed: string
