@@ -265,7 +265,10 @@ describe('always-on completion sources', function () {
       view.dispatch({ effects: snippetsUpdate.of([userSnippet({ prefixes: ['alg'], body: '${1:snippet}$0' })]) })
       view.focus()
       startCompletion(view)
-      for (let attempt = 0; attempt < 40 && currentCompletions(view.state).length === 0; attempt++) {
+      // Completion sources resolve asynchronously; a loaded CI runner needs
+      // well over the few hundred milliseconds a workstation does.
+      const deadline = Date.now() + 5000
+      while (currentCompletions(view.state).length === 0 && Date.now() < deadline) {
         await new Promise<void>(resolve => setTimeout(resolve, 10))
       }
       const completions = currentCompletions(view.state)

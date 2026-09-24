@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { openScene, outputDirectory } from "./visual/scene.mjs";
 
 const config = JSON.parse(
-  await readFile(new URL("../resources/test-cfg/config.json", import.meta.url), "utf8"),
+  await readFile(new URL("./fixtures/editor-config.json", import.meta.url), "utf8"),
 );
 config.app.openFiles = [];
 config.app.openWorkspaces = [];

@@ -8,13 +8,17 @@ readonly pandoc_reference_sha256='6c06b69b49ae95087573631a6fcafb233ab7ab51e5cfa7
 readonly crossref_release='0.3.24a'
 readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
 readonly pandoc_config_dir="${HOME}/.pandoc"
+# The LanguageTool CLI backend of the editor's grammar checker runs
+# `languagetool --json`; the release is the one the workstation uses.
+readonly languagetool_version='6.6'
+readonly languagetool_sha256='53600506b399bb5ffe1e4c8dec794fd378212f14aaf38ccef9b6f89314d11631'
 
 if [[ "$(uname -m)" != 'x86_64' ]]; then
   printf 'Unsupported CI architecture: %s\n' "$(uname -m)" >&2
   exit 1
 fi
 
-for command_name in curl dpkg-deb git sha256sum sudo tar; do
+for command_name in curl dpkg-deb git java sha256sum sudo tar unzip; do
   command -v "${command_name}" >/dev/null
 done
 
@@ -58,6 +62,16 @@ curl --fail --location --silent --show-error \
 printf '%s  %s\n' "${crossref_sha256}" "${crossref_archive}" | sha256sum --check
 sudo tar --extract --xz --file "${crossref_archive}" --directory /usr/local/bin pandoc-crossref
 
+readonly languagetool_archive="${setup_dir}/LanguageTool.zip"
+curl --fail --location --silent --show-error \
+  "https://languagetool.org/download/LanguageTool-${languagetool_version}.zip" \
+  --output "${languagetool_archive}"
+printf '%s  %s\n' "${languagetool_sha256}" "${languagetool_archive}" | sha256sum --check
+sudo unzip -q "${languagetool_archive}" -d /opt
+printf '#!/bin/sh\nexec java -jar /opt/LanguageTool-%s/languagetool-commandline.jar "$@"\n' \
+  "${languagetool_version}" | sudo tee /usr/local/bin/languagetool >/dev/null
+sudo chmod 0755 /usr/local/bin/languagetool
+
 git clone --depth 1 https://github.com/dzackgarza/pandoc-config.git "${pandoc_config_dir}"
 
 actual_pandoc_version="$(pandoc --version | head -1 | cut -d ' ' -f2)"
@@ -75,4 +89,5 @@ command -v pdflatex >/dev/null
 command -v biber >/dev/null
 command -v pdf2svg >/dev/null
 command -v xvfb-run >/dev/null
+languagetool --list | grep -q '^en-US '
 test -f "${pandoc_config_dir}/justfile"
