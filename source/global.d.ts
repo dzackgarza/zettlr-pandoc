@@ -42,6 +42,10 @@ declare module "*.glsl" {
   const content: string;
   export default content;
 }
+declare module "*.md" {
+  const content: string;
+  export default content;
+}
 declare module "*.css" {
   const filePath: string;
   export default filePath;

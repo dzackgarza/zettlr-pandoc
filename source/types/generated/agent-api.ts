@@ -499,6 +499,11 @@ export interface components {
             lineCount: number;
             byteLength: number;
             views: components["schemas"]["EditorViewSummary"][];
+            /**
+             * @description The system that renders this document's cross-references, which fixes the ID syntax: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). GET /help shows both.
+             * @enum {string}
+             */
+            crossReferences?: "quarto" | "pandoc-crossref";
             review?: components["schemas"]["ReviewSummary"];
         };
         EditorContext: {

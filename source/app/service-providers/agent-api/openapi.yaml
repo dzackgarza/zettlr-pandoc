@@ -124,6 +124,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EditorViewSummary'
+        crossReferences:
+          type: string
+          enum:
+            - quarto
+            - pandoc-crossref
+          description: >-
+            The system that renders this document's cross-references, which fixes
+            the ID syntax: quarto for documents in a Quarto project (#tbl-key),
+            pandoc-crossref for everything else (#tbl:key). GET /help shows both.
         review:
           $ref: '#/components/schemas/ReviewSummary'
     EditorContext:

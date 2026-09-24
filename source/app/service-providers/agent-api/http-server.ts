@@ -30,6 +30,7 @@ import type {
   AgentApiResponseBody,
   AgentError,
   AgentErrorCode,
+  DocumentSummary,
   AgentErrorResponse,
   AgentEvent,
   FigureCreateRequest,
@@ -94,11 +95,14 @@ import {
   lintDocumentText,
   type DocumentLintDocumentOptions,
 } from "../../util/document-lint";
-import { documentLintAuthority } from "../../util/document-bibliographies";
+import {
+  documentCrossReferenceSystem,
+  documentLintAuthority,
+} from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
-import { resolveHelpDocument } from "./help-content";
+import { HELP_DOCUMENT } from "./help-content";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -326,7 +330,7 @@ export default class AgentHTTPProvider extends ProviderContract {
   ) {
     super();
     this._instanceId = crypto.randomUUID();
-    this._helpText = resolveHelpDocument();
+    this._helpText = HELP_DOCUMENT;
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -906,7 +910,10 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListDocuments(res: http.ServerResponse): Promise<void> {
-    this.sendJson(res, 200, { documents: await this._queries.listDocuments() });
+    const documents = await this._queries.listDocuments();
+    this.sendJson(res, 200, {
+      documents: await Promise.all(documents.map(async (summary) => await this.withCrossReferences(summary))),
+    });
   }
 
   private async handleGetViews(res: http.ServerResponse): Promise<void> {
@@ -964,7 +971,18 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    this.sendJson(res, 200, summary);
+    this.sendJson(res, 200, await this.withCrossReferences(summary));
+  }
+
+  /** Adds the cross-reference system whose ID syntax (GET /help) the document uses. */
+  private async withCrossReferences(summary: DocumentSummary): Promise<DocumentSummary> {
+    if (this._app.fsal === undefined) {
+      return summary;
+    }
+    return {
+      ...summary,
+      crossReferences: await documentCrossReferenceSystem(this._app.fsal, summary.path),
+    };
   }
 
   private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {

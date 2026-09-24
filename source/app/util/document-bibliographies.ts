@@ -48,3 +48,27 @@ export async function documentLintAuthority (
     projectRoots: project === null ? [] : [project.rootPath]
   }
 }
+
+/**
+ * Which cross-reference system renders a document. A document in a Quarto
+ * project is rendered by Quarto, whose cross-reference IDs use a hyphen
+ * (`#tbl-key`); every other document is exported through the ~/.pandoc
+ * recipes with pandoc-crossref, whose IDs use a colon (`#tbl:key`).
+ */
+export type CrossReferenceSystem = 'quarto' | 'pandoc-crossref'
+
+export async function documentCrossReferenceSystem (
+  fsal: Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor'>,
+  documentPath: string
+): Promise<CrossReferenceSystem> {
+  const descriptor = await fsal.getDescriptorFor(documentPath)
+  if (descriptor.type !== 'file') {
+    return 'pandoc-crossref'
+  }
+  const project = await resolveProjectContextForDescriptor(
+    descriptor,
+    new Map(),
+    async dirPath => await fsal.getAnyDirectoryDescriptor(dirPath)
+  )
+  return project?.project.manifest.kind === 'quarto' ? 'quarto' : 'pandoc-crossref'
+}

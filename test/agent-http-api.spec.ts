@@ -50,6 +50,7 @@ import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 import { sha256Text } from "source/common/util/sha256";
@@ -768,7 +769,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
-    const rawHelp = readFileSync(path.join(__dirname, "../HELP.md"), "utf8");
+    const rawHelp = HELP_DOCUMENT;
+    // The served guide is HELP.md with the theorem-family table filled in.
+    assert.ok(rawHelp.startsWith(readFileSync(path.join(__dirname, "../HELP.md"), "utf8").split("<!--")[0]));
+    assert.ok(rawHelp.includes("| Lemma | `.lemma` | `#lem:key` |"));
 
     // Markdown by default
     const mdHelp = await httpRequest("GET", "/help");

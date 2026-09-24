@@ -22,6 +22,10 @@ import { readFileSync } from 'fs'
 Module._extensions['.svg'] = function (mod, filename) {
   mod.exports = readFileSync(filename, 'utf8')
 }
+// Markdown documents are asset/source as well (e.g. the agent API's HELP.md).
+Module._extensions['.md'] = function (mod, filename) {
+  mod.exports = readFileSync(filename, 'utf8')
+}
 
 /**
  * Emulates a browser environment, which is required for some tests (especially if Vue is involved).

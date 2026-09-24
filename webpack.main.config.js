@@ -72,10 +72,6 @@ module.exports = {
           from: "source/app/service-providers/agent-api/openapi.yaml",
           to: "assets/openapi.yaml",
         },
-        {
-          from: "HELP.md",
-          to: "assets/HELP.md",
-        },
       ],
     }),
     new DefinePlugin({
