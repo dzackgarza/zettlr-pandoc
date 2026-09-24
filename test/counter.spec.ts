@@ -66,7 +66,7 @@ const countWordsTesters = [
     expectedChars: 71
   },
   {
-    input: 'This is text with a list\n- one\n- two\n- three',
+    input: 'This is text with a list\n\n- one\n- two\n- three',
     locale: 'en',
     expectedWords: 9,
     expectedChars: 35

@@ -160,6 +160,9 @@ test-ci:
 
 [private]
 setup-ci:
+    # CI checkouts (including ai-review-ci's reusable QC workflow) do not fetch
+    # submodules, and Flowmark runs from vendor/flowmark.
+    git -C "{{justfile_directory()}}" submodule update --init vendor/flowmark
     bash "{{justfile_directory()}}/scripts/setup-ci-toolchain.sh"
 
 # Capture the real editor renderer in an isolated offscreen Electron process.
