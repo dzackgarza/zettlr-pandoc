@@ -177,8 +177,21 @@ describe("TikZ editor widgets (issue #14)", function () {
   let invocations: Array<{ command: string; payload: TikzRenderRequest }> = [];
   let respond: SeamResponse;
 
+  // The suite replaces window.ipc with a stub that rejects every other
+  // channel; later suites must get the IPC surface they started with back.
+  let previousIpc: PropertyDescriptor | undefined;
+
   before(function () {
     polyfillJsdomForCodeMirror();
+    previousIpc = Object.getOwnPropertyDescriptor(window, "ipc");
+  });
+
+  after(function () {
+    if (previousIpc === undefined) {
+      Reflect.deleteProperty(window, "ipc");
+    } else {
+      Object.defineProperty(window, "ipc", previousIpc);
+    }
   });
 
   beforeEach(function () {

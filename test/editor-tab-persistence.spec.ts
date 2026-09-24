@@ -17,7 +17,7 @@
 
 import { strict as assert } from "assert";
 import { execFile } from "child_process";
-import { mkdtemp, rm } from "fs/promises";
+import { mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { promisify } from "util";
@@ -57,13 +57,13 @@ describe("persistent editor tabs", function () {
       { maxBuffer: 32 * 1024 * 1024 },
     );
 
-    const { stdout } = await execFileAsync(
+    await execFileAsync(
       "xvfb-run",
       ["-a", "node", path.join(root, "test/editor-tab-persistence-capture.mjs"), outputDirectory],
       { maxBuffer: 16 * 1024 * 1024 },
     );
 
-    report = JSON.parse(stdout) as ProbeReport;
+    report = JSON.parse(await readFile(path.join(outputDirectory, "report.json"), "utf8")) as ProbeReport;
   });
 
   after(async function () {

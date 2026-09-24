@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { openScene, outputDirectory } from "./visual/scene.mjs";
 
 const config = JSON.parse(
@@ -242,7 +243,9 @@ try {
     );
   }
 
-  console.log(JSON.stringify({ initial, restored }, null, 2));
+  // A file, not stdout: Ubuntu's xvfb-run merges the driver's stderr (page
+  // console errors) into stdout.
+  await writeFile(path.join(outputDirectory, "report.json"), JSON.stringify({ initial, restored }, null, 2));
 } finally {
   await scene.close();
 }
