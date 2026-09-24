@@ -51,6 +51,7 @@ export function isEditorCommandName (value: string): value is EditorCommandName 
 
 /** The window-level shortcut names the menu templates and the window provider send. */
 export const WINDOW_SHORTCUT_NAMES = [
+  'close-all-tabs',
   'close-window',
   'copy-as-html',
   'copy-current-id',
@@ -79,6 +80,7 @@ export const WINDOW_SHORTCUT_NAMES = [
   'print',
   'rename-file',
   'save-file',
+  'save-all-and-close',
   'search',
   'toggle-annotation-panel',
   'toggle-distraction-free',

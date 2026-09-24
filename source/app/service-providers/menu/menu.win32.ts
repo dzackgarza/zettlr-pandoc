@@ -616,6 +616,20 @@ export default function getMenu (
           }
         },
         {
+          id: 'menu.tabs_close_all',
+          label: trans('Close All Tabs'),
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'close-all-tabs')
+          }
+        },
+        {
+          id: 'menu.tabs_save_all_close',
+          label: trans('Save All and Close'),
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'save-all-and-close')
+          }
+        },
+        {
           id: 'menu.tab_previous',
           label: trans('Previous Tab'),
           accelerator: sc('previous-tab'),

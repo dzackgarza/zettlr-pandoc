@@ -354,6 +354,14 @@ export type DocumentManagerIPCContract = {
     request: { payload: LeafLoc & { path: string } }
     response: boolean
   }
+  'close-all-tabs': {
+    request: { payload: { windowId: string } }
+    response: boolean
+  }
+  'save-all-and-close': {
+    request: { payload: { windowId: string } }
+    response: boolean
+  }
   'close-file-everywhere': {
     request: { payload: { path: string } }
     response: undefined
@@ -877,6 +885,12 @@ export default class DocumentManager
         case 'close-file': {
           const { windowId, leafId, path } = payload
           return await this.closeFile(windowId, leafId, path)
+        }
+        case 'close-all-tabs': {
+          return await this.closeAllTabs(payload.windowId)
+        }
+        case 'save-all-and-close': {
+          return await this.saveAllAndClose(payload.windowId)
         }
         case 'close-file-everywhere': {
           const { path } = payload
@@ -1906,6 +1920,68 @@ current contents from the editor somewhere else, and restart the application.`,
       await this.synchronizeDatabases()
     }
     return ret
+  }
+
+  /**
+   * Close every tab in one window using the ordinary per-document close path.
+   *
+   * Modified documents therefore keep the existing Save / Don't save / Cancel
+   * semantics. Pinned tabs are included because "all tabs" is explicit, but a
+   * refused/cancelled close restores the pin before aborting the bulk action.
+   */
+  public async closeAllTabs (windowId: string): Promise<boolean> {
+    const tree = this._windows[windowId]
+    if (tree === undefined) {
+      return false
+    }
+    const tabs = tree.getAllLeafs().flatMap((leaf) =>
+      leaf.tabMan.openFiles.map((file) => ({
+        leafId: leaf.id,
+        path: file.path,
+        pinned: file.pinned,
+      })),
+    )
+
+    for (const tab of tabs) {
+      const leaf = this._windows[windowId]?.findLeaf(tab.leafId)
+      if (leaf === undefined) {
+        continue
+      }
+      if (tab.pinned) {
+        leaf.tabMan.setPinnedStatus(tab.path, false)
+      }
+      const closed = await this.closeFile(windowId, tab.leafId, tab.path)
+      if (!closed) {
+        const currentLeaf = this._windows[windowId]?.findLeaf(tab.leafId)
+        if (tab.pinned && currentLeaf !== undefined) {
+          currentLeaf.tabMan.setPinnedStatus(tab.path, true)
+        }
+        return false
+      }
+    }
+    return true
+  }
+
+  /**
+   * Save every modified document represented in a window, then close all of
+   * its tabs. Since the buffers are clean before closing, ordinary unsaved-file
+   * prompts are bypassed. A refused save aborts before any tab is closed.
+   */
+  public async saveAllAndClose (windowId: string): Promise<boolean> {
+    if (!(windowId in this._windows)) {
+      return false
+    }
+    for (const document of this._windowDocuments(windowId)) {
+      if (!this.isModified(document.filePath)) {
+        continue
+      }
+      const saved = await this.saveFile(document.filePath)
+      if (!saved.ok) {
+        this._announceSaveRefusal(document.filePath, saved)
+        return false
+      }
+    }
+    return await this.closeAllTabs(windowId)
   }
 
   /**
@@ -3169,17 +3245,13 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   /** The refusal a save owes when the review could not be persisted. */
   private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
-    const message =
-      'The review could not be written to its sidecar, so the save did not complete: ' +
-      (err instanceof Error ? err.message : String(err))
+    const message = 'The review could not be saved, so the document was not saved.'
     this._app.log.error(`[DocumentManager] Save refused for ${filePath}: ${message}`, err)
     return { reason: 'review-not-persisted', message }
   }
 
   private _announceDetachFailure(filePath: string, err: unknown): void {
-    const message =
-      'The review could not be written to its sidecar, so this document was left open: ' +
-      (err instanceof Error ? err.message : String(err))
+    const message = 'The review could not be saved, so this document was left open.'
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err)
     const payload: SaveRefusedBroadcast = {
       filePath,
@@ -3247,10 +3319,11 @@ current contents from the editor somewhere else, and restart the application.`,
    * mutation that triggered it already answered its caller.
    */
   private _surfaceReviewSidecarError(documentId: string, action: string, err: unknown): void {
-    const message =
-      `Review sidecar ${action} failed for document ${documentId}: ` +
-      (err instanceof Error ? err.message : String(err))
-    this._app.log.error(`[DocumentManager] ${message}`, err)
+    const message = `Could not ${action} review state for document ${documentId}.`
+    this._app.log.error(
+      `[DocumentManager] Review sidecar ${action} failed for document ${documentId}`,
+      err,
+    )
     this.emitAgentEvent('review.sidecar-error', { documentId, message })
   }
 
@@ -3444,9 +3517,7 @@ current contents from the editor somewhere else, and restart the application.`,
         return {
           ok: false,
           code: 'DOCUMENT_CLOSED',
-          message:
-            `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
-            'Open it to reattach this review, then retract this packet.',
+          message: `The reviewed document ${detached.sidecar.documentPath} is closed. Open it before retracting this proposal.`,
           reviewId: detached.sidecar.review.reviewId,
           canClearUnresolved: false,
         }

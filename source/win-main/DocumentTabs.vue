@@ -178,6 +178,12 @@ onMounted(() => {
         // TODO: This must be managed centrally
         // ipcRenderer.send('window-controls', { command: 'win-close' })
       }
+    } else if (shortcut === 'close-all-tabs' || shortcut === 'save-all-and-close') {
+      ipcRenderer.invoke('documents-provider', {
+        command: shortcut,
+        payload: { windowId: props.windowId }
+      } as DocumentManagerIPCAPI)
+        .catch(e => reportError(e))
     } else if (shortcut === 'rename-file') {
       // Renaming via shortcut (= Cmd/Ctrl+R) works via a tooltip underneath
       // the corresponding filetab. First, make sure the container is visible

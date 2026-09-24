@@ -702,6 +702,18 @@
       },
       {
         "type": "normal",
+        "id": "menu.tabs_close_all",
+        "label": "Close All Tabs",
+        "enabled": true
+      },
+      {
+        "type": "normal",
+        "id": "menu.tabs_save_all_close",
+        "label": "Save All and Close",
+        "enabled": true
+      },
+      {
+        "type": "normal",
         "id": "menu.tab_previous",
         "label": "Previous Tab",
         "enabled": true,
