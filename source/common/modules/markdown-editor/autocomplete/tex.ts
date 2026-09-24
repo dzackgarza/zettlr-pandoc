@@ -5,7 +5,6 @@ import {
   type CompletionResult,
   type CompletionSource
 } from '@codemirror/autocomplete'
-import { linter, type Diagnostic } from '@codemirror/lint'
 import {
   Facet,
   StateEffect,
@@ -17,14 +16,12 @@ import indexJson from '@common/data/texstudio-command-index.json'
 import {
   collectTexContext,
   texCommandMayStartAt,
-  texCommandOccurrences,
   texCommandSurface,
   type TexDocumentKind,
   type TexMacroSource
 } from '@common/util/tex-context'
 import {
   buildTexCommandAuthority,
-  classifyTexCommand,
   type TexCommandAuthority,
   type TexstudioCommandIndex
 } from '@common/util/texstudio-command-index'
@@ -143,57 +140,11 @@ export const texCommandCompletionSource: CompletionSource = (
   }
 }
 
-export interface TexCommandDiagnostic extends Diagnostic {
-  data:
-    | { kind: 'unknown' }
-    | { kind: 'inactive-package', providers: readonly string[] }
-}
-
-export function texCommandDiagnostics (state: EditorState): TexCommandDiagnostic[] {
-  const source = state.doc.toString()
-  const kind = state.facet(texDocumentKind)
-  const knowledge = resolveKnowledge(state)
-  const diagnostics: TexCommandDiagnostic[] = []
-
-  for (const occurrence of texCommandOccurrences(source, kind)) {
-    const classification = classifyTexCommand(occurrence.command, knowledge.authority)
-    if (classification.kind === 'active') {
-      continue
-    }
-    if (classification.kind === 'inactive-package') {
-      diagnostics.push({
-        from: occurrence.from,
-        to: occurrence.to,
-        severity: 'info',
-        source: 'tex-command',
-        message: occurrence.command + ' is known to TeXstudio, but its providing package is not active.',
-        data: {
-          kind: 'inactive-package',
-          providers: classification.providers
-        }
-      })
-    } else {
-      diagnostics.push({
-        from: occurrence.from,
-        to: occurrence.to,
-        severity: 'info',
-        source: 'tex-command',
-        message: occurrence.command + ' is not declared by an active user macro or the indexed TeXstudio CWL corpus.',
-        data: { kind: 'unknown' }
-      })
-    }
-  }
-  return diagnostics
-}
-
-export const texCommandLint = linter(view => texCommandDiagnostics(view.state))
-
-/** State/lint layer shared by Markdown, LaTeX and Pandoc-YAML editors. */
+/** TeX knowledge state shared by Markdown, LaTeX and Pandoc-YAML editors. */
 export function texKnowledgeExtensions (kind: TexDocumentKind): Extension[] {
   return [
     texDocumentKind.of(kind),
-    texMacroSourcesField,
-    texCommandLint
+    texMacroSourcesField
   ]
 }
 

@@ -188,12 +188,6 @@ export function texCommandSurface (source: string, kind: TexDocumentKind): strin
   }
 }
 
-export interface TexCommandOccurrence {
-  command: string
-  from: number
-  to: number
-}
-
 export function texCommandMayStartAt (source: string, from: number): boolean {
   if (from === 0) {
     return true
@@ -202,25 +196,6 @@ export function texCommandMayStartAt (source: string, from: number): boolean {
   // control sequence in Markdown starts at a token boundary, not after a path
   // separator, drive-colon, identifier character, or another backslash.
   return !/[A-Za-z0-9_:/\\]/u.test(source[from - 1])
-}
-
-export function texCommandOccurrences (source: string, kind: TexDocumentKind): TexCommandOccurrence[] {
-  const surface = texCommandSurface(source, kind)
-  const occurrences: TexCommandOccurrence[] = []
-  for (const match of surface.matchAll(/\\[A-Za-z@]+/gu)) {
-    if (match.index === undefined) {
-      continue
-    }
-    if (!texCommandMayStartAt(surface, match.index)) {
-      continue
-    }
-    occurrences.push({
-      command: match[0],
-      from: match.index,
-      to: match.index + match[0].length
-    })
-  }
-  return occurrences
 }
 
 /** Removes unescaped TeX comments without changing line boundaries. */

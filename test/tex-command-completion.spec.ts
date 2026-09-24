@@ -3,11 +3,10 @@ import {
   CompletionContext,
   type CompletionResult
 } from '@codemirror/autocomplete'
-import { EditorState, Text } from '@codemirror/state'
+import { EditorState } from '@codemirror/state'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import {
   texCommandCompletionSource,
-  texCommandDiagnostics,
   texDocumentKind,
   texMacroSourcesField
 } from 'source/common/modules/markdown-editor/autocomplete/tex'
@@ -63,41 +62,6 @@ describe('package-aware TeX command completion', function () {
     assert.equal(result?.from, doc.lastIndexOf(bs))
   })
 
-  it('classifies known inactive-package commands separately from unknown commands', function () {
-    const doc = [
-      '$' + bs + 'xmapsto$',
-      '$' + bs + 'definitelyNotATeXCommand$'
-    ].join('\n')
-    const diagnostics = texCommandDiagnostics(stateFor(doc))
-    const inactive = diagnostics.find(diagnostic => diagnostic.from === doc.indexOf(bs))
-    const unknown = diagnostics.find(diagnostic => diagnostic.from === doc.lastIndexOf(bs))
-    assert.equal(inactive?.data.kind, 'inactive-package')
-    if (inactive?.data.kind === 'inactive-package') {
-      assert.ok(inactive.data.providers.includes('mathtools'))
-    }
-    assert.deepEqual(unknown?.data, { kind: 'unknown' })
-  })
-
-  it('preserves diagnostic source ranges in CRLF documents', function () {
-    const command = bs + 'definitelyNotATeXCommand'
-    const doc = 'first line\r\n$' + command + '$'
-    // MarkdownEditor loads authority content through Text.of(content.split('\n')),
-    // which deliberately preserves CR bytes instead of CodeMirror's string
-    // constructor normalizing CRLF to LF.
-    const state = EditorState.create({
-      doc: Text.of(doc.split('\n')),
-      extensions: [
-        texDocumentKind.of('markdown'),
-        texMacroSourcesField,
-        markdownParser({ zknLinkParserConfig: { format: 'link|title' } })
-      ]
-    })
-    const diagnostics = texCommandDiagnostics(state)
-    assert.equal(diagnostics.length, 1)
-    assert.equal(diagnostics[0].from, doc.indexOf(command))
-    assert.equal(diagnostics[0].to, doc.indexOf(command) + command.length)
-  })
-
   it('offers commands in raw TeX but never in ordinary code examples', async function () {
     const ordinary = [
       '~~~tex',
@@ -150,25 +114,11 @@ describe('package-aware TeX command completion', function () {
     const headerPos = yaml.lastIndexOf(bs + 'xma') + 4
     assert.equal(await completionFor(stateFor(yaml, 'yaml'), otherPos), null)
     assert.ok(optionLabels(await completionFor(stateFor(yaml, 'yaml'), headerPos)).includes(bs + 'xmapsto'))
-
-    const markdown = [
-      '---',
-      'tex:',
-      '  packages: [mathtools]',
-      'title: ' + bs + 'notATeXCommand',
-      'header-includes:',
-      '  - ' + bs + 'usepackage{mathtools}',
-      '---',
-      '$' + bs + 'xmapsto$'
-    ].join('\n')
-    const diagnostics = texCommandDiagnostics(stateFor(markdown))
-    assert.equal(diagnostics.some(diagnostic => diagnostic.message.includes('notATeXCommand')), false)
   })
 
   it('does not interpret path fragments as raw TeX commands in Markdown', async function () {
     const doc = 'Windows path C:' + bs + 'Users' + bs + 'notes and prose.'
     const state = stateFor(doc)
-    assert.equal(texCommandDiagnostics(state).length, 0)
     const pos = doc.indexOf(bs + 'Users') + 4
     assert.equal(await completionFor(state, pos), null)
   })
@@ -186,7 +136,6 @@ describe('package-aware TeX command completion', function () {
     const labels = optionLabels(await completionFor(state))
     assert.ok(labels.includes(bs + 'Pic'))
     assert.ok(labels.includes(bs + 'xmapsto'))
-    assert.equal(texCommandDiagnostics(stateFor('$' + bs + 'Pic$', 'markdown', [ macroSource ])).length, 0)
   })
 
   it('keeps prose dictionaries out of backslash command contexts', async function () {

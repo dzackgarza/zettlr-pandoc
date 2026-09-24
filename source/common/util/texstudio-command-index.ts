@@ -93,21 +93,3 @@ export function buildTexCommandAuthority (
     providersByCommand: providersByTexCommand(index)
   }
 }
-
-export type TexCommandClassification =
-  | { kind: 'active' }
-  | { kind: 'inactive-package', providers: readonly string[] }
-  | { kind: 'unknown' }
-
-export function classifyTexCommand (
-  command: string,
-  authority: TexCommandAuthority
-): TexCommandClassification {
-  if (authority.activeCommands.has(command)) {
-    return { kind: 'active' }
-  }
-  const providers = authority.providersByCommand.get(command)
-  return providers === undefined
-    ? { kind: 'unknown' }
-    : { kind: 'inactive-package', providers }
-}

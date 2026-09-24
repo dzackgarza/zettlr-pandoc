@@ -1,10 +1,6 @@
 import { strict as assert } from 'node:assert'
 import type { TexstudioCommandIndex } from 'source/common/util/texstudio-command-index'
-import {
-  buildTexCommandAuthority,
-  classifyTexCommand,
-  closeTexstudioPackages
-} from 'source/common/util/texstudio-command-index'
+import { closeTexstudioPackages } from 'source/common/util/texstudio-command-index'
 import indexJson from 'source/common/data/texstudio-command-index.json'
 
 const index = indexJson as TexstudioCommandIndex
@@ -21,15 +17,5 @@ describe('TeXstudio command index', function () {
     assert.ok(active.has('mathtools'))
     assert.ok(active.has('amsmath'))
     assert.ok(active.has('amsopn'))
-  })
-
-  it('distinguishes active, inactive-package and unknown control sequences', function () {
-    const baseline = buildTexCommandAuthority(index, [])
-    const mathtools = buildTexCommandAuthority(index, [ 'mathtools' ])
-
-    assert.deepEqual(classifyTexCommand('\\xmapsto', baseline).kind, 'inactive-package')
-    assert.deepEqual(classifyTexCommand('\\xmapsto', mathtools), { kind: 'active' })
-    assert.deepEqual(classifyTexCommand('\\operatorname', mathtools), { kind: 'active' })
-    assert.deepEqual(classifyTexCommand('\\definitelyNotATeXCommand', mathtools), { kind: 'unknown' })
   })
 })
