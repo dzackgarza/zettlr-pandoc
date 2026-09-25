@@ -331,7 +331,7 @@ export function tikzTemplateCompletions(templatePath: string): TikzTemplateCompl
         continue;
       }
       const label = `\\${name}`;
-      const index = match.index ?? 0;
+      const index = match.index;
       const lineStart = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
       const nextNewline = source.indexOf("\n", index);
       const lineEnd = nextNewline === -1 ? source.length : nextNewline;

@@ -60,7 +60,7 @@ describe('Quarto book manifest editor', function () {
 
   it('moves a chapter into a part and back out to top-level book order', function () {
     let edited = editQuartoBookSource(root, manifest, source, {
-      kind: 'add-chapter', chapterPath: 'extra.md'
+      kind: 'add-chapter', chapterPath: 'extra.md', placement: { kind: 'book-end' }
     })
     edited = editQuartoBookSource(root, manifest, edited, {
       kind: 'move-chapter',
@@ -104,7 +104,7 @@ describe('Quarto book manifest editor', function () {
 
   it('rejects a chapter outside the Project root', function () {
     assert.throws(() => editQuartoBookSource(root, manifest, source, {
-      kind: 'add-chapter', chapterPath: '../elsewhere.md'
+      kind: 'add-chapter', chapterPath: '../elsewhere.md', placement: { kind: 'book-end' }
     }), Error)
   })
 

@@ -37,7 +37,7 @@ export async function documentLintAuthority (
     new Map(),
     async dirPath => await fsal.getAnyDirectoryDescriptor(dirPath)
   )
-  const library = getBibliographyForDescriptor(descriptor, project?.project ?? null)
+  const library = getBibliographyForDescriptor(descriptor, project === null ? null : project.project)
   // Relative entries resolve from the document's directory, as MainEditor
   // resolves them for citeproc.
   const bibliographies = (Array.isArray(library) ? library : [ library ])

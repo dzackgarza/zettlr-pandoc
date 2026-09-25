@@ -10,7 +10,7 @@ export type QuartoChapterPlacement =
   | { kind: 'after-chapter', chapterPath: string }
 
 export type QuartoBookEdit =
-  | { kind: 'add-chapter', chapterPath: string, placement?: QuartoChapterPlacement }
+  | { kind: 'add-chapter', chapterPath: string, placement: QuartoChapterPlacement }
   | { kind: 'move-chapter', chapterPath: string, placement: QuartoChapterPlacement }
   | { kind: 'add-part', title: string, chapterPath: string }
 
@@ -179,7 +179,7 @@ export function editQuartoBookSource (
       throw new Error(`${edit.chapterPath} is already in the book`)
     }
     const node = document.createNode(authoredPathFor(rootPath, manifestPath, edit.chapterPath))
-    insertAtPlacement(rootPath, manifestPath, chapters, node, edit.placement ?? { kind: 'book-end' })
+    insertAtPlacement(rootPath, manifestPath, chapters, node, edit.placement)
     return document.toString()
   }
 

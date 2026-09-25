@@ -65,11 +65,19 @@ export function resolveCentralFiguresDirectory(
   if (configured !== "") {
     return path.resolve(expandHome(configured, homeDirectory));
   }
-  const environment = env.FIGURES_SOURCE_DIR?.trim() ?? "";
-  if (environment !== "") {
-    return path.resolve(expandHome(environment, homeDirectory));
+  // The ~/.pandoc TikZ filter resolves its figure tree the same way:
+  // FIGURES_SOURCE_DIR when set, otherwise ~/.pandoc/figures.
+  const environment = env.FIGURES_SOURCE_DIR;
+  if (environment === undefined) {
+    return path.join(homeDirectory, ".pandoc", "figures");
   }
-  return path.join(homeDirectory, ".pandoc", "figures");
+  const trimmed = environment.trim();
+  if (trimmed === "") {
+    throw new Error(
+      "FIGURES_SOURCE_DIR is set but empty; unset it or name the figures directory",
+    );
+  }
+  return path.resolve(expandHome(trimmed, homeDirectory));
 }
 
 function normalizeRelativePath(value: string): string {
@@ -146,7 +154,9 @@ async function prepareWritableFile(
 ): Promise<{ path: string; relativePath: string }> {
   const normalized = normalizeRelativePath(relativePath);
   const realRoot = await rootRealPath(root, true);
+  // normalizeRelativePath guarantees at least one non-empty segment.
   const segments = normalized.split("/");
+  const fileName = segments[segments.length - 1];
   let directory = realRoot;
   for (const segment of segments.slice(0, -1)) {
     const next = path.join(directory, segment);
@@ -165,7 +175,7 @@ async function prepareWritableFile(
     }
     directory = next;
   }
-  const target = path.join(directory, segments.at(-1) ?? "");
+  const target = path.join(directory, fileName);
   assertContained(realRoot, target);
   try {
     const stats = await fs.lstat(target);

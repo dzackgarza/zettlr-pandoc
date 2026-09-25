@@ -115,11 +115,9 @@ export async function findMissingRequirements (
  *   iff both parse and differ; 'unparseable' when either output does not
  *   yield a version (that side's field stays undefined).
  */
-export interface CrossrefCompatibility {
-  status: 'compatible' | 'incompatible' | 'unparseable'
-  crossrefBuiltWithPandoc?: string
-  pandocVersion?: string
-}
+export type CrossrefCompatibility =
+  | { status: 'compatible' | 'incompatible', crossrefBuiltWithPandoc: string, pandocVersion: string }
+  | { status: 'unparseable', crossrefBuiltWithPandoc?: string, pandocVersion?: string }
 
 /**
  * Runs a command and captures its stdout — the injectable seam of the
@@ -154,7 +152,7 @@ export function assessCrossrefCompatibility (
 
   if (crossrefBuiltWithPandoc === undefined || pandocVersion === undefined) {
     // A side that does not name its version cannot be assumed compatible.
-    const unparseable: CrossrefCompatibility = { status: 'unparseable' }
+    const unparseable: Extract<CrossrefCompatibility, { status: 'unparseable' }> = { status: 'unparseable' }
     if (crossrefBuiltWithPandoc !== undefined) {
       unparseable.crossrefBuiltWithPandoc = crossrefBuiltWithPandoc
     }
@@ -225,8 +223,8 @@ export async function crossrefCompatibilityFailure (
   }
 
   if (result.status === 'incompatible') {
-    return `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc ?? '?'}, ` +
-      `but Pandoc v${result.pandocVersion ?? '?'} is installed. Install matching versions before exporting Projects.`
+    return `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc}, ` +
+      `but Pandoc v${result.pandocVersion} is installed. Install matching versions before exporting Projects.`
   }
 
   return 'Could not verify that pandoc-crossref matches the installed Pandoc version ' +

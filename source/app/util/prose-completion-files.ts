@@ -11,7 +11,8 @@ import { appendFile, readFile } from 'node:fs/promises'
 /** Parse the explicit word column of a Hunspell `.dic` file. */
 export function proseWordsFromHunspellDic (contents: string): string[] {
   const lines = contents.replace(/^\uFEFF/, '').split(/\r?\n/)
-  if (/^\s*\d+\s*$/u.test(lines[0] ?? '')) {
+  // String.prototype.split always yields at least one element.
+  if (/^\s*\d+\s*$/u.test(lines[0])) {
     lines.shift()
   }
 

@@ -107,8 +107,13 @@ async function captureCommand (
     child.stdout.on('data', chunk => { stdout += String(chunk) })
     child.stderr.on('data', chunk => { stderr += String(chunk) })
     child.once('error', reject)
-    child.once('close', code => {
-      resolve({ code: code ?? 1, stdout, stderr })
+    child.once('close', (code, signal) => {
+      // Node reports a null exit code exactly when a signal ended the process.
+      if (code === null) {
+        reject(new Error(`${command} was terminated by signal ${String(signal)}`))
+        return
+      }
+      resolve({ code, stdout, stderr })
     })
   })
 }
