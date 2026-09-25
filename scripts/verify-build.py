@@ -24,7 +24,6 @@ from collections import deque
 import json
 import os
 import pathlib
-import signal
 import subprocess
 import sys
 import threading
@@ -34,6 +33,7 @@ import zipfile
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ASAR = REPO / "out" / "Zettlr-Pandoc-linux-x64" / "resources" / "app.asar"
 BUILD_TIMEOUT_S = 600
+BUILD_KILL_GRACE_S = 3
 MIN_PLAUSIBLE_ASAR_MB = 10  # a real build is ~100 MB; anything tiny is broken
 STAMP = REPO / "out" / "Zettlr-Pandoc-linux-x64" / ".source-fingerprint"
 ELECTRON_PACKAGE = REPO / "node_modules" / "electron" / "package.json"
@@ -156,57 +156,20 @@ def electron_packager_zip_dir() -> pathlib.Path:
     return zip_dir
 
 
-def descendant_pids(root_pid: int) -> list[int]:
-    """Return descendants of root_pid, deepest children first."""
-    parents: dict[int, int] = {}
-    for stat_path in pathlib.Path("/proc").glob("[0-9]*/stat"):
-        try:
-            # /proc/PID/stat's second field is `(comm)` and may contain spaces;
-            # parent pid is the second token after the final `)`.
-            text = stat_path.read_text()
-            after_comm = text[text.rfind(")") + 2:].split()
-            pid = int(stat_path.parent.name)
-            ppid = int(after_comm[1])
-            parents[pid] = ppid
-        except (OSError, ValueError, IndexError):
-            continue
-
-    descendants: list[int] = []
-    frontier = [root_pid]
-    while frontier:
-        parent = frontier.pop()
-        children = [pid for pid, ppid in parents.items() if ppid == parent]
-        frontier.extend(children)
-        descendants.extend(children)
-    return list(reversed(descendants))
-
-
-def terminate_process_tree(root_pid: int) -> None:
-    """Terminate a timed-out build without leaving Forge/download orphans."""
-    pids = descendant_pids(root_pid) + [root_pid]
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
-        # A process exists exactly while its /proc entry does (kill(2)'s
-        # signal-0 existence check answers the same question with ESRCH).
-        if not any(pathlib.Path("/proc", str(pid)).exists() for pid in pids):
-            return
-        time.sleep(0.05)
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
-
 def run_build_streaming(env: dict[str, str]) -> tuple[int, str]:
     """Run Forge with live output while retaining a bounded failure tail."""
+    # coreutils timeout(1) runs the build in its own process group and signals
+    # the whole group on expiry, then KILLs it after the grace period, so no
+    # Forge or download child outlives a timed-out build.
     process = subprocess.Popen(
-        ["bun", "run", "package:linux-x64"],
+        [
+            "timeout",
+            f"--kill-after={BUILD_KILL_GRACE_S}s",
+            f"{BUILD_TIMEOUT_S}s",
+            "bun",
+            "run",
+            "package:linux-x64",
+        ],
         cwd=REPO,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -224,16 +187,14 @@ def run_build_streaming(env: dict[str, str]) -> tuple[int, str]:
 
     reader = threading.Thread(target=pump, name="zettlr-package-output", daemon=True)
     reader.start()
-    try:
-        returncode = process.wait(timeout=BUILD_TIMEOUT_S)
-    except subprocess.TimeoutExpired:
-        terminate_process_tree(process.pid)
-        reader.join(timeout=2)
+    returncode = process.wait()
+    reader.join(timeout=2)
+    # timeout(1) exits 124 after its TERM, or 128+KILL once the grace ran out.
+    if returncode in (124, 128 + 9):
         fail(
-            f"build TIMED OUT after {BUILD_TIMEOUT_S}s; the complete build process tree was terminated",
+            f"build TIMED OUT after {BUILD_TIMEOUT_S}s; timeout(1) terminated its process group",
             "".join(tail),
         )
-    reader.join(timeout=2)
     return returncode, "".join(tail)
 
 
