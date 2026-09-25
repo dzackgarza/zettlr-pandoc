@@ -50,7 +50,22 @@
   "fileNameDisplay": "title+heading",
   "fileManager": {
     "twoStepCollapseWorkspaces": false,
-    "sortWorkspacesManually": false
+    "sortWorkspacesManually": false,
+    "expandedDirectories": [],
+    "hiddenDirectories": [],
+    "showHiddenDirectories": false,
+    "filters": {
+      "include": [
+        ".md",
+        ".rmd",
+        ".qmd",
+        ".markdown",
+        ".txt",
+        ".mdx",
+        ".mkd"
+      ],
+      "exclude": []
+    }
   },
   "newFileNamePattern": "%id.md",
   "newFileDontPrompt": false,

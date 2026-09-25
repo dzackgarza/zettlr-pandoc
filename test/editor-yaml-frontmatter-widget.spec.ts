@@ -66,7 +66,7 @@ describe('Editor renders YAML front matter as an interactive Properties editor',
     const state = EditorState.create({
       doc,
       selection: { anchor },
-      extensions: [ markdownParser(), renderYamlFrontmatter ]
+      extensions: [ markdownParser(), configField.init(() => getDefaultConfig()), renderYamlFrontmatter ]
     })
     const view = new EditorView({ state, parent: document.body })
     assert.ok(forceParsing(view, doc.length, 5000), 'the syntax tree must be fully parsed before asserting')

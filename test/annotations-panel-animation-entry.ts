@@ -4,6 +4,7 @@
  */
 
 import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
+import editorConfig from './fixtures/editor-config.json'
 import { createApp, h, nextTick, ref, reactive } from 'vue'
 import { createPinia } from 'pinia'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
@@ -134,6 +135,10 @@ window.benchmarkReady = (async () => {
   const fullText = paragraphs.join('\n\n')
   const annotations = generateAnnotations(100, fullText.length)
 
+  // The window-state store reads the file-manager config at construction.
+  documentCollaborationIpcDouble.setSendSyncResponder((channel, message) =>
+    channel === 'config-provider' && message?.command === 'get-config' ? editorConfig : undefined
+  )
   const pinia = createPinia()
   const documentTreeStore = useDocumentTreeStore(pinia)
   documentTreeStore.lastLeafActiveFile = { path: BENCHMARK_PATH, pinned: false }
