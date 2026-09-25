@@ -166,7 +166,8 @@ export function rowKey (row: LauncherRow): string {
     case 'just-recipe':
       return `just-recipe:${row.repoRoot}:${row.name}`
     case 'preference':
-      return `preference:${row.group}:${row.fieldsetTitle}:${row.model ?? ''}:${row.label}`
+      // JSON keeps a fieldset row without a model distinct from every model.
+      return `preference:${JSON.stringify([ row.group, row.fieldsetTitle, row.model, row.label ])}`
   }
 }
 

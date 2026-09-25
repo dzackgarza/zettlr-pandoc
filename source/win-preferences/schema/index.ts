@@ -151,6 +151,11 @@ function indexableFields (fieldset: Fieldset): IndexableField[] {
   return fields
 }
 
+/** The search texts a schema actually authors: absent and empty strings name nothing. */
+function authoredTexts (texts: ReadonlyArray<string | undefined>): string[] {
+  return texts.filter((text): text is string => text !== undefined && text !== '')
+}
+
 /**
  * Builds the launcher's Preferences index directly from the form schema.
  * Fieldset entries make every card reachable; labeled controls add more
@@ -169,19 +174,17 @@ export function buildPreferenceIndex (config: ConfigOptions): PreferenceIndexEnt
     const fields = indexableFields(fieldset)
     const firstModel = fields.find(({ field }) => 'model' in field)?.field
     const firstModelName = firstModel !== undefined && 'model' in firstModel ? firstModel.model : undefined
-    const fieldsetAliases = [
-      fieldset.infoString ?? '',
-      fieldset.help ?? '',
-      ...fields.flatMap(({ field, label, contextAliases }) => {
-        const base = [
-          label ?? '',
-          'model' in field ? field.model : '',
-          'info' in field ? field.info ?? '' : '',
-          ...contextAliases
-        ]
-        return [ ...base, ...optionAliases(field) ]
-      })
-    ].filter(text => text !== '')
+    const fieldsetAliases = authoredTexts([
+      fieldset.infoString,
+      fieldset.help,
+      ...fields.flatMap(({ field, label, contextAliases }) => [
+        label,
+        'model' in field ? field.model : undefined,
+        'info' in field ? field.info : undefined,
+        ...contextAliases,
+        ...optionAliases(field)
+      ])
+    ])
 
     rows.push({
       group: fieldset.group,
@@ -192,7 +195,9 @@ export function buildPreferenceIndex (config: ConfigOptions): PreferenceIndexEnt
       aliases: fieldsetAliases
     })
 
-    const seenTargets = new Set([`${firstModelName ?? ''}\u0000${fieldset.title}`])
+    // A destination is its model (or none) plus its label; JSON keeps "no
+    // model" distinct from every model name.
+    const seenTargets = new Set([ JSON.stringify([ firstModelName, fieldset.title ]) ])
     for (const { field, label, contextAliases } of fields) {
       if (label === undefined || label === '') {
         continue
@@ -203,7 +208,7 @@ export function buildPreferenceIndex (config: ConfigOptions): PreferenceIndexEnt
         continue
       }
       const model = 'model' in field ? field.model : undefined
-      const identity = `${model ?? ''}\u0000${label}`
+      const identity = JSON.stringify([ model, label ])
       if (seenTargets.has(identity)) {
         continue
       }
@@ -214,12 +219,12 @@ export function buildPreferenceIndex (config: ConfigOptions): PreferenceIndexEnt
         fieldsetTitle: fieldset.title,
         model,
         label,
-        aliases: [
-          'model' in field ? field.model : '',
-          'info' in field ? field.info ?? '' : '',
+        aliases: authoredTexts([
+          'model' in field ? field.model : undefined,
+          'info' in field ? field.info : undefined,
           ...contextAliases,
           ...optionAliases(field)
-        ].filter(text => text !== '')
+        ])
       })
     }
   }

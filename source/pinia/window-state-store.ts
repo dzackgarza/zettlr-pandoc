@@ -54,7 +54,7 @@ export const useWindowStateStore = defineStore('window-state', () => {
   const configStore = useConfigStore()
   const isFullscreen = ref(false)
   const uncollapsedDirectories = ref<string[]>([
-    ...(configStore.config?.fileManager?.expandedDirectories ?? [])
+    ...configStore.config.fileManager.expandedDirectories
   ])
   const distractionFreeMode = ref<undefined|string>(undefined)
   const activeDocumentInfo = ref<undefined|DocumentInfo>(undefined)
