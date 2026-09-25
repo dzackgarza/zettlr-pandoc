@@ -37,7 +37,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { type Browser, type Page } from 'playwright'
+import { type Browser, type Locator, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
@@ -133,8 +133,17 @@ async function readConfig (page: Page): Promise<{ fileManagerVisible: boolean }>
   })
 }
 
+/**
+ * The active document's editor. Every open tab keeps its initialized editor
+ * mounted and hides the inactive ones, so the active document is the one
+ * visible `.cm-content`, not the first in document order.
+ */
+function activeEditor (page: Page): Locator {
+  return page.locator('.cm-content').filter({ visible: true })
+}
+
 async function readEditorDocument (page: Page): Promise<string> {
-  return await page.locator('.cm-content').first().evaluate(content => {
+  return await activeEditor(page).evaluate(content => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } } }).cmTile
     const text = tile?.root?.view?.state?.doc?.toString()
     if (text === undefined) {
@@ -145,7 +154,7 @@ async function readEditorDocument (page: Page): Promise<string> {
 }
 
 async function readCursorLine (page: Page): Promise<number> {
-  return await page.locator('.cm-content').first().evaluate(content => {
+  return await activeEditor(page).evaluate(content => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc: { lineAt(pos: number): { number: number } }, selection: { main: { head: number } } } } } } }).cmTile
     const state = tile?.root?.view?.state
     if (state === undefined) {
@@ -157,7 +166,7 @@ async function readCursorLine (page: Page): Promise<number> {
 
 /** Places the editor cursor at an offset and focuses the editor. */
 async function placeCursor (page: Page, offset: number): Promise<void> {
-  await page.locator('.cm-content').first().evaluate((content, anchor) => {
+  await activeEditor(page).evaluate((content, anchor) => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { dispatch(spec: { selection: { anchor: number } }): void, focus(): void } } } }).cmTile
     const view = tile?.root?.view
     if (view === undefined) {
@@ -441,7 +450,7 @@ describe('the Ctrl+P command launcher', function () {
     const indexPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'index.md')
     const indexText = await readFile(indexPath, 'utf8')
 
-    await activePage.locator('.cm-content').first().focus()
+    await activeEditor(activePage).focus()
     await activePage.keyboard.press('Control+Shift+P')
     await activePage.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
     assert.equal(
