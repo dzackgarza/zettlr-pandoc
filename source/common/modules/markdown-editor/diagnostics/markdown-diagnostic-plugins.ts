@@ -40,7 +40,8 @@ registerMarkdownDiagnosticPlugin({
       const references = view.state.field(workspaceReferencesField, false)
       return {
         sourcePath: config?.metadata.path || undefined,
-        projectRoots: references?.projectRoots?.map(root => root.rootPath) ?? []
+        // Undefined until the workspace reference view names the Project roots.
+        projectRoots: references?.projectRoots?.map(root => root.rootPath)
       }
     },
     // Flowmark reads the bibliography files itself. MainEditor dispatches

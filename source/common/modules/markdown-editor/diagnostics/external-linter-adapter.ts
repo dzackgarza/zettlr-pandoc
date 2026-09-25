@@ -99,8 +99,10 @@ export function externalLinterExtension<Context, Metadata = undefined>(
 export function externalLinterPluginExtensions<Context, Metadata = undefined>(
   plugin: ExternalLinterPlugin<Context, Metadata>
 ): Extension[] {
-  return [
-    ...(plugin.extensions ?? []),
-    externalLinterExtension(plugin)
-  ]
+  const lint = externalLinterExtension(plugin)
+  // A plugin without presentation extensions contributes only its linter.
+  if (plugin.extensions === undefined) {
+    return [lint]
+  }
+  return [...plugin.extensions, lint]
 }
