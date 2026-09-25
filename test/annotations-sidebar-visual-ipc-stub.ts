@@ -7,19 +7,20 @@
  * operation; this module only supplies what THIS capture's fixtures answer
  * with, and what it must record for the driver to inspect.
  *
- * It also records what the panel asked for. The review adjudication the
- * editor used to own now lives in this panel, and the claim that matters is
- * that a click raises the provider's fenced request instead of deciding
- * locally — which is only observable at this bridge.
+ * It also records what the page asked for. For the review controls and the
+ * annotation thread the editor carries, the claim that matters is that a
+ * click raises the provider's fenced request instead of deciding locally —
+ * which is only observable at this bridge.
  */
 
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { LeafNodeJSON } from '@dts/common/documents'
 import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { SCENE_DOCUMENT_PATH } from './annotations-sidebar-scene-fixture'
+import editorConfig from './fixtures/editor-config.json'
 
 /**
- * One request the panel raised, as it reached the preload bridge: the
+ * One request the page raised, as it reached the preload bridge: the
  * channel name (the typed `documents:*` channel, or the multiplexer's own
  * inner command) and the raw request the caller sent on it.
  */
@@ -55,17 +56,24 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return sceneLeaf
     default:
       // Every typed documents:* mutation channel answers with the
-      // provider's success shape, so the panel's own busy state settles
+      // provider's success shape, so the controls' busy state settles
       // the way it does in the app.
       return message.command.startsWith('documents:') ? { ok: true } : undefined
   }
 })
 
+// The window-state and config stores read the config at construction, as
+// they do in a real window; the capture serves the same snapshot the tab
+// persistence harness uses.
+documentCollaborationIpcDouble.setSendSyncResponder((channel, message) =>
+  channel === 'config-provider' && message?.command === 'get-config' ? editorConfig : undefined
+)
+
 export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {
   sceneSession = session
 }
 
-/** Every request the mounted panel raised, in order. */
+/** Every request the page raised, in order. */
 export function recordedRequests (): RecordedRequest[] {
   return recorded
 }

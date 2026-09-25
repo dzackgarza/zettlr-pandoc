@@ -1,10 +1,20 @@
 /**
- * Mounts the production AnnotationsTab.vue against the same fixture session
- * the unit spec uses (annotations-sidebar-scene-fixture.ts), for the M7
- * structural-conformance captures (plan section 4, scenes 03/05/10/11). The
- * harness computes no render output itself — every card, pill, and count on
- * screen is the real component reading a real Pinia store, exactly the path
- * the app takes, with only the IPC transport stubbed to serve the fixture.
+ * Mounts the production collaboration surfaces against the same fixture
+ * session the unit spec uses (annotations-sidebar-scene-fixture.ts), for the
+ * plan's capture scenes 03/04/05/06/10/11/12 and the review controls:
+ *
+ * - AnnotationsTab.vue, the workspace list in the right-hand panel;
+ * - a CodeMirror pane over the scene document carrying the production
+ *   review-chunks, text-annotations and collaboration-controls extensions,
+ *   filled by InlineCollaborationControls.vue exactly as MainEditor fills
+ *   them: the controls under each review chunk, the review bar, and the
+ *   open annotation's thread under its target.
+ *
+ * The harness computes no render output itself. Every row, thread, control
+ * and count on screen is a real component reading a real Pinia store; only
+ * the IPC transport is stubbed to serve the fixture, and the wrapper below
+ * plays the two roles the app gives App.vue and MainEditor.vue (routing the
+ * panel's navigation to the selection, and syncing the pane from the store).
  */
 
 // Must be the first local import: it installs window.ipc as a side effect,
@@ -13,51 +23,68 @@
 import './document-collaboration-ipc-double'
 import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { recordedRequests, setAnnotationsSceneSession } from './annotations-sidebar-visual-ipc-stub'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, nextTick, shallowRef, watch } from 'vue'
 import { createPinia } from 'pinia'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
-import { defaultDark, editorTheme } from '@common/modules/markdown-editor/theme/editor'
+import { defaultDark, defaultLight, editorTheme } from '@common/modules/markdown-editor/theme/editor'
+import { reviewChunksExtension } from '@common/modules/markdown-editor/plugins/review-chunks'
 import {
+  annotationChipClickedEffect,
   setActiveAnnotationEffect,
   setAnnotationDraftEffect,
   setAnnotationSessionEffect,
   showResolvedAnnotationsEffect,
   textAnnotationsExtension
 } from '@common/modules/markdown-editor/plugins/text-annotations'
+import {
+  collaborationControls,
+  type CollaborationControl
+} from '@common/modules/markdown-editor/plugins/collaboration-controls'
 import loadIcons from 'source/common/modules/window-register/load-icons'
 import AnnotationsTab from 'source/win-main/sidebar/AnnotationsTab.vue'
 import ActivityBar from 'source/win-main/sidebar/ActivityBar.vue'
+import InlineCollaborationControls, { type CollaborationBlock } from 'source/win-main/editor-collaboration/InlineCollaborationControls.vue'
 import { PANEL_VIEW_ID, PANEL_VIEWS } from 'source/win-main/sidebar/sidebar-views'
 import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
 import type { AnnotationSet, TextAnnotation } from '@dts/common/annotation-domain'
+import type { SourceRange } from '@dts/common/references'
 import {
   buildSceneSession,
   buildSceneSessionForM10Captures,
   buildSceneSessionWithOrphan,
   buildSceneSessionWithReview,
-  SCENE_DOCUMENT_PATH
+  SCENE_DOCUMENT_PATH,
+  SCENE_WORKING_TEXT
 } from './annotations-sidebar-scene-fixture'
+
+/** A request the page put on the preload bridge. */
+interface RaisedRequest { channel: string, message: unknown }
 
 declare global {
   interface Window {
     captureReady: Promise<void>
+    /** The fixture document the pane shows, for offsets the driver checks. */
+    annotationsSceneWorkingText: string
     annotationsSceneSelect: (annotationId: string | null) => Promise<void>
     annotationsSceneSetShowResolved: (value: boolean) => Promise<void>
     /** Swap the cached session for the one that also carries a review, so
-     *  the SuggestionInspector mounts (M9). */
+     *  the pane places chunk controls and the review bar. */
     annotationsSceneSetReview: (active: boolean) => Promise<void>
     /** Swap the cached session for the one carrying a fourth, orphaned
-     *  annotation (M10, S8/I6) — the only state that renders a real
-     *  Reattach control. */
+     *  annotation (S8/I6) — the only state whose thread offers Reattach. */
     annotationsSceneSetOrphanScenario: (active: boolean) => Promise<void>
-    /** Swap the cached session for the one M10's own capture scenes need
-     *  (04 multi-turn/no-proposal, 06 partial proposal): the base three
-     *  annotations plus a multi-turn thread and a partially-decided
+    /** Swap the cached session for the one scenes 04 and 06 need: the base
+     *  three annotations plus a multi-turn thread and a partially decided
      *  proposal, review active. */
     annotationsSceneSetM10CapturesScenario: (active: boolean) => Promise<void>
-    /** Structural diagnostics for the composite editor mount scene 12 uses
-     *  (every distinguishable state from plan section 3, dark theme). */
+    /** Clicks the gutter chip on a 1-based source line, as the owner does. */
+    annotationsSceneClickChip: (line: number) => Promise<void>
+    /** Clicks an annotation's row in the workspace panel and reports every
+     *  navigation the panel raised so far. */
+    annotationsSceneClickRow: (annotationId: string) => Promise<Array<{ documentPath: string, range?: SourceRange, annotationId?: string }>>
+    /** Structural diagnostics for the composite editor scene 12 adds (every
+     *  distinguishable locator state from plan section 3, dark theme). */
     annotationsSceneEditorDiagnostics: () => {
       marks: number
       markers: number
@@ -70,78 +97,66 @@ declare global {
       contentClientWidth: number | undefined
       contentScrollWidth: number | undefined
     }
-    /**
-     * Clicks the selected card's "Show proposal" action (S7) and reports
-     * which outstanding suggestion chunk ids the panel marked focused —
-     * read from the SAME session's linked proposalActions, not asserted by
-     * the driver, so this can only pass if the panel actually resolved the
-     * link itself.
-     */
-    annotationsSceneClickShowProposal: () => Promise<string[]>
-    /**
-     * Clicks "Reattach" on the selected card and reports every annotation
-     * id the panel's begin-reattach listener (App.vue's role here) has
-     * received so far — the boundary S8/I6 wires: only the id crosses it.
-     */
+    /** Clicks the open thread's "Show diff" and reports the ranges the
+     *  controls asked the pane to reveal so far. */
+    annotationsSceneClickShowProposal: () => Promise<SourceRange[]>
+    /** Clicks the open thread's Reattach and reports every annotation id the
+     *  controls handed the pane so far — only the id crosses (S8/I6). */
     annotationsSceneClickReattach: () => Promise<string[]>
-    /**
-     * Clicks the header's close control and reports how many times the
-     * panel's parent (App.vue's role, which hides the pane) has been asked
-     * to close so far.
-     */
+    /** Clicks the panel header's close and reports how many times the
+     *  panel's parent (App.vue's role, which hides the pane) was asked. */
     annotationsSceneClickClose: () => Promise<number>
-    /**
-     * Types a reply into the detail's composer and presses Mod-Enter,
-     * reporting the request the store raised because of it — the owner's
-     * message reaches the provider, and nothing lands in the thread until
-     * the broadcast does.
-     */
-    annotationsSceneComposeReply: (text: string) => Promise<{ channel: string, message: unknown } | undefined>
-    /** Types a draft into the composer and presses Escape, reporting what
-     *  the field holds afterwards. */
+    /** Types a reply into the open thread's composer and presses Mod-Enter,
+     *  reporting the request the store raised because of it. */
+    annotationsSceneComposeReply: (text: string) => Promise<RaisedRequest | undefined>
+    /** Types a draft into the thread's composer and presses Escape,
+     *  reporting what the field holds afterwards. */
     annotationsSceneComposeEscape: (text: string) => Promise<string>
-    /** Click the nth Accept control the panel renders, and report the
-     *  request that reached the preload bridge because of it. */
-    annotationsSceneAcceptChunk: (index: number) => Promise<{ channel: string, message: unknown } | undefined>
-    /** Type into the nth chunk's note field and blur it, reporting the
+    /** Clicks the nth chunk's Accept in the pane, reporting the request. */
+    annotationsSceneAcceptChunk: (index: number) => Promise<RaisedRequest | undefined>
+    /** Types into the nth chunk's note field and blurs it, reporting the
      *  request the commit raised. */
-    annotationsSceneWriteChunkNote: (index: number, text: string) => Promise<{ channel: string, message: unknown } | undefined>
-    /** Type a review-level comment and submit it, reporting the request. */
-    annotationsSceneWriteReviewComment: (text: string) => Promise<{ channel: string, message: unknown } | undefined>
-    /**
-     * Type into the nth chunk's note field WITHOUT committing, then let the
-     * provider's echo of an earlier commit land. Reports whether the field
-     * kept the unsent characters and the caret.
-     */
+    annotationsSceneWriteChunkNote: (index: number, text: string) => Promise<RaisedRequest | undefined>
+    /** Types a review comment into the review bar and submits it. */
+    annotationsSceneWriteReviewComment: (text: string) => Promise<RaisedRequest | undefined>
+    /** Types into the nth chunk's note field WITHOUT committing, then lets
+     *  the provider's echo of an earlier commit land. Reports whether the
+     *  field kept the unsent characters and the caret. */
     annotationsSceneTypeThroughEcho: (index: number, text: string) => Promise<{ value: string, focused: boolean }>
     annotationsSceneDiagnostics: () => {
-      openCount: number
-      listCardCount: number
-      resolvedDisclosurePresent: boolean
-      inspectorPresent: boolean
-      inspectorMode: string
-      suggestionInspectorPresent: boolean
-      suggestionChunkCount: number
-      outstandingLabel: string
-      acceptCount: number
-      rejectCount: number
-      chunkNoteValues: string[]
-      massActionCount: number
-      reviewCommentPresent: boolean
-      /** Suggestion chunk ids currently marked linked (S7 "Show proposal"). */
-      linkedProposalChunkIds: string[]
+      /** Open annotation rows in the workspace panel. */
+      annotationRowCount: number
+      /** Outstanding-change rows in the workspace panel. */
+      suggestionRowCount: number
+      documentAcceptAllCount: number
+      globalAcceptAllPresent: boolean
       /** Heading elements inside the panel: the header is a body-size row. */
       headingCount: number
       /** The panel toggle's shortcut, as the header's chip renders it. */
       shortcutChip: string
-      /** The composer is mounted with the detail, not behind a Reply click. */
+      /** The annotation ids whose thread is open in the pane. */
+      threadIds: string[]
+      threadLifecycle: string
+      /** The composer is mounted with the thread, not behind a Reply click. */
       composerPresent: boolean
-      /** Resolve renders in exactly one place. */
+      /** Resolve (or Reopen) renders exactly once, in the thread. */
       resolveCount: number
+      resolveLabel: string
+      reattachPresent: boolean
       /** The proposal card's one affordance. */
       showProposalLabel: string
+      proposalCardText: string | null
       /** Every thread message's relative time, in thread order. */
       messageTimes: string[]
+      /** Chunk control blocks in the pane, and what they carry. */
+      chunkControlCount: number
+      acceptCount: number
+      rejectCount: number
+      chunkNoteValues: string[]
+      reviewBarPresent: boolean
+      reviewBarLabel: string
+      reviewBarMassActionCount: number
+      reviewCommentPresent: boolean
     }
     annotationsSceneActivityBadgeDiagnostics: () => {
       text: string
@@ -158,23 +173,19 @@ const m10CapturesSession = buildSceneSessionForM10Captures()
 setAnnotationsSceneSession(sceneSession)
 
 /**
- * A small, self-contained document carrying every distinguishable editor
- * state from plan section 3, for scene 12 (12-dark-mode-complete) — the ONE
- * scene that needs "every surface" (not just the panel) on screen at once.
- * Reuses the SAME webpack bundle as the panel above (it already resolves
- * @codemirror/*, per test/visual-build.cjs), so this
- * needs no second build pipeline (M10's own instruction: follow the
- * existing registry conventions rather than inventing a parallel one).
+ * A small, self-contained document carrying every distinguishable locator
+ * state from plan section 3, for scene 12 (12-dark-mode-complete), which
+ * shows every surface at once.
  */
 const EDITOR_STATES_DOC = [
   '# Every Distinguishable Annotation State',                                     // 1 (orphaned marker always lands here)
   '',                                                                             // 2
   'An inactive marker sits quietly over ordinary open prose right here.',         // 3
-  'An active marker gets the stronger treatment once its own card is open.',      // 4
+  'An active marker gets the stronger treatment once its own thread is open.',    // 4
   'Two spans on this single line overlap into one grouped marker badge here.',    // 5
   'A point target appears once its exact text is deleted from the document.',     // 6
   'A drafting selection shows a transient underline before it is ever saved.',    // 7
-  'A resolved annotation stays invisible unless View resolved is toggled on.'     // 8
+  'A resolved annotation stays invisible unless resolved ones are shown.'         // 8
 ].join('\n')
 
 function editorStateSpan (needle: string): { from: number, to: number } {
@@ -201,12 +212,12 @@ function editorStateAnnotation (anchor: TextAnnotation['anchor'], state: TextAnn
 }
 
 const inactiveSpan = editorStateSpan('inactive marker sits quietly over ordinary open prose right here')
-const activeSpan = editorStateSpan('active marker gets the stronger treatment once its own card is open')
+const activeSpan = editorStateSpan('active marker gets the stronger treatment once its own thread is open')
 const overlapSpanA = editorStateSpan('Two spans on this single line')
 const overlapSpanB = editorStateSpan('overlap into one grouped marker badge here')
 const deletionSeam = editorStateSpan('point target appears once its exact text is deleted').from
 const draftSpan = editorStateSpan('drafting selection shows a transient underline')
-const resolvedSpan = editorStateSpan('resolved annotation stays invisible unless View resolved is toggled on')
+const resolvedSpan = editorStateSpan('resolved annotation stays invisible unless resolved ones are shown')
 
 const activeAnnotation = editorStateAnnotation({ state: 'range', ...activeSpan, quotedText: EDITOR_STATES_DOC.slice(activeSpan.from, activeSpan.to) })
 
@@ -223,28 +234,69 @@ const EDITOR_STATES_SET: AnnotationSet = {
   ]
 }
 
+function requireElement<T extends Element> (root: ParentNode, selector: string): T {
+  const element = root.querySelector<T>(selector)
+  if (element === null) {
+    throw new Error(`the scene renders no ${selector}`)
+  }
+  return element
+}
+
+async function settle (): Promise<void> {
+  await nextTick()
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
+  await nextTick()
+}
+
 async function mount (): Promise<void> {
   await loadIcons()
+  const dark = document.body.classList.contains('dark')
+  const panelHost = requireElement<HTMLElement>(document, '#app')
+  const paneHost = requireElement<HTMLElement>(document, '#editor')
 
-  // Wrapped in a plain render-function parent (App.vue's actual role) so
-  // this harness observes what the panel emits upward.
-  const navigationEvents: Array<{ documentPath: string, range?: { from: number, to: number } }> = []
-  let closeEvents = 0
-  const app = createApp({
-    render: () => h(AnnotationsTab, {
-      workspacePaths: [SCENE_DOCUMENT_PATH],
-      onNavigate: (target: { documentPath: string, range?: { from: number, to: number } }) => { navigationEvents.push(target) },
-      onClose: () => { closeEvents += 1 }
-    })
-  })
   const pinia = createPinia()
+  const navigationEvents: Array<{ documentPath: string, range?: SourceRange, annotationId?: string }> = []
+  const revealedRanges: SourceRange[] = []
+  const reattachedIds: string[] = []
+  let closeEvents = 0
 
+  // The blocks the pane's editor places, exactly as MainEditor keeps them.
+  const blocks = shallowRef<CollaborationBlock[]>([])
+  let blockSerial = 0
+  const mountCollaborationControl = (dom: HTMLElement, control: CollaborationControl): (() => void) => {
+    const block: CollaborationBlock = { key: ++blockSerial, dom, control }
+    blocks.value = [...blocks.value, block]
+    return () => { blocks.value = blocks.value.filter(existing => existing !== block) }
+  }
+
+  const app = createApp({
+    render: () => [
+      h(AnnotationsTab, {
+        workspacePaths: [SCENE_DOCUMENT_PATH],
+        // App.vue's role: a row opens its document and, for an annotation,
+        // that annotation's thread.
+        onNavigate: (target: { documentPath: string, range?: SourceRange, annotationId?: string }) => {
+          navigationEvents.push(target)
+          if (target.annotationId !== undefined) {
+            useDocumentCollaborationStore().selectAnnotation(target.annotationId)
+          }
+        },
+        onClose: () => { closeEvents += 1 }
+      }),
+      h(InlineCollaborationControls, {
+        documentPath: SCENE_DOCUMENT_PATH,
+        blocks: blocks.value,
+        onRevealRange: (range: SourceRange) => { revealedRanges.push(range) },
+        onReattach: (annotationId: string) => { reattachedIds.push(annotationId) },
+        onStepChunk: () => {}
+      })
+    ]
+  })
   app.use(pinia)
 
-  // Mount the production activity-bar component offscreen so the panel's
-  // structural screenshots remain unchanged while this same real-SFC harness
-  // proves the unresolved-work indicator. App.vue's count derivation is
-  // independently covered by the pure model spec.
+  // Mount the production activity-bar component offscreen, so the panel's
+  // captures stay unchanged while this real-SFC harness proves the
+  // unresolved-work indicator.
   const activityHost = document.createElement('div')
   activityHost.style.position = 'fixed'
   activityHost.style.left = '-10000px'
@@ -265,7 +317,6 @@ async function mount (): Promise<void> {
 
   const documentTreeStore = useDocumentTreeStore()
   documentTreeStore.lastLeafActiveFile = { path: SCENE_DOCUMENT_PATH, pinned: false }
-
   const collaborationStore = useDocumentCollaborationStore()
 
   window.annotationsSceneActivityBadgeDiagnostics = () => {
@@ -278,11 +329,56 @@ async function mount (): Promise<void> {
     }
   }
 
-  const host = document.querySelector<HTMLElement>('#app')
-  if (host === null) {
-    throw new Error('Visual capture host is missing')
-  }
-  app.mount(host)
+  // The pane over the scene document, carrying the extensions MarkdownEditor
+  // installs for collaboration. A gutter chip toggles its thread, as
+  // MainEditor does with the editor's annotation-selected event.
+  const reviewCompartment = new Compartment()
+  const pane = new EditorView({
+    parent: paneHost,
+    state: EditorState.create({
+      doc: SCENE_WORKING_TEXT,
+      extensions: [
+        editorTheme,
+        dark ? defaultDark : defaultLight,
+        EditorView.lineWrapping,
+        lineNumbers(),
+        reviewCompartment.of([]),
+        textAnnotationsExtension(),
+        collaborationControls(mountCollaborationControl),
+        EditorView.updateListener.of(update => {
+          for (const transaction of update.transactions) {
+            for (const effect of transaction.effects) {
+              if (effect.is(annotationChipClickedEffect)) {
+                collaborationStore.selectAnnotation(
+                  collaborationStore.selectedAnnotationId === effect.value ? null : effect.value
+                )
+              }
+            }
+          }
+        })
+      ]
+    })
+  })
+
+  app.mount(panelHost)
+
+  // MainEditor's watchers: the store is the only thing that moves the pane.
+  watch(() => collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH], session => {
+    pane.dispatch({
+      effects: [
+        setAnnotationSessionEffect.of(session?.annotations ?? { generation: 0, items: [] }),
+        reviewCompartment.reconfigure(session?.review === undefined
+          ? []
+          : reviewChunksExtension({ suggestions: session.review.suggestions }))
+      ]
+    })
+  }, { immediate: true })
+  watch(() => collaborationStore.selectedAnnotationId, annotationId => {
+    pane.dispatch({ effects: setActiveAnnotationEffect.of(annotationId) })
+  }, { immediate: true })
+  watch(() => collaborationStore.showResolved, show => {
+    pane.dispatch({ effects: showResolvedAnnotationsEffect.of(show) })
+  }, { immediate: true })
 
   // The application menu, as the menu provider broadcasts it to a window
   // that asked for it: the header reads the panel toggle's shortcut chip
@@ -304,23 +400,21 @@ async function mount (): Promise<void> {
   })
 
   await collaborationStore.ensureSession(SCENE_DOCUMENT_PATH)
-  await nextTick()
+  await settle()
 
-  // The composite editor for scene 12 (12-dark-mode-complete): a bare
-  // EditorView, always built with the dark theme (this scene has no light
-  // variant), carrying every distinguishable state plan section 3 names.
-  // Lives beside #app in the page the driver builds, so one screenshot
-  // shows both the editor's locators and the panel together (S1).
-  const editorHost = document.querySelector<HTMLElement>('#editor-complete')
-  if (editorHost !== null) {
-    const editorView = new EditorView({
-      parent: editorHost,
+  // The composite locator editor for scene 12 (12-dark-mode-complete): a
+  // bare EditorView carrying every distinguishable state plan section 3
+  // names. It lives beside the pane and the panel, hidden until scene 12.
+  const statesHost = document.querySelector<HTMLElement>('#editor-complete')
+  if (statesHost !== null) {
+    const statesView = new EditorView({
+      parent: statesHost,
       state: EditorState.create({
         doc: EDITOR_STATES_DOC,
-        extensions: [editorTheme, defaultDark, EditorView.lineWrapping, lineNumbers(), textAnnotationsExtension()]
+        extensions: [editorTheme, dark ? defaultDark : defaultLight, EditorView.lineWrapping, lineNumbers(), textAnnotationsExtension()]
       })
     })
-    editorView.dispatch({
+    statesView.dispatch({
       effects: [
         setAnnotationSessionEffect.of(EDITOR_STATES_SET),
         setActiveAnnotationEffect.of(activeAnnotation.annotationId),
@@ -330,60 +424,101 @@ async function mount (): Promise<void> {
     })
 
     window.annotationsSceneEditorDiagnostics = () => {
-      const content = editorHost.querySelector<HTMLElement>('.cm-content')
+      const content = statesHost.querySelector<HTMLElement>('.cm-content')
       return {
-        marks: editorHost.querySelectorAll('.cm-textAnnotation-mark').length,
-        markers: editorHost.querySelectorAll('.cm-textAnnotation-gutterMarker').length,
-        activeMarks: editorHost.querySelectorAll('.cm-textAnnotation-mark-active').length,
-        resolvedMarks: editorHost.querySelectorAll('.cm-textAnnotation-mark-resolved').length,
-        orphanedMarkers: editorHost.querySelectorAll('.cm-textAnnotation-gutterMarker-orphaned').length,
-        pointMarkers: editorHost.querySelectorAll('.cm-textAnnotation-gutterMarker-point').length,
-        overlappingMarkers: editorHost.querySelectorAll('.cm-textAnnotation-gutterMarker-overlapping').length,
-        draftMarks: editorHost.querySelectorAll('.cm-textAnnotation-draft').length,
+        marks: statesHost.querySelectorAll('.cm-textAnnotation-mark').length,
+        markers: statesHost.querySelectorAll('.cm-textAnnotation-gutterMarker').length,
+        activeMarks: statesHost.querySelectorAll('.cm-textAnnotation-mark-active').length,
+        resolvedMarks: statesHost.querySelectorAll('.cm-textAnnotation-mark-resolved').length,
+        orphanedMarkers: statesHost.querySelectorAll('.cm-textAnnotation-gutterMarker-orphaned').length,
+        pointMarkers: statesHost.querySelectorAll('.cm-textAnnotation-gutterMarker-point').length,
+        overlappingMarkers: statesHost.querySelectorAll('.cm-textAnnotation-gutterMarker-overlapping').length,
+        draftMarks: statesHost.querySelectorAll('.cm-textAnnotation-draft').length,
         contentClientWidth: content?.clientWidth,
         contentScrollWidth: content?.scrollWidth
       }
     }
   }
 
+  const setSession = async (session: typeof sceneSession): Promise<void> => {
+    // The provider double answers every later session read from this one,
+    // so the store cannot re-fetch the previous scenario over it.
+    setAnnotationsSceneSession(session)
+    // The broadcast handler's own effect on the cache, without a broadcast
+    // to wait for: the panel and the pane read the same session either way.
+    collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = session
+    await settle()
+  }
+
+  // Selecting an annotation in the app goes through a navigation that
+  // brings its target into view; CodeMirror renders the thread's block
+  // widget only inside the viewport.
   window.annotationsSceneSelect = async (annotationId) => {
+    if (annotationId === null) {
+      collaborationStore.selectAnnotation(null)
+      await settle()
+      return
+    }
+    const session = collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH]
+    if (session === undefined) {
+      throw new Error('the scene document has no collaboration session')
+    }
+    const annotation = session.annotations.items.find(item => item.annotationId === annotationId)
+    if (annotation === undefined) {
+      throw new Error(`the scene session holds no annotation ${annotationId}`)
+    }
     collaborationStore.selectAnnotation(annotationId)
-    await nextTick()
+    if (annotation.anchor.state === 'range') {
+      pane.dispatch({ effects: EditorView.scrollIntoView(annotation.anchor.from, { y: 'center' }) })
+    } else if (annotation.anchor.state === 'point') {
+      pane.dispatch({ effects: EditorView.scrollIntoView(annotation.anchor.at, { y: 'center' }) })
+    }
+    await settle()
   }
   window.annotationsSceneSetShowResolved = async (value) => {
     collaborationStore.toggleShowResolved(value)
-    await nextTick()
+    await settle()
   }
-  // The broadcast handler's own effect on the cache, without a broadcast to
-  // wait for: the panel reads the same session object either way.
-  window.annotationsSceneSetReview = async (active) => {
-    collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = active ? reviewedSession : sceneSession
-    await nextTick()
+  window.annotationsSceneSetReview = async (active) => { await setSession(active ? reviewedSession : sceneSession) }
+  window.annotationsSceneSetOrphanScenario = async (active) => { await setSession(active ? orphanSession : sceneSession) }
+  window.annotationsSceneSetM10CapturesScenario = async (active) => { await setSession(active ? m10CapturesSession : sceneSession) }
+
+  window.annotationsSceneClickChip = async (line) => {
+    const marker = [...paneHost.querySelectorAll<HTMLElement>('.cm-textAnnotation-gutterMarker')]
+      .find(candidate => candidate.dataset.line === String(line))
+    if (marker === undefined) {
+      throw new Error(`the pane carries no gutter chip on line ${line}`)
+    }
+    // The gutter resolves a press to its line by the pointer's height, so
+    // the press lands on the chip itself.
+    const box = marker.getBoundingClientRect()
+    marker.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: box.left + box.width / 2,
+      clientY: box.top + box.height / 2
+    }))
+    await settle()
   }
-  window.annotationsSceneSetOrphanScenario = async (active) => {
-    collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = active ? orphanSession : sceneSession
-    await nextTick()
+  window.annotationsSceneClickRow = async (annotationId) => {
+    requireElement<HTMLButtonElement>(panelHost, `.annotation-workspace-annotation[data-annotation-id="${annotationId}"]`).click()
+    await settle()
+    return navigationEvents
   }
-  window.annotationsSceneSetM10CapturesScenario = async (active) => {
-    collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = active ? m10CapturesSession : sceneSession
-    await nextTick()
-  }
+
   /** Runs an interaction and reports the request it put on the bridge. */
-  async function requestRaisedBy (interact: () => void): Promise<{ channel: string, message: unknown } | undefined> {
+  async function requestRaisedBy (interact: () => void): Promise<RaisedRequest | undefined> {
     const before = recordedRequests().length
     interact()
-    await nextTick()
-    await new Promise<void>(resolve => setTimeout(resolve, 0))
-    await nextTick()
+    await settle()
     return recordedRequests().slice(before)[0]
   }
 
-  // An arrow const, not a function declaration: declarations hoist, so TypeScript
-  // will not carry `host`'s null check into one, and this reads the panel mount.
   const noteFieldAt = (index: number): HTMLInputElement => {
-    const input = host.querySelectorAll<HTMLInputElement>('input.suggestion-chunk-comment')[index]
+    const input = paneHost.querySelectorAll<HTMLInputElement>('input.suggestion-chunk-comment')[index]
     if (input === undefined) {
-      throw new Error(`the panel renders no note field at index ${index}`)
+      throw new Error(`the pane renders no chunk note field at index ${index}`)
     }
     return input
   }
@@ -395,17 +530,11 @@ async function mount (): Promise<void> {
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  const composerField = (): HTMLTextAreaElement => {
-    const field = host.querySelector<HTMLTextAreaElement>('.annotation-composer textarea')
-    if (field === null) {
-      throw new Error('the detail renders no composer')
-    }
-    return field
-  }
+  const composerField = (): HTMLTextAreaElement => requireElement<HTMLTextAreaElement>(paneHost, '[data-annotation-detail] .annotation-composer textarea')
 
   window.annotationsSceneClickClose = async () => {
-    host.querySelector<HTMLButtonElement>('.annotation-header-close')?.click()
-    await nextTick()
+    requireElement<HTMLButtonElement>(panelHost, '.annotation-header-close').click()
+    await settle()
     return closeEvents
   }
   window.annotationsSceneComposeReply = async (text) => {
@@ -424,10 +553,9 @@ async function mount (): Promise<void> {
     await nextTick()
     return field.value
   }
-
   window.annotationsSceneAcceptChunk = async (index) => {
     return await requestRaisedBy(() => {
-      host.querySelectorAll<HTMLButtonElement>('.suggestion-decision.accept')[index]?.click()
+      paneHost.querySelectorAll<HTMLButtonElement>('.suggestion-chunk .suggestion-decision.accept')[index]?.click()
     })
   }
   window.annotationsSceneWriteChunkNote = async (index, text) => {
@@ -437,79 +565,83 @@ async function mount (): Promise<void> {
     return await requestRaisedBy(() => { input.dispatchEvent(new FocusEvent('blur')) })
   }
   window.annotationsSceneWriteReviewComment = async (text) => {
-    const input = host.querySelector<HTMLInputElement>('input.suggestion-review-comment-input')
-    if (input === null) {
-      throw new Error('the panel renders no review comment field')
-    }
+    const input = requireElement<HTMLInputElement>(paneHost, '.suggestion-review-bar input.suggestion-review-comment-input')
     typeInto(input, text)
     await nextTick()
     return await requestRaisedBy(() => {
-      host.querySelector<HTMLButtonElement>('.suggestion-review-comment-submit')?.click()
+      requireElement<HTMLButtonElement>(paneHost, '.suggestion-review-bar .suggestion-review-comment-submit').click()
     })
   }
   window.annotationsSceneClickShowProposal = async () => {
-    host.querySelector<HTMLButtonElement>('.annotation-action-show-proposal')?.click()
-    await nextTick()
-    await new Promise<void>(resolve => setTimeout(resolve, 0))
-    await nextTick()
-    return [...host.querySelectorAll('.suggestion-chunk.suggestion-chunk-linked')]
-      .map(el => el.getAttribute('data-chunk-id') ?? '')
+    requireElement<HTMLButtonElement>(paneHost, '[data-annotation-detail] .annotation-action-show-proposal').click()
+    await settle()
+    return revealedRanges
   }
   window.annotationsSceneClickReattach = async () => {
-    host.querySelector<HTMLButtonElement>('.annotation-action-reattach')?.click()
-    await nextTick()
-    return navigationEvents.map(event => event.documentPath)
+    requireElement<HTMLButtonElement>(paneHost, '[data-annotation-detail] [data-annotation-action="reattach"]').click()
+    await settle()
+    return reattachedIds
   }
   window.annotationsSceneTypeThroughEcho = async (index, text) => {
     const input = noteFieldAt(index)
     typeInto(input, text)
     await nextTick()
     // The broadcast a commit provokes, carrying the provider's own note for
-    // this chunk. It re-renders the inspector while the reviewer is still in
-    // the field with characters they have not sent.
+    // every chunk. It re-renders the controls while the reviewer is still
+    // in the field with characters they have not sent.
+    const review = reviewedSession.review
+    if (review === undefined) {
+      throw new Error('the reviewed scene session carries no review')
+    }
     collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = {
       ...reviewedSession,
       review: {
-        ...reviewedSession.review!,
-        reviewGeneration: reviewedSession.review!.reviewGeneration + 1,
-        chunkComments: reviewedSession.review!.suggestions.map(suggestion => ({
+        ...review,
+        reviewGeneration: review.reviewGeneration + 1,
+        chunkComments: review.suggestions.map(suggestion => ({
           chunkId: suggestion.suggestionId,
           comment: 'the provider\'s own note'
         }))
       }
     }
-    await nextTick()
+    await settle()
     const after = noteFieldAt(index)
     return { value: after.value, focused: document.activeElement === after }
   }
-  // Scoped to `host` (the panel mount), not `document`: the composite editor
-  // for scene 12 lives beside it in the same page.
-  window.annotationsSceneDiagnostics = () => ({
-    openCount: sceneSession.annotations.items.filter(a => a.state === 'open').length,
-    listCardCount: host.querySelectorAll('.annotation-list-item').length,
-    resolvedDisclosurePresent: host.querySelector('.annotation-resolved-disclosure') !== null,
-    inspectorPresent: host.querySelector('.annotation-inspector') !== null,
-    inspectorMode: host.querySelector('.annotations-tab')?.getAttribute('data-inspector-mode') ?? '',
-    suggestionInspectorPresent: host.querySelector('.suggestion-inspector') !== null,
-    suggestionChunkCount: host.querySelectorAll('.suggestion-chunk').length,
-    outstandingLabel: host.querySelector('.suggestion-outstanding')?.textContent ?? '',
-    acceptCount: host.querySelectorAll('.suggestion-decision.accept').length,
-    rejectCount: host.querySelectorAll('.suggestion-decision.reject').length,
-    chunkNoteValues: [...host.querySelectorAll<HTMLInputElement>('input.suggestion-chunk-comment')].map(input => input.value),
-    massActionCount: host.querySelectorAll('.suggestion-inspector-mass-actions button').length,
-    reviewCommentPresent: host.querySelector('.suggestion-review-comment-submit') !== null,
-    linkedProposalChunkIds: [...host.querySelectorAll('.suggestion-chunk.suggestion-chunk-linked')]
-      .map(el => el.getAttribute('data-chunk-id') ?? ''),
-    headingCount: host.querySelectorAll('h1, h2, h3').length,
-    shortcutChip: host.querySelector('.annotation-header-shortcut')?.textContent?.trim() ?? '',
-    composerPresent: host.querySelector('.annotation-composer textarea') !== null,
-    resolveCount: host.querySelectorAll('.annotation-inspector-resolve').length,
-    showProposalLabel: host.querySelector('.annotation-action-show-proposal')?.textContent?.trim() ?? '',
-    messageTimes: [...host.querySelectorAll('.annotation-message-time')].map(el => el.textContent?.trim() ?? ''),
-  })
+
+  window.annotationsSceneDiagnostics = () => {
+    const thread = paneHost.querySelector<HTMLElement>('[data-annotation-detail]')
+    const bar = paneHost.querySelector<HTMLElement>('.suggestion-review-bar')
+    return {
+      annotationRowCount: panelHost.querySelectorAll('.annotation-workspace-annotation').length,
+      suggestionRowCount: panelHost.querySelectorAll('.annotation-workspace-suggestion').length,
+      documentAcceptAllCount: panelHost.querySelectorAll('.annotation-document-accept-all').length,
+      globalAcceptAllPresent: panelHost.querySelector('.annotation-global-accept-all') !== null,
+      headingCount: panelHost.querySelectorAll('h1, h2, h3').length,
+      shortcutChip: panelHost.querySelector('.annotation-header-shortcut')?.textContent?.trim() ?? '',
+      threadIds: [...paneHost.querySelectorAll('[data-annotation-detail]')].map(element => element.getAttribute('data-annotation-id') ?? ''),
+      threadLifecycle: thread?.querySelector('.annotation-lifecycle-pill')?.textContent?.trim() ?? '',
+      composerPresent: thread !== null && thread.querySelector('.annotation-composer textarea') !== null,
+      resolveCount: paneHost.querySelectorAll('[data-annotation-detail] [data-annotation-action="resolve"]').length,
+      resolveLabel: thread?.querySelector('[data-annotation-action="resolve"]')?.textContent?.trim() ?? '',
+      reattachPresent: thread !== null && thread.querySelector('[data-annotation-action="reattach"]') !== null,
+      showProposalLabel: thread?.querySelector('.annotation-action-show-proposal')?.textContent?.trim() ?? '',
+      proposalCardText: thread?.querySelector('.proposal-action-card')?.textContent ?? null,
+      messageTimes: [...paneHost.querySelectorAll('.annotation-message-time')].map(element => element.textContent?.trim() ?? ''),
+      chunkControlCount: paneHost.querySelectorAll('.suggestion-chunk').length,
+      acceptCount: paneHost.querySelectorAll('.suggestion-chunk .suggestion-decision.accept').length,
+      rejectCount: paneHost.querySelectorAll('.suggestion-chunk .suggestion-decision.reject').length,
+      chunkNoteValues: [...paneHost.querySelectorAll<HTMLInputElement>('input.suggestion-chunk-comment')].map(input => input.value),
+      reviewBarPresent: bar !== null,
+      reviewBarLabel: bar?.querySelector('.suggestion-review-count')?.textContent?.trim() ?? '',
+      reviewBarMassActionCount: bar === null ? 0 : bar.querySelectorAll('.suggestion-accept-all, .suggestion-clear').length,
+      reviewCommentPresent: bar !== null && bar.querySelector('.suggestion-review-comment-submit') !== null
+    }
+  }
 
   await document.fonts.ready
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 }
 
+window.annotationsSceneWorkingText = SCENE_WORKING_TEXT
 window.captureReady = mount()

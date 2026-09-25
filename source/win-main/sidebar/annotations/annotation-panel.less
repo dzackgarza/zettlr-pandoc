@@ -158,6 +158,9 @@ button.annotation-button {
   font: inherit;
   font-size: var(--annotation-small-font-size);
   line-height: 1.2;
+  // A button label is one unit: its row gives way first.
+  flex-shrink: 0;
+  white-space: nowrap;
   cursor: pointer;
 
   &:hover:not(:disabled) {

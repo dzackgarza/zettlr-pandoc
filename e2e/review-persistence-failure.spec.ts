@@ -613,7 +613,7 @@ describe('a review that cannot be persisted', function () {
     await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
     assert.match(
       await toast.first().locator('span').first().innerText(),
-      /^The review could not be saved, so this document was left open: ./,
+      /: The review could not be saved, so this document was left open: ./,
       'the person who asked for the close must be told why it did not happen'
     )
     assert.deepEqual(

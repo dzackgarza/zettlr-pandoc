@@ -147,15 +147,18 @@ body {
 
   .suggestion-chunk-actions {
     display: flex;
-    flex: 0 1 auto;
+    flex-wrap: wrap;
+    flex: 1 1 auto;
     align-items: center;
+    justify-content: flex-end;
     gap: 6px;
+    min-width: 0;
     margin-left: auto;
   }
 
   input.suggestion-chunk-comment {
     box-sizing: border-box;
-    width: 14em;
+    flex: 0 1 14em;
     min-width: 6em;
     height: 26px;
     padding: 0 8px;
