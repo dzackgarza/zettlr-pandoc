@@ -267,7 +267,7 @@ describe('opening a Markdown document', function () {
     )
     await referenceSearch.waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
-      await referenceSearch.locator('input[aria-label="Definition search query"]').inputValue(),
+      await referenceSearch.locator('input[aria-label="Reference search"]').inputValue(),
       'sec:terminology',
       'The badge key must survive the editor-to-launcher relay.'
     )
