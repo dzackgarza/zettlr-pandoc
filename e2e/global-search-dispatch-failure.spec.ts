@@ -349,7 +349,7 @@ describe('global-search and project-properties failure recovery', function () {
       // durable application log transport, not the retired console side effect.
       await waitForProcessOutput(
         running.getOutput,
-        'Project was null',
+        'this folder is no longer a Project',
         30_000
       )
 
