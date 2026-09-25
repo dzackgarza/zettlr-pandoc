@@ -4,6 +4,7 @@ import type {
 } from '@common/diagnostics/external-linter'
 import { trans } from '@common/i18n-renderer'
 import { extractTextnodes, markdownToAST } from '@common/modules/markdown-utils'
+import type { DictionaryProviderBroadcast } from '@providers/dictionary/ipc-contract'
 
 export interface SpellcheckDiagnosticContext {
   autocorrectValues: string[]
@@ -20,9 +21,8 @@ function ensureDictionaryListener (): void {
     return
   }
   dictionaryListenerRegistered = true
-  window.ipc.on('dictionary-provider', (_event, message) => {
-    const payload = message as unknown as { command?: string }
-    if (payload.command === 'invalidate-dict') {
+  window.ipc.on('dictionary-provider', (_event, message: DictionaryProviderBroadcast) => {
+    if (message.command === 'invalidate-dict') {
       spellcheckCache.clear()
     }
   })

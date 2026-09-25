@@ -70,10 +70,13 @@ export function getSnippetsFields (): PreferencesFieldset[] {
             ipcRenderer.invoke('assets-provider', {
               command: 'open-phrase-completions-directory'
             })
+              // shell.openPath resolves with an error message, or '' on success.
               .then(error => {
-                if (error !== '') {console.error(error)}
+                if (error !== '') {
+                  reportError('Could not open the phrase completion dictionary', error)
+                }
               })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         }
       ]

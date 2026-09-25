@@ -10,6 +10,7 @@ import type { SyntaxNode } from '@lezer/common'
 import { isMathPosition } from '../util/is-math-position'
 import { tikzBlockAt } from '../tikz-block'
 import { withCompletionSource } from './completion-presentation'
+import type { DictionaryProviderBroadcast } from '@providers/dictionary/ipc-contract'
 
 interface ProseCatalogue {
   words: string[]
@@ -65,11 +66,7 @@ async function loadCatalogue (): Promise<ProseCatalogue> {
   return await loading
 }
 
-type DictionaryBroadcast = {
-  command: 'invalidate-dict'|'prose-completions-updated'
-}
-
-window.ipc.on('dictionary-provider', (_event, message: DictionaryBroadcast) => {
+window.ipc.on('dictionary-provider', (_event, message: DictionaryProviderBroadcast) => {
   if (message.command === 'prose-completions-updated' || message.command === 'invalidate-dict') {
     cached = null
   }

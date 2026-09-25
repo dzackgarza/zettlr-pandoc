@@ -1,6 +1,8 @@
 import type { ExternalLinter } from '@common/diagnostics/external-linter'
 import { ipcExternalLinter } from '@common/diagnostics/providers/ipc'
 import type { LanguageToolIgnoredRuleEntry } from '@providers/config/get-config-template'
+import type { DictionaryProviderBroadcast } from '@providers/dictionary/ipc-contract'
+import { reportError } from '@common/util/error-reporting'
 
 const userDictionary = new Set<string>()
 let dictionaryListenerRegistered = false
@@ -33,9 +35,8 @@ function ensureDictionaryListener (): void {
     return
   }
   dictionaryListenerRegistered = true
-  window.ipc.on('dictionary-provider', (_event, message) => {
-    const payload = message as unknown as { command?: string }
-    if (payload.command === 'invalidate-dict') {
+  window.ipc.on('dictionary-provider', (_event, message: DictionaryProviderBroadcast) => {
+    if (message.command === 'invalidate-dict') {
       refreshLanguageToolUserDictionary()
     }
   })
@@ -54,7 +55,7 @@ export function refreshLanguageToolUserDictionary (): void {
     for (const word of dictionary) {
       userDictionary.add(word)
     }
-  }).catch(() => {})
+  }).catch(err => reportError('Could not load the user dictionary for LanguageTool', err))
 }
 
 export const languageToolDiagnosticProvider: ExternalLinter<

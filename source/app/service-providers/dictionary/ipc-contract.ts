@@ -15,6 +15,14 @@
  */
 
 /**
+ * The messages the dictionary provider broadcasts on 'dictionary-provider'.
+ * Renderer listeners annotate their payload with this type.
+ */
+export interface DictionaryProviderBroadcast {
+  command: 'invalidate-dict'|'prose-completions-updated'
+}
+
+/**
  * The term commands carry their terms at the message's top level, not in
  * payload. The handler validates the payload at runtime as well, but its
  * renderer-facing contract is a string array; keeping that shape here makes a
