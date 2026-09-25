@@ -143,7 +143,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
+    width: 100%;
     height: 44px;
     margin: 0;
     padding: 0;
