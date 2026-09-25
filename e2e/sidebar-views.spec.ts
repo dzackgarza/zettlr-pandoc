@@ -121,7 +121,10 @@ describe('the sidebar views', function () {
       activeDocument: path.join('foundations', 'forms.md'),
       config: {
         darkMode: false,
-        window: { fileManagerVisible: true, sidebarVisible: true }
+        window: { fileManagerVisible: true, sidebarVisible: true },
+        // The shipped Include rule admits Markdown only; an empty Include
+        // admits every type File Treatment shows, attachments among them.
+        fileManager: { filters: { include: [], exclude: [] } }
       }
     })
     fixtureRoot = fixture.root
