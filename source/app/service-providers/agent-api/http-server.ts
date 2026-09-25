@@ -54,6 +54,7 @@ import type {
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentManager from "@providers/documents";
 import type {
@@ -1820,6 +1821,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const db = body.database;
+    if (body.citations.length === 0) {
+      this.sendError(res, 400, "INVALID_PARAMS", "citations must name at least one item to render");
+      return;
+    }
+    if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
+      this.sendError(res, 404, "CITATION_DATABASE_NOT_LOADED", "No main citation library is configured.");
+      return;
+    }
     try {
       const citeItems: CiteItem[] = body.citations.map((c) => ({
         id: c.id,
@@ -1829,7 +1838,18 @@ export default class AgentHTTPProvider extends ProviderContract {
         suffix: c.suffix,
       }));
       const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
-      this.sendJson(res, 200, { rendered: rendered ?? null });
+      // With items and a loaded database, the engine declines only when a
+      // citekey is missing from that database.
+      if (rendered === undefined) {
+        this.sendError(
+          res,
+          404,
+          "CITATION_NOT_FOUND",
+          `At least one citation key is not in database ${db}: ${citeItems.map((item) => item.id).join(", ")}`,
+        );
+        return;
+      }
+      this.sendJson(res, 200, { rendered });
     } catch (err) {
       if (err instanceof CiteprocRenderInvariantError) {
         this.sendError(res, 500, "INTERNAL_ERROR", err.message);

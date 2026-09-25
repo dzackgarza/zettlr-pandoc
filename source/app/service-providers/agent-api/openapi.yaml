@@ -1496,12 +1496,8 @@ components:
       additionalProperties: false
       properties:
         rendered:
-          type:
-            - string
-            - 'null'
-          description: >-
-            The formatted citation string, or null when the engine could not
-            render the requested items.
+          type: string
+          description: The formatted citation string.
     RenderBibliographyResponse:
       type: object
       required:
@@ -2635,8 +2631,14 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/RenderCitationResponse'
                   - $ref: '#/components/schemas/RenderBibliographyResponse'
+        '400':
+          description: No citations or citekeys to render
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
         '404':
-          description: Database not loaded
+          description: Database not loaded, or a citation key not in it
           content:
             application/json:
               schema:

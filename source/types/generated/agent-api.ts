@@ -991,8 +991,8 @@ export interface components {
             count: number;
         };
         RenderCitationResponse: {
-            /** @description The formatted citation string, or null when the engine could not render the requested items. */
-            rendered: string | null;
+            /** @description The formatted citation string. */
+            rendered: string;
         };
         RenderBibliographyResponse: {
             /** @description CSL bibliography formatting options. */
@@ -1953,7 +1953,16 @@ export interface operations {
                     "application/json": components["schemas"]["RenderCitationResponse"] | components["schemas"]["RenderBibliographyResponse"];
                 };
             };
-            /** @description Database not loaded */
+            /** @description No citations or citekeys to render */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Database not loaded, or a citation key not in it */
             404: {
                 headers: {
                     [name: string]: unknown;

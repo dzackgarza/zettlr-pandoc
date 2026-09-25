@@ -651,7 +651,7 @@ export default class CiteprocProvider extends ProviderContract {
       throw this.renderInvariantError(
         'citation',
         citekeys,
-        new Error(`citeproc returned non-printable output ${JSON.stringify(rendered)} (requestedComposite=${requestedComposite}, mode=${mode ?? 'ordinary'})`)
+        new Error(`citeproc returned non-printable output ${JSON.stringify(rendered)} (requestedComposite=${requestedComposite}, engine mode=${String(mode)})`)
       )
     }
     return rendered
@@ -714,7 +714,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return  {boolean} True if there is
    */
-  private hasMainLibrary (): boolean {
+  hasMainLibrary (): boolean {
     return this.mainLibrary !== '' && this.databases.has(this.mainLibrary)
   }
 
