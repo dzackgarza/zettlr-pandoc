@@ -9,6 +9,7 @@
     model-value=""
     v-bind:data-search-mode="mode"
     v-bind:aria-label="mode === 'citing-locations' ? trans('Reference uses') : trans('Search references')"
+    v-on:pointerleave="highlightFirstRow"
   >
     <div class="launcher-query-row">
       <span class="launcher-breadcrumb">{{ breadcrumbLabel }}</span>
@@ -232,13 +233,20 @@ const citingLocations = computed<ReferenceOccurrence[]>(() => {
   return props.occurrences.filter(occurrence => occurrence.key === query.value)
 })
 
-// A new query re-ranks the rows, so the selection restarts at the top match.
-watch([ matches, citingLocations ], () => {
+/**
+ * Restarts the selection at the top match. reka-ui's listbox clears its
+ * highlight on pointerleave, and Chromium fires pointerleave when a shrinking
+ * list moves out from under a resting pointer, so this runs there too.
+ */
+function highlightFirstRow (): void {
   // No catch: the combobox is mounted with the rows, so a rejection here is
   // a defect in this view rather than a condition to carry on from, and the
   // window's recoverable-error boundary is where it belongs.
   void nextTick().then(() => { combobox.value?.highlightFirstItem() })
-}, { immediate: true })
+}
+
+// A new query re-ranks the rows.
+watch([ matches, citingLocations ], highlightFirstRow, { immediate: true })
 
 /**
  * Returns the row headline: `Type — title`, or just the type when nothing

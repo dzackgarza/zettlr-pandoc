@@ -7,6 +7,7 @@
     v-bind:reset-search-term-on-blur="false"
     v-bind:reset-search-term-on-select="false"
     model-value=""
+    v-on:pointerleave="highlightFirstRow"
   >
     <div class="launcher-query-row">
       <span
@@ -126,13 +127,20 @@ function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
   return []
 }
 
-// Ranking replaces the list on every keystroke, so the first row must be
-// highlighted again for Enter to mean "run the best match".
-watch(() => props.rows, () => {
+/**
+ * Highlights the best match, so that Enter means "run the best match".
+ * reka-ui's listbox clears its highlight on pointerleave, and Chromium fires
+ * pointerleave when a shrinking list moves out from under a resting pointer,
+ * so the highlight is restored there too, not only after ranking.
+ */
+function highlightFirstRow (): void {
   nextTick()
     .then(() => { combobox.value?.highlightFirstItem() })
     .catch(err => reportError('[MenuCommandsView] Could not highlight the first row', err))
-}, { immediate: true })
+}
+
+// Ranking replaces the list on every keystroke.
+watch(() => props.rows, highlightFirstRow, { immediate: true })
 
 function onBackspace (): void {
   if (props.query === '') {
