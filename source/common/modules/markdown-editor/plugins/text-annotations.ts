@@ -7,18 +7,18 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Renders the editor's half of a text annotation: a
- *                  highlight over the target span and an ordinal marker on
- *                  the target's first line. Nothing else — no message text,
- *                  no thread, no button, no proposal state (invariant I4).
- *                  Everything the owner reads, replies to or decides lives
- *                  in the annotations panel; this field distinguishes the
- *                  seven editor states plan section 3 requires and owns one
- *                  gesture: a click on a chip reports which annotation it
- *                  carries (`annotationChipClickedEffect`) and changes
- *                  nothing itself. Selection, drafting, and the
- *                  resolved-visibility toggle are driven by effects a host
- *                  (the panel, the creation composer) dispatches.
+ * Description:     Renders a text annotation's locator: a highlight over the
+ *                  target span and an ordinal marker on the target's first
+ *                  line. The thread itself opens inline under the target
+ *                  (collaboration-controls.ts places it for the active
+ *                  annotation, the way an editor comment widget opens under
+ *                  its line). This field distinguishes the seven editor
+ *                  states plan section 3 requires and owns one gesture: a
+ *                  click on a chip reports which annotation it carries
+ *                  (`annotationChipClickedEffect`) and changes nothing
+ *                  itself. Selection, drafting, and the resolved-visibility
+ *                  toggle are driven by effects a host (the pane, the
+ *                  creation composer) dispatches.
  *
  *                  The ordinal chip sits in a gutter of its own
  *                  (`cm-textAnnotation-gutter`), so it is there whether or
@@ -349,6 +349,32 @@ const textAnnotationsGutter = gutter({
 /** The field's current annotation-locator state, or undefined if not installed. */
 export function getTextAnnotationsState (state: EditorState): TextAnnotationsState | undefined {
   return state.field(textAnnotationsField, false)
+}
+
+/**
+ * Where the active annotation's thread opens: the end of the last line its
+ * target covers (the line itself for a point target, line 1 for an orphaned
+ * one, which is where its marker sits). Undefined when no annotation is
+ * active, or the active one is hidden because it is resolved.
+ */
+export function activeAnnotationThreadAnchor (
+  annotations: TextAnnotationsState,
+  doc: EditorState['doc']
+): { annotationId: string, position: number } | undefined {
+  const active = annotations.annotations.find(annotation =>
+    annotation.annotationId === annotations.activeAnnotationId &&
+    (annotation.state === 'open' || annotations.showResolved))
+  if (active === undefined) {
+    return undefined
+  }
+  const anchor = active.anchor
+  const lastPosition = anchor.state === 'range'
+    ? Math.max(anchor.from, anchor.to - 1)
+    : anchor.state === 'point' ? anchor.at : 0
+  return {
+    annotationId: active.annotationId,
+    position: doc.lineAt(Math.min(lastPosition, doc.length)).to
+  }
 }
 
 export function textAnnotationsExtension (): Extension {

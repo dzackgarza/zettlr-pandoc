@@ -12,19 +12,18 @@
  *                  at the positions it was removed from, and inserted spans
  *                  highlighted in place.
  *
- *                  Locators only (plan invariant I4). The chunk a mark names
- *                  is adjudicated in the annotations panel's
- *                  SuggestionInspector, which reads the same
- *                  DocumentCollaborationSession broadcast this extension is
- *                  configured from. The editor therefore carries no button,
- *                  no comment field, no status bar, and no review state of
- *                  its own: it maps the provider's anchors onto this buffer
- *                  and shows where the proposal lands.
+ *                  The field also records whether the chunks it holds were
+ *                  built from the provider's latest broadcast (`synced`) or
+ *                  have since been mapped through edits the provider has not
+ *                  answered yet. The chunk controls (collaboration-controls.ts)
+ *                  read that flag: a decision is fenced on the broadcast's
+ *                  working-text hash, so a control acting on locally mapped
+ *                  chunks would name text the provider does not hold.
  *
  * END HEADER
  */
 
-import { Facet, StateField, type EditorState, type Extension } from '@codemirror/state'
+import { Facet, StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -49,9 +48,18 @@ function requireReviewChunksConfig (state: EditorState): ReviewChunksConfig {
   return configs[0]
 }
 
-interface ReviewChunksFieldValue {
-  suggestions: ReviewSuggestionView[]
-  decorations: DecorationSet
+/**
+ * Marks the installed chunks as out of step with the provider: a broadcast
+ * arrived whose working text differs from this buffer, so the chunks shown
+ * are the last synced ones, mapped locally, until the buffer catches up.
+ */
+export const markReviewChunksStale = StateEffect.define<null>()
+
+export interface ReviewChunksFieldValue {
+  readonly suggestions: ReviewSuggestionView[]
+  readonly decorations: DecorationSet
+  /** True while the chunks are exactly the provider's latest broadcast. */
+  readonly synced: boolean
 }
 
 const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
@@ -76,7 +84,10 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
               removedText: mapped.removedText
             }]
       })
-      return buildFieldValue(tr.state, suggestions)
+      return { ...buildFieldValue(tr.state, suggestions), synced: false }
+    }
+    if (value.synced && tr.effects.some(effect => effect.is(markReviewChunksStale))) {
+      return { ...value, synced: false }
     }
     return value
   },
@@ -91,6 +102,12 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
 export function getReviewChunks (state: EditorState): ReviewSuggestionView[]|null {
   const value = state.field(reviewChunksField, false)
   return value === undefined ? null : value.suggestions
+}
+
+/** The whole review field, or undefined when no review is installed. Its
+ *  identity changes exactly when the chunks or their sync state do. */
+export function getReviewChunksState (state: EditorState): ReviewChunksFieldValue|undefined {
+  return state.field(reviewChunksField, false)
 }
 
 /**
@@ -119,6 +136,19 @@ export function reviewSuggestionsInRange (
 function suggestionAnchor (state: EditorState, suggestion: ReviewSuggestionView): number {
   const position = Math.min(suggestion.anchors[0]?.from ?? suggestion.seam, state.doc.length)
   return state.doc.lineAt(position).from
+}
+
+/**
+ * The end of the last line a suggestion touches: its last working span, or
+ * the line carrying the strikethrough for a pure deletion. A span that ends
+ * on a newline stops on the line that newline closes.
+ */
+export function suggestionLastLineEnd (state: EditorState, suggestion: ReviewSuggestionView): number {
+  const last = suggestion.anchors.at(-1)
+  const position = last === undefined
+    ? suggestion.seam
+    : last.to > last.from ? last.to - 1 : last.from
+  return state.doc.lineAt(Math.min(position, state.doc.length)).to
 }
 
 function selectReviewChunk (view: EditorView, direction: 1|-1): boolean {
@@ -178,7 +208,7 @@ function buildFieldValue (
   const doc = state.doc
   const suggestions = projectedSuggestions ?? config.suggestions
   if (suggestions.length === 0) {
-    return { suggestions, decorations: Decoration.none }
+    return { suggestions, decorations: Decoration.none, synced: true }
   }
 
   const ranges: Array<ReturnType<Decoration['range']>> = []
@@ -205,7 +235,7 @@ function buildFieldValue (
       }
     }
   }
-  return { suggestions, decorations: Decoration.set(ranges, true) }
+  return { suggestions, decorations: Decoration.set(ranges, true), synced: true }
 }
 
 const changedLine = Decoration.line({ class: 'cm-changedLine' })
@@ -213,9 +243,8 @@ const changedText = Decoration.mark({ class: 'cm-changedText' })
 
 /**
  * One deleted span, struck through inline at the working-side position the
- * text was removed from. A locator, not a control: it shows WHERE the
- * proposal lands and WHAT it would take out, carries no decision, and
- * swallows every event.
+ * text was removed from. It shows WHERE the proposal lands and WHAT it would
+ * take out; the decision on it sits in the chunk's control block.
  */
 class DeletedSpanWidget extends WidgetType {
   constructor (

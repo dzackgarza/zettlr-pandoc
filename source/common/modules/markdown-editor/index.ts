@@ -129,7 +129,8 @@ import {
   type PushUpdateCallback,
   reloadStateEffect,
 } from './plugins/remote-doc'
-import { reviewChunksExtension } from './plugins/review-chunks'
+import { markReviewChunksStale, reviewChunksExtension } from './plugins/review-chunks'
+import { collaborationControls, type MountCollaborationControl } from './plugins/collaboration-controls'
 import {
   annotationChipClickedEffect,
   clearAnnotationDraftEffect,
@@ -346,6 +347,10 @@ export default class MarkdownEditor extends EventEmitter {
   private activeReviewDiffSession: ReviewDiffSession | null
   private pendingReviewDiffSession: ReviewDiffSession | null = null
 
+  /** Holds the inline review and annotation controls once a host supplies them. */
+  private readonly collaborationControlsCompartment = new Compartment()
+  private collaborationControlMount: MountCollaborationControl | null = null
+
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
    * the representedDocument. Immediately after instantiation the editor will
@@ -481,9 +486,9 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit('file-search')
             }
 
-            // A gutter chip was clicked: the shell opens the annotations
-            // panel on that annotation. The editor never opens a pane or
-            // selects on its own — it reports which chip was hit.
+            // A gutter chip was clicked: the pane opens or closes that
+            // annotation's inline thread. The editor never selects on its
+            // own — it reports which chip was hit.
             if (effect.is(annotationChipClickedEffect)) {
               this.emit('annotation-selected', effect.value)
             }
@@ -573,8 +578,25 @@ export default class MarkdownEditor extends EventEmitter {
           ? []
           : this.buildReviewExtension(this.activeReviewDiffSession),
       ),
+      this.collaborationControlsCompartment.of(
+        this.collaborationControlMount === null ? [] : collaborationControls(this.collaborationControlMount),
+      ),
     )
     return extensions
+  }
+
+  /**
+   * Installs the inline review and annotation controls, filled by `mount`
+   * (see plugins/collaboration-controls.ts). The pane that shows this editor
+   * supplies it; an editor without a host shows the change locators only.
+   */
+  setCollaborationControls (mount: MountCollaborationControl): void {
+    this.collaborationControlMount = mount
+    if (this.collaborationControlsCompartment.get(this._instance.state) !== undefined) {
+      this._instance.dispatch({
+        effects: this.collaborationControlsCompartment.reconfigure(collaborationControls(mount)),
+      })
+    }
   }
 
   /**
@@ -595,6 +617,13 @@ export default class MarkdownEditor extends EventEmitter {
     })
 
     this._instance.setState(state)
+
+    // A rebuilt state reinstalls the active review as synced; if the
+    // authority's text moved on meanwhile, its controls must not act until
+    // the matching broadcast arrives.
+    if (this.activeReviewDiffSession !== null && content !== this.activeReviewDiffSession.workingText) {
+      this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
+    }
 
     if (persistentState !== undefined) {
       // Now that the correct document has been loaded, there will be content
@@ -1084,15 +1113,22 @@ export default class MarkdownEditor extends EventEmitter {
       return
     }
 
-    // Never mount controls over a renderer buffer that is not the provider's
-    // authoritative working text. The collab update will retry activation
-    // until then the pane is ordinary editable Markdown with no stale action.
+    // Never offer a decision over a renderer buffer that is not the
+    // provider's authoritative working text. The next collab update retries
+    // activation. Meanwhile the same review keeps its locally mapped chunks
+    // on screen with its controls inert, so typing does not make every chunk
+    // block vanish and reappear; a different review is taken down at once.
     if (this._instance.state.doc.toString() !== session.workingText) {
       this.pendingReviewDiffSession = session
+      if (this.activeReviewDiffSession?.id === session.id) {
+        this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
+        return
+      }
       this.activeReviewDiffSession = null
       this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) })
       return
     }
+    const arriving = this.activeReviewDiffSession?.id !== session.id
     this.pendingReviewDiffSession = null
     this.activeReviewDiffSession = session
     // The review-diff-active styling scope rides in the extension itself
@@ -1101,15 +1137,19 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
     })
-    this._instance.focus()
+    // Focus follows a review's arrival only. Every later broadcast of the
+    // same review (a note, a reply, a keystroke elsewhere) would otherwise
+    // pull focus out of the note or reply field the owner is typing in.
+    if (arriving) {
+      this._instance.focus()
+    }
   }
 
   /**
    * The review extension for a session: the provider's mapped suggestion
-   * anchors, rendered over this buffer as locators. The pane emits nothing —
-   * the annotations panel adjudicates the same suggestions from the same
-   * broadcast, and the next broadcast is the only thing that changes what is
-   * drawn here.
+   * anchors, rendered over this buffer. The chunk controls the host mounts
+   * decide the same suggestions from the same broadcast, and the next
+   * broadcast is the only thing that changes what is drawn here.
    */
   private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
     return reviewChunksExtension({ suggestions: session.suggestions })
