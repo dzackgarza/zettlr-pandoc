@@ -41,21 +41,22 @@
       v-bind:disabled="busy || reviewComment.trim().length === 0"
       v-on:click="submitReviewComment"
     >{{ trans('Comment') }}</button>
-    <span class="suggestion-review-spacer"></span>
-    <button
-      type="button"
-      class="annotation-button suggestion-clear"
-      v-bind:title="trans('Reject every change still pending in this document')"
-      v-bind:disabled="busy"
-      v-on:click="emit('clear')"
-    >{{ trans('Reject all') }}</button>
-    <button
-      type="button"
-      class="annotation-button annotation-button-primary suggestion-accept-all"
-      v-bind:title="trans('Accept every change still pending in this document')"
-      v-bind:disabled="busy"
-      v-on:click="emit('accept-all')"
-    >{{ trans('Accept all') }}</button>
+    <span class="suggestion-review-decisions">
+      <button
+        type="button"
+        class="annotation-button suggestion-clear"
+        v-bind:title="trans('Reject every change still pending in this document')"
+        v-bind:disabled="busy"
+        v-on:click="emit('clear')"
+      >{{ trans('Reject all') }}</button>
+      <button
+        type="button"
+        class="annotation-button annotation-button-primary suggestion-accept-all"
+        v-bind:title="trans('Accept every change still pending in this document')"
+        v-bind:disabled="busy"
+        v-on:click="emit('accept-all')"
+      >{{ trans('Accept all') }}</button>
+    </span>
   </div>
 </template>
 
@@ -133,8 +134,9 @@ body {
 
   input.suggestion-review-comment-input {
     box-sizing: border-box;
-    flex: 0 1 18em;
-    min-width: 8em;
+    flex: 1 1 8em;
+    min-width: 6em;
+    max-width: 24em;
     height: 26px;
     padding: 0 8px;
     border: 1px solid var(--annotation-border);
@@ -145,8 +147,11 @@ body {
     font-size: var(--annotation-small-font-size);
   }
 
-  .suggestion-review-spacer {
-    flex: 1 1 auto;
+  // Reject all and Accept all wrap as one unit, at the bar's far end.
+  .suggestion-review-decisions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
   }
 }
 </style>
