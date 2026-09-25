@@ -16,12 +16,155 @@ import sys
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal, TypedDict
 
 from flowmark.lint_rules import pandoc_math_regions
 from flowmark.pandoc_lint import parse_pandoc_for_lint, walk_pandoc
 
 TRAILING_PUNCT = re.compile(r"([,.;:!?])\s*$")
+
+
+class Variants(TypedDict):
+    en: str
+    de: str
+    pt: str
+    ca: str
+
+
+class LanguageToolContext(TypedDict):
+    """The context the host sends: `runLanguageToolBackend` in
+    source/app/util/external-linter-registry.ts merges the renderer's
+    `LanguageToolDiagnosticContext` with `editor.lint.languageTool` config."""
+
+    active: bool
+    language: str
+    disabledRules: list[str]
+    supportedLanguages: list[str]
+    userDictionary: list[str]
+    level: Literal["picky", "default"]
+    motherTongue: str
+    variants: Variants
+    backend: Literal["cli", "official", "custom"]
+    customServer: str
+    username: str
+    apiKey: str
+
+
+class Payload(TypedDict):
+    text: str
+    context: LanguageToolContext
+
+
+class LTReplacement(TypedDict):
+    value: str
+
+
+class LTCategory(TypedDict):
+    id: str
+    name: str
+
+
+class LTRule(TypedDict):
+    id: str
+    description: str
+    issueType: str
+    category: LTCategory
+
+
+class LTMatch(TypedDict):
+    message: str
+    offset: int
+    length: int
+    replacements: list[LTReplacement]
+    rule: LTRule
+
+
+class LTDetectedLanguage(TypedDict):
+    code: str
+
+
+class LTLanguage(TypedDict):
+    code: str
+    detectedLanguage: LTDetectedLanguage
+
+
+class LTResponse(TypedDict):
+    """The `/v2/check` response, which `languagetool --json` also prints."""
+
+    language: LTLanguage
+    matches: list[LTMatch]
+
+
+class LTLanguageEntry(TypedDict):
+    """One entry of the `/v2/languages` response."""
+
+    longCode: str
+
+
+class ReplaceAction(TypedDict):
+    kind: Literal["replace"]
+    name: str
+    replacement: str
+    markClass: str
+
+
+class IgnoredRule(TypedDict):
+    """`LanguageToolIgnoredRuleEntry` in get-config-template.ts."""
+
+    description: str
+    id: str
+    category: str
+
+
+class DisableRulePayload(TypedDict):
+    """`DisableLanguageToolRulePayload` in diagnostics/providers/language-tool.ts."""
+
+    rule: IgnoredRule
+    ruleId: str
+
+
+class CommandAction(TypedDict):
+    kind: Literal["command"]
+    name: str
+    command: str
+    markClass: str
+    payload: DisableRulePayload
+
+
+class DiagnosticData(TypedDict):
+    ruleId: str
+    issueType: str
+
+
+# `from` is a Python keyword, so this TypedDict uses the functional syntax.
+Diagnostic = TypedDict(
+    "Diagnostic",
+    {
+        "from": int,
+        "to": int,
+        "severity": Literal["info", "warning", "error"],
+        "message": str,
+        "source": str,
+        "data": DiagnosticData,
+        "actions": list[ReplaceAction | CommandAction],
+    },
+)
+
+
+class Metadata(TypedDict):
+    lastDetectedLanguage: str
+    supportedLanguages: list[str]
+
+
+class Result(TypedDict):
+    diagnostics: list[Diagnostic]
+    metadata: Metadata
+
+
+class InactiveResult(TypedDict):
+    """The answer while the user has LanguageTool switched off."""
+
+    diagnostics: list[Diagnostic]
 
 
 @dataclass(frozen=True)
@@ -59,7 +202,9 @@ def _punctuation(content: str) -> str:
 def _math_spans(text: str) -> list[Span]:
     parsed = parse_pandoc_for_lint(text)
     if parsed.document is None:
-        return []
+        # Without Pandoc's parse the math cannot be projected out, and
+        # LanguageTool would check TeX as prose.
+        raise RuntimeError(f"Pandoc could not parse the document: {parsed.messages}")
 
     spans: list[Span] = []
     for start, end in pandoc_math_regions(text, parsed.document):
@@ -157,174 +302,180 @@ def _mapped_range(projection: Projection, offset: int, length: int, source_lengt
     return min(start, end), max(start, end)
 
 
-def _cli_check(text: str, context: dict[str, Any]) -> dict[str, Any]:
-    language = str(context.get("language") or "auto")
+def _cli_check(text: str, context: LanguageToolContext) -> LTResponse:
     args = ["languagetool", "--json"]
-    if language == "auto":
+    if context["language"] == "auto":
         args.append("--autoDetect")
     else:
-        args.extend(["-l", language])
-    disabled = [str(item) for item in context.get("disabledRules", []) if str(item)]
-    if disabled:
-        args.extend(["-d", ",".join(disabled)])
-    if context.get("level") == "picky":
+        args.extend(["-l", context["language"]])
+    if context["disabledRules"]:
+        args.extend(["-d", ",".join(context["disabledRules"])])
+    if context["level"] == "picky":
         args.extend(["--level", "PICKY"])
-    mother_tongue = str(context.get("motherTongue") or "").strip()
-    if mother_tongue:
-        args.extend(["-m", mother_tongue])
+    # An empty mother tongue is the unset state of the preference.
+    if context["motherTongue"].strip():
+        args.extend(["-m", context["motherTongue"].strip()])
     args.append("-")
-    completed = subprocess.run(args, input=text, text=True, capture_output=True, check=False)
-    if completed.returncode != 0:
-        raise RuntimeError(completed.stderr.strip() or f"LanguageTool exited with {completed.returncode}")
-    return json.loads(completed.stdout)
+    completed = subprocess.run(args, input=text, text=True, capture_output=True, check=True)
+    response: LTResponse = json.loads(completed.stdout)
+    return response
 
 
-def _remote_check(text: str, context: dict[str, Any]) -> dict[str, Any]:
-    backend = str(context.get("backend") or "official")
-    server = str(context.get("customServer") or "").strip() if backend == "custom" else "https://api.languagetool.org"
-    username = str(context.get("username") or "").strip()
-    api_key = str(context.get("apiKey") or "").strip()
-    if username and api_key:
-        server = "https://api.languagetoolplus.com"
-    server = server.rstrip("/")
-    language = str(context.get("language") or "auto")
+def _premium(context: LanguageToolContext) -> bool:
+    return bool(context["username"].strip() and context["apiKey"].strip())
+
+
+def _remote_server(context: LanguageToolContext) -> str:
+    if _premium(context):
+        return "https://api.languagetoolplus.com"
+    if context["backend"] == "official":
+        return "https://api.languagetool.org"
+    server = context["customServer"].strip().rstrip("/")
+    if not server:
+        raise ValueError("The custom LanguageTool backend is selected but no server URL is configured")
+    return server
+
+
+def _remote_check(text: str, context: LanguageToolContext) -> LTResponse:
     params: dict[str, str] = {
-        "language": language,
+        "language": context["language"],
         "text": text,
-        "level": str(context.get("level") or "default"),
+        "level": context["level"],
     }
-    disabled = [str(item) for item in context.get("disabledRules", []) if str(item)]
-    if disabled:
-        params["disabledRules"] = ",".join(disabled)
-    mother = str(context.get("motherTongue") or "").strip()
-    if mother:
-        params["motherTongue"] = mother
-    if username and api_key:
-        params["username"] = username
-        params["apiKey"] = api_key
-    variants = context.get("variants")
-    if language == "auto" and isinstance(variants, dict):
-        params["preferredVariants"] = ",".join(str(value) for value in variants.values())
+    if context["disabledRules"]:
+        params["disabledRules"] = ",".join(context["disabledRules"])
+    # An empty mother tongue is the unset state of the preference.
+    if context["motherTongue"].strip():
+        params["motherTongue"] = context["motherTongue"].strip()
+    if _premium(context):
+        params["username"] = context["username"].strip()
+        params["apiKey"] = context["apiKey"].strip()
+    if context["language"] == "auto":
+        variants = context["variants"]
+        params["preferredVariants"] = ",".join((variants["en"], variants["de"], variants["pt"], variants["ca"]))
     request = urllib.request.Request(
-        server + "/v2/check",
+        _remote_server(context) + "/v2/check",
         data=urllib.parse.urlencode(params).encode(),
         method="POST",
         headers={"User-Agent": "external-linter/language-tool"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+        checked: LTResponse = json.load(response)
+        return checked
 
 
-def _supported_languages(context: dict[str, Any]) -> list[str]:
-    cached = context.get("supportedLanguages")
-    if isinstance(cached, list) and cached:
-        return [str(item) for item in cached]
-    if str(context.get("backend") or "cli") != "cli":
-        return []
-    completed = subprocess.run(["languagetool", "--list"], text=True, capture_output=True, check=False)
-    if completed.returncode != 0:
-        return []
-    return [line.split(maxsplit=1)[0] for line in completed.stdout.splitlines() if line.strip()]
+def _supported_languages(context: LanguageToolContext) -> list[str]:
+    # The renderer echoes back the list from the previous run once it has one.
+    if context["supportedLanguages"]:
+        return context["supportedLanguages"]
+    if context["backend"] == "cli":
+        completed = subprocess.run(["languagetool", "--list"], text=True, capture_output=True, check=True)
+        return [line.split(maxsplit=1)[0] for line in completed.stdout.splitlines() if line.strip()]
+    request = urllib.request.Request(
+        _remote_server(context) + "/v2/languages",
+        headers={"User-Agent": "external-linter/language-tool"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        languages: list[LTLanguageEntry] = json.load(response)
+        return [language["longCode"] for language in languages]
 
 
-def run(payload: dict[str, Any]) -> dict[str, Any]:
-    text = str(payload.get("text") or "")
-    context = payload.get("context")
-    if not isinstance(context, dict):
-        context = {}
-    if context.get("active") is False:
+def _severity(issue_type: str) -> Literal["info", "warning", "error"]:
+    if issue_type == "style":
+        return "info"
+    if issue_type == "misspelling":
+        return "error"
+    return "warning"
+
+
+def _actions(match: LTMatch, replaceable: bool) -> list[ReplaceAction | CommandAction]:
+    actions: list[ReplaceAction | CommandAction] = []
+    if replaceable:
+        for replacement in match["replacements"][:10]:
+            actions.append(
+                {
+                    "kind": "replace",
+                    "name": replacement["value"],
+                    "replacement": replacement["value"],
+                    "markClass": "cm-ltSuggestAction",
+                }
+            )
+    rule = match["rule"]
+    actions.append(
+        {
+            "kind": "command",
+            "name": "Disable Rule",
+            "command": "language-tool:disable-rule",
+            "markClass": "cm-ltDisableAction",
+            "payload": {
+                "rule": {
+                    "description": rule["description"],
+                    "id": rule["id"],
+                    "category": rule["category"]["name"],
+                },
+                "ruleId": rule["id"],
+            },
+        }
+    )
+    return actions
+
+
+def run(payload: Payload) -> Result | InactiveResult:
+    text = payload["text"]
+    context = payload["context"]
+    if not context["active"]:
         return {"diagnostics": []}
 
     projection = project_math(text)
-    backend = str(context.get("backend") or "cli")
-    response = _cli_check(projection.text, context) if backend == "cli" else _remote_check(projection.text, context)
-    user_dictionary = {str(item) for item in context.get("userDictionary", [])}
-    diagnostics: list[dict[str, Any]] = []
+    if context["backend"] == "cli":
+        response = _cli_check(projection.text, context)
+    else:
+        response = _remote_check(projection.text, context)
+    user_dictionary = set(context["userDictionary"])
+    diagnostics: list[Diagnostic] = []
 
-    for match in response.get("matches", []):
-        if not isinstance(match, dict):
-            continue
-        offset = int(match.get("offset", 0))
-        length = int(match.get("length", 0))
-        end = offset + max(length, 0)
-        rule = match.get("rule") if isinstance(match.get("rule"), dict) else {}
-        issue_type = str(rule.get("issueType") or "grammar")
-        if length > 0 and any(
-            left <= offset and end <= right for left, right in projection.placeholders
-        ):
+    for match in response["matches"]:
+        offset = match["offset"]
+        length = match["length"]
+        end = offset + length
+        issue_type = match["rule"]["issueType"]
+        if length > 0 and any(left <= offset and end <= right for left, right in projection.placeholders):
             continue
         source_from, source_to = _mapped_range(projection, offset, length, len(text))
         authored = text[source_from:source_to]
         if issue_type == "misspelling" and authored in user_dictionary:
             continue
 
-        actions: list[dict[str, Any]] = []
-        safe_replacement = not _overlaps_placeholder(offset, end, projection.placeholders)
-        if safe_replacement:
-            for replacement in match.get("replacements", [])[:10]:
-                if isinstance(replacement, dict) and isinstance(replacement.get("value"), str):
-                    actions.append(
-                        {
-                            "kind": "replace",
-                            "name": replacement["value"],
-                            "replacement": replacement["value"],
-                            "markClass": "cm-ltSuggestAction",
-                        }
-                    )
-        actions.append(
-            {
-                "kind": "command",
-                "name": "Disable Rule",
-                "command": "language-tool:disable-rule",
-                "markClass": "cm-ltDisableAction",
-                "payload": {
-                    "rule": {
-                        "description": str(rule.get("description") or rule.get("id") or "LanguageTool rule"),
-                        "id": str(rule.get("id") or ""),
-                        "category": str((rule.get("category") or {}).get("name") if isinstance(rule.get("category"), dict) else ""),
-                    },
-                    "ruleId": str(rule.get("id") or ""),
-                },
-            }
-        )
-        severity = "info" if issue_type == "style" else "error" if issue_type == "misspelling" else "warning"
         diagnostics.append(
             {
                 "from": source_from,
                 "to": source_to,
-                "severity": severity,
-                "message": str(match.get("message") or "LanguageTool diagnostic"),
+                "severity": _severity(issue_type),
+                "message": match["message"],
                 "source": f"language-tool({issue_type})",
                 "data": {
-                    "ruleId": str(rule.get("id") or ""),
+                    "ruleId": match["rule"]["id"],
                     "issueType": issue_type,
                 },
-                "actions": actions,
+                "actions": _actions(match, not _overlaps_placeholder(offset, end, projection.placeholders)),
             }
         )
 
-    language = response.get("language") if isinstance(response.get("language"), dict) else {}
-    detected = language.get("detectedLanguage") if isinstance(language.get("detectedLanguage"), dict) else {}
     return {
         "diagnostics": diagnostics,
         "metadata": {
-            "lastDetectedLanguage": str(detected.get("code") or language.get("code") or context.get("language") or "auto"),
+            "lastDetectedLanguage": response["language"]["detectedLanguage"]["code"],
             "supportedLanguages": _supported_languages(context),
         },
     }
 
 
 def main() -> int:
-    try:
-        payload = json.load(sys.stdin)
-        result = run(payload if isinstance(payload, dict) else {})
-        json.dump(result, sys.stdout, ensure_ascii=False)
-        sys.stdout.write("\n")
-        return 0
-    except Exception as error:
-        json.dump({"diagnostics": [], "metadata": {"lastError": str(error)}}, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
+    # A failure propagates as a traceback on stderr and a nonzero exit; the
+    # host reports that stderr as the run's lastError.
+    payload: Payload = json.load(sys.stdin)
+    print(json.dumps(run(payload), ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":
