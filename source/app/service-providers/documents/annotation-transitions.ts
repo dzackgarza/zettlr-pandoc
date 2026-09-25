@@ -132,13 +132,14 @@ function locate(
   annotationId: string,
 ): TextAnnotation | AnnotationTransitionError {
   const found = items.find((candidate) => candidate.annotationId === annotationId);
-  return (
-    found ?? {
+  if (found === undefined) {
+    return {
       ok: false,
       code: "ANNOTATION_NOT_FOUND",
       message: `Annotation ${annotationId} was not found in this document.`,
-    }
-  );
+    };
+  }
+  return found;
 }
 
 function invalid(message: string): AnnotationTransitionError {

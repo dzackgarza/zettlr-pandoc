@@ -344,7 +344,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   async function acceptAllWorkspaceReviews (): Promise<Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }>> {
     const targets = workspaceSessions.value
-      .filter(session => (session.review?.suggestions.length ?? 0) > 0)
+      .filter(session => session.review !== undefined && session.review.suggestions.length > 0)
       .map(session => session.documentPath)
     const results: Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }> = []
     for (const path of targets) {

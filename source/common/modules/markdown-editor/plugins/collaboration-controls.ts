@@ -161,12 +161,14 @@ function buildControls (state: EditorState): ControlsFieldValue {
   const annotations = getTextAnnotationsState(state)
   const blocks: Array<Range<Decoration>> = []
 
-  for (const suggestion of review?.suggestions ?? []) {
-    blocks.push(Decoration.widget({
-      widget: new ControlBlockWidget({ kind: 'review-chunk', chunkId: suggestion.suggestionId }, review?.synced === true),
-      block: true,
-      side: 1
-    }).range(suggestionLastLineEnd(state, suggestion)))
+  if (review !== undefined) {
+    for (const suggestion of review.suggestions) {
+      blocks.push(Decoration.widget({
+        widget: new ControlBlockWidget({ kind: 'review-chunk', chunkId: suggestion.suggestionId }, review.synced),
+        block: true,
+        side: 1
+      }).range(suggestionLastLineEnd(state, suggestion)))
+    }
   }
 
   const thread = annotations === undefined ? undefined : activeAnnotationThreadAnchor(annotations, state.doc)
@@ -195,7 +197,7 @@ const controlsField = StateField.define<ControlsFieldValue>({
   },
   provide: field => [
     EditorView.decorations.from(field, value => value.decorations),
-    showPanel.from(field, value => (value.review?.suggestions.length ?? 0) > 0 ? reviewBarPanel : null)
+    showPanel.from(field, value => value.review !== undefined && value.review.suggestions.length > 0 ? reviewBarPanel : null)
   ]
 })
 

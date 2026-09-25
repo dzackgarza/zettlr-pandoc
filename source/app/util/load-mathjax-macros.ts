@@ -139,7 +139,7 @@ export async function loadCanonicalMacroInventory(
   homeDirectory: string,
 ): Promise<CanonicalMacroInventory> {
   const root = path.join(homeDirectory, ".pandoc", "styles", "macros");
-  const declarations = new Map<string, CanonicalMacroDeclaration[]>();
+  const found: Array<{ name: string; declaration: CanonicalMacroDeclaration }> = [];
   const queue: string[] = [root];
 
   while (queue.length > 0) {
@@ -170,19 +170,21 @@ export async function loadCanonicalMacroInventory(
       }
       const source = await fs.readFile(absolute, "utf8");
       const sourcePath = path.relative(root, absolute).split(path.sep).join("/");
-      for (const found of texCommandDeclarationEntries(source)) {
-        const existing = declarations.get(found.name) ?? [];
-        existing.push({
-          sourcePath,
-          line: found.line,
-          declaration: found.declaration,
-          context: found.context,
+      for (const command of texCommandDeclarationEntries(source)) {
+        found.push({
+          name: command.name,
+          declaration: {
+            sourcePath,
+            line: command.line,
+            declaration: command.declaration,
+            context: command.context,
+          },
         });
-        declarations.set(found.name, existing);
       }
     }
   }
 
+  const declarations = Map.groupBy(found, (entry) => entry.name);
   const projected = await loadCanonicalMathJaxMacros(homeDirectory);
   const names = new Set([
     ...declarations.keys(),
@@ -192,9 +194,12 @@ export async function loadCanonicalMacroInventory(
     .sort((a, b) => a.localeCompare(b))
     .map((name): CanonicalMacroEntry => {
       const projection = projected[name.slice(1)];
+      // A macro the MathJax projection defines but no TeX source declares has
+      // no declarations to report.
+      const declared = declarations.get(name);
       return {
         name,
-        declarations: declarations.get(name) ?? [],
+        declarations: declared === undefined ? [] : declared.map((entry) => entry.declaration),
         ...(projection === undefined ? {} : { mathjax: mathJaxDefinition(projection) }),
       };
     });

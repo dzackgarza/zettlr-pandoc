@@ -247,7 +247,10 @@ export interface SuggestionNavigatorView {
 export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
   const doc = Text.of(review.workingText.split('\n'))
   return review.suggestions.map(suggestion => {
-    const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
+    // A pure insertion anchors no existing text; it lands at its seam.
+    const firstAnchor = suggestion.anchors.length > 0
+      ? suggestion.anchors[0]
+      : { from: suggestion.seam, to: suggestion.seam }
     const line = doc.lineAt(Math.min(firstAnchor.from, doc.length))
     return {
       suggestionId: suggestion.suggestionId,

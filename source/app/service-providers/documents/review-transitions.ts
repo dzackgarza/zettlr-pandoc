@@ -490,6 +490,12 @@ export function validateAndParsePatch(
   if (patch.oldFileName === "/dev/null" || patch.newFileName === "/dev/null") {
     throw new Error("review-diff does not support create or delete patches");
   }
+  if (patch.oldFileName === undefined || patch.newFileName === undefined) {
+    throw new Error(
+      "review-diff patch has no '---'/'+++' file headers. " +
+      `Use '--- document\n+++ document' or the target path '${documentPath}'.`,
+    );
+  }
   // Headers must be either the exact canonical document URI or the generic
   // "--- document" / "+++ document". Basename matching is too weak.
   if (
@@ -497,7 +503,7 @@ export function validateAndParsePatch(
     !isAcceptableHeader(patch.newFileName, documentPath)
   ) {
     throw new Error(
-      `review-diff patch headers ('--- ${patch.oldFileName ?? "missing"}', '+++ ${patch.newFileName ?? "missing"}') ` +
+      `review-diff patch headers ('--- ${patch.oldFileName}', '+++ ${patch.newFileName}') ` +
       `do not match the target document. Use '--- document\n+++ document' or the target path '${documentPath}'.`,
     );
   }
@@ -505,12 +511,9 @@ export function validateAndParsePatch(
 }
 
 function isAcceptableHeader(
-  fileName: string | undefined,
+  fileName: string,
   documentPath: string,
 ): boolean {
-  if (fileName === undefined) {
-    return false;
-  }
   // Generic headers
   const normalized = fileName.replace(/\\/g, "/");
   if (
