@@ -177,7 +177,7 @@ export default class DictionaryProvider extends ProviderContract {
   }
 
   private configuredProseCompletionFile (): string {
-    const configured = String(this._config.get('editor.proseCompletionFile') ?? '').trim()
+    const configured = this._config.get().editor.proseCompletionFile.trim()
     return configured === ''
       ? path.join(app.getPath('home'), '.pandoc', 'completions', 'prose.txt')
       : path.resolve(configured)
@@ -275,7 +275,15 @@ export default class DictionaryProvider extends ProviderContract {
       return { added: false, filePath: this._proseCompletionFile }
     }
 
-    const currentEntries = this._portableCompletionEntries.get(this._proseCompletionFile) ?? []
+    // reloadPortableProseCompletions() either loads the primary file or throws,
+    // so a missing entry means the provider has not been configured yet.
+    const currentEntries = this._portableCompletionEntries.get(this._proseCompletionFile)
+    if (currentEntries === undefined) {
+      throw new Error(
+        `Prose completion file ${this._proseCompletionFile} is not loaded; ` +
+        'the dictionary provider must finish booting before completions can be added'
+      )
+    }
     if (currentEntries.includes(entry)) {
       return { added: false, filePath: this._proseCompletionFile }
     }

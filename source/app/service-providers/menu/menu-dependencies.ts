@@ -33,8 +33,8 @@ export interface MenuConfig {
     (): {
       editor: {
         fontSize: number
-        snippetsFile?: string
-        quickTexFile?: string
+        snippetsFile: string
+        quickTexFile: string
       }
       shortcuts: { ui: ConfigOptions['shortcuts']['ui'] }
     }

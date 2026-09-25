@@ -128,13 +128,13 @@ export function authoringSourceItems (
     {
       id: 'menu.edit_snippets',
       label: trans('Edit snippets'),
-      filePath: config.get().editor.snippetsFile ?? '',
+      filePath: config.get().editor.snippetsFile,
       shortcut: 'edit-snippets' as const
     },
     {
       id: 'menu.edit_quicktex',
       label: trans('Edit QuickTeX definitions'),
-      filePath: config.get().editor.quickTexFile ?? '',
+      filePath: config.get().editor.quickTexFile,
       shortcut: 'edit-quicktex' as const
     }
   ] as const

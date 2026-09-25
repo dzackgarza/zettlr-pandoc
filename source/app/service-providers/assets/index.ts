@@ -473,7 +473,7 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   private configuredSnippetsFile (): string {
-    const configured = String(this._config.get('editor.snippetsFile') ?? '').trim()
+    const configured = this._config.get().editor.snippetsFile.trim()
     const filePath = configured === '' ? this._defaultSnippetsFile : path.resolve(configured)
     if (!isSnippetFileName(path.basename(filePath))) {
       throw new Error(`Snippet file must use the .code-snippets extension: ${filePath}`)
@@ -498,13 +498,13 @@ export default class AssetsProvider extends ProviderContract {
   }
 
   private configuredQuickTexFile (): string {
-    const configured = String(this._config.get('editor.quickTexFile') ?? '').trim()
+    const configured = this._config.get().editor.quickTexFile.trim()
     return configured === '' ? '' : path.resolve(configured)
   }
 
   private async configureQuickTexFile (): Promise<void> {
     const nextFile = this.configuredQuickTexFile()
-    const pluginDirectory = String(this._config.get('editor.quickTexPluginDirectory') ?? '').trim()
+    const pluginDirectory = this._config.get().editor.quickTexPluginDirectory.trim()
     const resolvedPluginDirectory = pluginDirectory === '' ? '' : path.resolve(pluginDirectory)
     if (this._quickTexFile !== '' && nextFile !== this._quickTexFile) {
       await this._snippetsWatcher.unwatch(this._quickTexFile)
