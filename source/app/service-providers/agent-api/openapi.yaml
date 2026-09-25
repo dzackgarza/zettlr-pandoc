@@ -2781,6 +2781,7 @@ paths:
               - document
               - workspace
               - all
+            default: focused
         - name: documentId
           in: query
           schema:
@@ -2797,6 +2798,7 @@ paths:
               - info
               - warning
               - error
+            default: info
       responses:
         '200':
           description: Lint diagnostics.

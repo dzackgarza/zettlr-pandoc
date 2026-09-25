@@ -464,6 +464,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               // Kernel-assigned: the provider owns the bind and publishes the
               // actual port, so no reservation can race the listener.
               port: 0,
+              claimDescriptionSimilarityThreshold: 0.94,
             },
             tikz: {
               dataDir: path.join(__dirname, "../static/tikz"),
@@ -724,9 +725,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         get: () => ({
           app: { openWorkspaces: [scratch] },
           export: { cslLibrary: "" },
+          tikz: { dataDir: "", figuresDir: "" },
           agentApi: {
             enabled: true,
             port: takenPort,
+            claimDescriptionSimilarityThreshold: 0.94,
           },
         }),
       },
@@ -1618,9 +1621,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             get: () => ({
               app: { openWorkspaces: [scratch] },
               export: { cslLibrary: "" },
+              tikz: { dataDir: "", figuresDir: "" },
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,
+                claimDescriptionSimilarityThreshold: 0.94,
               },
             }),
           },

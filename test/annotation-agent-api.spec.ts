@@ -246,7 +246,8 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         get: () => ({
           app: { openWorkspaces },
           export: { cslLibrary: "" },
-          agentApi: { enabled: true, port: 0 },
+          tikz: { dataDir: "", figuresDir: "" },
+          agentApi: { enabled: true, port: 0, claimDescriptionSimilarityThreshold: 0.94 },
         }),
       },
     });

@@ -54,6 +54,7 @@ import type {
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
+import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentManager from "@providers/documents";
 import type {
   AnnotationFailure,
@@ -117,14 +118,6 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
 
-/**
- * Descriptions are per-claim review justifications, not batch labels. A high
- * threshold catches copy/paste variants while leaving room for genuinely
- * related edits to share some vocabulary. Whitespace and case are ignored so
- * superficial formatting changes cannot evade the check.
- */
-const CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD = 0.94;
-
 interface ClaimDescriptionCollision {
   firstIndex: number;
   secondIndex: number;
@@ -135,8 +128,16 @@ function normalizeClaimDescription(description: string): string {
   return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
 }
 
+/**
+ * Descriptions are per-claim review justifications, not batch labels. The
+ * configured threshold (`agentApi.claimDescriptionSimilarityThreshold`)
+ * catches copy/paste variants while leaving room for genuinely related edits
+ * to share some vocabulary. Whitespace and case are ignored so superficial
+ * formatting changes cannot evade the check.
+ */
 function findClaimDescriptionCollision(
   claims: readonly { description: string }[],
+  threshold: number,
 ): ClaimDescriptionCollision | undefined {
   const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
   for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
@@ -151,12 +152,12 @@ function findClaimDescriptionCollision(
       }
       // Levenshtein similarity cannot exceed minLength / maxLength, so skip
       // pairs that cannot possibly cross the rejection threshold.
-      if (minLength / maxLength < CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD) {
+      if (minLength / maxLength < threshold) {
         continue;
       }
 
       const similarity = 1 - levenshteinDistance(first, second) / maxLength;
-      if (similarity >= CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD) {
+      if (similarity >= threshold) {
         return { firstIndex, secondIndex, similarity };
       }
     }
@@ -254,6 +255,31 @@ type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Con
 /** The generated operations write `never` for a parameter section an operation has none of. */
 type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
 
+type OperationQuery<Id extends keyof AgentApiOperations> = OrEmpty<
+  AgentApiOperations[Id]["parameters"]["query"]
+>;
+
+/**
+ * The validator runs Ajv with `useDefaults`, so once a request has passed
+ * validation every query parameter the document gives a `default` is present.
+ * openapi-typescript keeps parameter defaults optional in the generated types;
+ * `Defaulted` names the parameters of this operation that the document
+ * defaults, and the handler reads them as present.
+ */
+type DefaultedQuery<
+  Id extends keyof AgentApiOperations,
+  Defaulted extends keyof OperationQuery<Id>,
+> = OperationQuery<Id> & Required<Pick<OperationQuery<Id>, Defaulted>>;
+
+type DefaultedOperationContext<
+  Id extends keyof AgentApiOperations,
+  Defaulted extends keyof OperationQuery<Id>,
+> = Context<
+  unknown,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
+  DefaultedQuery<Id, Defaulted>
+>;
+
 // ============================================================================
 // AgentHTTPProvider
 // ============================================================================
@@ -268,10 +294,10 @@ type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : Non
 export interface AgentApiHost {
   config: {
     get: () => {
-      agentApi?: { enabled: boolean; port: number };
+      agentApi: AgentApiConfig;
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
-      tikz?: { dataDir?: string; figuresDir?: string };
+      tikz: ConfigOptions["tikz"];
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
@@ -391,15 +417,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       // Query and path parameters arrive as strings. The document says which
       // are integers, so the validator is what turns them into numbers.
       coerceTypes: true,
+      // The document owns every optional field's meaning when it is omitted
+      // (`default:`). Ajv writes those defaults into the validated query and
+      // body, so handlers read the document's value rather than restating it.
+      ajvOpts: { useDefaults: true },
       handlers: this.operationHandlers(),
     });
   }
 
   async boot(): Promise<void> {
     const config = this._app.config.get().agentApi;
-    if (config === undefined) {
-      throw new Error("Agent API configuration is required");
-    }
     if (!config.enabled) {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
@@ -612,7 +639,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (url.pathname === "/v1/help") {
-        this.serveHelp(req, res);
+        this.serveHelp(res, req.headers.accept, url.searchParams.get("format") === "json");
         return;
       }
     }
@@ -662,16 +689,23 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
   }
 
-  private serveHelp(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = new URL(req.url ?? "", "http://127.0.0.1");
-    const accept = req.headers.accept ?? "";
-    const wantsJson =
-      (accept.includes("application/json") &&
-        !accept.includes("text/markdown") &&
-        !accept.includes("text/plain")) ||
-      url.searchParams.get("format") === "json";
+  /**
+   * @param accept           The request's Accept header; absent when the
+   *                         client states no preference.
+   * @param formatQueryJson  Whether the `format` query parameter asks for JSON.
+   */
+  private serveHelp(
+    res: http.ServerResponse,
+    accept: string | undefined,
+    formatQueryJson: boolean,
+  ): void {
+    const acceptsOnlyJson =
+      accept !== undefined &&
+      accept.includes("application/json") &&
+      !accept.includes("text/markdown") &&
+      !accept.includes("text/plain");
 
-    if (wantsJson) {
+    if (acceptsOnlyJson || formatQueryJson) {
       this.sendJson(res, 200, { help: this._helpText });
       return;
     }
@@ -692,7 +726,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
     return {
-      getHelp: (_c, req, res) => this.serveHelp(req, res),
+      getHelp: (c: OperationContext<"getHelp">, req, res: http.ServerResponse) =>
+        this.serveHelp(res, req.headers.accept, c.request.query.format === "json"),
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {
@@ -771,8 +806,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
-      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) => {
-        const view = c.request.query.view ?? "detail";
+      getReview: (
+        c: DefaultedOperationContext<"getReview", "view">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const view = c.request.query.view;
         switch (view) {
           case "diff":
             return this.handleGetReviewDiff(res, c.request.params.reviewId);
@@ -781,8 +820,11 @@ export default class AgentHTTPProvider extends ProviderContract {
           case "packets":
             return this.handleGetReviewPackets(res, c.request.params.reviewId);
           case "detail":
-          default:
             return this.handleGetReview(res, c.request.params.reviewId);
+          default: {
+            const unhandled: never = view;
+            throw new Error(`getReview has no handler for view ${String(unhandled)}`);
+          }
         }
       },
       addReviewComment: (
@@ -807,7 +849,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      queryCitations: (c: OperationContext<"queryCitations">, _req, res: http.ServerResponse) => {
+      queryCitations: (
+        c: DefaultedOperationContext<"queryCitations", "database">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
         if (c.request.query.citeKey) {
           return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
         }
@@ -821,24 +867,56 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        if (c.request.requestBody.mode === "bibliography") {
+        const body = c.request.requestBody;
+        if (body.mode === "bibliography") {
+          if (body.citekeys === undefined) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Body field 'citekeys' is required when mode=bibliography",
+            );
+            return;
+          }
           return this.handleRenderBibliography(res, {
-            database: c.request.requestBody.database,
-            citekeys: c.request.requestBody.citekeys ?? [],
+            database: body.database,
+            citekeys: body.citekeys,
           });
         }
+        if (body.citations === undefined) {
+          this.sendError(
+            res,
+            400,
+            "INVALID_PARAMS",
+            "Body field 'citations' is required when mode=citation",
+          );
+          return;
+        }
         return this.handleRenderCitation(res, {
-          database: c.request.requestBody.database,
-          citations: c.request.requestBody.citations ?? [],
-          composite: c.request.requestBody.composite,
+          database: body.database,
+          citations: body.citations,
+          composite: body.composite,
         });
       },
       listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
         this.handleListMacros(res, c.request.query.query),
-      queryFigures: (c: OperationContext<"queryFigures">, _req, res: http.ServerResponse) => {
-        const action = c.request.query.action ?? "list";
+      queryFigures: (
+        c: DefaultedOperationContext<"queryFigures", "action">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const action = c.request.query.action;
         if (action === "search") {
-          return this.handleSearchFigures(res, c.request.query.query ?? "");
+          if (c.request.query.query === undefined) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Query parameter 'query' is required when action=search",
+            );
+            return;
+          }
+          return this.handleSearchFigures(res, c.request.query.query);
         }
         if (action === "read") {
           if (!c.request.query.path) {
@@ -859,8 +937,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const action = c.request.requestBody.action ?? "create";
-        if (action === "create") {
+        if (c.request.requestBody.action === "create") {
           return this.handleCreateFigure(res, {
             path: c.request.requestBody.path,
             content: c.request.requestBody.content,
@@ -871,7 +948,11 @@ export default class AgentHTTPProvider extends ProviderContract {
           encoding: c.request.requestBody.encoding,
         });
       },
-      lintDocuments: (c: OperationContext<"lintDocuments">, _req, res: http.ServerResponse) =>
+      lintDocuments: (
+        c: DefaultedOperationContext<"lintDocuments", "scope" | "minimumSeverity">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
         this.handleLintDocuments(res, c.request.query),
 
       /**
@@ -879,17 +960,25 @@ export default class AgentHTTPProvider extends ProviderContract {
        * the offending field, which is more than the hand-written decoders
        * could say about a body they refused wholesale.
        */
-      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) =>
+      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) => {
+        // openapi-backend calls this handler only when validation produced
+        // errors, and it nulls an empty error list; no errors here is a
+        // contract break in the router, not an invalid request.
+        const errors = c.validation.errors;
+        if (errors === null || errors === undefined || errors.length === 0) {
+          throw new Error("validationFail was called without validation errors");
+        }
         this.sendError(
           res,
           400,
           "INVALID_PARAMS",
-          (c.validation.errors ?? [])
+          errors
             .map((error) =>
               typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
             )
-            .join("; ") || "Request fields are invalid",
-        ),
+            .join("; "),
+        );
+      },
 
       notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
         this.sendError(
@@ -1201,7 +1290,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         claims,
         clientRequestId: request.clientRequestId,
       },
-      request.focus ?? true,
+      request.focus,
     );
   }
 
@@ -1211,7 +1300,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     focus?: boolean,
   ): Promise<void> {
-    const descriptionCollision = findClaimDescriptionCollision(proposal.claims);
+    const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
+    const descriptionCollision = findClaimDescriptionCollision(proposal.claims, similarityThreshold);
     if (descriptionCollision !== undefined) {
       const { firstIndex, secondIndex, similarity } = descriptionCollision;
       const similarityPercent = Math.round(similarity * 100);
@@ -1220,7 +1310,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
         "DUPLICATE_CLAIM_DESCRIPTION",
         `claims[${firstIndex}] and claims[${secondIndex}] have descriptions that are ${similarityPercent}% similar ` +
-          `(limit: ${Math.round(CLAIM_DESCRIPTION_SIMILARITY_THRESHOLD * 100)}%). ` +
+          `(limit: ${Math.round(similarityThreshold * 100)}%). ` +
           "Give each claim its own description of the specific problem, change, and reason.",
         {
           conflictingClaimIndices: [firstIndex, secondIndex],
@@ -1677,12 +1767,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
   }
 
-  private handleListCitationItems(res: http.ServerResponse, database: string | undefined): void {
+  private handleListCitationItems(res: http.ServerResponse, database: string): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database ?? "main";
+    const db = database;
     try {
       const items = this._citeproc.getItems(db);
       this.sendJson(res, 200, { items, count: items.length });
@@ -1699,13 +1789,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   private handleGetCitationItem(
     res: http.ServerResponse,
     citeKey: string,
-    database: string | undefined,
+    database: string,
   ): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database ?? "main";
+    const db = database;
     try {
       const item = this._citeproc.getItem(db, citeKey);
       if (item === undefined) {
@@ -1728,7 +1818,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = body.database ?? "main";
+    const db = body.database;
     try {
       const citeItems: CiteItem[] = body.citations.map((c) => ({
         id: c.id,
@@ -1737,7 +1827,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         prefix: c.prefix,
         suffix: c.suffix,
       }));
-      const rendered = this._citeproc.getCitation(db, citeItems, body.composite ?? false);
+      const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
       this.sendJson(res, 200, { rendered: rendered ?? null });
     } catch (err) {
       if (err instanceof CiteprocRenderInvariantError) {
@@ -1761,7 +1851,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = body.database ?? "main";
+    const db = body.database;
     try {
       const result = this._citeproc.makeBibliography(db, body.citekeys);
       if (result === undefined) {
@@ -1790,7 +1880,7 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private centralFiguresDirectory(): string {
     return resolveCentralFiguresDirectory(
-      this._app.config.get().tikz?.figuresDir ?? "",
+      this._app.config.get().tikz.figuresDir,
       this.authoringHomeDirectory(),
       this._runtimeEnvironment?.env ?? process.env,
     );
@@ -1802,9 +1892,10 @@ export default class AgentHTTPProvider extends ProviderContract {
   ): Promise<void> {
     try {
       const inventory = await loadCanonicalMacroInventory(this.authoringHomeDirectory());
-      const needle = query?.trim().toLocaleLowerCase("en-US") ?? "";
+      // An omitted or blank query asks for the whole inventory.
+      const needle = query?.trim().toLocaleLowerCase("en-US");
       const macros =
-        needle === ""
+        needle === undefined || needle === ""
           ? inventory.macros
           : inventory.macros.filter((macro) => {
               if (macro.name.toLocaleLowerCase("en-US").includes(needle)) {
@@ -1925,7 +2016,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.centralFiguresDirectory(),
         relativePath,
         body.content,
-        body.encoding ?? "utf8",
+        body.encoding,
       );
       this.sendJson(res, 200, written);
     } catch (error) {
@@ -1980,9 +2071,9 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private async handleLintDocuments(
     res: http.ServerResponse,
-    query: NonNullable<AgentApiOperations["lintDocuments"]["parameters"]["query"]>,
+    query: DefaultedQuery<"lintDocuments", "scope" | "minimumSeverity">,
   ): Promise<void> {
-    const scope = query.scope ?? "focused";
+    const scope = query.scope;
     const context = await this._queries.getContext();
     const focusedDocumentId = context.focusedDocument?.documentId;
     type Target = {
@@ -2098,15 +2189,15 @@ export default class AgentHTTPProvider extends ProviderContract {
         env: runtimeEnv,
         referenceState: this._app.references?.getSnapshot(),
         tikzRenderConfig: resolveTikzRenderConfig(
-          tikzConfig?.dataDir ?? "",
-          tikzConfig?.figuresDir ?? "",
+          tikzConfig.dataDir,
+          tikzConfig.figuresDir,
           this.authoringHomeDirectory(),
           app.getPath("userData"),
           runtimeEnv,
         ),
       });
       const severityWeight = { info: 0, warning: 1, error: 2 } as const;
-      const minimum = query.minimumSeverity ?? "info";
+      const minimum = query.minimumSeverity;
       const documents: LintResponse["documents"] = [];
 
       for (const target of targets) {

@@ -98,6 +98,12 @@ export interface AgentApiConfig {
    * file in the user-data directory once the listener is up.
    */
   port: number;
+  /**
+   * Normalized Levenshtein similarity (0–1) at or above which two claims in
+   * one review submission count as sharing a description, and the submission
+   * is refused with DUPLICATE_CLAIM_DESCRIPTION.
+   */
+  claimDescriptionSimilarityThreshold: number;
 }
 
 export interface ReferenceConfig {
@@ -681,6 +687,7 @@ export function getConfigTemplate(): ConfigOptions {
     agentApi: {
       enabled: true,
       port: 27412,
+      claimDescriptionSimilarityThreshold: 0.94,
     },
     references: {
       authorityReportDebounceMs: 500,
