@@ -16,8 +16,8 @@
  * END HEADER
  */
 
-import { syntaxTree } from "@codemirror/language";
-import { type Extension, type Range, type RangeSet } from "@codemirror/state";
+import { syntaxTree } from '@codemirror/language'
+import { type Extension, type Range, type RangeSet } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -26,17 +26,17 @@ import {
   gutter,
   ViewPlugin,
   type ViewUpdate,
-} from "@codemirror/view";
+} from '@codemirror/view'
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
-} from "../util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
-import { markdownHeadingLevel } from "../util/heading-level";
+} from '../util/range-in-preview-suppression'
+import { visitVisibleSyntaxNodes } from '../util/visible-syntax-nodes'
+import { markdownHeadingLevel } from '../util/heading-level'
 
-function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
-  const ranges: Array<Range<Decoration>> = [];
-  const hiddenDeco = Decoration.replace({});
+function hideHeadingMarks (view: EditorView): RangeSet<Decoration> {
+  const ranges: Array<Range<Decoration>> = []
+  const hiddenDeco = Decoration.replace({})
 
   visitVisibleSyntaxNodes(view, (node) => {
     // Headings must always show their syntax even if the cursor is only
@@ -44,28 +44,28 @@ function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
     // click within this element to show the heading characters, which is
     // undesirable.
     if (rangeInPreviewSuppression(view.state, node.from, node.to, true)) {
-      return;
+      return
     }
 
-    if (node.name !== "ATXHeading") {
-      return;
+    if (node.name !== 'ATXHeading') {
+      return
     }
 
-    const mark = node.node.getChild("HeaderMark");
+    const mark = node.node.getChild('HeaderMark')
     if (mark === null) {
-      return;
+      return
     }
 
-    const span = view.state.sliceDoc(mark.to, node.to);
-    let offset = 0;
-    while (span.charAt(offset) === " ") {
-      offset++;
+    const span = view.state.sliceDoc(mark.to, node.to)
+    let offset = 0
+    while (span.charAt(offset) === ' ') {
+      offset++
     }
-    ranges.push(hiddenDeco.range(mark.from, mark.to + offset));
-    return false;
-  });
+    ranges.push(hiddenDeco.range(mark.from, mark.to + offset))
+    return false
+  })
 
-  return Decoration.set(ranges, true);
+  return Decoration.set(ranges, true)
 }
 
 /**
@@ -73,114 +73,114 @@ function hideHeadingMarks(view: EditorView): RangeSet<Decoration> {
  * heading size slots, so levels above six deliberately reuse the h6 size while
  * retaining their exact semantic level in `data-heading-level`.
  */
-function headingLevelDecorations(view: EditorView): DecorationSet {
-  const ranges: Array<Range<Decoration>> = [];
+function headingLevelDecorations (view: EditorView): DecorationSet {
+  const ranges: Array<Range<Decoration>> = []
   visitVisibleSyntaxNodes(view, (node) => {
-    const level = markdownHeadingLevel(node.node);
-    if (level === null) return;
-    const sizeClass = level < 6 ? `cm-pandoc-heading-size-${level}` : "cm-pandoc-heading-size-6";
+    const level = markdownHeadingLevel(node.node)
+    if (level === null) {return}
+    const sizeClass = level < 6 ? `cm-pandoc-heading-size-${level}` : 'cm-pandoc-heading-size-6'
     ranges.push(
       Decoration.line({
         attributes: {
           class: `cm-pandoc-heading-line ${sizeClass}`,
-          "data-heading-level": String(level),
+          'data-heading-level': String(level),
         },
       }).range(view.state.doc.lineAt(node.from).from),
-    );
-    return false;
-  });
-  return Decoration.set(ranges, true);
+    )
+    return false
+  })
+  return Decoration.set(ranges, true)
 }
 
 const headingLevelPresentation = ViewPlugin.fromClass(
   class {
-    decorations: DecorationSet;
+    decorations: DecorationSet
 
-    constructor(view: EditorView) {
-      this.decorations = headingLevelDecorations(view);
+    constructor (view: EditorView) {
+      this.decorations = headingLevelDecorations(view)
     }
 
-    update(update: ViewUpdate): void {
+    update (update: ViewUpdate): void {
       if (update.docChanged || update.viewportChanged) {
-        this.decorations = headingLevelDecorations(update.view);
+        this.decorations = headingLevelDecorations(update.view)
       }
     }
   },
   { decorations: (view) => view.decorations },
-);
+)
 
 export const renderHeadings = ViewPlugin.fromClass(
   class {
-    decorations: DecorationSet;
+    decorations: DecorationSet
 
-    constructor(view: EditorView) {
-      this.decorations = hideHeadingMarks(view);
+    constructor (view: EditorView) {
+      this.decorations = hideHeadingMarks(view)
     }
 
-    update(update: ViewUpdate): void {
+    update (update: ViewUpdate): void {
       if (
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
         reviewSuppressionChanged(update)
       ) {
-        this.decorations = hideHeadingMarks(update.view);
+        this.decorations = hideHeadingMarks(update.view)
       }
     }
   },
   {
     decorations: (v) => v.decorations,
   },
-);
+)
 
 // Second part of this file: Define a heading gutter.
 
 class HeadingMarkGutter extends GutterMarker {
-  constructor(private readonly level: number) {
-    super();
+  constructor (private readonly level: number) {
+    super()
   }
 
-  toDOM() {
-    const mark = document.createElement("div");
-    mark.textContent = `h${this.level}`;
-    return mark;
+  toDOM () {
+    const mark = document.createElement('div')
+    mark.textContent = `h${this.level}`
+    return mark
   }
 }
 
 export const headingGutter: Extension[] = [
   headingLevelPresentation,
   gutter({
-    class: "cm-heading-gutter",
+    class: 'cm-heading-gutter',
     renderEmptyElements: false,
     initialSpacer: () => new HeadingMarkGutter(1),
-    lineMarker(view, line, _otherMarkers) {
-      const node = syntaxTree(view.state).resolve(line.from, 1);
-      if (node.name !== "HeaderMark") {
-        return null;
+    lineMarker (view, line, _otherMarkers) {
+      const node = syntaxTree(view.state).resolve(line.from, 1)
+      if (node.name !== 'HeaderMark') {
+        return null
       }
 
-      const parent = node.parent;
-      if (parent === null || parent.name !== "ATXHeading") {
-        return null;
+      const parent = node.parent
+      if (parent === null || parent.name !== 'ATXHeading') {
+        return null
       }
 
-      const level = markdownHeadingLevel(parent);
+      const level = markdownHeadingLevel(parent)
       if (level === null) {
-        return null;
+        return null
       }
 
-      return new HeadingMarkGutter(level);
+      return new HeadingMarkGutter(level)
     },
   }),
   EditorView.baseTheme({
-    ".cm-heading-gutter .cm-gutterElement": {
-      display: "flex",
-      alignItems: "center",
+    '.cm-heading-gutter .cm-gutterElement': {
+      display: 'flex',
+      alignItems: 'center',
     },
-    ".cm-heading-gutter .cm-gutterElement div": {
-      fontFamily: "monospace",
-      opacity: "0.3",
-      fontSize: "80%",
+    '.cm-heading-gutter .cm-gutterElement div': {
+      fontFamily: 'monospace',
+      opacity: '0.3',
+      fontSize: '80%',
     },
   }),
-];
+]

@@ -12,49 +12,49 @@
  * END HEADER
  */
 
-import type { Range, RangeSet } from "@codemirror/state";
+import type { Range, RangeSet } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
   type EditorView,
   ViewPlugin,
   type ViewUpdate,
-} from "@codemirror/view";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+} from '@codemirror/view'
+import { visitVisibleSyntaxNodes } from '../util/visible-syntax-nodes'
 
-const codeDecorator = Decoration.mark({ class: "code" });
+const codeDecorator = Decoration.mark({ class: 'code' })
 
-function getCodeHighlighter(view: EditorView): RangeSet<Decoration> {
-  const ranges: Range<Decoration>[] = [];
+function getCodeHighlighter (view: EditorView): RangeSet<Decoration> {
+  const ranges: Range<Decoration>[] = []
 
   visitVisibleSyntaxNodes(view, (node) => {
     // CodeText contains a single node that has all the code's contents
-    if (["CodeText", "InlineCode"].includes(node.name) && node.from < node.to) {
-      ranges.push(codeDecorator.range(node.from, node.to));
-      return false;
+    if ([ 'CodeText', 'InlineCode' ].includes(node.name) && node.from < node.to) {
+      ranges.push(codeDecorator.range(node.from, node.to))
+      return false
     }
-  });
+  })
 
-  return Decoration.set(ranges, true);
+  return Decoration.set(ranges, true)
 }
 
 const renderCodePlugin = ViewPlugin.fromClass(
   class {
-    decorations: DecorationSet;
+    decorations: DecorationSet
 
-    constructor(view: EditorView) {
-      this.decorations = getCodeHighlighter(view);
+    constructor (view: EditorView) {
+      this.decorations = getCodeHighlighter(view)
     }
 
-    update(update: ViewUpdate): void {
+    update (update: ViewUpdate): void {
       if (update.docChanged || update.viewportChanged) {
-        this.decorations = getCodeHighlighter(update.view);
+        this.decorations = getCodeHighlighter(update.view)
       }
     }
   },
   {
     decorations: (v) => v.decorations,
   },
-);
+)
 
-export const renderCode = [renderCodePlugin];
+export const renderCode = [renderCodePlugin]

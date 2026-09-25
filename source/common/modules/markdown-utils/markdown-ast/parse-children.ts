@@ -13,11 +13,11 @@
  * END HEADER
  */
 
-import type { SyntaxNode } from "@lezer/common";
-import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
-import { type ASTNode, type MDNode, parseNode } from "../markdown-ast";
-import { genericTextNode } from "./generic-text-node";
-import { getWhitespaceBeforeNode } from "./get-whitespace-before-node";
+import type { SyntaxNode } from '@lezer/common'
+import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
+import { type ASTNode, type MDNode, parseNode } from '../markdown-ast'
+import { genericTextNode } from './generic-text-node'
+import { getWhitespaceBeforeNode } from './get-whitespace-before-node'
 
 /**
  * This list contains all Node names that do not themselves have any content.
@@ -29,35 +29,35 @@ import { getWhitespaceBeforeNode } from "./get-whitespace-before-node";
  */
 const EMPTY_NODES = new Set([
   // Top Node
-  "Document",
+  'Document',
   // Container nodes
-  "Blockquote",
-  "List",
-  "ListItem",
-  "PandocAttribute",
+  'Blockquote',
+  'List',
+  'ListItem',
+  'PandocAttribute',
   // Formatting marks
-  "CodeMark",
-  "EmphasisMark",
-  "HeaderMark",
-  "HighlightMark",
-  "ListMark",
-  "QuoteMark",
-  "SubscriptMark",
-  "SuperscriptMark",
-  "StrikethroughMark",
-  "TaskMarker",
-  "YAMLFrontmatterStart",
-  "YAMLFrontmatterEnd",
-  "PandocAttribute",
-  "PandocAttributeMark",
-  "PandocDivInfo",
-  "PandocDivMark",
-  "PandocSpanMark",
-  "RawBlockContent",
-  "ZknLinkMark",
-  "ZknLinkPipe",
-  "ZknTagMark",
-]);
+  'CodeMark',
+  'EmphasisMark',
+  'HeaderMark',
+  'HighlightMark',
+  'ListMark',
+  'QuoteMark',
+  'SubscriptMark',
+  'SuperscriptMark',
+  'StrikethroughMark',
+  'TaskMarker',
+  'YAMLFrontmatterStart',
+  'YAMLFrontmatterEnd',
+  'PandocAttribute',
+  'PandocAttributeMark',
+  'PandocDivInfo',
+  'PandocDivMark',
+  'PandocSpanMark',
+  'RawBlockContent',
+  'ZknLinkMark',
+  'ZknLinkPipe',
+  'ZknTagMark',
+])
 
 /**
  * Parses an attribute node (PandocAttribute), according to the Pandoc rules
@@ -69,29 +69,29 @@ const EMPTY_NODES = new Set([
  *
  * @return  {Record<string, string|string[]>}                 A map of the attributes
  */
-function parseAttributeNode(
+function parseAttributeNode (
   oldAttributes: Record<string, string | string[]> = {},
   node: SyntaxNode,
   markdown: string,
 ): Record<string, string | string[]> {
-  if (node.name !== "PandocAttribute") {
-    return oldAttributes;
+  if (node.name !== 'PandocAttribute') {
+    return oldAttributes
   }
 
-  const attributes = parsePandocAttributes(markdown.substring(node.from, node.to));
+  const attributes = parsePandocAttributes(markdown.substring(node.from, node.to))
 
   if (attributes.id !== undefined) {
-    oldAttributes.id = attributes.id;
+    oldAttributes.id = attributes.id
   }
 
   if (attributes.classes !== undefined) {
-    oldAttributes.class = attributes.classes;
+    oldAttributes.class = attributes.classes
   }
 
   return {
     ...oldAttributes,
     ...attributes.properties,
-  };
+  }
 }
 
 /**
@@ -103,7 +103,7 @@ function parseAttributeNode(
  *
  * @return  {T}                     Returns the same astNode with children.
  */
-export function parseChildren<T extends { children: ASTNode[] } & MDNode>(
+export function parseChildren<T extends { children: ASTNode[] } & MDNode> (
   astNode: T,
   node: SyntaxNode,
   markdown: string,
@@ -115,61 +115,61 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode>(
         node.to,
         markdown.substring(node.from, node.to),
         getWhitespaceBeforeNode(node, markdown),
-      );
-      astNode.children = [textNode];
+      )
+      astNode.children = [textNode]
     }
-    return astNode; // We're done
+    return astNode // We're done
   }
 
-  astNode.children = [];
+  astNode.children = []
 
-  let currentChild: SyntaxNode | null = node.firstChild;
-  let currentIndex = node.from;
+  let currentChild: SyntaxNode | null = node.firstChild
+  let currentIndex = node.from
   while (currentChild !== null) {
     // NOTE: We have to account for "gaps" where a node has children that do not
     // completely cover the node's contents. In that case, we have to add text
     // nodes that just contain those strings.
     if (currentChild.from > currentIndex && !EMPTY_NODES.has(node.name)) {
-      const gap = markdown.substring(currentIndex, currentChild.from);
-      const onlyWhitespace = /^(\s*)/m.exec(gap);
-      const whitespaceBefore = onlyWhitespace !== null ? onlyWhitespace[1] : "";
+      const gap = markdown.substring(currentIndex, currentChild.from)
+      const onlyWhitespace = /^(\s*)/m.exec(gap)
+      const whitespaceBefore = onlyWhitespace !== null ? onlyWhitespace[1] : ''
       const textNode = genericTextNode(
         currentIndex + whitespaceBefore.length,
         currentChild.from,
         gap.substring(whitespaceBefore.length),
         whitespaceBefore,
-      );
-      astNode.children.push(textNode);
+      )
+      astNode.children.push(textNode)
     }
 
-    if (currentChild.name === "PandocAttribute") {
+    if (currentChild.name === 'PandocAttribute') {
       // PandocAttribute nodes should never show up in the tree
       // TODO: This assumes that the PandocAttribute should apply to the parent
       // node, but often (e.g., for images) they belong to the previous child!
       // TODO: Check what the *previous* child was, and if it can have attributes
       // Docs: https://pandoc.org/MANUAL.html#extension-attributes
-      astNode.attributes = parseAttributeNode(astNode.attributes, currentChild, markdown);
+      astNode.attributes = parseAttributeNode(astNode.attributes, currentChild, markdown)
     } else {
-      astNode.children.push(parseNode(currentChild, markdown));
+      astNode.children.push(parseNode(currentChild, markdown))
     }
 
-    currentIndex = currentChild.to; // Must happen before the nextSibling assignment
-    currentChild = currentChild.nextSibling;
+    currentIndex = currentChild.to // Must happen before the nextSibling assignment
+    currentChild = currentChild.nextSibling
   }
 
   if (currentIndex < node.to && !EMPTY_NODES.has(node.name)) {
     // One final text node
-    const gap = markdown.substring(currentIndex, node.to);
-    const onlyWhitespace = /^(\s*)/m.exec(gap);
-    const whitespaceBefore = onlyWhitespace !== null ? onlyWhitespace[1] : "";
+    const gap = markdown.substring(currentIndex, node.to)
+    const onlyWhitespace = /^(\s*)/m.exec(gap)
+    const whitespaceBefore = onlyWhitespace !== null ? onlyWhitespace[1] : ''
     const textNode = genericTextNode(
       currentIndex + whitespaceBefore.length,
       node.to,
       markdown.substring(currentIndex + whitespaceBefore.length, node.to),
       whitespaceBefore,
-    );
-    astNode.children.push(textNode);
+    )
+    astNode.children.push(textNode)
   }
 
-  return astNode;
+  return astNode
 }

@@ -13,77 +13,77 @@
  * END HEADER
  */
 
-import type { Range, RangeSet } from "@codemirror/state";
-import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import type { SyntaxNode } from "@lezer/common";
-import { VISUAL_INDENT_EXEMPT_CLASS } from "../plugins/visual-indent";
-import { configField } from "../util/configuration";
+import type { Range, RangeSet } from '@codemirror/state'
+import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
+import type { SyntaxNode } from '@lezer/common'
+import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
+import { configField } from '../util/configuration'
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
-} from "../util/range-in-preview-suppression";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+} from '../util/range-in-preview-suppression'
+import { visitVisibleSyntaxNodes } from '../util/visible-syntax-nodes'
 
-function showBlockquoteWrappers(view: EditorView): RangeSet<BlockWrapper> {
-  const ranges: Range<BlockWrapper>[] = [];
-  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
+function showBlockquoteWrappers (view: EditorView): RangeSet<BlockWrapper> {
+  const ranges: Range<BlockWrapper>[] = []
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   visitVisibleSyntaxNodes(view, (node) => {
     if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {
-      return;
+      return
     }
 
-    if (node.name !== "Blockquote") {
-      return;
+    if (node.name !== 'Blockquote') {
+      return
     }
 
-    let parent: SyntaxNode | null = node.node.parent;
-    let parentNode;
+    let parent: SyntaxNode | null = node.node.parent
+    let parentNode
 
     while (parent) {
-      if (parent.name === "Blockquote") {
-        parentNode = parent.node;
+      if (parent.name === 'Blockquote') {
+        parentNode = parent.node
       }
-      parent = parent.parent;
+      parent = parent.parent
     }
 
     if (
       parentNode &&
       rangeInPreviewSuppression(view.state, parentNode.from, parentNode.to, includeAdjacent)
     ) {
-      return;
+      return
     }
 
-    const line = view.state.doc.lineAt(node.from);
+    const line = view.state.doc.lineAt(node.from)
     const wrapper = BlockWrapper.create({
-      tagName: "blockquote-wrapper",
+      tagName: 'blockquote-wrapper',
       attributes: {
         class: `blockquote-wrapper ${VISUAL_INDENT_EXEMPT_CLASS}`,
       },
-    });
+    })
 
-    ranges.push(wrapper.range(line.from, node.to));
-  });
+    ranges.push(wrapper.range(line.from, node.to))
+  })
 
-  return BlockWrapper.set(ranges, true);
+  return BlockWrapper.set(ranges, true)
 }
 
 const blockquotePlugin = ViewPlugin.fromClass(
   class {
-    blockWrappers: RangeSet<BlockWrapper>;
+    blockWrappers: RangeSet<BlockWrapper>
 
-    constructor(view: EditorView) {
-      this.blockWrappers = showBlockquoteWrappers(view);
+    constructor (view: EditorView) {
+      this.blockWrappers = showBlockquoteWrappers(view)
     }
 
-    update(update: ViewUpdate) {
+    update (update: ViewUpdate) {
       if (
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
         reviewSuppressionChanged(update)
       ) {
-        this.blockWrappers = showBlockquoteWrappers(update.view);
+        this.blockWrappers = showBlockquoteWrappers(update.view)
       }
     }
   },
@@ -95,21 +95,21 @@ const blockquotePlugin = ViewPlugin.fromClass(
           BlockWrapper.set([]),
       ),
   },
-);
+)
 
 export const renderBlockquotes = [
   blockquotePlugin,
   EditorView.baseTheme({
-    ".blockquote-wrapper": {
-      display: "block",
-      borderLeft: "solid 0.25em",
-      paddingLeft: "0.5em",
-      marginLeft: "0.25em",
+    '.blockquote-wrapper': {
+      display: 'block',
+      borderLeft: 'solid 0.25em',
+      paddingLeft: '0.5em',
+      marginLeft: '0.25em',
     },
     // The visual-indent line decorations are reverted through the
     // VISUAL_INDENT_EXEMPT_CLASS contract owned by the visual-indent plugin.
-    ".blockquote-wrapper .cm-line": {
-      opacity: "0.7",
+    '.blockquote-wrapper .cm-line': {
+      opacity: '0.7',
     },
   }),
-];
+]

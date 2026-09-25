@@ -22,55 +22,55 @@
  * These filetypes can be "imported" but their resolved value will be a string
  * pointing to wherever the file-loader has put these files.
  */
-declare module "*.png" {
-  const filePath: string;
-  export default filePath;
+declare module '*.png' {
+  const filePath: string
+  export default filePath
 }
-declare module "*.svg" {
-  const filePath: string;
-  export default filePath;
+declare module '*.svg' {
+  const filePath: string
+  export default filePath
 }
-declare module "*.mp3" {
-  const filePath: string;
-  export default filePath;
+declare module '*.mp3' {
+  const filePath: string
+  export default filePath
 }
-declare module "*.wav" {
-  const filePath: string;
-  export default filePath;
+declare module '*.wav' {
+  const filePath: string
+  export default filePath
 }
-declare module "*.glsl" {
-  const content: string;
-  export default content;
+declare module '*.glsl' {
+  const content: string
+  export default content
 }
-declare module "*.md" {
-  const content: string;
-  export default content;
+declare module '*.md' {
+  const content: string
+  export default content
 }
-declare module "*.css" {
-  const filePath: string;
-  export default filePath;
+declare module '*.css' {
+  const filePath: string
+  export default filePath
 }
 
 // Declare modules which don't offer types
-declare module "@joplin/turndown";
-declare module "joplin-turndown-plugin-gfm";
+declare module '@joplin/turndown'
+declare module 'joplin-turndown-plugin-gfm'
 // @replit/codemirror-emacs ships dist/index.d.ts, but its "exports" map has
 // no "types" condition, so resolvers running under node16/bundler semantics
 // (the typed lint, for one) cannot see it. Declare the one entry point we
 // use, typed — a bare declaration would erase the real types to `any`.
-declare module "@replit/codemirror-emacs" {
-  import { type Extension } from "@codemirror/state";
-  export function emacs(): Extension;
+declare module '@replit/codemirror-emacs' {
+  import { type Extension } from '@codemirror/state'
+  export function emacs (): Extension
 }
-declare module "@replit/codemirror-lang-nix" {
-  import { type LanguageSupport, type LRLanguage } from "@codemirror/language";
-  import { type Parser } from "@lezer/common";
-  export const parser: Parser;
-  export const nixLanguage: LRLanguage;
-  export function nix(): LanguageSupport;
+declare module '@replit/codemirror-lang-nix' {
+  import { type LanguageSupport, type LRLanguage } from '@codemirror/language'
+  import { type Parser } from '@lezer/common'
+  export const parser: Parser
+  export const nixLanguage: LRLanguage
+  export function nix (): LanguageSupport
 }
 // Declare all legacy-modes plugins at once
-declare module "@codemirror/legacy-modes/*";
+declare module '@codemirror/legacy-modes/*'
 
 /**
  * DECLARE ELECTRON-FORGE INSERTION VARIABLES
@@ -78,39 +78,39 @@ declare module "@codemirror/legacy-modes/*";
  * These variables are set by electron-forge to point to the relevant entrypoints.
  */
 
-declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
-declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
-declare const ABOUT_PRELOAD_WEBPACK_ENTRY: string;
-declare const ABOUT_WEBPACK_ENTRY: string;
-declare const ASSETS_PRELOAD_WEBPACK_ENTRY: string;
-declare const ASSETS_WEBPACK_ENTRY: string;
-declare const ERROR_PRELOAD_WEBPACK_ENTRY: string;
-declare const ERROR_WEBPACK_ENTRY: string;
-declare const LOG_VIEWER_PRELOAD_WEBPACK_ENTRY: string;
-declare const LOG_VIEWER_WEBPACK_ENTRY: string;
-declare const PASTE_IMAGE_PRELOAD_WEBPACK_ENTRY: string;
-declare const PASTE_IMAGE_WEBPACK_ENTRY: string;
-declare const PREFERENCES_PRELOAD_WEBPACK_ENTRY: string;
-declare const PREFERENCES_WEBPACK_ENTRY: string;
-declare const PRINT_PRELOAD_WEBPACK_ENTRY: string;
-declare const PRINT_WEBPACK_ENTRY: string;
-declare const STATS_PRELOAD_WEBPACK_ENTRY: string;
-declare const STATS_WEBPACK_ENTRY: string;
-declare const TAG_MANAGER_PRELOAD_WEBPACK_ENTRY: string;
-declare const TAG_MANAGER_WEBPACK_ENTRY: string;
-declare const UPDATE_PRELOAD_WEBPACK_ENTRY: string;
-declare const UPDATE_WEBPACK_ENTRY: string;
-declare const PROJECT_PROPERTIES_PRELOAD_WEBPACK_ENTRY: string;
-declare const PROJECT_PROPERTIES_WEBPACK_ENTRY: string;
-declare const SPLASH_SCREEN_WEBPACK_ENTRY: string;
-declare const SPLASH_SCREEN_PRELOAD_WEBPACK_ENTRY: string;
-declare const ONBOARDING_WEBPACK_ENTRY: string;
-declare const ONBOARDING_PRELOAD_WEBPACK_ENTRY: string;
+declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string
+declare const MAIN_WINDOW_WEBPACK_ENTRY: string
+declare const ABOUT_PRELOAD_WEBPACK_ENTRY: string
+declare const ABOUT_WEBPACK_ENTRY: string
+declare const ASSETS_PRELOAD_WEBPACK_ENTRY: string
+declare const ASSETS_WEBPACK_ENTRY: string
+declare const ERROR_PRELOAD_WEBPACK_ENTRY: string
+declare const ERROR_WEBPACK_ENTRY: string
+declare const LOG_VIEWER_PRELOAD_WEBPACK_ENTRY: string
+declare const LOG_VIEWER_WEBPACK_ENTRY: string
+declare const PASTE_IMAGE_PRELOAD_WEBPACK_ENTRY: string
+declare const PASTE_IMAGE_WEBPACK_ENTRY: string
+declare const PREFERENCES_PRELOAD_WEBPACK_ENTRY: string
+declare const PREFERENCES_WEBPACK_ENTRY: string
+declare const PRINT_PRELOAD_WEBPACK_ENTRY: string
+declare const PRINT_WEBPACK_ENTRY: string
+declare const STATS_PRELOAD_WEBPACK_ENTRY: string
+declare const STATS_WEBPACK_ENTRY: string
+declare const TAG_MANAGER_PRELOAD_WEBPACK_ENTRY: string
+declare const TAG_MANAGER_WEBPACK_ENTRY: string
+declare const UPDATE_PRELOAD_WEBPACK_ENTRY: string
+declare const UPDATE_WEBPACK_ENTRY: string
+declare const PROJECT_PROPERTIES_PRELOAD_WEBPACK_ENTRY: string
+declare const PROJECT_PROPERTIES_WEBPACK_ENTRY: string
+declare const SPLASH_SCREEN_WEBPACK_ENTRY: string
+declare const SPLASH_SCREEN_PRELOAD_WEBPACK_ENTRY: string
+declare const ONBOARDING_WEBPACK_ENTRY: string
+declare const ONBOARDING_PRELOAD_WEBPACK_ENTRY: string
 
 // Contains the git build number and date
-declare const __GIT_COMMIT_HASH__: string;
-declare const __BUILD_DATE__: string;
-declare const __UPDATES_DISABLED__: "1" | "0";
+declare const __GIT_COMMIT_HASH__: string
+declare const __BUILD_DATE__: string
+declare const __UPDATES_DISABLED__: '1' | '0'
 
 declare interface Window {
   /**
@@ -127,15 +127,15 @@ declare interface Window {
      *
      * @return  {T}            The value associated with key
      */
-    get: <T = unknown>(key?: string) => T;
+    get: <T = unknown>(key?: string) => T
     /**
      * Sets the configuration value associated with key to value.
      *
      * @param   {string}  key    The key to set
      * @param   {any}     value  The value to set the key to
      */
-    set: (key: string, value: unknown) => void;
-  };
+    set: (key: string, value: unknown) => void
+  }
   /**
    * Takes citation items and returns a rendered citation from main
    *
@@ -156,7 +156,7 @@ declare interface Window {
      * @param   {unknown[]}  args     Arguments to provide
      *
      */
-    send: (channel: string, ...args: unknown[]) => void;
+    send: (channel: string, ...args: unknown[]) => void
     /**
      * Sends a synchronous message and returns the response immediately. The
      * caller states the expected response type through T (or handles the
@@ -167,7 +167,7 @@ declare interface Window {
      *
      * @return  {T}                 Whichever this call returns from main
      */
-    sendSync: <T = unknown>(event: string, ...args: unknown[]) => T;
+    sendSync: <T = unknown>(event: string, ...args: unknown[]) => T
     /**
      * Sends a message to main and returns a promise which fulfills with the
      * response from main. Every channel's request and response type lives
@@ -175,7 +175,7 @@ declare interface Window {
      * composes those contracts and contributes this global alias — a wrong
      * channel, command, or payload is a compile error at the call site.
      */
-    invoke: ZettlrIpcInvoke;
+    invoke: ZettlrIpcInvoke
     /**
      * Listens to broadcasted messages from main. The listener's rest
      * parameters are typed never[]: the bridge does not know a channel's
@@ -187,8 +187,8 @@ declare interface Window {
      *
      * @return {Function}  A function to stop listening (remove the listener)
      */
-    on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void;
-  };
+    on: (channel: string, listener: (event: undefined, ...args: never[]) => void) => () => void
+  }
   /**
    * Returns the absolute path to the file on disk which this File object is
    * representing. Returns undefined if there was either an error or the File
