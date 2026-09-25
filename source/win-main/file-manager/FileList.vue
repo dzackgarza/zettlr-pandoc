@@ -5,12 +5,15 @@
     tabindex="1"
     role="region"
     aria-label="File List"
-    v-bind:class="{ hidden: !isVisible }"
-    v-bind:aria-hidden="!isVisible"
-    v-on:blur="activeDescriptor = undefined"
+    :class="{ hidden: !isVisible }"
+    :aria-hidden="!isVisible"
+    @blur="activeDescriptor = undefined"
   >
     <template v-if="getDirectoryContents.length > 1">
-      <div v-if="getFilteredDirectoryContents.length === 0" class="empty-file-list">
+      <div
+        v-if="getFilteredDirectoryContents.length === 0"
+        class="empty-file-list"
+      >
         {{ noResultsMessage }}
       </div>
       <template v-else>
@@ -25,21 +28,21 @@
         <RecycleScroller
           v-slot="{ item }"
           key-field="id"
-          v-bind:items="getFilteredDirectoryContents"
-          v-bind:item-size="itemHeight"
-          v-bind:emit-update="true"
-          v-bind:page-mode="true"
-          v-on:update="updateDynamics"
+          :items="getFilteredDirectoryContents"
+          :item-size="itemHeight"
+          :emit-update="true"
+          :page-mode="true"
+          @update="updateDynamics"
         >
           <FileItem
-            v-bind:item="item.props"
-            v-bind:active-file="activeDescriptor"
-            v-bind:index="0"
-            v-bind:window-id="windowId"
-            v-on:create-file="handleOperation('file-new', item.id)"
-            v-on:create-dir="handleOperation('dir-new', item.id)"
-            v-on:begin-dragging="emit('lock-file-tree')"
-          ></FileItem>
+            :item="item.props"
+            :active-file="activeDescriptor"
+            :index="0"
+            :window-id="windowId"
+            @create-file="handleOperation('file-new', item.id)"
+            @create-dir="handleOperation('dir-new', item.id)"
+            @begin-dragging="emit('lock-file-tree')"
+          />
         </RecycleScroller>
       </template>
     </template>
@@ -50,15 +53,14 @@
       -->
       <FileItem
         v-for="item in getDirectoryContents"
-        v-bind:key="item.id"
-        v-bind:index="0"
-        v-bind:item="item.props"
-        v-bind:window-id="windowId"
-        v-bind:active-file="activeDescriptor"
-        v-on:create-file="handleOperation('file-new', item.id)"
-        v-on:create-dir="handleOperation('dir-new', item.id)"
-      >
-      </FileItem>
+        :key="item.id"
+        :index="0"
+        :item="item.props"
+        :window-id="windowId"
+        :active-file="activeDescriptor"
+        @create-file="handleOperation('file-new', item.id)"
+        @create-dir="handleOperation('dir-new', item.id)"
+      />
       <div
         v-if="getDirectoryContents[0].props.type === 'directory'"
         class="empty-directory"
@@ -91,6 +93,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import tippy, { type Instance } from 'tippy.js'
 import FileItem from './FileItem.vue'
@@ -98,13 +101,14 @@ import { RecycleScroller } from 'vue-virtual-scroller'
 import matchQuery from './util/match-query'
 
 import { nextTick, ref, computed, watch, onUpdated } from 'vue'
-import { useConfigStore, useDocumentTreeStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
 import type { AnyDescriptor } from '@dts/common/fsal'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
-import { getSorter } from 'source/common/util/directory-sorter'
 import { retrieveChildrenAndSort } from './util/retrieve-children-and-sort'
 import { filterDescriptorChildren } from './util/filter-children'
+import { effectiveExplorerDisplayForDirectory, sortExplorerChildren } from '@common/util/explorer-ordering'
+import { isInsideRoot } from '@common/util/renderer-path-polyfill'
 
 interface RecycleScrollerData {
   id: number
@@ -116,6 +120,8 @@ const ipcRenderer = window.ipc
 const props = defineProps<{
   isVisible: boolean
   filterQuery: string
+  filePickerActive: boolean
+  filePickerPathSet: Set<string>
   windowId: string
 }>()
 
@@ -124,6 +130,7 @@ const emit = defineEmits<(e: 'lock-file-tree') => void>()
 const activeDescriptor = ref<AnyDescriptor|undefined>(undefined) // Can contain the active ("focused") item
 
 const documentTreeStore = useDocumentTreeStore()
+const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
 
@@ -140,8 +147,14 @@ const noResultsMessage = trans('No results')
 const emptyFileListMessage = trans('No directory selected')
 const emptyDirectoryMessage = trans('Empty directory')
 const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile)
-const useH1 = computed(() => configStore.config.fileNameDisplay.includes('heading'))
-const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
+const displayMode = computed(() => {
+  const dir = selectedDirDescriptor.value
+  return dir?.type === 'directory'
+    ? effectiveExplorerDisplayForDirectory(dir, workspaceStore.rootDescriptors, configStore.config.fileNameDisplay)
+    : configStore.config.fileNameDisplay
+})
+const useH1 = computed(() => displayMode.value.includes('heading'))
+const useTitle = computed(() => displayMode.value.includes('title'))
 const itemHeight = computed(() => configStore.config.fileMeta ? 70 : 30)
 const rootElement = ref<HTMLDivElement|null>(null)
 
@@ -153,23 +166,23 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
 
   // Fetch all descriptors ...
   const allDescriptors = [...workspaceStore.descriptorMap.keys()]
-    .filter(absPath => absPath.startsWith(dir.path))
+    .filter(absPath => absPath === dir.path || isInsideRoot(absPath, dir.path))
     .map(absPath => workspaceStore.descriptorMap.get(absPath)!)
 
   // ... sort them recursively ...
-  const {
-    sorting,
-    sortFoldersFirst,
-    fileNameDisplay,
-    appLang,
-    fileMetaTime,
-  } = configStore.config
-
-  const sorter = getSorter(sorting, sortFoldersFirst, fileNameDisplay, appLang, fileMetaTime)
+  const defaults = {
+    sortingType: configStore.config.sorting,
+    sortFoldersFirst: configStore.config.sortFoldersFirst,
+    fileNameDisplay: configStore.config.fileNameDisplay,
+    appLang: configStore.config.appLang,
+    fileMetaTime: configStore.config.fileMetaTime
+  } as const
 
   // ... and add them to our RecycleScroller.
   const filter = filterDescriptorChildren()
-  const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, sorter)
+  const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, (directory, children) => {
+    return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors)
+  })
     .filter(filter)
     .map((props, id) => {
       return {
@@ -181,61 +194,31 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
   return sortedDescendants
 })
 
-// Add an additional layer of filtering: This function applies a potential
-// project filtering to the files in this list to ensure that project files stay
-// on top. This implements the same logic as `projectSortedFilteredChildren` in
-// the `TreeItem.vue` component.
-const getProjectOrderedDirectoryContents = computed(() => {
-  const dir = selectedDirDescriptor.value
-  if (dir === undefined || dir.type !== 'directory' || dir.settings.project === null) {
-    return getDirectoryContents.value
-  }
-
-  // Modify the order using the project files by first mapping the sorted
-  // project file paths onto the descriptors available, sorting all other files
-  // separately, and then concatenating them with the project files up top.
-  const projectFiles: RecycleScrollerData[] = dir.settings.project.files
-    .map(filePath => getDirectoryContents.value.find(x => x.props.name === filePath))
-    .filter(x => x !== undefined)
-
-  const files: RecycleScrollerData[] = []
-  for (const desc of getDirectoryContents.value) {
-    if (!projectFiles.includes(desc)) {
-      files.push(desc)
-    }
-  }
-
-  // The file list displays the directory itself as its first element, so that
-  // must be on top of even the project files.
-  return [
-    files[0],
-    ...projectFiles,
-    ...files.slice(1)
-  ]
-})
-
 const getFilteredDirectoryContents = computed(() => {
   // Returns a list of directory contents, filtered
-  const originalContents = getProjectOrderedDirectoryContents.value
+  const originalContents = getDirectoryContents.value
 
   const q = props.filterQuery.trim().toLowerCase() // Easy access
 
-  if (q === '') {
+  if (q === '' && !props.filePickerActive) {
     return originalContents
   }
 
-  const filter = matchQuery(q, useTitle.value, useH1.value)
+  const filter = q === '' ? undefined : matchQuery(q, useTitle.value, useH1.value)
 
   // Filter based on the query (remember: there's an ID and a "props" property)
   return originalContents.filter(element => {
-    return filter(element.props)
+    if (props.filePickerActive && !props.filePickerPathSet.has(element.props.path)) {
+      return false
+    }
+    return filter === undefined || filter(element.props)
   })
 })
 
 onUpdated(() => {
   nextTick()
     .then(updateDynamics)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 })
 
 watch(getFilteredDirectoryContents, () => {
@@ -266,7 +249,7 @@ watch(selectedFile, () => {
 watch(getDirectoryContents, () => {
   nextTick()
     .then(() => { scrollIntoView() })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 })
 
 /**
@@ -301,7 +284,7 @@ function navigate (evt: KeyboardEvent): void {
           newTab: false
         }
       } as DocumentManagerIPCAPI)
-        .catch(e => console.error(e))
+        .catch(e => reportError(e))
     }
     return // Stop handling
   }
@@ -354,11 +337,19 @@ function navigate (evt: KeyboardEvent): void {
     }
   }
 
+  if (activeDescriptor.value !== undefined) {
+    windowStateStore.desktopFocusPath = activeDescriptor.value.path
+  }
+
   scrollIntoView()
 }
 
 function stopNavigate (): void {
   activeDescriptor.value = undefined
+}
+
+function getRootElement (): HTMLDivElement|null {
+  return rootElement.value
 }
 
 function scrollIntoView (): void {
@@ -386,12 +377,12 @@ function scrollIntoView (): void {
 
   let modifier = itemHeight.value
   let position = index * modifier
-  const quickFilterModifier = 40 // Height of the quick filter
+  const fileFilterModifier = 40 // Height of the file filter
 
   if (position < scrollTop) {
     rootElement.value.scrollTo({ top: position, behavior: 'smooth' })
   } else if (position > scrollTop + rootElement.value.offsetHeight - modifier) {
-    const top = position - rootElement.value.offsetHeight + modifier + quickFilterModifier
+    const top = position - rootElement.value.offsetHeight + modifier + fileFilterModifier
     rootElement.value.scrollTo({ top, behavior: 'smooth' })
   }
 }
@@ -444,7 +435,7 @@ async function handleOperation (type: 'dir-new'|'file-new', idx: number): Promis
   })
 }
 
-defineExpose({ navigate, stopNavigate })
+defineExpose({ navigate, stopNavigate, getRootElement })
 </script>
 
 <style lang="less">
@@ -453,17 +444,18 @@ defineExpose({ navigate, stopNavigate })
 
 body {
   #file-list {
-    transition: left 0.3s ease;
+    transition: transform 0.3s ease;
     position: relative;
     width: 100%;
     top: -100%;
     left: 0%;
+    transform: translateX(0);
     height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
     outline: none;
 
-    &.hidden { left: 100%; }
+    &.hidden { transform: translateX(100%); }
 
     .empty-file-list, .empty-directory {
       display: block;

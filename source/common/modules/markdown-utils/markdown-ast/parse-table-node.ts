@@ -96,33 +96,133 @@ export function parseTableNode (node: SyntaxNode, markdown: string): Table|TextN
   // pipe tables, and one that parses grid tables.
 
   // 2. We detect both the number of columns as well as the alignment using the
-  //    delimiter row
-  astNode.alignment = markdown
-    .slice(delimitingRow.from, delimitingRow.to)
-    // Account for Emacs tables which are essentially pipe tables with the one
-    // single exception that they contain "+" instead of "|" in the delimiter.
-    .replace('+', '|')
-    .split('|')
-    // We can throw away leading whitespace because table headers are required
-    // to be non-empty cells and must contain hyphens, whitespace, and colons.
-    .map(c => c.trim())
-    // NOTE: |-|-| will result in ['', '-', '-', ''] -> filter out
-    .filter(c => c.length > 0)
-    .map(c => {
-      // Now extract the alignment characters
-      if (c.startsWith(':') && c.endsWith(':')) {
-        return 'center'
-      } else if (c.startsWith(':')) {
-        return 'left'
-      } else if (c.endsWith(':')) {
-        return 'right'
-      } else {
-        return null
+  //    delimiter row. Grid-table border plus signs are column boundaries; pipe
+  //    tables use Pandoc's :--- / ---: / :---: alignment markers.
+  const delimiterSource = markdown.slice(delimitingRow.from, delimitingRow.to)
+  if (astNode.tableType === 'grid') {
+    const alignmentByNode: Record<string, 'left'|'center'|'right'|null> = {
+      GridTableColumnDefault: null,
+      GridTableColumnLeft: 'left',
+      GridTableColumnCenter: 'center',
+      GridTableColumnRight: 'right'
+    }
+    let column = delimitingRow.firstChild
+    while (column !== null) {
+      if (Object.hasOwn(alignmentByNode, column.name)) {
+        astNode.alignment.push(alignmentByNode[column.name])
       }
-    })
+      column = column.nextSibling
+    }
+  } else {
+    astNode.alignment = delimiterSource
+      // Account for Emacs tables, whose delimiter separators may be "+".
+      .replaceAll('+', '|')
+      .split('|')
+      .map(c => c.trim())
+      // NOTE: |-|-| will result in ['', '-', '-', ''] -> filter out
+      .filter(c => c.length > 0)
+      .map(c => {
+        if (c.startsWith(':') && c.endsWith(':')) {
+          return 'center'
+        } else if (c.startsWith(':')) {
+          return 'left'
+        } else if (c.endsWith(':')) {
+          return 'right'
+        } else {
+          return null
+        }
+      })
+  }
 
   // Delimiter row determines alignment + correct number of columns
   const nCols = astNode.alignment.length
+
+  if (astNode.tableType === 'grid') {
+    // The vendored parser has already run gridtables' tracing algorithm. A
+    // TableCell may therefore span multiple physical source lines, represented
+    // as TableCellLine children. Parse only those content slices and ignore the
+    // rectangular source gaps containing neighboring borders. This mirrors
+    // Pandoc's `GT.mapCells` + `removeOneLeadingSpace` conversion instead of
+    // reinterpreting the grid geometry here.
+    let gridRow = node.firstChild
+    while (gridRow !== null) {
+      if (gridRow.name !== 'TableHeader' && gridRow.name !== 'TableRow') {
+        gridRow = gridRow.nextSibling
+        continue
+      }
+      const tableRow: TableRow = {
+        type: 'TableRow',
+        name: gridRow.name,
+        from: gridRow.from,
+        to: gridRow.to,
+        cells: [],
+        isHeaderOrFooter: gridRow.name === 'TableHeader',
+        whitespaceBefore: '',
+        attributes: {}
+      }
+
+      for (const cell of gridRow.getChildren('TableCell')) {
+        const cellNode: TableCell = {
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
+          from: cell.from,
+          to: cell.to,
+          whitespaceBefore: '',
+          children: [],
+          padding: { from: cell.from, to: cell.to },
+          textContent: '',
+          attributes: {}
+        }
+        const textLines: string[] = []
+        const physicalLines = cell.getChildren('TableCellLine')
+        for (let lineIndex = 0; lineIndex < physicalLines.length; lineIndex++) {
+          const physicalLine = physicalLines[lineIndex]
+          const lineNode: TableCell = {
+            ...cellNode,
+            from: physicalLine.from,
+            to: physicalLine.to,
+            children: [],
+            padding: { from: physicalLine.from, to: physicalLine.to },
+            textContent: markdown.slice(physicalLine.from, physicalLine.to)
+          }
+          parseChildren(lineNode, physicalLine, markdown)
+          cellNode.children.push(...lineNode.children)
+          textLines.push(lineNode.textContent)
+          if (lineIndex + 1 < physicalLines.length) {
+            // Pandoc rejoins physical grid-cell lines with newlines before
+            // parsing blocks. In ordinary cell prose this becomes SoftBreak;
+            // preserve an equivalent separator in the editor AST without
+            // treating intervening grid borders as authored cell text.
+            cellNode.children.push(genericTextNode(physicalLine.to, physicalLine.to, '', '\n'))
+          }
+        }
+        cellNode.textContent = textLines.join('\n')
+        tableRow.cells.push(cellNode)
+      }
+
+      // Free grid slots become empty cells in gridtables' `toMutableArray`.
+      // The editor AST does not yet model row/col spans, so padding is only
+      // appropriate for simple rows rather than rows containing a spanning
+      // cell. The common simple case is identified by a short cell count.
+      while (tableRow.cells.length < nCols) {
+        const at = gridRow.to
+        tableRow.cells.push({
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
+          from: at,
+          to: at,
+          whitespaceBefore: '',
+          children: [],
+          padding: { from: at, to: at },
+          textContent: '',
+          attributes: {}
+        })
+      }
+      astNode.rows.push(tableRow)
+      gridRow = gridRow.nextSibling
+    }
+    return astNode
+  }
 
   // 2. Iterate over all top-level children, which can be TableHeader or
   //    TableRow to extract all rows.
@@ -249,6 +349,29 @@ export function parseTableNode (node: SyntaxNode, markdown: string): Table|TextN
     // assumption was clearly wrong in this case.
     if (hasHiddenFirstCell && tableRow.cells.length === nCols + 1) {
       tableRow.cells.shift()
+    }
+
+    // Pandoc's `pipeTable` normalizes every authored row to the number of
+    // columns declared by the delimiter line: extra cells are discarded and
+    // missing cells become empty cells. Keep the editor AST on that same
+    // semantic shape while the Lezer tree itself still preserves every
+    // authored delimiter/cell span for editing.
+    if (astNode.tableType === 'pipe') {
+      tableRow.cells = tableRow.cells.slice(0, nCols)
+      while (tableRow.cells.length < nCols) {
+        const at = row.to
+        tableRow.cells.push({
+          type: 'TableCell',
+          name: tableRow.isHeaderOrFooter ? 'th' : 'td',
+          from: at,
+          to: at,
+          whitespaceBefore: '',
+          children: [],
+          padding: { from: at, to: at },
+          textContent: '',
+          attributes: {}
+        })
+      }
     }
 
     // Next row

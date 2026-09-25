@@ -1,0 +1,11 @@
+schema = 1
+source_repository = "https://github.com/James-Yu/LaTeX-Workshop"
+source_files = ["data/commands.json", "data/environments.json"]
+source_commit = "0a854c33da559f6342fb1ae34a3847b32a96de17"
+license = "MIT"
+license_file = "LATEX-WORKSHOP-LICENSE.txt"
+purpose = "Maintained standard LaTeX command/snippet and environment catalogues for editor completion"
+
+[maintenance]
+update = "node scripts/update-latex-workshop-completions.mjs"
+note = "Do not hand-edit the LaTeX Workshop JSON snapshots; regenerate them from upstream."

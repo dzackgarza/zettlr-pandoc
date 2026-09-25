@@ -8,12 +8,11 @@
  *
  * Description:     Locks the reference-chip presentation contract: every
  *                  RESOLVED workspace reference occurrence renders as an
- *                  independent compact `Type — title` chip (fallback
- *                  `Type — key`), authored cluster punctuation, prefixes,
+ *                  independent compact `Type N.N.N` chip, authored cluster punctuation, prefixes,
  *                  suffixes, and locators are preserved, mixed
  *                  bibliography/reference clusters stay raw, unresolved
- *                  occurrences stay raw, and no reference ever displays a
- *                  number.
+ *                  occurrences stay raw, and editor-local numbers remain
+ *                  deterministic independently of export numbering.
  *
  *                  The takeover differential drives real headless
  *                  EditorViews over the CURRENT render-citations extension
@@ -34,7 +33,7 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
 import {
   workspaceReferencesField,
@@ -46,6 +45,7 @@ import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
 import { type DocumentReferenceSnapshot } from 'source/types/common/references'
 import { extractPandocCitations } from 'source/app/service-providers/references/pandoc-citations'
+import { installCitationIpcFromCallback, settleCitationWidgets } from './citation-widget-test-helper'
 
 const BIBLIOGRAPHY = new Map<string, CSLItem>([
   ['Ols04', { id: 'Ols04', type: 'article-journal', author: [{ family: 'Olsson' }], issued: { 'date-parts': [[2004]] } }],
@@ -120,7 +120,11 @@ function payloadFor (doc: string, files: string[]): EditorWorkspaceReferences {
   return {
     snapshot,
     workspaceOccurrences: workspace.flatMap(s => s.occurrences),
-    resolutions: resolveWorkspace(workspace)
+    resolutions: resolveWorkspace(workspace),
+    projectRoots: [{
+      rootPath: path.join(FIXTURE_ROOT, 'ProjectA'),
+      files: [ 'Theorems.md', 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md' ]
+    }]
   }
 }
 
@@ -132,12 +136,15 @@ const NEW_SET: () => Extension[] = () => [ markdownParser(), configField, render
 describe('Reference chips (issue #1 Phase 4)', function () {
   const views: EditorView[] = []
   const originalCitationCallback = window.getCitationCallback
+  let restoreCitationIpc: (() => void)|undefined
 
   before(function () {
     polyfillJsdomForCodeMirror()
+    restoreCitationIpc = installCitationIpcFromCallback()
   })
 
   beforeEach(function () {
+    __resetCitationRenderMemoForTests()
     const engine = new CSL.Engine({
       retrieveItem: id => {
         const item = BIBLIOGRAPHY.get(id)
@@ -147,12 +154,14 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       retrieveLocale: () => readFileSync('static/csl-locales/locales-en-US.xml', 'utf8')
     }, readFileSync('static/csl-styles/chicago-author-date.csl', 'utf8'), 'en-US', true)
     window.getCitationCallback = () => (citationItems, composite) => {
-      const citation = { citationItems, properties: { noteIndex: 0, mode: composite ? 'composite' : undefined } }
+      const mode: EngineCitation['properties']['mode'] = composite ? 'composite' : undefined
+      const citation: EngineCitation = { citationItems, properties: { noteIndex: 0, mode } }
       return engine.previewCitationCluster(citation, [], [], 'html')
     }
   })
 
   after(function () {
+    restoreCitationIpc?.()
     window.getCitationCallback = originalCitationCallback
   })
 
@@ -183,7 +192,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
   }
 
   describe('resolved occurrences render as independent compact chips', function () {
-    it('renders a bare untitled occurrence as a Type — key fallback chip', function () {
+    it('renders an untitled occurrence with the same principled local numbering as titled references', function () {
       const doc = 'The form @eq:intersection-form computes every square.'
       const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
 
@@ -191,11 +200,11 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.strictEqual(rendered.length, 1, 'the single resolved occurrence must render exactly one chip')
       assert.strictEqual(rendered[0].dataset.referenceKey, 'eq:intersection-form')
       assert.strictEqual(rendered[0].dataset.referenceFamily, 'eq')
-      assert.strictEqual(rendered[0].textContent, 'Equation — eq:intersection-form')
+      assert.strictEqual(rendered[0].textContent, 'Equation 1.2.1')
       assert.ok(!view.contentDOM.textContent.includes('@eq:intersection-form'), 'the authored token must be replaced by the chip')
     })
 
-    it('renders a titled theorem occurrence as a Type — title chip without any number', function () {
+    it('renders a titled theorem occurrence as a compact editor-local number instead of inlining its title', function () {
       const doc = 'By @thm:torelli the two surfaces agree.'
       const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
 
@@ -203,10 +212,8 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.strictEqual(rendered.length, 1)
       assert.strictEqual(rendered[0].dataset.referenceKey, 'thm:torelli')
       assert.strictEqual(rendered[0].dataset.referenceFamily, 'thm')
-      assert.strictEqual(rendered[0].textContent, 'Theorem — Torelli for Enriques')
-      // Numbering is owned exclusively by export tools and templates: the
-      // chip may never display a computed number of any kind.
-      assert.ok(!/\d/.test(rendered[0].textContent ?? ''), `the chip must never display a number: ${rendered[0].outerHTML}`)
+      assert.strictEqual(rendered[0].textContent, 'Theorem 1.1.1')
+      assert.ok(!rendered[0].textContent?.includes('Torelli for Enriques'), 'the potentially long title belongs in hover/detail surfaces, not inline prose')
     })
 
     it('preserves authored prefixes and punctuation around independent chips in a cluster', function () {
@@ -218,8 +225,8 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.deepStrictEqual(
         rendered.map(chip => [ chip.dataset.referenceKey, chip.textContent ]),
         [
-          [ 'tbl:coble-lattices', 'Table — Coble lattices of Halphen type' ],
-          [ 'eq:intersection-form', 'Equation — eq:intersection-form' ],
+          [ 'tbl:coble-lattices', 'Table 1.2.1' ],
+          [ 'eq:intersection-form', 'Equation 1.2.1' ],
         ]
       )
 
@@ -227,7 +234,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.ok(cluster !== null, 'the cluster renders as one widget wrapping its chips')
       assert.strictEqual(
         cluster.textContent,
-        'see Table — Coble lattices of Halphen type; Equation — eq:intersection-form',
+        'see Table 1.2.1; Equation 1.2.1',
         'the authored prefix and separator punctuation must be preserved verbatim around the chips'
       )
     })
@@ -238,7 +245,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
 
       const cluster = view.dom.querySelector<HTMLElement>('.reference-chip-cluster')
       assert.ok(cluster !== null, 'the bracketed cluster renders as one widget')
-      assert.strictEqual(cluster.textContent, 'Equation — eq:intersection-form, p. 3')
+      assert.strictEqual(cluster.textContent, 'Equation 1.2.1, p. 3')
       assert.strictEqual(chips(view).length, 1)
     })
 
@@ -251,7 +258,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       const rendered = chips(view)
       assert.strictEqual(rendered.length, 1)
       assert.strictEqual(rendered[0].dataset.referenceKey, 'fig:root-diagram')
-      assert.strictEqual(rendered[0].textContent, 'Figure — Root diagram')
+      assert.strictEqual(rendered[0].textContent, 'Figure 1.2.1')
       assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'a supported-family cluster must not render through the citation widget anymore')
     })
   })
@@ -287,7 +294,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'the mixed cluster must not render through the citation widget')
       assert.ok(
         view.contentDOM.textContent.includes('[@thm:torelli; @Ols04, Lem. 7.1]'),
-        'the authored mixed cluster must stay raw (the advisory is a reference-lint diagnostic)'
+        'the authored mixed cluster must stay raw (the advisory is a Flowmark diagnostic)'
       )
     })
   })
@@ -308,6 +315,7 @@ describe('Reference chips (issue #1 Phase 4)', function () {
         assert.equal(combinedView.contentDOM.textContent, doc)
         payload.snapshot.citations = await extractPandocCitations(doc)
         combinedView.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
+        await Promise.all([ settleCitationWidgets(currentView.dom), settleCitationWidgets(combinedView.dom) ])
 
         const currentWidgets = [ ...currentView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]
         const combinedWidgets = [ ...combinedView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]

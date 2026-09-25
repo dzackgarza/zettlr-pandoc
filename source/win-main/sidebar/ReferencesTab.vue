@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescriptorSync } from '@common/util/get-bibliography-for-descriptor'
 import { isAbsolutePath, resolvePath } from '@common/util/renderer-path-polyfill'
@@ -83,7 +84,7 @@ const approximateWordCount = computed(() => {
 const wordCountLabel = computed(() => trans('circa %s words', localiseNumber(approximateWordCount.value)))
 
 watch(activeFile, () => {
-  updateBibliography().catch(e => console.error('Could not update bibliography', e))
+  updateBibliography().catch(e => reportError('Could not update bibliography', e))
 })
 
 onMounted(() => {
@@ -94,13 +95,13 @@ onMounted(() => {
       const { filePath } = context
 
       if (filePath === activeFile.value?.path) {
-        updateBibliography().catch(e => console.error('Could not update bibliography', e))
+        updateBibliography().catch(e => reportError('Could not update bibliography', e))
       }
     }
   })
 
   // Initial bibliography update
-  updateBibliography().catch(e => console.error('Could not update bibliography', e))
+  updateBibliography().catch(e => reportError('Could not update bibliography', e))
 })
 
 /**

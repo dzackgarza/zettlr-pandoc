@@ -9,15 +9,13 @@
  *
  * Description:     Drives the production flowmark service with NO injected
  *                  runner, so it exercises the exact production command string
- *                  (`uvx --from git+…/flowmark.git flowmark --inplace --nobackup
- *                  --semantic --no-respect-gitignore <file>`) against the REAL
- *                  flowmark binary end-to-end and asserts flowmark's `--semantic`
- *                  reflow (sentence-per-line). This is the committed backing for
- *                  the PR claim that the real invocation is verified end-to-end.
+ *                  against the Flowmark source pinned in vendor/flowmark, rather
+ *                  than a network-selected revision. It proves both the formatter
+ *                  and the standalone linter through the same production runtime.
  *
- *                  This fetches flowmark from git via uvx (network), so it is NOT
- *                  a `*.spec.ts` file and is excluded from the default `just test`
- *                  commit gate. Run it explicitly with the dedicated recipe:
+ *                  A cold uv cache may install Flowmark's Python dependencies,
+ *                  so it is not a `*.spec.ts` file in the fastest default suite.
+ *                  Run it explicitly with the dedicated recipe:
  *                  `just test-flowmark-integration`. When flowmark cannot be
  *                  launched at all, formatMarkdownText returns a typed
  *                  `flowmark-absent`, and the `ok === true` assertion fails loudly
@@ -31,33 +29,113 @@
  * END HEADER
  */
 
-import { strict as assert } from 'assert'
-import { formatMarkdownText } from 'source/app/util/flowmark-format'
+import { strict as assert } from "assert";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { formatMarkdownText } from "source/app/util/flowmark-format";
+import { lintMarkdownText } from "source/app/util/flowmark-lint";
 
-describe('flowmark real-toolchain integration (issue #26)', function () {
-  // uvx fetches flowmark from git on a cold cache; allow generously for it.
-  this.timeout(180000)
+describe("flowmark real-toolchain integration (issue #26)", function () {
+  // A cold uv cache may need to install the pinned project's dependencies.
+  this.timeout(180000);
 
-  it('runs the production uvx flowmark command and applies the --semantic reflow', async function () {
+  it("runs the production uvx flowmark command and applies the --semantic reflow", async function () {
     // A single physical line holding two sentences. --semantic reflow must
     // break it into one sentence per line; if the production command string
     // were wrong the runner would not launch (flowmark-absent) and `ok` would
     // be false, so this asserts the real invocation, not a stand-in.
-    const input = 'The cat sat. The dog ran.\n'
-    assert.equal(input.trimEnd().includes('\n'), false, 'premise: input is a single physical line')
+    const input = "The cat sat. The dog ran.\n";
+    assert.equal(input.trimEnd().includes("\n"), false, "premise: input is a single physical line");
 
     // No opts -> the real FLOWMARK_COMMAND + FLOWMARK_ARGS_PREFIX are used.
-    const result = await formatMarkdownText(input)
+    const result = await formatMarkdownText(input);
 
-    assert.equal(result.ok, true, 'the real production flowmark invocation must launch and exit 0')
+    assert.equal(result.ok, true, "the real production flowmark invocation must launch and exit 0");
     if (result.ok) {
-      assert.notEqual(result.formatted, input, 'the semantic reflow must actually change the buffer')
-      const lines = result.formatted.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+      assert.notEqual(
+        result.formatted,
+        input,
+        "the semantic reflow must actually change the buffer",
+      );
+      const lines = result.formatted
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
       assert.deepEqual(
         lines,
-        [ 'The cat sat.', 'The dog ran.' ],
-        'flowmark --semantic must place each sentence on its own line'
-      )
+        ["The cat sat.", "The dog ran."],
+        "flowmark --semantic must place each sentence on its own line",
+      );
     }
-  })
-})
+  });
+
+  it("runs the pinned submodule linter and treats TeX math as math, not Markdown emphasis", async function () {
+    const result = await lintMarkdownText(
+      "The classes $x_i$, \\(y_j\\), and \\underline{z_k} are mathematical.\n",
+      { timeoutMs: 60_000 },
+    );
+    assert.equal(result.ok, true, "the vendored Flowmark linter must launch successfully");
+    if (result.ok) {
+      assert.deepEqual(
+        result.diagnostics,
+        [],
+        "underscores in parsed math/raw TeX must not become Markdown-emphasis findings",
+      );
+    }
+  });
+
+  it("does not turn formatter normalization into editor lint", async function () {
+    const result = await lintMarkdownText("Use _emphasis_ in prose.\n", { timeoutMs: 60_000 });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(
+        result.diagnostics,
+        [],
+        "a spelling the formatter would normalize is not a semantic defect",
+      );
+    }
+  });
+
+  it("reports mathematical defects that normalization cannot decide", async function () {
+    const result = await lintMarkdownText(
+      "The map $Hom_R(M,N)$ has component $x_i_j$ and value $x_{i$.\n",
+      { timeoutMs: 60_000 },
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const rules = new Set(result.diagnostics.map((diagnostic) => diagnostic.rule));
+      assert.ok(rules.has("math/bare-operator"));
+      assert.ok(rules.has("math/repeated-subscript"));
+      assert.ok(rules.has("math/unclosed-group"));
+      assert.equal(rules.has("format/canonical"), false);
+    }
+  });
+
+  it("passes the active document path so relative-link diagnostics use the editor location", async function () {
+    const dir = await mkdtemp(path.join(tmpdir(), "zettlr-flowmark-lint-path-"));
+    try {
+      const result = await lintMarkdownText(
+        "---\ncsl: styles/does-not-exist.csl\n---\n\n[missing](does-not-exist.md)\n",
+        {
+          sourcePath: path.join(dir, "document.md"),
+          timeoutMs: 60_000,
+        },
+      );
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        const rules = new Set(result.diagnostics.map((diagnostic) => diagnostic.rule));
+        assert.ok(
+          rules.has("link/missing-local-target"),
+          "relative links must be resolved against the active document path, not the process cwd",
+        );
+        assert.ok(
+          rules.has("pandoc/missing-resource"),
+          "Pandoc frontmatter resources must resolve against the active document path",
+        );
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -15,6 +15,7 @@
  *
  * END HEADER
  */
+import { reportError } from '@common/util/error-reporting'
 import { v4 as uuid } from 'uuid'
 
 interface SharedItemInfo {
@@ -212,7 +213,7 @@ export default function showPopupMenu (position: Point|Rect, items: AnyMenuItem[
           console.warn(`Could not trigger action for context menu item ${clickedID}: Neither action nor callback provided.`)
         }
       })
-      .catch(err => { console.error(err) })
+      .catch(err => { reportError(err) })
     return () => { /* Noop-function, since no cleanup is required */ }
   } // END darwin specific code
 

@@ -228,7 +228,7 @@ async function main() {
   }
 
   const content = success(
-    await request(port, "GET", `/v1/documents/${encodeURIComponent(documentId)}/content?side=working`),
+    await request(port, "GET", `/v1/documents/${encodeURIComponent(documentId)}?includeContent=true&side=working`),
     200,
     "working document read",
   );

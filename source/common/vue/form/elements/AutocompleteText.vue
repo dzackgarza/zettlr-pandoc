@@ -51,6 +51,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { ref, computed, watch, toRef, nextTick } from 'vue'
 
 const props = defineProps<{
@@ -127,7 +128,7 @@ function maybeScrollOptionIntoView () {
       }
       option.scrollIntoView()
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 watch(toRef(props, 'modelValue'), (newVal) => {

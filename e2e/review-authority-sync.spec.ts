@@ -8,18 +8,18 @@
  * License: GNU GPL v3
  *
  * Description: A review decision is bound to the bytes the reviewer was
- *              looking at when they clicked. M9 moved every review control
- *              out of the editor and into the annotations panel, so the panel
- *              is what forms that binding: it sends the working-text hash of
- *              the collaboration snapshot it drew the chunk from, and main
- *              refuses any decision whose hash no longer names the text main
- *              holds.
+ *              looking at when they clicked. The controls under each chunk
+ *              in the editor form that binding: they send the working-text
+ *              hash of the collaboration snapshot the chunk was drawn from,
+ *              and main refuses any decision whose hash no longer names the
+ *              text main holds. While the pane's own edits have not come
+ *              back from main, the controls are inert.
  *
  *              Only the assembled app can prove it: the buffer is edited in
- *              one renderer surface, the fence is formed in another out of a
- *              main-process broadcast, and the hash comparison lives in main.
- *              Both outcomes they produce together — a decision that lands on
- *              the edited chunk, and one refused for text main was never told
+ *              the renderer, the fence is formed out of a main-process
+ *              broadcast, and the hash comparison lives in main. Both
+ *              outcomes they produce together — a decision that lands on the
+ *              edited chunk, and one refused for text main was never told
  *              about — appear nowhere below the two processes.
  *
  * END HEADER
@@ -73,8 +73,13 @@ interface PageContentElement extends Element {
   cmTile?: { root?: { view?: PageEditorView } }
 }
 
-/** The annotations panel: where every review control lives after M9. */
-const PANEL = '#annotations-panel'
+/** The editor panes, in DOM order; the review controls live inside each. */
+const EDITORS = '.main-editor-wrapper .cm-editor'
+
+/** The first pane: the one every decision in this spec is made from. */
+function reviewPane (page: Page): Locator {
+  return page.locator(EDITORS).first()
+}
 
 interface EditInput {
   /** Which mounted pane is edited, in DOM order. */
@@ -84,20 +89,20 @@ interface EditInput {
   /** What that line reads after the first, then the second, edit. */
   edits: [string, string]
   /**
-   * A panel control clicked in the SAME renderer task as the edits. Omitted,
-   * the helper only edits, and the caller clicks once the panel has redrawn
-   * from the authority — which is what a reviewer can actually do.
+   * A control in the FIRST pane clicked in the SAME renderer task as the
+   * edits. Omitted, the helper only edits, and the caller clicks once the
+   * controls are live again — which is what a reviewer can actually do.
    */
   click?: {
-    /** Id of the chunk whose card is clicked, if any. */
+    /** Id of the chunk whose controls are clicked, if any. */
     chunk?: string
-    /** The control, as a selector resolved inside the panel or that card. */
+    /** The control, as a selector resolved inside the pane or that chunk's controls. */
     control: string
   }
 }
 
 /**
- * Two editor edits, and optionally one panel click, in a SINGLE renderer task.
+ * Two editor edits, and optionally one click, in a SINGLE renderer task.
  *
  * The barrier is the product's own: the remote-doc plugin pushes one batch at
  * a time and drops any further push while one is in flight. Dispatching both
@@ -105,10 +110,11 @@ interface EditInput {
  * the first push is unresolved and the second edit unsent — with no sleep, no
  * timing assumption, and nothing injected into the product.
  *
- * A click issued from that same task carries the fence of the snapshot the
- * panel was DRAWN with, while the first edit is already travelling the same
- * ordered channel to the authority and takes its per-document lock first.
- * That is the refusal case, and the only one this helper clicks for.
+ * A click issued from that same task, in a pane the edits did not touch,
+ * carries the fence of the snapshot that pane was DRAWN with, while the
+ * first edit is already travelling the same ordered channel to the authority
+ * and takes its per-document lock first. That is the refusal case, and the
+ * only one this helper clicks for.
  *
  * Returns the edited pane's buffer text at the end of the task.
  */
@@ -151,24 +157,26 @@ async function editLines (page: Page, input: EditInput): Promise<string> {
       return textAfterEdits
     }
 
-    const panel = document.querySelector('#annotations-panel')
-    if (panel === null) {
-      throw new Error('The annotations panel is not mounted')
+    const pane = document.querySelector('.main-editor-wrapper .cm-editor')
+    if (pane === null) {
+      throw new Error('No editor pane is mounted')
     }
-    // The cards carry the chunk's own id, which is what the provider listing
-    // names it by too.
+    // The controls carry the chunk's own id, which is what the provider
+    // listing names it by too.
     const scope = options.click.chunk === undefined
-      ? panel
-      : panel.querySelector(`.suggestion-chunk[data-chunk-id="${options.click.chunk}"]`)
+      ? pane
+      : pane.querySelector(`.suggestion-chunk[data-chunk-id="${options.click.chunk}"]`)
     if (scope === null) {
-      throw new Error(`No suggestion card carries the id ${JSON.stringify(options.click.chunk)}`)
+      throw new Error(`No chunk controls carry the id ${JSON.stringify(options.click.chunk)}`)
     }
     const button = scope.querySelector(options.click.control)
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error(`No control matches ${options.click.control}`)
     }
-    if (button.disabled) {
-      throw new Error(`The control ${options.click.control} is disabled`)
+    // The clicked pane was not edited, so its controls are live: a refusal
+    // below comes from main's fence, not from the pane holding back.
+    if (button.disabled || button.closest('[inert]') !== null) {
+      throw new Error(`The control ${options.click.control} does not take input`)
     }
     button.click()
     return textAfterEdits
@@ -188,9 +196,9 @@ async function bufferText (page: Page, pane = 0): Promise<string> {
   }, pane)
 }
 
-/** The card the panel draws for one chunk. */
-function panelChunk (page: Page, chunkId: string): Locator {
-  return page.locator(`${PANEL} .suggestion-chunk[data-chunk-id="${chunkId}"]`)
+/** The controls the first pane draws under one chunk. */
+function chunkControls (page: Page, chunkId: string): Locator {
+  return reviewPane(page).locator(`.suggestion-chunk[data-chunk-id="${chunkId}"]`)
 }
 
 /**
@@ -234,7 +242,7 @@ async function openDocumentId (api: AgentClient): Promise<string> {
 /** The provider's authoritative working text, as bytes. */
 async function workingText (api: AgentClient): Promise<string> {
   const payload = await api.get(
-    `/v1/documents/${await openDocumentId(api)}/content?side=working`
+    `/v1/documents/${await openDocumentId(api)}?includeContent=true&side=working`
   )
   return stringField(payload, 'content')
 }
@@ -273,7 +281,7 @@ async function chunkListing (
   api: AgentClient,
   reviewId: string
 ): Promise<{ chunks: ChunkView[], generation: number, workingSha256: string }> {
-  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
   assert.ok(
     isRecord(payload) &&
       Array.isArray(payload.chunks) &&
@@ -289,7 +297,7 @@ async function chunkListing (
 
 /**
  * Submits one proposal against whatever the provider currently holds, and
- * returns its review id once the panel has rendered the controls.
+ * returns its review id once the editor has rendered the controls.
  */
 async function propose (
   api: AgentClient,
@@ -298,7 +306,7 @@ async function propose (
   claims: Array<{ description: string, patch: string }>
 ): Promise<string> {
   const documentId = await openDocumentId(api)
-  const content = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  const content = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   assert.ok(isRecord(content) && isRecord(content.revision))
   assert.equal(typeof content.reviewGeneration, 'number')
   const reviewId = stringField(
@@ -310,8 +318,8 @@ async function propose (
     }),
     'reviewId'
   )
-  await page
-    .locator(`${PANEL} .suggestion-decision.accept`)
+  await reviewPane(page)
+    .locator('.suggestion-decision.accept')
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 })
   return reviewId
@@ -344,11 +352,11 @@ async function waitFor<T> (
 }
 
 /**
- * The provider's chunk list once it satisfies `holds`, with the panel redrawn
- * from it. A decision is settled only when both agree: the panel is where the
- * next decision is raised AND where its fence is formed, so acting on the
- * provider's answer alone would decide against a snapshot the reviewer has
- * not been shown.
+ * The provider's chunk list once it satisfies `holds`, with the first pane's
+ * controls redrawn from it. A decision is settled only when both agree: the
+ * pane is where the next decision is raised AND where its fence is formed,
+ * so acting on the provider's answer alone would decide against a snapshot
+ * the reviewer has not been shown.
  */
 async function settledChunks (
   api: AgentClient,
@@ -362,43 +370,44 @@ async function settledChunks (
     'the provider to commit the decision'
   )
   await waitFor(
-    async () => await page.locator(`${PANEL} .suggestion-chunk`).count(),
+    async () => await reviewPane(page).locator('.suggestion-chunk').count(),
     count => count === chunks.length,
-    `the panel to redraw ${chunks.length} suggestion card(s)`
+    `the pane to redraw ${chunks.length} chunk control block(s)`
   )
   return chunks
 }
 
 /**
- * Waits until the panel's card for `chunkId` reads `text` on its inserted
- * side. The card slices that text out of the SAME working snapshot its fence
- * comes from, so this is the moment the panel stopped showing the chunk it
- * was drawn with and started showing the edited one. Nothing but the
- * authority's own broadcast can move it: the panel never reads the buffer.
+ * Waits until the pane's controls for `chunkId` take input again after the
+ * pane's own edits, with the buffer reading `text`. The controls go inert on
+ * the edit itself and come back only when a broadcast from the authority
+ * carries exactly the buffer's text — so this is the moment the fence they
+ * send names the edited chunk rather than the one they were drawn with.
  */
-async function panelShowsInsertedText (
+async function controlsLiveOver (
   page: Page,
   chunkId: string,
   text: string
 ): Promise<void> {
-  await waitFor(
-    async () => await panelChunk(page, chunkId).locator('ins').innerText(),
-    value => value === text,
-    `the panel card for ${chunkId} to redraw as ${JSON.stringify(text)}`
-  )
+  assert.ok((await bufferText(page)).includes(text), `the buffer must read ${JSON.stringify(text)}`)
+  await reviewPane(page)
+    .locator(`.cm-collaborationControl-review-chunk:not([inert]) .suggestion-chunk[data-chunk-id="${chunkId}"]`)
+    .waitFor({ state: 'visible', timeout: 30_000 })
+  await reviewPane(page)
+    .locator('.cm-collaborationControl-review-bar:not([inert])')
+    .waitFor({ state: 'visible', timeout: 30_000 })
 }
 
 /**
- * Waits until the panel offers no decision at all. A review outlives its last
- * decision — resolved, awaiting the save that closes it — so the inspector
- * itself stays mounted; what leaves is every card, because nothing is
- * outstanding to adjudicate.
+ * Waits until the pane offers no decision at all. A review outlives its last
+ * decision — resolved, awaiting the save that closes it — but with nothing
+ * outstanding every chunk's controls and the review bar leave the editor.
  */
 async function waitForNoCards (page: Page): Promise<void> {
   await waitFor(
-    async () => await page.locator(`${PANEL} .suggestion-chunk`).count(),
+    async () => await reviewPane(page).locator('.suggestion-chunk, .suggestion-review-bar').count(),
     count => count === 0,
-    'every suggestion card to leave the panel'
+    'every chunk control block and the review bar to leave the editor'
   )
 }
 
@@ -420,9 +429,9 @@ describe('a review decision waits for the document authority', function () {
       documentContents: BASELINE,
       config: {
         agentApi: { enabled: true, port: 0 },
-        // Every review control lives in the sidebar's annotations panel (M9),
-        // so the fixture opens the sidebar on that tab: the surface under
-        // test has to be mounted before a review reaches it.
+        // The workspace panel stays open beside the editor, as a reviewer
+        // works: every decision here is still made from the controls the
+        // editor draws under each chunk.
         window: { sidebarVisible: true }
       }
     })
@@ -469,10 +478,10 @@ describe('a review decision waits for the document authority', function () {
       line: 'alpha proposed',
       edits: ['alpha proposed one', 'alpha proposed one two']
     })
-    await panelShowsInsertedText(activePage, acceptedChunk, 'alpha proposed one two')
+    await controlsLiveOver(activePage, acceptedChunk, 'alpha proposed one two')
 
     const textAtClick = await bufferText(activePage)
-    await panelChunk(activePage, acceptedChunk)
+    await chunkControls(activePage, acceptedChunk)
       .locator('.suggestion-decision.accept')
       .click()
 
@@ -483,7 +492,7 @@ describe('a review decision waits for the document authority', function () {
     assert.deepEqual(
       await toastMessages(activePage),
       [],
-      'a decision fenced on the snapshot the panel drew is never refused'
+      'a decision fenced on the snapshot the pane drew is never refused'
     )
     assert.equal(
       await workingText(activeApi),
@@ -492,7 +501,7 @@ describe('a review decision waits for the document authority', function () {
     )
 
     // The decisive part: the accepted reference is the EDITED text. Had the
-    // provider accepted the chunk as the panel was first drawn — before either
+    // provider accepted the chunk as the pane was first drawn — before either
     // edit reached the authority — the two edits would still differ from the
     // reference and would be sitting here as a fresh outstanding chunk.
     assert.deepEqual(
@@ -517,10 +526,10 @@ describe('a review decision waits for the document authority', function () {
       line: 'bravo proposed',
       edits: ['bravo proposed one', 'bravo proposed one two']
     })
-    await panelShowsInsertedText(activePage, rejectedChunk, 'bravo proposed one two')
+    await controlsLiveOver(activePage, rejectedChunk, 'bravo proposed one two')
 
     const textAtClick = await bufferText(activePage)
-    await panelChunk(activePage, rejectedChunk)
+    await chunkControls(activePage, rejectedChunk)
       .locator('.suggestion-decision.reject')
       .click()
 
@@ -551,10 +560,10 @@ describe('a review decision waits for the document authority', function () {
       line: 'charlie proposed',
       edits: ['charlie proposed one', 'charlie proposed one two']
     })
-    await panelShowsInsertedText(activePage, notedChunk, 'charlie proposed one two')
+    await controlsLiveOver(activePage, notedChunk, 'charlie proposed one two')
 
     const textAtClick = await bufferText(activePage)
-    const noteField = panelChunk(activePage, notedChunk)
+    const noteField = chunkControls(activePage, notedChunk)
       .locator('input.suggestion-chunk-comment')
     await noteField.fill('second thoughts')
     // Enter is the field's commit gesture; the note is a fenced mutation like
@@ -582,7 +591,7 @@ describe('a review decision waits for the document authority', function () {
     assert.equal(
       noted[0].workingText,
       'charlie proposed one two',
-      'the note must land on the edited chunk, not the one the panel was drawn with'
+      'the note must land on the edited chunk, not the one the pane was drawn with'
     )
   })
 
@@ -601,10 +610,10 @@ describe('a review decision waits for the document authority', function () {
       line: 'delta proposed',
       edits: ['delta proposed one', 'delta proposed one two']
     })
-    await panelShowsInsertedText(activePage, sweptChunk, 'delta proposed one two')
+    await controlsLiveOver(activePage, sweptChunk, 'delta proposed one two')
 
     const textAtClick = await bufferText(activePage)
-    await activePage.locator(`${PANEL} .suggestion-accept-all`).click()
+    await reviewPane(activePage).locator('.suggestion-accept-all').click()
 
     await waitFor(
       async () => await activeApi.get(`/v1/reviews/${activeReviewId}`),
@@ -613,7 +622,7 @@ describe('a review decision waits for the document authority', function () {
     )
     // The review survives its last decision — it is resolved, awaiting the
     // save that closes it — but that state is the agent's to read: with
-    // nothing outstanding, the panel offers no decision at all.
+    // nothing outstanding, the pane offers no decision at all.
     await waitForNoCards(activePage)
     assert.deepEqual(await toastMessages(activePage), [])
     assert.equal(
@@ -647,14 +656,14 @@ describe('a review decision waits for the document authority', function () {
       line: 'echo revised',
       edits: ['echo revised one', 'echo revised one two']
     })
-    await panelShowsInsertedText(activePage, echoChunk.chunkId, 'echo revised one two')
+    await controlsLiveOver(activePage, echoChunk.chunkId, 'echo revised one two')
 
     const textAtClick = await bufferText(activePage)
     assert.ok(
       textAtClick.includes('echo revised one two'),
       'both edits must be in the buffer when the control is clicked'
     )
-    await activePage.locator(`${PANEL} .suggestion-clear`).click()
+    await reviewPane(activePage).locator('.suggestion-clear').click()
 
     await waitFor(
       async () => await workingText(activeApi),
@@ -727,12 +736,12 @@ describe('a review decision waits for the document authority', function () {
     ])
     const beforeDecision = await chunkListing(activeApi, staleReviewId)
     assert.equal(beforeDecision.chunks.length, 1)
-    // One chunk, drawn once: the panel belongs to the window, not to a pane.
+    // One chunk; each pane draws controls for it, and the first one decides.
     await settledChunks(activeApi, activePage, staleReviewId, chunks => chunks.length === 1)
 
     // The second pane's edit is issued first and travels the same ordered IPC
     // channel, so it takes the provider's per-document lock before the
-    // decision does. The panel's fence was formed in that same renderer task,
+    // decision does. The first pane.s fence was formed in that same renderer task,
     // out of the snapshot it was drawn with — and names text that no longer
     // exists by the time the decision is applied.
     await editLines(activePage, {
@@ -749,9 +758,7 @@ describe('a review decision waits for the document authority', function () {
     await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(
       await toast.first().locator('span').first().innerText(),
-      'The document text changed after this decision was formed, so the chunk ' +
-        'it names is not the chunk that would be decided. Re-read the chunks ' +
-        'and decide again.',
+      'The document changed after this decision was prepared. Reload the review and try again.',
       'the refusal must name the hash precondition, not a generic failure'
     )
 
@@ -775,11 +782,14 @@ describe('a review decision waits for the document authority', function () {
 
     // Leave the window closable: resolve the review and flush the buffer.
     await toast.first().click()
-    // Disposing of the remaining chunks is the reviewer's: the panel's own
-    // control, which is the only surface that offers it. It carries the fence
-    // the panel now holds, which is why the refusal above had to be settled
-    // first.
-    await activePage.locator(`${PANEL} .suggestion-clear`).click()
+    // Disposing of the remaining chunks is the reviewer's: the review bar's
+    // own control, which is the only surface that offers it. The other
+    // pane's edits reach this pane as remote changes, so its bar is inert
+    // until the broadcast for them lands; only then does its fence name the
+    // text main holds.
+    const liveClear = reviewPane(activePage).locator('.cm-collaborationControl-review-bar:not([inert]) .suggestion-clear')
+    await liveClear.waitFor({ state: 'visible', timeout: 30_000 })
+    await liveClear.click()
     await waitForNoCards(activePage)
     assert.deepEqual(
       await activePage.evaluate(

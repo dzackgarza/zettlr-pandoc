@@ -31,6 +31,12 @@ import type { DirectorySettings, ProjectSettings } from 'source/types/common/fsa
 
 const FIXTURE = path.resolve('test', 'fixtures', 'quarto-bound-book')
 const BINDING = path.join('.book', '_quarto.yml')
+const DEFAULT_EXPLORER = {
+  displayName: 'inherit',
+  sortMetadataKey: 'zettlr-order_',
+  foldersFirst: null,
+  projectFilter: 'all'
+} as const
 
 /** The settings a directory's dotfile holds, as they were written to disk. */
 async function readDirectorySettings (directory: string): Promise<Partial<DirectorySettings>> {
@@ -67,7 +73,7 @@ describe('a workspace bound to a manifest that lives elsewhere in it', function 
 
     assert.deepEqual(
       await readDirectorySettings(workspace),
-      { sorting: 'name-up', project: null, icon: null, color: null, quartoManifest: BINDING },
+      { sorting: 'name-up', explorer: DEFAULT_EXPLORER, project: null, icon: null, color: null, quartoManifest: BINDING },
       'the dotfile names where the manifest is and holds nothing the manifest says'
     )
 

@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type EditorState } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
 import { trans } from '@common/i18n-renderer'
@@ -83,7 +84,7 @@ export function linkImageMenu (view: EditorView, node: SyntaxNode, coords: { x: 
   const url = getURLForNode(node, view.state)
 
   if (url === undefined) {
-    console.error('Could not show Link/Image context menu: No URL found!')
+    reportError('Could not show Link/Image context menu: No URL found!')
     return
   }
 
@@ -108,7 +109,7 @@ export function linkImageMenu (view: EditorView, node: SyntaxNode, coords: { x: 
       label: (url.indexOf('mailto:') === 0) ? trans('Copy email address') : trans('Copy link'),
       action () {
         const sanitizedUrl = url.replace(/^<|>$/g, '') // Remove markdown characters
-        navigator.clipboard.writeText(sanitizedUrl).catch(err => console.error(err))
+        navigator.clipboard.writeText(sanitizedUrl).catch(err => reportError(err))
       }
     },
     {

@@ -1,8 +1,8 @@
 import { openScene } from './visual/scene.mjs'
 
 // The four scenes M5 owns (plan section 10 names). M10 assembles the full
-// twelve-scene `just capture-annotations`; these are scoped to what the
-// editor alone renders — no panel, no thread, no button (invariant I4).
+// twelve-scene `just capture-annotations`; these are scoped to the
+// locators: target marks and gutter markers.
 const scenes = [
   { scene: '02-multiple-open-annotations', expect: { marks: 3, markers: 3 } },
   { scene: '07-deleted-target-point', expect: { marks: 0, markers: 1 } },
@@ -31,9 +31,6 @@ async function capture (view, { scene: name, expect }, dark) {
   console.log(variant, JSON.stringify(diagnostics))
   if (diagnostics.marks !== expect.marks || diagnostics.markers !== expect.markers) {
     throw new Error(`${variant} rendered ${diagnostics.marks} marks / ${diagnostics.markers} markers, expected ${expect.marks} / ${expect.markers}`)
-  }
-  if (diagnostics.buttons !== 0) {
-    throw new Error(`${variant} rendered ${diagnostics.buttons} button(s) — the editor must carry no adjudication content (I4)`)
   }
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
     throw new Error(`${variant} has horizontal editor overflow`)

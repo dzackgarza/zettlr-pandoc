@@ -22,7 +22,7 @@ import { promisify } from 'util'
 const execFileAsync = promisify(execFile)
 
 interface ClickResult {
-  kind: 'text'|'gutter'|'label'
+  kind: 'text'|'gutter'|'label'|'widget'
   side?: 'left'|'right'
   text: string
   expectedFrom: number
@@ -30,6 +30,8 @@ interface ClickResult {
   expectedAtCoords: number|null
   hitTag: string|null
   actual: number
+  actualHead: number
+  rectHeight?: number
 }
 
 describe('Pandoc fenced-div clicks preserve CodeMirror source positions', function () {
@@ -105,6 +107,23 @@ describe('Pandoc fenced-div clicks preserve CodeMirror source positions', functi
       assert.equal(result.actual, result.expectedFrom)
     })
   }
+
+  it('keeps a multiline opening fence as compact as a single-line semantic header', function () {
+    const definition = results.find(candidate => candidate.kind === 'label' && candidate.text === 'Definition')
+    const warning = results.find(candidate => candidate.kind === 'label' && candidate.text === 'Warning')
+    assert.ok(definition?.rectHeight !== undefined && warning?.rectHeight !== undefined)
+    assert.ok(
+      definition.rectHeight <= warning.rectHeight + 1,
+      `multiline definition header height ${definition.rectHeight}px exceeds the single-line control ${warning.rectHeight}px`
+    )
+  })
+
+  it('lets replacement widgets inside a rendered div reveal their exact authored source range', function () {
+    const result = results.find(candidate => candidate.kind === 'widget' && candidate.text === '\\(x+y\\)')
+    assert.ok(result !== undefined, 'missing Chromium result for rendered math inside the div')
+    assert.equal(result.actual, result.expectedFrom)
+    assert.equal(result.actualHead, result.expectedTo)
+  })
 
   const contentLines = [
     'First target alpha.',

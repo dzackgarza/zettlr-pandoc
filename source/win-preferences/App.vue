@@ -66,29 +66,19 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import FormBuilder from '@common/vue/form/FormBuilder.vue'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import { trans } from '@common/i18n-renderer'
 
-import { getGeneralFields } from './schema/general'
-import { getEditorFields } from './schema/editor'
-import { getCitationFields } from './schema/citations'
-import { getZettelkastenFields } from './schema/zettelkasten'
-import { getSpellcheckingFields } from './schema/spellchecking'
-import { getAutocorrectFields } from './schema/autocorrect'
-import { getAdvancedFields } from './schema/advanced'
-import { ref, computed, watch, onMounted, onBeforeMount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeMount, nextTick } from 'vue'
 import { resolveLangCode } from '@common/util/map-lang-code'
 import SplitView from '@common/vue/window/SplitView.vue'
 import SelectableList from '@common/vue/form/elements/SelectableList.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
-import { getAppearanceFields } from './schema/appearance'
-import { getFileManagerFields } from './schema/file-manager'
-import { getImportExportFields } from './schema/import-export'
-import { getSnippetsFields } from './schema/snippets'
 import { useConfigStore } from 'source/pinia'
-import { PreferencesGroups } from './schema/_preferences-groups'
-import { getShortcutFields } from './schema/shortcuts'
+import { getPreferenceFieldsets, getPreferenceGroups } from './schema'
+import { PreferencesGroups, type PreferenceNavigationTarget } from '@dts/common/preferences'
 
 const ipcRenderer = window.ipc
 const configStore = useConfigStore()
@@ -149,20 +139,7 @@ const schema = computed(() => {
 const selectedItem = computed(() => query.value === '' ? currentGroup.value : -1)
 
 const fieldsets = computed(() => {
-  return [
-    ...getAdvancedFields(configStore.config),
-    ...getAppearanceFields(configStore.config),
-    ...getAutocorrectFields(),
-    ...getCitationFields(),
-    ...getEditorFields(configStore.config),
-    ...getFileManagerFields(configStore.config),
-    ...getGeneralFields(appLangOptions.value),
-    ...getImportExportFields(),
-    ...getShortcutFields(configStore.config),
-    ...getSnippetsFields(),
-    ...getSpellcheckingFields(configStore.config),
-    ...getZettelkastenFields(configStore.config)
-  ]
+  return getPreferenceFieldsets(configStore.config, appLangOptions.value)
 })
 
 const filteredFieldsets = computed(() => {
@@ -207,68 +184,7 @@ const filteredFieldsets = computed(() => {
 })
 
 const groups = computed<Array<PreferencesListItem & { id: PreferencesGroups }>>(() => {
-  return [
-    {
-      displayText: trans('General'),
-      icon: 'cog',
-      id: PreferencesGroups.General
-    },
-    {
-      displayText: trans('Appearance'),
-      icon: 'paint-roller',
-      id: PreferencesGroups.Appearance
-    },
-    {
-      displayText: trans('File Manager'),
-      icon: 'folder-open',
-      id: PreferencesGroups.FileManager
-    },
-    {
-      displayText: trans('Editor'),
-      icon: 'align-left-text',
-      id: PreferencesGroups.Editor
-    },
-    {
-      displayText: trans('Spellchecking'),
-      icon: 'text',
-      id: PreferencesGroups.Spellchecking
-    },
-    {
-      displayText: trans('Autocorrect'),
-      icon: 'wand', // 'block-quote'
-      id: PreferencesGroups.Autocorrect
-    },
-    {
-      displayText: trans('Citations'),
-      icon: 'chat-bubble',
-      id: PreferencesGroups.Citations
-    },
-    {
-      displayText: trans('Shortcuts'),
-      icon: 'keyboard',
-      id: PreferencesGroups.Shortcuts
-    },
-    {
-      displayText: trans('Zettelkasten'),
-      icon: 'details',
-      id: PreferencesGroups.Zettelkasten
-    },
-    {
-      displayText: trans('Snippets'),
-      icon: 'add-text',
-      id: PreferencesGroups.Snippets
-    },
-    {
-      displayText: trans('Import and Export'),
-      icon: 'two-way-arrows',
-      id: PreferencesGroups.ImportExport
-    },
-    {
-      displayText: trans('Advanced'),
-      icon: 'cpu',
-      id: PreferencesGroups.Advanced
-    }
-  ]
+  return getPreferenceGroups()
 })
 
 const windowTitle = computed(() => {
@@ -307,13 +223,35 @@ watch(currentGroup, () => {
 onMounted(() => {
   setTitle()
   populateDynamicValues()
-  if (location.hash !== '') {
+  const startupTarget = preferenceTargetFromLocation()
+  if (startupTarget !== undefined) {
+    revealPreferenceTarget(startupTarget).catch(err => reportError('[Preferences] Could not reveal startup target', err))
+  } else if (location.hash !== '') {
     const groupId = parseInt(location.hash.substring(1), 10)
     if (Object.values(PreferencesGroups).includes(groupId)) {
       currentGroup.value = groupId
     }
   }
 })
+
+/** Initial cross-window deep-link encoded by the main-process window owner. */
+function preferenceTargetFromLocation (): PreferenceNavigationTarget | undefined {
+  const params = new URLSearchParams(location.search)
+  const rawGroup = params.get('group')
+  if (rawGroup === null) {
+    return undefined
+  }
+  const group = Number.parseInt(rawGroup, 10)
+  if (!Object.values(PreferencesGroups).includes(group)) {
+    reportError(new Error(`Preferences URL names unknown group ${rawGroup}`))
+    return undefined
+  }
+  return {
+    group: group as PreferencesGroups,
+    fieldsetTitle: params.get('fieldset') ?? undefined,
+    model: params.get('model') ?? undefined
+  }
+}
 
 /**
    * Listen to events in order to adapt display.
@@ -325,7 +263,43 @@ onBeforeMount(() => {
       populateDynamicValues()
     }
   })
+  ipcRenderer.on('preferences-navigate', (_event, target: PreferenceNavigationTarget) => {
+    revealPreferenceTarget(target).catch(err => reportError('[Preferences] Could not reveal preference target', err))
+  })
 })
+
+/** Opens one launcher-selected Preferences group/control in this window. */
+async function revealPreferenceTarget (target: PreferenceNavigationTarget): Promise<void> {
+  const groupIndex = groups.value.findIndex(group => group.id === target.group)
+  if (groupIndex < 0) {
+    throw new Error(`Unknown Preferences group ${target.group}`)
+  }
+
+  // A launcher deep-link is navigation, not a Preferences text search. Clear a
+  // previous search so the target's group is actually mounted.
+  query.value = ''
+  currentGroup.value = groupIndex
+  await nextTick()
+
+  let destination: HTMLElement | undefined
+  if (target.model !== undefined) {
+    destination = Array.from(document.querySelectorAll<HTMLElement>('[name]'))
+      .find(element => element.getAttribute('name') === target.model)
+  }
+  if (destination === undefined && target.fieldsetTitle !== undefined) {
+    destination = Array.from(document.querySelectorAll<HTMLElement>('[data-form-fieldset-title]'))
+      .find(element => element.dataset.formFieldsetTitle === target.fieldsetTitle)
+  }
+  if (destination === undefined) {
+    return
+  }
+
+  destination.scrollIntoView({ block: 'center' })
+  const focusTarget = destination.matches('input, select, textarea, button')
+    ? destination
+    : destination.querySelector<HTMLElement>('input, select, textarea, button')
+  focusTarget?.focus()
+}
 
 /**
  * Called whenever a form value changes, and updates that specific setting.
@@ -338,14 +312,14 @@ function handleInput (prop: string, val: unknown): void {
   if (prop === 'userDictionaryContents') {
     // The user dictionary is not handled by the config
     if (!isStringArray(val)) {
-      console.error(new TypeError('The user dictionary form value was not a string array.'))
+      reportError(new TypeError('The user dictionary form value was not a string array.'))
       return
     }
     ipcRenderer.invoke('dictionary-provider', {
       command: 'set-user-dictionary',
       payload: val
     })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   } else if (prop === 'availableDictionaries') {
     // We have to extract the selected dictionaries and send their keys only
     const enabled = (val as Array<{ selected: boolean, value: string, key: string }>)
@@ -394,7 +368,7 @@ function populateDynamicValues (): void {
       })
       appLangOptions.value = options
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   // Also, get a list of all available dictionaries
   ipcRenderer.invoke('application', {
@@ -413,7 +387,7 @@ function populateDynamicValues (): void {
 
       availableDictionaries.value = values
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   // Retrieve the user dictionary
   ipcRenderer.invoke('dictionary-provider', {
@@ -425,7 +399,7 @@ function populateDynamicValues (): void {
       }
       userDictionaryContents.value = dictionary
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function selectGroup (which: number): void {

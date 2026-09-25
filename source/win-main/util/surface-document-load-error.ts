@@ -1,3 +1,4 @@
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import errorToString from '@common/util/error-to-string'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
@@ -24,7 +25,7 @@ export function surfaceDocumentLoadFailure(
   filePath: string,
   failure: DocumentLoadFailure
 ): void {
-  console.error(
+  reportError(
     `[MainEditor] Could not load document ${filePath}\n${failure.diagnostic}`
   )
   showToast(

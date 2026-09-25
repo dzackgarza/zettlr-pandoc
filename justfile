@@ -74,10 +74,14 @@ test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
+# Run the pinned Flowmark linter's rule, config and mathematical-authoring tests.
+test-flowmark-lint:
+    uv run --project "{{justfile_directory()}}/vendor/flowmark" --isolated --frozen pytest -q "{{justfile_directory()}}/vendor/flowmark/tests/test_lint.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_lint_rules.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_config.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_lint_authoring.py"
+
 # Run the focused workspace-reference test suite.
 test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/reference-lint.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
 # Run the reference UI suite: the references-provider Electron shell spec
 # (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
@@ -88,6 +92,11 @@ test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
 
+# Run the annotations panel animation performance and layout isolation spec.
+test-annotations-animation: sync-dependencies
+    python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
+
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
 # companion checkout is missing; run explicitly, not part of the commit gate
@@ -97,11 +106,11 @@ test-pandoc-config-integration:
 
 # Real-toolchain proof for issue #26: drives the production flowmark service
 # (source/app/util/flowmark-format.ts) with NO injected runner, so it runs the
-# exact production `uvx … flowmark --inplace --semantic …` command string
-# end-to-end against the real flowmark binary and asserts the semantic reflow.
-# uvx fetches flowmark from git (network), so this is deliberately NOT a
-# *.spec.ts file and is excluded from the default `just test` commit gate; run
-# it explicitly. Fails loudly (typed flowmark-absent) if flowmark can't launch.
+# exact production `uvx --from vendor/flowmark …` command string end-to-end
+# against the pinned submodule and asserts both formatting and lint behavior.
+# A cold uv cache may still install Python dependencies, so this is deliberately
+# NOT a *.spec.ts file and is excluded from the fastest `just test` commit gate;
+# run it explicitly. Fails loudly if the pinned Flowmark toolchain can't launch.
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
@@ -151,6 +160,9 @@ test-ci:
 
 [private]
 setup-ci:
+    # CI checkouts (including ai-review-ci's reusable QC workflow) do not fetch
+    # submodules, and Flowmark runs from vendor/flowmark.
+    git -C "{{justfile_directory()}}" submodule update --init vendor/flowmark
     bash "{{justfile_directory()}}/scripts/setup-ci-toolchain.sh"
 
 # Capture the real editor renderer in an isolated offscreen Electron process.
@@ -162,6 +174,11 @@ setup-ci:
 capture-pandoc-divs output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" pandoc-divs "{{output}}"
 
+# Capture rendered YAML front matter in the production CodeMirror editor.
+# This never starts Forge, a dev server, xdg-open, or the system browser.
+capture-yaml-frontmatter output: sync-dependencies
+    {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" yaml-frontmatter "{{output}}"
+
 # Capture the widget-indent scenes (issue #15) in isolated offscreen Electron:
 # math widgets on visually indented list lines, plus the blockquote/div
 # regression scenes. Writes screenshots and per-scene diagnostics JSON.
@@ -171,8 +188,11 @@ capture-widget-indent output: sync-dependencies
 
 # Capture the TikZ editor scenes (issue #14) in isolated offscreen Electron:
 # inline figures rendered by the REAL toolchain (pandoc + pdflatex + pdf2svg
-# through the vendored filter), the in-place compile diagnostic, and the
-# click-to-zoom lightbox reusing ImageViewer. Requires pdflatex and pdf2svg.
+# through the shared Pandoc filter), the in-place compile diagnostic, explicit
+# lightbox affordance, and textbook-scale corpus. The same run loads the live
+# Stacks tags 01JO/07JW/067L, verifies their recorded xymatrix source, and emits
+# original/local/side-by-side screenshots plus normalized measurements. Requires
+# pdflatex, pdf2svg, and network access to stacks.math.columbia.edu.
 # This never starts Forge, a dev server, xdg-open, or the system browser.
 capture-tikz output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" tikz "{{output}}"
@@ -260,7 +280,7 @@ capture-review-diff output: sync-dependencies
 # marker, a point target's hollow marker at its deletion seam, an orphaned
 # target's marker with no span, and overlapping targets collapsed to one
 # marker with a count — light and dark. Scoped to what the editor alone
-# renders (no panel, no thread, no button — invariant I4); M10 assembles the
+# renders as locators (marks and gutter markers); M10 assembles the
 # full twelve-scene `just capture-annotations` around these.
 capture-editor-annotations output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"

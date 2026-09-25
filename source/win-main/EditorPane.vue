@@ -19,50 +19,49 @@
       class="editor-container"
       @drop="handleDrop($event, 'editor')"
     >
-      <template v-if="activeFileDescriptor !== undefined">
+      <template
+        v-for="file in openFiles"
+        :key="file.path"
+      >
         <!--
           Teleport the correct editor that needs to be in distraction free
           outside the DOM structure to have it render on top of everything else.
         -->
         <Teleport
           to="div#window-content"
-          :disabled="!distractionFree"
+          :disabled="!distractionFree || activeFile?.path !== file.path"
         >
           <!-- The image viewer displays one file; it holds no leaf, window or
                editor-command state, so the pane hands it only the file. -->
           <ImageViewer
-            v-if="hasImageExt(activeFileDescriptor.path)"
-            :file="activeFileDescriptor"
+            v-if="activeFile?.path === file.path && hasImageExt(file.path)"
+            :file="file"
           />
           <PDFViewer
-            v-else-if="hasPDFExt(activeFileDescriptor.path)"
-            :file="activeFileDescriptor"
+            v-else-if="activeFile?.path === file.path && hasPDFExt(file.path)"
+            :file="file"
             :leaf-id="leafId"
             :active-file="activeFile"
             :window-id="windowId"
             :editor-commands="editorCommands"
           />
           <MainEditor
-            v-else
-            :file="activeFileDescriptor"
-            :distraction-free="distractionFree"
+            v-else-if="!hasImageExt(file.path) && !hasPDFExt(file.path)"
+            v-show="activeFile?.path === file.path"
+            :file="file"
+            :distraction-free="distractionFree && activeFile?.path === file.path"
             :leaf-id="leafId"
             :active-file="activeFile"
             :window-id="windowId"
             :editor-commands="editorCommands"
-            :persistent-state-map="persistentStateMap"
             @global-search="emit('globalSearch', $event)"
             @reference-search="emit('referenceSearch', $event)"
+            @file-search="emit('fileSearch')"
             @create-reference-label="emit('createReferenceLabel', $event)"
             @open-pandoc-quick-help="emit('openPandocQuickHelp')"
-            @open-annotation="emit('openAnnotation', $event)"
           />
         </Teleport>
       </template>
-      <template
-        v-for="file in openFiles"
-        :key="file.path"
-      />
 
       <!-- Show empty pane if there are no files -->
       <div
@@ -148,6 +147,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
@@ -159,7 +159,6 @@ import ImageViewer from './file-viewers/ImageViewer.vue'
 import { hasImageExt, hasPDFExt } from '@common/util/file-extention-checks'
 import PDFViewer from './file-viewers/PDFViewer.vue'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
-import { type EditorViewPersistentState } from 'source/common/modules/markdown-editor'
 
 const ipcRenderer = window.ipc
 
@@ -179,19 +178,10 @@ type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
-  (e: 'openAnnotation', annotationId: string): void
 }>()
-
-// UNREFFED SCROLL MAP
-// Each individual editor pane has its own persistent state map so that the
-// editors can save their scroll positions, selections, etc. This enables us to
-// only display a single document, thus saving lots of memory, but at the same
-// time keep the feeling of a tabbed interface. The map is unique for each pane,
-// since users may have the same document open in two panes, and want one file
-// to be scrolled differently than the same file in a different pane.
-const persistentStateMap = new Map<string, EditorViewPersistentState>()
 
 const documentTabDrag = ref<boolean>(false)
 const documentTabDragWhere = ref<DragTargetAreas|undefined>(undefined)
@@ -209,14 +199,6 @@ const distractionFree = computed<boolean>(() => windowStateStore.distractionFree
 const node = computed<LeafNodeJSON|undefined>(() => documentTreeStore.paneData.find((leaf: LeafNodeJSON) => leaf.id === props.leafId))
 const activeFile = computed<OpenDocument|null>(() => node.value?.activeFile ?? null)
 const openFiles = computed<OpenDocument[]>(() => node.value?.openFiles ?? [])
-const activeFileDescriptor = computed(() => {
-  const af = activeFile.value
-  if (af === null) {
-    return undefined
-  }
-
-  return openFiles.value.find(d => d.path === af.path)
-})
 const hasNoOpenFiles = computed<boolean>(() => openFiles.value.length === 0)
 
 onMounted(() => {
@@ -260,7 +242,7 @@ function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bot
           path: filePath.join(DELIM)
         }
       } as DocumentManagerIPCAPI)
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     } else {
       const dir = ([ 'left', 'right' ].includes(where)) ? 'horizontal' : 'vertical'
       const ins = ([ 'top', 'left' ].includes(where)) ? 'before' : 'after'
@@ -276,7 +258,7 @@ function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bot
           fromLeaf: originLeaf
         }
       } as DocumentManagerIPCAPI)
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     }
   }
 }
@@ -353,7 +335,7 @@ body {
       div.dropzone {
         position: absolute;
         background-color: rgba(0, 0, 0, 0);
-        transition: all 0.3s ease;
+        transition: background-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
         // Display the direction caret centered ...
         display: flex;
         align-items: center;

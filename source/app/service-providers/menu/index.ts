@@ -34,6 +34,7 @@ import type ConfigProvider from '@providers/config'
 import type DocumentManager from '@providers/documents'
 import type WindowProvider from '@providers/windows'
 import type { SerializedMenuItem, SerializedSubmenu } from '@dts/common/serialized-menu'
+import { showNativeNotification } from '@common/util/show-notification'
 
 const BLUEPRINTS = {
   // Currently we ship two different sets of menu items -- one for macOS, and
@@ -196,7 +197,14 @@ export default class MenuProvider extends ProviderContract {
               this._logger.error(`[Menu Provider] Could not click menu item with role ${menuItem.role}, since no handler is implemented!`)
           }
         } else {
-          menuItem.click(menuItem, focusedWindow)
+          try {
+            menuItem.click(menuItem, focusedWindow)
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            const message = `[Menu Provider] Could not execute ${itemID}: ${detail}`
+            this._logger.error(message, error)
+            showNativeNotification(message, 'Zettlr-Pandoc')
+          }
         }
       }
     })

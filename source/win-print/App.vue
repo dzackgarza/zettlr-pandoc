@@ -32,6 +32,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import { computed, onMounted, ref } from 'vue'
@@ -102,7 +103,7 @@ onMounted(async () => {
     .then(html => {
       printContainer.value!.innerHTML = html
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 })
 
 function handleClick (buttonID?: string): void {

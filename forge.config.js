@@ -11,6 +11,7 @@ const forgeRendererPort = process.env.ZETTLR_FORGE_RENDERER_PORT === undefined
 const forgeLoggerPort = process.env.ZETTLR_FORGE_LOGGER_PORT === undefined
   ? 9001
   : Number.parseInt(process.env.ZETTLR_FORGE_LOGGER_PORT, 10)
+const electronZipDir = process.env.ZETTLR_ELECTRON_ZIP_DIR
 
 /**
  * This function runs the get-pandoc script in order to download the requested
@@ -201,6 +202,14 @@ module.exports = {
     force: false // NOTE: By now covered by the global flag on packaging.
   },
   packagerConfig: {
+    // Local desktop packaging is driven by scripts/verify-build.py. That
+    // verifier reconstructs the Electron release ZIP once from the exact
+    // already-installed node_modules/electron runtime and points Packager at
+    // it here. Electron Packager's documented electronZipDir option bypasses
+    // @electron/get completely, so an ordinary source edit never turns an app
+    // launch into a several-hundred-megabyte network download. CI/release
+    // callers that do not set the variable keep Forge's normal download path.
+    ...(electronZipDir === undefined || electronZipDir === '' ? {} : { electronZipDir }),
     appBundleId: 'com.dzackgarza.zettlr-pandoc',
     // This info.plist file contains file association for the app on macOS.
     extendInfo: './scripts/assets/info.plist',
@@ -247,10 +256,19 @@ module.exports = {
     // resources directory. After the `generateAssets` step, this will also
     // include the Pandoc binary (this is why we cannot leave `extraResource`
     // undefined).
-    extraResource: process.platform === 'darwin' ? [
-      'resources/icons/icon.code.icns',
-      'resources/icons/Assets.car' // Contains the new Liquid Glass app icon
-    ] : []
+    extraResource: [
+      // Flowmark is a pinned git submodule and the sole Markdown formatter /
+      // linter syntax authority. Keep the complete Python project outside the
+      // asar so uvx can install/run this exact local source in production.
+      path.join(__dirname, 'vendor', 'flowmark'),
+      path.join(__dirname, 'linter-plugins'),
+      ...(process.platform === 'darwin'
+        ? [
+            'resources/icons/icon.code.icns',
+            'resources/icons/Assets.car' // Contains the new Liquid Glass app icon
+          ]
+        : [])
+    ]
   },
   plugins: [
     {

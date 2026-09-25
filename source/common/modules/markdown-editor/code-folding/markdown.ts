@@ -14,6 +14,7 @@
 
 import { foldService, syntaxTree } from '@codemirror/language'
 import { type SyntaxNode } from '@lezer/common'
+import { markdownHeadingLevel } from '../util/heading-level'
 
 // Code folding for Markdown documents, as the regular code folding service
 // doesn't completely do what we need it to. NOTE: Most folding is already
@@ -24,7 +25,7 @@ export const markdownFolding = foldService.of((state, lineStart, _lineEnd) => {
   if (node.from < lineStart) {
     return null // The node doesn't start on this line
   } else if (
-    node.type.name.startsWith('ATXHeading') ||
+    node.type.name === 'ATXHeading' ||
     node.type.name.startsWith('SetextHeading') ||
     node.type.name === 'HeaderMark'
   ) {
@@ -34,13 +35,18 @@ export const markdownFolding = foldService.of((state, lineStart, _lineEnd) => {
 
     // We need headings to be foldable. We basically just have to search for
     // the next heading of equal level (or below)
-    const level = parseInt(node.type.name.slice(-1), 10)
+    const level = markdownHeadingLevel(node)
+    if (level === null) {
+      return null
+    }
     const allHeadings: SyntaxNode[] = []
-    for (let i = level; i > -1; i--) {
-      allHeadings.push(...syntaxTree(state).topNode.getChildren(`ATXHeading${i}`))
-      if (i <= 2) {
-        allHeadings.push(...syntaxTree(state).topNode.getChildren(`SetextHeading${i}`))
+    let sibling = syntaxTree(state).topNode.firstChild
+    while (sibling !== null) {
+      const siblingLevel = markdownHeadingLevel(sibling)
+      if (siblingLevel !== null && siblingLevel <= level) {
+        allHeadings.push(sibling)
       }
+      sibling = sibling.nextSibling
     }
 
     // Sort (So that ATXHeadings and SetextHeadings are interleaved)

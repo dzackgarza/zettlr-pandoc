@@ -36,7 +36,7 @@
             v-if="file.pinned"
             shape="pin"
           />
-          {{ getDocumentTitle(file) }}
+          {{ getSemanticDocumentTitle(file) }}
         </span>
         <span
           v-if="hasDuplicate(file)"
@@ -86,6 +86,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { displayTabbarContext } from './tabs-context'
 import tippy from 'tippy.js'
 import { nextTick, computed, ref, watch, onMounted } from 'vue'
@@ -99,7 +100,7 @@ import type { AnyMenuItem } from 'source/common/modules/window-register/applicat
 import { trans } from 'source/common/i18n-renderer'
 import showPopupMenu from 'source/common/modules/window-register/application-menu-helper'
 import { closeFile } from './file-manager/util/item-composable'
-import getDocumentTitle from './util/get-document-title'
+import { getSemanticDocumentTitle } from './util/get-document-title'
 
 const ipcRenderer = window.ipc
 
@@ -130,7 +131,7 @@ watch(activeFile, () => {
   // new file tab so that our handler retrieves the correct one, not the old.
   nextTick()
     .then(scrollActiveFileIntoView)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 })
 
 onMounted(() => {
@@ -171,12 +172,18 @@ onMounted(() => {
             windowId: props.windowId
           }
         } as DocumentManagerIPCAPI)
-          .catch(e => console.error(e))
+          .catch(e => reportError(e))
       } else {
         // No more open files, so request closing of the window
         // TODO: This must be managed centrally
         // ipcRenderer.send('window-controls', { command: 'win-close' })
       }
+    } else if (shortcut === 'close-all-tabs' || shortcut === 'save-all-and-close') {
+      ipcRenderer.invoke('documents-provider', {
+        command: shortcut,
+        payload: { windowId: props.windowId }
+      } as DocumentManagerIPCAPI)
+        .catch(e => reportError(e))
     } else if (shortcut === 'rename-file') {
       // Renaming via shortcut (= Cmd/Ctrl+R) works via a tooltip underneath
       // the corresponding filetab. First, make sure the container is visible
@@ -226,7 +233,7 @@ onMounted(() => {
               name: input.value
             }
           })
-            .catch(e => console.error(e))
+            .catch(e => reportError(e))
         }
         instance.hide()
       })
@@ -263,9 +270,9 @@ function scrollActiveFileIntoView (): void {
 
 
 function hasDuplicate (doc: OpenDocument): boolean {
-  const focalTabname = getDocumentTitle(doc).toLowerCase()
+  const focalTabname = getSemanticDocumentTitle(doc).toLowerCase()
   const duplicates = openFiles.value.filter(doc => {
-    return getDocumentTitle(doc).toLowerCase() === focalTabname
+    return getSemanticDocumentTitle(doc).toLowerCase() === focalTabname
   })
 
   // NOTE that `doc` is also contained in `openFiles`, i.e. we should have 1
@@ -277,7 +284,7 @@ function getDirBasename (doc: OpenDocument): string {
 }
 
 function getAccessibleTabLabel (doc: OpenDocument): string {
-  const title = getDocumentTitle(doc)
+  const title = getSemanticDocumentTitle(doc)
   return modifiedPaths.value.includes(doc.path)
     ? `${title} — ${unsavedChangesLabel}`
     : title
@@ -311,7 +318,7 @@ function handleClickClose (event: MouseEvent, file: OpenDocument): void {
       leafId: props.leafId
     }
   } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 /**
@@ -355,7 +362,7 @@ function selectFile (file: OpenDocument): void {
     command: 'open-file',
     payload: { path: file.path, windowId: props.windowId, leafId: props.leafId }
   } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function handleTabbarContext (event: MouseEvent): void {
@@ -368,7 +375,7 @@ function handleTabbarContext (event: MouseEvent): void {
           leafId: props.leafId,
           windowId: props.windowId
         }
-      } as DocumentManagerIPCAPI).catch(e => console.error(e))
+      } as DocumentManagerIPCAPI).catch(e => reportError(e))
     }
   })
 }
@@ -391,7 +398,7 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
         ipcRenderer.invoke('documents-provider', {
           command: 'close-file',
           payload: { path: descriptor.path, leafId: props.leafId, windowId: props.windowId }
-        } satisfies DocumentManagerIPCAPI).catch(e => console.error(e))
+        } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
       }
     },
     {
@@ -406,7 +413,7 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
           ipcRenderer.invoke('documents-provider', {
             command: 'close-file',
             payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId }
-          } satisfies DocumentManagerIPCAPI).catch(e => console.error(e))
+          } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
         }
       }
     },
@@ -419,7 +426,7 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
           ipcRenderer.invoke('documents-provider', {
             command: 'close-file',
             payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId }
-          } satisfies DocumentManagerIPCAPI).catch(e => console.error(e))
+          } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
         }
       }
     },
@@ -454,7 +461,7 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
           payload: {
             path: doc.path, leafId: props.leafId, windowId: props.windowId, pinned: !doc.pinned
           }
-        } satisfies DocumentManagerIPCAPI).catch(e => console.error(e))
+        } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
       }
     },
     {
@@ -464,14 +471,14 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
       label: trans('Copy filename'),
       type: 'normal',
       action () {
-        navigator.clipboard.writeText(descriptor.name).catch(err => console.error(err))
+        navigator.clipboard.writeText(descriptor.name).catch(err => reportError(err))
       }
     },
     {
       label: trans('Copy path'),
       type: 'normal',
       action () {
-        navigator.clipboard.writeText(descriptor.path).catch(err => console.error(err))
+        navigator.clipboard.writeText(descriptor.path).catch(err => reportError(err))
       }
     },
     {
@@ -490,7 +497,7 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
       enabled: descriptor.type === 'file' && descriptor.id !== '',
       action () {
         if (descriptor.type === 'file' && descriptor.id !== '') {
-          navigator.clipboard.writeText(descriptor.id).catch(err => console.error(err))
+          navigator.clipboard.writeText(descriptor.id).catch(err => reportError(err))
         }
       }
     },
@@ -670,7 +677,7 @@ function handleDragEnd (event: DragEvent): void {
       leafId: props.leafId
     }
   } satisfies DocumentManagerIPCAPI)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -743,7 +750,7 @@ function moveFile (itemPath: string, where: 'start'|'end') {
       leafId: props.leafId
     }
   } satisfies DocumentManagerIPCAPI)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -766,7 +773,7 @@ function handleExternalDrop (event: DragEvent): void {
   // The user dropped the file onto the origin (this indicates a bug as
   // the dropzone shouldn't even be on the DOM in that case)
   if (documentTabDragOverOrigin.value) {
-    console.error('A document tab has been dropped onto its origin, but the dropzone was in the DOM. This is a bug.')
+    reportError('A document tab has been dropped onto its origin, but the dropzone was in the DOM. This is a bug.')
     documentTabDragOverOrigin.value = false
     return
   }
@@ -786,7 +793,7 @@ function handleExternalDrop (event: DragEvent): void {
       path: filePath.join(DELIM)
     }
   } as DocumentManagerIPCAPI)
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -844,7 +851,7 @@ body div.tab-container {
 
   .dropzone {
     position: absolute;
-    transition: all 0.3s ease;
+    transition: background-color 0.3s ease;
     background-color: rgba(21, 61, 107, 0.5);
     top: 0;
     left: 0;

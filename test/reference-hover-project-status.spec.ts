@@ -171,19 +171,19 @@ describe('Reference hover Project status (issue #1 Phase 7)', function () {
     assert.strictEqual(status.textContent, wording)
   }
 
-  it('shows In active Project for a target listed in the active root', function () {
+  it('shows In current Project for a target listed in the active root', function () {
     // Active: Halphen (in ProjectA); target tbl:coble-lattices lives in the
     // listed Coble_Lattice_Table.md.
     const view = createEditor(HALPHEN_PATH, [ { rootPath: PROJECT_A, files: ALL_PROJECT_A_FILES } ])
-    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'in-active-project', 'In active Project')
+    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'in-active-project', 'In current Project')
   })
 
-  it('shows Omitted from active Project for an unlisted in-root target', function () {
+  it('shows Not included in current Project for an unlisted in-root target', function () {
     // Same scene, but ProjectA does not list Coble_Lattice_Table.md.
     const view = createEditor(HALPHEN_PATH, [
       { rootPath: PROJECT_A, files: [ 'Theorems.md', 'Halphen_Surfaces.md' ] }
     ])
-    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'omitted-from-active-project', 'Omitted from active Project')
+    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'omitted-from-active-project', 'Not included in current Project')
   })
 
   it('shows Another Project for a Project-rooted target hovered from a standalone document', function () {
@@ -193,9 +193,9 @@ describe('Reference hover Project status (issue #1 Phase 7)', function () {
     assertStatus(hoverDom(view, 'thm:torelli'), 'another-project', 'Another Project')
   })
 
-  it('shows Standalone document when no root contains the target', function () {
+  it('shows Outside any Project when no root contains the target', function () {
     const view = createEditor(HALPHEN_PATH, [])
-    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'standalone', 'Standalone document')
+    assertStatus(hoverDom(view, 'tbl:coble-lattices'), 'standalone', 'Outside any Project')
   })
 
   it('shows no status element while projectRoots is undefined (never fabricates)', function () {

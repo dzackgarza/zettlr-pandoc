@@ -27,6 +27,15 @@
             v-on:back="back"
             v-on:open-help="onOpenHelp"
           ></ReferenceSearchView>
+          <JustRecipeArgumentsView
+            v-else-if="state.view.kind === 'just-arguments'"
+            v-bind:recipe="state.view.recipe"
+            v-bind:query="state.query"
+            v-on:update:query="setLauncherQuery"
+            v-on:run="runJustRecipe(state.view.recipe, $event)"
+            v-on:back="back"
+            v-on:close="close"
+          ></JustRecipeArgumentsView>
           <MenuCommandsView
             v-else
             v-bind:rows="rows"
@@ -65,6 +74,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeMount, ref } from 'vue'
 import { trans } from '@common/i18n-renderer'
@@ -80,11 +90,16 @@ import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
 import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
 import type { ReferenceJumpIntent } from '../component-contracts'
+import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
+import showToast from '@common/util/show-toast'
+import { buildPreferenceIndex } from 'source/win-preferences/schema'
 import MenuCommandsView from './MenuCommandsView.vue'
 import ReferenceSearchView from './ReferenceSearchView.vue'
+import JustRecipeArgumentsView from './JustRecipeArgumentsView.vue'
 import {
   allMenuLeafRows,
   breadcrumbOf,
+  justRecipeLabel,
   menuGroupRows,
   rankRows,
   type DynamicGroupId,
@@ -94,6 +109,8 @@ import {
   type ExportRequest,
   type FileRow,
   type HeadingRow,
+  type JustRecipeRow,
+  type PreferenceRow,
   type LauncherRow
 } from './launcher-rows'
 import {
@@ -140,12 +157,40 @@ onBeforeMount(() => {
   ipcRenderer.send('menu-provider', { command: 'get-application-menu' })
 })
 
-const DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
+const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: 'dynamic-group', id: 'go-to-file', label: trans('Go to file') },
   { kind: 'dynamic-group', id: 'go-to-heading', label: trans('Go to heading') },
   { kind: 'dynamic-group', id: 'search-references', label: trans('Search references') },
+  { kind: 'dynamic-group', id: 'preferences', label: trans('Preferences') },
   { kind: 'dynamic-group', id: 'export', label: trans('Export as…') }
 ]
+
+const justRepositories = ref<JustRepositoryCommands[]>([])
+
+const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
+  if (justRepositories.value.length === 0) {
+    return BASE_DYNAMIC_GROUPS
+  }
+  return [
+    ...BASE_DYNAMIC_GROUPS.slice(0, 4),
+    { kind: 'dynamic-group', id: 'justfile', label: trans('Justfile commands') },
+    ...BASE_DYNAMIC_GROUPS.slice(4)
+  ]
+})
+
+/** Git-root Just recipes visible from the currently open workspace roots. */
+async function loadJustfileCommands (): Promise<boolean> {
+  try {
+    justRepositories.value = await ipcRenderer.invoke('application', {
+      command: 'list-justfile-commands',
+      payload: [ ...configStore.config.app.openWorkspaces ]
+    })
+  } catch (err: unknown) {
+    justRepositories.value = []
+    reportError('[CommandLauncher] Could not discover Justfile commands', err)
+  }
+  return true
+}
 
 // The export view's data: the profiles the assets provider can run, fetched
 // when the view opens; the custom commands come from the config.
@@ -236,10 +281,45 @@ const headingRows = computed<HeadingRow[]>(() => {
   return toc.map(entry => ({ kind: 'heading', line: entry.line, level: entry.level, label: entry.text }))
 })
 
+/** Public root recipes, with repository/group breadcrumbs when applicable. */
+const justRecipeRows = computed<JustRecipeRow[]>(() => {
+  const multipleRepositories = justRepositories.value.length > 1
+  return justRepositories.value.flatMap(repository => repository.recipes.map(recipe => ({
+    kind: 'just-recipe',
+    repoRoot: repository.repoRoot,
+    repoLabel: repository.repoLabel,
+    name: recipe.name,
+    doc: recipe.doc,
+    group: recipe.group,
+    parameters: recipe.parameters,
+    label: justRecipeLabel(recipe),
+    breadcrumb: [
+      ...(multipleRepositories ? [ repository.repoLabel ] : []),
+      ...(recipe.group === null ? [] : [ recipe.group ])
+    ]
+  })))
+})
+
+/** Every Preferences card and labeled control, derived from the real schemas. */
+const preferenceRows = computed<PreferenceRow[]>(() => buildPreferenceIndex(configStore.config).map(entry => ({
+  kind: 'preference',
+  group: entry.group,
+  fieldsetTitle: entry.fieldsetTitle ?? entry.label,
+  model: entry.model,
+  label: entry.label,
+  breadcrumb: [
+    entry.groupLabel,
+    ...(entry.label === entry.fieldsetTitle ? [] : [ entry.fieldsetTitle ?? entry.label ])
+  ],
+  aliases: entry.aliases
+})))
+
 /** Each dynamic group's rows, by the group that lists them. */
 const dynamicGroupRows = {
   'go-to-file': fileRows,
   'go-to-heading': headingRows,
+  preferences: preferenceRows,
+  justfile: justRecipeRows,
   export: exportRows
 } as const
 
@@ -248,8 +328,10 @@ function viewRows (view: LauncherView, query: string): LauncherRow[] {
   switch (view.kind) {
     case 'root': {
       const groups = menuGroupRows(menu.value, [])
-      const leaves = query === '' ? [] : allMenuLeafRows(menu.value)
-      return [ ...groups, ...DYNAMIC_GROUPS, ...leaves ]
+      const indexedRows = query === ''
+        ? []
+        : [ ...allMenuLeafRows(menu.value), ...preferenceRows.value ]
+      return [ ...groups, ...dynamicGroups.value, ...indexedRows ]
     }
     case 'menu-group':
       return menuGroupRows(menu.value, view.path)
@@ -257,12 +339,15 @@ function viewRows (view: LauncherView, query: string): LauncherRow[] {
       return dynamicGroupRows[view.id].value
     case 'references':
       return []
+    case 'just-arguments':
+      return []
   }
 }
 
 /** The data a dynamic group fetches before it opens; the others read stores. */
 const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>>> = {
   'search-references': loadReferences,
+  justfile: loadJustfileCommands,
   export: loadExportProfiles
 }
 
@@ -289,7 +374,7 @@ const breadcrumb = computed<readonly string[]>(() => {
     return breadcrumbOf(menu.value, view.path)
   }
   if (view.kind === 'dynamic-group') {
-    const group = DYNAMIC_GROUPS.find(row => row.id === view.id)
+    const group = dynamicGroups.value.find(row => row.id === view.id)
     return group === undefined ? [] : [ group.label ]
   }
   return []
@@ -335,6 +420,9 @@ async function loadReferences (): Promise<boolean> {
 
 /** Opens the launcher on a view: the root, a dynamic group, or the references search for a relayed request. */
 async function open (view: LauncherView): Promise<void> {
+  if (view.kind === 'root') {
+    await loadJustfileCommands()
+  }
   if (view.kind === 'references' && !(await loadReferences())) {
     return
   }
@@ -399,6 +487,49 @@ async function run (row: LauncherRow): Promise<void> {
     case 'export-command':
       close()
       emit('export', { kind: 'command', displayName: row.displayName, command: row.command })
+      return
+    case 'just-recipe':
+      if (row.parameters.length === 0) {
+        await runJustRecipe(row, [])
+        return
+      }
+      state.value = drillInto(state.value, { kind: 'just-arguments', recipe: row })
+      return
+    case 'preference':
+      close()
+      await ipcRenderer.invoke('application', {
+        command: 'open-preferences',
+        payload: {
+          group: row.group,
+          fieldsetTitle: row.fieldsetTitle,
+          model: row.model
+        }
+      })
+      return
+  }
+}
+
+/** Launches the selected recipe in a detached kitty terminal at its Git root. */
+async function runJustRecipe (recipe: JustRecipeRow, args: string[]): Promise<void> {
+  close()
+  try {
+    const error = await ipcRenderer.invoke('application', {
+      command: 'run-just-recipe',
+      payload: {
+        repoRoot: recipe.repoRoot,
+        recipe: recipe.name,
+        args
+      } satisfies RunJustRecipeRequest
+    })
+    if (error !== '') {
+      showToast(trans('Could not launch Just recipe %s: %s', recipe.name, error), 'error')
+    }
+  } catch (err: unknown) {
+    showToast(trans(
+      'Could not launch Just recipe %s: %s',
+      recipe.name,
+      err instanceof Error ? err.message : String(err)
+    ), 'error')
   }
 }
 

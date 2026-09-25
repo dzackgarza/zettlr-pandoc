@@ -43,9 +43,13 @@ import {
   type SourceRange,
 } from '@dts/common/references'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { UserSnippet } from '@dts/common/snippets'
+import type { QuickTexCatalogue } from '@dts/common/quicktex'
 import type { AnnotationSet } from '@dts/common/annotation-domain'
 
 import { type TagRecord } from '@providers/tags'
+import type { PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
+import type { TexMacroSource } from '@common/util/tex-context'
 // Keymaps/Input modes
 import { emacs } from '@replit/codemirror-emacs'
 /**
@@ -58,10 +62,13 @@ import type { ASTNode, Document as MarkdownDocument } from '../markdown-utils/ma
 import {
   citekeyUpdate,
   filesUpdate,
+  phraseCompletionsUpdate,
   referencesUpdate,
   snippetsUpdate,
   tagsUpdate,
+  texMacroSourcesUpdate,
 } from './autocomplete'
+import { EMPTY_QUICKTEX, quickTexUpdate } from './quicktex'
 import { addNewFootnote } from './commands/footnotes'
 import {
   type FormatResult,
@@ -111,17 +118,19 @@ import { formatDocumentEffect } from './plugins/format-document-effect'
 import { highlightRangesEffect } from './plugins/highlight-ranges'
 import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
 import { type ProjectInfo, projectInfoField, projectInfoUpdateEffect } from './plugins/project-info-field'
-import { languageToolState, updateLTState } from './linters/language-tool'
+import { languageToolState, updateLTState } from './diagnostics/language-tool-state'
 import { forceLinting } from '@codemirror/lint'
 import { countDiagnostics, toggleLintPanel, type DiagnosticCounts } from './statusbar/diagnostics'
 import { toggleReadability } from './renderers/readability'
 import { openReferenceSearchEffect } from './plugins/reference-search-effect'
+import { openFileSearchEffect } from './plugins/file-search-effect'
 import {
   type PullUpdateCallback,
   type PushUpdateCallback,
   reloadStateEffect,
 } from './plugins/remote-doc'
-import { reviewChunksExtension } from './plugins/review-chunks'
+import { markReviewChunksStale, reviewChunksExtension } from './plugins/review-chunks'
+import { collaborationControls, type MountCollaborationControl } from './plugins/collaboration-controls'
 import {
   annotationChipClickedEffect,
   clearAnnotationDraftEffect,
@@ -317,7 +326,10 @@ export default class MarkdownEditor extends EventEmitter {
   private readonly databaseCache: {
     tags: TagRecord[]
     citations: Array<{ citekey: string; displayText: string }>
-    snippets: Array<{ name: string; content: string }>
+    snippets: UserSnippet[]
+    phrases: PhraseDictionaryEntry[]
+    texMacroSources: TexMacroSource[]
+    quickTex: QuickTexCatalogue
     files: Array<{ filename: string; displayName: string; id: string }>
     references: ReferenceCompletionEntry[]
   }
@@ -334,6 +346,10 @@ export default class MarkdownEditor extends EventEmitter {
 
   private activeReviewDiffSession: ReviewDiffSession | null
   private pendingReviewDiffSession: ReviewDiffSession | null = null
+
+  /** Holds the inline review and annotation controls once a host supplies them. */
+  private readonly collaborationControlsCompartment = new Compartment()
+  private collaborationControlMount: MountCollaborationControl | null = null
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -380,6 +396,9 @@ export default class MarkdownEditor extends EventEmitter {
       tags: [],
       citations: [],
       snippets: [],
+      phrases: [],
+      texMacroSources: [],
+      quickTex: EMPTY_QUICKTEX,
       files: [],
       references: [],
     }
@@ -387,13 +406,17 @@ export default class MarkdownEditor extends EventEmitter {
     this.reviewDiffCompartment = new Compartment()
     this.activeReviewDiffSession = null
 
-    // Same goes for the config
-    this.config = getDefaultConfig()
+    // Same goes for the config. Construction must start from the caller's
+    // actual configuration, not from the defaults followed by an asynchronous
+    // correction: the extension set (in particular the light/dark theme
+    // compartment) is built during loadDocument(). Calling setOptions() here
+    // would also be invalid because _instance does not exist yet.
+    const initialConfig = getDefaultConfig()
     // TODO: This is bad style imho
-    this.config.metadata.path = representedDocument
-    if (configOverride !== undefined) {
-      this.setOptions(configOverride)
-    }
+    initialConfig.metadata.path = representedDocument
+    this.config = configOverride === undefined
+      ? initialConfig
+      : safeAssign(configOverride, initialConfig)
 
     // Create the editor ...
     this._instance = new EditorView({
@@ -459,9 +482,13 @@ export default class MarkdownEditor extends EventEmitter {
               this.emit('reference-search', effect.value)
             }
 
-            // A gutter chip was clicked: the shell opens the annotations
-            // panel on that annotation. The editor never opens a pane or
-            // selects on its own — it reports which chip was hit.
+            if (effect.is(openFileSearchEffect)) {
+              this.emit('file-search')
+            }
+
+            // A gutter chip was clicked: the pane opens or closes that
+            // annotation's inline thread. The editor never selects on its
+            // own — it reports which chip was hit.
             if (effect.is(annotationChipClickedEffect)) {
               this.emit('annotation-selected', effect.value)
             }
@@ -551,8 +578,25 @@ export default class MarkdownEditor extends EventEmitter {
           ? []
           : this.buildReviewExtension(this.activeReviewDiffSession),
       ),
+      this.collaborationControlsCompartment.of(
+        this.collaborationControlMount === null ? [] : collaborationControls(this.collaborationControlMount),
+      ),
     )
     return extensions
+  }
+
+  /**
+   * Installs the inline review and annotation controls, filled by `mount`
+   * (see plugins/collaboration-controls.ts). The pane that shows this editor
+   * supplies it; an editor without a host shows the change locators only.
+   */
+  setCollaborationControls (mount: MountCollaborationControl): void {
+    this.collaborationControlMount = mount
+    if (this.collaborationControlsCompartment.get(this._instance.state) !== undefined) {
+      this._instance.dispatch({
+        effects: this.collaborationControlsCompartment.reconfigure(collaborationControls(mount)),
+      })
+    }
   }
 
   /**
@@ -573,6 +617,13 @@ export default class MarkdownEditor extends EventEmitter {
     })
 
     this._instance.setState(state)
+
+    // A rebuilt state reinstalls the active review as synced; if the
+    // authority's text moved on meanwhile, its controls must not act until
+    // the matching broadcast arrives.
+    if (this.activeReviewDiffSession !== null && content !== this.activeReviewDiffSession.workingText) {
+      this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
+    }
 
     if (persistentState !== undefined) {
       // Now that the correct document has been loaded, there will be content
@@ -625,6 +676,15 @@ export default class MarkdownEditor extends EventEmitter {
       effects: snippetsUpdate.of(this.databaseCache.snippets),
     })
     this._instance.dispatch({
+      effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
+    })
+    this._instance.dispatch({
+      effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+    })
+    this._instance.dispatch({
+      effects: quickTexUpdate.of(this.databaseCache.quickTex),
+    })
+    this._instance.dispatch({
       effects: filesUpdate.of(this.databaseCache.files),
     })
     this._instance.dispatch({
@@ -641,6 +701,13 @@ export default class MarkdownEditor extends EventEmitter {
     if (type !== DocumentType.Markdown) {
       this._instance.contentDOM.classList.add('code')
     }
+
+    // A collaboration session can arrive while the authority fetch above is
+    // still pending. startReviewDiffSession() buffers it because the editor's
+    // placeholder document cannot yet equal session.workingText. Loading the
+    // authoritative state is itself the event that can satisfy that equality;
+    // do not wait for an unrelated later edit to retry activation.
+    this.activatePendingReviewDiffSession()
 
     this._instance.focus()
 
@@ -958,7 +1025,9 @@ export default class MarkdownEditor extends EventEmitter {
     type: 'citations',
     database: Array<{ citekey: string; displayText: string }>,
   ): void
-  setCompletionDatabase(type: 'snippets', database: Array<{ name: string; content: string }>): void
+  setCompletionDatabase(type: 'snippets', database: UserSnippet[]): void
+  setCompletionDatabase(type: 'phrases', database: PhraseDictionaryEntry[]): void
+  setCompletionDatabase(type: 'tex-macro-sources', database: TexMacroSource[]): void
   setCompletionDatabase(
     type: 'files',
     database: Array<{ filename: string; displayName: string; id: string }>,
@@ -983,10 +1052,23 @@ export default class MarkdownEditor extends EventEmitter {
         })
         break
       case 'snippets':
-        this.databaseCache.snippets = database as Array<{ name: string; content: string }>
+        this.databaseCache.snippets = database as UserSnippet[]
         this._instance.dispatch({
           effects: snippetsUpdate.of(this.databaseCache.snippets),
         })
+        break
+      case 'phrases':
+        this.databaseCache.phrases = database as PhraseDictionaryEntry[]
+        this._instance.dispatch({
+          effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
+        })
+        break
+      case 'tex-macro-sources':
+        this.databaseCache.texMacroSources = database as TexMacroSource[]
+        this._instance.dispatch({
+          effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+        })
+        forceLinting(this._instance)
         break
       case 'files':
         this.databaseCache.files = database as Array<{
@@ -1005,6 +1087,11 @@ export default class MarkdownEditor extends EventEmitter {
         })
         break
     }
+  }
+
+  setQuickTexCatalogue (catalogue: QuickTexCatalogue): void {
+    this.databaseCache.quickTex = catalogue
+    this._instance.dispatch({ effects: quickTexUpdate.of(catalogue) })
   }
 
   /**
@@ -1026,15 +1113,22 @@ export default class MarkdownEditor extends EventEmitter {
       return
     }
 
-    // Never mount controls over a renderer buffer that is not the provider's
-    // authoritative working text. The collab update will retry activation
-    // until then the pane is ordinary editable Markdown with no stale action.
+    // Never offer a decision over a renderer buffer that is not the
+    // provider's authoritative working text. The next collab update retries
+    // activation. Meanwhile the same review keeps its locally mapped chunks
+    // on screen with its controls inert, so typing does not make every chunk
+    // block vanish and reappear; a different review is taken down at once.
     if (this._instance.state.doc.toString() !== session.workingText) {
       this.pendingReviewDiffSession = session
+      if (this.activeReviewDiffSession?.id === session.id) {
+        this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
+        return
+      }
       this.activeReviewDiffSession = null
       this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) })
       return
     }
+    const arriving = this.activeReviewDiffSession?.id !== session.id
     this.pendingReviewDiffSession = null
     this.activeReviewDiffSession = session
     // The review-diff-active styling scope rides in the extension itself
@@ -1043,15 +1137,19 @@ export default class MarkdownEditor extends EventEmitter {
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
     })
-    this._instance.focus()
+    // Focus follows a review's arrival only. Every later broadcast of the
+    // same review (a note, a reply, a keystroke elsewhere) would otherwise
+    // pull focus out of the note or reply field the owner is typing in.
+    if (arriving) {
+      this._instance.focus()
+    }
   }
 
   /**
    * The review extension for a session: the provider's mapped suggestion
-   * anchors, rendered over this buffer as locators. The pane emits nothing —
-   * the annotations panel adjudicates the same suggestions from the same
-   * broadcast, and the next broadcast is the only thing that changes what is
-   * drawn here.
+   * anchors, rendered over this buffer. The chunk controls the host mounts
+   * decide the same suggestions from the same broadcast, and the next
+   * broadcast is the only thing that changes what is drawn here.
    */
   private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
     return reviewChunksExtension({ suggestions: session.suggestions })

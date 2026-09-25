@@ -53,12 +53,6 @@ describe("Quarto bibliography union in the editor", function () {
     chapterPath = path.join(chapterDirectory, "chapter.md");
     await mkdir(chapterDirectory);
     await writeFile(chapterPath, DOCUMENT, "utf8");
-    await writeFile(
-      path.join(workspace, "_quarto.yml"),
-      `project:\n  type: book\nbook:\n  title: Citation fixture\n  chapters:\n    - framework/chapter.md\nbibliography:\n  - references.bib\n  - refs-web.bib\n`,
-      "utf8",
-    );
-
     const sharedLibraryPath = path.join(fixture.root, "shared-library.bib");
     await writeFile(sharedLibraryPath, SHARED_LIBRARY, "utf8");
     await symlink(sharedLibraryPath, path.join(workspace, "references.bib"));
@@ -103,6 +97,15 @@ describe("Quarto bibliography union in the editor", function () {
     await citation.waitFor({ timeout: this.timeout() });
     assert.equal(await citation.innerText(), "[@nlab:locally_ringed_space]");
     assert.equal(await citation.evaluate((element) => element.classList.contains("error")), true);
+
+    // Make the manifest available only after the standalone citation has
+    // mounted. This forces the transition the test is about instead of relying
+    // on startup timing to keep project metadata temporarily unavailable.
+    await writeFile(
+      path.join(workspace, "_quarto.yml"),
+      `project:\n  type: book\nbook:\n  title: Citation fixture\n  chapters:\n    - framework/chapter.md\nbibliography:\n  - references.bib\n  - refs-web.bib\n`,
+      "utf8",
+    );
 
     await page.evaluate(async (projectPath) => {
       await window.ipc.invoke("application", {

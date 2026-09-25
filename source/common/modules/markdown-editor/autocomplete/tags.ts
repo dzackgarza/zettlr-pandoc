@@ -58,6 +58,7 @@ const apply = function (view: EditorView, completion: Completion, from: number, 
 }
 
 export const tags: AutocompletePlugin = {
+  source: 'Tag',
   applies (ctx) {
     if (ctx.pos === 0) {
       return false

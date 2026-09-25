@@ -58,4 +58,4 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): TaskWidget|unde
   return new TaskWidget(isChecked, node.node)
 }
 
-export const renderTasks = renderInlineWidgets(shouldHandleNode, createWidget)
+export const renderTasks = renderInlineWidgets([ 'TaskMarker' ], shouldHandleNode, createWidget)

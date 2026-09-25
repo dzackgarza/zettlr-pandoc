@@ -120,7 +120,7 @@ export function getShortcutFields (config: ConfigOptions): PreferencesFieldset[]
   return [
     {
       title: trans('Navigation Shortcuts'),
-      infoString: trans('Customize the per-pane Back/Forward history shortcuts.') + disclaimer,
+      infoString: trans('Set the Back and Forward shortcuts for each editor pane.') + disclaimer,
       group: PreferencesGroups.Shortcuts,
       help: undefined, // TODO
       fields: [

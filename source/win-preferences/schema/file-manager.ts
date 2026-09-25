@@ -17,7 +17,9 @@ import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 
-export function getFileManagerFields (config: ConfigOptions): PreferencesFieldset[] {
+const ipcRenderer = window.ipc
+
+export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDisplay'>): PreferencesFieldset[] {
   return [
     {
       title: trans('Display mode'),
@@ -64,8 +66,8 @@ export function getFileManagerFields (config: ConfigOptions): PreferencesFieldse
           options: {
             filename: trans('Filename only'),
             title: trans('Title if applicable'),
-            heading: trans('First heading level 1 if applicable'),
-            'title+heading': trans('Title or first heading level 1 if applicable')
+            heading: trans('First heading if applicable'),
+            'title+heading': trans('Title or first heading if applicable')
           }
         },
         {
@@ -75,6 +77,63 @@ export function getFileManagerFields (config: ConfigOptions): PreferencesFieldse
           info: trans('Only available if name display is set to "Filename only"'),
           model: 'display.markdownFileExtensions',
           disabled: config.fileNameDisplay !== 'filename'
+        }
+      ]
+    },
+    {
+      title: trans('File filters'),
+      infoString: trans('Permanent inclusion and exclusion settings for the file manager. Ctrl+Shift+P only searches files that pass these same rules. Include is applied first; Exclude always wins. Leave Include empty to allow every file type permitted by File Treatment.'),
+      group: PreferencesGroups.FileManager,
+      help: undefined,
+      fields: [
+        {
+          type: 'token',
+          label: trans('Include file extensions'),
+          placeholder: trans('Enter an extension, e.g. ".md"'),
+          model: 'fileManager.filters.include'
+        },
+        {
+          type: 'token',
+          label: trans('Exclude file extensions'),
+          placeholder: trans('Enter an extension, e.g. ".tex"'),
+          model: 'fileManager.filters.exclude'
+        }
+      ]
+    },
+    {
+      title: trans('Hidden folders'),
+      infoString: trans('Folders hidden here are removed together with their descendants from the file manager and Ctrl+Shift+P. Revealing hidden folders does not clear their hidden flags.'),
+      group: PreferencesGroups.FileManager,
+      help: undefined,
+      fields: [
+        {
+          type: 'checkbox',
+          label: trans('Show hidden folders'),
+          model: 'fileManager.showHiddenDirectories'
+        },
+        {
+          type: 'list',
+          valueType: 'simpleArray',
+          model: 'fileManager.hiddenDirectories',
+          columnLabels: [ trans('Hidden path') ],
+          deletable: true,
+          editable: false,
+          searchable: true,
+          searchLabel: trans('Filter hidden paths…'),
+          emptyMessage: trans('No hidden folders')
+        },
+        {
+          type: 'button',
+          label: trans('Clear hidden folders'),
+          onClick: () => {
+            ipcRenderer.sendSync('config-provider', {
+              command: 'set-config-single',
+              payload: {
+                key: 'fileManager.hiddenDirectories',
+                val: []
+              }
+            })
+          }
         }
       ]
     },

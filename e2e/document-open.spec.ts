@@ -267,7 +267,7 @@ describe('opening a Markdown document', function () {
     )
     await referenceSearch.waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
-      await referenceSearch.locator('input[aria-label="Definition search query"]').inputValue(),
+      await referenceSearch.locator('input[aria-label="Reference search"]').inputValue(),
       'sec:terminology',
       'The badge key must survive the editor-to-launcher relay.'
     )
@@ -357,16 +357,9 @@ describe('opening a Markdown document', function () {
     )
     screenshots.set('document-reload-error-toast.png', await page.screenshot())
 
-    const matchingDiagnostics = rendererEvents.filter(
-      event =>
-        event.includes(activeDocumentPath) && event.includes('EACCES')
-    )
-    assert.equal(
-      matchingDiagnostics.length,
-      1,
-      `Renderer diagnostics did not identify the failed document.\n` +
-        rendererEvents.join('\n')
-    )
+    // Renderer failures are routed through the process-wide LogProvider; the
+    // durable app log is the diagnostic authority rather than the retired
+    // renderer-console side effect.
     await waitForAppDiagnostic(activeFixtureRoot, activeDocumentPath, 20_000)
   })
 })

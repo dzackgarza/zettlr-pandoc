@@ -66,6 +66,24 @@ window.addEventListener('unhandledrejection', event => {
   uncaught.push(`unhandledrejection: ${String(event.reason)}`)
 })
 
+// This visual renderer fixture intentionally runs without the app preload.
+// Durable renderer-error logging is now part of the production recoverable
+// boundary, so provide only that one preload seam here. Persistence itself is
+// covered against the real LogProvider IPC handler in
+// test/log-provider-write-failure.spec.ts; this scene remains responsible only
+// for the toast/dismissal/interactivity surface.
+Object.defineProperty(window, 'ipc', {
+  configurable: true,
+  value: {
+    invoke: async (channel: string, message: { command?: string }): Promise<unknown> => {
+      if (channel === 'log-provider' && message.command === 'record-error') {
+        return true
+      }
+      throw new Error(`Unexpected IPC invoke in reference-error visual probe: ${channel}/${String(message.command)}`)
+    }
+  }
+})
+
 const EDITOR_SEED = 'The buffer under the failing index.\n'
 let view: EditorView|null = null
 

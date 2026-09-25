@@ -178,6 +178,50 @@ describe("CollaborationApplicationService", function () {
     assert.equal(service.getStatus(DOCUMENT_ID)?.unresolvedChunks, 0);
   });
 
+  it("accepts all chunks from a detached workspace review without reopening the document", async function () {
+    const baseline = "alpha\n";
+    const proposed = "ALPHA\n";
+    const { service } = harness({ diskText: baseline });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-detached-accept-all",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+
+    await service.detachCollaboration(DOCUMENT_ID);
+    assert.equal(service.getReview(DOCUMENT_ID), undefined, "the review must be detached from memory");
+
+    const accepted = await service.acceptAllWorkspaceChunks({
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      reviewId: submitted.reviewId,
+      precondition: {
+        expectedReviewGeneration: submitted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(proposed),
+      },
+    });
+
+    assert.equal(accepted.ok, true);
+    if (!accepted.ok) {
+      return;
+    }
+    assert.equal(accepted.acceptedChunks, 1);
+    assert.equal(accepted.unresolvedChunks, 0);
+    assert.equal(service.getReview(DOCUMENT_ID), undefined, "detached acceptance must not attach the review");
+    const persisted = await service.readSidecar(DOCUMENT_PATH);
+    assert.ok(persisted?.review !== null && persisted?.review !== undefined);
+    assert.equal(
+      persisted.review.suggestions.filter(suggestion => suggestion.state === "proposed").length,
+      0,
+    );
+  });
+
   it("rejects only agent text after the owner edits inside a suggestion (#68)", async function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";

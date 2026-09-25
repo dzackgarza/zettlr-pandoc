@@ -16,7 +16,13 @@ import { strict as assert } from "assert"
 import { execFileSync } from 'child_process'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { initializeMathJax, mathJaxToElem, mathJaxToHTML } from "source/common/util/mathtex-to-html"
+import {
+  __mathJaxRenderCacheSizeForTests,
+  __resetMathJaxRenderCacheForTests,
+  initializeMathJax,
+  mathJaxToElem,
+  mathJaxToHTML
+} from "source/common/util/mathtex-to-html"
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
 // The app ships no macros; this test supplies its own example fixture file and
@@ -89,5 +95,22 @@ describe('Utility#mathJaxToHTML()', function () {
 
     assert.equal(element.querySelector('mjx-container')?.getAttribute('jax'), 'CHTML')
     assert.match(element.textContent ?? '', /ℝ/)
+  })
+
+  it('memoizes repeated browser equations while cloning the cached DOM', function () {
+    __resetMathJaxRenderCacheForTests()
+    const first = document.createElement('div')
+    const second = document.createElement('div')
+
+    mathJaxToElem('x^2', first, 'inline')
+    assert.equal(__mathJaxRenderCacheSizeForTests(), 1)
+    mathJaxToElem('x^2', second, 'inline')
+    assert.equal(__mathJaxRenderCacheSizeForTests(), 1)
+
+    assert.equal(first.innerHTML, second.innerHTML)
+    assert.notEqual(first.firstElementChild, second.firstElementChild)
+
+    mathJaxToElem('x^2', second, 'display')
+    assert.equal(__mathJaxRenderCacheSizeForTests(), 2)
   })
 })

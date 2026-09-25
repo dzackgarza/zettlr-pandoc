@@ -180,18 +180,6 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Markdown Style'),
-      infoString: trans('Check your Markdown documents for style issues'),
-      group: PreferencesGroups.Editor,
-      fields: [
-        {
-          type: 'checkbox',
-          label: trans('Enable Markdown Linter'),
-          model: 'editor.lint.markdown'
-        }
-      ]
-    },
-    {
       title: trans('Table Editor'),
       group: PreferencesGroups.Editor,
       titleField: {
@@ -315,22 +303,11 @@ export function getEditorFields (config: ConfigOptions): PreferencesFieldset[] {
       ]
     },
     {
-      title: trans('Snippet Autocompletion'),
+      title: trans('Snippets'),
       group: PreferencesGroups.Editor,
       help: undefined, // TODO
-      infoString: trans('Control the snippet autocompletion functionality'),
+      infoString: trans('Snippets appear in autocomplete. QuickTeX is configured separately and expands exact prefixes when you press Space.'),
       fields: [
-        {
-          type: 'select',
-          inline: true,
-          label: trans('Autocomplete trigger character:'),
-          model: 'editor.snippetAutocompleteTriggerCharacter',
-          options: {
-            ':': ':',
-            '/': '/',
-            '%': '%',
-          }
-        },
         {
           type: 'checkbox',
           label: trans('Suggest emojis during autocompletion'),

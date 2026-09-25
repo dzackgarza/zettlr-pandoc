@@ -96,6 +96,7 @@ export interface ThemeVars {
   '--zettlr-editor-pandoc-div-float': string
   /** CSS `<color>` values for the review-diff attention layer */
   '--zettlr-editor-review-region-bg': string
+  '--zettlr-editor-review-region-accent': string
   '--zettlr-editor-review-insert-mark-bg': string
   '--zettlr-editor-review-delete-bg': string
   '--zettlr-editor-review-delete-accent': string
@@ -203,6 +204,7 @@ const reviewLight = {
   // Warm taupe, audited: >=6 dE2000 from every env surface both ways (the
   // cool grays sit sub-JND from the slate/blue/cyan surfaces in light mode).
   regionBg: 'rgba(94, 83, 75, 0.22)',
+  regionAccent: '#6b5c52',
   insertMarkBg: 'rgba(26, 178, 74, 0.45)',
   deleteBg: 'rgba(207, 34, 46, 0.30)',
   deleteAccent: '#cf222e',
@@ -210,6 +212,7 @@ const reviewLight = {
 
 const reviewDark = {
   regionBg: 'rgba(200, 187, 178, 0.20)',
+  regionAccent: '#d0c3ba',
   insertMarkBg: 'rgba(63, 185, 80, 0.48)',
   deleteBg: 'rgba(248, 81, 73, 0.38)',
   deleteAccent: '#f85149',
@@ -288,6 +291,7 @@ export const defaultVarsLight: ThemeVars = {
   '--zettlr-editor-pandoc-div-proof': pandocDivLight.proof,
   '--zettlr-editor-pandoc-div-float': pandocDivLight.float,
   '--zettlr-editor-review-region-bg': reviewLight.regionBg,
+  '--zettlr-editor-review-region-accent': reviewLight.regionAccent,
   '--zettlr-editor-review-insert-mark-bg': reviewLight.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewLight.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewLight.deleteAccent,
@@ -343,6 +347,7 @@ export const defaultVarsDark: ThemeVars = {
   '--zettlr-editor-pandoc-div-proof': pandocDivDark.proof,
   '--zettlr-editor-pandoc-div-float': pandocDivDark.float,
   '--zettlr-editor-review-region-bg': reviewDark.regionBg,
+  '--zettlr-editor-review-region-accent': reviewDark.regionAccent,
   '--zettlr-editor-review-insert-mark-bg': reviewDark.insertMarkBg,
   '--zettlr-editor-review-delete-bg': reviewDark.deleteBg,
   '--zettlr-editor-review-delete-accent': reviewDark.deleteAccent,
@@ -553,29 +558,30 @@ export const editorTheme = EditorView.baseTheme({
   '.cm-heading': {
     textDecoration: 'var(--zettlr-editor-line-decoration)',
   },
-  // Don't increase font-size within blockquotes
-  '.cm-line:has(:not(.cm-quote).cm-header-1)': {
+  // ATX heading level is semantic data. These six classes are only the six
+  // editor presentation sizes; deeper Pandoc headings reuse size 6.
+  '.cm-line.cm-pandoc-heading-size-1:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-1-size) var(--zettlr-editor-font)',
     // TODO: find a better way to override the `cm-code-mark` styling above
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-2)': {
+  '.cm-line.cm-pandoc-heading-size-2:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-2-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-3)': {
+  '.cm-line.cm-pandoc-heading-size-3:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-3-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-4)': {
+  '.cm-line.cm-pandoc-heading-size-4:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-4-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-5)': {
+  '.cm-line.cm-pandoc-heading-size-5:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-5-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },
-  '.cm-line:has(:not(.cm-quote).cm-header-6)': {
+  '.cm-line.cm-pandoc-heading-size-6:not(:has(.cm-quote))': {
     font: 'var(--zettlr-editor-header-style) var(--zettlr-editor-header-6-size) var(--zettlr-editor-font)',
     '--zettlr-editor-code-style': 'var(--zettlr-editor-header-style)',
   },

@@ -1,55 +1,88 @@
 <template>
   <div
     id="annotations-panel"
-    class="annotations-tab"
-    v-bind:data-inspector-mode="collaborationStore.inspectorMode"
+    class="annotations-tab workspace-annotations-tab"
   >
     <AnnotationHeader
-      v-bind:open-count="openCount"
+      v-bind:outstanding-count="collaborationStore.workspaceUnresolvedCount"
+      v-bind:accept-all-count="outstandingSuggestionCount"
       v-bind:query="filterQuery"
-      v-bind:view="collaborationStore.showResolved ? 'resolved' : 'open'"
+      v-bind:busy="globalAcceptBusy"
       v-on:update:query="filterQuery = $event"
-      v-on:set-view="collaborationStore.toggleShowResolved($event === 'resolved')"
+      v-on:accept-all="acceptAllWorkspace"
       v-on:close="emit('close')"
     ></AnnotationHeader>
 
-    <AnnotationList
-      v-bind:cards="filteredCards"
-      v-bind:show-resolved="collaborationStore.showResolved"
-      v-bind:selected-id="collaborationStore.selectedAnnotationId"
-      v-bind:now="now"
-      v-on:select="collaborationStore.selectAnnotation($event)"
-      v-on:jump-to-line="emit('jump-to-line', $event)"
-      v-on:toggle-resolved="collaborationStore.toggleShowResolved()"
-    ></AnnotationList>
+    <p
+      v-if="groups.length === 0"
+      class="annotation-workspace-empty annotation-muted"
+    >
+      {{ trans('No pending annotations or proposed changes in this workspace.') }}
+    </p>
 
-    <AnnotationInspector
-      v-if="selectedCard !== undefined"
-      v-bind:card="selectedCard"
-      v-bind:now="now"
-      v-bind:document-name="documentName"
-      v-on:close="collaborationStore.selectAnnotation(null)"
-      v-on:back="collaborationStore.selectAnnotation(null)"
-      v-on:jump-to-line="emit('jump-to-line', $event)"
-      v-on:reply="onReply"
-      v-on:show-proposal="onShowProposal(selectedCard.annotation)"
-      v-on:begin-reattach="emit('begin-reattach', selectedCard.annotation.annotationId)"
-      v-on:resolve-toggle="onResolveToggle"
-      v-on:delete="onDelete"
-    ></AnnotationInspector>
+    <section
+      v-for="group in groups"
+      v-bind:key="group.documentPath"
+      class="annotation-document-group"
+      v-bind:data-document-path="group.documentPath"
+    >
+      <header class="annotation-document-header">
+        <button
+          type="button"
+          class="annotation-document-name"
+          v-bind:title="group.documentPath"
+          v-on:click="navigate(group.documentPath)"
+        >{{ group.documentName }}</button>
+        <span class="annotation-document-count annotation-muted">
+          {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
+        </span>
+        <button
+          v-if="group.suggestions.length > 0"
+          type="button"
+          class="annotation-button annotation-document-accept-all"
+          v-bind:disabled="globalAcceptBusy || acceptingDocuments.has(group.documentPath)"
+          v-on:click="acceptAllDocument(group.documentPath)"
+        >{{ trans('Accept all') }}</button>
+      </header>
 
-    <SuggestionInspector
-      v-if="review !== undefined"
-      v-bind:review="review"
-      v-bind:busy="reviewBusy"
-      v-bind:focused-chunk-ids="focusedProposalChunkIds"
-      v-on:jump-to-line="emit('jump-to-line', $event)"
-      v-on:decide="onDecide"
-      v-on:comment-chunk="onCommentChunk"
-      v-on:accept-all="onAcceptAll"
-      v-on:clear="onClearReview"
-      v-on:comment="onReviewComment"
-    ></SuggestionInspector>
+      <div class="annotation-document-items">
+        <button
+          v-for="card in group.annotations"
+          v-bind:key="card.annotation.annotationId"
+          type="button"
+          class="annotation-workspace-row annotation-workspace-annotation"
+          v-bind:data-annotation-id="card.annotation.annotationId"
+          v-on:click="navigateAnnotation(group.documentPath, card)"
+        >
+          <span class="annotation-ordinal">{{ card.ordinal }}</span>
+          <span class="annotation-workspace-copy">
+            <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
+            <span
+              v-if="card.quotedText.length > 0"
+              class="annotation-workspace-context"
+            >“{{ card.quotedText }}”</span>
+          </span>
+        </button>
+
+        <button
+          v-for="suggestion in group.suggestions"
+          v-bind:key="suggestion.suggestionId"
+          type="button"
+          class="annotation-workspace-row annotation-workspace-suggestion"
+          v-bind:data-suggestion-id="suggestion.suggestionId"
+          v-on:click="navigate(group.documentPath, suggestion.range)"
+        >
+          <cds-icon shape="wand" role="presentation"></cds-icon>
+          <span class="annotation-workspace-copy">
+            <span class="annotation-workspace-summary">{{ suggestion.description }}</span>
+            <span
+              v-if="suggestion.contextText.length > 0"
+              class="annotation-workspace-context"
+            >“{{ suggestion.contextText }}”</span>
+          </span>
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -58,197 +91,148 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        AnnotationsTab
+ * Contains:        Workspace annotations panel
  * CVM-Role:        View
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The panel's root, alone in the main window's right pane:
- *                  the compact list above the detail inspector (S1/S3), fed exclusively
- *                  from useDocumentCollaborationStore — never a second read
- *                  of the sidecar (plan section 6). Container queries on this
- *                  root switch between the wide arrangement (list and
- *                  detail both visible, mockup 4) and the narrow
- *                  arrangement (one at a time, with the inspector's back
- *                  button, structural gate scene 11) — see the style block.
- *
- *                  S3 says the panel owns adjudication too, so the review
- *                  half of the same session snapshot renders here as the
- *                  SuggestionInspector (M9). The editor keeps no control of
- *                  its own (I4); this root is the only place a review
- *                  decision is raised from.
- *
- *                  One minute clock, owned here, feeds every relative time
- *                  the list cards and the thread show.
+ * Description:     Workspace-wide outstanding collaboration work, grouped by
+ *                  document. Rows are navigation only: a row opens its
+ *                  document at the target, and an annotation row also opens
+ *                  that annotation's thread there. Every single decision,
+ *                  note and reply happens in the editor, under the change or
+ *                  the annotated text. Rows lead with the full owner reason
+ *                  or proposal claim and never duplicate navigation metadata
+ *                  or the diff. Each document owns an Accept all action and
+ *                  the panel header owns the workspace-wide one.
  *
  * END HEADER
  */
 
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
+import { reportError } from '@common/util/error-reporting'
 import showToast from '@common/util/show-toast'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
+import type { SourceRange } from '@dts/common/references'
 import AnnotationHeader from './annotations/AnnotationHeader.vue'
-import AnnotationList from './annotations/AnnotationList.vue'
-import AnnotationInspector from './annotations/AnnotationInspector.vue'
-import SuggestionInspector from './annotations/SuggestionInspector.vue'
-import { buildAnnotationCards, filterCards, openAnnotationCount, suggestionIdsForPacketIds, type AnnotationCardView } from './annotations/annotation-panel-model'
-import { useMinuteClock } from './annotations/use-minute-clock'
-import { useDocumentCollaborationStore, useDocumentTreeStore } from 'source/pinia'
-import type { TextAnnotation } from '@dts/common/annotation-domain'
-import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
+import {
+  buildSuggestionNavigatorRows,
+  filterCards,
+  type AnnotationCardView,
+  type SuggestionNavigatorView
+} from './annotations/annotation-panel-model'
+import { useDocumentCollaborationStore } from 'source/pinia'
+
+interface WorkspaceAnnotationGroup {
+  documentPath: string
+  documentName: string
+  annotations: AnnotationCardView[]
+  suggestions: SuggestionNavigatorView[]
+}
+
+const props = defineProps<{
+  workspacePaths: string[]
+}>()
 
 const emit = defineEmits<{
-  (e: 'jump-to-line', line: number): void
-  // S8/I6: only the annotation id crosses this boundary — the replacement
-  // range comes from a fresh editor selection, which this panel does not
-  // own (see App.vue -> MainEditor.vue).
-  (e: 'begin-reattach', annotationId: string): void
-  /** The header's close: the parent hides the pane. */
+  (e: 'navigate', target: { documentPath: string, range?: SourceRange, annotationId?: string }): void
   (e: 'close'): void
 }>()
 
 const collaborationStore = useDocumentCollaborationStore()
-const documentTreeStore = useDocumentTreeStore()
-
-const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
-const documentName = computed(() => activeFile.value === undefined ? undefined : pathBasename(activeFile.value.path))
 const filterQuery = ref('')
-const now = useMinuteClock()
+const globalAcceptBusy = ref(false)
+const acceptingDocuments = reactive(new Set<string>())
 
-const session = computed(() => activeFile.value === undefined ? undefined : collaborationStore.getSession(activeFile.value.path))
-const annotations = computed(() => session.value?.annotations.items ?? [])
-// The review half of the same snapshot (M9). A document with no active
-// review reports undefined and the inspector never mounts.
-const review = computed(() => session.value?.review)
-const openCount = computed(() => openAnnotationCount(annotations.value))
-
-const cards = computed(() => buildAnnotationCards(annotations.value, session.value?.workingText ?? ''))
-const filteredCards = computed(() => filterCards(cards.value, filterQuery.value))
-const selectedCard = computed<AnnotationCardView | undefined>(() => {
-  const id = collaborationStore.selectedAnnotationId
-  return id === null ? undefined : cards.value.find(card => card.annotation.annotationId === id)
-})
-
-watch(activeFile, file => {
-  if (file !== undefined) {
-    collaborationStore.ensureSession(file.path).catch(err => console.error('[AnnotationsTab] Could not load the collaboration session', err))
-  }
+watch(() => props.workspacePaths, paths => {
+  collaborationStore.refreshWorkspaceSessions(paths)
+    .catch(err => reportError('[AnnotationsTab] Could not load workspace collaboration state', err))
 }, { immediate: true })
 
-function onReply (text: string): void {
-  const path = activeFile.value?.path
-  const annotationId = collaborationStore.selectedAnnotationId
-  if (path === undefined || annotationId === null) {
+const normalizedFilter = computed(() => filterQuery.value.trim().toLowerCase())
+
+const groups = computed<WorkspaceAnnotationGroup[]>(() => collaborationStore.workspaceSessions
+  .map(session => {
+    const annotations = filterCards(
+      collaborationStore.getCards(session.documentPath)
+        .filter(card => card.annotation.state === 'open'),
+      filterQuery.value
+    )
+    const suggestions = (session.review === undefined ? [] : buildSuggestionNavigatorRows(session.review))
+      .filter(card => normalizedFilter.value.length === 0 ||
+        card.description.toLowerCase().includes(normalizedFilter.value))
+    return {
+      documentPath: session.documentPath,
+      documentName: pathBasename(session.documentPath),
+      annotations,
+      suggestions
+    }
+  })
+  .filter(group => group.annotations.length > 0 || group.suggestions.length > 0)
+  .sort((left, right) => left.documentName.localeCompare(right.documentName) ||
+    left.documentPath.localeCompare(right.documentPath)))
+
+const outstandingSuggestionCount = computed(() => collaborationStore.workspaceSessions
+  .reduce((count, session) => count + (session.review?.suggestions.length ?? 0), 0))
+
+function annotationRange (card: AnnotationCardView): SourceRange | undefined {
+  const anchor = card.annotation.anchor
+  if (anchor.state === 'range') {
+    return { from: anchor.from, to: anchor.to }
+  }
+  if (anchor.state === 'point') {
+    return { from: anchor.at, to: anchor.at }
+  }
+  return undefined
+}
+
+function navigate (documentPath: string, range?: SourceRange): void {
+  emit('navigate', { documentPath, range })
+}
+
+function navigateAnnotation (documentPath: string, card: AnnotationCardView): void {
+  emit('navigate', { documentPath, range: annotationRange(card), annotationId: card.annotation.annotationId })
+}
+
+async function acceptAllDocument (documentPath: string): Promise<void> {
+  if (acceptingDocuments.has(documentPath)) {
     return
   }
-  collaborationStore.addAnnotationMessage(path, annotationId, text)
-    .catch(err => console.error('[AnnotationsTab] Could not send the reply', err))
+  acceptingDocuments.add(documentPath)
+  try {
+    const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath)
+    if (!result.ok) {
+      showToast(trans(result.message), 'error')
+    }
+  } catch (err) {
+    reportError('[AnnotationsTab] Could not accept document review', err)
+  } finally {
+    acceptingDocuments.delete(documentPath)
+  }
 }
 
-/**
- * S7: a proposal is "a count, plus an affordance to open it" — the review
- * surface it opens is the SuggestionInspector already rendered below (M9
- * moved it into this same panel), so there is no navigation to do. Opening
- * it means finding the specific chunk(s) this annotation's linked
- * proposal(s) produced, among however many chunks the review carries, and
- * bringing them into view. Nothing is applied from here (S7): the owner
- * still accepts or rejects in the SuggestionInspector itself.
- */
-const focusedProposalChunkIds = ref<string[]>([])
-
-function onShowProposal (annotation: TextAnnotation): void {
-  const currentReview = review.value
-  if (currentReview === undefined) {
+async function acceptAllWorkspace (): Promise<void> {
+  if (globalAcceptBusy.value) {
     return
   }
-  focusedProposalChunkIds.value = suggestionIdsForPacketIds(
-    currentReview,
-    annotation.proposalActions.map(action => action.packetId)
-  )
-}
-
-watch(selectedCard, () => { focusedProposalChunkIds.value = [] })
-
-function onResolveToggle (): void {
-  const path = activeFile.value?.path
-  const annotation = selectedCard.value?.annotation
-  if (path === undefined || annotation === undefined) {
-    return
+  globalAcceptBusy.value = true
+  try {
+    const results = await collaborationStore.acceptAllWorkspaceReviews()
+    const failures = results.filter(({ result }) => !result.ok)
+    if (failures.length > 0) {
+      showToast(
+        failures.length === 1
+          ? trans('Could not accept all changes in 1 document.')
+          : trans('Could not accept all changes in %s documents.', String(failures.length)),
+        'error'
+      )
+    }
+  } catch (err) {
+    reportError('[AnnotationsTab] Could not accept workspace reviews', err)
+  } finally {
+    globalAcceptBusy.value = false
   }
-  const call = annotation.state === 'open'
-    ? collaborationStore.resolveAnnotation(path, annotation.annotationId)
-    : collaborationStore.reopenAnnotation(path, annotation.annotationId)
-  call.catch(err => console.error('[AnnotationsTab] Could not change the annotation resolution', err))
-}
-
-/**
- * The owner deleted the selected annotation. The card leaves the list and
- * the chip leaves the editor through the provider's broadcast, the way
- * every other annotation mutation lands; the selection is dropped here,
- * because the annotation the inspector was showing is gone.
- */
-function onDelete (): void {
-  const path = activeFile.value?.path
-  const annotation = selectedCard.value?.annotation
-  if (path === undefined || annotation === undefined) {
-    return
-  }
-  collaborationStore.deleteAnnotation(path, annotation.annotationId)
-    .then(result => {
-      if ('ok' in result && !result.ok) {
-        showToast(trans(result.message), 'error')
-        return
-      }
-      collaborationStore.selectAnnotation(null)
-    })
-    .catch(err => console.error('[AnnotationsTab] Could not delete the annotation', err))
-}
-
-// M9: the panel's review adjudication path. Every control the editor's chunk
-// widgets and status bar used to carry lands here, and nothing about the
-// round trip is local: the store sends the fenced request, the provider
-// decides, and its DP_EVENTS.DOCUMENT_COLLABORATION broadcast is what
-// redraws the inspector. A refusal — a competing decision, or an edit that
-// moved the chunk — is toasted so the owner reads WHY nothing changed.
-const reviewBusy = ref(false)
-
-function runReviewAction (
-  action: (path: string) => Promise<{ ok: true } | ReviewFailure>
-): void {
-  const path = activeFile.value?.path
-  if (path === undefined || reviewBusy.value) {
-    return
-  }
-  reviewBusy.value = true
-  action(path)
-    .then(result => {
-      if (!result.ok) {
-        showToast(trans(result.message), 'error')
-      }
-    })
-    .catch(err => console.error('[AnnotationsTab] Could not send the review mutation', err))
-    .finally(() => { reviewBusy.value = false })
-}
-
-function onDecide (chunkId: string, decision: 'accept' | 'reject'): void {
-  runReviewAction(path => collaborationStore.decideReviewChunk(path, chunkId, decision))
-}
-
-function onCommentChunk (chunkId: string, text: string): void {
-  runReviewAction(path => collaborationStore.commentReviewChunk(path, chunkId, text))
-}
-
-function onAcceptAll (): void {
-  runReviewAction(path => collaborationStore.acceptAllReviewChunks(path))
-}
-
-function onClearReview (): void {
-  runReviewAction(path => collaborationStore.clearReview(path))
-}
-
-function onReviewComment (text: string): void {
-  runReviewAction(path => collaborationStore.addReviewComment(path, text))
 }
 </script>
 
@@ -256,7 +240,7 @@ function onReviewComment (text: string): void {
 @import './annotations/annotation-panel.less';
 
 body {
-  .annotations-tab {
+  .workspace-annotations-tab {
     container-type: inline-size;
     container-name: annotations-panel;
     display: flex;
@@ -268,14 +252,108 @@ body {
     color: var(--annotation-text);
     font-size: var(--annotation-font-size);
   }
-}
 
-// Narrow sidebar (structural gate scene 11): show one pane at a time behind
-// a back button rather than the wide stacked arrangement. The list/detail
-// split itself never changes — only how many of the two are visible at once.
-@container annotations-panel (max-width: 400px) {
-  .annotations-tab[data-inspector-mode="detail"] .annotation-list { display: none; }
-  .annotations-tab[data-inspector-mode="list"] .annotation-inspector { display: none; }
-  .annotation-inspector-back { display: inline-flex !important; }
+  .annotation-workspace-empty {
+    padding: 12px 0;
+    margin: 0;
+  }
+
+  .annotation-document-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--annotation-border);
+  }
+
+  .annotation-document-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .annotation-document-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    border: none;
+    background: transparent;
+    color: var(--annotation-text);
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .annotation-document-count {
+    flex: 0 0 auto;
+    font-size: var(--annotation-small-font-size);
+  }
+
+  .annotation-document-accept-all {
+    flex: 0 0 auto;
+  }
+
+  .annotation-document-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .annotation-workspace-row {
+    display: grid;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 28px;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 6px;
+    width: 100%;
+    min-height: 28px;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--annotation-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--annotation-surface-muted);
+    }
+
+    > cds-icon {
+      width: 14px;
+      height: 14px;
+      color: var(--annotation-text-muted);
+    }
+  }
+
+  .annotation-workspace-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .annotation-workspace-summary,
+  .annotation-workspace-context {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .annotation-workspace-context {
+    color: var(--annotation-text-muted);
+    font-size: var(--annotation-small-font-size);
+  }
+
+  .annotation-header-spacer {
+    flex: 1 1 auto;
+  }
 }
 </style>

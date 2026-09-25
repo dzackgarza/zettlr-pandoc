@@ -1,0 +1,9 @@
+
+
+  language-aware completion sources in the assembled editor
+    ✔ offers prose phrases, LaTeX in math, and LaTeX plus TikZ inside TikZ (910ms)
+    ✔ adds a phrase through the real provider to the portable file and completes it without restart (102ms)
+
+
+  2 passing (49s)
+

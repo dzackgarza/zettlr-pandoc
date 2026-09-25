@@ -7,6 +7,7 @@
     v-bind:reset-search-term-on-blur="false"
     v-bind:reset-search-term-on-select="false"
     model-value=""
+    v-on:pointerleave="highlightFirstRow"
   >
     <div class="launcher-query-row">
       <span
@@ -39,7 +40,10 @@
           v-bind:disabled="isDisabled(row)"
           v-bind:checked="row.kind === 'menu-leaf' ? row.checked : undefined"
           v-bind:data-row-kind="row.kind"
+          v-bind:data-file-path="row.kind === 'file' ? row.path : undefined"
           v-bind:data-export-profile="row.kind === 'export-profile' ? row.profile.name : undefined"
+          v-bind:data-just-recipe="row.kind === 'just-recipe' ? row.name : undefined"
+          v-bind:data-preference-model="row.kind === 'preference' ? row.model : undefined"
           v-on:run="emit('run', row)"
         >
           <template v-if="row.kind === 'heading'">
@@ -73,6 +77,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxRoot, ComboboxViewport } from 'reka-ui'
 import { nextTick, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
@@ -113,7 +118,7 @@ function isDisabled (row: LauncherRowModel): boolean {
  * whole path.
  */
 function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
-  if (row.kind === 'file') {
+  if (row.kind === 'file' || row.kind === 'just-recipe' || row.kind === 'preference') {
     return row.breadcrumb
   }
   if (row.kind === 'menu-leaf' || row.kind === 'menu-group') {
@@ -122,13 +127,20 @@ function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
   return []
 }
 
-// Ranking replaces the list on every keystroke, so the first row must be
-// highlighted again for Enter to mean "run the best match".
-watch(() => props.rows, () => {
+/**
+ * Highlights the best match, so that Enter means "run the best match".
+ * reka-ui's listbox clears its highlight on pointerleave, and Chromium fires
+ * pointerleave when a shrinking list moves out from under a resting pointer,
+ * so the highlight is restored there too, not only after ranking.
+ */
+function highlightFirstRow (): void {
   nextTick()
     .then(() => { combobox.value?.highlightFirstItem() })
-    .catch(err => console.error('[MenuCommandsView] Could not highlight the first row', err))
-}, { immediate: true })
+    .catch(err => reportError('[MenuCommandsView] Could not highlight the first row', err))
+}
+
+// Ranking replaces the list on every keystroke.
+watch(() => props.rows, highlightFirstRow, { immediate: true })
 
 function onBackspace (): void {
   if (props.query === '') {

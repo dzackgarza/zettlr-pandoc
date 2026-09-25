@@ -15,6 +15,7 @@
     v-on:wheel="handleWheel"
     v-on:dragstart="lockDirectoryTree"
     v-on:dragend="unlockDirectoryTree"
+    v-on:focusin="rememberFileManagerFocus"
   >
     <!-- Display the arrow button in case we have a non-combined view -->
     <div
@@ -35,13 +36,13 @@
     <!-- Filter field -->
     <div class="chrome-filter file-manager-filter">
       <input
-        ref="quickFilter"
+        ref="fileFilterInput"
         v-model="filterQuery"
         class="chrome-filter-input file-manager-filter-input"
         type="search"
         v-bind:placeholder="filterPlaceholder"
         v-on:focus="($event.target as HTMLInputElement).select()"
-        v-on:blur="handleQuickFilterBlur"
+        v-on:blur="handleFileFilterBlur"
       />
       <ShortcutDisplay
         v-if="filterShortcut !== undefined"
@@ -57,6 +58,9 @@
         ref="fileTreeComponent"
         v-bind:is-visible="fileTreeVisible"
         v-bind:filter-query="filterQuery"
+        v-bind:file-picker-active="filePickerActive"
+        v-bind:file-picker-paths="filePickerCache.paths"
+        v-bind:file-picker-path-set="filePickerCache.pathSet"
         v-bind:window-id="props.windowId"
         v-on:selection="selectionListener"
         v-on:toggle-file-list="toggleFileList"
@@ -74,6 +78,8 @@
         ref="fileListComponent"
         v-bind:is-visible="isFileListVisible"
         v-bind:filter-query="filterQuery"
+        v-bind:file-picker-active="filePickerActive"
+        v-bind:file-picker-path-set="filePickerCache.pathSet"
         v-bind:window-id="props.windowId"
         v-on:lock-file-tree="lockDirectoryTree()"
       ></FileList>
@@ -95,15 +101,18 @@
  *
  * END HEADER
  */
+import { reportError } from '@common/util/error-reporting'
 import FileTree from './FileTree.vue'
 import FileList from './FileList.vue'
 import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { trans } from '@common/i18n-renderer'
 import { explodeShortcut } from '@common/util/shortcuts'
 import { getCustomShortcut } from '@providers/menu/shortcuts'
-import { nextTick, ref, computed, watch, onMounted } from 'vue'
-import { useConfigStore } from 'source/pinia'
+import { nextTick, ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useConfigStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
+import { buildFilePickerCache, type FilePickerCache } from './util/match-query'
+import { filterDescriptorChildren } from './util/filter-children'
 
 const ipcRenderer = window.ipc
 
@@ -115,18 +124,55 @@ const lockedTree = ref<boolean>(false)
 const fileTreeVisible = ref<boolean>(true)
 const fileListVisible = ref<boolean>(false)
 const filterQuery = ref<string>('')
+const filePickerActive = ref(false)
 
 // Element refs
 const arrowButton = ref<HTMLDivElement|null>(null)
-const quickFilter = ref<HTMLInputElement|null>(null)
+const fileFilterInput = ref<HTMLInputElement|null>(null)
 const rootElement = ref<HTMLDivElement|null>(null)
 const fileTreeComponent = ref<typeof FileTree|null>(null)
 const fileListComponent = ref<typeof FileList|null>(null)
 
 const workspaceStore = useWorkspaceStore()
 const configStore = useConfigStore()
+const windowStateStore = useWindowStateStore()
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
+const filePickerCache = shallowRef<FilePickerCache>({ paths: [], pathSet: new Set() })
+
+function rebuildFilePickerCache (): void {
+  filePickerCache.value = buildFilePickerCache(
+    workspaceStore.descriptorMap.values(),
+    filterDescriptorChildren()
+  )
+}
+
+// The picker cache is exactly the file-manager-visible file set. Invoking
+// Ctrl+Shift+P only activates this already-computed candidate set.
+watch(
+  [
+    () => workspaceStore.descriptorMap,
+    () => configStore.config.fileManager.filters,
+    () => configStore.config.fileManager.hiddenDirectories,
+    () => configStore.config.fileManager.showHiddenDirectories,
+    () => configStore.config.files,
+    () => configStore.config.attachmentExtensions
+  ],
+  rebuildFilePickerCache,
+  { deep: true, immediate: true }
+)
+
+/** Remembers the directory context when the Explorer itself takes focus. */
+function rememberFileManagerFocus (): void {
+  if (selectedDirectory.value !== null) {
+    windowStateStore.desktopFocusPath = selectedDirectory.value
+    return
+  }
+  const directoryRoots = workspaceStore.rootDescriptors.filter(root => root.type === 'directory')
+  if (directoryRoots.length === 1) {
+    windowStateStore.desktopFocusPath = directoryRoots[0].path
+  }
+}
 
 const filterPlaceholder = trans('Search files')
 // The filter's shortcut hint reads the same binding the menu's Filter files
@@ -182,17 +228,24 @@ watch(fileManagerMode, () => {
   }
 })
 
+let stopShortcutListener: (() => void)|undefined
+
 onMounted(() => {
-  ipcRenderer.on('shortcut', (event, message) => {
+  stopShortcutListener = ipcRenderer.on('shortcut', (event, message) => {
     if (message === 'filter-files') {
+      filePickerActive.value = true
       // Focus the filter on the next tick. Why? Because it might be that
       // the file manager is hidden, or the global search is visible. In both
       // cases we need to wait for the app to display the file manager.
       nextTick()
-        .then(() => { quickFilter.value?.focus() })
-        .catch(err => console.error(err))
+        .then(() => { fileFilterInput.value?.focus() })
+        .catch(err => reportError(err))
     }
   })
+})
+
+onUnmounted(() => {
+  stopShortcutListener?.()
 })
 
 /**
@@ -263,13 +316,22 @@ function maybeNavigate (evt: KeyboardEvent): void {
   }
 }
 
-function handleQuickFilterBlur (_event: Event): void {
+function handleFileFilterBlur (_event: Event): void {
   // Stop navigating on blur
   if (isFileListVisible.value) {
     fileListComponent.value?.stopNavigate()
   } else {
     fileTreeComponent.value?.stopNavigate()
   }
+
+  // A click on a picker result blurs the field before the click completes.
+  // Restore the ordinary file-manager scope only after that interaction has
+  // had a chance to finish.
+  window.setTimeout(() => {
+    if (document.activeElement !== fileFilterInput.value) {
+      filePickerActive.value = false
+    }
+  }, 0)
 }
 
 /**
@@ -411,7 +473,7 @@ body #file-manager {
 
   &.expanded {
     #file-tree, #file-list { width: 50%; }
-    #file-list, #file-list.hidden { left: 50%; }
+    #file-list, #file-list.hidden { left: 50%; transform: none; }
     #file-tree, #file-tree.hidden { left: 0%; }
   }
 
@@ -430,9 +492,9 @@ body #file-manager {
     left: 10px;
     width: 30px;
     height: 30px;
-    transition: 0.4s left ease;
+    transition: transform 0.4s ease;
 
-    &.hidden { left:-60px; }
+    &.hidden { transform: translateX(-70px); }
   }
 }
 

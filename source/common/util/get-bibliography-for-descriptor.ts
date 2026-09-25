@@ -13,14 +13,19 @@
  * END HEADER
  */
 
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { CitationDatabase } from '@dts/common/citeproc'
-import type { AnyDescriptor, MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { AnyDescriptor, MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
 
 /**
  * Resolves the descriptor for a directory path, if it is known.
  */
-export type DirectoryLookup = (dirPath: string) => Promise<AnyDescriptor|undefined>
+export type DirectoryLookup = (dirPath: string) => Promise<AnyDescriptor | undefined>;
+
+export interface ResolvedProjectContext {
+  rootPath: string;
+  project: ProjectSettings;
+}
 
 /**
  * Walks up the parent directories of a file and returns the settings of the
@@ -34,18 +39,21 @@ export type DirectoryLookup = (dirPath: string) => Promise<AnyDescriptor|undefin
  *
  * @return  {ProjectSettings|null}                       The project settings
  */
-export function resolveProjectForDescriptorSync (descriptor: MDFileDescriptor, descriptorMap: Map<string, AnyDescriptor>): ProjectSettings|null {
-  let directory = descriptorMap.get(descriptor.dir)
-  while (directory?.type === 'directory') {
+export function resolveProjectForDescriptorSync(
+  descriptor: MDFileDescriptor,
+  descriptorMap: Map<string, AnyDescriptor>,
+): ProjectSettings | null {
+  let directory = descriptorMap.get(descriptor.dir);
+  while (directory?.type === "directory") {
     if (directory.settings.project !== null) {
-      return directory.settings.project
+      return directory.settings.project;
     }
     if (directory.dir === directory.path) {
-      break
+      break;
     }
-    directory = descriptorMap.get(directory.dir)
+    directory = descriptorMap.get(directory.dir);
   }
-  return null
+  return null;
 }
 
 /**
@@ -58,21 +66,34 @@ export function resolveProjectForDescriptorSync (descriptor: MDFileDescriptor, d
  *
  * @return  {Promise<ProjectSettings|null>}              The project settings
  */
-export async function resolveProjectForDescriptor (descriptor: MDFileDescriptor, descriptorMap: Map<string, AnyDescriptor>, lookup: DirectoryLookup): Promise<ProjectSettings|null> {
-  let directoryPath = descriptor.dir
+export async function resolveProjectContextForDescriptor(
+  descriptor: MDFileDescriptor,
+  descriptorMap: Map<string, AnyDescriptor>,
+  lookup: DirectoryLookup,
+): Promise<ResolvedProjectContext | null> {
+  let directoryPath = descriptor.dir;
   while (true) {
-    const directory = descriptorMap.get(directoryPath) ?? await lookup(directoryPath)
-    if (directory?.type !== 'directory') {
-      return null
+    const directory = descriptorMap.get(directoryPath) ?? (await lookup(directoryPath));
+    if (directory?.type !== "directory") {
+      return null;
     }
     if (directory.settings.project !== null) {
-      return directory.settings.project
+      return { rootPath: directory.path, project: directory.settings.project };
     }
     if (directory.dir === directory.path) {
-      return null
+      return null;
     }
-    directoryPath = directory.dir
+    directoryPath = directory.dir;
   }
+}
+
+export async function resolveProjectForDescriptor(
+  descriptor: MDFileDescriptor,
+  descriptorMap: Map<string, AnyDescriptor>,
+  lookup: DirectoryLookup,
+): Promise<ProjectSettings | null> {
+  const context = await resolveProjectContextForDescriptor(descriptor, descriptorMap, lookup);
+  return context === null ? null : context.project;
 }
 
 /**
@@ -84,26 +105,34 @@ export async function resolveProjectForDescriptor (descriptor: MDFileDescriptor,
  *
  * @return  {string}                        The appropriate library
  */
-export function getBibliographyForDescriptor (descriptor: MDFileDescriptor, project: ProjectSettings|null = null): CitationDatabase {
-  if (descriptor.frontmatter != null && 'bibliography' in descriptor.frontmatter) {
-    const library = descriptor.frontmatter.bibliography
+export function getBibliographyForDescriptor(
+  descriptor: MDFileDescriptor,
+  project: ProjectSettings | null = null,
+): CitationDatabase {
+  const frontmatter: unknown = descriptor.frontmatter;
+  if (typeof frontmatter === "object" && frontmatter !== null && "bibliography" in frontmatter) {
+    const library = (frontmatter as { bibliography?: unknown }).bibliography;
 
-    if (typeof library === 'string' && library.trim() !== '') {
-      return library.trim()
+    if (typeof library === "string" && library.trim() !== "") {
+      return library.trim();
     }
 
-    if (Array.isArray(library) && library.length > 0 && library.every((item): item is string => typeof item === 'string')) {
-      return library.map(item => item.trim())
+    if (
+      Array.isArray(library) &&
+      library.length > 0 &&
+      library.every((item): item is string => typeof item === "string")
+    ) {
+      return library.map((item) => item.trim());
     }
   }
 
-  if (project?.manifest.kind === 'quarto' && project.manifest.bibliographies.length > 0) {
-    const bibliographies = [ ...project.manifest.bibliographies ]
+  if (project?.manifest.kind === "quarto" && project.manifest.bibliographies.length > 0) {
+    const bibliographies = [...project.manifest.bibliographies];
     if (!bibliographies.includes(CITEPROC_MAIN_DB)) {
-      bibliographies.push(CITEPROC_MAIN_DB)
+      bibliographies.push(CITEPROC_MAIN_DB);
     }
-    return bibliographies
+    return bibliographies;
   }
 
-  return CITEPROC_MAIN_DB
+  return CITEPROC_MAIN_DB;
 }

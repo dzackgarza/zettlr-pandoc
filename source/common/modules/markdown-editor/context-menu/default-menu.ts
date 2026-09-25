@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type EditorView } from '@codemirror/view'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
@@ -21,10 +22,44 @@ import { forEachDiagnostic, type Diagnostic, forceLinting, setDiagnostics } from
 import { applyBold, applyItalic, insertLink, applyBlockquote, applyOrderedList, applyBulletList, applyTaskList } from '../commands/markdown'
 import { cut, copyAsPlain, copyAsHTML, paste, pasteAsPlain } from '../util/copy-paste-cut'
 import { getTransformSubmenu } from './transform-items'
-import { extractLTSpellcheckSuggestionsFrom, isLanguageToolMisspelling } from '../linters/language-tool'
+import { extractLTSpellcheckSuggestionsFrom, isLanguageToolMisspelling } from '../diagnostics/language-tool-state'
+import { isProseCompletionPosition } from '../autocomplete/prose-dictionary'
 
 const ipcRenderer = window.ipc
 const suggestionCache = new Map<string, string[]>()
+
+/**
+ * Builds the user-facing action that appends a word/phrase to the configured
+ * portable prose-completion file. A non-empty selection is used only when the
+ * menu was opened inside it; otherwise the word under the click is the entry.
+ */
+export function proseCompletionMenuItem (view: EditorView, pos: number): AnyMenuItem|undefined {
+  if (!isProseCompletionPosition(view.state, pos)) {
+    return undefined
+  }
+
+  const selection = view.state.selection.main
+  const selected = !selection.empty && selection.from <= pos && pos <= selection.to
+    ? selection
+    : view.state.wordAt(pos)
+  const completionEntry = selected === null
+    ? ''
+    : view.state.sliceDoc(selected.from, selected.to).replace(/\s+/gu, ' ').trim()
+  if (completionEntry === '') {
+    return undefined
+  }
+
+  return {
+    label: trans('Add to prose completion dictionary'),
+    type: 'normal',
+    action () {
+      ipcRenderer.invoke('dictionary-provider', {
+        command: 'add-prose-completion',
+        payload: { entry: completionEntry }
+      }).catch(error => reportError('Could not add prose completion entry', error))
+    }
+  }
+}
 
 // Listen for dictionary-provider messages. NOTE: The suggestionCache is shared,
 // meaning I'd have to implement it in a scope if I need custom
@@ -174,7 +209,7 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
         )
           .then(() => {
             // After we've added the word to the dictionary, we have to invalidate
-            // the spellcheck linter errors that mark this specific word as wrong.
+            // the external spelling diagnostics that mark this word as wrong.
             const filteredDiagnostics: Diagnostic[] = []
             forEachDiagnostic(view.state, (d, from, to) => {
               if (d.source !== 'spellcheck' && !isLanguageToolMisspelling(d)) {
@@ -186,7 +221,7 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
             view.dispatch(setDiagnostics(view.state, filteredDiagnostics))
             forceLinting(view)
           })
-          .catch(e => console.error(e))
+          .catch(e => reportError(e))
       }
     },
     { type: 'separator' }
@@ -287,6 +322,11 @@ export async function defaultMenu (view: EditorView, node: SyntaxNode, coords: {
     },
     getTransformSubmenu(view)
   ]
+
+  const addProseCompletion = pos === null ? undefined : proseCompletionMenuItem(view, pos)
+  if (addProseCompletion !== undefined) {
+    tpl.unshift(addProseCompletion, { type: 'separator' })
+  }
 
   // If we found a diagnostic earlier and a word, add the suggestion items
   if (diagnostic !== undefined && misspelledWord !== undefined) {

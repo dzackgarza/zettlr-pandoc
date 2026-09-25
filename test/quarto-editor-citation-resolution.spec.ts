@@ -25,12 +25,13 @@ import path from 'path'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import {
   configField,
   configUpdateEffect,
   getDefaultConfig
 } from 'source/common/modules/markdown-editor/util/configuration'
+import { installCitationIpcFromCallback, settleCitationWidgets } from './citation-widget-test-helper'
 import {
   getBibliographyForDescriptor,
   resolveProjectForDescriptor,
@@ -86,6 +87,7 @@ describe('Quarto editor citation resolution and startup race', function () {
   const views: EditorView[] = []
   let citeproc: CiteprocProvider
   const originalCitationCallback = (globalThis as any).window?.getCitationCallback
+  let restoreCitationIpc: (() => void)|undefined
 
   const chapterDescriptor: MDFileDescriptor = {
     path: path.join(ROOT, 'foundations', 'categories.md'),
@@ -138,12 +140,14 @@ describe('Quarto editor citation resolution and startup race', function () {
         return citeproc.getCitation(database, citations, composite)
       }
     }
+    restoreCitationIpc = installCitationIpcFromCallback()
   })
 
   after(async function () {
     if (citeproc) {
       await citeproc.shutdown()
     }
+    restoreCitationIpc?.()
     if ((globalThis as any).window) {
       ;(globalThis as any).window.getCitationCallback = originalCitationCallback
     }
@@ -230,7 +234,7 @@ describe('Quarto editor citation resolution and startup race', function () {
     ])
   })
 
-  it('proves citation widget fails under CITEPROC_MAIN_DB but resolves under project bibliographies with real CiteprocProvider', function () {
+  it('proves citation widget fails under CITEPROC_MAIN_DB but resolves under project bibliographies with real CiteprocProvider', async function () {
     const expectedQuartoBibs = [
       path.join(ROOT, 'references.bib'),
       path.join(ROOT, 'web.bib'),
@@ -240,6 +244,7 @@ describe('Quarto editor citation resolution and startup race', function () {
     // Mount editor with fallback CITEPROC_MAIN_DB (boot race condition)
     const view = createEditor('See [@Stacks] for details.', CITEPROC_MAIN_DB)
 
+    await settleCitationWidgets(view.dom)
     const initialCitation = view.dom.querySelector('.citeproc-citation')
     assert.notStrictEqual(initialCitation, null, 'citation widget must mount in editor DOM')
     assert.ok(
@@ -258,6 +263,8 @@ describe('Quarto editor citation resolution and startup race', function () {
       })
     })
 
+    __resetCitationRenderMemoForTests()
+    await settleCitationWidgets(view.dom)
     const updatedCitation = view.dom.querySelector('.citeproc-citation')
     assert.notStrictEqual(updatedCitation, null, 'citation widget must exist after update')
     assert.ok(

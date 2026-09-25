@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import type { DirDescriptor } from '@dts/common/fsal'
@@ -24,11 +25,17 @@ export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, 
   const configStore = useConfigStore()
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
+  const isExplicitlyHidden = configStore.config.fileManager.hiddenDirectories.includes(dirObject.path)
 
   const TEMPLATE: AnyMenuItem[] = [
     {
       label: trans('Properties'),
       id: 'menu.properties',
+      type: 'normal'
+    },
+    {
+      label: isExplicitlyHidden ? trans('Unhide folder') : trans('Hide folder'),
+      id: 'menu.toggle_hidden_dir',
       type: 'normal'
     },
     {
@@ -116,7 +123,7 @@ export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, 
     callback(clickedID) // TODO
     switch (clickedID) {
       case 'menu.copy_path':
-        navigator.clipboard.writeText(dirObject.path).catch(err => console.error(err))
+        navigator.clipboard.writeText(dirObject.path).catch(err => reportError(err))
         break
       case 'gui.attachments_open_dir':
         ipcRenderer.send('window-controls', {

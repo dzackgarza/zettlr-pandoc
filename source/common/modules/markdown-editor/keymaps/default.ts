@@ -17,7 +17,8 @@
 
 import {
   acceptCompletion, closeCompletion, moveCompletionSelection,
-  startCompletion, deleteBracketPair
+  startCompletion, deleteBracketPair, clearSnippet,
+  nextSnippetField, prevSnippetField
 } from '@codemirror/autocomplete'
 import {
   cursorCharLeft, selectCharLeft, cursorGroupLeft, selectGroupLeft,
@@ -43,12 +44,12 @@ import {
   openSearchPanel, findNext, findPrevious, closeSearchPanel,
   selectSelectionMatches, gotoLine, selectNextOccurrence
 } from '@codemirror/search'
-import { type KeyBinding } from '@codemirror/view'
+import { type Command, type KeyBinding } from '@codemirror/view'
 import {
   insertNewlineContinueMarkup, deleteMarkupBackward
 } from '@codemirror/lang-markdown'
 
-import { nextSnippet, abortSnippet, abortSnippetRemoveContent } from '../autocomplete/snippets'
+import { expandQuickTexOnSpace } from '../quicktex'
 import {
   handleBackspace,
   handleQuote,
@@ -71,6 +72,7 @@ import { addRowAfter, addRowBefore, moveNextRow, movePrevRow, swapNextRow, swapP
 import { removeLineBreaks } from '../commands/transforms/remove-line-breaks'
 import { requestFormatDocument } from '../plugins/format-document-effect'
 import { openReferenceSearch } from '../plugins/reference-search-effect'
+import { openFileSearch } from '../plugins/file-search-effect'
 import { navigateHistoryBack, navigateHistoryForward } from '../util/reference-navigation'
 import {
   type EditorShortcutName, getCustomShortcut, type CustomEditorShortcut
@@ -103,7 +105,14 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
     return getCustomShortcut(name, customShortcutMap)
   }
 
-  const { autocompleteWithEnter, autocompleteWithTab } = config
+  // Read autocomplete preferences when the key actually runs. This means the
+  // keymap does not need to be rebuilt merely because a checkbox changed.
+  const acceptCompletionWithTab: Command = view => {
+    return (view.state.field(configField, false)?.autocompleteWithTab ?? config.autocompleteWithTab) && acceptCompletion(view)
+  }
+  const acceptCompletionWithEnter: Command = view => {
+    return (view.state.field(configField, false)?.autocompleteWithEnter ?? config.autocompleteWithEnter) && acceptCompletion(view)
+  }
 
   const alignLeft = setAlignment('left')
   const alignCenter = setAlignment('center')
@@ -116,18 +125,19 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
     // the further atop they need to be.
 
     // Tabulator
-    ...(autocompleteWithTab ? [{ key: 'Tab', run: acceptCompletion }] : []),
-    { key: 'Tab', run: nextSnippet },
+    { key: 'Tab', run: acceptCompletionWithTab },
+    { key: 'Tab', run: nextSnippetField },
     { key: 'Tab', run: moveNextCell },
     { key: 'Tab', run: maybeIndentList },
     { key: 'Tab', run: insertTabOrSpace },
     { key: 'Tab', run: indentMore },
+    { key: 'Shift-Tab', run: prevSnippetField },
     { key: 'Shift-Tab', run: movePrevCell },
     { key: 'Shift-Tab', run: maybeUnindentList },
     { key: 'Shift-Tab', run: indentLess },
     
     // Enter
-    ...(autocompleteWithEnter ? [{ key: 'Enter', run: acceptCompletion }] : []),
+    { key: 'Enter', run: acceptCompletionWithEnter },
     { key: 'Enter', run: handleAutocorrectEnter },
     { key: 'Enter', run: moveNextRow },
     { key: 'Enter', run: insertNewlineContinueMarkup },
@@ -152,11 +162,10 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
     { mac: 'Mod-Delete', run: deleteLineBoundaryForward },
 
     // Escape
-    { key: 'Escape', run: abortSnippet },
     { key: 'Escape', run: closeCompletion },
+    { key: 'Escape', run: clearSnippet },
     { key: 'Escape', run: closeSearchPanel },
     { key: 'Escape', run: simplifySelection },
-    { key: 'Shift-Escape', run: abortSnippetRemoveContent },
     
     // Arrow Up
     { key: 'ArrowUp', run: moveCompletionSelection(false) },
@@ -244,6 +253,7 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
     { key: 'Shift-PageUp', run: selectPageUp },
     
     // Some keybindings that should work even in case of conflicts
+    { key: 'Space', run: expandQuickTexOnSpace },
     { key: 'Space', run: handleAutocorrectSpace },
     { key: 'Mod-Shift-v', run: view => { pasteAsPlain(view); return true } },
     { key: 'Mod-Alt-c', run: view => { copyAsHTML(view); return true } },
@@ -295,6 +305,7 @@ export function mainEditorKeybindings (customShortcutMap: CustomEditorShortcut[]
 
     // searchKeymap
     { key: 'Mod-f', run: openSearchPanel, scope: 'editor search-panel' },
+    { key: sc('search-files'), run: openFileSearch, preventDefault: true },
     { key: sc('search-references'), run: openReferenceSearch, preventDefault: true },
     { key: sc('search-find-next'), run: findNext, scope: 'editor search-panel', preventDefault: true },
     { key: sc('search-find-previous'), run: findPrevious, scope: 'editor search-panel', preventDefault: true },

@@ -43,8 +43,7 @@ if (process.argv.includes('--clean')) {
     startApp(argv)
   }).catch(err => {
     error(err.message)
-    // Add a console.error with the full error for stack trace, etc.
-    console.error(err)
+    error(err instanceof Error ? err.stack ?? err.message : String(err))
   })
 } else {
   // Start the app retaining the directory structure.
@@ -142,7 +141,7 @@ function startApp (argv = []) {
   // the promise rejection go unhandled.
   proc.on('error', (err) => {
     error(`Failed to start Zettlr: ${err.message}`)
-    console.error(err)
+    error(err.stack ?? err.message)
     process.exitCode = 1
   })
 

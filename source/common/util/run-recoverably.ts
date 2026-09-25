@@ -29,6 +29,17 @@
 
 import { trans } from '@common/i18n-renderer'
 import showToast from '@common/util/show-toast'
+import { reportError } from '@common/util/error-reporting'
+
+/**
+ * Records a renderer failure in the main-process LogProvider. The log IPC is
+ * itself best-effort: if main is already unavailable, stderr remains the last
+ * independent diagnostic surface rather than recursively trying to log a log
+ * failure.
+ */
+export function recordRendererError (message: string, err: unknown): void {
+  reportError(message, err)
+}
 
 /** The typed outcome of a recoverable operation. */
 export type RecoverableOutcome<T> =
@@ -57,7 +68,8 @@ export async function runRecoverably<T> (
       // Exactly one closable error toast naming the failed operation, plus
       // the typed outcome. The rejection never escapes; the console line
       // keeps the raw diagnostic available.
-      console.error(`Reference operation failed (${operationLabel})`, err)
+      const diagnostic = `Recoverable renderer operation failed (${operationLabel})`
+      reportError(diagnostic, err)
       const detail = err instanceof Error ? err.message : String(err)
       showToast(trans('%s failed: %s', operationLabel, detail), 'error')
       return { status: 'failed' }

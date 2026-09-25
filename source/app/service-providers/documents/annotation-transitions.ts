@@ -20,9 +20,11 @@
  *                  safe as one arriving before, and a failed write leaves the
  *                  committed set untouched because it was never replaced.
  *
- *                  Two rules are enforced here rather than at each transport,
- *                  because a transport that forgets one is the whole failure
- *                  mode. Lifecycle is owner-only: an agent request may add a
+ *                  Operation rules are enforced here rather than at each
+ *                  transport. Candidate AnnotationSet values are admitted
+ *                  only through annotation-domain-validation.ts, the same
+ *                  schema/semantic validator used by persistence. Lifecycle
+ *                  is owner-only: an agent request may add a
  *                  reply and link a proposal, and can reach no transition
  *                  that moves an annotation between open and resolved or
  *                  moves its anchor. And `quotedText` is never rewritten,
@@ -42,6 +44,7 @@ import type {
   TextAnnotation,
 } from "@dts/common/annotation-domain";
 import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
+import { annotationSetValidationIssue } from "./annotation-domain-validation";
 import type { AgentEventDraft } from "./review-transitions";
 
 /**
@@ -106,10 +109,7 @@ function checkGeneration(
   return {
     ok: false,
     code: "ANNOTATION_GENERATION_MISMATCH",
-    message:
-      `The document is at annotation generation ${annotations.generation}, not ` +
-      `${expected}: something changed after this one was read. Re-read the ` +
-      "annotations and try again.",
+    message: "The annotations changed after they were opened. Reload them and try again.",
   };
 }
 
@@ -132,17 +132,29 @@ function locate(
   annotationId: string,
 ): TextAnnotation | AnnotationTransitionError {
   const found = items.find((candidate) => candidate.annotationId === annotationId);
-  return (
-    found ?? {
+  if (found === undefined) {
+    return {
       ok: false,
       code: "ANNOTATION_NOT_FOUND",
-      message: `No annotation ${annotationId} on this document.`,
-    }
-  );
+      message: `Annotation ${annotationId} was not found in this document.`,
+    };
+  }
+  return found;
 }
 
 function invalid(message: string): AnnotationTransitionError {
   return { ok: false, code: "INVALID_PARAMS", message };
+}
+
+function validatedPlan<Response>(
+  nextAnnotations: AnnotationSet,
+  response: Response,
+  events: AgentEventDraft[],
+): AnnotationMutationPlan<Response> | AnnotationTransitionError {
+  const issue = annotationSetValidationIssue(nextAnnotations);
+  return issue === undefined
+    ? { nextAnnotations, response, events }
+    : invalid(issue.message);
 }
 
 /** A target the owner can actually have selected. */
@@ -199,10 +211,6 @@ export function prepareAnnotationCreation(input: {
   if (badRange !== undefined) {
     return badRange;
   }
-  if (input.instruction.trim() === "") {
-    return invalid("An annotation needs an instruction: it is the annotation's first message.");
-  }
-
   const createdAt = new Date().toISOString();
   const annotation: TextAnnotation = {
     annotationId: randomUUID(),
@@ -230,20 +238,16 @@ export function prepareAnnotationCreation(input: {
     generation: input.annotations.generation + 1,
     items: [...cloneItems(input.annotations), annotation],
   };
-  return {
-    nextAnnotations,
-    response: annotation,
-    events: [
-      {
-        event: "annotation.created",
-        payload: {
-          documentId: input.documentId,
-          annotationId: annotation.annotationId,
-          annotationGeneration: nextAnnotations.generation,
-        },
+  return validatedPlan(nextAnnotations, annotation, [
+    {
+      event: "annotation.created",
+      payload: {
+        documentId: input.documentId,
+        annotationId: annotation.annotationId,
+        annotationGeneration: nextAnnotations.generation,
       },
-    ],
-  };
+    },
+  ]);
 }
 
 /**
@@ -277,7 +281,7 @@ export function prepareAnnotationMessage(input: {
         message.author === "agent" && message.clientRequestId === input.clientRequestId,
     );
     if (replayed !== undefined) {
-      return { nextAnnotations: input.annotations, response: replayed, events: [] };
+      return validatedPlan(input.annotations, replayed, []);
     }
   }
 
@@ -317,20 +321,16 @@ export function prepareAnnotationMessage(input: {
     generation: input.annotations.generation + 1,
     items,
   };
-  return {
-    nextAnnotations,
-    response: message,
-    events: [
-      {
-        event: "annotation.message-added",
-        payload: {
-          documentId: target.documentId,
-          annotationId: target.annotationId,
-          annotationGeneration: nextAnnotations.generation,
-        },
+  return validatedPlan(nextAnnotations, message, [
+    {
+      event: "annotation.message-added",
+      payload: {
+        documentId: target.documentId,
+        annotationId: target.annotationId,
+        annotationGeneration: nextAnnotations.generation,
       },
-    ],
-  };
+    },
+  ]);
 }
 
 /** The one shape the four owner-only lifecycle moves share. */
@@ -371,22 +371,16 @@ function prepareLifecycleMove(
     generation: input.annotations.generation + 1,
     items: applied,
   };
-  return {
-    nextAnnotations,
-    // The annotation as the move left it. A deletion answers with the record
-    // it removed, which is the only moment that record still exists.
-    response: target,
-    events: [
-      {
-        event,
-        payload: {
-          documentId: located.documentId,
-          annotationId: input.annotationId,
-          annotationGeneration: nextAnnotations.generation,
-        },
+  return validatedPlan(nextAnnotations, target, [
+    {
+      event,
+      payload: {
+        documentId: located.documentId,
+        annotationId: input.annotationId,
+        annotationGeneration: nextAnnotations.generation,
       },
-    ],
-  };
+    },
+  ]);
 }
 
 /** Resolve: the annotation leaves the primary list and keeps its thread. */
@@ -613,21 +607,21 @@ export function prepareAnnotationProposalLinkage(input: {
         return {
           ok: false,
           code: "ANNOTATION_NOT_FOUND",
-          message: `The proposal addresses annotation ${annotationId}, which is not on this document.`,
+          message: `Annotation ${annotationId} was not found in this document.`,
         };
       }
       if (target.state === "resolved") {
         return {
           ok: false,
           code: "ANNOTATION_RESOLVED",
-          message: `The proposal addresses annotation ${annotationId}, which is resolved.`,
+          message: `Annotation ${annotationId} is resolved. Reopen it before applying a proposal.`,
         };
       }
       if (target.anchor.state === "orphaned") {
         return {
           ok: false,
           code: "ANNOTATION_ORPHANED",
-          message: `The proposal addresses annotation ${annotationId}, whose target is orphaned.`,
+          message: `The selected text for annotation ${annotationId} no longer exists. Reattach the annotation before applying a proposal.`,
         };
       }
       target.proposalActions = [
@@ -653,5 +647,5 @@ export function prepareAnnotationProposalLinkage(input: {
     }
   }
 
-  return { nextAnnotations: { generation, items }, response: undefined, events };
+  return validatedPlan({ generation, items }, undefined, events);
 }

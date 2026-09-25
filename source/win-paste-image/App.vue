@@ -76,6 +76,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import Checkbox from '@common/vue/form/elements/CheckboxControl.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
@@ -100,7 +101,7 @@ retrieveClipboardData().then(({ aspect, name, size, dataUrl }) => {
   aspectRatio.value = aspect
   fileName.value = name
   imgBase64.value = dataUrl
-}).catch(err => console.error(err))
+}).catch(err => reportError(err))
 
 // Retrieve the correct startPath from the searchParams
 const searchParams = new URLSearchParams(window.location.search)

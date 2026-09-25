@@ -23,6 +23,7 @@ import { mathJaxToElem } from 'source/common/util/mathtex-to-html'
 import { stripMathDelimiters } from 'source/common/util/math-delimiters'
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 import { configField } from '../util/configuration'
+import { pandocLatexMathEnvironmentAtStart } from '@lezer/markdown'
 
 class MathWidget extends WidgetType {
   constructor (readonly equation: string, readonly displayMode: boolean, readonly node: SyntaxNode) {
@@ -63,6 +64,13 @@ class MathWidget extends WidgetType {
 }
 
 function shouldHandleNode (node: SyntaxNodeRef): boolean {
+  // Pandoc keeps LaTeX math environments such as align/equation as
+  // RawInline(tex). The syntax node stays RawInline; createWidget checks the
+  // exact Pandoc math-environment subset before rendering it with MathJax.
+  if (node.type.name === 'RawInline') {
+    return true
+  }
+
   // This parser should look for InlineCode and FencedCode and then immediately
   // check its first CodeMark child to ensure its contents only include $ or $$.
   if (![ 'InlineCode', 'FencedCode' ].includes(node.type.name)) {
@@ -90,7 +98,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
   // and then remove the leading and trailing dollars. Also, pass a stable node
   // reference (SyntaxNodeRef will be dropped, but the SyntaxNode itself will
   // stay, and keep its position updated depending on what happens in the doc)
-  const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   // Don't render if the selection is within the node
   if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
@@ -98,6 +106,15 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
   }
 
   const nodeText = state.sliceDoc(node.from, node.to)
+
+  if (node.type.name === 'RawInline') {
+    const environment = pandocLatexMathEnvironmentAtStart(nodeText)
+    if (environment === null || environment.end !== nodeText.length) {
+      return undefined
+    }
+    return new MathWidget(nodeText, environment.display, node.node)
+  }
+
   // Recognizes $…$, $$…$$, \(…\) and \[…\]; returns null for regular code.
   const math = stripMathDelimiters(nodeText)
   if (math === null) {
@@ -108,7 +125,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
 }
 
 export const renderMath = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ 'InlineCode', 'FencedCode', 'RawInline' ], shouldHandleNode, createWidget),
   EditorView.baseTheme({
     // MathJax CommonHTML overrides
     'mjx-container': {

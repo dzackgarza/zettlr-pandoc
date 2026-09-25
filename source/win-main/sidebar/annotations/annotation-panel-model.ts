@@ -2,13 +2,14 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Annotations panel pure view model
+ * Contains:        Collaboration pure view model
  * CVM-Role:        Model
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Everything the annotations panel derives from a
- *                  DocumentCollaborationSession, with no framework and no
+ * Description:     Everything the workspace annotations panel and the
+ *                  editor's inline review and annotation controls derive
+ *                  from a DocumentCollaborationSession, with no framework and no
  *                  IPC — one function per derived fact, so each is provable
  *                  on its own. This is where invariant I8 lives: a card's
  *                  title is computed here, every render, from the
@@ -19,7 +20,9 @@
 
 import { Text } from '@codemirror/state'
 import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-domain'
+import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
+import type { SourceRange } from '@dts/common/references'
 
 export interface AnnotationCardView {
   annotation: TextAnnotation
@@ -39,7 +42,7 @@ export interface AnnotationCardView {
   endLineNumber: number | undefined
   wordCount: number
   quotedText: string
-  instructionPreview: string
+  instructionText: string
   hasPendingProposal: boolean
 }
 
@@ -62,10 +65,6 @@ export function deriveCardTitle (firstMessageText: string): string {
   return sentence.length > 72 ? `${sentence.slice(0, 69).trimEnd()}…` : sentence
 }
 
-export function truncatePreview (text: string, maxLength = 140): string {
-  const trimmed = text.trim()
-  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1).trimEnd()}…` : trimmed
-}
 
 function anchorPosition (anchor: AnnotationAnchor): number | undefined {
   if (anchor.state === 'range') {
@@ -77,10 +76,44 @@ function anchorPosition (anchor: AnnotationAnchor): number | undefined {
   return undefined
 }
 
+export interface LineIndex {
+  lineOfPosition: (position: number) => number
+}
+
+/**
+ * Builds a single-pass line offset index for fast O(log N) line lookups.
+ * Eliminates repeated multi-megabyte string splits during card derivation.
+ */
+export function createLineIndex (workingText: string): LineIndex {
+  const newlineOffsets: number[] = [0]
+  let idx = 0
+  while ((idx = workingText.indexOf('\n', idx)) !== -1) {
+    newlineOffsets.push(idx + 1)
+    idx += 1
+  }
+  const textLength = workingText.length
+
+  return {
+    lineOfPosition (position: number): number {
+      const clamped = Math.min(Math.max(position, 0), textLength)
+      let low = 0
+      let high = newlineOffsets.length - 1
+      while (low <= high) {
+        const mid = (low + high) >> 1
+        if (newlineOffsets[mid] <= clamped) {
+          low = mid + 1
+        } else {
+          high = mid - 1
+        }
+      }
+      return low
+    }
+  }
+}
+
 /** The 1-based source line a document offset falls on, clamped into the text. */
 function lineOfPosition (position: number, workingText: string): number {
-  const doc = Text.of(workingText.length === 0 ? [''] : workingText.split('\n'))
-  return doc.lineAt(Math.min(Math.max(position, 0), doc.length)).number
+  return createLineIndex(workingText).lineOfPosition(position)
 }
 
 /** The 1-based source line an anchor's position falls on, or undefined for
@@ -103,6 +136,7 @@ function wordCount (text: string): number {
  * marker carried while it was open.
  */
 export function buildAnnotationCards (annotations: TextAnnotation[], workingText: string): AnnotationCardView[] {
+  const lineIndex = createLineIndex(workingText)
   const sorted = [...annotations].sort((a, b) => {
     const posA = anchorPosition(a.anchor) ?? Number.POSITIVE_INFINITY
     const posB = anchorPosition(b.anchor) ?? Number.POSITIVE_INFINITY
@@ -114,17 +148,18 @@ export function buildAnnotationCards (annotations: TextAnnotation[], workingText
   return sorted.map((annotation, index) => {
     const firstMessage = annotation.messages[0]
     const quotedText = annotation.anchor.quotedText
-    const lineNumber = lineNumberFor(annotation.anchor, workingText)
+    const pos = anchorPosition(annotation.anchor)
+    const lineNumber = pos === undefined ? undefined : lineIndex.lineOfPosition(pos)
     return {
       annotation,
       ordinal: index + 1,
       title: deriveCardTitle(firstMessage.text),
       lineLocator: lineNumber === undefined ? 'Orphaned' : `Ln ${lineNumber}`,
       lineNumber,
-      endLineNumber: annotation.anchor.state === 'range' ? lineOfPosition(annotation.anchor.to, workingText) : lineNumber,
+      endLineNumber: annotation.anchor.state === 'range' ? lineIndex.lineOfPosition(annotation.anchor.to) : lineNumber,
       wordCount: wordCount(quotedText),
       quotedText,
-      instructionPreview: truncatePreview(firstMessage.text),
+      instructionText: firstMessage.text,
       hasPendingProposal: annotation.proposalActions.some(action => action.terminalOutcome === undefined)
     }
   })
@@ -143,6 +178,16 @@ export function openAnnotationCount (annotations: TextAnnotation[]): number {
   return annotations.filter(annotation => annotation.state === 'open').length
 }
 
+/**
+ * Everything on the collaboration panel for which the active document still
+ * asks for an owner decision: open annotations plus outstanding review
+ * suggestions. This is also the activity-bar badge count.
+ */
+export function unresolvedCollaborationCount (session: DocumentCollaborationSession): number {
+  return openAnnotationCount(session.annotations.items) +
+    (session.review === undefined ? 0 : session.review.suggestions.length)
+}
+
 export function filterCards (cards: AnnotationCardView[], query: string): AnnotationCardView[] {
   const needle = query.trim().toLowerCase()
   if (needle.length === 0) {
@@ -151,7 +196,7 @@ export function filterCards (cards: AnnotationCardView[], query: string): Annota
   return cards.filter(card =>
     card.title.toLowerCase().includes(needle) ||
     card.quotedText.toLowerCase().includes(needle) ||
-    card.instructionPreview.toLowerCase().includes(needle)
+    card.instructionText.toLowerCase().includes(needle)
   )
 }
 
@@ -186,57 +231,58 @@ export function suggestionIdsForPacketIds (review: ReviewDiffSession, packetIds:
     .map(suggestion => suggestion.suggestionId)
 }
 
+export interface SuggestionNavigatorView {
+  suggestionId: string
+  description: string
+  contextText: string
+  range: SourceRange
+}
+
 /**
- * One outstanding suggestion as the SuggestionInspector shows it (M9). The
- * editor renders the same chunk as a locator — a struck-through deletion and
- * a highlighted insertion in the document flow — so this card carries the
- * identity the owner adjudicates on: which claim, which line, and both sides
- * of the change.
+ * Workspace-sidebar projection of outstanding review work. This deliberately
+ * contains no before/after diff: the editor is the one place review diffs are
+ * rendered. Sidebar rows carry the review claim plus current authored source
+ * context, then navigate to that exact range.
+ */
+export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
+  const doc = Text.of(review.workingText.split('\n'))
+  return review.suggestions.map(suggestion => {
+    // A pure insertion anchors no existing text; it lands at its seam.
+    const firstAnchor = suggestion.anchors.length > 0
+      ? suggestion.anchors[0]
+      : { from: suggestion.seam, to: suggestion.seam }
+    const line = doc.lineAt(Math.min(firstAnchor.from, doc.length))
+    return {
+      suggestionId: suggestion.suggestionId,
+      description: suggestion.description,
+      contextText: doc.sliceString(line.from, line.to),
+      range: { from: firstAnchor.from, to: firstAnchor.to }
+    }
+  })
+}
+
+/**
+ * One outstanding suggestion as the controls under its chunk show it. The
+ * editor draws the change itself — a struck-through deletion and a
+ * highlighted insertion in the document flow — so the card carries only what
+ * the owner decides on: the claim that proposed it and the owner's note.
  */
 export interface SuggestionCardView {
   suggestionId: string
-  /** The packet this chunk came from — how a linked annotation's "Show
-   *  proposal" finds it (plan S7). Undefined only for a fixture that never
-   *  named one. */
-  packetId: string | undefined
   /** The packet's claim: why the agent proposed this change. */
   description: string
-  lineLocator: string
-  /** The line the chunk starts on, as a jump-to-line target. */
-  lineNumber: number
-  /** What the chunk takes out of the working text; '' for a pure insertion. */
-  removedText: string
-  /** What it puts in, read out of the working text the anchors index; ''
-   *  for a pure deletion, which has no span on the working side. */
-  insertedText: string
   /** The reviewer's own note on this chunk; '' when none was written. */
   comment: string
 }
 
-/**
- * The panel's view of a review's outstanding chunks, in the order the
- * provider projected them. `insertedText` is sliced out of the SAME
- * workingText the anchors were mapped against — the snapshot's own bytes —
- * so a card can never show a span from a different moment of the document
- * than the offsets that produced it.
- */
+/** A review's outstanding chunks, in the order the provider projected them. */
 export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCardView[] {
-  return review.suggestions.map(suggestion => {
-    const position = suggestion.anchors[0]?.from ?? suggestion.seam
-    return {
-      suggestionId: suggestion.suggestionId,
-      packetId: suggestion.packetId,
-      description: suggestion.description,
-      lineLocator: `Ln ${lineOfPosition(position, review.workingText)}`,
-      lineNumber: lineOfPosition(position, review.workingText),
-      removedText: suggestion.removedText,
-      insertedText: suggestion.anchors
-        .map(span => review.workingText.slice(span.from, span.to))
-        .join(''),
-      comment: review.chunkComments
-        .find(note => note.chunkId === suggestion.suggestionId)?.comment ?? ''
-    }
-  })
+  return review.suggestions.map(suggestion => ({
+    suggestionId: suggestion.suggestionId,
+    description: suggestion.description,
+    comment: review.chunkComments
+      .find(note => note.chunkId === suggestion.suggestionId)?.comment ?? ''
+  }))
 }
 
 /**

@@ -121,7 +121,7 @@ This iss a *file* with two tpyos in here. asdaa *ss* adas word word.`,
       children: [
         {
           type: 'Heading',
-          name: 'ATXHeading1',
+          name: 'ATXHeading',
           from: 0,
           to: 12,
           whitespaceBefore: '',

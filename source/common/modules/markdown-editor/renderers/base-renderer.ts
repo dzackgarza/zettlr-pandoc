@@ -14,19 +14,33 @@
  * END HEADER
  */
 
+import { syntaxTree } from "@codemirror/language";
+import { type EditorState, type Extension, Facet, type Range, StateField } from "@codemirror/state";
 import {
   Decoration,
+  type DecorationSet,
   EditorView,
   ViewPlugin,
+  type ViewUpdate,
   WidgetType,
-  type DecorationSet,
-  type ViewUpdate
-} from '@codemirror/view'
-import { syntaxTree } from '@codemirror/language'
-import { type SyntaxNodeRef } from '@lezer/common'
-import { StateField, type Range, type EditorState, type Extension } from '@codemirror/state'
-import { rangeInPreviewSuppression, reviewSuppressionChanged } from '../util/range-in-preview-suppression'
-import { configField } from '../util/configuration'
+} from "@codemirror/view";
+import { type SyntaxNodeRef } from "@lezer/common";
+import { configField } from "../util/configuration";
+import {
+  rangeInPreviewSuppression,
+  reviewSuppressionChanged,
+} from "../util/range-in-preview-suppression";
+import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
+
+interface RendererSpec {
+  nodeTypes: ReadonlySet<string>;
+  shouldHandleNode: (node: SyntaxNodeRef) => boolean;
+  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType | undefined;
+}
+
+const blockRendererFacet = Facet.define<RendererSpec, readonly RendererSpec[]>({
+  combine: (values) => values,
+});
 
 /**
  * The visual-indent plugin hangs list markers outside the text block by
@@ -39,13 +53,13 @@ import { configField } from '../util/configuration'
  * omission. Widget paths that cannot route through this module (the table
  * editor's block widget) add the class themselves.
  */
-export const WIDGET_LINE_STYLE_RESET_CLASS = 'cm-widget-line-style-reset'
+export const WIDGET_LINE_STYLE_RESET_CLASS = "cm-widget-line-style-reset";
 
 const widgetLineStyleResetTheme = EditorView.baseTheme({
   [`.${WIDGET_LINE_STYLE_RESET_CLASS}`]: {
-    textIndent: '0'
-  }
-})
+    textIndent: "0",
+  },
+});
 
 /**
  * Wraps a renderer's widget so its DOM is stamped with the line-style reset
@@ -53,21 +67,30 @@ const widgetLineStyleResetTheme = EditorView.baseTheme({
  * to the wrapped widget.
  */
 class LineStyleResetWidget extends WidgetType {
-  constructor (readonly inner: WidgetType) {
-    super()
+  constructor(
+    readonly inner: WidgetType,
+    readonly sourceFrom: number,
+    readonly sourceTo: number,
+  ) {
+    super();
   }
 
-  eq (other: LineStyleResetWidget): boolean {
-    return other.inner.constructor === this.inner.constructor && this.inner.eq(other.inner)
+  eq(other: LineStyleResetWidget): boolean {
+    return other.sourceFrom === this.sourceFrom &&
+      other.sourceTo === this.sourceTo &&
+      other.inner.constructor === this.inner.constructor &&
+      this.inner.eq(other.inner);
   }
 
-  toDOM (view: EditorView): HTMLElement {
-    const dom = this.inner.toDOM(view)
-    dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
-    return dom
+  toDOM(view: EditorView): HTMLElement {
+    const dom = this.inner.toDOM(view);
+    dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
+    dom.dataset.previewSourceFrom = String(this.sourceFrom);
+    dom.dataset.previewSourceTo = String(this.sourceTo);
+    return dom;
   }
 
-  updateDOM (dom: HTMLElement, view: EditorView, from: LineStyleResetWidget): boolean {
+  updateDOM(dom: HTMLElement, view: EditorView, from: LineStyleResetWidget): boolean {
     // CodeMirror recycles a widget's element when the two widgets share a
     // constructor, which every renderer now does through this wrapper. `dom`
     // therefore belongs to whichever renderer produced it, and a renderer that
@@ -75,36 +98,38 @@ class LineStyleResetWidget extends WidgetType {
     // with math keeps the citation background. Refuse across renderers so
     // CodeMirror builds a fresh element instead.
     if (from.inner.constructor !== this.inner.constructor) {
-      return false
+      return false;
     }
     // @codemirror/view's WidgetType.updateDOM is (dom, view, from) where `from`
     // is the previous widget of this type; forward the previous INNER widget so
     // the wrapped renderer sees its own predecessor, not this wrapper.
-    const updated = this.inner.updateDOM(dom, view, from.inner)
+    const updated = this.inner.updateDOM(dom, view, from.inner);
     if (updated) {
-      dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
+      dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
+      dom.dataset.previewSourceFrom = String(this.sourceFrom);
+      dom.dataset.previewSourceTo = String(this.sourceTo);
     }
-    return updated
+    return updated;
   }
 
-  ignoreEvent (event: Event): boolean {
-    return this.inner.ignoreEvent(event)
+  ignoreEvent(event: Event): boolean {
+    return this.inner.ignoreEvent(event);
   }
 
-  get estimatedHeight (): number {
-    return this.inner.estimatedHeight
+  get estimatedHeight(): number {
+    return this.inner.estimatedHeight;
   }
 
-  get lineBreaks (): number {
-    return this.inner.lineBreaks
+  get lineBreaks(): number {
+    return this.inner.lineBreaks;
   }
 
-  coordsAt (dom: HTMLElement, pos: number, side: number): ReturnType<WidgetType['coordsAt']> {
-    return this.inner.coordsAt(dom, pos, side)
+  coordsAt(dom: HTMLElement, pos: number, side: number): ReturnType<WidgetType["coordsAt"]> {
+    return this.inner.coordsAt(dom, pos, side);
   }
 
-  destroy (dom: HTMLElement): void {
-    this.inner.destroy(dom)
+  destroy(dom: HTMLElement): void {
+    this.inner.destroy(dom);
   }
 }
 
@@ -143,62 +168,66 @@ class LineStyleResetWidget extends WidgetType {
  * @return  {DecorationSet}                                   A set of rendered
  *                                                            decorations.
  */
-function renderWidgets (
+function renderWidgets(
   state: EditorState,
-  visibleRanges: ReadonlyArray<{ from: number, to: number }>,
-  shouldHandleNode: (node: SyntaxNodeRef) => boolean,
-  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
+  visibleRanges: ReadonlyArray<{ from: number; to: number }>,
+  specs: readonly RendererSpec[],
+  visibleView?: EditorView,
 ): DecorationSet {
-  const widgets: Range<Decoration>[] = []
+  const widgets: Range<Decoration>[] = [];
 
   if (visibleRanges.length === 0) {
-    // visibleRanges is empty, hence we should (re)process the whole document
-    visibleRanges = [{ from: 0, to: state.doc.length }]
+    visibleRanges = [{ from: 0, to: state.doc.length }];
   }
 
-  const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
-
-  for (const { from, to } of visibleRanges) {
-    syntaxTree(state).iterate({
-      from,
-      to,
-      enter: (node) => {
-        // Determine the number of overlapping selections. If these are non-
-        // null, we must not render this widget
-        if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
-          return
-        }
-
-        // Then, let the caller decide if they want to handle this node
-        if (!shouldHandleNode(node)) {
-          return
-        }
-
-        // Lastly, create a widget and add it to the array
-        const renderedWidget = createWidget(state, node)
-        if (renderedWidget === undefined) {
-          return // This can happen if an additional condition was false
-        }
-        // NOTE: We are not setting the property `block` to true if this
-        // function is being called from within a block renderer, since
-        // Codemirror figures this out by looking at whether there are newlines
-        // in the range the widget replaces. This allows block renderers to
-        // *also* create inline widgets if necessary. This is helpful especially
-        // for the Math renderer, since it handles both inline and block
-        // equations and this makes it easier. The only reason we should always
-        // use inline renderers wherever possible is since block renderers
-        // impose a larger performance penalty.
-        const widget = Decoration.replace({
-          widget: new LineStyleResetWidget(renderedWidget),
-          inclusive: false
-        })
-
-        widgets.push(widget.range(node.from, node.to))
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const specsByNodeType = new Map<string, RendererSpec[]>();
+  for (const spec of specs) {
+    for (const nodeType of spec.nodeTypes) {
+      const candidates = specsByNodeType.get(nodeType);
+      if (candidates === undefined) {
+        specsByNodeType.set(nodeType, [spec]);
+      } else {
+        candidates.push(spec);
       }
-    })
+    }
   }
 
-  return Decoration.set(widgets)
+  const handleNode = (node: SyntaxNodeRef): void => {
+    const candidates = specsByNodeType.get(node.type.name);
+    if (candidates === undefined) {
+      return;
+    }
+    if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
+      return;
+    }
+
+    for (const spec of candidates) {
+      if (!spec.shouldHandleNode(node)) {
+        continue;
+      }
+      const renderedWidget = spec.createWidget(state, node);
+      if (renderedWidget === undefined) {
+        continue;
+      }
+      const widget = Decoration.replace({
+        widget: new LineStyleResetWidget(renderedWidget, node.from, node.to),
+        inclusive: false,
+      });
+      widgets.push(widget.range(node.from, node.to));
+      break;
+    }
+  };
+
+  if (visibleView !== undefined) {
+    visitVisibleSyntaxNodes(visibleView, handleNode);
+  } else {
+    for (const { from, to } of visibleRanges) {
+      syntaxTree(state).iterate({ from, to, enter: handleNode });
+    }
+  }
+
+  return Decoration.set(widgets);
 }
 
 /**
@@ -219,27 +248,46 @@ function renderWidgets (
  * @return  {Extension}                     The view plugin plus the shared
  *                                          widget line-style reset theme
  */
-export function renderInlineWidgets (
+export function renderInlineWidgets(
+  nodeTypes: readonly string[],
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
-  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
+  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType | undefined,
 ): Extension {
-  const plugin = ViewPlugin.fromClass(class {
-    decorations: DecorationSet
+  const spec: RendererSpec = {
+    nodeTypes: new Set(nodeTypes),
+    shouldHandleNode,
+    createWidget,
+  };
+  const plugin = ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
 
-    constructor (view: EditorView) {
-      this.decorations = renderWidgets(view.state, view.visibleRanges, shouldHandleNode, createWidget)
-    }
-
-    update (update: ViewUpdate): void {
-      if (update.docChanged || update.viewportChanged || update.selectionSet || reviewSuppressionChanged(update)) {
-        this.decorations = renderWidgets(update.view.state, update.view.visibleRanges, shouldHandleNode, createWidget)
+      constructor(view: EditorView) {
+        this.decorations = renderWidgets(view.state, view.visibleRanges, [spec], view);
       }
-    }
-  }, {
-    decorations: view => view.decorations
-  })
 
-  return [ plugin, widgetLineStyleResetTheme ]
+      update(update: ViewUpdate): void {
+        if (
+          update.docChanged ||
+          update.viewportChanged ||
+          update.selectionSet ||
+          reviewSuppressionChanged(update)
+        ) {
+          this.decorations = renderWidgets(
+            update.view.state,
+            update.view.visibleRanges,
+            [spec],
+            update.view,
+          );
+        }
+      }
+    },
+    {
+      decorations: (view) => view.decorations,
+    },
+  );
+
+  return [plugin, widgetLineStyleResetTheme];
 }
 
 /**
@@ -261,18 +309,28 @@ export function renderInlineWidgets (
  * @return  {Extension}                     The decoration StateField plus the
  *                                          shared widget line-style reset theme
  */
-export function renderBlockWidgets (
+const sharedBlockRendererField = StateField.define<DecorationSet>({
+  create(state: EditorState) {
+    return renderWidgets(state, [], state.facet(blockRendererFacet));
+  },
+  update(_oldDecoSet, transaction) {
+    return renderWidgets(transaction.state, [], transaction.state.facet(blockRendererFacet));
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+export function renderBlockWidgets(
+  nodeTypes: readonly string[],
   shouldHandleNode: (node: SyntaxNodeRef) => boolean,
-  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType|undefined
+  createWidget: (state: EditorState, node: SyntaxNodeRef) => WidgetType | undefined,
 ): Extension {
-  const pluginField = StateField.define<DecorationSet>({
-    create (state: EditorState) {
-      return renderWidgets(state, [], shouldHandleNode, createWidget)
-    },
-    update (oldDecoSet, transactions) {
-      return renderWidgets(transactions.state, [], shouldHandleNode, createWidget)
-    },
-    provide: f => EditorView.decorations.from(f)
-  })
-  return [ pluginField, widgetLineStyleResetTheme ]
+  return [
+    blockRendererFacet.of({
+      nodeTypes: new Set(nodeTypes),
+      shouldHandleNode,
+      createWidget,
+    }),
+    sharedBlockRendererField,
+    widgetLineStyleResetTheme,
+  ];
 }

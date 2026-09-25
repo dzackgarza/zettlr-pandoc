@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type EditorView } from '@codemirror/view'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
 import { configField } from '../util/configuration'
@@ -35,10 +36,17 @@ export function citationMenu (view: EditorView, coords: { x: number, y: number }
   const config = view.state.field(configField).metadata.library
   const callback = window.getCitationCallback(config === '' ? CITEPROC_MAIN_DB : config)
   const citation = nodeToCiteItem(citationNode.node, view.state.sliceDoc())
-  const items = Object.fromEntries(citation.items.map(({ id }) => {
-    return [ id, callback([{ id }], true) ?? id ]
-  }))
-  const label = callback(citation.items, citation.composite) ?? view.state.sliceDoc(citationNode.from, citationNode.to)
+  let items: Record<string, string>
+  let label: string
+  try {
+    items = Object.fromEntries(citation.items.map(({ id }) => {
+      return [ id, callback([{ id }], true) ?? id ]
+    }))
+    label = callback(citation.items, citation.composite) ?? view.state.sliceDoc(citationNode.from, citationNode.to)
+  } catch (error) {
+    reportError('Could not render citation context menu', error)
+    return
+  }
 
   const tpl: AnyMenuItem[] = []
 
@@ -64,7 +72,7 @@ export function citationMenu (view: EditorView, coords: { x: number, y: number }
           command: 'open-attachment',
           payload: { citekey: key, filePath }
         })
-          .catch((err: unknown) => console.error(err))
+          .catch((err: unknown) => reportError(err))
       }
     })
   }

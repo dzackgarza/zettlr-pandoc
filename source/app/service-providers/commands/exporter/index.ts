@@ -37,7 +37,7 @@ import { enableExtension, parseReaderWriter, readerWriterToString } from '@commo
 import { EXT2READER, isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
 import { injectPandocMathHeaders } from './pandoc-math-headers'
 import { type MathJaxMacro } from '@common/util/mathjax-config'
-import { loadMathJaxMacros, mathJaxMacrosPath } from '../../../util/load-mathjax-macros'
+import { loadCanonicalMathJaxMacros } from '../../../util/load-mathjax-macros'
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -139,8 +139,8 @@ export async function makeExport (
   // We already know where the exported file will end up, so set the property
   const inputFiles = options.sourceFiles.map(file => file.path)
 
-  // Load the user's MathJax macros once for all defaults written in this export.
-  const macros = await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData')))
+  // Load the central ~/.pandoc MathJax projection once for this export.
+  const macros = await loadCanonicalMathJaxMacros(app.getPath('home'))
 
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {

@@ -24,7 +24,9 @@ const overview = `# Semantic fenced divs
 Every compact interval has a maximum.
 :::
 
-::: definition
+::: {.definition
+  title="The Symington polytope $B(\\lambda)$"
+}
 A *proper map* preserves compact inverse images, with $\\RR$ as a familiar setting.
 :::
 

@@ -8,7 +8,8 @@
     v-bind:reset-search-term-on-select="false"
     model-value=""
     v-bind:data-search-mode="mode"
-    v-bind:aria-label="mode === 'citing-locations' ? trans('Workspace citing locations') : trans('Search workspace definitions')"
+    v-bind:aria-label="mode === 'citing-locations' ? trans('Reference uses') : trans('Search references')"
+    v-on:pointerleave="highlightFirstRow"
   >
     <div class="launcher-query-row">
       <span class="launcher-breadcrumb">{{ breadcrumbLabel }}</span>
@@ -17,8 +18,8 @@
         data-command-launcher-input
         v-bind:auto-focus="true"
         v-bind:model-value="query"
-        v-bind:placeholder="trans('Search workspace definitions…')"
-        v-bind:aria-label="trans('Definition search query')"
+        v-bind:placeholder="trans('Search references…')"
+        v-bind:aria-label="trans('Reference search')"
         v-on:update:model-value="query = $event"
         v-on:keydown.backspace="onBackspace"
       ></ComboboxInput>
@@ -54,7 +55,7 @@
             <span class="path">{{ occurrence.documentPath }}</span>
           </LauncherRow>
           <ComboboxEmpty class="launcher-empty">
-            {{ trans('No citing locations in the workspace') }}
+            {{ trans('No uses of this reference were found') }}
           </ComboboxEmpty>
         </template>
         <template v-else>
@@ -80,7 +81,7 @@
             <span class="path">{{ definition.documentPath }}</span>
           </LauncherRow>
           <ComboboxEmpty class="launcher-empty">
-            {{ trans('No matching definitions') }}
+            {{ trans('No matching references') }}
           </ComboboxEmpty>
         </template>
       </ComboboxViewport>
@@ -192,7 +193,7 @@ const mode = computed<'definitions'|'citing-locations'>(() => {
 })
 
 const breadcrumbLabel = computed(() => mode.value === 'citing-locations'
-  ? trans('Citing locations')
+  ? trans('Reference uses')
   : trans('Search references'))
 
 const query = ref<string>(props.initialRequest?.key ?? '')
@@ -232,13 +233,20 @@ const citingLocations = computed<ReferenceOccurrence[]>(() => {
   return props.occurrences.filter(occurrence => occurrence.key === query.value)
 })
 
-// A new query re-ranks the rows, so the selection restarts at the top match.
-watch([ matches, citingLocations ], () => {
+/**
+ * Restarts the selection at the top match. reka-ui's listbox clears its
+ * highlight on pointerleave, and Chromium fires pointerleave when a shrinking
+ * list moves out from under a resting pointer, so this runs there too.
+ */
+function highlightFirstRow (): void {
   // No catch: the combobox is mounted with the rows, so a rejection here is
   // a defect in this view rather than a condition to carry on from, and the
   // window's recoverable-error boundary is where it belongs.
   void nextTick().then(() => { combobox.value?.highlightFirstItem() })
-}, { immediate: true })
+}
+
+// A new query re-ranks the rows.
+watch([ matches, citingLocations ], highlightFirstRow, { immediate: true })
 
 /**
  * Returns the row headline: `Type — title`, or just the type when nothing

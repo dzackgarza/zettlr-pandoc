@@ -68,9 +68,9 @@ export function getGeneralFields (appLangOptions: Record<string, string>): Prefe
           }
         },
         {
-          // Issue #26: run flowmark over the document on every explicit save.
+          // Issue #26: format the document on every explicit save.
           type: 'checkbox',
-          label: trans('Format the document with flowmark on save'),
+          label: trans('Format Markdown on save'),
           model: 'editor.formatOnSave'
         }
       ]

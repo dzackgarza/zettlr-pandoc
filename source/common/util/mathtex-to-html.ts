@@ -23,6 +23,8 @@ import '@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js'
 import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
 import '@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js'
 import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
+import { HandlerType } from '@mathjax/src/cjs/input/tex/HandlerTypes.js'
+import { AbstractParseMap } from '@mathjax/src/cjs/input/tex/TokenMap.js'
 import { type LiteDocument } from '@mathjax/src/cjs/adaptors/lite/Document.js'
 import { LiteElement, type LiteNode } from '@mathjax/src/cjs/adaptors/lite/Element.js'
 import { type LiteText } from '@mathjax/src/cjs/adaptors/lite/Text.js'
@@ -56,6 +58,34 @@ let mainRenderer: MainDocument|undefined
 let browserChtml: CHTML<HTMLElement, Text, Document>|undefined
 let mainChtml: CHTML<LiteElement, LiteText, LiteDocument>|undefined
 let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
+
+type MathJaxDisplay = 'inline'|'display'
+
+const BROWSER_RENDER_CACHE_LIMIT = 256
+const browserRenderCache = new Map<string, HTMLElement>()
+
+function browserRenderCacheKey (equation: string, display: MathJaxDisplay): string {
+  return `${display}\0${equation}`
+}
+
+function cacheBrowserNode (key: string, node: HTMLElement): void {
+  browserRenderCache.delete(key)
+  browserRenderCache.set(key, node.cloneNode(true) as HTMLElement)
+  if (browserRenderCache.size > BROWSER_RENDER_CACHE_LIMIT) {
+    const oldest = browserRenderCache.keys().next().value
+    if (oldest !== undefined) {
+      browserRenderCache.delete(oldest)
+    }
+  }
+}
+
+export function __resetMathJaxRenderCacheForTests (): void {
+  browserRenderCache.clear()
+}
+
+export function __mathJaxRenderCacheSizeForTests (): number {
+  return browserRenderCache.size
+}
 let mainAdaptorInstance: ReturnType<typeof liteAdaptor>|undefined
 
 mathjax.asyncLoad = () => Promise.resolve()
@@ -63,15 +93,93 @@ mathjax.asyncLoad = () => Promise.resolve()
 let initialized = false
 let initializing: Promise<void>|undefined
 
+export interface MathJaxCompletionCatalogue {
+  /** Control sequences exactly as authored, including the leading backslash. */
+  commands: readonly string[]
+  /** Environments accepted by the active MathJax TeX package configuration. */
+  environments: readonly string[]
+}
+
+let completionCatalogue: MathJaxCompletionCatalogue = {
+  commands: [],
+  environments: []
+}
+
+function mapKeysForHandler<N, T, D> (tex: TeX<N, T, D>, handlerType: HandlerType): string[] {
+  const handler = tex.parseOptions.handlers.get(handlerType)
+  if (handler === undefined) {
+    return []
+  }
+
+  const keys: string[] = []
+  for (const mapName of handler.toString().split(', ').filter(Boolean)) {
+    const tokenMap = handler.retrieve(mapName)
+    // Only parse maps hold a finite token table. Pattern maps (RegExpMap:
+    // letters, digits) match open-ended token classes and name no commands.
+    if (!(tokenMap instanceof AbstractParseMap)) {
+      continue
+    }
+    // MathJax exposes no public enumeration of a parse map; its table is the
+    // `private map: Map<string, K>` of AbstractParseMap
+    // (mathjax/MathJax-src ts/input/tex/TokenMap.ts). Element access reads
+    // that declared field with its declared type.
+    keys.push(...tokenMap['map'].keys())
+  }
+  return keys
+}
+
+function buildCompletionCatalogue<N, T, D> (tex: TeX<N, T, D>): MathJaxCompletionCatalogue {
+  const commands = new Set<string>()
+  for (const key of [
+    ...mapKeysForHandler(tex, HandlerType.MACRO),
+    ...mapKeysForHandler(tex, HandlerType.DELIMITER)
+  ]) {
+    const bare = key.startsWith('\\') ? key.slice(1) : key
+    // Completion is intentionally for control words. TeX's one-character
+    // control symbols (\%, \_, etc.) need no useful fuzzy catalogue and would
+    // make the popup noisy as soon as the slash is typed.
+    if (/^[A-Za-z@]+$/u.test(bare)) {
+      commands.add(`\\${bare}`)
+    }
+  }
+
+  const environments = new Set<string>()
+  for (const key of mapKeysForHandler(tex, HandlerType.ENVIRONMENT)) {
+    if (/^[A-Za-z@*]+$/u.test(key)) {
+      environments.add(key)
+    }
+  }
+
+  return {
+    commands: [...commands].sort((a, b) => a.localeCompare(b)),
+    environments: [...environments].sort((a, b) => a.localeCompare(b))
+  }
+}
+
+/** Build completion data from the same MathJax configuration used at boot. */
+export function buildMathJaxCompletionCatalogue (macros: Record<string, MathJaxMacro>): MathJaxCompletionCatalogue {
+  return buildCompletionCatalogue(new TeX({ packages: [...mathJaxPackages], macros }))
+}
+
+/**
+ * Completion data from the exact MathJax TeX parser Zettlr initialized. This
+ * includes the configured base/AMS/mhchem packages and the central macro map;
+ * it is therefore preferable to maintaining a parallel LaTeX command list.
+ */
+export function mathJaxCompletionCatalogue (): MathJaxCompletionCatalogue {
+  return completionCatalogue
+}
+
 /**
  * Constructs the MathJax input/output pipeline with the supplied macro set and
- * loads the font data. The macros come from the user's macro file (renderer:
- * fetched over IPC; main process: read from disk), so no macro set is baked
- * into the app. This is restart-gated: the first call builds the renderer and
+ * loads the font data. Production macros come from the generated central
+ * ~/.pandoc projection (renderer: fetched over IPC; main process: read from
+ * disk), so no independent macro set is baked into the app. This is
+ * restart-gated: the first call builds the renderer and
  * subsequent calls return the same in-flight/settled promise, ignoring any
  * later macro argument.
  *
- * @param   {Record<string, MathJaxMacro>}  macros  The user's macro definitions.
+ * @param   {Record<string, MathJaxMacro>}  macros  The supplied macro projection.
  */
 export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promise<void> {
   if (initializing !== undefined) {
@@ -79,6 +187,7 @@ export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promis
   }
 
   const tex = new TeX({ packages: [...mathJaxPackages], macros })
+  completionCatalogue = buildCompletionCatalogue(tex)
 
   if (documentElement === undefined) {
     mainAdaptorInstance = liteAdaptor()
@@ -113,8 +222,6 @@ export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promis
   return initializing
 }
 
-type MathJaxDisplay = 'inline'|'display'
-
 function isMmlNode (node: LiteNode|HTMLElement|MmlNode): node is MmlNode {
   return 'isToken' in node
 }
@@ -124,11 +231,20 @@ function mathJaxToBrowserNode (equation: string, display: MathJaxDisplay): HTMLE
     throw new Error('Browser MathJax renderer is unavailable')
   }
 
+  const key = browserRenderCacheKey(equation, display)
+  const cached = browserRenderCache.get(key)
+  if (cached !== undefined) {
+    browserRenderCache.delete(key)
+    browserRenderCache.set(key, cached)
+    return cached.cloneNode(true) as HTMLElement
+  }
+
   const node = browserRenderer.convert(equation, { display: display === 'display' })
   if (isMmlNode(node)) {
     throw new Error('MathJax did not produce HTML')
   }
   browserRenderer.updateDocument()
+  cacheBrowserNode(key, node)
   return node
 }
 

@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type ChangeSpec } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
 import { md2html } from '@common/modules/markdown-utils'
@@ -100,9 +101,9 @@ export function copyAsHTML (view: EditorView): void {
           'text/plain': new Blob([plainText], { type: 'text/plain' }),
           'text/html': new Blob([html], { type: 'text/html' })
         })
-      ]).catch(err => console.error(err))
+      ]).catch(err => reportError(err))
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
 }
 
@@ -123,7 +124,7 @@ export function copyAsPlain (view: EditorView): void {
       'text/plain': new Blob([selections.join('\n')], { type: 'text/plain' })
     })
   ])
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -156,7 +157,7 @@ export function cut (view: EditorView, asHTML?: boolean): void {
  * @param   {EditorView}  view  The view
  */
 export function paste (view: EditorView): void {
-  handlePaste(view).catch(err => console.error(err))
+  handlePaste(view).catch(err => reportError(err))
 }
 
 /**
@@ -171,5 +172,5 @@ export function pasteAsPlain (view: EditorView): void {
         view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true })
       }
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }

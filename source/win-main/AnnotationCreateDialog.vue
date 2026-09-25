@@ -130,6 +130,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Compartment, StateEffect } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
@@ -214,7 +215,7 @@ async function save (): Promise<void> {
 function handleInstructionKeydown (event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
-    save().catch(err => console.error('Could not save the annotation', err))
+    save().catch(err => reportError('Could not save the annotation', err))
   }
 }
 
@@ -242,7 +243,7 @@ onMounted(() => {
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
   })
     .then(html => { excerptHtml.value = html })
-    .catch(err => console.error('Could not render the annotation excerpt', err))
+    .catch(err => reportError('Could not render the annotation excerpt', err))
 
   instructionInput.value?.focus()
 })

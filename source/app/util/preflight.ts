@@ -22,6 +22,7 @@ import os from 'os'
 // The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
 // symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
 import resolvesToFile from '@common/util/resolves-to-file'
+import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from './tikz-render'
 
 export interface CommandRequirement { command: string, purpose: string }
 export interface PathRequirement { target: string, purpose: string }
@@ -32,22 +33,35 @@ export interface PathRequirement { target: string, purpose: string }
  * latexmk, pdflatex, and biber; `just` runs the recipe itself.
  */
 export const REQUIRED_COMMANDS: CommandRequirement[] = [
-  { command: 'pandoc', purpose: 'document conversion for previews and every export' },
-  { command: 'just', purpose: 'PDF export — runs the ~/.pandoc compile-pandoc recipe' },
-  { command: 'latexmk', purpose: 'PDF build driver invoked by the compile-pandoc recipe' },
-  { command: 'pdflatex', purpose: 'PDF typesetting engine used by the recipe' },
-  { command: 'biber', purpose: 'bibliography resolution for PDF export' },
-  { command: 'pandoc-crossref', purpose: 'cross-file reference resolution in the Project export filter chain' }
+  { command: 'pandoc', purpose: 'preview and export' },
+  { command: 'just', purpose: 'PDF export' },
+  { command: 'latexmk', purpose: 'PDF export' },
+  { command: 'pdflatex', purpose: 'PDF export' },
+  { command: 'biber', purpose: 'PDF bibliography generation' },
+  { command: 'pandoc-crossref', purpose: 'cross-references in Project exports' }
 ]
 
 /**
  * Files that must exist on disk for core functionality.
  */
 export function requiredPaths (): PathRequirement[] {
+  const pandocDir = path.join(os.homedir(), '.pandoc')
   return [
     {
-      target: path.join(os.homedir(), '.pandoc', 'justfile'),
-      purpose: 'the authoritative compile-pandoc PDF export recipe'
+      target: path.join(pandocDir, 'justfile'),
+      purpose: 'PDF export'
+    },
+    {
+      target: path.join(pandocDir, 'filters', 'tikzcd.lua'),
+      purpose: 'TikZ preview rendering'
+    },
+    {
+      target: path.join(pandocDir, 'filters', 'utilities.lua'),
+      purpose: 'TikZ preview rendering'
+    },
+    {
+      target: path.join(pandocDir, 'templates', 'standalone-tikz.tex'),
+      purpose: 'TikZ preview rendering'
     }
   ]
 }
@@ -101,11 +115,9 @@ export async function findMissingRequirements (
  *   iff both parse and differ; 'unparseable' when either output does not
  *   yield a version (that side's field stays undefined).
  */
-export interface CrossrefCompatibility {
-  status: 'compatible' | 'incompatible' | 'unparseable'
-  crossrefBuiltWithPandoc?: string
-  pandocVersion?: string
-}
+export type CrossrefCompatibility =
+  | { status: 'compatible' | 'incompatible', crossrefBuiltWithPandoc: string, pandocVersion: string }
+  | { status: 'unparseable', crossrefBuiltWithPandoc?: string, pandocVersion?: string }
 
 /**
  * Runs a command and captures its stdout — the injectable seam of the
@@ -140,7 +152,7 @@ export function assessCrossrefCompatibility (
 
   if (crossrefBuiltWithPandoc === undefined || pandocVersion === undefined) {
     // A side that does not name its version cannot be assumed compatible.
-    const unparseable: CrossrefCompatibility = { status: 'unparseable' }
+    const unparseable: Extract<CrossrefCompatibility, { status: 'unparseable' }> = { status: 'unparseable' }
     if (crossrefBuiltWithPandoc !== undefined) {
       unparseable.crossrefBuiltWithPandoc = crossrefBuiltWithPandoc
     }
@@ -211,14 +223,33 @@ export async function crossrefCompatibilityFailure (
   }
 
   if (result.status === 'incompatible') {
-    return `pandoc-crossref — built with Pandoc v${result.crossrefBuiltWithPandoc ?? '?'}, ` +
-      `but the installed pandoc is v${result.pandocVersion ?? '?'}; pandoc-crossref refuses ` +
-      'mismatched pandoc builds, so Project exports would fail at runtime'
+    return `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc}, ` +
+      `but Pandoc v${result.pandocVersion} is installed. Install matching versions before exporting Projects.`
   }
 
-  return 'pandoc-crossref — could not verify its pandoc build compatibility ' +
-    `(pandoc-crossref names ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'no Pandoc build version'}; ` +
-    `pandoc reports ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'no version'})`
+  return 'Could not verify that pandoc-crossref matches the installed Pandoc version ' +
+    `(pandoc-crossref: ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'version unknown'}; ` +
+    `Pandoc: ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'version unknown'}).`
+}
+
+/**
+ * The live TikZ preview relies on behavior in the shared ~/.pandoc filter
+ * (cache refresh, cache isolation, safe replacement). Presence alone is not
+ * enough: a stale checkout would accept the render command but silently violate
+ * those semantics. The protocol marker makes that drift a startup error.
+ */
+export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
+  const pandocDir = path.join(os.homedir(), '.pandoc')
+  const filterPath = path.join(pandocDir, 'filters', 'tikzcd.lua')
+  if (!resolvesToFile(filterPath)) {
+    return null // requiredPaths() owns the missing-file diagnostic.
+  }
+  const actual = tikzRenderProtocolVersion(pandocDir)
+  if (actual === TIKZ_RENDER_PROTOCOL) {
+    return null
+  }
+  return `${filterPath} uses TikZ renderer protocol ${actual === undefined ? 'unknown' : actual}; ` +
+    `this app requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter files under ~/.pandoc.`
 }
 
 /**
@@ -233,19 +264,25 @@ export async function crossrefCompatibilityFailure (
  * @param   exit            Terminates the process with the given code.
  * @param   commands        The required external commands.
  * @param   paths           The required on-disk files.
- * @param   crossrefFailure The compatibility gate (injected for testability).
+ * @param   crossrefFailure The pandoc-crossref compatibility gate.
+ * @param   tikzFailure     The shared TikZ-filter protocol gate.
  */
 export async function preflight (
   showError: (title: string, message: string) => void,
   exit: (code: number) => void,
   commands: CommandRequirement[] = REQUIRED_COMMANDS,
   paths: PathRequirement[] = requiredPaths(),
-  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure
+  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure,
+  tikzFailure: () => Promise<string|null> = tikzFilterCompatibilityFailure
 ): Promise<boolean> {
   const missing = await findMissingRequirements(commands, paths)
   const incompatibility = await crossrefFailure()
   if (incompatibility !== null) {
     missing.push(incompatibility)
+  }
+  const tikzIncompatibility = await tikzFailure()
+  if (tikzIncompatibility !== null) {
+    missing.push(tikzIncompatibility)
   }
   if (missing.length === 0) {
     return true

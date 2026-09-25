@@ -11,10 +11,10 @@
  *                  and proves the editor distinguishes the seven states plan
  *                  section 3 requires: open/inactive, open/active,
  *                  overlapping, point-target, drafting, orphaned, and
- *                  resolved. Also proves I4 — the editor renders no message
- *                  text, thread, button, or proposal state, only the
- *                  locator — and that a local edit maps a target's highlight
- *                  and marker without a fresh broadcast.
+ *                  resolved — and that a local edit maps a target's
+ *                  highlight and marker without a fresh broadcast. Where the
+ *                  active annotation's thread opens is proved in
+ *                  editor-collaboration-controls.spec.ts.
  *
  * END HEADER
  */
@@ -126,18 +126,6 @@ describe('Editor text-annotation locators', function () {
     'A second line with a target phrase in it.',    // line 2
     'A third line.'                                 // line 3
   ].join('\n')
-
-  it('invariant I4: renders no message text, thread, button, or proposal state — only the locator', function () {
-    const view = mount(DOC)
-    const from = DOC.indexOf('target phrase')
-    const item = annotation({ state: 'range', from, to: from + 'target phrase'.length, quotedText: 'target phrase' }, {
-      messages: [{ messageId: 'm1', author: 'owner', text: 'Please justify this claim with a citation.', createdAt: '2026-01-01T00:00:00.000Z' }]
-    })
-    view.dispatch({ effects: setAnnotationSessionEffect.of(session([ item ])) })
-
-    assert.equal(view.dom.querySelectorAll('button').length, 0, 'no adjudication or thread control renders in the editor')
-    assert.equal(view.dom.textContent?.includes('Please justify this claim with a citation.'), false, 'the owner instruction is panel content, never editor content')
-  })
 
   it('open/inactive: highlights the target span and marks its first line with the card ordinal', function () {
     const view = mount(DOC)

@@ -54,7 +54,178 @@
 
   /* Hide overflowing text in autocompletion info panels */
   .cm-completionInfo {
+    overflow: auto;
+    max-width: min(34rem, calc(100vw - 24px));
+  }
+
+  .zettlr-completion-info {
+    box-sizing: border-box;
+    min-width: min(24rem, calc(100vw - 40px));
+    max-width: 32rem;
+    padding: 10px 12px;
+    color: #2e3238;
+    font-family: var(--zettlr-editor-code-font), monospace;
+    font-size: 0.84rem;
+    line-height: 1.38;
+  }
+
+  .zettlr-completion-info-header {
+    display: flex;
+    gap: 0.65rem;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #d8dbe0;
+  }
+
+  .zettlr-completion-info-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #202328;
+    font-weight: 650;
+  }
+
+  .zettlr-completion-info-source {
+    flex: none;
+    color: #6f7680;
+    font-size: 0.82em;
+  }
+
+  .zettlr-completion-info-description,
+  .zettlr-completion-info-syntax,
+  .zettlr-completion-info-note {
+    margin-top: 7px;
+    white-space: pre-wrap;
+  }
+
+  .zettlr-completion-info-syntax,
+  .zettlr-completion-info-note {
+    color: #737a84;
+    font-size: 0.9em;
+  }
+
+  .zettlr-completion-info-section-label {
+    margin-top: 9px;
+    color: #777e88;
+    font-size: 0.76em;
+    font-weight: 650;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+  }
+
+  .zettlr-completion-info-code {
+    box-sizing: border-box;
+    max-height: 15rem;
+    margin: 4px 0 0;
+    padding: 8px 9px;
+    overflow: auto;
+    border: 1px solid #d8dbe0;
+    border-radius: 4px;
+    background: #f5f6f7;
+    color: #30343a;
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * Completion list: mirror the workstation's nvim-cmp presentation rather
+   * than CodeMirror's stock prose-like list. CodeMirror still owns matching,
+   * selection, scrolling, ARIA, and the popup lifetime; autocomplete/index.ts
+   * only injects the icon/source cells consumed by this grid.
+   */
+  .cm-tooltip.cm-tooltip-autocomplete {
+    box-sizing: border-box;
+    /* Grow to nvim-cmp-like table width on roomy screens, but leave enough
+     * viewport for CodeMirror's native side-docked documentation when that is
+     * possible. On narrower windows the 36rem floor yields to the viewport. */
+    width: min(48rem, max(36rem, calc(100vw - 42rem)));
+    min-width: min(36rem, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    padding: 0;
     overflow: hidden;
+    border: 1px solid #c8cbd0;
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+    & > ul {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      max-height: 18rem;
+      padding: 3px 0;
+      font-family: var(--zettlr-editor-code-font), monospace;
+      font-size: 0.88rem;
+      line-height: 1.2;
+    }
+
+    li.zettlr-completion-option {
+      display: grid;
+      grid-template-columns: 1.15rem minmax(12rem, 1fr) minmax(0, 18rem) 11ch;
+      column-gap: 0.55rem;
+      align-items: center;
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 1.65rem;
+      padding: 2px 9px;
+      overflow: hidden;
+      text-overflow: clip;
+      border-radius: 0;
+    }
+
+    .zettlr-completion-icon {
+      grid-column: 1;
+      display: inline-flex;
+      width: 1.15rem;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.72;
+
+      cds-icon { width: 14px; height: 14px; }
+    }
+
+    .cm-completionLabel {
+      grid-column: 2;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #737984;
+    }
+
+    .cm-completionMatchedText {
+      color: #202328;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .cm-completionDetail {
+      grid-column: 3;
+      min-width: 0;
+      margin-left: 0;
+      overflow: hidden;
+      color: #8a9099;
+      font-size: 0.9em;
+      font-style: normal;
+      text-overflow: ellipsis;
+    }
+
+    .zettlr-completion-source {
+      grid-column: 4;
+      justify-self: start;
+      min-width: 0;
+      color: #646b76;
+      font-size: 0.88em;
+      font-style: normal;
+      white-space: nowrap;
+    }
+
+    li.zettlr-completion-option[aria-selected="true"] {
+      background: #e3e6ea;
+      color: #15171a;
+
+      .cm-completionMatchedText { color: #111317; }
+    }
   }
 
   .cm-panel.cm-search label input[type=checkbox] {
@@ -289,6 +460,52 @@ body.dark {
 
   .cm-panel .cm-button {
     border-color: #646464;
+  }
+
+  .cm-tooltip.cm-tooltip-autocomplete {
+    border-color: #4b4f57;
+    background: #292c31;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+
+    .cm-completionLabel { color: #8e949e; }
+    .cm-completionMatchedText { color: #f3f4f6; }
+    .cm-completionDetail { color: #757b85; }
+    .zettlr-completion-source { color: #a8adb6; }
+
+    li.zettlr-completion-option[aria-selected="true"] {
+      background: #414650;
+      color: #f6f7f9;
+
+      .cm-completionLabel { color: #aeb3bc; }
+      .cm-completionMatchedText { color: #ffffff; }
+      .cm-completionDetail { color: #c1c5cb; }
+      .zettlr-completion-source { color: #f0f1f3; }
+    }
+  }
+
+  .zettlr-completion-info {
+    color: #d4d7dc;
+
+    .zettlr-completion-info-header {
+      border-bottom-color: #4a4f57;
+    }
+
+    .zettlr-completion-info-title {
+      color: #f0f1f3;
+    }
+
+    .zettlr-completion-info-source,
+    .zettlr-completion-info-syntax,
+    .zettlr-completion-info-note,
+    .zettlr-completion-info-section-label {
+      color: #a3a9b2;
+    }
+
+    .zettlr-completion-info-code {
+      border-color: #4a4f57;
+      background: #23262a;
+      color: #e2e4e8;
+    }
   }
 
   .cm-formatting-bar {

@@ -49,6 +49,8 @@ interface EngineCitation {
      * array index for use in `processCitationCluster()`.
      */
     noteIndex: number
+    /** citeproc-js citation mode used for Pandoc narrative citations. */
+    mode?: 'composite'|'author-only'|'suppress-author'
   }
   /**
    * A unique ID assigned to the citation, for internal use by the processor.

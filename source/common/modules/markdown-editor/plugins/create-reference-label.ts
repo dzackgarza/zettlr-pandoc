@@ -93,7 +93,7 @@ export const openCreateReferenceLabelEffect = StateEffect.define<CreateReference
 /** The node names that can anchor a label creation. */
 const TARGET_NODES = [
   'PandocDiv',
-  'ATXHeading1', 'ATXHeading2', 'ATXHeading3', 'ATXHeading4', 'ATXHeading5', 'ATXHeading6',
+  'ATXHeading',
   'SetextHeading1', 'SetextHeading2',
   'Image',
   'FencedCode'
@@ -208,7 +208,7 @@ function resolveNodeRequest (view: EditorView, node: SyntaxNode): CreateReferenc
     }
   }
 
-  if (node.name.startsWith('ATXHeading') || node.name.startsWith('SetextHeading')) {
+  if (node.name === 'ATXHeading' || node.name.startsWith('SetextHeading')) {
     const headingText = openLine.text.replace(/^#+\s*/, '').replace(/\{[^}]*\}\s*$/, '').trim()
     const brace = openLine.text.lastIndexOf('{')
     if (brace !== -1 && openLine.text.trimEnd().endsWith('}')) {

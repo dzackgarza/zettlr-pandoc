@@ -16,6 +16,7 @@ import { type AutocompletePlugin } from '.'
 import { tocField } from '../plugins/toc-field'
 
 export const headings: AutocompletePlugin = {
+  source: 'Heading',
   applies (ctx) {
     // A valid citekey position is: Beginning of the line (citekey without square
     // brackets), after a square bracket open (regular citation without prefix),

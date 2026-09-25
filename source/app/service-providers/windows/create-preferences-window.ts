@@ -22,6 +22,7 @@ import {
 import attachLogger from './attach-logger'
 import setWindowChrome from './set-window-chrome'
 import type { WindowPosition } from './types'
+import type { PreferenceNavigationTarget } from '@dts/common/preferences'
 
 /**
  * Creates a BrowserWindow with print window configuration and loads the
@@ -29,7 +30,12 @@ import type { WindowPosition } from './types'
  *
  * @return  {BrowserWindow}           The loaded print window
  */
-export default function createPreferencesWindow (logger: LogProvider, config: ConfigProvider, conf: WindowPosition): BrowserWindow {
+export default function createPreferencesWindow (
+  logger: LogProvider,
+  config: ConfigProvider,
+  conf: WindowPosition,
+  target?: PreferenceNavigationTarget
+): BrowserWindow {
   const winConf: BrowserWindowConstructorOptions = {
     acceptFirstMouse: true,
     minWidth: 300,
@@ -52,10 +58,21 @@ export default function createPreferencesWindow (logger: LogProvider, config: Co
 
   const window = new BrowserWindow(winConf)
 
-  // Load the index.html of the app.
-  window.loadURL(PREFERENCES_WEBPACK_ENTRY)
+  // Load the index.html of the app. A first-open launcher deep-link belongs in
+  // the URL because did-finish-load can precede Vue installing an IPC listener.
+  const preferencesURL = new URL(PREFERENCES_WEBPACK_ENTRY)
+  if (target !== undefined) {
+    preferencesURL.searchParams.set('group', String(target.group))
+    if (target.fieldsetTitle !== undefined) {
+      preferencesURL.searchParams.set('fieldset', target.fieldsetTitle)
+    }
+    if (target.model !== undefined) {
+      preferencesURL.searchParams.set('model', target.model)
+    }
+  }
+  window.loadURL(preferencesURL.toString())
     .catch(e => {
-      logger.error(`Could not load URL ${PREFERENCES_WEBPACK_ENTRY}: ${e.message as string}`, e)
+      logger.error(`Could not load URL ${preferencesURL.toString()}: ${e.message as string}`, e)
     })
 
   // EVENT LISTENERS

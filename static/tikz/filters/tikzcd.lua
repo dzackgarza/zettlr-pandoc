@@ -1,3 +1,4 @@
+-- ZETTLR_TIKZ_RENDER_PROTOCOL=3
 local system = require 'pandoc.system'
 -- App-owned fallback fork of pandoc-config's TikZ filter. PANDOC_DIR is
 -- resolved by the main process from tikz.dataDir, a complete ~/.pandoc tree,
@@ -25,9 +26,10 @@ local figures_dir = os.getenv("FIGURES_DIR") or (pandoc_dir .. "/figures")
 local svg_dir = os.getenv("SVG_DIR")
 
 -- Per-figure preamble template: the standalone LaTeX document each figure body
--- is wrapped in. It belongs to the selected data tree and defaults to the
--- template under PANDOC_DIR, overridable via
--- FIGURE_TEMPLATE_FILE. Read LAZILY at compile time (not at filter load) so the
+-- is wrapped in. Standalone filter use defaults to the template under
+-- PANDOC_DIR, but the app always supplies FIGURE_TEMPLATE_FILE explicitly from
+-- ~/.pandoc so the filter tree and the user's macro/preamble owner stay
+-- independent. Read LAZILY at compile time (not at filter load) so the
 -- doctor's empty-stdin invocation probe, which loads the filter but compiles no
 -- figure, needs no render-context env. Returns (compiled_template,
 -- raw_template_string): the raw string is folded into the figure cache key so
@@ -99,6 +101,19 @@ local function emit_figure_compile_error(log_path, figure_body, preamble_lines)
       end
     end
   end
+
+  -- The mapped marker above is a convenience for editor line highlighting, not
+  -- a substitute for the compiler's own diagnostics.  Always forward the real
+  -- pdflatex log on failure so callers can present the actual TeX error even
+  -- when the narrow `! ...` / `l.NN` mapper cannot associate it with a figure
+  -- body line.  stderr is Pandoc's diagnostic channel; unlike stdout, writing
+  -- the log here cannot corrupt the filter's document output.
+  io.stderr:write("[tikzcd-pdflatex-log-begin]\n")
+  io.stderr:write(log_text)
+  if not log_text:match("\n$") then
+    io.stderr:write("\n")
+  end
+  io.stderr:write("[tikzcd-pdflatex-log-end]\n")
   return emitted
 end
 
@@ -110,15 +125,22 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   local svg_path = svg_dir .. "/dzgtikz-" .. hash .. ".svg"
   local pdf_path = svg_dir .. "/dzgtikz-" .. hash .. ".pdf"
 
+  local force_rebuild = os.getenv("TIKZ_FORCE_REBUILD") == "1"
+
   local sf = io.open(svg_path, "r")
   if sf then sf:close() end
   local pf = io.open(pdf_path, "r")
   if pf then pf:close() end
-  if sf and pf then
+  if sf and pf and not force_rebuild then
     return svg_path, pdf_path
   end
 
   os.execute("mkdir -p " .. svg_dir)
+  -- A force refresh skips the cache hit but deliberately leaves the previous
+  -- SVG in place until the replacement SVG has been converted successfully.
+  -- In particular pdf2svg must never write directly over svg_path: a failed
+  -- conversion may truncate its destination, which would destroy the
+  -- lightbox/cache file for the last-good image the editor is still showing.
 
   local tmp = "/tmp/" .. tmp_prefix .. "-" .. hash
   os.execute("mkdir -p " .. tmp)
@@ -129,11 +151,14 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   f:close()
 
   local inputs_env = ""
-  local styles_dir = pandoc_dir .. "/styles//"
+  local styles_dir = os.getenv("FIGURE_STYLES_DIR") or (pandoc_dir .. "/styles")
+  styles_dir = styles_dir:gsub("/+$", "") .. "//"
+  local figures_dir = os.getenv("FIGURES_SOURCE_DIR") or (pandoc_dir .. "/figures")
+  local figures_inputs = figures_dir:gsub("/+$", "") .. "//"
   if doc_dir and doc_dir ~= "" then
-    inputs_env = "TEXINPUTS=" .. doc_dir .. ":" .. styles_dir .. ":: "
+    inputs_env = 'TEXINPUTS="' .. doc_dir .. ':' .. styles_dir .. ':' .. figures_inputs .. '::" '
   else
-    inputs_env = "TEXINPUTS=" .. styles_dir .. ":: "
+    inputs_env = 'TEXINPUTS="' .. styles_dir .. ':' .. figures_inputs .. '::" '
   end
 
   -- Discard pdflatex's stdout+stderr: a pandoc filter's stdout is its output
@@ -153,8 +178,26 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   end
 
   local tmp_pdf = tmp .. "/tikz.pdf"
+  local tmp_svg = tmp .. "/tikz.svg"
+  -- The PDF is already a successful pdflatex product and remains useful to
+  -- LaTeX-output callers even when SVG conversion later fails.
   os.execute("cp " .. tmp_pdf .. " " .. pdf_path)
-  local ok2 = os.execute("pdf2svg " .. tmp_pdf .. " " .. svg_path .. " >/dev/null 2>&1")
+  local ok2 = os.execute("pdf2svg " .. tmp_pdf .. " " .. tmp_svg .. " >/dev/null 2>&1")
+  if ok2 then
+    -- Stage in the cache directory, then rename over the old SVG. `cp` may fail
+    -- part-way (disk full, permissions); that must leave the old svg_path
+    -- untouched. The final rename is within one directory/filesystem.
+    local staged_svg = svg_path .. ".new"
+    local staged = os.execute("cp " .. tmp_svg .. " " .. staged_svg)
+    if staged then
+      ok2 = os.rename(staged_svg, svg_path)
+    else
+      ok2 = false
+    end
+    if not ok2 then
+      os.remove(staged_svg)
+    end
+  end
   os.execute("rm -rf " .. tmp)
 
   if not ok2 then
@@ -164,48 +207,96 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   return svg_path, pdf_path
 end
 
+local function try_open_file(candidate)
+  local f = io.open(candidate, "r")
+  if f then
+    f:close()
+    return candidate
+  end
+  return nil
+end
+
+local function check_path_and_extensions(base_path)
+  local p = try_open_file(base_path)
+  if p then return p end
+  if not base_path:match("%.%a+$") then
+    p = try_open_file(base_path .. ".tikz")
+    if p then return p end
+    p = try_open_file(base_path .. ".tikzcd")
+    if p then return p end
+    p = try_open_file(base_path .. ".tex")
+    if p then return p end
+  end
+  return nil
+end
+
+local function find_input_file(filename, base_dir, figures_dir)
+  -- 1. Absolute path
+  if filename:sub(1,1) == "/" or filename:match("^%a+:") then
+    return check_path_and_extensions(filename)
+  end
+
+  -- 2. Document-relative
+  if base_dir and base_dir ~= "" then
+    local p = check_path_and_extensions(base_dir .. "/" .. filename)
+    if p then return p end
+  end
+
+  -- 3. Figures directory direct match
+  if figures_dir and figures_dir ~= "" then
+    local p = check_path_and_extensions(figures_dir .. "/" .. filename)
+    if p then return p end
+
+    p = check_path_and_extensions(figures_dir .. "/tikz/" .. filename)
+    if p then return p end
+
+    p = check_path_and_extensions(figures_dir .. "/tikzcd/" .. filename)
+    if p then return p end
+
+    -- 4. Search subdirectories of figures_dir
+    local sub_filename = filename:gsub("^tikz/", ""):gsub("^tikzcd/", "")
+    for _, parent_name in ipairs({"tikz", "tikzcd", ""}) do
+      local search_root = parent_name ~= "" and (figures_dir .. "/" .. parent_name) or figures_dir
+      local ok, entries = pcall(pandoc.system.list_directory, search_root)
+      if ok and entries then
+        for _, entry in ipairs(entries) do
+          local candidate = search_root .. "/" .. entry .. "/" .. sub_filename
+          p = check_path_and_extensions(candidate)
+          if p then return p end
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
 local function resolve_inputs(text, base_dir, depth)
   if not depth then depth = 1 end
   if depth > 10 then
-    log("resolve_inputs: max depth exceeded, potential circular input")
-    return text
+    io.stderr:write("[tikzcd-figure-error] 1|Max input depth exceeded (potential circular input)|" .. text:sub(1, 80) .. "\n")
+    error("tikzcd.lua: max depth exceeded, potential circular input")
   end
 
-  local count
-  repeat
-    count = 0
-    text = text:gsub("\\input%s-{(.-)}", function(filename)
-      count = count + 1
-      local full_path = filename
-      local is_absolute = filename:sub(1,1) == "/" or filename:match("^%a+:")
-      if not is_absolute then
-        full_path = base_dir .. "/" .. filename
-      end
+  local figures_dir = os.getenv("FIGURES_SOURCE_DIR") or (pandoc_dir .. "/figures")
 
-      local file = io.open(full_path, "r")
-      if not file then
-        -- If it doesn't end with .tikz or .tex, try appending extensions
-        if not filename:match("%.%a+$") then
-          file = io.open(full_path .. ".tikz", "r")
-          if not file then
-            file = io.open(full_path .. ".tex", "r")
-          end
-        end
-      end
+  return text:gsub("\\input%s-{(.-)}", function(filename)
+    local full_path = find_input_file(filename, base_dir, figures_dir)
+    if not full_path then
+      io.stderr:write("[tikzcd-figure-error] 1|Input file not found: " .. filename .. "|\\input{" .. filename .. "}\n")
+      error("tikzcd.lua: input file not found: '" .. filename .. "'")
+    end
 
-      if file then
-        local content = file:read("*a")
-        file:close()
-        -- Recursively resolve inputs inside the loaded content
-        return resolve_inputs(content, base_dir, depth + 1)
-      else
-        log("resolve_inputs: WARNING: could not open input file " .. filename)
-        return "\\input{" .. filename .. "}"
-      end
-    end)
-  until count == 0
+    local file = io.open(full_path, "r")
+    if not file then
+      io.stderr:write("[tikzcd-figure-error] 1|Cannot open input file: " .. full_path .. "|\\input{" .. filename .. "}\n")
+      error("tikzcd.lua: could not open input file: '" .. full_path .. "'")
+    end
 
-  return text
+    local content = file:read("*a")
+    file:close()
+    return resolve_inputs(content, base_dir, depth + 1)
+  end)
 end
 
 -- Compile a tikz snippet (e.g. \begin{tikzcd}...) by wrapping it in the
@@ -223,13 +314,18 @@ local function compile_tikz(source)
   -- The selected per-figure template wraps this figure body. Read it lazily so
   -- changes in the configured Pandoc data tree take effect without rebuilding.
   local tikz_doc_template, template_str = figure_template()
+  local render_context_hash = os.getenv("TIKZ_RENDER_CONTEXT_HASH") or ""
 
   -- The cache key (hash) folds in the TEMPLATE content as well as the figure body:
   -- the same body compiled against a different per-figure template is a different
   -- figure, so
   -- hashing only the body would return a stale cached SVG when the template
   -- changes.
-  local hash = pandoc.sha1(resolved_source .. "\0" .. template_str)
+  -- doc_dir is part of the render input even after resolving \input: TeX can
+  -- still load relative assets directly (notably \includegraphics). Two
+  -- documents with byte-identical TikZ source but different local assets must
+  -- therefore never share a cache entry.
+  local hash = pandoc.sha1(resolved_source .. "\0" .. template_str .. "\0" .. render_context_hash .. "\0" .. doc_dir)
 
   -- Substitute the figure source at the QTikz `<>` marker. The `<>` is plain text
   -- to pandoc's template engine (not a $...$ variable), so it survives the render
@@ -267,7 +363,8 @@ local function compile_tikz_document(source)
   end
 
   local resolved_source = resolve_inputs(source, doc_dir)
-  local hash = pandoc.sha1(resolved_source)
+  local render_context_hash = os.getenv("TIKZ_RENDER_CONTEXT_HASH") or ""
+  local hash = pandoc.sha1(resolved_source .. "\0" .. render_context_hash .. "\0" .. doc_dir)
   -- A full-document tikz code block IS its own `.tex`: no template preamble is
   -- prepended, so a pdflatex `l.NN` cite is already the figure-body line.
   return run_pdflatex_and_convert(resolved_source, "tikzfull", hash, doc_dir, resolved_source, 0)
@@ -318,11 +415,13 @@ if FORMAT:match 'latex' or FORMAT:match 'pdf' or FORMAT:match 'markdown' then
   function RawBlock(el)
     local is_tikzcd = starts_with('\\begin{tikzcd}', el.text)
     local is_tikzpic = starts_with('\\begin{tikzpicture}', el.text)
-    if not is_tikzcd and not is_tikzpic then
+    local is_tikz = el.text:match("\\input%s-{%s*(.-%.tikz)%s*}") or el.text:match("\\input%s-{%s*(.-%.tikzcd)%s*}")
+    if not is_tikzcd and not is_tikzpic and not is_tikz then
       return el
     end
 
-    log("RawBlock: processing " .. (is_tikzcd and "tikzcd" or "tikzpicture") .. " block, length=" .. #el.text)
+    local is_cd = is_tikzcd or (is_tikz and is_tikz:match("%.tikzcd$") ~= nil)
+    log("RawBlock: processing " .. (is_cd and "tikzcd" or "tikzpicture") .. " block, length=" .. #el.text)
     local _, pdf_path = compile_tikz(el.text)
     if not pdf_path then
       log("RawBlock: compilation FAILED for block")
@@ -330,7 +429,21 @@ if FORMAT:match 'latex' or FORMAT:match 'pdf' or FORMAT:match 'markdown' then
     end
     log("RawBlock: compiled to " .. pdf_path)
 
-    el.text = make_latex_output(pdf_path, is_tikzcd)
+    el.text = make_latex_output(pdf_path, is_cd)
+    return el
+  end
+
+  function Para(el)
+    if #el.content == 1 and el.content[1].t == 'RawInline' then
+      local inline = el.content[1]
+      if inline.format == 'tex' or inline.format == 'latex' then
+        local raw = pandoc.RawBlock(inline.format, inline.text)
+        local processed = RawBlock(raw)
+        if processed ~= raw then
+          return processed
+        end
+      end
+    end
     return el
   end
 
@@ -351,7 +464,8 @@ if FORMAT:match 'html' then
     local is_tikzcd = starts_with('\\begin{tikzcd}', el.text)
     local is_tikzpic = starts_with('\\begin{tikzpicture}', el.text)
     local is_pdftex = el.text:match("\\input%s-{(.-%.pdf_tex)}")
-    if not is_tikzcd and not is_tikzpic and not is_pdftex then
+    local is_tikz = el.text:match("\\input%s-{%s*(.-%.tikz)%s*}") or el.text:match("\\input%s-{%s*(.-%.tikzcd)%s*}")
+    if not is_tikzcd and not is_tikzpic and not is_pdftex and not is_tikz then
       return el
     end
 
@@ -374,11 +488,27 @@ if FORMAT:match 'html' then
     local css_class = "tikzcd"
     if is_pdftex then
       css_class = "pdftex"
+    elseif is_tikz then
+      css_class = is_tikz:match("%.tikzcd$") and "tikzcd" or "tikzpic"
     elseif not is_tikzcd then
       css_class = "tikzpic"
     end
 
     return make_html_output(svg_path, css_class)
+  end
+
+  function Para(el)
+    if #el.content == 1 and el.content[1].t == 'RawInline' then
+      local inline = el.content[1]
+      if inline.format == 'tex' or inline.format == 'latex' then
+        local raw = pandoc.RawBlock(inline.format, inline.text)
+        local processed = RawBlock(raw)
+        if processed ~= raw then
+          return processed
+        end
+      end
+    end
+    return el
   end
 
   function CodeBlock(el)

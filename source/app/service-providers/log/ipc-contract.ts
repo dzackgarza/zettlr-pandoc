@@ -22,4 +22,8 @@ export type LogProviderIPCContract = {
     request: { nextIndex: number }
     response: LogMessage[]
   }
+  'record-error': {
+    request: { payload: { message: string, details?: string } }
+    response: true
+  }
 }

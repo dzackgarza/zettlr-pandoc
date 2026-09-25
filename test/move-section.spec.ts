@@ -26,6 +26,7 @@ This is the Section 1 body.
 ## Section 1.2
 
 This is the Section 1.2 body.
+
 # Section 2
 
 This is the Section 2 body.
@@ -33,6 +34,7 @@ This is the Section 2 body.
 # Section 3
 
 This is the Section 3 body.
+
 ## Section 3.1
 
 This is the Section 3.1 body.
@@ -44,7 +46,7 @@ This is the Section 3.1.1 body.`
 const moveSectionTests = [
   {
     from: 1,
-    to: 12,
+    to: 13,
     expected: `\
 # Section 2
 
@@ -61,6 +63,7 @@ This is the Section 1.2 body.
 # Section 3
 
 This is the Section 3 body.
+
 ## Section 3.1
 
 This is the Section 3.1 body.
@@ -70,7 +73,7 @@ This is the Section 3.1 body.
 This is the Section 3.1.1 body.`,
   },
   {
-    from: 15,
+    from: 17,
     to: 5,
     expected: `\
 # Section 1
@@ -88,6 +91,7 @@ This is the Section 3.1.1 body.
 ## Section 1.2
 
 This is the Section 1.2 body.
+
 # Section 2
 
 This is the Section 2 body.
@@ -95,11 +99,12 @@ This is the Section 2 body.
 # Section 3
 
 This is the Section 3 body.
+
 `,
   },
   {
-    from: 19,
-    to: 8,
+    from: 21,
+    to: 9,
     expected: `\
 # Section 1
 
@@ -108,6 +113,7 @@ This is the Section 1 body.
 ## Section 1.2
 
 This is the Section 1.2 body.
+
 ### Section 3.1.1
 
 This is the Section 3.1.1 body.
@@ -119,6 +125,7 @@ This is the Section 2 body.
 # Section 3
 
 This is the Section 3 body.
+
 ## Section 3.1
 
 This is the Section 3.1 body.
@@ -127,7 +134,7 @@ This is the Section 3.1 body.
   },
   {
     from: 5,
-    to: 15,
+    to: 17,
     expected: `\
 # Section 1
 
@@ -140,6 +147,7 @@ This is the Section 2 body.
 # Section 3
 
 This is the Section 3 body.
+
 ## Section 1.2
 
 This is the Section 1.2 body.

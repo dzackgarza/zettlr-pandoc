@@ -105,6 +105,7 @@ export default class RootOpen extends ZettlrCommand {
 
     let newFile = null
     let newDir: undefined|DirDescriptor
+    let rootsChanged = false
 
     // Make sure there's at least one window
     if (this._app.documents.windowCount() === 0) {
@@ -142,6 +143,7 @@ export default class RootOpen extends ZettlrCommand {
           this._app.log.error(`Could not open root ${absPath} because it was an ignored directory/file.`)
           continue
         }
+        rootsChanged = true
 
         if (!isFile) {
           continue // We are done here
@@ -165,6 +167,17 @@ export default class RootOpen extends ZettlrCommand {
     // Open the newly added path(s) directly.
     if (newDir !== undefined) {
       this._app.config.set('openDirectory', newDir.path)
+    }
+
+    // Adding a workspace can make Quarto/project bibliographies available to
+    // documents that were already open as standalone files. The config event
+    // starts FSAL's background reindex, but Citeproc otherwise has no reason to
+    // recompute its database union until another file is opened. Synchronizing
+    // here makes roots-add complete only once the new root's bibliography
+    // surface is available; FSAL materializes the descriptors from current
+    // config as this call needs them.
+    if (rootsChanged) {
+      await this._app.documents.synchronizeDatabases()
     }
   }
 }

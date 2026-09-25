@@ -20,6 +20,10 @@
       direction="horizontal"
       class="main-panes"
       :class="{ animating: panesAnimating }"
+      :style="{
+        '--annotation-panel-width': mountWidths.annotationPanel + 'px',
+        '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
+      }"
     >
       <SplitterPanel
         ref="navigationSidebarPanel"
@@ -53,6 +57,7 @@
         data-pane="editor"
         :order="1"
         :min-size="EDITOR_MINIMUM_PERCENT"
+        @focusin="rememberEditorDesktopFocus"
       >
         <EditorPane
           v-if="paneConfiguration?.type === 'leaf'"
@@ -62,9 +67,9 @@
           :window-id="windowId"
           @global-search="startGlobalSearch($event)"
           @reference-search="openReferenceSearch($event)"
+          @file-search="openFileLauncher()"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
-          @open-annotation="openAnnotation($event)"
         />
         <EditorBranch
           v-else-if="paneConfiguration !== undefined"
@@ -74,9 +79,9 @@
           :is-last="true"
           @global-search="startGlobalSearch($event)"
           @reference-search="openReferenceSearch($event)"
+          @file-search="openFileLauncher()"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
-          @open-annotation="openAnnotation($event)"
         />
       </SplitterPanel>
       <SplitterResizeHandle
@@ -98,8 +103,8 @@
         @resize="draggedWidths.annotationPanel = $event"
       >
         <AnnotationsTab
-          @jump-to-line="genericJtl($event)"
-          @begin-reattach="beginAnnotationReattach($event)"
+          v-bind:workspace-paths="workspaceCollaborationPaths"
+          @navigate="navigateToWorkspaceCollaboration($event)"
           @close="configStore.setConfigValue('window.sidebarVisible', false)"
         />
       </SplitterPanel>
@@ -109,6 +114,7 @@
       side="right"
       :items="PANEL_VIEWS"
       :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
+      :badges="panelActivityBadges"
       :label="trans('Panel views')"
       @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
     />
@@ -130,7 +136,6 @@
   </WindowChrome>
 
   <!-- Full-screen lightbox for rendered TikZ figures (issue #14) -->
-  <TikzLightbox />
 
   <!-- Popover area: these will be teleported to the body element anyhow -->
   <PopoverPomodoro
@@ -185,6 +190,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import NavigationSidebar from './sidebar/NavigationSidebar.vue'
 import ActivityBar from './sidebar/ActivityBar.vue'
@@ -192,7 +198,6 @@ import AnnotationsTab from './sidebar/AnnotationsTab.vue'
 import EditorPane from './EditorPane.vue'
 import EditorBranch from './EditorBranch.vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import TikzLightbox from './TikzLightbox.vue'
 import PopoverPomodoro from './PopoverPomodoro.vue'
 import PandocQuickHelp from './PandocQuickHelp.vue'
 import MainStatusbar from './MainStatusbar.vue'
@@ -208,6 +213,7 @@ import type {
   CreateReferenceLabelIntent
 } from '@common/modules/markdown-editor/plugins/create-reference-label'
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import type { SourceRange } from '@dts/common/references'
 import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
 import type {
   CreateReferenceLabelDialogPrompt,
@@ -216,6 +222,7 @@ import type {
   ReferenceJumpIntent
 } from './component-contracts'
 import showToast from '@common/util/show-toast'
+import { recordRendererError } from '@common/util/run-recoverably'
 import { trans } from '@common/i18n-renderer'
 import localiseNumber from '@common/util/localise-number'
 import generateId from '@common/util/generate-id'
@@ -225,6 +232,7 @@ import {
   computed,
   watch,
   onMounted,
+  onUnmounted,
   reactive
 } from 'vue'
 
@@ -235,12 +243,17 @@ import chimeFile from './assets/chime.mp3'
 import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
-import getDocumentTitle from './util/get-document-title'
+import { getSemanticDocumentTitle } from './util/get-document-title'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
+import {
+  resolveDirectoryHere,
+  resolveExternalFile,
+  type DesktopCommandContext
+} from './util/desktop-command-target'
 import PopoverLRT from './PopoverLRT.vue'
 import {
   insertTablePayloadSchema,
@@ -382,6 +395,11 @@ async function openReferenceSearch (request: ReferenceSearchRequest = null): Pro
   await commandLauncher.value?.open(view)
 }
 
+/** Opens the command launcher directly on its workspace-file navigator. */
+async function openFileLauncher (): Promise<void> {
+  await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'go-to-file' })
+}
+
 /** Opens the launcher on the export profiles: the Export… menu item's path. */
 async function openExport (): Promise<void> {
   await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'export' })
@@ -452,7 +470,7 @@ function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): vo
         .map(definition => definition.key)
       createLabelPrompt.value = prompt
     })
-    .catch(err => console.error('Could not open the create-reference-label dialog', err))
+    .catch(err => reportError('Could not open the create-reference-label dialog', err))
 }
 
 /**
@@ -500,7 +518,7 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
       showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
     })
     .catch(err => {
-      console.error('Could not copy the reference to the clipboard', err)
+      reportError('Could not copy the reference to the clipboard', err)
       showToast(trans('Created %s. The clipboard copy failed.', intent.key), 'error')
     })
 }
@@ -525,7 +543,7 @@ function handleReferenceJump (intent: ReferenceJumpIntent): void {
       targetRange: intent.range
     }
   })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 const pomodoro = ref<PomodoroConfig>({
@@ -546,7 +564,6 @@ const editorCommands = ref<EditorCommands>({
   replaceSelection: false,
   insertPandoc: false,
   executeCommand: false,
-  beginAnnotationReattach: false,
   setLanguageToolLanguage: false,
   data: undefined
 })
@@ -576,6 +593,7 @@ const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel>|null>(null
 const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
 const panesAnimating = ref(false)
 let paneAnimationTimer: ReturnType<typeof setTimeout>|undefined
+let paneResizeFrame: number|undefined
 
 /**
  * The width each pane mounts at, zero for a pane the window opens with
@@ -623,13 +641,156 @@ watch([ fileManagerVisible, sidebarVisible ], ([ sidebar, panel ], [ wasSidebar,
   }
 })
 
+/**
+ * Reka preserves the pixel size a panel had immediately before the group
+ * resized. If the window first mounts too narrow, that may be only a temporary
+ * squeeze of the user's stored width. Reassert the stored widths after the
+ * host window has finished resizing; Reka still clamps them when the current
+ * window genuinely cannot fit them, and no temporary clamp is persisted.
+ */
+function restorePaneWidthsAfterWindowResize (): void {
+  if (paneResizeFrame !== undefined) {
+    cancelAnimationFrame(paneResizeFrame)
+  }
+  paneResizeFrame = requestAnimationFrame(() => {
+    paneResizeFrame = requestAnimationFrame(() => {
+      paneResizeFrame = undefined
+      if (fileManagerVisible.value) {
+        navigationSidebarPanel.value?.resize(mountWidths.navigationSidebar)
+      }
+      if (sidebarVisible.value) {
+        annotationPanelPanel.value?.resize(mountWidths.annotationPanel)
+      }
+    })
+  })
+}
+
+onMounted(() => {
+  window.addEventListener('resize', restorePaneWidthsAfterWindowResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', restorePaneWidthsAfterWindowResize)
+  if (paneResizeFrame !== undefined) {
+    cancelAnimationFrame(paneResizeFrame)
+  }
+})
+
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+
+const workspaceCollaborationPaths = computed(() => workspaceStore.pathList.filter(path =>
+  workspaceStore.descriptorMap.get(path)?.type === 'file'
+))
+
+/** The right-edge collaboration badge is workspace-wide, like the panel. */
+const panelActivityBadges = computed<Record<string, number>>(() => ({
+  [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount
+}))
+
+/** The editor pane became the user's filesystem context. */
+function rememberEditorDesktopFocus (): void {
+  if (activeFile.value !== undefined) {
+    windowStateStore.desktopFocusPath = activeFile.value.path
+  }
+}
+
+/** Snapshot of the current filesystem context for the three desktop actions. */
+function desktopCommandContext (): DesktopCommandContext {
+  return {
+    focusPath: windowStateStore.desktopFocusPath,
+    activeFilePath: activeFile.value?.path,
+    selectedDirectory: configStore.config.openDirectory,
+    descriptors: workspaceStore.descriptorMap,
+    roots: workspaceStore.rootDescriptors
+  }
+}
+
+/** Open one path through the desktop's configured MIME association. */
+function openDesktopPath (target: string|undefined, missingMessage: string): void {
+  if (target === undefined) {
+    showToast(missingMessage, 'error')
+    return
+  }
+  ipcRenderer.invoke('application', { command: 'open-desktop-path', payload: target })
+    .then(error => {
+      if (error !== '') {
+        showToast(trans('Could not open %s: %s', target, error), 'error')
+      }
+    })
+    .catch(err => { showToast(trans('Could not open %s: %s', target, err instanceof Error ? err.message : String(err)), 'error') })
+}
+
+/** Open the focused file using its desktop MIME association. */
+function openFileExternally (): void {
+  openDesktopPath(resolveExternalFile(desktopCommandContext()), trans('No file is focused.'))
+}
+
+/**
+ * Opens a configured authoring source in the explicit terminal editor. Unlike
+ * the generic desktop opener this operation is awaited, so a failed kitty
+ * launch has both a durable log entry and a closable in-window surface.
+ */
+function editConfiguredTextFile (target: string, operationLabel: string): void {
+  if (target.trim() === '') {
+    const error = new Error(trans('No file is configured.'))
+    recordRendererError(`${operationLabel} failed`, error)
+    showToast(trans('%s failed: %s', operationLabel, error.message), 'error')
+    return
+  }
+
+  ipcRenderer.invoke('application', { command: 'edit-text-file', payload: target })
+    .then(error => {
+      if (error === '') {
+        return
+      }
+      const failure = new Error(error)
+      recordRendererError(`${operationLabel} failed`, failure)
+      showToast(trans('%s failed: %s', operationLabel, error), 'error')
+    })
+    .catch(err => {
+      recordRendererError(`${operationLabel} failed`, err)
+      showToast(
+        trans('%s failed: %s', operationLabel, err instanceof Error ? err.message : String(err)),
+        'error'
+      )
+    })
+}
+
+function editSnippets (): void {
+  editConfiguredTextFile(configStore.config.editor.snippetsFile, trans('Opening snippets'))
+}
+
+function editQuickTexDefinitions (): void {
+  editConfiguredTextFile(configStore.config.editor.quickTexFile, trans('Opening QuickTeX definitions'))
+}
+
+/** Open the directory meant by "here" using its desktop MIME association. */
+function openFileBrowserHere (): void {
+  openDesktopPath(resolveDirectoryHere(desktopCommandContext()), trans('No workspace or file is focused.'))
+}
+
+/** Launch kitty with the focused file/workspace directory as its working directory. */
+function openTerminalHere (): void {
+  const target = resolveDirectoryHere(desktopCommandContext())
+  if (target === undefined) {
+    showToast(trans('No workspace or file is focused.'), 'error')
+    return
+  }
+  ipcRenderer.invoke('application', { command: 'open-terminal-here', payload: target })
+    .then(error => {
+      if (error !== '') {
+        showToast(trans('Could not open a terminal in %s: %s', target, error), 'error')
+      }
+    })
+    .catch(err => { showToast(trans('Could not open a terminal in %s: %s', target, err instanceof Error ? err.message : String(err)), 'error') })
+}
+
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
     return 'Zettlr'
   }
 
-  return `Zettlr - ${getDocumentTitle(activeFile.value)}`
+  return `Zettlr - ${getSemanticDocumentTitle(activeFile.value)}`
 })
 
 // Simple state machine to trigger which of the three shows up when. Below's the
@@ -709,7 +870,7 @@ function navigateHistory (command: 'navigate-back'|'navigate-forward'): void {
   ipcRenderer.invoke('documents-provider', {
     command,
     payload: { windowId, leafId }
-  }).catch(err => console.error(err))
+  }).catch(err => reportError(err))
 }
 
 function refreshNavigationState (): void {
@@ -728,7 +889,7 @@ function refreshNavigationState (): void {
       canGoBack.value = state.canGoBack
       canGoForward.value = state.canGoForward
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 watch(lastLeafId, refreshNavigationState)
@@ -793,10 +954,10 @@ onMounted(() => {
       })
         .then((descriptor: AnyDescriptor|AnyDescriptor[]|undefined) => {
           if (descriptor !== undefined && !Array.isArray(descriptor) && descriptor.type === 'file' && descriptor.id !== '') {
-            navigator.clipboard.writeText(descriptor.id).catch(err => console.error(err))
+            navigator.clipboard.writeText(descriptor.id).catch(err => reportError(err))
           }
         })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     },
     'global-search': () => navigationSidebar.value?.reveal({ view: 'search', focus: 'search-query' }),
     'toggle-navigation-sidebar': () => {
@@ -810,14 +971,20 @@ onMounted(() => {
     print: () => {
       if (activeFile.value !== undefined) {
         ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })
-          .catch(err => console.error(err))
+          .catch(err => reportError(err))
       }
     },
     'navigate-back': () => { navigateHistory('navigate-back') },
     'navigate-forward': () => { navigateHistory('navigate-forward') },
     'insert-pandoc-div': () => { insertPandoc({ type: 'div', attributes: '' }) },
     'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) },
-    'open-command-launcher': () => openReferenceSearch(null)
+    'open-command-launcher': () => openReferenceSearch(null),
+    'open-file-launcher': () => openFileLauncher(),
+    'edit-snippets': editSnippets,
+    'edit-quicktex': editQuickTexDefinitions,
+    'open-file-browser-here': openFileBrowserHere,
+    'open-file-externally': openFileExternally,
+    'open-terminal-here': openTerminalHere
   }
 
   ipcRenderer.on('shortcut', (event, shortcut: unknown, payload: unknown) => {
@@ -840,7 +1007,7 @@ onMounted(() => {
     .then(state => {
       isUpdateAvailable.value = state.updateAvailable
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   // Also, listen for any changes in the update available state
   ipcRenderer.on('update-provider', (event, command: string, updateState: UpdateState) => {
@@ -863,6 +1030,27 @@ function insertTable (spec: { rows: number, cols: number }): void {
 function insertPandoc (spec: { type: string, attributes: string }): void {
   editorCommands.value.data = spec
   editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc
+}
+
+/**
+ * A panel row was clicked: open its document at the target range. An
+ * annotation row also opens that annotation's thread in the editor.
+ */
+function navigateToWorkspaceCollaboration (target: { documentPath: string, range?: SourceRange, annotationId?: string }): void {
+  if (target.annotationId !== undefined) {
+    collaborationStore.selectAnnotation(target.annotationId)
+  }
+  ipcRenderer.invoke('documents-provider', {
+    command: 'open-file',
+    payload: {
+      path: target.documentPath,
+      windowId,
+      leafId: lastLeafId.value,
+      newTab: false,
+      targetRange: target.range
+    }
+  })
+    .catch(err => reportError('[Annotations] Could not navigate to collaboration target', err))
 }
 
 function genericJtl (lineNumber: number): void {
@@ -908,7 +1096,7 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
         // Re-execute the jtl command
         setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
       })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
     return
   }
 
@@ -928,17 +1116,9 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
       // Re-execute the jtl command
       setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
     })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
-/**
- * S8/I6: forwards the panel's Reattach intent (an annotation id — never a
- * range the panel guessed) to the last focused editor pane for the active
- * document. The pane itself decides whether the owner's current selection
- * is a usable replacement range (component-contracts.ts EditorCommands).
- *
- * @param   {string}  annotationId  The orphaned annotation to reattach
- */
 /**
  * An icon on the left activity bar: it opens the drawer on that view, or
  * closes the drawer when the view it already shows is pressed again.
@@ -950,27 +1130,6 @@ function pressSidebarView (id: string): void {
     return
   }
   configStore.setConfigValue('window.fileManagerVisible', false)
-}
-
-/**
- * A gutter chip was clicked in an editor. The chip is the editor's half of
- * an annotation and the panel holds the other half, so the gesture selects
- * the annotation and brings the panel out if it was away.
- */
-function openAnnotation (annotationId: string): void {
-  collaborationStore.selectAnnotation(annotationId)
-  if (!sidebarVisible.value) {
-    configStore.setConfigValue('window.sidebarVisible', true)
-  }
-}
-
-function beginAnnotationReattach (annotationId: string): void {
-  const doc = documentTreeStore.lastLeafActiveFile
-  if (doc === undefined) {
-    return
-  }
-  editorCommands.value.data = { filePath: doc.path, annotationId }
-  editorCommands.value.beginAnnotationReattach = !editorCommands.value.beginAnnotationReattach
 }
 
 function moveSection (data: { from: number, to: number }): void {
@@ -1093,9 +1252,42 @@ body {
 
   // A pane slides open and shut. `flex-grow` is what the splitter writes, so
   // it is what eases; the panes beside it take up the room as it goes.
+  // During animation, the inner sidebar containers are held at target width and clipped
+  // by the collapsing outer pane so cards are not repeatedly reflowed across frames.
   .main-panes.animating {
-    .main-pane { transition: flex-grow 180ms ease; }
+    .main-pane {
+      transition: flex-grow 180ms ease;
+      overflow: hidden !important;
+    }
     .main-pane-handle { transition: width 180ms ease; }
+
+    [data-pane="annotation-panel"] {
+      position: relative;
+
+      > .annotations-tab {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: var(--annotation-panel-width, 320px);
+        min-width: var(--annotation-panel-width, 320px);
+        pointer-events: none;
+      }
+    }
+
+    [data-pane="navigation-sidebar"] {
+      position: relative;
+
+      > #navigation-sidebar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: var(--navigation-sidebar-width, 240px);
+        min-width: var(--navigation-sidebar-width, 240px);
+        pointer-events: none;
+      }
+    }
   }
 
   // A hairline with a wider hit area; the accent while hovered or dragged.

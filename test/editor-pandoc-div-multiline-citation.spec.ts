@@ -17,12 +17,13 @@ import { forceParsing } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
+import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
+import { installCitationIpcFromCallback, settleCitationWidgets } from './citation-widget-test-helper'
 
 function polyfillJsdomForCodeMirror (): void {
   const global = globalThis as any
@@ -59,19 +60,23 @@ function polyfillJsdomForCodeMirror (): void {
 describe('Editor renders line-wrapped citations inside Pandoc fenced divs', function () {
   const views: EditorView[] = []
   const originalCitationCallback = window.getCitationCallback
+  let restoreCitationIpc: (() => void)|undefined
 
   before(async function () {
     this.timeout(30000)
     polyfillJsdomForCodeMirror()
+    restoreCitationIpc = installCitationIpcFromCallback()
     await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
     window.getCitationCallback = () => citations => citations.map(citation => citation.id).join('; ')
   })
 
   after(function () {
+    restoreCitationIpc?.()
     window.getCitationCallback = originalCitationCallback
   })
 
   afterEach(function () {
+    __resetCitationRenderMemoForTests()
     for (const view of views.splice(0)) {
       view.destroy()
     }
@@ -115,7 +120,7 @@ Cor. 6.2], which remains semistable.
 
 outside`
 
-  it('opens an active div containing the Morrison line-wrapped citation', function () {
+  it('opens an active div containing the Morrison line-wrapped citation', async function () {
     let view: EditorView|undefined
     assert.doesNotThrow(() => {
       view = createEditor(morrisonFixture, morrisonFixture.indexOf('Flower pots'))
@@ -123,10 +128,11 @@ outside`
 
     assert.ok(view !== undefined)
     assert.ok(view.dom.querySelector('pandoc-div-active-wrapper') !== null)
+    await settleCitationWidgets(view.dom)
     assert.deepStrictEqual(renderedCitations(view), [ 'Ols04' ])
   })
 
-  it('opens an inactive div containing the Morrison line-wrapped citation', function () {
+  it('opens an inactive div containing the Morrison line-wrapped citation', async function () {
     let view: EditorView|undefined
     assert.doesNotThrow(() => {
       view = createEditor(morrisonFixture, morrisonFixture.length)
@@ -134,10 +140,11 @@ outside`
 
     assert.ok(view !== undefined)
     assert.ok(view.dom.querySelector('pandoc-div-wrapper') !== null)
+    await settleCitationWidgets(view.dom)
     assert.deepStrictEqual(renderedCitations(view), [ 'Ols04' ])
   })
 
-  it('keeps the document editable after mounting a wrapped citation', function () {
+  it('keeps the document editable after mounting a wrapped citation', async function () {
     let view: EditorView|undefined
     assert.doesNotThrow(() => {
       view = createEditor(morrisonFixture, morrisonFixture.indexOf('Flower pots'))
@@ -147,10 +154,11 @@ outside`
     const insertion = morrisonFixture.indexOf('Flower pots') + 'Flower pots'.length
     view.dispatch({ changes: { from: insertion, insert: ' still' } })
     assert.match(view.state.doc.toString(), /Flower pots still correspond/)
+    await settleCitationWidgets(view.dom)
     assert.deepStrictEqual(renderedCitations(view), [ 'Ols04' ])
   })
 
-  it('keeps a second wrapped citation rendered while the first citation is selected', function () {
+  it('keeps a second wrapped citation rendered while the first citation is selected', async function () {
     const doc = `::: theorem
 First [@Ols04
 Cor. 6.2] and second [@AEGS23
@@ -164,12 +172,13 @@ outside`
     })
 
     assert.ok(view !== undefined)
+    await settleCitationWidgets(view.dom)
     assert.deepStrictEqual(renderedCitations(view), [ 'AEGS23' ])
     assert.match(view.dom.textContent ?? '', /\[@Ols04Cor\. 6\.2\]/)
     assert.match(view.state.doc.toString(), /\[@Ols04\nCor\. 6\.2\]/)
   })
 
-  it('keeps a wrapped citation rendered while a neighboring equation is selected', function () {
+  it('keeps a wrapped citation rendered while a neighboring equation is selected', async function () {
     const doc = `::: remark
 The class $x=y$ occurs in [@Ols04
 Cor. 6.2].
@@ -182,14 +191,16 @@ outside`
     })
 
     assert.ok(view !== undefined)
+    await settleCitationWidgets(view.dom)
     assert.deepStrictEqual(renderedCitations(view), [ 'Ols04' ])
     assert.equal(view.dom.querySelector('.preview-math'), null, 'the selected equation must remain raw')
     assert.match(view.dom.textContent ?? '', /\$x=y\$/)
   })
 
-  it('continues to render a single-line citation inside an active div', function () {
+  it('continues to render a single-line citation inside an active div', async function () {
     const doc = '::: remark\nText [@Ols04].\n:::\n\noutside'
     const view = createEditor(doc, doc.indexOf('Text'))
+    await settleCitationWidgets(view.dom)
 
     assert.deepStrictEqual(renderedCitations(view), [ 'Ols04' ])
   })

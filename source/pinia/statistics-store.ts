@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type Stats } from '@providers/stats'
 import { defineStore } from 'pinia'
 import { last30EntriesByDate, avgAny30Days, sumAny30Days } from 'source/common/util/stats'
@@ -102,7 +103,7 @@ export const useStatisticsStore = defineStore('statistics', () => {
   // Initial update
   ipcRenderer.invoke('stats-provider', { command: 'get-data' })
     .then(data => { stats.value = data })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 
   // Listen to subsequent updates
   ipcRenderer.on('stats-updated', (event, data: Stats) => {

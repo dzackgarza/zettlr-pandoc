@@ -301,7 +301,7 @@ describe('file delivery through the installed desktop launcher (#52)', function 
     )
     assert.ok(isRecord(focused) && typeof focused.documentId === 'string')
     const content = await api.get(
-      `/v1/documents/${encodeURIComponent(focused.documentId)}/content`
+      `/v1/documents/${encodeURIComponent(focused.documentId)}?includeContent=true`
     )
     assert.ok(isRecord(content) && typeof content.content === 'string')
     assert.ok(

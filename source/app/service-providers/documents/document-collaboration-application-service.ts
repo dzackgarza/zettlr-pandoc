@@ -73,6 +73,7 @@ import {
 import { sha256Text } from "@common/util/sha256";
 import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
+import { AnnotationDomainValidationError } from "./annotation-domain-validation";
 import {
   emptyAnnotationSet,
   prepareAnnotationCreation,
@@ -307,11 +308,18 @@ interface AnnotationDocumentState {
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
+  if (error instanceof AnnotationDomainValidationError) {
+    return {
+      ok: false,
+      code: "INVALID_PARAMS",
+      message: error.message,
+    };
+  }
   return {
     ok: false,
     code: "PERSISTENCE_FAILED",
     message:
-      `The collaboration state could not be persisted, so ${action} was not applied: ` +
+      `Couldn't save the review state, so ${action} was not applied: ` +
       (error instanceof Error ? error.message : String(error)),
   };
 }
@@ -959,6 +967,15 @@ export class CollaborationApplicationService {
     return this.sidecars.read(documentPath);
   }
 
+  /**
+   * Validated persisted collaboration state, for workspace-level projections.
+   * One directory enumeration is intentionally cheaper than probing a
+   * possible sidecar for every file in a large workspace.
+   */
+  public listCollaborationSidecars(): Promise<CollaborationSidecarData[]> {
+    return this.sidecars.list();
+  }
+
   private lockFor(documentId: string): Mutex {
     const existing = this.locks.get(documentId);
     if (existing !== undefined) {
@@ -1108,10 +1125,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message:
-          `The review is at generation ${context.review.generation}, not ` +
-          `${precondition.expectedReviewGeneration}: something was decided ` +
-          "after this one was read. Re-read the review and decide again.",
+        message: "This review changed after it was opened. Reload it and try again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1123,10 +1137,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message:
-          "The document text changed after this decision was formed, so the " +
-          "chunk it names is not the chunk that would be decided. Re-read " +
-          "the chunks and decide again.",
+        message: "The document changed after this decision was prepared. Reload the review and try again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1147,7 +1158,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_INVALIDATED",
-        message: "The review was invalidated by external disk drift.",
+        message: "The file changed on disk, so this review is no longer current.",
       };
     }
     let diskText: string;
@@ -1156,7 +1167,7 @@ export class CollaborationApplicationService {
     } catch {
       return await this.commitInvalidation(
         context,
-        "The reviewed document could not be read from disk; the review was invalidated.",
+        "Couldn't read the reviewed file from disk, so this review is no longer current.",
       );
     }
     if (sha256Text(normalizeText(diskText)) === context.review.diskFenceSha256) {
@@ -1164,7 +1175,7 @@ export class CollaborationApplicationService {
     }
     return await this.commitInvalidation(
       context,
-      "The document changed on disk after this review opened; the review was invalidated.",
+      "The file changed on disk after this review opened, so this review is no longer current.",
     );
   }
 
@@ -1267,7 +1278,7 @@ export class CollaborationApplicationService {
         : {
             ok: false,
             code: "IDEMPOTENCY_CONFLICT",
-            message: "clientRequestId was already used for a different proposal request.",
+            message: "This request ID was already used for a different proposal.",
           };
     }
 
@@ -1284,7 +1295,7 @@ export class CollaborationApplicationService {
         ok: false,
         code: "INTERNAL_ERROR",
         message:
-          "Could not read the document from disk to fence the review: " +
+          "Couldn't read the document from disk: " +
           (err instanceof Error ? err.message : String(err)),
       };
     }
@@ -1296,7 +1307,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: "The document changed after the baseline content was read.",
+        message: "The document changed after this proposal was prepared.",
       };
     }
 
@@ -1311,7 +1322,7 @@ export class CollaborationApplicationService {
         return {
           ok: false,
           code: "REVISION_MISMATCH",
-          message: "The document changed on disk after the last saved editor baseline.",
+          message: "The file on disk changed since the editor last saved it.",
         };
       }
     } else if (diskSha256 !== activeReview.diskFenceSha256) {
@@ -1322,7 +1333,7 @@ export class CollaborationApplicationService {
           review: activeReview,
           workingText,
         },
-        "The document changed on disk after this review opened; the review was invalidated.",
+        "The file changed on disk after this review opened, so this review is no longer current.",
       );
     }
 
@@ -1331,7 +1342,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "The review generation no longer matches.",
+        message: "This review changed. Reload it and try again.",
       };
     }
 
@@ -1518,6 +1529,89 @@ export class CollaborationApplicationService {
     });
   }
 
+  /**
+   * Accept every outstanding chunk for a workspace document, whether its
+   * review is currently attached to an editor buffer or detached in a
+   * collaboration sidecar. Detached acceptance never opens a renderer pane
+   * and never installs a temporary document in the authority.
+   */
+  public async acceptAllWorkspaceChunks(input: {
+    documentId: string;
+    documentPath: string;
+    reviewId: string;
+    precondition: ReviewMutationPrecondition;
+  }): Promise<AcceptAllChunksResponse | ReviewFailure> {
+    const active = this.reviews.findReviewByReviewId(input.reviewId);
+    if (active !== undefined) {
+      if (active.documentId !== input.documentId || active.documentPath !== input.documentPath) {
+        return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+      }
+      return await this.acceptAllChunks(input.reviewId, input.precondition);
+    }
+
+    return await this.withDocumentLock(input.documentId, async () => {
+      const sidecar = await this.sidecars.read(input.documentPath);
+      if (sidecar?.review === null || sidecar === undefined || sidecar.review.reviewId !== input.reviewId) {
+        return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+      }
+
+      const review = reviewFromSidecar(input.documentId, sidecar);
+      const context: MutationContext = {
+        documentId: input.documentId,
+        documentPath: input.documentPath,
+        review,
+        workingText: sidecar.workingText,
+      };
+      if (review.invalidated) {
+        return { ok: false, code: "REVIEW_INVALIDATED", message: "The file changed on disk, so this review is no longer current." };
+      }
+
+      let diskText: string;
+      try {
+        diskText = await this.deps.authority.readDiskText(input.documentPath);
+      } catch {
+        return {
+          ok: false,
+          code: "REVIEW_INVALIDATED",
+          message: "The reviewed document could not be read from disk.",
+        };
+      }
+      if (sha256Text(normalizeText(diskText)) !== review.diskFenceSha256) {
+        return {
+          ok: false,
+          code: "REVIEW_INVALIDATED",
+          message: "The document changed on disk after this review opened.",
+        };
+      }
+
+      const stale = this.checkPrecondition(context, input.precondition);
+      if (stale !== undefined) {
+        return stale;
+      }
+      const plan = prepareAcceptAll({ review, workingText: sidecar.workingText });
+      if (isTransitionError(plan)) {
+        return { ok: false, code: plan.code, message: plan.message };
+      }
+
+      try {
+        await this.sidecars.write(collaborationSidecar({
+          documentPath: sidecar.documentPath,
+          workingText: plan.nextWorkingText,
+          diskFenceSha256: sidecar.diskFenceSha256,
+          review: plan.nextReview,
+          annotations: sidecar.annotations,
+          pendingSave: sidecar.pendingSave,
+        }));
+      } catch (error) {
+        return persistenceFailure("the workspace review acceptance", error);
+      }
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+      return plan.response;
+    });
+  }
+
   /** Clear every unresolved suggestion: mass reject, ending review mode. */
   public async clearReview(
     reviewId: string,
@@ -1584,7 +1678,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "PACKET_NOT_RETRACTABLE",
-        message: "The packet was not found.",
+        message: "Proposal not found.",
         reviewId: "",
         canClearUnresolved: true,
       };
@@ -1648,7 +1742,7 @@ export class CollaborationApplicationService {
         return {
           ok: false as const,
           code: "DOCUMENT_CLOSED" as const,
-          message: "The annotated document is no longer open.",
+          message: "The document containing this annotation is no longer open.",
         };
       }
       const normalized = normalizeText(workingText);

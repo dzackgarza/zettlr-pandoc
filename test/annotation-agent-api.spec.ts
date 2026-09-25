@@ -245,7 +245,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       config: {
         get: () => ({
           app: { openWorkspaces },
-          agentApi: { enabled: true, port: 0 },
+          export: { cslLibrary: "" },
+          tikz: { dataDir: "", figuresDir: "" },
+          editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+          agentApi: { enabled: true, port: 0, claimDescriptionSimilarityThreshold: 0.94 },
         }),
       },
     });
@@ -315,7 +318,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     const to = from + "here.\nSecond line".length;
     await provider.createAnnotation(documentId, "owner", from, to, "Spans two lines.", 0);
 
-    const response = await httpRequest("GET", `/v1/documents/${documentId}/annotations`);
+    const response = await httpRequest("GET", `/v1/annotations?documentId=${documentId}`);
     assert.equal(response.status, 200);
     const parsed = JSON.parse(response.body) as AnnotationListResponse;
     assertMatchesSchema(parsed, "AnnotationListResponse");
@@ -330,7 +333,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.equal(annotation.target.endColumn, expectedEnd.column);
   });
 
-  it("scopes GET /v1/documents/{documentId}/annotations to that document alone", async function () {
+  it("scopes GET /v1/annotations?documentId={documentId} to that document alone", async function () {
     const contentA = "Document A body text for scoping.\n";
     const contentB = "Document B body text for scoping.\n";
     const docA = await openFile(path.join(scratch, "a.md"), contentA);
@@ -338,7 +341,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     await provider.createAnnotation(docA, "owner", 0, 8, "About A.", 0);
     await provider.createAnnotation(docB, "owner", 0, 8, "About B.", 0);
 
-    const onlyA = await httpRequest("GET", `/v1/documents/${docA}/annotations`);
+    const onlyA = await httpRequest("GET", `/v1/annotations?documentId=${docA}`);
     const parsedA = JSON.parse(onlyA.body) as AnnotationListResponse;
     assert.equal(parsedA.annotations.length, 1);
     assert.equal(parsedA.annotations[0].documentId, docA);
@@ -663,7 +666,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     };
     assert.equal(document.review, undefined);
     const content = JSON.parse(
-      (await httpRequest("GET", `/v1/documents/${documentId}/content`)).body,
+      (await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`)).body,
     ) as { content: string };
     assert.equal(content.content.trimEnd(), original.trimEnd());
     const annotation = JSON.parse(

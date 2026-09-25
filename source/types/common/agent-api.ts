@@ -76,8 +76,32 @@ export type WorkspaceDocumentEntry = Schemas["WorkspaceDocumentSummary"];
 export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
+export type HelpResponse = Schemas["HelpResponse"];
 export type PingResponse = Schemas["PingResponse"];
 export type CapabilitiesResponse = Schemas["CapabilitiesResponse"];
+export type CitationDatabaseSummary = Schemas["CitationDatabaseSummary"];
+export type CitationItem = Schemas["CitationItem"];
+export type CitationDatabasesResponse = Schemas["CitationDatabasesResponse"];
+export type CitationItemsResponse = Schemas["CitationItemsResponse"];
+export type RenderCitationRequest = Schemas["RenderCitationRequest"];
+export type RenderCitationResponse = Schemas["RenderCitationResponse"];
+export type RenderBibliographyRequest = Schemas["RenderBibliographyRequest"];
+export type RenderBibliographyResponse = Schemas["RenderBibliographyResponse"];
+export type MacroMathJaxDefinition = Schemas["MacroMathJaxDefinition"];
+export type MacroDeclaration = Schemas["MacroDeclaration"];
+export type MacroEntry = Schemas["MacroEntry"];
+export type MacroInventoryResponse = Schemas["MacroInventoryResponse"];
+export type FigureEntry = Schemas["FigureEntry"];
+export type FigureListResponse = Schemas["FigureListResponse"];
+export type FigureFileResponse = Schemas["FigureFileResponse"];
+export type FigureCreateRequest = Schemas["FigureCreateRequest"];
+export type FigureWriteRequest = Schemas["FigureWriteRequest"];
+export type FigureSearchHit = Schemas["FigureSearchHit"];
+export type FigureSearchResponse = Schemas["FigureSearchResponse"];
+export type LintSeverityCounts = Schemas["LintSeverityCounts"];
+export type LintDiagnostic = Schemas["LintDiagnostic"];
+export type DocumentLintResult = Schemas["DocumentLintResult"];
+export type LintResponse = Schemas["LintResponse"];
 export type AgentEvent = Schemas["AgentEvent"];
 export type AgentEventType = AgentEvent["event"];
 export type ReviewEventsResponse = Schemas["ReviewEventsResponse"];
@@ -87,8 +111,10 @@ export type AgentErrorResponse = Schemas["AgentErrorResponse"];
 
 /** The `side` query parameter of the content read, with its declared default applied. */
 export type ReadSide = NonNullable<
-  NonNullable<operations["readDocumentContent"]["parameters"]["query"]>["side"]
+  NonNullable<operations["getDocument"]["parameters"]["query"]>["side"]
 >;
+export type FigureSaveRequest = Schemas["FigureSaveRequest"];
+export type RenderCitationsRequest = Schemas["RenderCitationsRequest"];
 
 type JsonBody<Response> = Response extends {
   content: { "application/json": infer Body };

@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
@@ -25,4 +26,4 @@ windowRegister()
     const app = createApp(App).use(pinia)
     app.mount('#app')
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))

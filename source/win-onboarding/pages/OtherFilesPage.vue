@@ -20,8 +20,8 @@ import { computed } from 'vue'
 const configStore = useConfigStore()
 
 const pageHeading = trans('Images and PDFs in Zettlr')
-const previewInfo = trans('Zettlr can preview images and PDF files directly in Zettlr. This allows you to reference plots or literature directly while writing. If you do not activate this, images and PDF files open with your computer\'s default viewer.')
-const activateLabel = trans('Activate Image and PDF Previews in Zettlr')
+const previewInfo = trans('Preview images and PDFs inside Zettlr while you write. If disabled, they open in your computer\'s default viewer.')
+const activateLabel = trans('Preview images and PDFs in Zettlr')
 
 const hasActivatedPreviws = computed(() => {
   return configStore.config.files.images.showInFilemanager &&

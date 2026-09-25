@@ -174,6 +174,42 @@ describe('Pandoc attribute-block rendering (issue #11)', function () {
     assert.ok(text.includes('{#sec:central-problem}'), `the attribute block must reveal for editing, saw: ${text}`)
   })
 
+  it('leaves multiline attribute-like source visible instead of replacing line breaks from a view plugin', function () {
+    const multiline = [
+      'Before.',
+      '',
+      '{.theorem',
+      '    title=\"A title\"',
+      '    #thm:multiline',
+      '}',
+      '',
+      'After.',
+      ''
+    ].join('\n')
+    const config = getDefaultConfig()
+    config.renderingMode = 'preview'
+    const exceptions: unknown[] = []
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: multiline,
+        selection: { anchor: multiline.indexOf('After.') },
+        extensions: [
+          markdownParser(),
+          configField.init(() => config),
+          EditorView.exceptionSink.of(exception => { exceptions.push(exception) }),
+          renderers(config)
+        ]
+      })
+    })
+    views.push(view)
+    assert.ok(forceParsing(view, multiline.length, 5000), 'the multiline attribute fixture must fully parse')
+
+    assert.equal(exceptions.length, 0, 'multiline authored source must not create an illegal replacement decoration')
+    assert.match(view.contentDOM.textContent ?? '', /\{\.theorem/)
+    assert.match(view.contentDOM.textContent ?? '', /#thm:multiline/)
+  })
+
   it('renders the image attribute block away when the cursor is elsewhere (issue #27)', function () {
     const view = createEditor(DOC.indexOf('prose paragraph'))
     const text = lineText(view, 'A figure caption')

@@ -34,6 +34,7 @@ import { configField, configUpdateEffect, type EditorConfiguration } from '../ut
 import type { EditorView } from '@codemirror/view'
 import { renderHorizontalRules } from './render-hr'
 import { renderBlockquotes } from './render-blockquotes'
+import { renderYamlFrontmatter } from './render-yaml-frontmatter'
 
 const renderCompartment = new Compartment()
 
@@ -59,6 +60,7 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
   }
 
   if (config.renderingMode === 'preview') {
+    updateExtension(renderYamlFrontmatter, true, ext)
     updateExtension(renderMermaid, true, ext)
     updateExtension(renderTikzFigures, true, ext)
     updateExtension(renderCode, true, ext)
@@ -128,4 +130,3 @@ const modeSwitcher = EditorState.transactionExtender.from(configField, config =>
 export function renderers (config: EditorConfiguration): Extension {
   return [ modeSwitcher, renderCompartment.of(configureRenderers(config)) ]
 }
-

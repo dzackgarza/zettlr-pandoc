@@ -32,7 +32,6 @@ export interface AutocorrectOptions {
 
 export interface EditorConfiguration {
   autocompleteSuggestEmojis: boolean
-  snippetAutocompleteTriggerCharacter: ':'
   autocompleteWithEnter: boolean
   autocompleteWithTab: boolean
   autocorrect: AutocorrectOptions
@@ -76,7 +75,6 @@ export interface EditorConfiguration {
   readabilityMode: boolean
   typewriterMode: boolean
   distractionFree: boolean
-  lintMarkdown: boolean
   lintLanguageTool: boolean
   darkMode: boolean
   darkModeEditor: 'match'|'light'|'dark'
@@ -100,7 +98,6 @@ export function getDefaultConfig (): EditorConfiguration {
       replacements: []
     },
     autocompleteSuggestEmojis: false,
-    snippetAutocompleteTriggerCharacter: ':',
     autocompleteWithEnter: false,
     autocompleteWithTab: true,
     autoCloseBrackets: true,
@@ -143,7 +140,6 @@ export function getDefaultConfig (): EditorConfiguration {
     readabilityMode: false,
     typewriterMode: false,
     distractionFree: false,
-    lintMarkdown: false,
     lintLanguageTool: false,
     darkMode: false,
     darkModeEditor: 'match',

@@ -21,12 +21,12 @@
  * END HEADER
  */
 
-import { extractASTNodes, markdownToAST } from '.'
-import type { CitationNode, ASTNode, GenericNode, FootnoteRef } from './markdown-ast'
-import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
-import _ from 'underscore'
-import { mathJaxToHTML } from '@common/util/mathtex-to-html'
 import { mathDisplayForOpen, mathFromCodeNode } from '@common/util/math-delimiters'
+import { mathJaxToHTML } from '@common/util/mathtex-to-html'
+import _ from 'underscore'
+import { type MarkdownParserConfig } from '../markdown-editor/parser/markdown-parser'
+import { extractASTNodes, markdownToAST } from '.'
+import type { ASTNode, CitationNode, FootnoteRef, GenericNode } from './markdown-ast'
 
 /**
  * Represents an HTML tag. This is a purposefully shallow representation
@@ -43,7 +43,7 @@ interface HTMLTag {
   /**
    * A simple map of attributes (e.g., ['class', 'my-class'])
    */
-  attributes: Array<[ string, string ]>
+  attributes: Array<[string, string]>;
   /**
    * A flag indicating whether this node includes raw HTML. This means that (a)
    * you might want to sanitize its contents if you wish to insert it into a DOM
@@ -52,13 +52,13 @@ interface HTMLTag {
   containsHTML: boolean
 }
 
-export type CitationCallback = (citations: CiteItem[], composite: boolean) => string|undefined
+export type CitationCallback = (citations: CiteItem[], composite: boolean) => string | undefined
 
 export interface MD2HTMLOptions {
   /**
    * The link format used in the Markdown source
    */
-  zknLinkFormat: 'link|title'|'title|link' // = 'link|title'
+  zknLinkFormat: 'link|title' | 'title|link'; // = 'link|title'
   /**
    * An optional section heading for the reference section. Will only be used if
    * there is a bibliography to render.
@@ -72,7 +72,7 @@ export interface MD2HTMLOptions {
    *
    * @return  {[]}                     Should return the citation, or undefined.
    */
-  onCitation: (citations: CiteItem[], composite: boolean) => string|undefined
+  onCitation: (citations: CiteItem[], composite: boolean) => string | undefined;
   /**
    * If provided, this callback will be called after the Markdown-to-HTML
    * conversion is finished to generate a bibliography. The callback should
@@ -84,7 +84,9 @@ export interface MD2HTMLOptions {
    *
    * @return  {any}             The citeproc responde.
    */
-  onBibliography?: (keys: string[]) => Promise<[{ bibstart: string, bibend: string }, string[]]|undefined>
+  onBibliography?: (
+    keys: string[],
+  ) => Promise<[{ bibstart: string; bibend: string }, string[]] | undefined>;
   /**
    * Can be used to hook into the image tag generation to alter the image's
    * `src` attribute from the Markdown.
@@ -110,7 +112,7 @@ function getTagInfo (node: GenericNode): HTMLTag {
     tagName: 'div',
     selfClosing: false,
     attributes: [],
-    containsHTML: node.name === 'HTMLBlock' || node.name === 'HTMLTag'
+    containsHTML: node.name === 'HTMLBlock' || node.name === 'HTMLTag',
   }
 
   if (node.name === 'HorizontalRule') {
@@ -183,12 +185,15 @@ function renderNodeAttributes (node: ASTNode): string {
  */
 function addAttribute (node: ASTNode, attributeName: string, ...values: string[]): void {
   const attr = node.attributes
-  attr[attributeName] = attr[attributeName] ?? []
+  const existing: string | string[] | undefined = attr[attributeName]
 
-  if (!Array.isArray(attr[attributeName])) {
-    attr[attributeName] = [attr[attributeName]]
+  if (existing === undefined) {
+    attr[attributeName] = [...values]
+  } else if (Array.isArray(existing)) {
+    existing.push(...values)
+  } else {
+    attr[attributeName] = [ existing, ...values ]
   }
-  attr[attributeName].push(...values)
 }
 
 /**
@@ -200,7 +205,11 @@ function addAttribute (node: ASTNode, attributeName: string, ...values: string[]
  *
  * @return  {string}                The HTML string
  */
-export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, indent: number = 0): string {
+export function nodeToHTML (
+  node: ASTNode | ASTNode[],
+  options: MD2HTMLOptions,
+  indent: number = 0,
+): string {
   const HIDDEN_GENERIC_NODES = ['Document']
 
   // Convenience to convert a list of child nodes to HTML
@@ -235,8 +244,20 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     const attr = renderNodeAttributes(node)
     return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`
   } else if (node.type === 'Heading') {
+    let body = nodeToHTML(node.children, options, indent)
+    if (node.name === 'ATXHeading') {
+      body = body.replace(/^[ \t]+/u, '')
+    }
+    if (node.level > 6) {
+      // Pandoc's HTML writer represents Header levels beyond HTML's h1-h6
+      // range as a paragraph with class="heading", while preserving the
+      // semantic level in the Pandoc AST. Never emit non-standard <h7>, <h8>, …
+      addAttribute(node, 'class', 'heading')
+      const attr = renderNodeAttributes(node)
+      return `${node.whitespaceBefore}<p${attr}>${body}</p>`
+    }
     const attr = renderNodeAttributes(node)
-    return `${node.whitespaceBefore}<h${node.level}${attr}>${nodeToHTML(node.children, options, indent)}</h${node.level}>`
+    return `${node.whitespaceBefore}<h${node.level}${attr}>${body}</h${node.level}>`
   } else if (node.type === 'Highlight') {
     const attr = renderNodeAttributes(node)
     return `${node.whitespaceBefore}<mark${attr}>${nodeToHTML(node.children, options, indent)}</mark>`
@@ -247,7 +268,11 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     const attr = renderNodeAttributes(node)
     return `${node.whitespaceBefore}<sub${attr}>${nodeToHTML(node.children, options, indent)}</sub>`
   } else if (node.type === 'Image') {
-    addAttribute(node, 'src', options.onImageSrc !== undefined ? options.onImageSrc(node.url) : node.url)
+    addAttribute(
+      node,
+      'src',
+      options.onImageSrc !== undefined ? options.onImageSrc(node.url) : node.url,
+    )
     addAttribute(node, 'alt', _.escape(node.alt.value))
     addAttribute(node, 'title', node.title?.value ?? _.escape(node.alt.value))
     const attr = renderNodeAttributes(node)
@@ -275,7 +300,10 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     return `${node.whitespaceBefore}<ul${attr}>\n${nodeToHTML(node.items, options, indent)}\n</ul>`
   } else if (node.type === 'ListItem') {
     const attr = renderNodeAttributes(node)
-    const task = node.checked !== undefined ? `<input type="checkbox" disabled="disabled" ${node.checked ? 'checked="checked"' : ''}>` : ''
+    const task =
+      node.checked !== undefined
+        ? `<input type="checkbox" disabled="disabled" ${node.checked ? 'checked="checked"' : ''}>`
+        : ''
     return `${node.whitespaceBefore}<li${attr}>${task}${nodeToHTML(node.children, options, indent + 1)}</li>`
   } else if (node.type === 'Emphasis') {
     const body = nodeToHTML(node.children, options, indent)
@@ -299,7 +327,7 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
         cells.push(nodeToHTML(cell.children, options, indent))
       }
       const tag = row.isHeaderOrFooter ? 'th' : 'td'
-      const content = cells.map(c => `<${tag}>${c}</${tag}>`).join('\n')
+      const content = cells.map((c) => `<${tag}>${c}</${tag}>`).join('\n')
       const attr = renderNodeAttributes(row)
       if (row.isHeaderOrFooter) {
         rows.push(`${row.whitespaceBefore}<thead>\n<tr${attr}>\n${content}\n</tr>\n</thead>`)
@@ -325,11 +353,21 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     // environment needs its marks put back, which mathFromCodeNode owns.
     const math = mathFromCodeNode(node.info, node.source)
     if (math !== null) {
-      return node.whitespaceBefore + mathJaxToHTML(math.equation, math.display ? 'display' : 'inline')
+      return (
+        node.whitespaceBefore + mathJaxToHTML(math.equation, math.display ? 'display' : 'inline')
+      )
     } else {
       const attr = renderNodeAttributes(node)
       return `${node.whitespaceBefore}<code${attr}>${_.escape(node.source)}</code>`
     }
+  } else if (node.type === 'RawBlock') {
+    // Match Pandoc's HTML writer: raw TeX is not emitted into HTML. Specialized
+    // editor renderers (TikZ) may visualize a subset, but copy/preview HTML
+    // must not expose TeX source as prose.
+    return ''
+  } else if (node.type === 'RawInline') {
+    // Same Pandoc HTML-writer rule as RawBlock(tex): TeX source is omitted.
+    return ''
   } else if (node.type === 'PandocDiv') {
     const attr = renderNodeAttributes(node)
     return `${node.whitespaceBefore}<div${attr}>${nodeToHTML(node.children, options, indent)}</div>`
@@ -350,9 +388,10 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
     }
 
     const nodeAttr = renderNodeAttributes(node)
-    const attr = tagInfo.attributes.length > 0
-      ? ' ' + tagInfo.attributes.map(a => `${a[0]}="${a[1]}"`).join(' ') + nodeAttr
-      : nodeAttr
+    const attr =
+      tagInfo.attributes.length > 0
+        ? ' ' + tagInfo.attributes.map((a) => `${a[0]}="${a[1]}"`).join(' ') + nodeAttr
+        : nodeAttr
 
     const open = `${node.whitespaceBefore}<${tagInfo.tagName}${attr}${tagInfo.selfClosing ? '/' : ''}>`
     const close = tagInfo.selfClosing ? '' : `</${tagInfo.tagName}>`
@@ -380,12 +419,8 @@ export function nodeToHTML (node: ASTNode|ASTNode[], options: MD2HTMLOptions, in
  * @return  {string}                   The rendered HTML.
  */
 function footnotesToHTML (fn: FootnoteRef[], options: MD2HTMLOptions): string {
-  const fnHTML = fn.map(f => nodeToHTML(f, options, 0))
-  const html = [
-    '<div id="footnote-container">',
-    ...fnHTML,
-    '</div>'
-  ]
+  const fnHTML = fn.map((f) => nodeToHTML(f, options, 0))
+  const html = [ '<div id="footnote-container">', ...fnHTML, '</div>' ]
 
   return html.join('\n')
 }
@@ -401,7 +436,7 @@ function footnotesToHTML (fn: FootnoteRef[], options: MD2HTMLOptions): string {
  */
 export async function md2html (markdown: string, options: MD2HTMLOptions): Promise<string> {
   const config: MarkdownParserConfig = {
-    zknLinkParserConfig: { format: options.zknLinkFormat }
+    zknLinkParserConfig: { format: options.zknLinkFormat },
   }
 
   const ast = markdownToAST(markdown, undefined, config)
@@ -410,11 +445,12 @@ export async function md2html (markdown: string, options: MD2HTMLOptions): Promi
     throw new Error('Could not turn Markdown to HTML: No Document top node returned from parser.')
   }
 
-  const noFootnotes = ast.children.filter(node => node.type !== 'FootnoteRef')
-  const onlyFootnotes = ast.children.filter(node => node.type === 'FootnoteRef')
+  const noFootnotes = ast.children.filter((node) => node.type !== 'FootnoteRef')
+  const onlyFootnotes = ast.children.filter((node) => node.type === 'FootnoteRef')
 
   const html = nodeToHTML(noFootnotes, options)
-  const fnHTML = onlyFootnotes.length > 0 ? '\n<hr>\n' + footnotesToHTML(onlyFootnotes, options) : ''
+  const fnHTML =
+    onlyFootnotes.length > 0 ? '\n<hr>\n' + footnotesToHTML(onlyFootnotes, options) : ''
 
   if (options.onBibliography === undefined) {
     return html + fnHTML // No bibliography wanted
@@ -422,16 +458,20 @@ export async function md2html (markdown: string, options: MD2HTMLOptions): Promi
 
   // Prepare and include a bibliography at the end.
   // We replicate what the fsal file parser does.
-  const keys = (extractASTNodes(ast, 'Citation') as CitationNode[])
-    .flatMap(node => node.parsedCitation.items.map(item => item.id))
+  const keys = (extractASTNodes(ast, 'Citation') as CitationNode[]).flatMap((node) =>
+    node.parsedCitation.items.map((item) => item.id),
+  )
 
   const bibHTML = await options.onBibliography([...new Set(keys)])
   if (bibHTML !== undefined) {
-    const h1 = options.referenceSectionTitle !== undefined ? `<h1>${options.referenceSectionTitle}</h1>` : ''
+    const h1 =
+      options.referenceSectionTitle !== undefined
+        ? `<h1>${options.referenceSectionTitle}</h1>`
+        : ''
 
-    return html + h1 +
-      [ '\n', bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend ].join('\n') +
-      fnHTML
+    return (
+      html + h1 + [ '\n', bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend ].join('\n') + fnHTML
+    )
   }
 
   return html + fnHTML

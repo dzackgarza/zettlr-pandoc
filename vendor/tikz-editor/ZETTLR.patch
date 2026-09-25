@@ -1,0 +1,69 @@
+diff --git a/packages/app/src/app-menu/default-menu.ts b/packages/app/src/app-menu/default-menu.ts
+index 59fab7a..8cc20ff 100644
+--- a/packages/app/src/app-menu/default-menu.ts
++++ b/packages/app/src/app-menu/default-menu.ts
+@@ -112,7 +112,8 @@ export const APP_MENU_DEFINITION = [
+       {
+         kind: "command",
+         commandId: APP_MENU_COMMAND_IDS.SHOW_COMPILED_PICTURE,
+-        label: "Show Compiled Picture..."
++        label: "Show Compiled Picture...",
++        platforms: ["desktop"]
+       },
+       { kind: "separator" },
+       {
+diff --git a/packages/app/src/ui/SettingsModal.tsx b/packages/app/src/ui/SettingsModal.tsx
+index e849b25..134cf65 100644
+--- a/packages/app/src/ui/SettingsModal.tsx
++++ b/packages/app/src/ui/SettingsModal.tsx
+@@ -7,17 +7,7 @@ import css from "./SettingsModal.module.css";
+ type CategoryId = "general" | "editor" | "canvas";
+ 
+ const MATHJAX_FONTS: { value: MathJaxFont; label: string }[] = [
+-  { value: "mathjax-newcm",   label: "New Computer Modern (default)" },
+-  { value: "mathjax-asana",   label: "Asana Math" },
+-  { value: "mathjax-bonum",   label: "Gyre Bonum" },
+-  { value: "mathjax-dejavu",  label: "DejaVu" },
+-  { value: "mathjax-fira",    label: "Fira / Fira Math" },
+-  { value: "mathjax-modern",  label: "Latin Modern" },
+-  { value: "mathjax-pagella", label: "Gyre Pagella" },
+-  { value: "mathjax-schola",  label: "Gyre Schola" },
+-  { value: "mathjax-stix2",   label: "STIX2" },
+-  { value: "mathjax-termes",  label: "Gyre Termes" },
+-  { value: "mathjax-tex",     label: "TeX (classic MathJax v3)" },
++  { value: "mathjax-newcm", label: "New Computer Modern" }
+ ];
+ 
+ const CATEGORIES: { id: CategoryId; label: string }[] = [
+diff --git a/packages/core/src/text/mathjax-engine.ts b/packages/core/src/text/mathjax-engine.ts
+index e992116..2e35053 100644
+--- a/packages/core/src/text/mathjax-engine.ts
++++ b/packages/core/src/text/mathjax-engine.ts
+@@ -84,7 +84,7 @@ const MIDLINE_FROM_BASELINE_RATIO = 0.215;
+ const MATHJAX_PARAGRAPH_PT_PER_WIDTH_UNIT = 10;
+ const MATHJAX_PARAGRAPH_WIDTH_UNIT_STEP = 0.001;
+ const SINGLE_LINE_WIDTH_EPSILON_PT = 1e-4;
+-const BROWSER_STARTUP_COMPONENT_URL = "https://cdn.jsdelivr.net/npm/mathjax@4/startup.js";
++const BROWSER_STARTUP_COMPONENT_URL = "./mathjax/startup.js";
+ const BROWSER_STARTUP_COMPONENT_ID = "tikz-editor-mathjax-startup";
+ const SCRIPT_LOADED_MARKER = "__tikzMathJaxLoaded";
+ const SCRIPT_ERROR_MARKER = "__tikzMathJaxLoadError";
+@@ -589,6 +589,7 @@ function configureBrowserMathJaxGlobal(font: MathJaxFont): void {
+   const globals = globalThis as { MathJax?: Record<string, unknown> };
+   const existing = isRecord(globals.MathJax) ? globals.MathJax : {};
+   const existingLoader = isRecord(existing.loader) ? existing.loader : {};
++  const existingLoaderPaths = isRecord(existingLoader.paths) ? existingLoader.paths : {};
+   const existingTex = isRecord(existing.tex) ? existing.tex : {};
+   const existingSvg = isRecord(existing.svg) ? existing.svg : {};
+   const existingOutput = isRecord(existing.output) ? existing.output : {};
+@@ -609,6 +610,10 @@ function configureBrowserMathJaxGlobal(font: MathJaxFont): void {
+     },
+     loader: {
+       ...existingLoader,
++      paths: {
++        ...existingLoaderPaths,
++        fonts: "[mathjax]/output/fonts"
++      },
+       load: loaderLoad
+     },
+     tex: {

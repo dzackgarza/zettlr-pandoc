@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type DOMEventHandlers } from '@codemirror/view'
 import html2md from '@common/util/html-to-md'
 import { configField } from '../util/configuration'
@@ -130,7 +131,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<any> = {
           insertions.push(md)
         })
         .catch(err => {
-          console.error(err)
+          reportError(err)
           // On error, fall back to the plain text
           insertions.push(data.getData('text/plain'))
         })
@@ -177,7 +178,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<any> = {
         const transaction = view.state.replaceSelection(insertions.join('\n'))
         view.dispatch(transaction)
       })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
 
     return true
   },
@@ -244,7 +245,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<any> = {
               newTab: true
             }
           } as DocumentManagerIPCAPI)
-            .catch(e => console.error(e))
+            .catch(e => reportError(e))
         } else {
           // Unsupported file type -> ignore
         }
@@ -252,7 +253,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<any> = {
 
       Promise.allSettled(allPromises).then(() => {
         view.dispatch({ changes: { from: pos, insert: insertions.join('\n') } })
-      }).catch(err => console.error(err))
+      }).catch(err => reportError(err))
 
       return true
     } else if (zettlrFile !== '') {

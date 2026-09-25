@@ -177,6 +177,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import ListControl from '@common/vue/form/elements/ListControl.vue'
@@ -371,7 +372,7 @@ ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
   .then((defaults: PandocProfileMetadata[]) => {
     profiles.value = defaults
   })
-  .catch(err => console.error(err))
+  .catch(err => reportError(err))
 
 // On startup, fetch the properties immediately
 onMounted(fetchProperties)
@@ -406,11 +407,11 @@ function updateProperties (): void {
   })
     .then(descriptor => {
       if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-        throw new Error('Could not update project settings: No directory descriptor received!')
+        throw new Error('Could not update project settings because the project folder is no longer open.')
       }
 
       if (descriptor.settings.project == null) {
-        throw new Error('Could not update project settings: Project was null!')
+        throw new Error('Could not update project settings because this folder is no longer a Project.')
       }
 
       // The JSON round trip de-proxies the reactive settings object.
@@ -421,7 +422,7 @@ function updateProperties (): void {
         payload: { properties: deproxiedSettings, path: dirPath }
       })
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
     .finally(() => {
       updateLock.value = false
     })
@@ -430,7 +431,7 @@ function updateProperties (): void {
 async function fetchProperties (): Promise<void> {
   const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
   if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-    throw new Error('Could not fetch project properties: No directory descriptor received!')
+    throw new Error('Could not load project settings because the project folder is no longer open.')
   }
   // Save the actually used formats.
   if (descriptor.settings.project !== null) {

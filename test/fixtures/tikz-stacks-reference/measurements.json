@@ -1,0 +1,79 @@
+[
+  {
+    "tag": "01JO",
+    "url": "https://stacks.math.columbia.edu/tag/01JO",
+    "title": "Fibre products of schemes",
+    "columnWidth": 632.984375,
+    "bodyFontPx": 14,
+    "comparisons": [
+      {
+        "id": "fibre-product-square",
+        "stacksWidthPx": 137.81,
+        "stacksBodyFontPx": 14,
+        "stacksWidthEm": 9.844,
+        "zettlrWidthPx": 136.08,
+        "zettlrEditorFontPx": 14,
+        "zettlrWidthEm": 9.72,
+        "normalizedRatio": 0.987
+      },
+      {
+        "id": "universal-cone",
+        "stacksWidthPx": 241.91,
+        "stacksBodyFontPx": 14,
+        "stacksWidthEm": 17.279,
+        "zettlrWidthPx": 233.52,
+        "zettlrEditorFontPx": 14,
+        "zettlrWidthEm": 16.68,
+        "normalizedRatio": 0.965
+      },
+      {
+        "id": "residue-field-cone",
+        "stacksWidthPx": 489.53,
+        "stacksBodyFontPx": 14,
+        "stacksWidthEm": 34.967,
+        "zettlrWidthPx": 466.38,
+        "zettlrEditorFontPx": 14,
+        "zettlrWidthEm": 33.313,
+        "normalizedRatio": 0.953
+      }
+    ]
+  },
+  {
+    "tag": "07JW",
+    "url": "https://stacks.math.columbia.edu/tag/07JW",
+    "title": "Snake lemma",
+    "columnWidth": 632.984375,
+    "bodyFontPx": 14,
+    "comparisons": [
+      {
+        "id": "snake-ladder",
+        "stacksWidthPx": 275.48,
+        "stacksBodyFontPx": 14,
+        "stacksWidthEm": 19.677,
+        "zettlrWidthPx": 277.72,
+        "zettlrEditorFontPx": 14,
+        "zettlrWidthEm": 19.837,
+        "normalizedRatio": 1.008
+      }
+    ]
+  },
+  {
+    "tag": "067L",
+    "url": "https://stacks.math.columbia.edu/tag/067L",
+    "title": "Sheaf of differentials triangle",
+    "columnWidth": 632.984375,
+    "bodyFontPx": 14,
+    "comparisons": [
+      {
+        "id": "immersion-triangle",
+        "stacksWidthPx": 88.09,
+        "stacksBodyFontPx": 14,
+        "stacksWidthEm": 6.292,
+        "zettlrWidthPx": 94.86,
+        "zettlrEditorFontPx": 14,
+        "zettlrWidthEm": 6.776,
+        "normalizedRatio": 1.077
+      }
+    ]
+  }
+]

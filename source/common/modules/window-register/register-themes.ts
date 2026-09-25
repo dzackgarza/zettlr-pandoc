@@ -16,6 +16,7 @@
 // Import the main.css file which imports CSS for MathJax, Clarity, Tippy.JS, and
 // the geometry for the application. This will be added to the HTML by Webpack
 // automatically
+import { reportError } from '@common/util/error-reporting'
 import './assets/main.css'
 
 const ipcRenderer = window.ipc
@@ -53,7 +54,7 @@ export default function registerThemes (): void {
   // Initial rendering of the Custom CSS
   ipcRenderer.invoke('css-provider', { command: 'get-custom-css-path' })
     .then((cssPath: string) => setCustomCss(cssPath))
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 
   // Create the custom stylesheet which includes certain system colours which
   // will be referenced by the components as necessary.
@@ -125,5 +126,5 @@ function setSystemCss (): void {
       style.textContent += '}'
       document.head.prepend(style)
     })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }

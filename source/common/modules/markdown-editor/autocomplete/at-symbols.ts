@@ -61,6 +61,7 @@ import { runRecoverably } from '@common/util/run-recoverably'
 import { requestPandocQuickHelp } from '../plugins/pandoc-quick-help-effect'
 import { type AutocompletePlugin } from '.'
 import { citations, citekeyUpdateField } from './citations'
+import type { PresentedCompletion } from './completion-presentation'
 
 /**
  * Use this effect to provide the editor state with a new set of workspace
@@ -89,6 +90,7 @@ export const referencesUpdateField = StateField.define<ReferenceCompletionEntry[
  */
 interface ReferenceLabelCompletion extends Completion {
   referenceAffordance: CompletionInsertionAffordance
+  zettlrSource: PresentedCompletion['zettlrSource']
 }
 
 /**
@@ -178,12 +180,12 @@ async function runAppendAndContinue (plan: AppendAndContinuePlan): Promise<void>
   })
 
   if (descriptor === undefined || Array.isArray(descriptor) || descriptor.type !== 'directory') {
-    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the path is not a workspace directory`)
+    throw new Error(`Can't update Project ${plan.rootPath}: that path is not an open folder`)
   }
 
   const settings: ProjectSettings|null = descriptor.settings.project
   if (settings === null) {
-    throw new Error(`Cannot append to the Project at ${plan.rootPath}: the directory carries no Project settings`)
+    throw new Error(`Can't update Project ${plan.rootPath}: no Project settings were found`)
   }
 
   await window.ipc.invoke('application', {
@@ -215,7 +217,7 @@ function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel
       // The append continuation surfaces failures through the recoverable
       // boundary (review B8): one closable error toast, never a silent
       // console-only line. The insertion above already happened either way.
-      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Appending to the Project'))
+      void runRecoverably(async () => { await runAppendAndContinue(affordance.plan) }, trans('Adding files to the Project'))
     }
   }
 
@@ -229,6 +231,7 @@ function applyFor (affordance: CompletionInsertionAffordance): typeof applyLabel
  * projectStatus never gates, reorders, or restyles label entries in Phase 3.
  */
 export const atSymbols: AutocompletePlugin = {
+  source: 'Cite',
   applies (ctx) {
     // The trigger surface is byte-identical to the citation provider's.
     return citations.applies(ctx)
@@ -249,7 +252,8 @@ export const atSymbols: AutocompletePlugin = {
           // quick help from its info panel. Citation options never carry
           // this — their objects pass through byte-identically.
           info: () => labelInfoPanel(detail, ctx.view),
-          referenceAffordance
+          referenceAffordance,
+          zettlrSource: 'Ref' as const
         }
       })
       .filter(entry => {

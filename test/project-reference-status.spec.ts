@@ -344,10 +344,10 @@ describe('Project reference status computation (issue #1 Phase 7)', function () 
   describe('projectStatusDisplayName', function () {
     it('renders the exact user-facing status wording', function () {
       assert.strictEqual(projectStatusDisplayName('same-file'), 'This file')
-      assert.strictEqual(projectStatusDisplayName('in-active-project'), 'In active Project')
-      assert.strictEqual(projectStatusDisplayName('omitted-from-active-project'), 'Omitted from active Project')
+      assert.strictEqual(projectStatusDisplayName('in-active-project'), 'In current Project')
+      assert.strictEqual(projectStatusDisplayName('omitted-from-active-project'), 'Not included in current Project')
       assert.strictEqual(projectStatusDisplayName('another-project'), 'Another Project')
-      assert.strictEqual(projectStatusDisplayName('standalone'), 'Standalone document')
+      assert.strictEqual(projectStatusDisplayName('standalone'), 'Outside any Project')
     })
   })
 })

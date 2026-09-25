@@ -30,7 +30,7 @@ import type {
 } from './menu-dependencies'
 import { getCustomShortcut, type MenuShortcutName } from './shortcuts'
 import { cmShortcutToElectron } from 'source/common/util/shortcuts'
-import { commandLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
+import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -178,6 +178,10 @@ export default function getMenu (
           }
         },
         recentDocsItem,
+        {
+          type: 'separator'
+        },
+        ...desktopFileItems(),
         {
           type: 'separator'
         },
@@ -423,6 +427,10 @@ export default function getMenu (
         {
           type: 'separator'
         },
+        ...authoringSourceItems(config),
+        {
+          type: 'separator'
+        },
         {
           id: 'menu.generate_id',
           label: trans('Generate new ID'),
@@ -450,6 +458,7 @@ export default function getMenu (
       label: trans('View'),
       submenu: [
         commandLauncherItem('Ctrl+P'),
+        fileLauncherItem('Ctrl+Shift+P'),
         statisticsItem(commands),
         {
           type: 'separator'
@@ -604,6 +613,20 @@ export default function getMenu (
           accelerator: 'Ctrl+W',
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'close-window')
+          }
+        },
+        {
+          id: 'menu.tabs_close_all',
+          label: trans('Close All Tabs'),
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'close-all-tabs')
+          }
+        },
+        {
+          id: 'menu.tabs_save_all_close',
+          label: trans('Save All and Close'),
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'save-all-and-close')
           }
         },
         {

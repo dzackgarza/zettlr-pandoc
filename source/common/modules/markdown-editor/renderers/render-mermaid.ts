@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, type EditorView } from '@codemirror/view'
@@ -45,7 +46,7 @@ mermaid.initialize(DEFAULT_MERMAID_OPTIONS)
 function onError (err: unknown, container: HTMLElement) {
   container.classList.add('error')
   if (err instanceof Error) {
-    console.error(err)
+    reportError(err)
     container.innerText = `${trans('Could not render Graph:')}\n\n${err.message}`
   } else {
     container.innerText = trans('Could not render Graph.')
@@ -95,7 +96,10 @@ class MermaidWidget extends WidgetType {
   }
 
   ignoreEvent (event: Event): boolean {
-    return false // By default ignore all events
+    // The rendered chart owns its mouse gesture. Letting CodeMirror process
+    // mousedown first can move the document selection, de-render the chart,
+    // and make the later click resolve against different DOM geometry.
+    return event instanceof MouseEvent
   }
 }
 
@@ -147,4 +151,4 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MermaidWidget|u
   return new MermaidWidget(graph, node.node, window.config.get('darkMode') as boolean)
 }
 
-export const renderMermaid = renderBlockWidgets(shouldHandleNode, createWidget)
+export const renderMermaid = renderBlockWidgets([ 'FencedCode' ], shouldHandleNode, createWidget)

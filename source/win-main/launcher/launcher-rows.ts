@@ -20,11 +20,13 @@
 import { Fzf } from 'fzf'
 import type { SerializedMenuItem, SerializedSubmenu } from '@dts/common/serialized-menu'
 import type { ValidPandocProfile } from '@providers/assets'
+import type { JustRecipeCommand, JustRecipeParameter } from '@dts/common/justfile-commands'
+import type { PreferencesGroups } from '@dts/common/preferences'
 
 /** A group's address from the root: one key per nesting level. */
 export type GroupPath = readonly string[]
 
-export type DynamicGroupId = 'go-to-file' | 'go-to-heading' | 'search-references' | 'export'
+export type DynamicGroupId = 'go-to-file' | 'go-to-heading' | 'search-references' | 'preferences' | 'justfile' | 'export'
 
 export interface MenuLeafRow {
   kind: 'menu-leaf'
@@ -82,12 +84,58 @@ export interface ExportCommandRow {
   label: string
 }
 
-export type LauncherRow = MenuLeafRow | MenuGroupRow | DynamicGroupRow | FileRow | HeadingRow | ExportProfileRow | ExportCommandRow
+export interface JustRecipeRow extends JustRecipeCommand {
+  kind: 'just-recipe'
+  repoRoot: string
+  repoLabel: string
+  label: string
+  breadcrumb: readonly string[]
+}
+
+/** One destination in the Preferences form schema. */
+export interface PreferenceRow {
+  kind: 'preference'
+  group: PreferencesGroups
+  fieldsetTitle: string
+  model?: string
+  label: string
+  /** Preferences group and fieldset, shown before the row label. */
+  breadcrumb: readonly string[]
+  /** Schema-derived option labels/model names/help text used only for search. */
+  aliases: readonly string[]
+}
+
+export type LauncherRow = MenuLeafRow | MenuGroupRow | DynamicGroupRow | FileRow | HeadingRow | ExportProfileRow | ExportCommandRow | JustRecipeRow | PreferenceRow
 
 /** What the launcher asks the window to export the active document with. */
 export type ExportRequest =
   | { kind: 'profile', profile: ValidPandocProfile }
   | { kind: 'command', displayName: string, command: string }
+
+function parameterLabel (parameter: JustRecipeParameter): string {
+  const option = parameter.long !== null
+    ? `--${parameter.long}`
+    : parameter.short !== null
+      ? `-${parameter.short}`
+      : null
+  const isSwitch = parameter.flag || parameter.hasValue
+  const operand = parameter.kind === 'singular' ? `<${parameter.name}>` : `<${parameter.name}>…`
+  const value = option === null
+    ? operand
+    : isSwitch
+      ? option
+      : `${option} ${operand}`
+  const optional = parameter.flag || parameter.hasDefault || parameter.kind === 'star'
+  return optional ? `[${value}]` : value
+}
+
+/** Recipe name plus the argument signature the launcher can ask Just to run. */
+export function justRecipeLabel (recipe: JustRecipeCommand): string {
+  if (recipe.parameters.length === 0) {
+    return recipe.name
+  }
+  return `${recipe.name} ${recipe.parameters.map(parameterLabel).join(' ')}`
+}
 
 
 /**
@@ -115,6 +163,11 @@ export function rowKey (row: LauncherRow): string {
       return `export-profile:${row.profile.name}`
     case 'export-command':
       return `export-command:${row.command}`
+    case 'just-recipe':
+      return `just-recipe:${row.repoRoot}:${row.name}`
+    case 'preference':
+      // JSON keeps a fieldset row without a model distinct from every model.
+      return `preference:${JSON.stringify([ row.group, row.fieldsetTitle, row.model, row.label ])}`
   }
 }
 
@@ -243,6 +296,28 @@ export function rankRows (rows: readonly LauncherRow[], query: string): Launcher
   if (query === '') {
     return [...rows]
   }
-  const fzf = new Fzf([...rows], { selector: (row: LauncherRow) => row.label })
+  const fzf = new Fzf([...rows], { selector: launcherRowSearchText })
   return fzf.find(query).map(result => result.item)
+}
+
+/** Search the semantic path of a row, not only its final visible label. */
+export function launcherRowSearchText (row: LauncherRow): string {
+  switch (row.kind) {
+    case 'menu-leaf':
+    case 'menu-group':
+    case 'just-recipe':
+      return [ ...row.breadcrumb, row.label ].join(' ')
+    case 'file':
+      // A file's display label is often its YAML title or first heading, so
+      // quick-open must also match the actual filename/path. Otherwise a file
+      // called index.md titled "Lattice Notes" is impossible to find by name.
+      return [ row.label, ...row.breadcrumb, row.path ].join(' ')
+    case 'preference':
+      return [ 'Preferences', ...row.breadcrumb, row.label, ...row.aliases ].join(' ')
+    case 'heading':
+    case 'dynamic-group':
+    case 'export-profile':
+    case 'export-command':
+      return row.label
+  }
 }

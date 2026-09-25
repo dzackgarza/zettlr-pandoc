@@ -1,0 +1,63 @@
+html,
+body.zettlr-quiver-host {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+body.zettlr-quiver-host.ui {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* Zettlr owns persistence, source editing, macros and mode switching. Keep
+ * Quiver's actual diagram editor, inspector, toolbar, touch gestures and
+ * shortcuts, but remove the website-oriented import/export/share surface. */
+body.zettlr-quiver-host .panel.global,
+body.zettlr-quiver-host .port,
+body.zettlr-quiver-host #welcome-pane,
+body.zettlr-quiver-host .version,
+body.zettlr-quiver-host > a > .logo,
+body.zettlr-quiver-host .pane:not(#keyboard-shortcuts-pane) {
+    display: none !important;
+}
+
+/* The upstream toolbar is a fixed 672px strip. In the RHS editor pane that
+ * pushes legitimate editor actions beyond the iframe viewport. Host mode wraps
+ * the same native actions instead of hiding/scaling them; fullscreen restores
+ * Quiver's ordinary single-row toolbar geometry. */
+body.zettlr-quiver-host .toolbar {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    width: auto;
+    height: auto;
+    min-height: 60px;
+    transform: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+body.zettlr-quiver-host.zettlr-fullscreen .toolbar {
+    left: 50%;
+    right: auto;
+    top: 16px;
+    width: auto;
+    height: 60px;
+    min-height: 0;
+    transform: translateX(-50%);
+    display: block;
+}
+
+/* Upstream positions help immediately below its one-row toolbar. Host mode can
+ * have multiple rows, so centre the shortcuts pane independently. */
+body.zettlr-quiver-host #keyboard-shortcuts-pane {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(72%, 48rem);
+    max-height: 72%;
+}

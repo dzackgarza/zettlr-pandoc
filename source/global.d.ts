@@ -42,6 +42,10 @@ declare module '*.glsl' {
   const content: string
   export default content
 }
+declare module '*.md' {
+  const content: string
+  export default content
+}
 declare module '*.css' {
   const filePath: string
   export default filePath
@@ -58,7 +62,13 @@ declare module '@replit/codemirror-emacs' {
   import { type Extension } from '@codemirror/state'
   export function emacs (): Extension
 }
-declare module '@replit/codemirror-lang-nix'
+declare module '@replit/codemirror-lang-nix' {
+  import { type LanguageSupport, type LRLanguage } from '@codemirror/language'
+  import { type Parser } from '@lezer/common'
+  export const parser: Parser
+  export const nixLanguage: LRLanguage
+  export function nix (): LanguageSupport
+}
 // Declare all legacy-modes plugins at once
 declare module '@codemirror/legacy-modes/*'
 
@@ -100,7 +110,7 @@ declare const ONBOARDING_PRELOAD_WEBPACK_ENTRY: string
 // Contains the git build number and date
 declare const __GIT_COMMIT_HASH__: string
 declare const __BUILD_DATE__: string
-declare const __UPDATES_DISABLED__: '1'|'0'
+declare const __UPDATES_DISABLED__: '1' | '0'
 
 declare interface Window {
   /**
@@ -135,7 +145,9 @@ declare interface Window {
    *
    * @return  {string|undefined}       The rendered citation, or undefined
    */
-  getCitationCallback: (database: import('./types/common/citeproc').CitationDatabase) => (citations: CiteItem[], composite: boolean) => string|undefined
+  getCitationCallback: (
+    database: string | string[],
+  ) => (citations: CiteItem[], composite: boolean) => string | undefined;
   ipc: {
     /**
      * Sends a message to main (fire-and-forget)
@@ -186,5 +198,5 @@ declare interface Window {
    *
    * @return  {string|undefined}        The absolute path, or undefined.
    */
-  getPathForFile: (file: File) => string|undefined
+  getPathForFile: (file: File) => string | undefined;
 }

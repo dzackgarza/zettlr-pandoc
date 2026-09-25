@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { type ChangeSpec, EditorSelection } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
 import { configField, configUpdateEffect } from '../util/configuration'
@@ -72,7 +73,7 @@ function insertLinkOrImage (target: EditorView, type: 'link'|'image'): void {
 
       target.dispatch(transaction)
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**

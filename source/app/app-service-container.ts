@@ -46,6 +46,7 @@ import path from 'path'
 import { trans } from 'source/common/i18n-main'
 import LongRunningTaskProvider from './service-providers/long-running-tasks'
 import { SearchProvider } from './service-providers/search'
+import { installErrorReporter } from '@common/util/error-reporting'
 
 // We need module-global variables so that garbage collect won't shut down the
 // providers before the app is shut down.
@@ -111,6 +112,7 @@ export class AppServiceContainer {
 
     // First section: Crucial providers
     this._logProvider = new LogProvider()
+    installErrorReporter((message, details) => { this._logProvider.error(message, details) })
     this._configProvider = new ConfigProvider(this._logProvider)
     this._lrtProvider = new LongRunningTaskProvider(this._logProvider) // Not really crucial, but the FSAL needs access
     this._fsal = new FSAL(
@@ -121,7 +123,7 @@ export class AppServiceContainer {
 
     // Now according to their dependencies
     this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider)
-    this._assetsProvider = new AssetsProvider(this._logProvider)
+    this._assetsProvider = new AssetsProvider(this._logProvider, this._configProvider)
     this._cssProvider = new CssProvider(this._logProvider)
     this._statsProvider = new StatsProvider(this._logProvider)
 
@@ -166,6 +168,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._documentManager,
       this,
+      this._citeprocProvider,
     )
     this._tagProvider = new TagProvider(
       this._logProvider,

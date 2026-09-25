@@ -3,7 +3,7 @@
     ref="pdfViewerContainer"
     class="pdf-viewer-container"
     role="region"
-    :aria-label="`PDFViewer: Currently viewing file ${pathBasename(props.file.path)}`"
+    :aria-label="`Viewing PDF ${pathBasename(props.file.path)}`"
     @pointerenter="acceptsClicks = true"
     @pointerleave="acceptsClicks = false"
   >

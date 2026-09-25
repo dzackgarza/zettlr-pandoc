@@ -72,6 +72,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
 import NumberControl from '@common/vue/form/elements/NumberControl.vue'
 import SelectControl from '@common/vue/form/elements/SelectControl.vue'
@@ -144,7 +145,7 @@ function updateWritingTarget (): void {
       count: internalTargetValue.value,
       path: props.file.path
     }
-  }).catch(e => console.error(e))
+  }).catch(e => reportError(e))
 }
 
 function retrieveTagColour (tagName: string): string {

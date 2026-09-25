@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { mapLangCodeToName, resolveLangCode } from '@common/util/map-lang-code'
 import { type PreferencesFieldset } from './types'
@@ -55,7 +56,7 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
           onClick: () => {
             ipcRenderer.invoke('dictionary-provider', {
               command: 'open-dictionary-folder'
-            }).catch(err => console.error(err))
+            }).catch(err => reportError(err))
           }
         },
       ]
@@ -78,8 +79,42 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
       ]
     },
     {
+      title: trans('Prose completion dictionaries'),
+      infoString: trans('Autocomplete uses the selected Hunspell dictionaries and these UTF-8 files. Put one word or phrase on each line. New entries go to the primary file.'),
+      group: PreferencesGroups.Spellchecking,
+      fields: [
+        {
+          type: 'file',
+          label: trans('Primary completion file'),
+          model: 'editor.proseCompletionFile',
+          placeholder: trans('Path to a text file with prose completions'),
+          filter: [{ extensions: ['txt', 'dic'], name: trans('Text dictionaries') }]
+        },
+        {
+          type: 'list',
+          valueType: 'simpleArray',
+          model: 'editor.proseCompletionExtraFiles',
+          label: trans('Additional completion files'),
+          columnLabels: [trans('File path')],
+          deletable: true,
+          searchable: true,
+          searchLabel: trans('Filter files …'),
+          striped: true
+        },
+        {
+          type: 'button',
+          label: trans('Open primary completion file'),
+          onClick: () => {
+            ipcRenderer.invoke('dictionary-provider', {
+              command: 'open-prose-completion-file'
+            }).catch(err => reportError(err))
+          }
+        }
+      ]
+    },
+    {
       title: trans('LanguageTool'),
-      infoString: trans('LanguageTool can check your texts for typos, grammatical, and stylistic issues. By default, LanguageTool sends your texts to the official servers. You can also self-host the software.'),
+      infoString: trans('LanguageTool can check your texts for typos, grammatical, and stylistic issues. By default, Zettlr uses the local LanguageTool CLI. Remote LanguageTool servers remain optional.'),
       group: PreferencesGroups.Spellchecking,
       titleField: {
         type: 'switch',
@@ -174,6 +209,7 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
           label: trans('LanguageTool Provider'),
           inline: true,
           options: {
+            cli: trans('Local CLI'),
             official: 'LanguageTool.org',
             custom: trans('Custom server')
           },
@@ -196,21 +232,21 @@ export function getSpellcheckingFields (config: ConfigOptions): PreferencesField
         {
           type: 'form-text',
           display: 'info',
-          contents: trans('Zettlr will ignore the "LanguageTool provider" settings if you enter any credentials here.')
+          contents: trans('Premium credentials are used only with the LanguageTool.org backend. The local CLI and custom-server backends do not use them.')
         },
         {
           type: 'text',
           label: trans('LanguageTool Username'),
           model: 'editor.lint.languageTool.username',
           placeholder: 'Username',
-          disabled: !config.editor.lint.languageTool.active || config.editor.lint.languageTool.provider === 'custom'
+          disabled: !config.editor.lint.languageTool.active || config.editor.lint.languageTool.provider !== 'official'
         },
         {
           type: 'text',
           label: trans('LanguageTool API key'),
           model: 'editor.lint.languageTool.apiKey',
           placeholder: 'API key',
-          disabled: !config.editor.lint.languageTool.active || config.editor.lint.languageTool.provider === 'custom'
+          disabled: !config.editor.lint.languageTool.active || config.editor.lint.languageTool.provider !== 'official'
         }
       ]
     },

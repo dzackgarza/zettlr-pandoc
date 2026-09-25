@@ -21,6 +21,24 @@ import loadIcons from './load-icons'
 import { loadData } from '@common/i18n-renderer'
 import { initializeMathJax } from '@common/util/mathtex-to-html'
 import type { MathJaxMacro } from '@common/util/mathjax-config'
+import { reportError } from '@common/util/error-reporting'
+
+let rendererErrorCaptureInstalled = false
+
+/** Route otherwise-uncaught renderer failures into the durable application log. */
+export function registerRendererErrorCapture (): void {
+  if (rendererErrorCaptureInstalled) {
+    return
+  }
+  rendererErrorCaptureInstalled = true
+
+  window.addEventListener('error', event => {
+    reportError('[Renderer] Uncaught error', event.error ?? event.message)
+  })
+  window.addEventListener('unhandledrejection', event => {
+    reportError('[Renderer] Unhandled promise rejection', event.reason)
+  })
+}
 
 /**
  * This function is the renderer's counterpart to the main process's window
@@ -28,6 +46,7 @@ import type { MathJaxMacro } from '@common/util/mathjax-config'
  * bar (on Windows and Linux, if native is off)
  */
 export default async function windowRegister (): Promise<void> {
+  registerRendererErrorCapture()
   // Immediately load the translations
   await loadData()
   // Load the clarity icons

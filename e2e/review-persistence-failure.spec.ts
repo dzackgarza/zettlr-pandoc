@@ -45,8 +45,8 @@ import {
   type AgentClient
 } from './support/electron-app'
 
-/** The annotations panel: where every review control lives after M9. */
-const PANEL = '#annotations-panel'
+/** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
+const EDITOR = '.main-editor-wrapper .cm-editor'
 
 const BASELINE = [
   '# Persistence', '',
@@ -119,7 +119,7 @@ async function openDocumentId (api: AgentClient): Promise<string> {
 
 async function workingText (api: AgentClient): Promise<string> {
   const payload = await api.get(
-    `/v1/documents/${await openDocumentId(api)}/content?side=working`
+    `/v1/documents/${await openDocumentId(api)}?includeContent=true&side=working`
   )
   return stringField(payload, 'content')
 }
@@ -137,7 +137,7 @@ async function chunkListing (
   api: AgentClient,
   reviewId: string
 ): Promise<{ chunks: ChunkView[], generation: number, workingSha256: string }> {
-  const payload = await api.get(`/v1/reviews/${reviewId}/chunks`)
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
   assert.ok(
     isRecord(payload) &&
       Array.isArray(payload.chunks) &&
@@ -160,7 +160,7 @@ async function proposalPreconditions (
   api: AgentClient,
   documentId: string
 ): Promise<{ baselineSha256: string, expectedReviewGeneration: number }> {
-  const payload = await api.get(`/v1/documents/${documentId}/content?side=working`)
+  const payload = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   assert.ok(isRecord(payload) && isRecord(payload.revision))
   assert.equal(typeof payload.reviewGeneration, 'number')
   return {
@@ -201,25 +201,21 @@ function toastMessages (page: Page): Promise<string[]> {
     .allInnerTexts()
 }
 
-/**
- * Waits for a renderer console error matching `pattern`. The renderer logs the
- * rejected authority push there and nowhere else, so this is how the spec
- * knows the push was attempted and refused rather than merely slow.
- */
-async function waitForRendererError (
-  events: string[],
+/** Waits for the process-wide LogProvider to record the rejected renderer operation. */
+async function waitForProcessError (
+  output: () => string,
   pattern: RegExp,
   timeoutMs: number
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (events.some(event => pattern.test(event))) {
+    if (pattern.test(output())) {
       return
     }
     await delay(100)
   }
   throw new Error(
-    `No renderer error matched ${String(pattern)} within ${timeoutMs}ms:\n${events.join('\n')}`
+    `No application error matched ${String(pattern)} within ${timeoutMs}ms:\n${output()}`
   )
 }
 
@@ -253,6 +249,7 @@ describe('a review that cannot be persisted', function () {
   let api: AgentClient | undefined
   let page: Page | undefined
   let reviewId: string | undefined
+  let getOutput: () => string = () => ''
   const rendererEvents: string[] = []
 
   before(async function () {
@@ -261,8 +258,8 @@ describe('a review that cannot be persisted', function () {
       documentContents: BASELINE,
       config: {
         agentApi: { enabled: true, port: 0 },
-        // Every review control lives in the sidebar's annotations panel (M9),
-        // so the fixture opens the sidebar on that tab.
+        // The workspace panel stays open beside the editor; every decision
+        // here is still made from the controls inside the editor.
         window: { sidebarVisible: true }
       }
     })
@@ -272,6 +269,7 @@ describe('a review that cannot be persisted', function () {
     const running = await attach(fixture.configDirectory, rendererEvents, this.timeout())
     appProcess = running.appProcess
     browser = running.browser
+    getOutput = running.getOutput
     api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000))
     page = await findEditorPage(running.browser, this.timeout())
     await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
@@ -322,7 +320,7 @@ describe('a review that cannot be persisted', function () {
     assert.deepEqual(reviews.reviews, [], 'a refused proposal must open no review')
     assert.deepEqual(await sidecarBytes(directory), {})
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-inspector`).count(),
+      await activePage.locator(`${EDITOR} .cm-collaborationControl`).count(),
       0,
       'a refused proposal must not mount review controls'
     )
@@ -338,7 +336,7 @@ describe('a review that cannot be persisted', function () {
       'reviewId'
     )
     await activePage
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'visible', timeout: 30_000 })
     assert.deepEqual(
@@ -356,8 +354,8 @@ describe('a review that cannot be persisted', function () {
 
     const before = await reviewSummary(activeApi, activeReviewId)
     const beforeSidecars = await sidecarBytes(directory)
-    // The card names its chunk by the claim description.
-    const card = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise alpha' })
+    // The controls name their chunk by the claim description.
+    const card = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise alpha' })
     const accept = card.locator('.suggestion-decision.accept')
 
     await breakSidecarWrites(directory)
@@ -367,7 +365,7 @@ describe('a review that cannot be persisted', function () {
     await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
     assert.match(
       await toast.first().locator('span').first().innerText(),
-      /^The collaboration state could not be persisted, so the mutation was not applied: /,
+      /^Couldn't save the review state, so the mutation was not applied: ./,
       'the reviewer must be told the review was not persisted'
     )
     assert.equal(
@@ -418,7 +416,7 @@ describe('a review that cannot be persisted', function () {
         }
       ]
     })
-    const noted = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
+    const noted = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
     // The note is committed with Enter, and the provider answering with it is
     // the acknowledgment — the sidecar is only broken AFTER this write has
     // landed, so what the later scenarios refuse is never this one.
@@ -491,12 +489,12 @@ describe('a review that cannot be persisted', function () {
     const beforeSidecars = await sidecarBytes(directory)
 
     await breakSidecarWrites(directory)
-    await activePage.locator('.cm-content').click()
+    await activePage.locator('.cm-line').first().click()
     await activePage.keyboard.press('Control+End')
     await activePage.keyboard.type('refused-edit')
     // The push is refused in main and logged here; waiting for that is what
     // makes the assertions below about an attempt rather than about timing.
-    await waitForRendererError(rendererEvents, /Pushing updates failed/, 30_000)
+    await waitForProcessError(getOutput, /Pushing updates failed/, 30_000)
 
     assert.equal(
       await workingText(activeApi),
@@ -511,7 +509,7 @@ describe('a review that cannot be persisted', function () {
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' }).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' }).count(),
       1,
       'the annotated chunk must still be rendered'
     )
@@ -535,7 +533,7 @@ describe('a review that cannot be persisted', function () {
       file => isRecord(file) && file.path === activePath
     )
     await activeApi.post(`/v1/documents/${stringField(entry, 'documentId')}/focus`, {})
-    const reopened = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
+    const reopened = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
     await reopened
       .locator('input.suggestion-chunk-comment')
       .waitFor({ state: 'visible', timeout: 30_000 })
@@ -545,7 +543,7 @@ describe('a review that cannot be persisted', function () {
       'the reattached review restores the note into its field'
     )
 
-    await activePage.locator('.cm-content').click()
+    await activePage.locator('.cm-line').first().click()
     await activePage.keyboard.press('Control+End')
     await activePage.keyboard.type('accepted-edit')
     await waitForWorkingText(activeApi, text => text.includes('accepted-edit'), 30_000)
@@ -574,14 +572,14 @@ describe('a review that cannot be persisted', function () {
       `only the proposed claim remains adjudicable: ${JSON.stringify(pending)}`
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasNotText: 'Revise bravo' }).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasNotText: 'Revise bravo' }).count(),
       0,
-      'the typed line gets no card of its own'
+      'the typed line gets no controls of its own'
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).count(),
       1,
-      'the annotated chunk is the only one the panel offers a decision on'
+      'the annotated chunk is the only one the editor offers a decision on'
     )
     assert.deepEqual(
       await activePage.evaluate(
@@ -615,7 +613,7 @@ describe('a review that cannot be persisted', function () {
     await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
     assert.match(
       await toast.first().locator('span').first().innerText(),
-      /The review could not be written to its sidecar, so this document was left open: /,
+      /^The review could not be saved, so this document was left open: ./,
       'the person who asked for the close must be told why it did not happen'
     )
     assert.deepEqual(

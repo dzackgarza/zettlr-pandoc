@@ -298,6 +298,30 @@ describe('extractReferences()', function () {
     )
   })
 
+  it('indexes a theorem whose Pandoc attribute list spans several lines', function () {
+    const doc = `:::{.theorem
+    title="{\\cite[Thm. 1.1]{AEGS25}}"
+    #thm:intro-main-theorem
+}
+The theorem body.
+:::
+`
+    const snapshot = extractReferences('multiline-theorem.md', doc)
+
+    assert.strictEqual(snapshot.definitions.length, 1)
+    const definition = snapshot.definitions[0]
+    assert.strictEqual(definition.key, 'thm:intro-main-theorem')
+    assert.strictEqual(definition.family, 'thm')
+    assert.strictEqual(definition.sourceKind, 'theorem-div')
+    assert.deepStrictEqual(definition.classes, [ 'theorem' ])
+    assert.strictEqual(definition.title, '{\\cite[Thm. 1.1]{AEGS25}}')
+    assert.deepStrictEqual(
+      definition.range,
+      tokenRange(doc, '#thm:intro-main-theorem'),
+      'the workspace definition must point at the authored id token in the multiline attribute list'
+    )
+  })
+
   it('never fabricates definitions from unclosed attribute-block near-misses (review C8)', function () {
     // A heading whose attribute block never closes is structurally not a
     // labeled definition; the citing occurrence still extracts and simply

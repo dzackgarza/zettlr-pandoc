@@ -40,6 +40,14 @@ import {
   CollaborationSidecarStore,
   collaborationSidecarFilePath,
 } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import {
+  AnnotationDomainValidationError,
+  type AnnotationDomainValidationCode,
+} from "source/app/service-providers/documents/annotation-domain-validation";
+
+function annotationIssue(code: AnnotationDomainValidationCode): (error: unknown) => boolean {
+  return (error) => error instanceof AnnotationDomainValidationError && error.issue.code === code;
+}
 
 const FINGERPRINT =
   "1111111111111111111111111111111111111111111111111111111111111111";
@@ -417,7 +425,32 @@ describe("CollaborationSidecarStore", function () {
       review: null,
       annotations: { generation: 1, items: [annotation("annotation-1"), annotation("annotation-1")] },
     });
-    await assert.rejects(store.read(documentPath), /duplicate annotation id annotation-1/);
+    await assert.rejects(store.read(documentPath), annotationIssue("DUPLICATE_ANNOTATION_ID"));
+  });
+
+  it("rejects distinct annotations with the same normalized creation instruction", async function () {
+    const first = annotation("annotation-1");
+    const secondBase = annotation("annotation-2");
+    const second: TextAnnotation = {
+      ...secondBase,
+      messages: [
+        {
+          ...secondBase.messages[0],
+          messageId: "message-3",
+          text: "  CHECK   THIS CAPITALIZATION  ",
+        },
+      ],
+      proposalActions: [],
+    };
+    persistRaw({
+      ...sidecar(documentPath),
+      review: null,
+      annotations: { generation: 2, items: [first, second] },
+    });
+    await assert.rejects(
+      store.read(documentPath),
+      annotationIssue("DUPLICATE_ANNOTATION_INSTRUCTION"),
+    );
   });
 
   it("rejects an annotation with no messages", async function () {

@@ -15,6 +15,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { syntaxTree } from '@codemirror/language'
 import { type EditorState } from '@codemirror/state'
 import { type SyntaxNode } from '@lezer/common'
@@ -77,7 +78,7 @@ export function removeMarkdownLink (node: SyntaxNode, view: EditorView): void {
       }
     }
   } else {
-    console.error(`Cannot remove Markdown link for node -- wrong type: ${node.type.name}`)
+    reportError(`Cannot remove Markdown link for node -- wrong type: ${node.type.name}`)
   }
 
   view.dispatch({ changes })

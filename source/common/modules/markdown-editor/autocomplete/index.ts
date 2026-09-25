@@ -19,17 +19,41 @@ import {
   type CompletionSource,
   type CompletionResult,
   autocompletion,
-  CompletionContext
+  CompletionContext,
+  completeAnyWord,
 } from '@codemirror/autocomplete'
-import { type StateField } from '@codemirror/state'
+import { type Extension } from '@codemirror/state'
 import { codeBlocks } from './code-blocks'
 import { atSymbols } from './at-symbols'
 import { snippets } from './snippets'
 import { files } from './files'
 import { tags } from './tags'
 import { headings } from './headings'
+import { emojis } from './emojis'
+import { texConstructionSource } from './tex-constructions'
+import { texCommandSource } from './tex-commands'
+import { proseDictionarySource } from './prose-dictionary'
+import {
+  phraseCompletionSource,
+  phraseCompletionsField,
+  phraseCompletionsUpdate
+} from './phrases'
+import {
+  texCommandCompletionSource,
+  texMacroSourcesUpdate
+} from './tex'
+import {
+  completionOptionClass,
+  renderCompletionIcon,
+  renderCompletionSource,
+  withDefaultCompletionInfo,
+  withCompletionSource,
+  type CompletionSourceName,
+} from './completion-presentation'
 
 export interface AutocompletePlugin {
+  /** Source label shown in the aligned nvim-cmp-style rightmost column. */
+  source?: CompletionSourceName
   /**
    * This function is frequently called and should return true as soon as the
    * plugin detects a string that it can autocomplete.
@@ -53,14 +77,26 @@ export interface AutocompletePlugin {
    * @return  {Completion[]}              The list of available completions
    */
   entries: (ctx: CompletionContext, query: string) => Completion[]
-  fields?: Array<StateField<any>>
+  /**
+   * The state fields this provider reads. The autocomplete extension installs
+   * them for every provider; a provider that keeps no state lists none.
+   */
+  fields: Extension[]
+}
+
+/**
+ * A completion's rank after a source-level adjustment. CodeMirror reads an
+ * absent `Completion.boost` as no rank adjustment of the option's own, so the
+ * source adjustment is then the whole boost.
+ */
+function adjustedBoost (option: Completion, adjustment: number): number {
+  return option.boost === undefined ? adjustment : option.boost + adjustment
 }
 
 const forbiddenTokens = [
   'YAMLFrontmatter',
   'YAMLFrontmatterStart',
-  'YAMLFrontmatterEnd',
-  'MathEquation'
+  'YAMLFrontmatterEnd'
 ]
 
 /**
@@ -74,61 +110,83 @@ const forbiddenTokens = [
  *
  * @return  {CompletionSource}                 The dispatching source
  */
-export function createAutocompleteSource (providers: AutocompletePlugin[]): CompletionSource {
+export function autocompleteSourceFor (
+  plugin: AutocompletePlugin,
+  boost: number = 0
+): CompletionSource {
   return function (ctx): CompletionResult|null {
-    // This function is called for every keystroke and shall determine whether
-    // to actually start the autocomplete.
-
-    // With this function we check whether we are currently within "forbidden"
-    // tokens (i.e. codeblocks, YAML stuff, etc.)
     if (ctx.tokenBefore(forbiddenTokens) !== null) {
       return null
     }
-
-    let plugin: AutocompletePlugin|undefined
-    let startpos = ctx.pos
-
-    for (const p of providers) {
-      const res = p.applies(ctx)
-      if (res !== false) {
-        plugin = p
-        startpos = res
-        break
-      }
+    const from = plugin.applies(ctx)
+    if (from === false) {
+      return null
     }
-
-    if (plugin !== undefined) {
-      const initialOptions = plugin.entries(ctx, ctx.state.doc.sliceString(startpos, ctx.pos).toLowerCase())
-      return {
-        from: startpos,
-        options: initialOptions,
-        filter: false,
-        update: (current, from, to, updateContext) => {
-          const query = updateContext.state.doc.sliceString(from, to).toLowerCase()
-          const context = new CompletionContext(updateContext.state, updateContext.pos, updateContext.explicit, ctx.view)
-          current.options = plugin!.entries(context, query)
-          return current
+    const query = ctx.state.doc.sliceString(from, ctx.pos).toLowerCase()
+    return {
+      from,
+      options: plugin.entries(ctx, query).map(option => {
+        const sourced = withCompletionSource(option, plugin.source)
+        const enriched = withDefaultCompletionInfo(sourced, sourced.zettlrSource)
+        return {
+          ...enriched,
+          boost: Math.max(-99, Math.min(99, adjustedBoost(option, boost)))
         }
-      }
+      })
     }
+  }
+}
 
-    // Return null to indicate that autocomplete does not apply.
-    return null
+/** CodeMirror's own cached current-buffer word source, labeled and de-prioritized. */
+export const bufferWordSource: CompletionSource = ctx => {
+  const result = completeAnyWord(ctx)
+  if (result === null || result instanceof Promise) {
+    return result
+  }
+  return {
+    ...result,
+    options: result.options.map(option => ({
+      ...withCompletionSource(option, 'Buffer'),
+      boost: adjustedBoost(option, -20)
+    }))
   }
 }
 
 // NOTE: Headings has to be checked before tags
-export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [ codeBlocks, atSymbols, files, headings, tags, snippets ]
-
-const autocompleteSource: CompletionSource = createAutocompleteSource(AUTOCOMPLETE_PROVIDERS)
+export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [ codeBlocks, atSymbols, files, headings, tags, emojis, snippets ]
+export const AUTOCOMPLETE_SOURCES: CompletionSource[] = [
+  autocompleteSourceFor(codeBlocks, 40),
+  autocompleteSourceFor(atSymbols, 40),
+  autocompleteSourceFor(files, 40),
+  autocompleteSourceFor(headings, 40),
+  autocompleteSourceFor(tags, 30),
+  autocompleteSourceFor(emojis, 10),
+  autocompleteSourceFor(snippets, 25),
+  texCommandCompletionSource,
+  texConstructionSource,
+  texCommandSource,
+  phraseCompletionSource,
+  proseDictionarySource,
+  bufferWordSource,
+]
 
 export const autocomplete = [
   autocompletion({
     activateOnTyping: true, // Always show immediately
-    selectOnOpen: true, // But never pre-select anything
+    activateOnTypingDelay: 25,
+    selectOnOpen: true,
     closeOnBlur: true,
     maxRenderedOptions: 20,
-    override: [autocompleteSource],
+    override: AUTOCOMPLETE_SOURCES,
+    // Match the workstation's nvim-cmp presentation without replacing
+    // CodeMirror's popup engine: use its native match spans and documented
+    // content hooks to add a compact icon and aligned `[Source]` column.
+    icons: false,
+    optionClass: completionOptionClass,
+    addToOptions: [
+      { position: 20, render: renderCompletionIcon },
+      { position: 90, render: renderCompletionSource }
+    ],
     // Do not include the default keymap. Instead, we re-define it below to
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to
@@ -138,14 +196,10 @@ export const autocomplete = [
   // Make sure any configuration fields will be inserted into the state so that
   // the plugins can look them up and function correctly. These fields are not
   // required by the main class (MarkdownEditor), hence we do not have to re-
-  // export them here.
-  codeBlocks.fields ?? [],
-  // atSymbols carries both the citation field and the references field, so
-  // each is registered exactly once through this single entry.
-  atSymbols.fields ?? [],
-  files.fields ?? [],
-  tags.fields ?? [],
-  snippets.fields ?? []
+  // export them here. atSymbols carries both the citation field and the
+  // references field, so each is registered exactly once through its entry.
+  AUTOCOMPLETE_PROVIDERS.flatMap(provider => provider.fields),
+  phraseCompletionsField
 ]
 
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
@@ -155,3 +209,4 @@ export { referencesUpdate } from './at-symbols'
 export { filesUpdate } from './files'
 export { tagsUpdate } from './tags'
 export { snippetsUpdate } from './snippets'
+export { phraseCompletionsUpdate, texMacroSourcesUpdate }

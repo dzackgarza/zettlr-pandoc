@@ -1,0 +1,2195 @@
+bun install --frozen-lockfile
+bun install v1.3.11 (af24e281)
+Resolving dependencies
+Resolved, downloaded and extracted [2]
+
+Checked 1581 installs across 1429 packages (no changes) [271.00ms]
+python3 "/home/dzack/gitclones/Zettlr-pandoc-mathjax/scripts/assert-dev-server-stopped.py"
+"/home/dzack/gitclones/Zettlr-pandoc-mathjax/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
+
+
+  ✔ requires initialization before conversion
+  ✔ registers updater IPC only after its boot initialization
+  ✔ renders updater Markdown with the lite adaptor without a global document (683ms)
+  Agent HTTP API (OpenAPI / REST)
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Initializing document storage ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:39331
+    ✔ review-submission applies a closed-file patch without changing focus and refuses a stale baseline (86ms)
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:35197
+    ✔ review-submission applies ordered claims and rejects paths outside the workspace (64ms)
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:46809
+    ✔ fails enabled startup when the configured port is taken
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:45171
+    ✔ publishes the bound port for discovery and retracts it on shutdown
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:38979
+    ✔ GET /openapi.yaml serves the OpenAPI specification without auth
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:35359
+    ✔ serves a parsable specification for a Host header that is not a YAML scalar (76ms)
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:33769
+    ✔ serves a document the Custom GPT Action importer accepts
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:38313
+    ✔ reproduces each import finding on a document that breaks the rules
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:39823
+    ✔ publishes no adjudication operation in the served document
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:36141
+    ✔ declares every submitProposal response status in the served OpenAPI
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:38173
+[21:40:09] [AgentHTTPProvider] Unhandled error: TypeError: Invalid URL
+{}
+    ✔ answers a request target that is not a URL instead of dying on it
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:33753
+    ✔ GET /v1/ping returns protocol version
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:45753
+    ✔ preserves workspace walk failures in the HTTP error detail
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:39921
+    ✔ GET /v1/capabilities reports supported features
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:46507
+    ✔ GET /v1/context returns open documents
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:38957
+    ✔ GET /v1/documents lists open documents
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:35345
+    ✔ GET /v1/documents/{id} returns document metadata
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:09] [AgentHTTPProvider] Listening on http://127.0.0.1:35361
+    ✔ GET /v1/documents/{id}/content returns live buffer with ETag
+[21:40:09] Document Manager starting up ...
+[21:40:09] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:45673
+    ✔ accepts unauthenticated loopback requests
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:41735
+[21:40:10] Could not open file /tmp/zettlr-http-api-EzC7eU/cli-review.md: windowId was undefined.
+    ✔ submits a review through the standalone external CLI process (87ms)
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:44395
+    ✔ rejects an incompatible Agent API before any mutating request
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:38697
+[21:40:10] [DocumentManager] File /tmp/zettlr-http-api-gyEAle/save-close-review.md saved.
+    ✔ detaches a saved pending review before closing its final pane
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:40983
+    ✔ returns a patch refusal without opening an unopened document (66ms)
+    request body lifecycle
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:39339
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:40599
+      ✔ answers a stalled body with 408 REQUEST_BODY_TIMEOUT and closes the socket (302ms)
+[21:40:10] Log provider shutting down ...
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:37617
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:41273
+[21:40:10] Log provider shutting down ...
+[21:40:10] [AgentHTTPProvider] Refused oversized POST /v1/documents/doc-lifecycle/proposals with REQUEST_TOO_LARGE
+[21:40:10] Log provider shutting down ...
+      ✔ answers an oversized body with structured 413 and logs the refusal (78ms)
+[21:40:10] Log provider shutting down ...
+[21:40:10] Document Manager starting up ...
+[21:40:10] [Document Manager] Restored 1 open windows.
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:34473
+[21:40:10] [AgentHTTPProvider] Listening on http://127.0.0.1:40401
+[21:40:10] Log provider shutting down ...
+[21:40:10] [AgentHTTPProvider] Client disconnected before finishing POST /v1/documents/doc-lifecycle/proposals; dropped the body read
+[21:40:11] Log provider shutting down ...
+      ✔ abandons the read when the client disconnects mid-body and keeps serving (455ms)
+[21:40:11] Log provider shutting down ...
+    live OpenAPI response conformance
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:39717
+      ✔ serves the remaining declared bodies matching their schemas
+
+  Annotation Agent API (/v1/annotations)
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:40533
+    ✔ lists an open annotation across the workspace with a UTF-16 line/column target
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:44023
+    ✔ computes line and column correctly for a target that crosses a line break
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:38763
+    ✔ scopes GET /v1/documents/{documentId}/annotations to that document alone
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:34185
+    ✔ GET /v1/annotations/{annotationId} returns full detail and 404s for an unknown id
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:44535
+    ✔ filters GET /v1/annotations by state
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:35963
+    ✔ posts exactly one message for a repeated clientRequestId, and a fresh one for a new id (41ms)
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:39253
+    ✔ refuses a stale expectedAnnotationGeneration with 409 and persists nothing
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:38399
+    ✔ refuses whitespace-only message text with 400 INVALID_PARAMS
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:43079
+    ✔ 404s a message posted against an unknown annotationId
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:41529
+    ✔ publishes no lifecycle-mutating annotation operation in the served document
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:37465
+    ✔ refuses an agent's resolve, reopen, reattach, and delete attempt on the real, sidecar-backed pipeline
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:42275
+    ✔ links a submitted proposal to the annotation it addresses
+[21:40:11] Document Manager starting up ...
+[21:40:11] [Document Manager] Restored 1 open windows.
+[21:40:11] [AgentHTTPProvider] Listening on http://127.0.0.1:36669
+    ✔ refuses a claim addressing a non-open annotation, committing neither the packet nor the annotation
+
+  Annotation anchor mapping
+    ✔ verifies the fixture coordinates against the document
+    ✔ rule 3: an insertion inside the target expands it
+    ✔ rule 4: a replacement inside the target is covered by it
+    ✔ rule 5: deleting part of the target shrinks it
+    ✔ rule 4, at its limit: a rewrite of exactly the target is followed
+    ✔ rule 7: an orphaned anchor passes through untouched
+    ✔ returns to its original coordinates when an insertion is undone
+    ✔ never rewrites the quoted text
+    rule 1: a change strictly before the target shifts it
+      ✔ shifts both coordinates past an insertion
+      ✔ shifts both coordinates back over a deletion
+    rule 2: an insertion on a boundary stays outside the target
+      ✔ leaves text typed at the start boundary before the target
+      ✔ leaves text typed at the end boundary after the target
+    rule 6: deleting the whole target collapses it to a point
+      ✔ keeps the quoted text and marks the seam
+      ✔ collapses to the seam of a deletion that reaches past the target
+      ✔ collapses when a wider rewrite swallows the target
+    rule 8: overlapping annotations map independently
+      ✔ maps each of two overlapping targets to its own text
+      ✔ gives the same result whichever target is mapped first
+    a collapsed point keeps travelling with the document
+      ✔ shifts past an earlier insertion
+      ✔ stays at the head of text typed into the seam
+      ✔ does not become a range again when the deletion is undone
+
+  Selection-anchored annotate command (M6)
+    ✔ offers no annotate item at a collapsed cursor inside a word (79ms)
+    ✔ offers the annotate item over a real non-empty selection, identified by its dispatched event
+
+  collaborationSessionFor
+    ✔ broadcasts an annotation-only document — no review required to signal
+
+  useDocumentCollaborationStore
+    ✔ serves two panes and the panel from one cached session, with one mutation reaching all three
+    ✔ prunes a closed document's cached session and forgets nothing else
+
+  annotation-presentation
+    ✔ labels an instant against the injected clock, in luxon's short relative form
+    ✔ reads anything under a minute old as just now, never as a count of seconds
+    ✔ renders an unparsable timestamp as an empty label
+    ✔ maps the owner to the person glyph and the agent to the sparkle glyph, each with its label and time
+    ✔ counts a proposal card by the linked actions still undecided
+    ✔ submits a trimmed draft, and nothing for whitespace
+    ✔ reports the last line a range target reaches, for the selected-text card
+
+  cross-section proposal linkage
+    ✔ records the packet and the annotation's action in one sidecar
+    ✔ commits neither half when the proposal addresses an annotation the document does not have
+    ✔ refuses a proposal against a resolved thread and leaves the review unopened
+    ✔ refuses a proposal against an orphaned target, whose text the document no longer has
+    ✔ lands neither the packet nor the action when the one write fails
+    ✔ restores the annotation's target when the owner rejects the proposal that moved it
+    ✔ treats a replayed request id with different linkage as a different request
+    ✔ leaves an unlinked proposal's fingerprint alone, so its own replay still answers
+
+  Reattach-selection resolver (M10, S8/I6)
+    ✔ refuses a collapsed cursor rather than fabricating a point range (I6: no background guess)
+    ✔ reports the exact range the owner selected, coordinate for coordinate
+
+  Journey 1 — create, close, reopen (plan section 9)
+    ✔ restores the exact anchor coordinates and the full message thread from the v5 sidecar
+
+  Journey 2 — anchor mapping through owner typing (plan section 9)
+    ✔ maps the anchor through a shift before the target and an expansion inside it, without drift
+
+  Journey 6 — external disk drift then owner Reattach (plan section 9, invariant I6)
+    ✔ orphans the annotation on drift, and returns it to range ONLY through an explicit owner Reattach
+    ✔ refuses to reattach through anything but the owner (I3)
+
+  Rename carries the sidecar (plan section 4, M10 acceptance)
+    ✔ moves the sidecar to the new path's key, leaving no debris at the old one
+
+  pure annotation transitions
+    ✔ cuts the quoted text from the buffer and makes the instruction the thread's first turn
+    ✔ refuses a target that is empty, backwards, or outside the document
+    ✔ refuses an annotation with no instruction, because the instruction is the annotation
+    ✔ refuses every lifecycle move an agent asks for, and leaves the set untouched (I3)
+    ✔ lets an agent reply, and stamps the message with the actor rather than the caller's word
+    ✔ answers a replayed clientRequestId with the message it already posted, without a second turn
+    ✔ refuses an agent message with no request id, so a retry can never be told apart from a new turn
+    ✔ fences every mutation on the annotation generation alone
+    ✔ resolves, refuses a second resolution, refuses a reply, and reopens
+    ✔ reattaches to a range the owner picked and keeps the original quoted text (I1)
+    ✔ deletes the annotation it names and nothing else
+    ✔ leaves its input untouched whatever it decides
+
+  the annotation transaction boundary
+    ✔ has the mutation on disk before any reader can see it in memory (I2)
+    ✔ commits neither memory nor disk when the sidecar write fails, and both agree on reload
+    ✔ serializes two concurrent mutations that were formed against the same generation
+    ✔ serializes a review mutation against an annotation mutation, and one sidecar carries both
+    ✔ carries an anchor through the owner's typing in the same transaction as the text
+    ✔ never blocks a save on an open annotation, and moves the fence with the file (I5)
+    ✔ orphans annotations on external drift instead of losing them (I6)
+    ✔ keeps a document's annotations across a review mutation that rewrites its text
+    ✔ keeps counting after the last annotation goes, so a stale fence stays stale
+    ✔ keeps the threads and orphans the anchors when the owner discards the bytes they described
+    ✔ refuses an annotation mutation on a closed document without touching the sidecar
+
+  annotation-panel-model
+    ✔ derives a card's title from the first sentence of its first message, not a stored field (I8)
+    ✔ truncates a title with no sentence-ending punctuation instead of running unbounded
+    ✔ assigns ordinals by document position across open AND resolved annotations together (S4)
+    ✔ reports the source line a target still occupies, and reports orphaned targets as having none
+    ✔ partitions resolved cards out of the primary list entirely (S9)
+    ✔ counts open annotations only, not the resolved one sitting alongside them (S10)
+    ✔ derives the terminal action row from annotation state, not a stored menu (S8)
+    ✔ filters cards by quoted text and by instruction text, case-insensitively
+    ✔ truncates a long instruction preview instead of rendering it unbounded
+    ✔ builds cards from a REAL CollaborationApplicationService's output, not just fixture literals
+
+  useDocumentCollaborationStore panel surface
+    ✔ selectAnnotation switches the inspector mode, and clearing the selection returns to the list
+    ✔ toggleShowResolved flips the disclosure, and accepts an explicit value
+    ✔ resolveAnnotation sends a fenced IPC request and does not touch the cache itself — only a broadcast does
+    ✔ addAnnotationMessage sends the owner's text as an owner-authored message request
+    ✔ reattachAnnotation carries the owner-selected replacement range, never a guessed one (S8/I6)
+    ✔ reopenAnnotation names its own channel, fenced on the same snapshot resolve is
+
+  suggestion inspector model
+    ✔ shows each outstanding chunk with the claim that proposed it
+    ✔ reads both sides of a chunk out of the same working text its anchors index
+    ✔ locates each chunk on its own source line
+    ✔ prefills a chunk's note field from the provider, and only its own chunk's
+    ✔ commits a trimmed note, commits nothing when it did not change, and commits an emptied field as the removal
+    ✔ finds only the chunk(s) a given set of packets produced (S7: Show proposal)
+
+  useDocumentCollaborationStore review surface
+    ✔ sends a chunk decision on its own typed channel, addressing the chunk and fencing on the snapshot it was formed against
+    ✔ addresses the second chunk when the second chunk is decided, not the first
+    ✔ sends a chunk note under the same fence a decision uses, since the chunk id is content-addressed
+    ✔ sends the two mass actions under the fence one decision uses, and changes nothing locally
+    ✔ fences a review-level comment on the generation alone: it adjudicates nothing and moves no text
+    ✔ hands a provider refusal back as a value the panel can surface, without touching the cache
+    ✔ fences against the snapshot on screen now, not the one the panel first rendered
+    ✔ refuses to fabricate a fence for a document carrying no review
+
+  the two M10 emit boundaries (S7/S8/I6) in a real panel mount
+    ✔ proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers (7816ms)
+    ✔ buildSceneSessionWithOrphan carries a fourth, orphaned, OPEN annotation alongside the base three
+
+  attachment icon markup
+    ✔ renders an ordinary three-character extension in the bundled SVG label
+    ✔ renders a markup-shaped three-character extension only as text
+
+  TableEditor#buildGrid()
+    ✔ Should build test table 1 correctly
+    ✔ Should build test table 2 correctly
+    ✔ Should build test table 3 correctly
+    ✔ Should build test table 4 correctly
+
+  Citeproc database parse cache
+    ✔ parses a bib database and stamps the cache with the source hash
+    ✔ serves an unchanged database from the cache instead of re-parsing
+    ✔ re-parses and re-stamps when the database content changes
+    ✔ re-parses over an unreadable cache file rather than failing the load
+
+  CITEPROC_MAIN_DB sentinel
+    with no global library configured
+[21:40:20] Citeproc provider booting up ...
+[21:40:20] [Citeproc Provider] Loading CSL style at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-styles/chicago-author-date.csl ...
+[21:40:20] [Citeproc Provider] Loading CSL locale file at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-locales/locales-en-US.xml ...
+[21:40:20] [Citeproc Provider] Could not load main database: No main database available.
+      ✔ serves an empty item set for a document carrying no library of its own
+[21:40:20] Loading database project.bib as BibLaTeX.
+[21:40:20] BibLaTeX database loaded, 1 items.
+[21:40:20] [Citeproc Provider] Could not load main database: No main database available.
+[21:40:20] [Citeproc Provider] Selecting database /tmp/zettlr-citeproc-sentinel-2gMoCj/project.bib...
+      ✔ serves a project bibliography without the unconfigured global library
+[21:40:20] Citeproc provider shutting down ...
+    with a global library configured
+[21:40:20] Citeproc provider booting up ...
+[21:40:20] [Citeproc Provider] Loading CSL style at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-styles/chicago-author-date.csl ...
+[21:40:20] [Citeproc Provider] Loading CSL locale file at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-locales/locales-en-US.xml ...
+[21:40:21] Loading database global.bib as BibLaTeX.
+[21:40:21] BibLaTeX database loaded, 1 items.
+[21:40:21] Loaded database project.bib from parse cache (1 items).
+[21:40:21] [Citeproc Provider] Selecting database /tmp/zettlr-citeproc-sentinel-2gMoCj/project.bib, /tmp/zettlr-citeproc-sentinel-2gMoCj/global.bib...
+      ✔ merges the global library into a project bibliography
+[21:40:21] [Citeproc Provider] Selecting database /tmp/zettlr-citeproc-sentinel-2gMoCj/global.bib...
+      ✔ resolves the bare sentinel to the global library
+[21:40:21] Citeproc provider shutting down ...
+
+  CollaborationApplicationService
+    ✔ commits review state, document text, sidecars, and typed events together
+    ✔ never offers the user's own edits for adjudication (#65)
+    ✔ accepts all proposal chunks without accepting the user's own edit (#65)
+    ✔ rejects only agent text after the owner edits inside a suggestion (#68)
+    ✔ keeps an adjacent owner insertion outside the suggestion (#68)
+    ✔ maps a deletion seam past later owner text and restores only removed text (#68)
+    ✔ preserves independent suggestion identity across owner edits and restart (#68)
+    ✔ refuses a closed review through an explicit service error
+    ✔ fails reattachment when persisted state is version 3 (#68)
+    ✔ preserves a saved held review when only a later unsaved edit is discarded
+    ✔ owns editor reconciliation, save fencing, and detached reattachment
+
+  CollaborationSidecarStore
+    ✔ composes real filesystem writes and reads as asynchronous operations
+    ✔ restores a valid sidecar, pendingSave included
+    ✔ reads a version-4 fixture as version 5, writes it back, and is identical after a restart
+    ✔ rejects a version-3 sidecar rather than migrating it
+    ✔ rejects a field the schema does not declare
+    ✔ rejects a packet field retired from the suggestion model
+    ✔ rejects a hash that is not a sha256
+    ✔ rejects duplicate suggestion identities
+    ✔ rejects a suggestion without an owning packet
+    ✔ rejects unsorted, overlapping, and out-of-bounds anchors
+    ✔ rejects out-of-bounds seams and restorations
+    ✔ rejects incoherent insertion, deletion, and substitution data
+    ✔ accepts a deletion represented by one zero-length anchor
+    ✔ accepts one deletion with multiple zero-length anchors
+    ✔ rejects overlapping proposed suggestion anchors
+    ✔ rejects a sidecar whose payload path does not match its hashed filename
+    ✔ round-trips a text annotation exactly, including its message thread
+    ✔ rejects a duplicate annotation id
+    ✔ rejects an annotation with no messages
+    ✔ keeps a sidecar alive on annotations alone, and removes it once both clear
+    ✔ never writes annotation or review state into the document's own file
+    ✔ leaves the previous complete sidecar behind when a write fails
+    ✔ ends concurrent writes with one complete valid payload
+
+  command launcher: serialised menu boundary
+    ✔ parses the menu the provider serialised from the running app
+    ✔ rejects an item whose type the provider never emits
+
+  command launcher: rows
+    ✔ lists a group as its groups and leaves in menu order, separators dropped
+    ✔ resolves an id-less group through its label key
+    ✔ flattens every executable leaf once, with its breadcrumb
+    ✔ ranks leaves over their menu breadcrumb plus label and keeps menu order on the empty query
+    ✔ finds a file by its actual filename even when its display title is unrelated
+
+  command launcher: navigation state
+    ✔ drills down with an empty query, pops back to the parent, and closes above the root
+    ✔ opens the references view directly with the relayed request
+
+  command launcher: a menu the launcher cannot present in full
+    ✔ fails on a group path that names no submenu, rather than presenting the group as empty
+    ✔ fails on an executable item the provider serialised without an id, rather than dropping it from the list
+
+  previewReferenceRename
+    ✔ renames a duplicated key across every definition and occurrence with exact ranges
+    ✔ pins expectedSourceHashes to the snapshot hashes of exactly the touched documents
+    ✔ leaves buffer partitioning and conflict state to the committing layer
+    ✔ computes inverse undo edits restoring every touched document byte-exactly
+    ✔ renames a colon-bearing key without touching the prefix-similar occurrence
+    ✔ rejects family changes as typed family-changed values
+    ✔ rejects renaming onto an existing key as a collision naming every colliding definition
+    ✔ rejects structurally malformed replacement keys as typed malformed-key values
+    ✔ distinguishes unknown-key rejection from a blanket rejection
+
+  Utility#counter()
+    ✔ 1. should return 0 words (en)
+    ✔ 1. should return 0 characters (en)
+    ✔ 2. should return 2 words (en)
+    ✔ 2. should return 10 characters (en)
+    ✔ 3. should return 3 words (en)
+    ✔ 3. should return 16 characters (en)
+    ✔ 4. should return 0 words (en)
+    ✔ 4. should return 0 characters (en)
+    ✔ 5. should return 3 words (en)
+    ✔ 5. should return 11 characters (en)
+    ✔ 6. should return 0 words (en)
+    ✔ 6. should return 0 characters (en)
+    ✔ 7. should return 6 words (en)
+    ✔ 7. should return 34 characters (en)
+    ✔ 8. should return 12 words (en)
+    ✔ 8. should return 71 characters (en)
+    ✔ 9. should return 9 words (en)
+    ✔ 9. should return 35 characters (en)
+    ✔ 10. should return 5 words (ja)
+    ✔ 10. should return 8 characters (ja)
+    ✔ 11. should return 5 words (ja)
+    ✔ 11. should return 12 characters (ja)
+    ✔ 12. should return 5 words (ja)
+    ✔ 12. should return 15 characters (ja)
+    ✔ 13. should return 6 words (ja)
+    ✔ 13. should return 22 characters (ja)
+
+  Utility#cssSafeString()
+    ✔ should sanitize "some arbitrary text" to "some-arbitrary-text"
+    ✔ should sanitize "some-text-but-with-✅" to "some-text-but-with-"
+    ✔ should sanitize "" to ""
+    ✔ should sanitize "99-air-balloons" to "_9-air-balloons"
+    ✔ should sanitize "--looks-like-a-var" to "__looks-like-a-var"
+    ✔ should sanitize "-1—up" to "__up"
+
+  CiteprocProvider#LoadDatabase()
+    ✔ 0. should parse the bib content correctly
+
+  desktop command target resolution
+    ✔ uses a focused file ahead of the active editor file
+    ✔ uses a focused directory as here while keeping the active file for external editing
+    ✔ falls back from focus to the active editor file
+    ✔ uses the selected Explorer directory when no file is active
+    ✔ uses one unambiguous root when there is no more specific context
+    ✔ does not guess between multiple roots
+
+  Utility#disambiguateFile()
+    ✔ should return the same path if the file does not yet exist
+    ✔  1. should generate a new filename
+    ✔  2. should generate a new filename
+    ✔  3. should generate a new filename
+    ✔  4. should generate a new filename
+    ✔  5. should generate a new filename
+    ✔  6. should generate a new filename
+    ✔  7. should generate a new filename
+    ✔  8. should generate a new filename
+    ✔  9. should generate a new filename
+    ✔ 10. should generate a new filename
+    ✔ should correctly count 11 files in the folder
+    ✔ should disambiguate a path regardless of whether it's a file or folder
+
+  Div-class registry relation (issue #5, B23)
+    ✔ no referenceable div class belongs to the proof family
+    ✔ classifies a div by its label prefix exactly as by the equivalent class
+
+  Document annotation IPC (M6, WU-14)
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ creates an annotation through documents:create-annotation and reaches the real application service
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ refuses documents:create-annotation for a path with no open document
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ surfaces a real coordinate bounds violation through the channel unchanged
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ surfaces a real generation mismatch through the channel unchanged
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ hardcodes actor: owner and never reads a forged actor field off the wire payload
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ wires documents:add-annotation-message to the real thread
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ wires documents:resolve-annotation and documents:reopen-annotation to the real lifecycle
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ wires documents:reattach-annotation to a freshly picked range
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ wires documents:delete-annotation to the real removal
+
+  Modules#DocumentTree
+    ✔ should successfully create a tree
+    ✔ should successfully serialize itself to JSON
+    ✔ should successfully deserialize from JSON
+Replacing this leaf with a new branch as the tree node
+    ✔ should correctly add splits to the tree
+
+  Documents-provider navigation join (review C6)
+[21:40:22] Document Manager starting up ...
+[21:40:22] [Document Manager] Initializing document storage ...
+[21:40:22] [Document Manager] Restored 1 open windows.
+    ✔ open-file with targetRange/sourceLocation stamps history and echoes the range
+    ✔ navigate-back returns the widened entry; forward restores the stamped destination
+
+  Editor text-annotation locators
+    ✔ invariant I4: renders no message text, thread, button, or proposal state — only the locator
+    ✔ open/inactive: highlights the target span and marks its first line with the card ordinal
+    ✔ open/active: gives the active annotation's mark and marker a stronger treatment than open/inactive
+    ✔ overlapping: two targets on the same line collapse to one marker carrying the count, while both spans still highlight
+    ✔ point target: marks the deletion seam and highlights no span
+    ✔ orphaned: marks the document's first line and highlights no span, since no position survived
+    ✔ resolved: renders nothing until "Show resolved" is on, then renders distinguishably from open
+    ✔ drafting: shows a transient treatment on the selection, with no marker, cleared on cancel
+    ✔ local mapping: an interior edit grows the highlighted span and the marker follows the retargeted line without a fresh broadcast
+
+  Document-authority sync guard (format-on-save ordering)
+    ✔ fails when the backstop expires with updates still unsent (60ms)
+    ✔ resolves once the authority confirms the pending update (40ms)
+    ✔ resolves immediately when there is nothing left to send
+
+  Editor parses multi-key citation clusters
+    ✔ renders every key of a spaced cluster with one separator each (924ms)
+    ✔ renders a cluster whose semicolons have no following space (724ms)
+    ✔ keeps a real prefix while dropping the separator whitespace (669ms)
+
+  Editor preserves citation suffixes beginning with Roman-numeral letters
+    ✔ keeps “Lem. 7.1, 7.2” intact as a citation suffix
+    ✔ keeps “Cor. 6.2” intact as a citation suffix
+    ✔ renders the lemma suffix without an artificial gap (41ms)
+    ✔ redraws an open citation after its bibliography becomes available
+    ✔ styles the complete lemma reference as suffix text while editing
+    ✔ continues to parse a genuine Roman-numeral locator
+    ✔ continues to parse a supported explicit locator label
+    ✔ does not treat an adjacent bracketed citation as a locator suffix of an in-text reference
+
+  Footnote body background
+    ✔ tints the label line and its indented body
+    ✔ tints a body written on the label line
+    ✔ spans the blank line between two body paragraphs
+    ✔ leaves a de-indented continuation untinted
+
+  Footnote reference bodies
+    ✔ labels a body written on the same line
+    ✔ labels a body written on the following indented line
+    ✔ keeps a next-line body inside the footnote, not in a code block
+
+  Editor "Format document" command (issue #26)
+    ✔ feeds the whole current buffer to the formatter and applies its output
+    ✔ applies the reformat as a SINGLE undo step that restores the original byte-identically
+    ✔ preserves the caret across a whitespace-only reflow (anchored to the same word)
+    ✔ leaves the document untouched and creates no undo step when the formatter reports it is absent
+    ✔ does not push an undo step when the formatted output is identical to the buffer
+
+  LaTeX/TikZ completion sources
+    ✔ derives custom MathJax macros from the exact parser configuration
+    ✔ offers the maintained LaTeX Workshop catalogue in Markdown math
+    ✔ offers user-owned MathJax macros in Markdown math
+    ✔ offers ordinary LaTeX, TikZ grammar commands, and template-owned macros inside TikZ
+    ✔ offers tikzcd commands and LaTeX commands together in tikzcd
+    ✔ completes ordinary LaTeX environments after \begin{
+    ✔ does not spray LaTeX command completion into ordinary prose
+
+  portable prose dictionary completion
+    ✔ completes ordinary dictionary words
+    ✔ completes a multi-word phrase from a partially typed phrase
+    ✔ also offers phrase entries from their first word
+    ✔ does not offer prose dictionary entries inside math, code, or TikZ
+
+  Editor detects LaTeX math delimiters
+    ✔ $$ … $$ block renders as display math
+    ✔ $ … $ renders as inline math
+    ✔ \[ … \] block renders as display math
+    ✔ \( … \) renders as inline math
+    ✔ \[ … \] mid-paragraph (after prose, no blank line) renders as display
+    ✔ \[ … .\] with the closing delimiter after a trailing period renders as display
+
+  Editor renders LaTeX math environments
+    the HTML conversion
+      ✔ renders an align environment standing alone as display math
+      ✔ renders it glued to the prose above, as Pandoc does
+      ✔ renders equation, gather, multline and cases
+      ✔ renders a starred environment
+      ✔ leaves a non-math environment as ordinary text
+    the editor preview
+      ✔ hands MathJax the whole environment, which is what makes align align
+      ✔ produces the same math node when the environment follows prose
+      ✔ does not treat a non-math environment as math
+      ✔ leaves an unterminated environment alone rather than eating the document
+      ✔ still renders the dollar forms it always did
+      ✔ does not fire inside inline math that already delimits an environment
+
+  Editor mounts math widgets for LaTeX delimiters
+    ✔ mounts a DISPLAY widget for a mid-paragraph \[ … \] block (63ms)
+    ✔ mounts a DISPLAY widget when the close is a trailing ".\]"
+    ✔ mounts an INLINE widget for \( … \) in prose
+    ✔ still mounts a DISPLAY widget for a $$ block (regression)
+
+  Pandoc attribute-block rendering (issue #11)
+    ✔ renders the heading attribute block away when the cursor is elsewhere
+    ✔ renders multi-entry attribute blocks away on every heading
+    ✔ renders the table-caption attribute block away
+    ✔ reveals the attribute block while the cursor is on the carrier line
+    ✔ renders the image attribute block away when the cursor is elsewhere (issue #27)
+    ✔ reveals the image attribute block while the cursor is on the image line (issue #27)
+    ✔ decides the reveal threshold by the user preference, not by a value of its own
+    ✔ reports an editor assembled without the configuration instead of hiding blocks on a preference nobody set
+
+  Editable Pandoc citation input
+    ✔ preserves braced and Unicode identifiers in citation clusters
+    ✔ keeps an unfinished bracket cluster editable without exceeding its source
+
+  Pandoc fenced-div clicks preserve CodeMirror source positions
+    ✔ maps a click on alpha inside an inactive div to that authored token
+    ✔ maps a click on omega inside an inactive div to that authored token
+    ✔ maps a click on gamma inside an inactive div to that authored token
+    ✔ maps a click on delta inside an inactive div to that authored token
+    ✔ keeps ordinary text Before outside. correctly mapped as a control
+    ✔ keeps ordinary text Between outside. correctly mapped as a control
+    ✔ keeps ordinary text After outside target. correctly mapped as a control
+    ✔ keeps Definition label activation mapped to its authored opening fence
+    ✔ keeps Warning label activation mapped to its authored opening fence
+    ✔ maps the left panel gutter beside First target alpha. to CodeMirror's position on that authored line
+    ✔ maps the right panel gutter beside First target alpha. to CodeMirror's position on that authored line
+    ✔ maps the left panel gutter beside Second target omega. to CodeMirror's position on that authored line
+    ✔ maps the right panel gutter beside Second target omega. to CodeMirror's position on that authored line
+    ✔ maps the left panel gutter beside Third target gamma. to CodeMirror's position on that authored line
+    ✔ maps the right panel gutter beside Third target gamma. to CodeMirror's position on that authored line
+    ✔ maps the left panel gutter beside Fourth target delta. to CodeMirror's position on that authored line
+    ✔ maps the right panel gutter beside Fourth target delta. to CodeMirror's position on that authored line
+
+  Editor renders line-wrapped citations inside Pandoc fenced divs
+    ✔ opens an active div containing the Morrison line-wrapped citation
+    ✔ opens an inactive div containing the Morrison line-wrapped citation
+    ✔ keeps the document editable after mounting a wrapped citation
+    ✔ keeps a second wrapped citation rendered while the first citation is selected
+    ✔ keeps a wrapped citation rendered while a neighboring equation is selected
+    ✔ continues to render a single-line citation inside an active div
+    ✔ leaves a selected wrapped citation raw without throwing
+    ✔ leaves malformed citation source raw as a control
+
+  Editor presents Pandoc fenced divs semantically
+    ✔ shows an inactive semantic panel while preserving authored content and inner renderers
+    ✔ reveals the div shell while preserving cursor-local nested preview behavior
+    ✔ keeps inline equations rendered while editing ordinary theorem prose
+    ✔ keeps display equations rendered while editing ordinary theorem prose
+    ✔ makes only the selected inline equation raw
+    ✔ makes only the selected display equation raw
+    ✔ keeps emphasis rendered while editing unrelated theorem prose
+    ✔ keeps links rendered while editing unrelated theorem prose
+    ✔ makes only selected emphasis raw while links and equations remain rendered
+    ✔ makes only the selected link raw while emphasis and equations remain rendered
+    ✔ reveals the complete raw div for cursor positions on every authored part
+    ✔ makes only the deepest selected div active and keeps its container lightweight
+    ✔ uses the first recognized authored class for each semantic family
+    ✔ classifies Quarto classless theorem divs by their label prefix
+    ✔ activates the deepest div independently for every selection range
+    ✔ keeps the existing renderPandoc preference authoritative
+    ✔ moves the cursor to the source from mouse or keyboard label activation
+    ✔ leaves malformed and incomplete fenced divs as raw source
+    ✔ preserves ordinary editing and undo history inside an active div
+
+  Reference definition badges (issue #1 Phase 4)
+    ✔ renders one subtle label badge per definition, showing the authored key
+    ✔ renders a separate always-visible count badge for every definition, including zero
+    ✔ counts citing locations workspace-wide with a singular form for exactly one
+    ✔ keeps the authored definition source intact next to its badges
+    ✔ emits the Mod-P signal family keyed to the definition when the count badge is clicked
+
+  Reference chips (issue #1 Phase 4)
+    resolved occurrences render as independent compact chips
+      ✔ renders a bare untitled occurrence as a Type — key fallback chip
+      ✔ renders a titled theorem occurrence as a Type — title chip without any number
+      ✔ preserves authored prefixes and punctuation around independent chips in a cluster
+      ✔ preserves authored locators and suffixes after the chip
+      ✔ takes over the supported-family cluster from render-citations
+    unresolved occurrences stay raw
+      ✔ renders no chip for a missing key and keeps the authored source
+      ✔ renders no chip for a duplicate key and never selects one definition silently
+    mixed bibliography/reference clusters
+      ✔ stays raw under the new extension set
+    bibliography byte-parity (MUST hold in every phase)
+      ✔ produces byte-identical citation DOM for "By [@Ols04, Lem. 7.1], some result follows." (661ms)
+      ✔ produces byte-identical citation DOM for "See [see @Ols04; @BHPV04] for the surface classification." (251ms)
+      ✔ produces byte-identical citation DOM for "@Kod63 says something important about elliptic surfaces." (237ms)
+      ✔ produces byte-identical citation DOM for "Smith argues this [-@Kod63] at length." (231ms)
+
+  Completion help link (review A2)
+    ✔ every label option carries the quick-help info panel; citation options never do
+    ✔ the info panel links to the Pandoc quick reference and the link dispatches the open-help effect (47ms)
+
+  Project-status completion gating (issue #1 Phase 7)
+    ✔ keeps status-carrying entries visible with unchanged label/detail text
+    ✔ disables insertion for another-Project entries while keeping them listed
+    ✔ inserts omitted entries and carries their append-and-continue plan (46ms)
+    ✔ inserts standalone entries with the export-unit warning affordance
+    ✔ marks in-active-Project entries with the plain insert affordance
+    ✔ leaves citation options byte-identical and affordance-free (51ms)
+
+  Combined @-symbol completion surface (issue #1 Phase 3)
+    byte-identity differential against the citation provider
+      ✔ preserves citation completion byte-identically for a line-start @ with the cursor directly behind it
+      ✔ preserves citation completion byte-identically for a bare citation after a space
+      ✔ preserves citation completion byte-identically for a bracketed citation
+      ✔ preserves citation completion byte-identically for a suppressed-author citation
+      ✔ preserves citation completion byte-identically for a citation after an opening parenthesis
+      ✔ preserves citation completion byte-identically for a bracketed citation behind an authored prefix
+      ✔ preserves citation completion byte-identically for a query that filters the citation database
+      ✔ preserves citation completion byte-identically for a database sorted by in-document citation usage
+      ✔ preserves citation completion byte-identically for a line-start @ with a query (no citation context today)
+      ✔ preserves citation completion byte-identically for an email-like in-word @ (no citation context today)
+      ✔ keeps the combined surface citation-only while no references DB has been pushed
+    typed label entries from the references database
+      ✔ appends typed label entries after the unchanged citation entries
+      ✔ filters label entries by the typed query alongside the citation filter
+      ✔ inserts a label completion as bare @-key text
+      ✔ inserts a label completion inside an authored bracket cluster without rewriting it
+      ✔ renders label entries without Project-status gating in Phase 3
+    the shipped installation of the references database
+      ✔ offers workspace labels at @ after the references database is pushed (100ms)
+      ✔ leaves the @ surface at the citations it shipped with until a database arrives
+
+  Editor review-chunk view
+    ✔ locates every chunk and adjudicates none of them (I4)
+    ✔ maps a local owner insertion out of the rendered suggestion immediately
+    ✔ never marks a region the user typed (#65)
+    ✔ renders a small replacement as inline track changes
+    ✔ renders a whole-line deletion as inline strikethrough
+    ✔ keeps a heavy rewrite merged in the document flow
+    ✔ suppresses live-preview rendering only over a range carrying a review chunk
+    ✔ uses half-open chunk overlap while preserving deletion-point suppression
+    ✔ rebuilds preview renderers when a review arrives or clears without an edit
+    ✔ navigates between chunks with next and previous, wrapping at both ends
+    ✔ answers false from navigation commands outside a review
+    ✔ carries the styling scope as an editor attribute owned by CodeMirror
+    ✔ drops a chunk's marks when the provider reports it decided
+    ✔ returns no preview suppression outside an active review
+    ✔ leaves unchanged document lines visible instead of folding them away
+
+  Table-cell rendering (issue #23)
+    ✔ renders inline math inside a table cell instead of leaving it as raw source
+
+  Editor light/dark mode enum contract
+    ✔ treats light and dark as explicit enum values, with match alone following the app
+
+  TikZ grammar integration
+    ✔ uses the upstream Lezer TikZ grammar in fenced tikz blocks
+    ✔ embeds the same upstream grammar into raw tikzpicture paragraphs
+    ✔ gives tikzcd its own matrix/arrow syntax in both raw and fenced forms
+    ✔ exposes TeX line comments to the standard Mod-/ command in raw and fenced tikzcd
+    ✔ does not misclassify raw TikZ as Markdown inline code
+    ✔ projects grammar tags through Zettlr's existing syntax-theme CSS classes
+
+  TikZ editor widgets (issue #14)
+    ✔ renders the raw block and the tikz fence as figure widgets over the IPC seam
+    ✔ carries the document path from the editor configuration into every render request
+    ✔ does not deduplicate identical in-flight source across different document roots
+    ✔ mounts the figure without pandoc paragraph wrapper the HTML writer adds
+    ✔ preserves the TeX/pdf2svg natural box instead of promoting diagrams to semantic width buckets
+    ✔ refuses a success whose markup carries no figure instead of mounting it (60ms)
+    ✔ names the signal when the render was killed, distinct from a pandoc diagnostic
+    ✔ surfaces a mapped compile failure in place, never silence
+    ✔ names the missing tools when the toolchain is absent
+    ✔ names the tool and the errno when the toolchain check itself failed, instead of reporting absence
+    ✔ opens tikzcd in Quiver while ordinary TikZ keeps reveal-source activation
+    ✔ requests the lightbox only through the explicit expand control, built in the clicked document's own realm
+    ✔ uses a native button for keyboard-accessible expansion instead of making the whole figure a button
+    ✔ reveals raw source while the selection is inside the block
+    ✔ derives the live-preview source from the same raw/fence recognition as the inline renderer
+
+  Editor keeps renderer widgets in their own DOM
+    ✔ does not give the math widget the citation widget element
+
+  Widget renderers under the visual-indent plugin (issue #15)
+    ✔ arms the trap: list scenes render math widgets on visually indented lines
+    ✔ keeps every widget's content inside the widget's own box on indented lines
+    ✔ renders table-editor cells and mermaid diagrams intact (issue #7 regression)
+
+  Declarative export filter chain
+    ✔ prepends the declared filters before the profile filters and runs them (689ms)
+
+  Export math-header injection toggle
+    ✔ skips the local MathJax injection when injectMathHeaders is off
+
+  Export template defaults
+    ✔ applies the configured per-writer template when the profile declares none
+    ✔ does not override a template the profile already declares
+
+  Ordered Project export inputs (issue #1 Phase 7)
+    ✔ keeps the single-file export invocation unchanged
+    ✔ passes ordered Project inputs to compile-pandoc-project
+    ✔ delivers a spaced filename as exactly one argument
+
+  Quote-bearing export inputs (review B2/B11)
+    ✔ delivers apostrophe-bearing filenames and titles as exact single tokens
+    ✔ delivers a quote-bearing single-file export title as one exact token
+    ✔ passes the '' sentinel for an unconfigured Project template (B11)
+
+  Pipeline-integrated export scripts
+(node:3196447) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+    ✔ runs the base Pandoc profile, then the script on the processed output (279ms)
+
+  Utility#extractBibTexAttachments()
+    ✔ should successfully parse a valid BibTex file
+    ✔ should throw an error due to invalid BibTex entries
+
+  Utility#extractLinefeed()
+    ✔ should detect \n as the linefeed
+    ✔ should detect \n as the linefeed
+    ✔ should detect \r\n as the linefeed
+    ✔ should detect \r\n as the linefeed
+    ✔ should detect \r as the linefeed
+    ✔ should detect \n\r as the linefeed
+    ✔ should detect \n\r as the linefeed
+    ✔ should detect \r\n as the linefeed
+    ✔ should detect \n as the linefeed
+
+  extractReferences() against the real Pandoc AST oracle
+    ✔ has a working system pandoc (hard requirement, never skipped) (196ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for ProjectA/Coble_Lattice_Table.md (236ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for ProjectA/Theorems.md (206ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for ProjectA/Halphen_Surfaces.md (326ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for ProjectB/Other_Paper.md (221ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for Standalone_Notes.md (203ms)
+    ✔ agrees with the Pandoc AST on referenceable identity for ../subfigure-gallery/Subfigure_Gallery.md (180ms)
+
+  Subfigure/wrapping crossref extraction (review A1)
+    ✔ extracts the subfigure group div id as a crossref definition with the group caption
+    ✔ keeps the nested subfigure image ids as their own definitions
+    ✔ extracts the wrapping listing div id with its caption paragraph title
+    ✔ extracts exactly the five supported fixture definitions in document order
+    ✔ resolves an authored @fig:group occurrence end-to-end against the div definition
+    ✔ never extracts unsupported families from div ids
+
+  extractReferences()
+    ✔ fixture covers every supported theorem prefix exactly once
+    ✔ extracts every crossref-attr definition with exact ranges, captions, and sections
+    ✔ extracts a theorem-div definition for every supported prefix with exact ranges
+    ✔ preserves colon-bearing keys in full with the family taken from the first segment
+    ✔ excludes proof divs, empty keys, and unsupported families from definitions
+    ✔ extracts bare and bracketed occurrences with exact ranges and cluster text
+    ✔ extracts bracketed reference clusters but never bibliography citations
+    ✔ extracts duplicate definitions from every defining file
+    ✔ extracts the another-project definitions with exact ranges
+    ✔ extracts the standalone document snapshot completely
+    ✔ preserves escaped quotes inside authored title attributes (review C8)
+    ✔ never fabricates definitions from unclosed attribute-block near-misses (review C8)
+    ✔ computes a deterministic source hash that distinguishes different content
+
+  extractYamlFrontmatter()
+    ✔ extracts no frontmatter
+    ✔ extracts the existing frontmatter
+    ✔ extracts the existing frontmatter
+    ✔ extracts no frontmatter
+
+  flowmark format service (issue #26)
+    ✔ reports a typed flowmark-absent result when the runner binary does not exist
+    ✔ reports a typed flowmark-error when the runner exits non-zero
+    ✔ reads the (possibly rewritten) temp file back on success
+    ✔ returns the rewritten bytes when the runner edits the temp file in place
+    ✔ bounds a hung runner: resolves ok:false timeout and terminates the child (259ms)
+
+  formatDate()
+    ✔ formats the date February 9, 2022 at 10:59 AM
+    ✔ formats the date 9. Februar 2022 um 10:59
+    ✔ formats the date January 1, 1970 at 12:00 AM
+    ✔ formats the date 23 min. ago
+    ✔ formats the date vor 23 Min.
+    ✔ formats the date 2 hr. ago
+    ✔ formats the date vor 2 Std.
+
+  FSAL directory reads after explorer deletion events
+    ✔ returns an empty child list when the requested directory has just been deleted
+    ✔ settles every stale read after a recursive directory deletion
+    ✔ still rejects an existing regular file as a directory
+    ✔ still reads an existing empty directory
+
+  FSAL saved reference snapshots
+    ✔ parseMarkdownFile extracts the exact reference snapshot of ProjectA/Halphen_Surfaces.md
+    ✔ parseMarkdownFile extracts the exact reference snapshot of ProjectA/Coble_Lattice_Table.md
+    ✔ parseMarkdownFile extracts the exact reference snapshot of ProjectA/Theorems.md
+    ✔ parseMarkdownFile extracts the exact reference snapshot of ProjectB/Other_Paper.md
+    ✔ parseMarkdownFile extracts the exact reference snapshot of Standalone_Notes.md
+    ✔ keeps bibliography citekeys from the shared pass untouched
+    ✔ parse() surfaces the reference snapshot of an on-disk file
+
+  DirectedGraph
+    ✔ should contain 6 vertices
+    ✔ should contain 9 arcs
+    ✔ should contain 1 component
+    ✔ should now contain 9 vertices
+    ✔ should now contain 3 isolates
+    ✔ should now contain 4 components
+    ✔ should contain 3 components
+    ✔ should contain not add duplicate vertices
+
+  Utility#hash()
+    ✔ should return the value 0
+    ✔ should return the value 49
+    ✔ should return the value 50
+    ✔ should return the value 97
+    ✔ should return the value 3105
+    ✔ should return the value 3556498
+    ✔ should return the value -1238814210
+
+  Utility#isFunction()
+    ✔ should return true for function(){return"something"}
+    ✔ should return true for ()=>{return"hello"}
+    ✔ should return true for ()=>{return"world"}
+    ✔ should return false for A string
+    ✔ should return false for -1234
+
+  Justfile command discovery
+    ✔ deduplicates Git roots, keeps only public top-level recipes, and preserves recipe metadata
+    ✔ rejects a Justfile discovered below the repository root
+
+  Just recipe launcher argv
+    ✔ parses quoted arguments without evaluating shell syntax
+    ✔ builds a direct Just argv and a held kitty command without a shell
+    ✔ renders positional, option, variadic, and optional parameters in a recipe label
+
+  external completion catalogue provenance
+    ✔ ships the LaTeX Workshop command snapshot with explicit MIT provenance
+    ✔ keeps the generated TikZ control-word catalogue synchronized with the installed grammar
+
+  LaTeX environment linter
+    an environment that is its own block
+      ✔ says nothing about a separated figure
+      ✔ says nothing about a separated equation
+    a figure folded into its paragraph
+      ✔ is an error, because it is not drawn at all
+      ✔ marks the \begin line, which is the line the author must move
+      ✔ flags a folded tikzpicture too
+    any other environment folded into its paragraph
+      ✔ is a warning, not an error: it still renders
+      ✔ warns for a non-math environment as well
+      ✔ never calls a rendering equation undrawn
+    what it leaves alone
+      ✔ says nothing about prose that merely names an environment
+      ✔ says nothing about a fenced tikz block, which renders wherever it sits
+      ✔ says nothing about an environment inside inline math
+    documents with several
+      ✔ reports one diagnostic per folded environment
+      ✔ reports one diagnostic, not two, for an environment glued on both sides
+
+  application lifecycle
+    ✔ allows shutdown before the service container boots
+
+  loadMathJaxMacros()
+    ✔ parses an explicit MathJax macro fixture into validated definitions
+    ✔ treats an absent explicit fixture as an empty map
+    ✔ fails loudly on a malformed macro definition instead of dropping it
+
+  central ~/.pandoc MathJax projection
+    ✔ resolves the one production macro projection under ~/.pandoc
+    ✔ loads the central generated projection rather than an app-local copy
+    ✔ fails loudly when the central generated projection is absent
+
+  Utility#localiseNumber()
+    ✔ should return 123,456,789 for 123456789
+    ✔ should return 143 for 143
+    ✔ should return 0 for 0
+    ✔ should return -14,320 for -14320
+    ✔ should return 9,482.23 for 9482.23
+    ✔ should return -23,476.66 for -23476.66
+
+  LogProvider (failing file writes)
+[21:40:55] queued log entry 0
+[21:40:55] queued log entry 1
+[21:40:55] queued log entry 2
+[21:40:55] queued log entry 3
+[21:40:55] queued log entry 4
+[21:40:55] queued log entry 5
+[21:40:55] queued log entry 6
+[21:40:55] queued log entry 7
+[21:40:55] queued log entry 8
+[21:40:55] queued log entry 9
+[21:40:55] queued log entry 10
+[21:40:55] queued log entry 11
+[21:40:55] queued log entry 12
+[21:40:55] queued log entry 13
+[21:40:55] queued log entry 14
+[21:40:55] queued log entry 15
+[21:40:55] queued log entry 16
+[21:40:55] queued log entry 17
+[21:40:55] queued log entry 18
+[21:40:55] queued log entry 19
+[21:40:55] queued log entry 20
+[21:40:55] queued log entry 21
+[21:40:55] queued log entry 22
+[21:40:55] queued log entry 23
+[21:40:55] queued log entry 24
+[21:40:55] queued log entry 25
+[21:40:55] queued log entry 26
+[21:40:55] queued log entry 27
+[21:40:55] queued log entry 28
+[21:40:55] queued log entry 29
+[21:40:55] queued log entry 30
+[21:40:55] queued log entry 31
+[21:40:55] queued log entry 32
+[21:40:55] queued log entry 33
+[21:40:55] queued log entry 34
+[21:40:55] queued log entry 35
+[21:40:55] queued log entry 36
+[21:40:55] queued log entry 37
+[21:40:55] queued log entry 38
+[21:40:55] queued log entry 39
+[21:40:55] queued log entry 40
+[21:40:55] queued log entry 41
+[21:40:55] queued log entry 42
+[21:40:55] queued log entry 43
+[21:40:55] queued log entry 44
+[21:40:55] queued log entry 45
+[21:40:55] queued log entry 46
+[21:40:55] queued log entry 47
+[21:40:55] queued log entry 48
+[21:40:55] queued log entry 49
+[21:40:55] queued log entry 50
+[21:40:55] queued log entry 51
+[21:40:55] queued log entry 52
+[21:40:55] queued log entry 53
+[21:40:55] queued log entry 54
+[21:40:55] queued log entry 55
+[21:40:55] queued log entry 56
+[21:40:55] queued log entry 57
+[21:40:55] queued log entry 58
+[21:40:55] queued log entry 59
+[21:40:55] queued log entry 60
+[21:40:55] queued log entry 61
+[21:40:55] queued log entry 62
+[21:40:55] queued log entry 63
+[21:40:55] Log provider shutting down ...
+    ✔ flushes the newest entry and every arrival queued behind an in-flight append
+[21:40:55] entry logged while the logfile could not be written
+{}
+[21:40:55] Log provider shutting down ...
+[Log Provider] Could not write to the logfile. The affected entries remain pending for the next explicit append. Error: EISDIR: illegal operation on a directory, open '/tmp/zettlr-pandoc-headless-test-3196447-bfBEDa/logs/log-write-failure-3196447-1789479655697.log'
+    at async open (node:internal/fs/promises:697:25)
+    at async Object.writeFile (node:internal/fs/promises:1317:14)
+    at async IsolatedLogProvider._writePendingEntries (/home/dzack/gitclones/Zettlr-pandoc-mathjax/source/app/service-providers/log/index.ts:311:29)
+[21:40:55] entry logged after the logfile became writable again
+{}
+[21:40:55] Log provider shutting down ...
+    ✔ keeps a failed batch pending, exposes the failure, and accepts a later flush
+[21:40:55] Opening QuickTeX definitions failed
+kitty: executable not found
+[21:40:55] Log provider shutting down ...
+    ✔ persists a renderer-reported error through the typed log-provider IPC boundary
+
+  Exporter macro projections
+    ✔ projects string, required-argument, and optional-argument macros into a MathJax header
+    ✔ projects the same macro config into deterministic TeX definitions
+    ✔ serializes closing script tags safely in MathJax macro bodies
+    ✔ rejects unsupported macro forms instead of omitting them
+
+  Utility#makeSearchRegex()
+    ✔ should return the regular expression /hello/i
+    ✔ should return the regular expression /\w/g
+    ✔ should return the regular expression /\/\\w\/abide/i
+    ✔ should return the regular expression /[a-zA-Z0-9]/
+    ✔ should return the regular expression /<a href="(.+?)">(.+?)<\/a>/
+
+  Utility#makeValidUri()
+    ✔ Input "file:///home/foo/documents/test.md" should return "safe-file:///home/foo/documents/test.md"
+    ✔ Input "http://www.example.com/" should return "http://www.example.com/"
+    ✔ Input "ftp://api.somelink.fm/api/test.php" should return "ftp://api.somelink.fm/api/test.php"
+    ✔ Input "//shared-host/docs/file.md" should return "safe-file:////shared-host/docs/file.md"
+    ✔ Input "file://./relative/file.md" should return "safe-file:///home/foo/documents/relative/file.md"
+    ✔ Input "github.com" should return "https://github.com/"
+    ✔ Input "www.zettlr.com" should return "https://www.zettlr.com/"
+    ✔ Input "/home/bar/documents/absolute.md" should return "safe-file:///home/bar/documents/absolute.md"
+    ✔ Input "/Users/user/Documents/test/code-file.json" should return "safe-file:///Users/user/Documents/test/code-file.json"
+    ✔ Input "./more/relative.md" should return "safe-file:///home/foo/documents/more/relative.md"
+    ✔ Input "another/relative.md" should return "safe-file:///home/foo/documents/another/relative.md"
+    ✔ Input "folder.bundle/file.md" should return "safe-file:///home/foo/documents/folder.bundle/file.md"
+    ✔ Input "gov.md/" should return "https://gov.md/"
+    ✔ Input "assets/Cover Letter.pdf" should return "safe-file:///home/foo/documents/assets/Cover%20Letter.pdf"
+    ✔ Input "file://folder.bundle/file.md" should return "safe-file:///home/foo/documents/folder.bundle/file.md"
+    ✔ Input "./folder.bundle/file.md" should return "safe-file:///home/foo/documents/folder.bundle/file.md"
+    ✔ Input "test-proto://www.example.com" should return "test-proto://www.example.com"
+
+  MarkdownAST#markdownToAST()
+    ✔ should: Parse pipe table correctly
+    ✔ should: Parse a minimal pipe table correctly
+    ✔ should: Parse a regular Markdown document correctly
+
+  Utility#mathJaxToHTML()
+    ✔ serializes configured macros and mhchem as CommonHTML display math
+    ✔ inserts CommonHTML into the supplied element synchronously
+
+  File ▸ Previous/Next file menu navigation
+    ✔ win32/linux: Previous file moves the focused pane back
+    ✔ win32/linux: Next file moves the focused pane forward
+    ✔ darwin: Previous file moves the focused pane back
+    ✔ darwin: Next file moves the focused pane forward
+
+  Edit ▸ authoring source files
+    ✔ win32/linux: Edit snippets opens the configured snippets file
+    ✔ win32/linux: Edit QuickTeX definitions opens the configured Vimscript
+    ✔ darwin: Edit snippets opens the configured snippets file
+    ✔ darwin: Edit QuickTeX definitions opens the configured Vimscript
+
+  menu shortcut dispatch
+    ✔ fails when the picked item has no window to act on, rather than returning quietly
+    ✔ fails when the window it was given cannot receive the shortcut
+
+  MarkdownEditor#moveSection()
+    ✔ Move Sections: Test 1
+    ✔ Move Sections: Test 2
+    ✔ Move Sections: Test 3
+    ✔ Move Sections: Test 4
+
+  Configurable navigation shortcuts (review A8)
+    ✔ registers the Alt-Arrow defaults, with the macOS Ctrl-Arrow variants
+    real keydown dispatch through the built keymap
+      ✔ the default keymap navigates on Alt-ArrowLeft/Alt-ArrowRight
+      ✔ a configured combo navigates and the displaced default no longer does
+
+  Pandoc Differential Oracle Citation Parity Specification
+    1. Basic and Complex Citekey Parity with Real Pandoc
+      ✔ matches real Pandoc AST for: [@Lurie2009] (174ms)
+      ✔ matches real Pandoc AST for: [-@Lurie2009] (185ms)
+      ✔ matches real Pandoc AST for: [@1984Orwell] (175ms)
+      ✔ matches real Pandoc AST for: [@nlab:grothendieck_construction] (185ms)
+      ✔ matches real Pandoc AST for: [@nlab:category_of_elements] (198ms)
+      ✔ matches real Pandoc AST for: [@arxiv:2104.12345] (211ms)
+      ✔ matches real Pandoc AST for: [@doi:10.1000/182] (268ms)
+      ✔ matches real Pandoc AST for: [@isbn:978-3-16-148410-0] (210ms)
+      ✔ matches real Pandoc AST for: [@author_2024-rev.1] (191ms)
+      ✔ matches real Pandoc AST for: [@author2020/supplement] (186ms)
+      ✔ matches real Pandoc AST for: [@urn:nbn:de:1234] (181ms)
+      ✔ matches real Pandoc AST for: @Lurie2009 (182ms)
+      ✔ matches real Pandoc AST for: @nlab:grothendieck_construction (184ms)
+      ✔ matches real Pandoc AST for: @arxiv:2104.12345 (182ms)
+    2. Prefixes, Suffixes & Locators Parity with Real Pandoc
+      ✔ matches real Pandoc AST for: [see @Lurie2009] (189ms)
+      ✔ matches real Pandoc AST for: [compare @Joyal2002, section 3.2] (173ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, p. 23] (179ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, pp. 23-25] (213ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, chap. 4] (189ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, sec. 2.1] (182ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, vol. 2] (195ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, 42-45] (188ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, IV] (179ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, xiv-xvi] (337ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, Lem. 7.1] (169ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009, Cor. 3.4] (177ms)
+      ✔ matches real Pandoc AST for: @Lurie2009 [p. 33] (182ms)
+      ✔ matches real Pandoc AST for: @Lurie2009 [chap. 2] (173ms)
+    3. Multi-Item Cluster Parity with Real Pandoc
+      ✔ matches real Pandoc AST for: [@Lurie2009; @Joyal2002; @Simpson2012] (175ms)
+      ✔ matches real Pandoc AST for: [see @Lurie2009, p. 12; compare @Joyal2002, chap. 3; also @Simpson2012] (173ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009; -@Joyal2002, p. 5] (171ms)
+      ✔ matches real Pandoc AST for: [@nlab:grothendieck_construction; @nlab:category_of_elements; @Lurie2009] (184ms)
+      ✔ matches real Pandoc AST for: [@a; @b, p. 1; -@c, chap. 2; @d; see @e, sec. 4] (202ms)
+      ✔ matches real Pandoc AST for: [@a;@b;@c] (214ms)
+    4. Prose Punctuation & Formatting Parity with Real Pandoc
+      ✔ matches real Pandoc AST for: According to @Lurie2009. (252ms)
+      ✔ matches real Pandoc AST for: See @Lurie2009, and also @Joyal2002. (168ms)
+      ✔ matches real Pandoc AST for: Work by @Lurie2009; however, @Joyal2002 disagreed. (181ms)
+      ✔ matches real Pandoc AST for: *See [@Lurie2009, p. 12]*. (179ms)
+      ✔ matches real Pandoc AST for: **@Joyal2002** proved the result. (187ms)
+      ✔ matches real Pandoc AST for: _@Mac98_ is the canonical reference. (213ms)
+      ✔ matches real Pandoc AST for: > As shown in [@Lurie2009, p. 45], infinity-categories form a topos. (178ms)
+      ✔ matches real Pandoc AST for: - Key result: see [@Lurie2009, chap. 1] (185ms)
+      ✔ matches real Pandoc AST for: 1. Follows @Joyal2002. (176ms)
+      ✔ matches real Pandoc AST for: ## 2. Foundations (following @Lurie2009) (173ms)
+    5. Crossref and Adjacent Citation Parity with Real Pandoc
+      ✔ matches real Pandoc AST for: @def-higher-category [@nlab:grothendieck_construction] (174ms)
+      ✔ matches real Pandoc AST for: @thm-main [-@Lurie2009, p. 42] (175ms)
+      ✔ matches real Pandoc AST for: @fig-diagram [@Lurie2009, p. 10] (172ms)
+      ✔ matches real Pandoc AST for: @lem-helper [@Joyal2002] (173ms)
+      ✔ matches real Pandoc AST for: [@Lurie2009] [@Joyal2002] (190ms)
+      ✔ matches real Pandoc AST for: [@thm-main; @Lurie2009] (170ms)
+    6. Negative Boundary Parity with Real Pandoc (Zero False Positives)
+      ✔ matches real Pandoc producing 0 citations for: "Contact user@example.com for help." (209ms)
+      ✔ matches real Pandoc producing 0 citations for: "[1]" (183ms)
+      ✔ matches real Pandoc producing 0 citations for: "[a-z]" (170ms)
+      ✔ matches real Pandoc producing 0 citations for: "[see above]" (170ms)
+      ✔ matches real Pandoc producing 0 citations for: "[important note]" (175ms)
+      ✔ matches real Pandoc producing 0 citations for: "[]" (339ms)
+      ✔ matches real Pandoc producing 0 citations for: "[   ]" (195ms)
+      ✔ matches real Pandoc producing 0 citations for: "@" (191ms)
+      ✔ matches real Pandoc producing 0 citations for: "@ " (267ms)
+      ✔ matches real Pandoc producing 0 citations for: "Meeting at @ 3pm" (232ms)
+
+  Comprehensive Pandoc Citation Parser Regression Suite
+    1. Bracketed Single Citations (All Syntax Forms & Keys)
+      ✔ parses standard bracketed citekey
+      ✔ parses suppress-author flag in brackets
+      ✔ parses numeric-starting citekeys
+      ✔ parses complex citekeys with colons, underscores, hyphens, slashes, and dots
+      ✔ parses curly-bracket enclosed citekeys with special characters
+    2. Prefixes, Punctuation, and Suffixes
+      ✔ parses simple prefixes
+      ✔ parses multi-word descriptive prefixes
+      ✔ parses suffixes following citekeys
+      ✔ parses both prefix and suffix simultaneously
+      ✔ parses parenthesized citations in prose
+    3. Locators & Multilingual Labels (English, German, French)
+      ✔ parses explicit English page locators (p. and pp.)
+      ✔ parses German locator labels (S., Kap., Bd., Abb., Abschn.)
+      ✔ parses French locator labels (chap., art., liv., col.)
+      ✔ parses dotted section and chapter locators (sec. 2.1, chap. 3.4.1)
+      ✔ parses implicit numeric locators without label
+      ✔ parses genuine Roman-numeral locators
+      ✔ does NOT treat lemma/corollary suffixes as Roman-numeral locators
+    4. Multi-Item Citation Clusters
+      ✔ parses simple multi-key cluster separated by semicolons
+      ✔ parses multi-key clusters with individual prefixes and locators
+      ✔ parses multi-key clusters containing suppress-author items
+      ✔ parses large 10-item cluster with mixed prefixes, locators, and suppress-author
+      ✔ parses cluster with dense semicolon spacing [@a;@b;@c]
+    5. Narrative (In-Text) Citations
+      ✔ parses bare narrative citation @key
+      ✔ parses narrative citations followed by trailing punctuation
+      ✔ parses narrative citations with complex web/DOI keys
+      ✔ parses narrative composite with locator brackets @key [p. 33]
+      ✔ parses narrative composite with chapter locator @key [chap. 2]
+      ✔ parses narrative sequences in prose
+    6. Cross-Reference and Citation Adjacencies (All Families)
+      ✔ does NOT swallow an adjacent bracketed citation as a suffix of an in-text crossref
+      ✔ does NOT swallow a bracketed suppress-author citation following an in-text citation
+      ✔ correctly separates all 13 standard theorem and crossref families from adjacent bracketed citations
+      ✔ parses consecutive bracketed citations [@a][@b]
+      ✔ parses consecutive space-separated bracketed citations [@a] [@b]
+    7. Structural Markdown Contexts
+      ✔ parses citations inside Blockquotes
+      ✔ parses citations inside unordered and ordered List items
+      ✔ parses citations inside Headings
+      ✔ parses citations inside Emphasis and Strong formatting
+      ✔ parses citations inside Pandoc fenced Divs
+    8. Negative Boundaries, Links, Math & False Positives
+      ✔ does NOT parse email addresses as citations
+      ✔ does NOT parse plain bracketed text without @ as citations
+      ✔ does NOT parse lone at-signs or invalid characters
+      ✔ does NOT parse markdown links with @ in link text as citation clusters
+    9. Cross-Reference and Citation Combinations in Clusters
+      ✔ parses pure cross-reference clusters [@thm-main; @lem-aux; @cor-result]
+      ✔ parses mixed cross-reference and bibliography clusters [@thm-main; @Lurie2009]
+      ✔ parses cross-references with prefixes and locators in brackets
+    10. Combinatorial Parameterized Matrix (100+ Generated Syntax Combinations)
+      ✔ correctly parses combination: [@Lurie2009]
+      ✔ correctly parses combination: [@Lurie2009, p. 42]
+      ✔ correctly parses combination: [@Lurie2009, chap. 3]
+      ✔ correctly parses combination: [@Lurie2009, sec. 2.1]
+      ✔ correctly parses combination: [@Lurie2009, IV]
+      ✔ correctly parses combination: [@Lurie2009, 12-15]
+      ✔ correctly parses combination: [@1984Orwell]
+      ✔ correctly parses combination: [@1984Orwell, p. 42]
+      ✔ correctly parses combination: [@1984Orwell, chap. 3]
+      ✔ correctly parses combination: [@1984Orwell, sec. 2.1]
+      ✔ correctly parses combination: [@1984Orwell, IV]
+      ✔ correctly parses combination: [@1984Orwell, 12-15]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction, p. 42]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction, chap. 3]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction, sec. 2.1]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction, IV]
+      ✔ correctly parses combination: [@nlab:grothendieck_construction, 12-15]
+      ✔ correctly parses combination: [@arxiv:2104.12345]
+      ✔ correctly parses combination: [@arxiv:2104.12345, p. 42]
+      ✔ correctly parses combination: [@arxiv:2104.12345, chap. 3]
+      ✔ correctly parses combination: [@arxiv:2104.12345, sec. 2.1]
+      ✔ correctly parses combination: [@arxiv:2104.12345, IV]
+      ✔ correctly parses combination: [@arxiv:2104.12345, 12-15]
+      ✔ correctly parses combination: [@doi:10.1000/182]
+      ✔ correctly parses combination: [@doi:10.1000/182, p. 42]
+      ✔ correctly parses combination: [@doi:10.1000/182, chap. 3]
+      ✔ correctly parses combination: [@doi:10.1000/182, sec. 2.1]
+      ✔ correctly parses combination: [@doi:10.1000/182, IV]
+      ✔ correctly parses combination: [@doi:10.1000/182, 12-15]
+      ✔ correctly parses combination: [@author-2024_rev1]
+      ✔ correctly parses combination: [@author-2024_rev1, p. 42]
+      ✔ correctly parses combination: [@author-2024_rev1, chap. 3]
+      ✔ correctly parses combination: [@author-2024_rev1, sec. 2.1]
+      ✔ correctly parses combination: [@author-2024_rev1, IV]
+      ✔ correctly parses combination: [@author-2024_rev1, 12-15]
+      ✔ correctly parses combination: [see @Lurie2009]
+      ✔ correctly parses combination: [see @Lurie2009, p. 42]
+      ✔ correctly parses combination: [see @Lurie2009, chap. 3]
+      ✔ correctly parses combination: [see @Lurie2009, sec. 2.1]
+      ✔ correctly parses combination: [see @Lurie2009, IV]
+      ✔ correctly parses combination: [see @Lurie2009, 12-15]
+      ✔ correctly parses combination: [see @1984Orwell]
+      ✔ correctly parses combination: [see @1984Orwell, p. 42]
+      ✔ correctly parses combination: [see @1984Orwell, chap. 3]
+      ✔ correctly parses combination: [see @1984Orwell, sec. 2.1]
+      ✔ correctly parses combination: [see @1984Orwell, IV]
+      ✔ correctly parses combination: [see @1984Orwell, 12-15]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction, p. 42]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction, chap. 3]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction, sec. 2.1]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction, IV]
+      ✔ correctly parses combination: [see @nlab:grothendieck_construction, 12-15]
+      ✔ correctly parses combination: [see @arxiv:2104.12345]
+      ✔ correctly parses combination: [see @arxiv:2104.12345, p. 42]
+      ✔ correctly parses combination: [see @arxiv:2104.12345, chap. 3]
+      ✔ correctly parses combination: [see @arxiv:2104.12345, sec. 2.1]
+      ✔ correctly parses combination: [see @arxiv:2104.12345, IV]
+      ✔ correctly parses combination: [see @arxiv:2104.12345, 12-15]
+      ✔ correctly parses combination: [see @doi:10.1000/182]
+      ✔ correctly parses combination: [see @doi:10.1000/182, p. 42]
+      ✔ correctly parses combination: [see @doi:10.1000/182, chap. 3]
+      ✔ correctly parses combination: [see @doi:10.1000/182, sec. 2.1]
+      ✔ correctly parses combination: [see @doi:10.1000/182, IV]
+      ✔ correctly parses combination: [see @doi:10.1000/182, 12-15]
+      ✔ correctly parses combination: [see @author-2024_rev1]
+      ✔ correctly parses combination: [see @author-2024_rev1, p. 42]
+      ✔ correctly parses combination: [see @author-2024_rev1, chap. 3]
+      ✔ correctly parses combination: [see @author-2024_rev1, sec. 2.1]
+      ✔ correctly parses combination: [see @author-2024_rev1, IV]
+      ✔ correctly parses combination: [see @author-2024_rev1, 12-15]
+      ✔ correctly parses combination: [compare @Lurie2009]
+      ✔ correctly parses combination: [compare @Lurie2009, p. 42]
+      ✔ correctly parses combination: [compare @Lurie2009, chap. 3]
+      ✔ correctly parses combination: [compare @Lurie2009, sec. 2.1]
+      ✔ correctly parses combination: [compare @Lurie2009, IV]
+      ✔ correctly parses combination: [compare @Lurie2009, 12-15]
+      ✔ correctly parses combination: [compare @1984Orwell]
+      ✔ correctly parses combination: [compare @1984Orwell, p. 42]
+      ✔ correctly parses combination: [compare @1984Orwell, chap. 3]
+      ✔ correctly parses combination: [compare @1984Orwell, sec. 2.1]
+      ✔ correctly parses combination: [compare @1984Orwell, IV]
+      ✔ correctly parses combination: [compare @1984Orwell, 12-15]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction, p. 42]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction, chap. 3]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction, sec. 2.1]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction, IV]
+      ✔ correctly parses combination: [compare @nlab:grothendieck_construction, 12-15]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345, p. 42]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345, chap. 3]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345, sec. 2.1]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345, IV]
+      ✔ correctly parses combination: [compare @arxiv:2104.12345, 12-15]
+      ✔ correctly parses combination: [compare @doi:10.1000/182]
+      ✔ correctly parses combination: [compare @doi:10.1000/182, p. 42]
+      ✔ correctly parses combination: [compare @doi:10.1000/182, chap. 3]
+      ✔ correctly parses combination: [compare @doi:10.1000/182, sec. 2.1]
+      ✔ correctly parses combination: [compare @doi:10.1000/182, IV]
+      ✔ correctly parses combination: [compare @doi:10.1000/182, 12-15]
+      ✔ correctly parses combination: [compare @author-2024_rev1]
+      ✔ correctly parses combination: [compare @author-2024_rev1, p. 42]
+      ✔ correctly parses combination: [compare @author-2024_rev1, chap. 3]
+      ✔ correctly parses combination: [compare @author-2024_rev1, sec. 2.1]
+      ✔ correctly parses combination: [compare @author-2024_rev1, IV]
+      ✔ correctly parses combination: [compare @author-2024_rev1, 12-15]
+      ✔ correctly parses combination: [for details, see @Lurie2009]
+      ✔ correctly parses combination: [for details, see @Lurie2009, p. 42]
+      ✔ correctly parses combination: [for details, see @Lurie2009, chap. 3]
+      ✔ correctly parses combination: [for details, see @Lurie2009, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @Lurie2009, IV]
+      ✔ correctly parses combination: [for details, see @Lurie2009, 12-15]
+      ✔ correctly parses combination: [for details, see @1984Orwell]
+      ✔ correctly parses combination: [for details, see @1984Orwell, p. 42]
+      ✔ correctly parses combination: [for details, see @1984Orwell, chap. 3]
+      ✔ correctly parses combination: [for details, see @1984Orwell, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @1984Orwell, IV]
+      ✔ correctly parses combination: [for details, see @1984Orwell, 12-15]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction, p. 42]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction, chap. 3]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction, IV]
+      ✔ correctly parses combination: [for details, see @nlab:grothendieck_construction, 12-15]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345, p. 42]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345, chap. 3]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345, IV]
+      ✔ correctly parses combination: [for details, see @arxiv:2104.12345, 12-15]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182, p. 42]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182, chap. 3]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182, IV]
+      ✔ correctly parses combination: [for details, see @doi:10.1000/182, 12-15]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1, p. 42]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1, chap. 3]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1, sec. 2.1]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1, IV]
+      ✔ correctly parses combination: [for details, see @author-2024_rev1, 12-15]
+
+  Pandoc live citation extraction
+    ✔ publishes exact source ranges and CSL items from a document with code and repeated keys (243ms)
+    ✔ keeps incomplete input bounded and extracts its valid author-in-text citation (237ms)
+    ✔ preserves a prose suffix and leaves invalid braced identifiers as authored text (191ms)
+    ✔ retains punctuation and the complete nested-link suffix range (175ms)
+
+  Pandoc math export headers
+    ✔ runs real Pandoc HTML with macro config before the local MathJax component (537ms)
+    ✔ renders canonical macros and mhchem in a local Chromium HTML export (4777ms)
+    ✔ writes copied Reveal defaults through the exporter seam before real Pandoc output (307ms)
+    ✔ classifies copied Reveal, LaTeX, and plain-text profile defaults at the shared header seam
+    ✔ runs real Pandoc TeX with projected macros while preserving existing headers (256ms)
+
+  Searchable Pandoc quick help (review A2)
+    ✔ narrows the cross-reference examples to the queried object
+    ✔ narrows the theorem-div examples across class names and authored syntax
+    ✔ matches case-insensitively across titles and details
+    ✔ keeps every entry on the empty query
+    ✔ drops entries whose parts never contain the query
+    ✔ the help component consumes the shared filter behind a filter input
+
+  Pandoc quick reference
+    ✔ opens in the focused editor window through the application shortcut channel
+    ✔ documents the five cross-reference families rendered by the editor
+    ✔ pairs every cross-reference label with the reference that cites it
+    ✔ covers citation locators, prefixes, suffixes, groups, and author suppression
+    ✔ covers grouped and modified references plus Pandoc block and inline attributes
+    ✔ renders the documented cross-reference prefix-suppression form
+
+  lst crossref family (issue #1 Phase 8)
+    ✔ registers lst in the crossref prefix registry
+    ✔ exposes a listing example pairing the lst label with the reference that cites it
+    ✔ renders @lst references through the textual crossref branch in field-less states
+    ✔ preserves authored citation text while its workspace snapshot is pending
+    ✔ END-TO-END CANARY (already green): a resolved @lst occurrence renders as a chip
+
+  Pandoc#readerWriter()
+    ✔ Input "markdown-smart" should be parsed correctly
+    ✔ Input "markdown-smart+pipe_tables" should be parsed correctly
+    ✔ Input "markdown-pipe_tables-smart" should be parsed correctly
+    ✔ Input should be stringified correctly to "markdown-smart"
+    ✔ Input should be stringified correctly to "markdown+pipe_tables-smart"
+    ✔ Input should be stringified correctly to "markdown-smart-pipe_tables"
+
+  Utility#parsePandocAttributes()
+    ✔ should parse the attribute string "width=50%"
+    ✔ should parse the attribute string "{width=50%}"
+    ✔ should parse the attribute string " width = 50% "
+    ✔ should parse the attribute string "{ width= 50% }"
+    ✔ should parse the attribute string "{ width =50% }"
+    ✔ should parse the attribute string "{width=10}"
+    ✔ should parse the attribute string "{height=75}"
+    ✔ should parse the attribute string "{key="some long value"}"
+    ✔ should parse the attribute string "{key="He said \"stop\" twice"}"
+    ✔ should parse the attribute string "{key=some long value}"
+    ✔ should parse the attribute string "#some-id .class1 .class2 width=50% height=25 disabled=false style="font-size: 12px;""
+    ✔ should parse the attribute string "{#some-id .class1 unsupported-property style="font-size: 12px;"}"
+
+  Modules#PersistentDataContainer
+    ✔ should properly handle initialization
+    ✔ should return the same data as was provided
+    ✔ should correctly update stored data (110ms)
+    ✔ should not accept null or undefined as data
+    ✔ should throw an error for non-serializable data
+
+  pandoc-crossref preflight compatibility (issue #1 Phase 7)
+    ✔ registers pandoc-crossref as a hard required command
+    ✔ parses matching version outputs as compatible, naming both versions
+    ✔ detects a version mismatch and names both versions
+    ✔ reports unparseable output instead of assuming compatibility
+    ✔ produces a preflight failure naming both versions on mismatch
+    ✔ executes the real tools and reports the versions they print (647ms)
+    ✔ preflight() itself fails the boot on a compatibility mismatch (review C1)
+
+  Startup preflight
+    ✔ resolves a present command and rejects a missing one (220ms)
+    ✔ reports every missing command and path, and nothing that is present (202ms)
+    ✔ fails loud and exits when a requirement is missing (301ms)
+    ✔ passes without side effects when nothing is missing (502ms)
+    ✔ finds all real required tooling present on this machine (1026ms)
+    ✔ the production preflight call (default requirements) passes here (1297ms)
+
+  Project reference status computation (issue #1 Phase 7)
+    computeProjectReferenceStatus
+      ✔ reports same-file for a definition in the active document, winning over membership
+      ✔ reports in-active-project for a listed file of the active root
+      ✔ reports omitted-from-active-project for an in-root file missing from files
+      ✔ reports another-project for a definition under a different root
+      ✔ reports standalone for a definition outside every root
+      ✔ classifies targets from a standalone active document
+      ✔ activates the containing root even when the active document is itself omitted
+      ✔ uses path-segment-safe root containment
+    annotateCompletionEntries
+      ✔ computes the status of every real fixture definition (included active document)
+      ✔ attaches the append plan exactly on omitted entries (omitted active document)
+    computeAppendAndContinuePlan
+      ✔ plans a single append for an omitted target from an included source
+      ✔ plans both files, source first, when the source is also omitted
+      ✔ uses Unix-separator project-relative paths for nested targets
+      ✔ returns null for every non-appendable configuration
+    applyAppendPlan
+      ✔ appends the planned files to a scratch ProjectSettings without touching anything else
+    appendToastMessage
+      ✔ names both appended files in one toast for a source+target plan
+      ✔ names the single appended file for a target-only plan
+    completionAffordanceFor
+      ✔ inserts plainly for undefined, same-file, and in-active-project statuses
+      ✔ disables insertion for another-project entries
+      ✔ carries the append action for omitted entries with a plan
+      ✔ inserts plainly for omitted entries carrying no mechanical append plan
+      ✔ warns about the export unit for standalone entries
+    projectStatusDisplayName
+      ✔ renders the exact user-facing status wording
+
+  portable prose completion context action
+    ✔ adds a selected multi-word phrase when the menu is opened inside that selection
+    ✔ adds the clicked word instead of an unrelated selection elsewhere
+
+  portable prose completion files
+    ✔ reads words and phrases while preserving comments as metadata only
+    ✔ projects the explicit word column from a Hunspell dictionary
+    ✔ appends a phrase to the portable file without rewriting its existing bytes
+
+  Quarto editor citation resolution and startup race
+[21:41:18] Citeproc provider booting up ...
+[21:41:18] [Citeproc Provider] Loading CSL style at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-styles/chicago-author-date.csl ...
+[21:41:18] [Citeproc Provider] Loading CSL locale file at /home/dzack/gitclones/Zettlr-pandoc-mathjax/static/csl-locales/locales-en-US.xml ...
+[21:41:19] Loading database references.bib as BibLaTeX.
+[21:41:19] BibLaTeX database loaded, 1 items.
+[21:41:19] Loading database web.bib as BibLaTeX.
+[21:41:19] BibLaTeX database loaded, 1 items.
+    ✔ reproduces startup failure: empty descriptor map falls back to CITEPROC_MAIN_DB
+    ✔ resolves Quarto project bibliographies when descriptor map is populated
+    ✔ resolves Quarto project asynchronously before workspace walk completes
+[21:41:19] [Citeproc Provider] Selecting database /home/dzack/gitclones/Zettlr-pandoc-mathjax/test/fixtures/quarto-book/references.bib, /home/dzack/gitclones/Zettlr-pandoc-mathjax/test/fixtures/quarto-book/web.bib...
+    ✔ proves citation widget fails under CITEPROC_MAIN_DB but resolves under project bibliographies with real CiteprocProvider
+[21:41:19] Citeproc provider shutting down ...
+
+  a workspace bound to a manifest that lives elsewhere in it
+    ✔ persists the binding alone, and derives the project from the manifest it names
+    ✔ re-reads the manifest on every load, so a stale project in the dotfile cannot shadow it
+    ✔ names every chapter by the file the assembly symlinks reach, not by the link beside the manifest
+    ✔ refuses a manifest outside the directory, and one that is not a file
+    ✔ leaves a project the user wrote themselves alone, manifest or no manifest
+    ✔ drops the project with the binding when the workspace is unbound
+
+  Quarto project adapter
+    ✔ projects the authored book structure into ordered navigation
+    ✔ builds a visible book hierarchy with ordered chapter actions
+    ✔ resolves every inherited bibliography from the manifest root
+    ✔ projects the manifest through the real FSAL directory boundary
+    ✔ loads citations from every bibliography inherited through FSAL
+    ✔ indexes Quarto definitions and occurrences through the workspace model
+
+  Quarto theorem cross-reference E2E and linter proof
+    ✔ extracts classless Quarto ::: {#def-core} as a theorem definition with child heading title
+    ✔ extracts @def-core occurrence from consuming document
+    ✔ resolves def-core end-to-end across workspace snapshots
+    ✔ CodeMirror reference linter produces ZERO missing-reference warnings for @def-core on active EditorView
+    ✔ CodeMirror reference linter DOES emit missing-key warning when def-core definition is absent
+
+  Quarto semantic authoring
+    ✔ preserves Unicode identifiers and rejects invalid identifier tokens
+    ✔ preserves theorem aliases and complete identifiers in the editor and reference index
+    ✔ keeps proof aliases unnumbered while recognizing their semantic presentation
+    ✔ uses the authored heading ID when attributes contain quoted hashes and whitespace
+
+  Quiver macro projection
+    ✔ takes only the faithful one-line subset from the actual template graph
+    ✔ lets the actual TikZ template override the generated MathJax fallback and keeps projection-only macros
+    ✔ reports optional-default macros instead of changing their semantics
+    ✔ uses a compatible template definition when it supersedes an unsupported MathJax fallback
+
+  vendored Quiver fork
+    ✔ pins upstream provenance and carries the MIT license locally
+    ✔ ships its editor host and KaTeX locally rather than embedding the hosted Quiver app
+    ✔ hooks synchronization at Quiver history persistence rather than observing its DOM
+    ✔ does not register Quiver web persistence/theme/about actions in host mode
+    ✔ ships the deterministic vendor refresh command
+
+  Create-label confirm-time re-resolution (issue #1 Phase 8)
+    ✔ re-resolves the shifted target and returns the freshly recomputed insertion
+    ✔ reports structured staleness when the target was labeled while the dialog was open
+    ✔ reports structured staleness when the target no longer exists
+
+  Create-reference-label dialog and key-edit prompt
+    ✔ mounts the CreateReferenceLabelDialog component from source/win-main
+    ✔ fixes the family prefix and reports the taken proposed slug
+    ✔ typing a unique slug flips the verdict to available and unblocks confirmation
+    ✔ Enter records the explicit-label insertion and clipboard payload at the emit seam
+    ✔ provides the reference-key-edit-prompt editor extension
+    ✔ leaving an edited definition id emits exactly one workspace-rename prompt intent
+
+  Recoverable reference-error surface
+    ✔ provides the recoverable reference-error boundary in source/win-main/util
+    ✔ surfaces the forced provider failure as one closable error toast, never an uncaught error
+    ✔ the toast dismisses on click and leaves no surface behind
+    ✔ the editor stays interactive: real typing lands in the document after dismissal
+
+  Mod-P workspace definition search ranks with fzf (issue #1 Phase 3)
+    ✔ reaches every workspace definition with the empty query
+    ✔ ranks consecutive-substring matches above scattered fuzzy matches
+    ✔ finds every duplicate definition of a searched key across projects
+    ✔ resolves a scattered fuzzy query to the single matching key
+
+  Reference hover Project status (issue #1 Phase 7)
+    ✔ shows In active Project for a target listed in the active root (47ms)
+    ✔ shows Omitted from active Project for an unlisted in-root target
+    ✔ shows Another Project for a Project-rooted target hovered from a standalone document
+    ✔ shows Standalone document when no root contains the target
+    ✔ shows no status element while projectRoots is undefined (never fabricates)
+
+  Reference hover tooltips (issue #1 Phase 4)
+    ✔ answers a tooltip spanning exactly the authored @key token of a resolved occurrence
+    ✔ presents type, key, path, and enclosing section of the resolved definition
+    ✔ presents a bounded rendered excerpt of the definition plus an expand indicator
+    ✔ renders excerpt math with MathJax structure, not flattened Unicode text (issue #7) (45ms)
+    ✔ answers null for a missing reference instead of fabricating a target
+    ✔ leaves bibliography citations to the citation tooltip
+    ✔ answers null over plain prose
+
+  ReferenceIndex overlay authority
+    ✔ serves every applied saved snapshot with resolutions over that view
+    ✔ replaces the saved snapshot with a reported live buffer in all outputs
+    ✔ always serves the LAST reported live buffer — the authority feed admits no counter to race (issue #53)
+    ✔ keeps the overlay authoritative across saved snapshots — only the authority ends the live side
+    ✔ reverts to the saved snapshot when the live buffer is dropped, and reports whether an overlay existed
+    ✔ serves an open buffer FSAL has never indexed (issue #46: standalone first load)
+    ✔ removes an unlinked document without an overlay entirely
+    ✔ follows a file move (unlink + add) to the new path without duplicating the definition (review C8)
+    ✔ keeps the live overlay of an unlinked but still open document
+    ✔ resolves a saved occurrence through a definition that exists only in a live buffer
+    ✔ reports a duplicate introduced by a live overlay with every definition retained
+
+  Reference diagnostics (issue #1 Phase 4)
+    ✔ reports a duplicate key as an error listing ALL definition sites
+    ✔ reports missing references as warnings at the authored occurrence without fabricating targets
+    ✔ reports a class/prefix mismatch naming BOTH conflicting values and a valid example
+    ✔ reports an id on a proof div as an info diagnostic: proofs are unreferenceable
+    ✔ reports a mixed bibliography/reference cluster as an advisory spanning the authored cluster
+    ✔ reports nothing for a document whose definitions and occurrences all resolve cleanly
+
+  Reference navigation (issue #1 Phase 5)
+    ✔ has valid fixture oracles
+    edit-first parity (must stay green)
+      ✔ ordinary click on a resolved chip reveals the authored source
+      ✔ ordinary click on a footnote stays edit-first and never navigates
+    DocumentLocation capture at jump time (red)
+      ✔ the probe scene produced a nontrivial fold and scroll to capture
+      ✔ captureDocumentLocation returns the exact restorable location
+    cross-file Mod-click follow (red)
+      ✔ resolves the navigation intent for @thm:torelli with the definition’s exact range
+      ✔ emits the documents-provider open-file request with target range and source location
+    same-file Mod-click follow (red)
+      ✔ follows @thm:local to its definition inside the same view, without leaving the pane
+    footnote Mod-click follow (red)
+      ✔ follows [^note] to the footnote body and keeps the jump in the same document
+
+  References provider behavior
+    ✔ applies FSAL change-event snapshots so get-snapshot serves the workspace definitions
+[21:41:37] Reference provider shutting down ...
+    ✔ debounces an authority report and extracts the current authority text when the debounce fires
+[21:41:37] Reference provider shutting down ...
+    ✔ serves the citing occurrences of a loaded document FSAL never indexed
+[21:41:37] Reference provider shutting down ...
+    ✔ drops a buffer closed before its pending extraction fires
+[21:41:37] Reference provider shutting down ...
+    ✔ dropAuthorityBuffer cancels pending extraction and restores the saved snapshot
+[21:41:37] Reference provider shutting down ...
+    ✔ removes unlinked documents from the merged state on FSAL unlink events
+[21:41:37] Reference provider shutting down ...
+
+  Workspace rename commit protocol
+    conflict abort
+      ✔ preview-reference-rename over the merged workspace computes the complete four-document edit
+      ✔ commit-reference-rename aborts atomically with a structured conflict when a closed file changed on disk
+[21:41:37] Reference provider shutting down ...
+    applied path and one-shot undo
+      ✔ commit-reference-rename writes closed files atomically and acknowledges open authority buffers (49ms)
+      ✔ undo-reference-rename is hash-fenced, restores every byte, and is one-shot (49ms)
+[21:41:37] Reference provider shutting down ...
+
+  Workspace edit transaction rollback and recovery
+    a failed file installation rolls the whole transaction back
+      ✔ restores every installed file and every mutated buffer, and leaves no journal (47ms)
+[21:41:37] Reference provider shutting down ...
+    a failed open-buffer commit rolls the whole transaction back
+      ✔ leaves every closed file untouched when the authority cannot apply the open buffers
+[21:41:37] Reference provider shutting down ...
+    an open-buffer application the authority did not truly perform
+      ✔ rolls back when the authority names fewer buffers than the transaction handed it (64ms)
+      ✔ rolls back when the authority holds different content than the transaction computed (76ms)
+[21:41:37] Reference provider shutting down ...
+[21:41:37] Reference provider shutting down ...
+    the journal is written before anything is mutated
+      ✔ mutates nothing when the journal cannot be written
+[21:41:37] Reference provider shutting down ...
+    a journal found at startup restores the pre-transaction state
+[21:41:37] [Reference Provider] Restored 1 file(s) from an interrupted workspace edit
+      ✔ rewrites every journaled file to its original content and deletes the journal
+[21:41:37] Reference provider shutting down ...
+
+  Workspace reference rename authority application
+    ✔ applies every open touched document in the central authority before reporting success
+[21:41:37] Reference provider shutting down ...
+    ✔ makes immediate undo safe only after the open-buffer application is acknowledged
+[21:41:37] Reference provider shutting down ...
+
+  Rename preview dialog
+    ✔ mounts the RenameReferencePreviewDialog component from source/win-main
+    ✔ presents the rename identity and the Apply/Cancel choice
+    ✔ lists the exact affected files and counts from the fixture
+    ✔ Cancel commits nothing: no apply intent is ever emitted
+    ✔ Apply proceeds: exactly one apply intent for the host to commit
+
+  Mod-P reference search overlay
+    ✔ mounts the ReferenceSearchView component from source/win-main/launcher
+    ✔ typing kodemb narrows the workspace definitions to lem:kodaira:embedding
+    ✔ headlines every row with the shared display name of its family
+    ✔ Enter emits the jump intent for the selected definition
+    current-Project ranking and Project markers
+      ✔ lists every active-Project definition before every other-Project definition
+      ✔ marks other-Project rows with their Project status and leaves current rows unmarked
+    quick-help affordance
+      ✔ exposes the [data-open-help] affordance beside the query input
+      ✔ a real click on the affordance emits exactly one open-help intent
+    badge-keyed reverse lookup
+      ✔ opening with a key pre-populates the query and enters citing-locations mode
+      ✔ presents every workspace citing location with its authored snippet
+      ✔ Enter jumps to the first citing location, not to a definition
+
+  Mod-P current-Project-first ranking (review A3)
+    ✔ ranks the current-Project duplicate before the other-Project duplicate
+    ✔ lists every current-Project definition before every other definition on the empty query
+    ✔ preserves the fzf order within each group
+    ✔ same-file definitions count as current for a standalone active document
+
+  Rename preview per-file summary (review A4)
+    ✔ summarizes every affected document with its exact edit count
+    ✔ carries the authored context snippet of every affected range
+
+  Utility#pathDirname()
+    ✔ should return "C:\test\one" for "C:\test\one\two.md"
+    ✔ should return "C:\test" for "C:\test\one"
+    ✔ should return "/home/test/one" for "/home/test/one/two.md"
+    ✔ should return "/home/test" for "/home/test/one"
+    ✔ should return "test" for "test/one"
+    ✔ should return "test" for "test/one.md"
+    ✔ should return "." for "test.md"
+    ✔ should return "test" for "test\one.md"
+    ✔ should return "test" for "test\one"
+    ✔ should return "." for "./test"
+    ✔ should return ".." for "../test"
+    ✔ should return ".." for "..\test"
+    ✔ should return "." for ".\test"
+    ✔ should return "C:\" for "C:\"
+    ✔ should return "C:\" for "C:\Notes"
+    ✔ should return "/" for "/notes"
+    ✔ should return "/" for "/"
+    ✔ should return "\" for "\\"
+
+  Utility#isAbsolutePath()
+    ✔ should return true for "C:\test\one\two.md"
+    ✔ should return true for "C:\test\one"
+    ✔ should return true for "c:\test\one\two.md"
+    ✔ should return true for "c:\test\one"
+    ✔ should return true for "\\test\one\two.md"
+    ✔ should return true for "\\test\one"
+    ✔ should return true for "/home/test/one/two.md"
+    ✔ should return true for "/home/test/one"
+    ✔ should return false for "test/one"
+    ✔ should return false for "test/one.md"
+    ✔ should return false for "test.md"
+    ✔ should return false for "test\one.md"
+    ✔ should return false for "test\one"
+    ✔ should return false for "./test"
+    ✔ should return false for "../test"
+    ✔ should return false for "..\test"
+    ✔ should return false for ".\test"
+
+  Utility#relativePath()
+    ✔ should return "../../etc/images/test.png" for "/var/test/main.md" -> "/var/etc/images/test.png"
+    ✔ should return "..\.." for "C:\folder\one.md" -> "C:\"
+    ✔ should return "D:\assets\image.png" for "C:\assets\file.md" -> "D:\assets\image.png"
+    ✔ should return "../image.png" for "/var/test/main.md" -> "/var/test/image.png"
+    ✔ should return "..\image.png" for "C:\test\main.md" -> "C:\test\image.png"
+    ✔ should return "image.png" for "C:\test" -> "C:\test\image.png"
+    ✔ should return "image.png" for "/test" -> "/test/image.png"
+    ✔ should return "../GUI Tests/non-ascii image.md" for "README.md" -> "GUI Tests/non-ascii image.md"
+    ✔ should return "../an image with ümläuts.jpeg" for "non-ascii image.md" -> "an image with ümläuts.jpeg"
+
+  Utility#resolvePath()
+    ✔ should return "/var/etc/images/test.png" for "/var/test/main.md" -> "../../etc/images/test.png"
+    ✔ should return "C:\" for "C:\folder\one.md" -> "..\.."
+    ✔ should return "D:\assets\image.png" for "C:\assets\file.md" -> "D:\assets\image.png"
+    ✔ should return "/var/test/image.png" for "/var/test/main.md" -> "../image.png"
+    ✔ should return "C:\test\image.png" for "C:\test\main.md" -> "..\image.png"
+    ✔ should return "C:\test\image.png" for "C:\test" -> "image.png"
+    ✔ should return "/test/image.png" for "/test" -> "image.png"
+    ✔ should return "GUI Tests/non-ascii image.md" for "README.md" -> "../GUI Tests/non-ascii image.md"
+    ✔ should return "an image with ümläuts.jpeg" for "non-ascii image.md" -> "../an image with ümläuts.jpeg"
+
+  Utility#replaceLinks()
+    ✔ should replace "Zettelkasten.md" with "Zettelkasten (Luhmann).md"
+    ✔ should replace "Zettelkasten (Luhmann).md" with "Zettelkasten.md"
+
+  Utility#replaceLinks()
+    ✔ should replace the variables in "%Y-%M-%D" with "2017-12-26"
+    ✔ should replace the variables in "%h:%m:%s" with "21:12:00"
+    ✔ should replace the variables in "Week %W, '%y" with "Week 52, '17"
+    ✔ should replace the variables in "Zettlr was released at %X" with "Zettlr was released at 1514319120"
+
+  Utility#replaceTags()
+    ✔ should replace the tag "one tag" with "A new keyword"
+    ✔ should replace the tag "second-tag" with "new-keyword"
+    ✔ should replace the tag "second-tag" with "New keyword"
+    ✔ should replace the tag "one tag" with "one-tag"
+    ✔ should replace the tag "Mixed-case-Tag" with "all-lowercase-tag"
+
+  resolveWorkspace()
+    ✔ resolves every uniquely defined key to its single definition
+    ✔ reports missing for occurrences without any workspace definition
+    ✔ retains every definition for a key duplicated across the workspace
+
+  resolvesToFile() vs isFile() symlink semantics (issue #5, B12)
+    ✔ both predicates accept a regular file and reject a missing path
+    ✔ resolvesToFile follows a symlink to a file where isFile (lstat) rejects it
+    ✔ both predicates reject a dangling symlink and a directory
+    ✔ preflight accepts a symlinked required path (the ~/.pandoc/justfile case)
+
+  pure review transitions
+    ✔ applies ordered claims as separate packets
+    ✔ refuses a patch that does not apply and leaves no candidate state
+    ✔ decides chunks, carries comments, and clears unresolved state
+    ✔ retracts only the newest untouched packet
+    ✔ keeps preparation pure and drafts events without emitting them
+
+  suggestions through owner edits and later claims
+    ✔ reconciles a working-text edit without mutating the input
+    ✔ maps each deletion restoration when owner text changes between seams
+    ✔ maps an earlier suggestion through a later claim and later rejection
+    ✔ maps sibling identity through rejection of repeated text
+    ✔ withdraws a suggestion when an owner edit destroys its complete anchor
+    ✔ round-trips packet attribution through the sidecar
+
+  ReviewDiffStore projections
+    ✔ derive status, chunks, and a composite diff from live text
+
+  Utility#safeAssign()
+    ✔ should return a properly merged object
+    ✔ should return a properly merged object
+    ✔ should return a properly merged object
+    ✔ should return a properly merged object
+    ✔ should return a properly merged object
+
+  the workspace search query
+    ✔ takes the query as text unless the regular-expression option is on
+    ✔ reports an unparsable regular expression instead of throwing
+    ✔ treats an empty query as no query, not as an error
+    ✔ matches without regard to case until match case is on
+    ✔ matches inside a word until whole word is on
+    ✔ counts the line each match is on, one-based
+    ✔ reads a row as the text before the match, the match, and the rest of its line
+    ✔ trims a long line from the left and marks that it was trimmed
+    ✔ admits a file by the include globs and rejects it by the exclude globs
+    ✔ takes several globs separated by commas
+    ✔ expands capture groups into the replacement
+    ✔ carries the case of the match into the replacement only when asked
+
+  Utility#shortenUrlVisually()
+    ✔ should shorten URL to 'www.cambridge.org/…ls/philosophy-of-science/issue/F854E266F79EA9FC1D8EA585021FC72F'
+    ✔ should shorten URL to 'https://en.wikipedia.org/wiki/Marxist_literary_criticism'
+
+  Toast action affordance (review A5)
+    ✔ renders one labeled action button and runs the action exactly once on click
+    ✔ dismissing the toast body never runs the action
+    ✔ action-free toasts render no action button
+
+  portable VS Code snippet files
+    ✔ parses JSONC, arrays, scopes and file-pattern fields
+    ✔ accepts only the standard .code-snippets storage surface
+
+  CodeMirror-native snippet host
+    ✔ uses CodeMirror native snippet navigation in the editor keymap
+    ✔ adapts VS Code numbered fields to CodeMirror and lets CodeMirror own field state
+    ✔ keeps repeated fields mirrored through CodeMirror multiple selections
+    ✔ uses Microsoft parsers/resolvers for standard time variables before handing off to CodeMirror
+    ✔ refuses rich placeholder constructs CodeMirror cannot execute rather than reimplementing a second runtime
+
+  always-on completion sources
+    ✔ offers actual snippets during ordinary typing, not only explicit completion
+    ✔ uses CodeMirror completeAnyWord as the buffer-word source
+    ✔ merges and ranks snippet and buffer-word candidates in the real production completion session (67ms)
+    ✔ exposes latex-scoped snippets inside Markdown math without changing their file format
+    ✔ exposes latex and TikZ snippet scopes while editing TikZ/TikZCD source
+
+  QuickTeX is a separate aggressive Space mechanism
+    ✔ inserts the configured expansion including its trailing Space
+    ✔ preserves another prose expansion trailing Space byte-for-byte
+    ✔ uses only the math dictionary in Markdown math, never prose fallback
+    ✔ returns false immediately on a miss so the ordinary Space binding runs
+    ✔ preserves QuickTeX jump markers and places the cursor at <+++>
+    ✔ double-space consumes the previous space and jumps to the next QuickTeX marker
+    ✔ is the first Space binding, ahead of autocorrect and literal insertion
+
+  TabManager per-pane navigation history (issue #1 Phase 5)
+    path-only parity (current behavior, must stay green)
+      ✔ walks back and forward through a three-file session by path
+Out of bounds
+Out of bounds
+      ✔ keeps out-of-bounds moves at both history ends as no-ops
+      ✔ deduplicates a reopened path by moving it to the newest position
+      ✔ keeps jump-opened tabs open when walking back
+      ✔ keeps the persisted JSON surface at { openFiles, activeFile }
+    widened { path, location? } entries (Phase 5 red)
+      ✔ exposes the session history as widened { path, location? } entries
+      ✔ stamps the current entry with the location captured before a jump
+      ✔ back() returns the widened entry it restored, including the stamped location
+      ✔ restores legacy path-only entries exactly as today, with location undefined
+      ✔ spans tabs within one pane, restoring each stamped location in turn
+Out of bounds
+Out of bounds
+Out of bounds
+      ✔ returns null (and moves nothing) at both history boundaries
+
+  TikZ editor display-size projection
+    ✔ projects the physical TeX width into the same 1.1em display-math scale as MathJax
+    ✔ does not guess when the SVG lacks a TeX point width
+
+  TikZ live preview controller
+    ✔ trailing-debounces rapid edits to the newest source
+    ✔ keeps one render in flight and replaces queued intermediate source with the newest edit (56ms)
+    ✔ keeps the last good figure when current source fails to compile
+    ✔ does not flash an error from source that was edited away while compiling (41ms)
+    ✔ force render bypasses the cache even when source is unchanged
+
+  TikZ shared Pandoc-config authority
+    ✔ provisions current pandoc-config in CI without a per-project commit pin
+
+  TikZ-cd ↔ Quiver source bridge
+    ✔ hands raw tikzcd to Quiver byte-for-byte
+    ✔ wraps only the body of a fenced tikzcd for Quiver parsing
+    ✔ maps a canonical fenced export back to its body and advances every owned range by the same delta
+    ✔ refuses to discard environment-level options a fence cannot encode
+    ✔ keeps a raw environment whole when Quiver canonicalises it
+
+  TikZ TeX typography metadata
+    ✔ reads the documentclass point size and defaults ordinary standalone documents to 10pt
+    ✔ indexes macros from the owned template and its local package/input graph
+
+  TikZ render service (issue #14)
+    ✔ reports missing pdflatex/pdf2svg as a typed result, never silence
+    ✔ distinguishes a toolchain probe that failed from a tool that is absent
+    ✔ renders a tikzcd snippet to namespaced inline SVG plus a lightbox file, or reports the toolchain (795ms)
+    ✔ renders a fenced tikzcd body through the owned template rather than treating it as a standalone TeX document (716ms)
+    ✔ serves a repeat render from the content-addressed cache (457ms)
+    ✔ force-render bypasses the filter cache and rewrites the generated SVG (1624ms)
+    ✔ keeps the last-good cached SVG when a forced refresh fails during conversion (1294ms)
+    ✔ maps a figure-compile failure back to the tikz source line (624ms)
+    ✔ resolves the figure \input against the document the request names (1317ms)
+    ✔ keeps identical source in different document roots in distinct filter-cache entries (1286ms)
+    ✔ reports a render killed by a signal as its own outcome naming the signal, not as a pandoc diagnostic (237ms)
+    ✔ uses an explicitly configured TikZ data directory
+    ✔ defaults to the live ~/.pandoc tree when it carries the TikZ assets
+    ✔ requires the user-owned ~/.pandoc standalone template for live preview
+    ✔ fails loudly instead of substituting a bundled TikZ filter when the shared data tree is absent
+
+  TikZ exact Stacks visual-reference corpus
+    ✔ pins several real Stacks pages and every recorded diagram to literal xymatrix source
+    ✔ keeps durable original-page and side-by-side screenshots for every reference
+    ✔ records Stacks-normalized widths within the accepted visual equivalence band
+
+  the toolbar commands in the application menu
+    ✔ carries the toolbar's toggle-navigation-sidebar as the menu item menu.toggle_navigation_sidebar
+    ✔ carries the toolbar's root-open-workspaces as the menu item menu.open_workspace
+    ✔ carries the toolbar's show-stats as the menu item menu.statistics
+    ✔ carries the toolbar's show-tag-cloud as the menu item menu.tags
+    ✔ carries the toolbar's open-preferences as the menu item menu.preferences
+    ✔ carries the toolbar's new-file as the menu item menu.new_file
+    ✔ carries the toolbar's previous-file as the menu item menu.previous_file
+    ✔ carries the toolbar's next-file as the menu item menu.next_file
+    ✔ carries the toolbar's export as the menu item menu.export
+    ✔ carries the toolbar's pandocDivOrSpan as the menu item menu.insert_pandoc_div
+    ✔ carries the toolbar's markdownComment as the menu item menu.insert_comment
+    ✔ carries the toolbar's markdownLink as the menu item menu.insert_link
+    ✔ carries the toolbar's markdownImage as the menu item menu.insert_image
+    ✔ carries the toolbar's markdownMakeTaskList as the menu item menu.insert_task_list
+    ✔ carries the toolbar's insert-table as the menu item menu.insert_table
+    ✔ carries the toolbar's insertFootnote as the menu item menu.insert_footnote
+    ✔ carries the toolbar's toggle-sidebar as the menu item menu.toggle_annotation_panel
+    ✔ carries the toolbar's open-updater as the menu item menu.update
+
+  MarkdownEditor#addSpacesAroundEmdashes()
+    ✔ given "blush—curious" ➡️ "blush — curious"
+    ✔ given "blush —curious" ➡️ "blush — curious"
+    ✔ given "blush— curious" ➡️ "blush — curious"
+    ✔ given text with no emdashes and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no emdashes and all the text is selected then no transaction is dispatched because nothing is selected
+    ✔ given text with emdashes that already have the correct spacing then no transaction is dispatched
+    ✔ given text with emdashes that need spacing but the emdash-y bit is not in the selected text then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#curlQuotes()
+    ✔ given "He said "hello" to her" ➡️ "He said “hello” to her"
+    ✔ given "He said 'hello' to her" ➡️ "He said ‘hello’ to her"
+    ✔ given ""Hello" ➡️ "“Hello"
+    ✔ given "He said ("hello")" ➡️ "He said (“hello”)"
+    ✔ given "He said-"hello"" ➡️ "He said-“hello”"
+    ✔ given ""It's here," he said" ➡️ "“It’s here,” he said"
+    ✔ given "He said"hello"to her" ➡️ "He said”hello”to her"
+    ✔ given a partial selection, converts quotes only inside the selection
+    ✔ given a contraction, converts apostrophe to closing single quote
+    ✔ given a quote after newline, uses opening quote
+    ✔ given mixed straight and curly quotes, converts only straight quotes
+    ✔ given no quotes and no selection then no transaction is dispatched
+    ✔ given quotes but no selection then no transaction is dispatched
+    ✔ given only curly quotes, no transaction is dispatched
+
+  MarkdownEditor#convertDoubleQuotesToSingleQuotes()
+    ✔ given ""I love you," said Elric" ➡️ "'I love you,' said Elric"
+    ✔ given """"" ➡️ "'''"
+    ✔ given """ ➡️ "'"
+    ✔ given text with no double quotes and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no double quotes and all the text is selected then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#italicsToQuotes()
+    ✔ given "_Cultures in Orbit_" ➡️ ""Cultures in Orbit""
+    ✔ given "*Cultures in Orbit*" ➡️ ""Cultures in Orbit""
+    ✔ given "_Cultures in Orbit_ and _Cultures in Orbit_" ➡️ ""Cultures in Orbit" and "Cultures in Orbit""
+    ✔ given "*Cultures in Orbit* and _Cultures in Orbit_" ➡️ ""Cultures in Orbit" and "Cultures in Orbit""
+    ✔ given "_Cultures **in** Orbit_" ➡️ ""Cultures **in** Orbit""
+    ✔ given "There are no italicized regions in this text" no transaction is dispatched
+    ✔ given "There are no italicized regions but there is a rogue _ character" no transaction is dispatched
+    ✔ given "There are no italicized regions but there is a rogue * character" no transaction is dispatched
+    ✔ given text with no italicized regions and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with an italicized region using "_" but that region is not in the selected text then no transaction is dispatched
+    ✔ given text with an italicized region using "*" but that region is not in the selected text then no transaction is dispatched
+
+  MarkdownEditor#quotesToItalics()
+    ✔ given ""Cultures in Orbit"" ➡️ "_Cultures in Orbit_"
+    ✔ given ""Cultures in Orbit" and "Cultures in Orbit"" ➡️ "_Cultures in Orbit_ and _Cultures in Orbit_"
+    ✔ given ""Cultures in Orbit"" ➡️ "*Cultures in Orbit*"
+    ✔ given ""Cultures in Orbit" and "Cultures in Orbit"" ➡️ "*Cultures in Orbit* and *Cultures in Orbit*"
+    ✔ given text with no quoted regions and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with a quoted region but that region is not in the selected text then no transaction is dispatched
+
+  MarkdownEditor#removeLineBreaks()
+    ✔ given "How\nhappy I am that I am gone!" ➡️ "How happy I am that I am gone!"
+    ✔ given "How    \n  happy I am that I am gone!" ➡️ "How happy I am that I am gone!"
+    ✔ given "How \n happy  \nI\nam \n                that I am gone!" ➡️ "How happy I am that I am gone!"
+    ✔ given text with no line breaks and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with line breaks but that region is not in the selected text then no transaction is dispatched
+
+  MarkdownEditor#removeSpacesAroundEmdashes()
+    ✔ given "blush — curious" ➡️ "blush—curious"
+    ✔ given "blush —curious" ➡️ "blush—curious"
+    ✔ given "blush— curious" ➡️ "blush—curious"
+    ✔ given "blush      —      curious" ➡️ "blush—curious"
+    ✔ given text with no emdashes and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no emdashes and all the text is selected then no transaction is dispatched because nothing is selected
+    ✔ given text with emdashes that are already unspaced then no transaction is dispatched
+    ✔ given text with emdashes that need unspacing but the emdash-y bit is not in the selected text then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#singleQuotesToDouble()
+    ✔ given "'I love you,' said Elric" ➡️ ""I love you," said Elric"
+    ✔ given "'''" ➡️ """""
+    ✔ given "'" ➡️ """
+    ✔ given text with no single quotes and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no single quotes and all the text is selected then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#straightenQuotes()
+    ✔ given "“ ‘ ’ ”" ➡️ "" ' ' ""
+    ✔ given " “ ‘ ’ ”“ ‘ ’ ”“ ‘ ’ ” " ➡️ " " ' ' "" ' ' "" ' ' " "
+    ✔ given "Ein „deutscher Testsatz mit ‚Anführungszeichen‘.“" ➡️ "Ein "deutscher Testsatz mit 'Anführungszeichen'.""
+    ✔ given "Un «exemple de phrase en français» avec des ‹guillemets›." ➡️ "Un "exemple de phrase en français" avec des 'guillemets'."
+    ✔ given "En svensk ”exempelmening med ’citattecken’”." ➡️ "En svensk "exempelmening med 'citattecken'"."
+    ✔ given "I'm lacking the language skills, but 「Japanese」 or 『Taiwanese』 quotation marks." ➡️ "I'm lacking the language skills, but "Japanese" or 'Taiwanese' quotation marks."
+    ✔ given text with no quotes and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no quotes and all the text is selected then no transaction is dispatched because nothing is selected
+    ✔ given text with curly quotes but those quotes are not in the selected text then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#stripDuplicateSpaces()
+    ✔ given "Duplicate (  ) spaces" ➡️ "Duplicate ( ) spaces"
+    ✔ given "Duplicate (  ) spaces and again (     ) and again (  ) " ➡️ "Duplicate ( ) spaces and again ( ) and again ( ) "
+    ✔ given "There are no duplicate spaces in this text" no transaction is dispatched
+    ✔ given "No duplicate spaces but 	 		 there are duplicate tabs" no transaction is dispatched
+    ✔ given text with no duplicate spaces and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with two duplicate spaces but those dupes are not in the selected text then no transaction is dispatched
+
+  MarkdownEditor#toDoubleQuotes()
+    ✔ given "Oh 'such' joy" ➡️ "Oh "such" joy"
+    ✔ given "Oh `such` joy" ➡️ "Oh "such" joy"
+    ✔ given "Oh `such` joy & Oh `such` joy" ➡️ "Oh "such" joy & Oh "such" joy"
+    ✔ given text with no quotes of any kind and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text with no quotes of any kind and all text is selected then no transaction is dispatched
+    ✔ given text with an unpaired single quote and all text is selected then no transaction is dispatched
+    ✔ given text with an unpaired backtick and all text is selected then no transaction is dispatched
+    ✔ given text with paired backticks but those backticks are not in the selected text then no transaction is dispatched
+    ✔ given text with paired single quotes but those backticks are not in the selected text then no transaction is dispatched
+
+  MarkdownEditor#toSentenceCase()
+    ✔ given "A Review of the Literature" ➡️ "A review of the literature"
+    ✔ given "a" ➡️ "A"
+    ✔ given "WRITE ONE SAMPLE SENTENCE TO EXEMPLIFY THIS." ➡️ "Write one sample sentence to exemplify this."
+    ✔ given text and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text but the relevant text is not in the selected text then no transaction is dispatched because nothing is selected
+    ✔ given text that is already in sentence case then no transaction is dispatched because nothing is selected
+
+  MarkdownEditor#toTitleCase()
+    ✔ given "A review of the literature" ➡️ "A Review Of The Literature"
+    ✔ given "a" ➡️ "A"
+    ✔ given "A review ✌️ of The Literature" ➡️ "A Review ✌️ Of The Literature"
+    ✔ given "A review of ह Literature" ➡️ "A Review Of ह Literature"
+    ✔ given text and no selected text then no transaction is dispatched because nothing is selected
+    ✔ given text but the relevant text is not in the selected text then no transaction is dispatched because nothing is selected
+    ✔ given text that is already in title case then no transaction is dispatched because nothing needs changing
+
+  MarkdownEditor#zapGremlins()
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips individual control character"
+    ✔ strips multiple control characters in sequence
+    ✔ strips only control characters leaving other text as-is
+    ✔ text with just spaces, tabs, page breaks and line breaks is left as-is
+
+
+  1452 passing (2m)
+

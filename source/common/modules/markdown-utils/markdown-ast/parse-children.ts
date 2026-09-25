@@ -15,9 +15,9 @@
 
 import type { SyntaxNode } from '@lezer/common'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
-import { type ASTNode, parseNode, type MDNode } from '../markdown-ast'
-import { getWhitespaceBeforeNode } from './get-whitespace-before-node'
+import { type ASTNode, type MDNode, parseNode } from '../markdown-ast'
 import { genericTextNode } from './generic-text-node'
+import { getWhitespaceBeforeNode } from './get-whitespace-before-node'
 
 /**
  * This list contains all Node names that do not themselves have any content.
@@ -53,9 +53,10 @@ const EMPTY_NODES = new Set([
   'PandocDivInfo',
   'PandocDivMark',
   'PandocSpanMark',
+  'RawBlockContent',
   'ZknLinkMark',
   'ZknLinkPipe',
-  'ZknTagMark'
+  'ZknTagMark',
 ])
 
 /**
@@ -68,7 +69,11 @@ const EMPTY_NODES = new Set([
  *
  * @return  {Record<string, string|string[]>}                 A map of the attributes
  */
-function parseAttributeNode (oldAttributes: Record<string, string|string[]> = {}, node: SyntaxNode, markdown: string): Record<string, string|string[]> {
+function parseAttributeNode (
+  oldAttributes: Record<string, string | string[]> = {},
+  node: SyntaxNode,
+  markdown: string,
+): Record<string, string | string[]> {
   if (node.name !== 'PandocAttribute') {
     return oldAttributes
   }
@@ -98,10 +103,19 @@ function parseAttributeNode (oldAttributes: Record<string, string|string[]> = {}
  *
  * @return  {T}                     Returns the same astNode with children.
  */
-export function parseChildren<T extends { children: ASTNode[] } & MDNode> (astNode: T, node: SyntaxNode, markdown: string): T {
+export function parseChildren<T extends { children: ASTNode[] } & MDNode> (
+  astNode: T,
+  node: SyntaxNode,
+  markdown: string,
+): T {
   if (node.firstChild === null) {
     if (!EMPTY_NODES.has(node.name)) {
-      const textNode = genericTextNode(node.from, node.to, markdown.substring(node.from, node.to), getWhitespaceBeforeNode(node, markdown))
+      const textNode = genericTextNode(
+        node.from,
+        node.to,
+        markdown.substring(node.from, node.to),
+        getWhitespaceBeforeNode(node, markdown),
+      )
       astNode.children = [textNode]
     }
     return astNode // We're done
@@ -109,7 +123,7 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode> (astNo
 
   astNode.children = []
 
-  let currentChild: SyntaxNode|null = node.firstChild
+  let currentChild: SyntaxNode | null = node.firstChild
   let currentIndex = node.from
   while (currentChild !== null) {
     // NOTE: We have to account for "gaps" where a node has children that do not
@@ -123,7 +137,7 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode> (astNo
         currentIndex + whitespaceBefore.length,
         currentChild.from,
         gap.substring(whitespaceBefore.length),
-        whitespaceBefore
+        whitespaceBefore,
       )
       astNode.children.push(textNode)
     }
@@ -152,7 +166,7 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode> (astNo
       currentIndex + whitespaceBefore.length,
       node.to,
       markdown.substring(currentIndex + whitespaceBefore.length, node.to),
-      whitespaceBefore
+      whitespaceBefore,
     )
     astNode.children.push(textNode)
   }

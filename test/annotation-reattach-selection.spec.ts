@@ -7,8 +7,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Proves the rule MainEditor.vue's beginAnnotationReattach
- *                  watcher enforces, over a real EditorView — the same
+ * Description:     Proves the rule MainEditor.vue's reattachAnnotation
+ *                  enforces, over a real EditorView — the same
  *                  boundary annotation-context-menu.spec.ts proves
  *                  resolveAnnotateSelectionMenuItem against. S8/I6: an
  *                  orphaned anchor comes back to `range` ONLY through a

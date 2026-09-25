@@ -3,15 +3,24 @@
     ref="mainEditorWrapper"
     class="main-editor-wrapper"
     role="region"
-    :aria-label="`Markdown Editor: Currently editing file ${pathBasename(props.file.path)}`"
+    :aria-label="`Editing ${pathBasename(props.file.path)}`"
     :style="{ 'font-size': `${fontSize}px` }"
     :class="{
       'code-file': !isMarkdown,
-      fullscreen: distractionFree
+      fullscreen: distractionFree,
+      'tikz-live-preview-open': tikzPreviewTarget !== null
     }"
   >
-    <div :id="`cm-text-${props.leafId}`">
-      <!-- This element will be replaced with Codemirror's wrapper element on mount -->
+    <div class="main-editor-workspace">
+      <div
+        ref="editorHost"
+        class="main-editor-host"
+      />
+      <TikzLivePreview
+        v-if="tikzPreviewTarget !== null && activeEditorView !== null"
+        :target="tikzPreviewTarget"
+        :editor-view="activeEditorView"
+      />
     </div>
     <RenameReferencePreviewDialog
       v-if="renamePreviewPrompt !== undefined"
@@ -31,6 +40,13 @@
       :annotation-generation="collaborationSession?.annotations.generation ?? 0"
       @saved="closeAnnotationComposer()"
       @close="closeAnnotationComposer()"
+    />
+    <InlineCollaborationControls
+      :document-path="props.file.path"
+      :blocks="collaborationBlocks"
+      @reveal-range="revealRange($event)"
+      @reattach="reattachAnnotation($event)"
+      @step-chunk="stepReviewChunk($event)"
     />
   </div>
 </template>
@@ -52,12 +68,14 @@
  * END HEADER
  */
 
-import MarkdownEditor, { type EditorViewPersistentState } from '@common/modules/markdown-editor'
+import { reportError } from '@common/util/error-reporting'
+import MarkdownEditor from '@common/modules/markdown-editor'
 
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, onUpdated } from 'vue'
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, nextTick } from 'vue'
+import _ from 'underscore'
 import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
-import { hasMarkdownExt } from '@common/util/file-extention-checks'
-import { DP_EVENTS, type OpenDocument } from '@dts/common/documents'
+import { getDocumentTypeForExtension, hasMarkdownExt } from '@common/util/file-extention-checks'
+import { DocumentType, DP_EVENTS, type OpenDocument } from '@dts/common/documents'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/configuration'
@@ -66,6 +84,9 @@ import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescr
 import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
+import InlineCollaborationControls, { type CollaborationBlock } from './editor-collaboration/InlineCollaborationControls.vue'
+import type { CollaborationControl } from '@common/modules/markdown-editor/plugins/collaboration-controls'
+import { selectNextReviewChunk, selectPreviousReviewChunk } from '@common/modules/markdown-editor/plugins/review-chunks'
 import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
 import { resolveReattachSelection } from './util/annotation-reattach-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
@@ -111,6 +132,15 @@ import type { WorkspaceReferenceEdit } from '@dts/common/references'
 import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
+import TikzLivePreview from './TikzLivePreview.vue'
+import { activeTikzBlock as findActiveTikzBlock, type TikzSourceBlock } from '@common/modules/markdown-editor/tikz-block'
+import type { TikzLivePreviewTarget } from '@common/modules/markdown-editor/tikz-live-preview'
+import {
+  declaredTexMacroSources,
+  type TexDocumentKind,
+  type TexMacroSource
+} from '@common/util/tex-context'
+import { resolveTexMacroSourcePaths } from '@common/util/tex-macro-source-resolution'
 
 const ipcRenderer = window.ipc
 
@@ -148,15 +178,14 @@ const props = defineProps<{
   editorCommands: EditorCommands
   distractionFree: boolean
   file: OpenDocument
-  persistentStateMap: Map<string, EditorViewPersistentState>
 }>()
 
 const emit = defineEmits<{
   (e: 'globalSearch', query: string): void
   (e: 'referenceSearch', request: ReferenceSearchRequest): void
+  (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
-  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -173,6 +202,7 @@ const collaborationStore = useDocumentCollaborationStore()
  * store entry; nothing here pulls the sidecar or a session of its own.
  */
 const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
+const isActiveTab = computed(() => props.activeFile?.path === props.file.path)
 
 /**
  * The open selection-creation composer request (M6), or null when none is
@@ -207,8 +237,119 @@ function closeAnnotationComposer (): void {
   annotationComposerRequest.value = null
 }
 
+/**
+ * The blocks this pane's editor has placed for review chunks, the review bar
+ * and the open annotation thread. The editor calls
+ * mountCollaborationControl when it places one and the returned function
+ * when it drops it; InlineCollaborationControls renders into each.
+ */
+const collaborationBlocks = shallowRef<CollaborationBlock[]>([])
+let collaborationBlockSerial = 0
+
+function mountCollaborationControl (dom: HTMLElement, control: CollaborationControl): () => void {
+  const block: CollaborationBlock = { key: ++collaborationBlockSerial, dom, control }
+  collaborationBlocks.value = [ ...collaborationBlocks.value, block ]
+  return () => {
+    collaborationBlocks.value = collaborationBlocks.value.filter(existing => existing !== block)
+  }
+}
+
+function revealRange (range: SourceRange): void {
+  currentEditor?.selectSourceRange(range)
+}
+
+function stepReviewChunk (direction: 1 | -1): void {
+  if (currentEditor === null) {
+    return
+  }
+  const view = currentEditor.instance
+  if (direction === 1) {
+    selectNextReviewChunk(view)
+  } else {
+    selectPreviousReviewChunk(view)
+  }
+  view.focus()
+}
+
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor|null = null
+let texMacroSourceCacheKey = ''
+let texMacroSourceRequestId = 0
+let activeTexMacroSourcePaths = new Set<string>()
+
+function texDocumentKindForPath (filePath: string): TexDocumentKind|undefined {
+  switch (getDocumentTypeForExtension(filePath)) {
+    case DocumentType.Markdown:
+      return 'markdown'
+    case DocumentType.LaTeX:
+      return 'latex'
+    case DocumentType.YAML:
+      return 'yaml'
+    case DocumentType.JSON:
+    case undefined:
+      return undefined
+  }
+}
+
+async function updateTexMacroSources (
+  editor: MarkdownEditor|null = currentEditor,
+  force = false
+): Promise<void> {
+  if (editor === null) return
+  const kind = texDocumentKindForPath(editor.documentPath)
+  if (kind === undefined) return
+
+  const patterns = declaredTexMacroSources(editor.value, kind)
+  const workspacePaths = [...workspaceStore.descriptorMap.values()]
+    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
+    .map(descriptor => descriptor.path)
+  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths)
+  const cacheKey = JSON.stringify([editor.documentPath, patterns, paths])
+  if (!force && cacheKey === texMacroSourceCacheKey) return
+
+  texMacroSourceCacheKey = cacheKey
+  activeTexMacroSourcePaths = new Set(paths)
+  const requestId = ++texMacroSourceRequestId
+  const sources: TexMacroSource[] = []
+  for (const filePath of paths) {
+    try {
+      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath)
+      sources.push({ path: filePath, content: sourceDocument.content })
+    } catch (error) {
+      console.error('[MainEditor] Could not load TeX macro source ' + filePath, error)
+    }
+  }
+
+  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) return
+  editor.setCompletionDatabase('tex-macro-sources', sources)
+}
+let editorLoadPromise: Promise<void>|null = null
+const activeTikzSource = shallowRef<TikzSourceBlock|null>(null)
+const activeEditorView = shallowRef<EditorView|null>(null)
+
+function ownsWindowActiveState (editor: MarkdownEditor|null = currentEditor): editor is MarkdownEditor {
+  return editor !== null &&
+    editor === currentEditor &&
+    isActiveTab.value &&
+    documentTreeStore.lastLeafId === props.leafId
+}
+
+function updateActiveTikzSource (editor: MarkdownEditor): void {
+  if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
+    return
+  }
+  activeTikzSource.value = findActiveTikzBlock(editor.instance.state)
+}
+
+function publishActiveEditorState (editor: MarkdownEditor): void {
+  if (!ownsWindowActiveState(editor)) {
+    return
+  }
+  windowStateStore.activeDocumentInfo = editor.documentInfo
+  windowStateStore.tableOfContents = editor.tableOfContents
+  updateActiveTikzSource(editor)
+}
+
 
 function reportDocumentLoadError (error: unknown): void {
   surfaceDocumentLoadError(props.file.path, error)
@@ -233,7 +374,7 @@ function applyPendingNavigation (): void {
     return
   }
 
-  if (pendingNavigation.filePath !== currentEditor.documentPath) {
+  if (pendingNavigation.filePath !== currentEditor.documentPath || !isActiveTab.value) {
     return // The pane moved elsewhere; keep waiting or get superseded.
   }
 
@@ -263,6 +404,9 @@ function applyReviewDiffSession (session: ReviewDiffSession): void {
 
 // EVENT LISTENERS
 const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
+  if (!isActiveTab.value) {
+    return
+  }
   const descriptor = activeFileDescriptor.value
 
   if (descriptor === undefined || descriptor.type !== 'file') {
@@ -285,7 +429,7 @@ const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event,
       })
     })
     .catch(e => {
-      console.error('Could not update citation keys', e)
+      reportError('Could not update citation keys', e)
     })
 })
 
@@ -296,8 +440,11 @@ const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event,
 // recoverable-error boundary (closable toast, typed outcome); this catch
 // only guards against unexpected renderer-side faults.
 const stopReferenceUpdates = ipcRenderer.on('references', _event => {
+  if (!isActiveTab.value) {
+    return
+  }
   updateReferenceEntries().catch(e => {
-    console.error('Could not update workspace reference entries', e)
+    reportError('Could not update workspace reference entries', e)
   })
 })
 
@@ -320,13 +467,13 @@ const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
           // the closable toast surface instead, and never swallow the reason.
           const message = result.refusal?.message ??
             trans('Could not save "%s".', pathBasename(props.file.path))
-          console.error(
+          reportError(
             `[MainEditor] Main refused to save ${props.file.path}` +
             (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
           )
           showToast(message, 'error', 12000)
         })
-        .catch(e => console.error(e))
+        .catch(e => reportError(e))
     }
 
     // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
@@ -351,7 +498,7 @@ const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
           doSave()
         })
         .catch(e => {
-          console.error(`[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`, e)
+          reportError(`[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`, e)
           showToast(
             trans(
               'Could not save "%s": format-on-save did not complete, so nothing was written. Press save again.',
@@ -428,7 +575,7 @@ const stopDocumentUpdates = ipcRenderer.on('documents-update', (e, payload: { ev
         activeFileDescriptor.value = descriptor
         const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
         if (library !== undefined) {
-          updateCitationKeys(library).catch(e => console.error('Could not update citation keys', e))
+          updateCitationKeys(library).catch(e => reportError('Could not update citation keys', e))
         }
 
         // Provide the editor instance with updated metadata
@@ -440,7 +587,19 @@ const stopDocumentUpdates = ipcRenderer.on('documents-update', (e, payload: { ev
           }
         })
       })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
+  }
+  if (
+    context.filePath !== undefined &&
+    activeTexMacroSourcePaths.has(context.filePath) &&
+    (
+      event === DP_EVENTS.CHANGE_FILE_STATUS ||
+      event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
+      event === DP_EVENTS.FILE_SAVED
+    )
+  ) {
+    updateTexMacroSources(currentEditor, true)
+      .catch(error => reportError('Could not refresh TeX macro sources', error))
   }
   // Collaboration state (annotations, review) is not handled here: it
   // reaches this pane through the document-collaboration store and the
@@ -453,16 +612,18 @@ const stopReloads = ipcRenderer.on('reload-editors', _e => {
 
 // Update the file database whenever links have been updated
 const stopLinkUpdates = ipcRenderer.on('links', _e => {
-  updateFileDatabase().catch(err => console.error('Could not update file database', err))
+  if (!isActiveTab.value) {
+    return
+  }
+  updateFileDatabase().catch(err => reportError('Could not update file database', err))
 })
 
 // MOUNTED HOOK
 onMounted(() => {
-  loadDocument().catch(reportDocumentLoadError)
-  // mainEditorWrapper is stable across a file switch (currentEditor's own
-  // DOM is replaced underneath it), so this one listener, attached once,
-  // catches every "Annotate for AI…" request for the pane's whole lifetime.
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
+  if (isActiveTab.value) {
+    activateTab().catch(reportDocumentLoadError)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -470,40 +631,37 @@ onBeforeUnmount(() => {
     stop()
   }
   latestReferenceRequestId++
+  activeTikzSource.value = null
+  activeEditorView.value = null
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
   if (currentEditor !== null) {
-    props.persistentStateMap.set(props.file.path, currentEditor.persistentState)
-    // Clear out the table of contents before unmounting the component.
-    windowStateStore.tableOfContents = undefined
     currentEditor.unmount()
   }
 })
 
-onUpdated(() => {
-  // We hook into the onUpdated lifecycle event since that will fire when the
-  // data for this component update, which includes visibility with the v-show
-  // directive. In case that the editor component is mounted and non-hidden, we
-  // will fire
-  if (currentEditor === null) {
+watch(isActiveTab, active => {
+  if (!active) {
+    activeTikzSource.value = null
+    annotationComposerRequest.value = null
     return
   }
+  nextTick()
+    .then(async () => { await activateTab() })
+    .catch(reportDocumentLoadError)
+})
 
-  const currentFilePath = currentEditor.documentPath
-  if (currentFilePath !== props.activeFile?.path) {
-    // File path has changed -> unmount and remount (duplicate code from
-    // onMounted and onBeforeUnmount hooks).
-    props.persistentStateMap.set(currentFilePath, currentEditor.persistentState)
-    currentEditor.unmount()
-    loadDocument().catch(reportDocumentLoadError)
-  }
-
-  if (!currentEditor.hasFocus()) {
-    currentEditor.focus()
+// The focus event reaches this pane before main moves lastLeafId here, so
+// the pane's own events are refused ownership until that move lands. Publish
+// once it does, or the window keeps the previous pane's document info.
+watch(() => documentTreeStore.lastLeafId, leafId => {
+  if (leafId === props.leafId && currentEditor !== null) {
+    publishActiveEditorState(currentEditor)
   }
 })
 
 // DATA SETUP
 const mainEditorWrapper = ref<HTMLDivElement|null>(null)
+const editorHost = ref<HTMLDivElement|null>(null)
 
 // COMPUTED PROPERTIES
 const useH1 = computed<boolean>(() => configStore.config.fileNameDisplay.includes('heading'))
@@ -511,8 +669,16 @@ const useTitle = computed<boolean>(() => configStore.config.fileNameDisplay.incl
 const fontSize = computed<number>(() => configStore.config.editor.fontSize)
 const globalSearchResults = computed(() => windowStateStore.searchResults)
 const snippets = computed(() => windowStateStore.snippets)
+const quickTex = computed(() => windowStateStore.quickTex)
+const phraseCompletions = computed(() => windowStateStore.phraseCompletions)
 const tags = computed(() => tagStore.tags)
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path))
+const tikzPreviewTarget = computed<TikzLivePreviewTarget|null>(() => activeTikzSource.value === null
+  ? null
+  : {
+      ...activeTikzSource.value,
+      docPath: props.file.path
+    })
 
 const activeFileDescriptor = ref<undefined|MDFileDescriptor|CodeFileDescriptor>(undefined)
 
@@ -537,7 +703,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
       replacements: editor.autoCorrect.replacements
     },
     autocompleteSuggestEmojis: editor.autocompleteSuggestEmojis,
-    snippetAutocompleteTriggerCharacter: editor.snippetAutocompleteTriggerCharacter,
     autocompleteWithEnter: editor.autocompleteWithEnter,
     autocompleteWithTab: editor.autocompleteWithTab,
     imagePreviewWidth: display.imageWidth,
@@ -567,7 +732,6 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     zknAddFileTitle: zkn.linkAddFileTitle,
     linkWithIDIfPossible: zkn.linkWithIDIfPossible,
     inputMode: editor.inputMode,
-    lintMarkdown: editor.lint.markdown,
     // The editor only needs to know if it should use languageTool
     lintLanguageTool: editor.lint.languageTool.active,
     distractionFree: props.distractionFree.valueOf(),
@@ -716,25 +880,15 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
 })
 
 /**
- * S8/I6: the annotations panel's Reattach only ever names an annotation
- * (component-contracts.ts) — the replacement range is whatever the owner
- * has just selected in THIS, the last focused pane for the document. There
- * is no arming step and no background guess: an empty selection means the
- * owner has not picked a location yet, so this refuses with a toast that
- * says exactly that, rather than silently doing nothing or fabricating a
- * point range.
+ * S8/I6: the thread's Reattach names only the annotation — the replacement
+ * range is whatever the owner has selected in THIS pane, the one whose
+ * thread was clicked. There is no arming step and no background guess: an
+ * empty selection means the owner has not picked a location yet, so this
+ * refuses with a toast that says exactly that, rather than silently doing
+ * nothing or fabricating a point range.
  */
-watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
-  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
-    return
-  }
-  if (documentTreeStore.lastLeafId !== props.leafId) {
-    // Mirrors executeCommand/replaceSelection above: an unfocused pane
-    // showing the same file is not where the owner's selection lives.
-    return
-  }
-  const data = props.editorCommands.data
-  if (typeof data !== 'object' || data === undefined || !('annotationId' in data) || data.filePath !== props.file.path) {
+function reattachAnnotation (annotationId: string): void {
+  if (currentEditor === null) {
     return
   }
   const selection = resolveReattachSelection(currentEditor.instance)
@@ -742,14 +896,14 @@ watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
     showToast(trans('Select the new location for this annotation, then click Reattach again.'), 'error')
     return
   }
-  collaborationStore.reattachAnnotation(props.file.path, data.annotationId, selection.from, selection.to)
+  collaborationStore.reattachAnnotation(props.file.path, annotationId, selection.from, selection.to)
     .then(result => {
       if ('ok' in result && !result.ok) {
         showToast(result.message, 'error')
       }
     })
-    .catch(err => console.error('[MainEditor] Could not reattach the annotation', err))
-})
+    .catch(err => reportError('[MainEditor] Could not reattach the annotation', err))
+}
 
 watch(toRef(props.editorCommands, 'replaceSelection'), () => {
   if (props.activeFile?.path !== props.file.path) {
@@ -808,23 +962,58 @@ watch(toRef(props.editorCommands, 'insertPandoc'), () => {
 const fsalFiles = computed<MDFileDescriptor[]>(() => {
   return [...workspaceStore.descriptorMap.values()].filter(d => d.type === 'file')
 })
+const texMacroSourceWorkspacePaths = computed<string[]>(() => {
+  return [...workspaceStore.descriptorMap.values()]
+    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
+    .map(descriptor => descriptor.path)
+    .sort()
+})
 
 // WATCHERS
-watch(useH1, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
-watch(useTitle, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
-watch(fsalFiles, () => { updateFileDatabase().catch(err => console.error('Could not update file database', err)) })
+watch(useH1, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
+watch(useTitle, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
+watch(fsalFiles, () => {
+  if (isActiveTab.value) {
+    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  }
+})
+watch(texMacroSourceWorkspacePaths, () => {
+  updateTexMacroSources(currentEditor, true)
+    .catch(error => reportError('Could not refresh TeX macro sources', error))
+})
 
-watch(editorConfiguration, (newValue) => {
-  currentEditor?.setOptions(newValue)
+watch(editorConfiguration, (newValue, oldValue) => {
+  if (!_.isEqual(newValue, oldValue)) {
+    currentEditor?.setOptions(newValue)
+  }
 })
 
 watch(globalSearchResults, () => {
+  if (!isActiveTab.value) {
+    return
+  }
   // TODO: I don't like that we need a timeout here.
   setTimeout(maybeHighlightSearchResults, 200)
 })
 
 watch(snippets, (newValue) => {
   currentEditor?.setCompletionDatabase('snippets', newValue)
+})
+
+watch(quickTex, (newValue) => {
+  currentEditor?.setQuickTexCatalogue(newValue)
+})
+
+watch(phraseCompletions, (newValue) => {
+  currentEditor?.setCompletionDatabase('phrases', newValue)
 })
 
 watch(tags, (newValue) => {
@@ -850,9 +1039,9 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-// The set, the selected card and the resolved-visibility switch are all the
-// panel's state; the editor renders from them and mutates none of them. They
-// travel together because a document swap builds a fresh editor state:
+// The set plus editor locator selection/resolved visibility travel together;
+// the workspace sidebar does not own a duplicate detail view. A document swap
+// builds a fresh editor state, so
 // pushing the set alone would leave the new state with no selection and the
 // resolved switch back at its default.
 watch([
@@ -874,31 +1063,46 @@ watch([
  * @return  {MarkdownEditor}       The requested editor
  */
 async function getEditorFor (doc: string): Promise<MarkdownEditor> {
-  const persistentState = props.persistentStateMap.get(doc)
-  const editor = new MarkdownEditor(props.leafId, props.windowId, doc, documentAuthorityIPCAPI, undefined, persistentState)
+  const editor = new MarkdownEditor(
+    props.leafId,
+    props.windowId,
+    doc,
+    documentAuthorityIPCAPI,
+    editorConfiguration.value
+  )
 
   editor.on('document-load-error', reportDocumentLoadError)
 
   // Update the document info on corresponding events
   editor.on('loaded', () => {
-    if (currentEditor === editor) {
-      windowStateStore.activeDocumentInfo = currentEditor.documentInfo
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
+    if (ownsWindowActiveState(editor)) {
+      publishActiveEditorState(editor)
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
       applyPendingNavigation()
+      updateTexMacroSources(editor)
+        .catch(error => reportError('Could not refresh TeX macro sources', error))
     }
   })
 
   editor.on('change', () => {
-    if (currentEditor === editor) {
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.tableOfContents = editor.tableOfContents
+      updateActiveTikzSource(editor)
+      updateTexMacroSources(editor)
+        .catch(error => reportError('Could not refresh TeX macro sources', error))
+    }
+  })
+
+  editor.on('cursorActivity', () => {
+    if (ownsWindowActiveState(editor)) {
+      updateActiveTikzSource(editor)
     }
   })
 
   editor.on('docUpdate', () => {
-    if (currentEditor === editor) {
-      windowStateStore.activeDocumentInfo = currentEditor.documentInfo
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.activeDocumentInfo = editor.documentInfo
     }
   })
 
@@ -909,13 +1113,13 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         leafId: props.leafId,
         windowId: props.windowId
       }
-    }).catch(err => console.error(err))
+    }).catch(err => reportError(err))
 
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
     // result of our focus-leaf event above.
-    if (currentEditor === editor) {
-      windowStateStore.tableOfContents = currentEditor.tableOfContents
+    if (ownsWindowActiveState(editor)) {
+      windowStateStore.tableOfContents = editor.tableOfContents
     }
   })
 
@@ -929,7 +1133,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
         windowId: props.windowId
       }
     })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
 
     if (configStore.config.zkn.autoSearch) {
       emit('globalSearch', linkContents)
@@ -948,12 +1152,20 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     emit('referenceSearch', request)
   })
 
-  // A gutter chip was clicked. Opening the annotations panel is the
-  // window's business, so relay the annotation up to App.vue, which owns
-  // both directions of the panel's visibility.
-  editor.on('annotation-selected', (annotationId: string) => {
-    emit('openAnnotation', annotationId)
+  editor.on('file-search', () => {
+    emit('fileSearch')
   })
+
+  // A gutter chip was clicked: open that annotation's inline thread, or
+  // close it when it is the one already open, as an editor comment glyph
+  // toggles its thread.
+  editor.on('annotation-selected', (annotationId: string) => {
+    collaborationStore.selectAnnotation(
+      collaborationStore.selectedAnnotationId === annotationId ? null : annotationId
+    )
+  })
+
+  editor.setCollaborationControls(mountCollaborationControl)
 
   // An in-editor help link (the completion info panel, issue #1 review A2)
   // requested the searchable Pandoc quick help: relay up to App.vue's
@@ -967,7 +1179,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   editor.on('format-document', () => {
     editor.runFormatter(ipcMarkdownFormatter)
       .then(surfaceFormatResult)
-      .catch(e => { console.error('Format document failed', e) })
+      .catch(e => { reportError('Format document failed', e) })
   })
 
   // The context menu (or command registry) requested the create-label
@@ -1003,8 +1215,6 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     promptWorkspaceRename(intent)
   })
 
-  // Supply the configuration object once initially
-  editor.setOptions(editorConfiguration.value)
   return editor
 }
 
@@ -1012,22 +1222,29 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
  * Loads the document for this editor instance.
  */
 async function loadDocument (): Promise<void> {
+  activeTikzSource.value = null
+  activeEditorView.value = null
   const newEditor = await getEditorFor(props.file.path)
 
-  mainEditorWrapper.value?.appendChild(newEditor.dom)
+  editorHost.value?.appendChild(newEditor.dom)
   currentEditor = newEditor
+  activeEditorView.value = newEditor.instance
   try {
     await newEditor.ready
   } catch (error) {
     newEditor.unmount()
     if (currentEditor === newEditor) {
       currentEditor = null
+      activeEditorView.value = null
     }
     throw error
   }
 
   currentEditor.setCompletionDatabase('tags', tags.value)
   currentEditor.setCompletionDatabase('snippets', snippets.value)
+  currentEditor.setCompletionDatabase('phrases', phraseCompletions.value)
+  currentEditor.setQuickTexCatalogue(quickTex.value)
+  await updateTexMacroSources(currentEditor)
 
   maybeHighlightSearchResults()
 
@@ -1040,10 +1257,10 @@ async function loadDocument (): Promise<void> {
 
   const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
   if (library !== undefined) {
-    updateCitationKeys(library).catch(e => console.error('Could not update citation keys', e))
+    updateCitationKeys(library).catch(e => reportError('Could not update citation keys', e))
   }
 
-  updateFileDatabase().catch(err => console.error('Could not update file database', err))
+  updateFileDatabase().catch(err => reportError('Could not update file database', err))
 
   // Provide the editor instance with metadata for the new file
   currentEditor.setOptions({
@@ -1063,8 +1280,54 @@ async function loadDocument (): Promise<void> {
   if (pendingReviewDiffSession !== null) {
     applyReviewDiffSession(pendingReviewDiffSession)
   }
+  currentEditor.setAnnotations(collaborationSession.value?.annotations ?? EMPTY_ANNOTATION_SET)
+  currentEditor.setActiveAnnotation(collaborationStore.selectedAnnotationId)
+  currentEditor.setShowResolvedAnnotations(collaborationStore.showResolved)
   collaborationStore.ensureSession(props.file.path)
-    .catch(err => console.error('Could not fetch the collaboration session', err))
+    .catch(err => reportError('Could not fetch the collaboration session', err))
+}
+
+async function ensureEditorLoaded (): Promise<boolean> {
+  if (currentEditor !== null) {
+    return false
+  }
+  if (editorLoadPromise === null) {
+    editorLoadPromise = loadDocument().finally(() => {
+      editorLoadPromise = null
+    })
+  }
+  await editorLoadPromise
+  return true
+}
+
+function refreshActiveEditorAuxiliaryState (): void {
+  maybeHighlightSearchResults()
+  updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  updateReferenceEntries().catch(err => reportError('Could not update workspace reference entries', err))
+
+  const descriptor = activeFileDescriptor.value
+  if (descriptor?.type === 'file') {
+    getBibliographyForDescriptor(descriptor)
+      .then(updateCitationKeys)
+      .catch(err => reportError('Could not update citation keys', err))
+  }
+}
+
+async function activateTab (): Promise<void> {
+  const loadedNow = await ensureEditorLoaded()
+  const editor = currentEditor
+  if (editor === null || !isActiveTab.value) {
+    return
+  }
+
+  publishActiveEditorState(editor)
+  applyPendingNavigation()
+  if (!editor.hasFocus()) {
+    editor.focus()
+  }
+  if (!loadedNow) {
+    refreshActiveEditorAuxiliaryState()
+  }
 }
 
 function jtl (lineNumber: number): void {
@@ -1242,7 +1505,7 @@ function describeRenameRejection (reason: ReferenceRenameRejection): string {
     case 'malformed-key':
       return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey)
     case 'family-changed':
-      return trans('Cannot rename: references keep their family prefix ("%s:" cannot become "%s:").', reason.oldFamily, reason.newFamily)
+      return trans('Cannot rename: the reference type cannot change from "%s:" to "%s:".', reason.oldFamily, reason.newFamily)
     case 'collision':
       return trans('Cannot rename: %s is already defined in %s.', reason.newKey, reason.definitionPaths.join(', '))
     case 'unknown-key':
@@ -1414,7 +1677,7 @@ async function applyWorkspaceRename (): Promise<void> {
     {
       label: trans('Undo'),
       onAction: () => {
-        undoWorkspaceRename().catch(err => console.error('Workspace rename undo failed', err))
+        undoWorkspaceRename().catch(err => reportError('Workspace rename undo failed', err))
       }
     }
   )
@@ -1514,6 +1777,26 @@ function maybeHighlightSearchResults (): void {
   background-color: #ffffff;
   transition: 0.2s background-color ease;
   position: relative;
+
+  .main-editor-workspace {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .main-editor-host {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+
+    > .cm-editor { width: 100%; }
+  }
 
   .cm-editor {
     .cm-scroller { padding: 50px 50px; }

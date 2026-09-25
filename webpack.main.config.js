@@ -2,6 +2,7 @@ const CopyWebpackPlugin = require("copy-webpack-plugin");
 const { DefinePlugin } = require("webpack");
 const path = require("path");
 const rules = require("./webpack.rules");
+const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const externals = {};
 
@@ -18,6 +19,12 @@ module.exports = {
   // Main entry point: the file that runs in the main process
   entry: "./source/main.ts",
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
+  optimization: {
+    // Local desktop rebuilds are launch artifacts, not distribution files.
+    // Preserve production semantics/tree-shaking while skipping the expensive
+    // minifier pass. Release and ordinary package builds remain minified.
+    minimize: process.env.NODE_ENV === "production" && !isLocalPackage,
+  },
   module: { rules },
   plugins: [
     new CopyWebpackPlugin({
@@ -30,10 +37,7 @@ module.exports = {
         { from: "static/csl-locales", to: "assets/csl-locales" },
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
-        {
-          from: "static/mathjax-macros.json",
-          to: "assets/mathjax-macros.json",
-        },
+        { from: "static/completions", to: "assets/completions" },
         {
           from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
           to: "assets/defaults/mathjax-tex-chtml.js",
@@ -57,7 +61,6 @@ module.exports = {
         { from: "static/lua-filter", to: "assets/lua-filter" },
         // The vendored TikZ pipeline (issue #14): filter, per-figure
         // template, and the styles tree the template \usepackage's.
-        { from: "static/tikz", to: "assets/tikz" },
         { from: "resources/icons/icon.ico", to: "assets/icons" },
         { from: "resources/icons/png", to: "assets/icons/png" },
         {

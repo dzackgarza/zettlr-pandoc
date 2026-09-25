@@ -16,6 +16,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import type { Extension } from '@codemirror/state'
 import { type ExParams, vim, Vim, type CodeMirror } from '@replit/codemirror-vim'
 import { configField } from '../util/configuration'
@@ -56,7 +57,7 @@ async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
       // into the console where nobody sees it.
       const message = result.refusal?.message ??
         trans('Could not save "%s".', pathBasename(filePath))
-      console.error(
+      reportError(
         `[vim :w] Main refused to save ${filePath}` +
         (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
       )
@@ -64,7 +65,7 @@ async function write (cm: CodeMirror, _params: ExParams): Promise<boolean> {
       return false
     })
     .catch(e => {
-      console.error(e)
+      reportError(e)
       return false
     })
 }
@@ -94,7 +95,7 @@ async function quit (cm: CodeMirror, _params: ExParams): Promise<void> {
       windowId: windowId,
       leafId: leafId
     }
-  }).catch(e => console.error(e))
+  }).catch(e => reportError(e))
 }
 
 // replit's API seems a bit less elegant than the CodeMirror one, but I think
@@ -119,8 +120,8 @@ Vim.defineEx('wq', 'wq', (cm: CodeMirror, params: ExParams) => {
     if (!saved) {
       return
     }
-    quit(cm, params).catch(err => console.error(err))
-  }).catch(err => console.error(err))
+    quit(cm, params).catch(err => reportError(err))
+  }).catch(err => reportError(err))
 })
 
 // Remap movement keys

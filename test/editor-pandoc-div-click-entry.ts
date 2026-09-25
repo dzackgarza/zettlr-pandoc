@@ -4,12 +4,18 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 
 const doc = `Before outside.
 
-::: definition
+::: {.definition
+  title="Compact multiline definition"
+}
 First target alpha.
+Rendered math target \\(x+y\\).
 Second target omega.
 :::
 
@@ -30,6 +36,7 @@ interface ClickTarget {
   expectedTo: number
   expectedAtCoords: number | null
   hitTag: string | null
+  rectHeight?: number
 }
 
 declare global {
@@ -39,7 +46,9 @@ declare global {
     clickProbeTarget: (text: string) => ClickTarget
     clickProbePanelGutterTarget: (text: string, side: 'left'|'right') => ClickTarget
     clickProbeLabelTarget: (label: string) => ClickTarget
+    clickProbeWidgetTarget: (selector: string, source: string) => ClickTarget
     clickProbeAnchor: () => number
+    clickProbeHead: () => number
   }
 }
 
@@ -57,6 +66,7 @@ function findTextNode (text: string): { node: Text, from: number } {
 }
 
 async function mount (): Promise<void> {
+  await initializeMathJax({})
   const host = document.querySelector<HTMLElement>('#editor')
   if (host === null) {
     throw new Error('Click-test editor host is missing')
@@ -71,7 +81,9 @@ async function mount (): Promise<void> {
         EditorView.lineWrapping,
         editorTheme,
         defaultLight,
+        configField,
         renderPandoc,
+        renderMath,
       ],
     }),
     parent: host,
@@ -133,7 +145,11 @@ async function mount (): Promise<void> {
     if (element === null) {
       throw new Error(`Could not find semantic panel label: ${label}`)
     }
-    const rect = element.getBoundingClientRect()
+    const header = element.querySelector<HTMLElement>('.pandoc-div-header')
+    if (header === null) {
+      throw new Error(`Could not find rendered semantic header: ${label}`)
+    }
+    const rect = header.getBoundingClientRect()
     const x = rect.left + Math.min(rect.width / 2, 32)
     const y = rect.top + rect.height / 2
     const expectedFrom = Number(element.dataset.pandocDivFrom)
@@ -144,9 +160,32 @@ async function mount (): Promise<void> {
       expectedTo: expectedFrom,
       expectedAtCoords: view.posAtCoords({ x, y }),
       hitTag: document.elementFromPoint(x, y)?.tagName ?? null,
+      rectHeight: rect.height,
+    }
+  }
+  window.clickProbeWidgetTarget = (selector: string, source: string) => {
+    const element = document.querySelector<HTMLElement>(selector)
+    if (element === null) {
+      throw new Error(`Could not find rendered widget: ${selector}`)
+    }
+    const rect = element.getBoundingClientRect()
+    const expectedFrom = doc.indexOf(source)
+    if (expectedFrom < 0) {
+      throw new Error(`Could not find widget source in document: ${source}`)
+    }
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    return {
+      x,
+      y,
+      expectedFrom,
+      expectedTo: expectedFrom + source.length,
+      expectedAtCoords: view.posAtCoords({ x, y }),
+      hitTag: document.elementFromPoint(x, y)?.tagName ?? null,
     }
   }
   window.clickProbeAnchor = () => view.state.selection.main.anchor
+  window.clickProbeHead = () => view.state.selection.main.head
 
   view.focus()
   await document.fonts.ready

@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import path from 'path'
 import { app, dialog } from 'electron'
 import tls from 'tls'
@@ -46,7 +47,7 @@ export default async function environmentCheck (): Promise<void> {
   // a cryptic error mid-export. No fallbacks.
   const passed = await preflight(
     (title, message) => {
-      console.error(`[Application] Preflight FAILED.\n${message}`)
+      reportError(`[Application] Preflight FAILED.\n${message}`)
       dialog.showErrorBox(title, message)
     },
     (code) => app.exit(code)

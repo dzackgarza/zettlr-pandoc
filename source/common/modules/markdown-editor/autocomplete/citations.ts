@@ -15,34 +15,40 @@
 import { type Completion } from '@codemirror/autocomplete'
 import { type EditorState, StateEffect, StateField } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
-import { type AutocompletePlugin } from '.'
-import { configField } from '../util/configuration'
 import { extractCitationNodes, nodeToCiteItem } from '../parser/citation-parser'
+import { configField } from '../util/configuration'
+import { type AutocompletePlugin } from '.'
 
 /**
  * Use this effect to provide the editor state with a set of new citekeys
  */
-export const citekeyUpdate = StateEffect.define<Array<{ citekey: string, displayText: string }>>()
-export const citekeyUpdateField = StateField.define<Completion[]>({
+export const citekeyUpdate = StateEffect.define<Array<{ citekey: string; displayText: string }>>()
+interface CitekeySnapshot {
+  entries: Completion[];
+}
+
+export const citekeyUpdateField = StateField.define<CitekeySnapshot>({
   create (_state) {
-    return []
+    return { entries: [] }
   },
   update (val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(citekeyUpdate)) {
         // Convert the citationentries into completion objects
-        return effect.value.map(entry => {
-          return {
+        return {
+          entries: effect.value.map((entry) => ({
             label: entry.citekey,
             info: entry.displayText,
-            apply
-          }
-        })
+            apply,
+            zettlrSource: 'Cite' as const,
+          })),
+        }
       }
     }
     return val
-  }
+  },
 })
+
 
 /**
  * This function takes the citations from the corresponding database and returns
@@ -56,32 +62,29 @@ export const citekeyUpdateField = StateField.define<Completion[]>({
 function sortCitationKeysByUsage (state: EditorState): Completion[] {
   // First, get our existing entries in the database, and re-transform them into
   // what the update effect expects
-  const entries = state.field(citekeyUpdateField)
+  const entries = [...state.field(citekeyUpdateField).entries]
 
   const doc = state.sliceDoc()
-  const citationNodes = extractCitationNodes(state).map(node => nodeToCiteItem(node, doc))
+  const citationNodes = extractCitationNodes(state).map((node) => nodeToCiteItem(node, doc))
 
   // Then, retrieve the already existing citations
-  const existingCitations = citationNodes.flatMap(c => c.items.map(item => item.id))
+  const existingCitations = citationNodes.flatMap((c) => c.items.map((item) => item.id))
 
-  // Create a counter
-  const citationCounts: Record<string, number> = {}
+  // Every database entry has a usage count, starting at zero; citations of
+  // keys outside the database do not rank anything.
+  const ranked = entries.map((entry) => ({ entry, uses: 0 }))
+  const rankedByKey = new Map(ranked.map((item) => [ item.entry.label, item ]))
   for (const key of existingCitations) {
-    if (!(key in citationCounts)) {
-      citationCounts[key] = 0
+    const item = rankedByKey.get(key)
+    if (item !== undefined) {
+      item.uses += 1
     }
-
-    citationCounts[key] += 1
   }
 
   // Now sort the entries based on the existing citation counts
-  entries.sort((a, b) => {
-    const countA: number = citationCounts[a.label] ?? 0
-    const countB: number = citationCounts[b.label] ?? 0
-    return countB - countA
-  })
+  ranked.sort((a, b) => b.uses - a.uses)
 
-  return entries
+  return ranked.map((item) => item.entry)
 }
 
 /**
@@ -99,7 +102,9 @@ const apply = function (view: EditorView, completion: Completion, from: number, 
 
   const afterOpen = line.lastIndexOf('[', fromCh) > line.lastIndexOf(']', fromCh)
   // Either no open and 1 close bracket or a close bracket after an open bracket
-  const beforeClose = (!line.includes('[', toCh) && line.includes(']', toCh)) || (line.indexOf(']', toCh) < line.indexOf('[', toCh))
+  const beforeClose =
+    (!line.includes('[', toCh) && line.includes(']', toCh)) ||
+    line.indexOf(']', toCh) < line.indexOf('[', toCh)
   const noBrackets = !afterOpen && !beforeClose
 
   if (citeStyle === 'regular' && noBrackets) {
@@ -107,14 +112,14 @@ const apply = function (view: EditorView, completion: Completion, from: number, 
     view.dispatch({
       // Minus 1 is important since we have to overwrite the @-sign with [@
       changes: [{ from: from - 1, to, insert }],
-      selection: { anchor: from - 1 + insert.length - 1 } // Between citekey and ]
+      selection: { anchor: from - 1 + insert.length - 1 }, // Between citekey and ]
     })
   } else if (citeStyle === 'in-text-suffix' && noBrackets) {
     // We should add square brackets after the completion text
     const insert = `${completion.label} []`
     view.dispatch({
       changes: [{ from, to, insert }],
-      selection: { anchor: from + insert.length - 1 } // Inside []
+      selection: { anchor: from + insert.length - 1 }, // Inside []
     })
   } else {
     // Otherwise: citeStyle was in-text or there were brackets surrounding the
@@ -125,6 +130,7 @@ const apply = function (view: EditorView, completion: Completion, from: number, 
 }
 
 export const citations: AutocompletePlugin = {
+  source: 'Cite',
   applies (ctx) {
     // A valid citekey position is: Beginning of the line (citekey without square
     // brackets), after a square bracket open (regular citation without prefix),
@@ -146,9 +152,12 @@ export const citations: AutocompletePlugin = {
   entries (ctx, query) {
     query = query.toLowerCase()
     const entries = sortCitationKeysByUsage(ctx.state)
-    return entries.filter(entry => {
-      return entry.label.toLowerCase().includes(query) || (entry.info as string|undefined)?.toLowerCase().includes(query) === true
+    return entries.filter((entry) => {
+      return (
+        entry.label.toLowerCase().includes(query) ||
+        (entry.info as string | undefined)?.toLowerCase().includes(query) === true
+      )
     })
   },
-  fields: [citekeyUpdateField]
+  fields: [citekeyUpdateField],
 }

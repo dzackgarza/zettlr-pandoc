@@ -13,7 +13,7 @@
           {{ schema.getFieldsetCategory(fieldset)?.title }}
         </span>
       </div>
-      <fieldset>
+      <fieldset v-bind:data-form-fieldset-title="fieldset.title">
         <!-- First, let's do some setup of the fieldset -->
         <div class="form-header">
           <!-- First the fieldset legend: Required -->

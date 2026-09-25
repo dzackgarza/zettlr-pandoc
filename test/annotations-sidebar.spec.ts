@@ -2,49 +2,24 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Annotations panel (M7) tests
+ * Contains:        Collaboration view model and store tests
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Two halves.
- *
- *                  The first half is the panel's pure view model
- *                  (annotation-panel-model.ts): title derivation (I8), the
- *                  ordinal sequence shared by open and resolved cards (S4),
- *                  the open/resolved partition (S9), the open-only count
- *                  (S10), and the terminal action row (S8). One case runs
- *                  the model against a REAL CollaborationApplicationService's
- *                  output rather than fixture literals, so it cannot pass
- *                  on a model that merely echoes a hand-built TextAnnotation
- *                  shape.
- *
- *                  The second half is the renderer store's panel-only
- *                  surface (selection, the resolved toggle, and the four
- *                  owner mutation calls), exercised against the real
- *                  preload-bridge double (document-collaboration-ipc-double.ts,
- *                  the same one M4's own spec uses). It proves the calls are
- *                  well-formed IPC requests — command name, generation
- *                  fence, payload shape — and that none of them mutates
- *                  sessionsByDocumentPath itself: the cache only ever moves
- *                  through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast.
- *
- *                  Both halves also cover REVIEW adjudication, which M9
- *                  moved out of the editor's chunk widgets and into this
- *                  panel (S3, invariant I4): what a suggestion card derives
- *                  from the session's review half, what a chunk note
- *                  commits, and the five fenced review mutations the
- *                  SuggestionInspector raises.
- *
- *                  The third half proves, in a real mount of the panel,
- *                  that "Show proposal" focuses the linked chunk (S7) and
- *                  that "Reattach" emits the annotation id upward (S8/I6).
+ * Description:     Proves the collaboration view model and the renderer
+ *                  store both collaboration surfaces read: the workspace
+ *                  panel, which aggregates every workspace document carrying
+ *                  open annotations or outstanding review suggestions and
+ *                  offers Accept all at document and workspace scope, and
+ *                  the editor's inline chunk controls and annotation
+ *                  threads. Store tests prove each owner action's fence over
+ *                  the real provider IPC boundary.
  *
  * END HEADER
  */
 
 import { strict as assert } from "assert";
-import { execFile } from "child_process";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -59,7 +34,9 @@ import type { TextAnnotation, AnnotationMessage } from "@dts/common/annotation-d
 import {
   buildAnnotationCards,
   buildSuggestionCards,
+  buildSuggestionNavigatorRows,
   chunkNoteCommit,
+  createLineIndex,
   deriveActionRow,
   deriveCardTitle,
   filterCards,
@@ -67,7 +44,7 @@ import {
   openAnnotationCount,
   partitionByResolution,
   suggestionIdsForPacketIds,
-  truncatePreview,
+  unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import {
   buildSceneReview,
@@ -85,9 +62,6 @@ import {
   SCENE_REVIEW_ID,
   SCENE_WORKING_SHA256,
 } from "./annotations-sidebar-scene-fixture";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
 
 describe("annotation-panel-model", function () {
   const session = buildSceneSession();
@@ -118,6 +92,22 @@ describe("annotation-panel-model", function () {
     assert.equal(byId.get(SCENE_ANNOTATION_THREAD_ID), 1);
     assert.equal(byId.get(SCENE_ANNOTATION_PROPOSAL_ID), 2);
     assert.equal(byId.get(SCENE_ANNOTATION_RESOLVED_ID), 3);
+  });
+
+  it("counts every unresolved annotation and review suggestion for the activity-bar indicator", function () {
+    const annotationOnly = buildSceneSession();
+    assert.equal(
+      unresolvedCollaborationCount(annotationOnly),
+      2,
+      "the resolved annotation is not unresolved work",
+    );
+
+    const withReview = buildSceneSessionWithReview();
+    assert.equal(
+      unresolvedCollaborationCount(withReview),
+      4,
+      "two open annotations plus two outstanding review suggestions are four owner decisions",
+    );
   });
 
   it("reports the source line a target still occupies, and reports orphaned targets as having none", function () {
@@ -180,11 +170,15 @@ describe("annotation-panel-model", function () {
     assert.equal(filterCards(cards, "no such text anywhere").length, 0);
   });
 
-  it("truncates a long instruction preview instead of rendering it unbounded", function () {
-    const long = "word ".repeat(60);
-    const preview = truncatePreview(long, 40);
-    assert.ok(preview.length <= 40);
-    assert.ok(preview.endsWith("…"));
+  it("preserves the complete annotation reason instead of truncating it", function () {
+    const long = "word ".repeat(60).trim();
+    const annotation: TextAnnotation = {
+      ...annotations.items[0],
+      annotationId: "annotation-long-reason",
+      messages: [ { ...annotations.items[0].messages[0], messageId: "message-long-reason", text: long } ]
+    };
+    const [card] = buildAnnotationCards([annotation], workingText);
+    assert.equal(card.instructionText, long);
   });
 
   it("builds cards from a REAL CollaborationApplicationService's output, not just fixture literals", async function () {
@@ -219,6 +213,18 @@ describe("annotation-panel-model", function () {
     assert.equal(realCards[0].lineLocator, "Ln 2");
     assert.equal(openAnnotationCount(realAnnotations.items), 0, "the annotation is resolved, so the open count must be zero");
   });
+
+  it("builds a fast line index that maps positions to 1-based line numbers via binary search", function () {
+    const text = "First line.\nSecond line.\nThird line.\n";
+    const index = createLineIndex(text);
+    assert.equal(index.lineOfPosition(0), 1);
+    assert.equal(index.lineOfPosition(5), 1);
+    assert.equal(index.lineOfPosition(11), 1);
+    assert.equal(index.lineOfPosition(12), 2);
+    assert.equal(index.lineOfPosition(24), 2);
+    assert.equal(index.lineOfPosition(25), 3);
+    assert.equal(index.lineOfPosition(999), 4);
+  });
 });
 
 describe("useDocumentCollaborationStore panel surface", function () {
@@ -229,16 +235,32 @@ describe("useDocumentCollaborationStore panel surface", function () {
     documentCollaborationIpcDouble.reset();
   });
 
-  it("selectAnnotation switches the inspector mode, and clearing the selection returns to the list", function () {
+  it("precomputes cards in the background upon ensureSession and getCards reads them directly", async function () {
+    documentCollaborationIpcDouble.setInvokeResponder(async () => session);
     const store = useDocumentCollaborationStore();
-    assert.equal(store.inspectorMode, "list");
-    store.selectAnnotation(SCENE_ANNOTATION_THREAD_ID);
-    assert.equal(store.selectedAnnotationId, SCENE_ANNOTATION_THREAD_ID);
-    assert.equal(store.inspectorMode, "detail");
-    store.selectAnnotation(null);
-    assert.equal(store.selectedAnnotationId, null);
-    assert.equal(store.inspectorMode, "list");
+    await store.ensureSession(session.documentPath);
+
+    const cards = store.getCards(session.documentPath);
+    assert.equal(cards.length, session.annotations.items.length);
+    assert.equal(cards[0].ordinal, 1);
+    assert.ok(cards[0].lineLocator.startsWith("Ln ") || cards[0].lineLocator === "Orphaned");
   });
+
+  it("precomputes cards in the background upon document-collaboration broadcast", function () {
+    const store = useDocumentCollaborationStore();
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: "document-collaboration",
+      context: {
+        filePath: session.documentPath,
+        collaborationSession: session,
+      },
+    });
+
+    const cards = store.getCards(session.documentPath);
+    assert.equal(cards.length, session.annotations.items.length);
+    assert.equal(store.cardsByDocumentPath[session.documentPath]?.length, session.annotations.items.length);
+  });
+
 
   it("toggleShowResolved flips the disclosure, and accepts an explicit value", function () {
     const store = useDocumentCollaborationStore();
@@ -355,7 +377,21 @@ describe("useDocumentCollaborationStore panel surface", function () {
   });
 });
 
-describe("suggestion inspector model", function () {
+describe("workspace suggestion navigator model", function () {
+  it("pairs each review claim with current authored source context, not line-number metadata", function () {
+    const review = buildSceneReview();
+    const rows = buildSuggestionNavigatorRows(review);
+    assert.equal(rows.length, review.suggestions.length);
+    assert.deepEqual(rows.map(row => row.description), review.suggestions.map(suggestion => suggestion.description));
+    for (const row of rows) {
+      assert.ok(row.contextText.length > 0, "workspace review rows carry useful source context");
+      assert.equal("lineLocator" in row, false);
+      assert.equal("lineNumber" in row, false);
+    }
+  });
+});
+
+describe("inline chunk controls model", function () {
   const review = buildSceneReview();
   const cards = buildSuggestionCards(review);
 
@@ -365,19 +401,6 @@ describe("suggestion inspector model", function () {
       "Say which tasks automation actually handles.",
       "Frame the goal as collaboration, not replacement.",
     ]);
-  });
-
-  it("reads both sides of a chunk out of the same working text its anchors index", function () {
-    // The insertion is SLICED from review.workingText, never carried
-    // alongside it: a card cannot show a span from a different moment of the
-    // document than the offsets that produced it.
-    assert.deepEqual(cards.map(card => card.insertedText), ["well-defined tasks", "to work with it"]);
-    assert.deepEqual(cards.map(card => card.removedText), ["narrow tasks", "to replace it"]);
-  });
-
-  it("locates each chunk on its own source line", function () {
-    assert.deepEqual(cards.map(card => card.lineLocator), ["Ln 7", "Ln 11"]);
-    assert.deepEqual(cards.map(card => card.lineNumber), [7, 11]);
   });
 
   it("prefills a chunk's note field from the provider, and only its own chunk's", function () {
@@ -562,78 +585,92 @@ describe("useDocumentCollaborationStore review surface", function () {
       "a mutation with no review to name never reaches the provider",
     );
   });
-});
 
-describe("the two M10 emit boundaries (S7/S8/I6) in a real panel mount", function () {
-  // vue-tsc/tsx cannot import a .vue SFC directly, so this cannot mount the
-  // panel in-process the way the store tests above exercise the Pinia store
-  // directly. It instead follows this repository's established pattern for
-  // proving real Vue rendering from a plain mocha spec
-  // (test/reference-search-overlay.spec.ts): build the real webpack renderer
-  // bundle, mount AnnotationsTab.vue under a render-function parent (App.vue's
-  // role) in isolated offscreen Electron, and read what the panel emitted out
-  // of that mount — the same bundle and driver `just capture-annotations-panel`
-  // uses, with one JSON line appended as the proof this spec asserts on.
-  //
-  // suggestionIdsForPacketIds above proves the pure resolution; this proves
-  // it is actually WIRED to a click, on a real button, in a real mount, and
-  // that Reattach crosses the panel's boundary as an annotation id alone.
-  it("proves show-proposal (S7) and begin-reattach (S8/I6) reach their real handlers", async function () {
-    this.timeout(240000);
-    const outputDirectory = mkdtempSync(join(tmpdir(), "zettlr-annotations-badge-"));
-    const root = process.cwd();
-    await execFileAsync(
-      "node",
-      [
-        join(root, "test/visual-build.cjs"),
-        join(root, "test/annotations-sidebar-visual-entry.ts"),
-        "annotations-sidebar-visual-bundle.js",
-        outputDirectory,
-      ],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      [
-        "-a",
-        "node",
-        join(root, "test/annotations-sidebar-visual-capture.mjs"),
-        outputDirectory,
-      ],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    const jsonLine = stdout.trim().split("\n").at(-1);
-    assert.ok(jsonLine !== undefined, "the capture driver must print the probe result");
-    const result = JSON.parse(jsonLine as string) as {
-      showProposalLinkedChunkIds: string[];
-      beginReattachAnnotationIds: string[];
+  it("hydrates collaboration state for multiple workspace documents at once", async function () {
+    const second = {
+      ...session,
+      documentId: "doc-second",
+      documentPath: "/tmp/second-workspace-note.md",
+      workingSha256: "c".repeat(64),
+      review: {
+        ...session.review!,
+        id: "review-second",
+        documentPath: "/tmp/second-workspace-note.md",
+        reviewGeneration: 9,
+      },
     };
-
-    // S7: clicking "Show proposal" on SCENE_ANNOTATION_PROPOSAL_ID's card
-    // must land on the ONE outstanding chunk its linked packet actually
-    // produced (SCENE_CHUNK_GOAL_ID) — not every chunk, and not none.
-    assert.deepEqual(
-      result.showProposalLinkedChunkIds,
-      [SCENE_CHUNK_GOAL_ID],
-      `Show proposal must focus exactly the linked chunk: got ${JSON.stringify(result.showProposalLinkedChunkIds)}`,
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
+      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined
     );
+    const store = useDocumentCollaborationStore();
 
-    // S8/I6: clicking "Reattach" must reach the panel's parent's
-    // begin-reattach listener carrying the exact annotation id and nothing
-    // else.
-    assert.deepEqual(
-      result.beginReattachAnnotationIds,
-      [SCENE_ANNOTATION_ORPHANED_ID],
-      `the panel must emit the orphaned annotation's Reattach intent: got ${JSON.stringify(result.beginReattachAnnotationIds)}`,
+    await store.refreshWorkspaceSessions([session.documentPath, second.documentPath]);
+
+    assert.deepEqual(store.workspaceSessions.map(item => item.documentPath).sort(),
+      [session.documentPath, second.documentPath].sort());
+    assert.equal(
+      store.workspaceUnresolvedCount,
+      unresolvedCollaborationCount(session) + unresolvedCollaborationCount(second),
     );
   });
 
+  it("accepts all outstanding review chunks for one workspace document through the workspace channel", async function () {
+    const seen: Array<{ command: string, payload: unknown }> = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      seen.push({ command: message.command, payload: message.payload });
+      if (message.command === "get-workspace-collaboration-sessions") {
+        return [session];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        return { ok: true, acceptedChunks: 2 };
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath]);
+
+    await store.acceptAllWorkspaceReviewChunks(session.documentPath);
+
+    const request = seen.find(item => item.command === "documents:accept-all-workspace-review-chunks");
+    assert.deepEqual(request?.payload, { path: session.documentPath, ...fence });
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"), 2);
+  });
+
+  it("global Accept all sends one fenced workspace acceptance per reviewed document", async function () {
+    const secondPath = "/tmp/second-workspace-note.md";
+    const second = {
+      ...session,
+      documentId: "doc-second",
+      documentPath: secondPath,
+      workingSha256: "d".repeat(64),
+      review: { ...session.review!, id: "review-second", documentPath: secondPath, reviewGeneration: 9 },
+    };
+    const accepted: string[] = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      if (message.command === "get-workspace-collaboration-sessions") {
+        return [session, second];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        accepted.push((message.payload as { path: string }).path);
+        return { ok: true, acceptedChunks: 2 };
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath, secondPath]);
+
+    const results = await store.acceptAllWorkspaceReviews();
+
+    assert.deepEqual(accepted.sort(), [session.documentPath, secondPath].sort());
+    assert.equal(results.length, 2);
+  });
+});
+
+describe("workspace annotation fixtures", function () {
   it("buildSceneSessionWithOrphan carries a fourth, orphaned, OPEN annotation alongside the base three", function () {
-    // Guards the fixture itself: if this stops being true the Electron
-    // proof above would silently stop exercising Reattach at all.
-    const session = buildSceneSessionWithOrphan();
-    assert.equal(session.annotations.items.length, 4);
-    const orphaned = session.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
+    const fixture = buildSceneSessionWithOrphan();
+    assert.equal(fixture.annotations.items.length, 4);
+    const orphaned = fixture.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
     assert.ok(orphaned !== undefined);
     assert.equal(orphaned.anchor.state, "orphaned");
     assert.equal(orphaned.state, "open");

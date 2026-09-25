@@ -32,14 +32,18 @@
  * END HEADER
  */
 
+import { mathDisplayForOpen } from '@common/util/math-delimiters'
+import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from '@common/util/raw-latex-block'
 import { type SyntaxNode } from '@lezer/common'
-import { parseTableNode } from './parse-table-node'
-import { getWhitespaceBeforeNode } from './get-whitespace-before-node'
+import {
+  parsePandocAttributes,
+  type ParsedPandocAttributes,
+} from 'source/common/pandoc-util/parse-pandoc-attributes'
+import { type Citation, nodeToCiteItem } from '../../markdown-editor/parser/citation-parser'
 import { genericTextNode } from './generic-text-node'
+import { getWhitespaceBeforeNode } from './get-whitespace-before-node'
 import { parseChildren } from './parse-children'
-import { nodeToCiteItem, type Citation } from '../../markdown-editor/parser/citation-parser'
-import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
-import { mathDisplayForOpen, mathEnvironmentName } from '@common/util/math-delimiters'
+import { parseTableNode } from './parse-table-node'
 
 /**
  * Basic info every ASTNode needs to provide
@@ -68,7 +72,7 @@ export interface MDNode {
    * Can be used to store arbitrary attributes (e.g. Pandoc-style attributes
    * such as {.className})
    */
-  attributes: Record<string, string|string[]>
+  attributes: Record<string, string | string[]>;
 }
 
 /**
@@ -135,7 +139,7 @@ export interface FootnoteRefLabel extends MDNode {
  * consists of a single character.
  */
 export interface LinkOrImage extends MDNode {
-  type: 'Link'|'Image'
+  type: 'Link' | 'Image';
   /**
    * The URL of the link or image
    */
@@ -164,7 +168,7 @@ export interface Heading extends MDNode {
    */
   children: ASTNode[]
   /**
-   * Level from 1-6
+   * Positive heading level. Pandoc ATX headings are not capped at six.
    */
   level: number
 }
@@ -238,7 +242,7 @@ export interface ListItem extends MDNode {
    * A list item can contain an arbitrary amount of child nodes. Adding "List"
    * as an explicit child to signify that nested lists are children of an item.
    */
-  children: Array<OrderedList|BulletList|ASTNode>
+  children: Array<OrderedList | BulletList | ASTNode>;
 }
 
 /**
@@ -257,7 +261,7 @@ export interface OrderedList extends MDNode {
   /**
    * The delimiter used by this list, can be either ) or .
    */
-  delimiter: ')'|'.'
+  delimiter: ')' | '.';
   /**
    * Whether this list is loose (in that case, HTML output should wrap the list
    * item's contents in paragraphs)
@@ -278,7 +282,7 @@ export interface BulletList extends MDNode {
   /**
    * The symbol this list uses
    */
-  symbol: '*'|'-'|'+'
+  symbol: '*' | '-' | '+';
   /**
    * Whether this list is loose (in that case, HTML output should wrap the list
    * item's contents in paragraphs)
@@ -334,7 +338,7 @@ export interface Emphasis extends MDNode {
   /**
    * The type of emphasis -- italic or bold
    */
-  which: 'italic'|'bold'
+  which: 'italic' | 'bold';
   /**
    * The children of this node
    */
@@ -415,11 +419,11 @@ export interface Table extends MDNode {
   /**
    * A list of column alignments in the table.
    */
-  alignment: Array<'left'|'center'|'right'|null>
+  alignment: Array<'left' | 'center' | 'right' | null>;
   /**
    * This property contains the table type in the source.
    */
-  tableType: 'grid'|'pipe'
+  tableType: 'grid' | 'pipe';
 }
 
 /**
@@ -435,7 +439,7 @@ export interface ZettelkastenLink extends MDNode {
    * The from:to positions of the actual target range. This can be useful to
    * access just the title range (e.g., for replacing).
    */
-  targetRange: { from: number, to: number }
+  targetRange: { from: number; to: number };
   /**
    * The link title; undefined if the link does not include a title.
    */
@@ -466,6 +470,15 @@ export interface Comment extends MDNode {
  */
 export interface PandocDiv extends MDNode {
   type: 'PandocDiv'
+  /**
+   * Exact authored source range of the div's braced Pandoc attribute list.
+   * Undefined for the legacy bare-class spelling (`::: theorem`).
+   *
+   * Consumers that need token coordinates must use this parsed range rather
+   * than re-scanning the opening physical line — Pandoc attribute lists may
+   * span several lines.
+   */
+  attributeRange?: { from: number; to: number };
   /**
    * The string value of the content node.
    */
@@ -516,18 +529,84 @@ export interface GenericNode extends MDNode {
   children: ASTNode[]
 }
 
+/** A Pandoc-style raw block. The editor currently recognizes raw TeX blocks. */
+export interface RawBlock extends MDNode {
+  type: 'RawBlock';
+  format: 'tex';
+  source: string;
+  sourceLineRanges: Array<{ from: number; to: number }>;
+}
+
+/** A Pandoc-style raw inline. The editor currently recognizes raw TeX inlines. */
+export interface RawInline extends MDNode {
+  type: 'RawInline';
+  format: 'tex';
+  source: string;
+}
+
 /**
  * Any node that can be part of the AST is an ASTNode.
  */
-export type ASTNode = Document | Comment | Footnote | FootnoteRef | FootnoteRefLabel
-| LinkOrImage | TextNode | Heading | CitationNode | Highlight | Superscript
-| Subscript | OrderedList | BulletList | ListItem | GenericNode | FencedCode
-| InlineCode | YAMLFrontmatter | Emphasis | Strikethrough | Table | TableCell | TableRow
-| ZettelkastenLink | ZettelkastenTag | PandocDiv | PandocSpan
+export type ASTNode =
+  | Document
+  | Comment
+  | Footnote
+  | FootnoteRef
+  | FootnoteRefLabel
+  | LinkOrImage
+  | TextNode
+  | Heading
+  | CitationNode
+  | Highlight
+  | Superscript
+  | Subscript
+  | OrderedList
+  | BulletList
+  | ListItem
+  | GenericNode
+  | FencedCode
+  | InlineCode
+  | YAMLFrontmatter
+  | Emphasis
+  | Strikethrough
+  | Table
+  | TableCell
+  | TableRow
+  | ZettelkastenLink
+  | ZettelkastenTag
+  | PandocDiv
+  | PandocSpan
+  | RawBlock
+  | RawInline
 /**
  * Extract the "type" properties from the ASTNodes that can differentiate these.
  */
 export type ASTNodeType = ASTNode['type']
+
+/**
+ * The AST attributes of a Pandoc div or span. As in Pandoc's HTML writer, `id`
+ * appears only when the source names an identifier, and `class` only when the
+ * attribute list or the div's bare class names at least one class.
+ *
+ * @param   {ParsedPandocAttributes}  parsed        The authored attribute list
+ * @param   {string[]}                bareClasses   Classes named outside it
+ *
+ * @return  {Record<string, string | string[]>}    The node attributes
+ */
+function pandocNodeAttributes (
+  parsed: ParsedPandocAttributes,
+  bareClasses: readonly string[],
+): Record<string, string | string[]> {
+  const attributes: Record<string, string | string[]> = { ...parsed.properties }
+  if (parsed.id !== undefined) {
+    attributes.id = parsed.id
+  }
+  const classes = parsed.classes === undefined ? [...bareClasses] : [ ...parsed.classes, ...bareClasses ]
+  if (classes.length > 0) {
+    attributes.class = classes
+  }
+  return attributes
+}
 
 /**
  * Parses a single Lezer style SyntaxNode to an ASTNode.
@@ -549,7 +628,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         to: node.to,
         whitespaceBefore: '',
         attributes: {},
-        children: []
+        children: [],
       }
       return parseChildren(docNode, node, markdown)
     // NOTE: Most nodes are treated as generics (see default case); here we only
@@ -561,15 +640,23 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
       const title = node.getChild('LinkTitle')
 
       if (url === null) {
-        return {
+        // A Lezer Link node without a URL can be a syntactic wrapper around
+        // source that Pandoc ultimately leaves as ordinary text while still
+        // recognizing semantic children inside it. Example:
+        // `[@a][label](url)` is not a normal citation in Pandoc; the leading
+        // `[` remains literal, while `@a` is an AuthorInText Cite. Collapsing
+        // this whole wrapper into one Text node discards that child semantic
+        // structure. Preserve the parsed children/gaps instead.
+        const genericLink: GenericNode = {
           type: 'Generic',
           name: node.name,
           attributes: {},
           from: node.from,
           to: node.to,
           whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-          children: [genericTextNode(node.from, node.to, markdown.substring(node.from, node.to))]
+          children: [],
         }
+        return parseChildren(genericLink, node, markdown)
       }
 
       const astNode: LinkOrImage = {
@@ -579,11 +666,19 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        title: title === null ? undefined : genericTextNode(title.from, title.to, markdown.substring(title.from, title.to)),
+        title:
+          title === null
+            ? undefined
+            : genericTextNode(title.from, title.to, markdown.substring(title.from, title.to)),
         url: markdown.substring(url.from, url.to),
-        alt: marks.length >= 2
-          ? genericTextNode(marks[0].to, marks[1].from, markdown.substring(marks[0].to, marks[1].from))
-          : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to))
+        alt:
+          marks.length >= 2
+            ? genericTextNode(
+              marks[0].to,
+              marks[1].from,
+              markdown.substring(marks[0].to, marks[1].from),
+            )
+            : genericTextNode(url.from, url.to, markdown.substring(url.from, url.to)),
       }
 
       return astNode
@@ -602,16 +697,11 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         url,
-        alt: genericTextNode(node.from, node.to, url)
+        alt: genericTextNode(node.from, node.to, url),
       }
       return astNode
     }
-    case 'ATXHeading1':
-    case 'ATXHeading2':
-    case 'ATXHeading3':
-    case 'ATXHeading4':
-    case 'ATXHeading5':
-    case 'ATXHeading6': {
+    case 'ATXHeading': {
       const mark = node.getChild('HeaderMark')
       const level = mark !== null ? mark.to - mark.from : 0
       const astNode: Heading = {
@@ -623,7 +713,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         content: markdown.slice(mark?.to ?? node.from, node.to).trim(),
         children: [],
-        level
+        level,
       }
       return parseChildren(astNode, node, markdown)
     }
@@ -640,7 +730,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         content: markdown.slice(node.from, mark?.from ?? node.to),
         children: [],
-        level
+        level,
       }
       return parseChildren(astNode, node, markdown)
     }
@@ -653,7 +743,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         parsedCitation: nodeToCiteItem(node, markdown),
         from: node.from,
         to: node.to,
-        whitespaceBefore: getWhitespaceBeforeNode(node, markdown)
+        whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
       }
       return astNode
     }
@@ -667,7 +757,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         inline: contents.endsWith('^'),
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        label: contents.endsWith('^') ? contents.substring(0, contents.length - 1) : contents
+        label: contents.endsWith('^') ? contents.substring(0, contents.length - 1) : contents,
       }
       return astNode
     }
@@ -679,14 +769,19 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        label: markdown.substring(node.from + 2, node.to - 2)
+        label: markdown.substring(node.from + 2, node.to - 2),
       }
       return astNode
     }
     case 'FootnoteRef': {
       const label = node.getChild('FootnoteRefLabel')
       if (label === null) {
-        return genericTextNode(node.from, node.to, markdown.substring(node.from, node.to), getWhitespaceBeforeNode(node, markdown))
+        return genericTextNode(
+          node.from,
+          node.to,
+          markdown.substring(node.from, node.to),
+          getWhitespaceBeforeNode(node, markdown),
+        )
       }
 
       const astNode: FootnoteRef = {
@@ -699,7 +794,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         label: markdown.substring(label.from + 2, label.to - 2),
         labelFrom: label.from + 2,
         labelTo: label.to - 2,
-        children: []
+        children: [],
       }
 
       return parseChildren(astNode, node, markdown)
@@ -712,7 +807,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
       return parseChildren(astNode, node, markdown)
     }
@@ -728,7 +823,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        items: []
+        items: [],
       }
 
       for (const item of node.getChildren('ListItem')) {
@@ -740,7 +835,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
           to: item.to,
           whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
           children: [],
-          marker: { from: item.from, to: item.from }
+          marker: { from: item.from, to: item.from },
         }
 
         const listMark = item.getChild('ListMark')
@@ -773,7 +868,9 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         // mechanism for it (TODO), but we can manually pry it out of the tree
         // here. We first need to parse the node's children here.
         parseChildren(listItem, item, markdown)
-        const taskNode = listItem.children.find(child => child.type === 'Generic' && child.name === 'Task')
+        const taskNode = listItem.children.find(
+          (child) => child.type === 'Generic' && child.name === 'Task',
+        )
         if (taskNode !== undefined && taskNode.type === 'Generic') {
           const idx = listItem.children.indexOf(taskNode)
           listItem.children.splice(idx, 1, ...taskNode.children)
@@ -795,7 +892,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        items: []
+        items: [],
       }
 
       for (const item of node.getChildren('ListItem')) {
@@ -807,7 +904,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
           to: item.to,
           whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
           children: [],
-          marker: { from: item.from, to: item.from }
+          marker: { from: item.from, to: item.from },
         }
 
         const listMark = item.getChild('ListMark')
@@ -835,7 +932,9 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         // mechanism for it (TODO), but we can manually pry it out of the tree
         // here. We first need to parse the node's children here.
         parseChildren(listItem, item, markdown)
-        const taskNode = listItem.children.find(child => child.type === 'Generic' && child.name === 'Task')
+        const taskNode = listItem.children.find(
+          (child) => child.type === 'Generic' && child.name === 'Task',
+        )
         if (taskNode !== undefined && taskNode.type === 'Generic') {
           const idx = listItem.children.indexOf(taskNode)
           listItem.children.splice(idx, 1, ...taskNode.children)
@@ -868,7 +967,36 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         info: info !== null ? markdown.substring(info.from, info.to) : '',
-        source: source !== null ? markdown.substring(source.from, source.to) : ''
+        source: source !== null ? markdown.substring(source.from, source.to) : '',
+      }
+      return astNode
+    }
+    case 'RawBlock': {
+      const astNode: RawBlock = {
+        type: 'RawBlock',
+        name: 'RawBlock',
+        format: 'tex',
+        source: rawBlockSourceFromNode(node, (from, to) => markdown.substring(from, to)),
+        sourceLineRanges: rawBlockLineRangesFromNode(node, (from, to) =>
+          markdown.substring(from, to),
+        ),
+        attributes: {},
+        from: node.from,
+        to: node.to,
+        whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
+      }
+      return astNode
+    }
+    case 'RawInline': {
+      const astNode: RawInline = {
+        type: 'RawInline',
+        name: 'RawInline',
+        format: 'tex',
+        source: markdown.substring(node.from, node.to),
+        attributes: {},
+        from: node.from,
+        to: node.to,
+        whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
       }
       return astNode
     }
@@ -879,24 +1007,17 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
       const attr = node.getChild('PandocAttribute')
       const attributes = attr ? parsePandocAttributes(markdown.substring(attr.from, attr.to)) : {}
 
+      // The legacy bare-class spelling (`::: theorem`) names one class.
       const info = node.getChild('PandocDivInfo')
-      const divName = info ? markdown.substring(info.from, info.to) : ''
-
-      const id = attributes.id ?? ''
-      const classes = attributes.classes ?? []
-
-      if (info) { classes.push(divName) }
+      const bareClasses = info ? [markdown.substring(info.from, info.to)] : []
 
       const astNode: PandocDiv = {
         type: 'PandocDiv',
         name: 'PandocDiv',
-        attributes: {
-          id: id,
-          class: classes,
-          ...attributes.properties
-        },
+        attributes: pandocNodeAttributes(attributes, bareClasses),
         from: node.from,
         to: node.to,
+        attributeRange: attr === null ? undefined : { from: attr.from, to: attr.to },
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         value: content,
         children: [],
@@ -911,17 +1032,10 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
       const attr = node.getChild('PandocAttribute')
       const attributes = attr ? parsePandocAttributes(markdown.substring(attr.from, attr.to)) : {}
 
-      const id = attributes.id ?? ''
-      const classes = attributes.classes ?? ''
-
       const astNode: PandocSpan = {
         type: 'PandocSpan',
         name: 'PandocSpan',
-        attributes: {
-          id: id,
-          class: classes,
-          ...attributes.properties
-        },
+        attributes: pandocNodeAttributes(attributes, []),
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
@@ -940,7 +1054,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        source: source !== null ? markdown.substring(source.from, source.to) : ''
+        source: source !== null ? markdown.substring(source.from, source.to) : '',
       }
       return astNode
     }
@@ -948,11 +1062,8 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
       const [ start, end ] = node.getChildren('CodeMark')
       let info = ''
       const codeMark = markdown.substring(start.from, start.to)
-      // The mark opens math when the delimiter table or the math-environment
-      // set recognizes it; anything else is a genuine code span. Asked of
-      // math-delimiters rather than restated here, so the four delimiters and
-      // the environments have one owner.
-      if (mathDisplayForOpen(codeMark) !== null || mathEnvironmentName(codeMark) !== null) {
+      // The mark opens math only when Pandoc's Markdown math delimiters do.
+      if (mathDisplayForOpen(codeMark) !== null) {
         info = codeMark
       }
 
@@ -964,7 +1075,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         to: node.to,
         info,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        source: markdown.substring(start.to, end.from)
+        source: markdown.substring(start.to, end.from),
       }
       return astNode
     }
@@ -977,7 +1088,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        value: markdown.slice(node.from + 4, node.to - 3).trim() // <!-- and -->
+        value: markdown.slice(node.from + 4, node.to - 3).trim(), // <!-- and -->
       }
       return astNode
     }
@@ -991,7 +1102,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
 
       return parseChildren(astNode, node, markdown)
@@ -1004,7 +1115,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
 
       return parseChildren(astNode, node, markdown)
@@ -1017,7 +1128,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
 
       return parseChildren(astNode, node, markdown)
@@ -1030,7 +1141,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
 
       return parseChildren(astNode, node, markdown)
@@ -1041,7 +1152,9 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
     case 'ZknLink': {
       const content = node.getChild('ZknLinkContent')
       if (content === null) {
-        throw new Error('Could not parse node ZknLink: No ZknLinkContent node found within children!')
+        throw new Error(
+          'Could not parse node ZknLink: No ZknLinkContent node found within children!',
+        )
       }
       const title = node.getChild('ZknLinkTitle')
       const astNode: ZettelkastenLink = {
@@ -1053,11 +1166,15 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         target: markdown.substring(content.from, content.to),
         targetRange: { from: content.from, to: content.to },
-        title: undefined
+        title: undefined,
       }
 
       if (title !== null) {
-        astNode.title = genericTextNode(title.from, title.to, markdown.substring(title.from, title.to))
+        astNode.title = genericTextNode(
+          title.from,
+          title.to,
+          markdown.substring(title.from, title.to),
+        )
       }
 
       return astNode
@@ -1070,7 +1187,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        value: markdown.substring(node.from + 1, node.to)
+        value: markdown.substring(node.from + 1, node.to),
       }
       return astNode
     }
@@ -1082,7 +1199,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        children: []
+        children: [],
       }
       return parseChildren(astNode, node, markdown)
     }

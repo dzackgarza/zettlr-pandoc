@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { renderInlineWidgets } from './base-renderer'
 import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
 import { EditorView, WidgetType } from '@codemirror/view'
@@ -242,7 +243,7 @@ class ImageWidget extends WidgetType {
         const realPath = leadingSlash ? unencoded.substring(1) : unencoded
         ipcRenderer
           .invoke('documents-provider', { command: 'open-file', payload: { path: realPath } })
-          .catch(e => console.error(e))
+          .catch(e => reportError(e))
       } else {
         // NOTE: We can only do this because the main process prevents any
         // navigation, and will open the "URL" using the shell.
@@ -399,5 +400,5 @@ export const renderImages = [
       }
     }
   }),
-  renderInlineWidgets(shouldHandleNode, createWidget)
+  renderInlineWidgets([ 'Image' ], shouldHandleNode, createWidget)
 ]

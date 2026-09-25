@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
@@ -36,7 +37,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
                 hash: 'tab-import-control'
               }
             })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         },
         {
@@ -50,7 +51,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
                 hash: 'tab-export-control'
               }
             })
-              .catch(err => console.error(err))
+              .catch(err => reportError(err))
           }
         }
       ] // TODO: Add two buttons "Open import profiles editor" and "Open export profiles editor"
@@ -72,8 +73,8 @@ export function getImportExportFields (): PreferencesFieldset[] {
         },
         {
           type: 'checkbox',
-          label: trans('Enforce highlight extension on export'),
-          info: trans('When enabled, Zettlr will automatically enable the "mark"-extension when exporting Markdown files.'),
+          label: trans('Preserve highlighted text on export'),
+          info: trans('Enable Pandoc\'s mark extension when exporting Markdown.'),
           model: 'export.enforceMarkSupport'
         },
         { type: 'separator' },
@@ -133,7 +134,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
     },
     {
       title: trans('Export templates'),
-      infoString: trans('Default Pandoc templates, applied when the export profile declares none. Choose a file, or type a name resolved from Pandoc\'s data directory (~/.pandoc/templates).'),
+      infoString: trans('Choose the default template used when an export profile does not specify one. Select a file or enter a template name from ~/.pandoc/templates.'),
       group: PreferencesGroups.ImportExport,
       help: undefined,
       fields: [
@@ -157,7 +158,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
     },
     {
       title: trans('Export filters'),
-      infoString: trans('Lua filters discovered in Pandoc\'s data directory (~/.pandoc/filters) and Zettlr\'s lua-filter directory. Enable the ones to run on every export; enabled filters run in the order shown (before the profile\'s own filters).'),
+      infoString: trans('Choose Lua filters to run on every export. They run in the order shown, before filters defined by the export profile. Available filters come from ~/.pandoc/filters and Zettlr\'s lua-filter folder.'),
       group: PreferencesGroups.ImportExport,
       help: undefined,
       fields: [
@@ -170,7 +171,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
     },
     {
       title: trans('Export scripts'),
-      infoString: trans('Declare a compilation script as an export format. The source is exported through the base Pandoc profile to an intermediate file, then the command runs with the intermediate path and the output path as its two arguments.'),
+      infoString: trans('Add an export format that runs a command after the selected profile. The command receives the intermediate file first and the output path second.'),
       group: PreferencesGroups.ImportExport,
       help: undefined,
       fields: [
@@ -178,7 +179,7 @@ export function getImportExportFields (): PreferencesFieldset[] {
           type: 'list',
           valueType: 'record',
           keyNames: [ 'name', 'profile', 'command', 'extension' ],
-          columnLabels: [ trans('Name'), trans('Base profile'), trans('Command'), trans('Extension') ],
+          columnLabels: [ trans('Name'), trans('Profile'), trans('Command'), trans('Extension') ],
           model: 'export.scripts',
           deletable: true,
           searchable: true,

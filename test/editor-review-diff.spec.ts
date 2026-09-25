@@ -10,15 +10,9 @@
  * Description:     Mounts the production CodeMirror review-chunks plugin and
  *                  exercises only behavior owned by the editor view: where a
  *                  chunk's marks land, how they map through the owner's own
- *                  typing, chunk navigation, and preview suppression.
- *
- *                  The plugin renders locators and nothing else (plan
- *                  invariant I4), so the decisive claim here is a negative
- *                  one: no button, no field, and no panel appears inside the
- *                  editor for any chunk shape. Adjudication itself — the
- *                  decisions, the notes, the mass actions, the review
- *                  comment — is the annotations panel's, and is proved in
- *                  annotations-sidebar.spec.ts against the real IPC bridge.
+ *                  typing, chunk navigation, and preview suppression. Where
+ *                  the chunk controls land is proved in
+ *                  editor-collaboration-controls.spec.ts.
  *
  * END HEADER
  */
@@ -29,12 +23,14 @@ import { EditorView } from '@codemirror/view'
 import type { ReviewSuggestionView } from '@dts/common/review-diff'
 import {
   getReviewChunks,
+  reviewSuggestionsInRange,
   reviewChunksExtension,
   selectNextReviewChunk,
   selectPreviousReviewChunk
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
 import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 
 function polyfillJsdomForCodeMirror (): void {
@@ -140,27 +136,7 @@ describe('Editor review-chunk view', function () {
     return chunks
   }
 
-  /**
-   * Everything in a review pane that could adjudicate a chunk. I4 admits
-   * locators only, so each of these must be zero for every chunk shape — a
-   * replacement, a pure deletion, a heavy rewrite, several chunks at once.
-   * `.cm-panels` catches the status bar specifically: a panel mounts
-   * OUTSIDE the scroller, so a control count taken from the content alone
-   * would miss it.
-   */
-  function adjudicationControlsIn (view: EditorView): {
-    buttons: number
-    fields: number
-    panels: number
-  } {
-    return {
-      buttons: view.dom.querySelectorAll('button').length,
-      fields: view.dom.querySelectorAll('input, textarea, select').length,
-      panels: view.dom.querySelectorAll('.cm-panels').length
-    }
-  }
-
-  it('locates every chunk and adjudicates none of them (I4)', function () {
+  it('locates every chunk at the position it lands on', function () {
     const baseline = [
       '# Note', '', 'first baseline', '', 'middle unchanged', '', 'second baseline', ''
     ].join('\n')
@@ -188,12 +164,6 @@ describe('Editor review-chunk view', function () {
     assert.deepEqual(
       [...view.dom.querySelectorAll<HTMLElement>('.cm-changedText')].map(el => el.textContent),
       ['proposed', 'proposed']
-    )
-
-    assert.deepEqual(
-      adjudicationControlsIn(view),
-      { buttons: 0, fields: 0, panels: 0 },
-      'the editor carries locators only: the panel owns every decision'
     )
   })
 
@@ -263,7 +233,6 @@ describe('Editor review-chunk view', function () {
       'the originalrevised wording stays here',
       'the deleted span reads before its replacement, in one pass'
     )
-    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
   it('renders a whole-line deletion as inline strikethrough', function () {
@@ -283,7 +252,6 @@ describe('Editor review-chunk view', function () {
     const deleted = view.dom.querySelectorAll<HTMLElement>('del.cm-deletedText')
     assert.equal(deleted.length, 1)
     assert.equal(deleted[0].textContent, 'first removed\nsecond removed')
-    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
   it('keeps a heavy rewrite merged in the document flow', function () {
@@ -299,7 +267,6 @@ describe('Editor review-chunk view', function () {
     assert.ok(line !== null && line !== undefined, 'the deleted span sits inside a document line')
     const lineText = line.textContent
     assert.ok(lineText !== null && lineText.includes('completely different words now'))
-    assert.deepEqual(adjudicationControlsIn(view), { buttons: 0, fields: 0, panels: 0 })
   })
 
   it('suppresses live-preview rendering only over a range carrying a review chunk', function () {
@@ -390,7 +357,7 @@ describe('Editor review-chunk view', function () {
       parent: document.body,
       state: EditorState.create({
         doc: working,
-        extensions: [ markdownParser(), renderLinks, reviewCompartment.of([]) ]
+        extensions: [ markdownParser(), configField, renderLinks, reviewCompartment.of([]) ]
       })
     })
     views.push(view)
@@ -416,6 +383,60 @@ describe('Editor review-chunk view', function () {
       false,
       'clearing the review without an edit re-renders the link'
     )
+  })
+
+  it('identifies unresolved suggestions inside a source range replaced by a renderer such as a table', function () {
+    const table = [
+      '| Name | Value |',
+      '|------|-------|',
+      '| alpha | corrected |',
+      '| beta | fixed |',
+      ''
+    ].join('\n')
+    const corrected = table.indexOf('corrected')
+    const fixed = table.indexOf('fixed')
+    const suggestions: ReviewSuggestionView[] = [
+      {
+        suggestionId: 'table-corrected',
+        removedText: 'old',
+        anchors: [{ from: corrected, to: corrected + 'corrected'.length }],
+        seam: corrected,
+        description: 'Correct the alpha value.'
+      },
+      {
+        suggestionId: 'table-fixed',
+        removedText: 'wrong',
+        anchors: [{ from: fixed, to: fixed + 'fixed'.length }],
+        seam: fixed,
+        description: 'Correct the beta value.'
+      }
+    ]
+    const view = createReviewView(table, suggestions)
+    assert.deepEqual(
+      reviewSuggestionsInRange(view.state, 0, table.length).map(suggestion => suggestion.suggestionId),
+      [ 'table-corrected', 'table-fixed' ]
+    )
+  })
+
+  it('does not report review suggestions outside a renderer-replaced source range', function () {
+    const table = [
+      'Changed prose before the table.',
+      '',
+      '| Name | Value |',
+      '|------|-------|',
+      '| alpha | stable |',
+      ''
+    ].join('\n')
+    const prose = table.indexOf('Changed prose')
+    const view = createReviewView(table, [{
+      suggestionId: 'prose-only',
+      removedText: 'Old prose',
+      anchors: [{ from: prose, to: prose + 'Changed prose'.length }],
+      seam: prose,
+      description: 'Change prose only.'
+    }])
+    const tableStart = table.indexOf('| Name | Value |')
+    assert.deepEqual(reviewSuggestionsInRange(view.state, tableStart, table.length), [])
   })
 
   it('navigates between chunks with next and previous, wrapping at both ends', function () {

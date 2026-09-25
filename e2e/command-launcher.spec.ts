@@ -32,10 +32,12 @@
 
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { type Browser, type Page } from 'playwright'
+import { promisify } from 'node:util'
+import { type Browser, type Locator, type Page } from 'playwright'
 import {
   assertCleanExit,
   attach,
@@ -57,6 +59,7 @@ const HIGHLIGHTED_ROW = `${LAUNCHER} [data-launcher-row][data-highlighted]`
 const NAVIGATION_SIDEBAR = '#navigation-sidebar'
 const FILTER_INPUT = '#navigation-sidebar .chrome-filter-input'
 const LAUNCHER_MENU_ITEM = 'menu.command_launcher'
+const execFileAsync = promisify(execFile)
 
 interface SerializedMenuNode {
   id?: string
@@ -99,6 +102,20 @@ async function openLauncherFromMenu (page: Page): Promise<void> {
   await page.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
 }
 
+async function findPreferencesPage (browser: Browser, timeoutMs = 20_000): Promise<Page> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const page = browser.contexts()
+      .flatMap(context => context.pages())
+      .find(candidate => candidate.url().includes('/preferences/'))
+    if (page !== undefined) {
+      return page
+    }
+    await delay(100)
+  }
+  throw new Error('Preferences window did not open')
+}
+
 async function readConfig (page: Page): Promise<{ fileManagerVisible: boolean }> {
   return await page.evaluate(() => {
     const config: unknown = window.ipc.sendSync('config-provider', { command: 'get-config' })
@@ -116,8 +133,17 @@ async function readConfig (page: Page): Promise<{ fileManagerVisible: boolean }>
   })
 }
 
+/**
+ * The active document's editor. Every open tab keeps its initialized editor
+ * mounted and hides the inactive ones, so the active document is the one
+ * visible `.cm-content`, not the first in document order.
+ */
+function activeEditor (page: Page): Locator {
+  return page.locator('.cm-content').filter({ visible: true })
+}
+
 async function readEditorDocument (page: Page): Promise<string> {
-  return await page.locator('.cm-content').first().evaluate(content => {
+  return await activeEditor(page).evaluate(content => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } } }).cmTile
     const text = tile?.root?.view?.state?.doc?.toString()
     if (text === undefined) {
@@ -128,7 +154,7 @@ async function readEditorDocument (page: Page): Promise<string> {
 }
 
 async function readCursorLine (page: Page): Promise<number> {
-  return await page.locator('.cm-content').first().evaluate(content => {
+  return await activeEditor(page).evaluate(content => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc: { lineAt(pos: number): { number: number } }, selection: { main: { head: number } } } } } } }).cmTile
     const state = tile?.root?.view?.state
     if (state === undefined) {
@@ -140,7 +166,7 @@ async function readCursorLine (page: Page): Promise<number> {
 
 /** Places the editor cursor at an offset and focuses the editor. */
 async function placeCursor (page: Page, offset: number): Promise<void> {
-  await page.locator('.cm-content').first().evaluate((content, anchor) => {
+  await activeEditor(page).evaluate((content, anchor) => {
     const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { dispatch(spec: { selection: { anchor: number } }): void, focus(): void } } } }).cmTile
     const view = tile?.root?.view
     if (view === undefined) {
@@ -191,6 +217,23 @@ describe('the Ctrl+P command launcher', function () {
       }
     })
     fixtureRoot = fixture.root
+    const workspaceRoot = path.join(fixture.root, 'workspace')
+    await execFileAsync('git', [ 'init', '-q', workspaceRoot ])
+    await writeFile(path.join(workspaceRoot, 'justfile'), [
+      '# Run a parameterless fixture check',
+      "[group('checks')]",
+      'fixture-check:',
+      '  @echo fixture-check',
+      '',
+      '# Run a fixture check with one argument',
+      'fixture-with-arg name:',
+      '  @echo {{name}}',
+      '',
+      '[private]',
+      'fixture-hidden:',
+      '  @true',
+      ''
+    ].join('\n'))
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout())
     appProcess = app.appProcess
     browser = app.browser
@@ -219,6 +262,9 @@ describe('the Ctrl+P command launcher', function () {
     const item = findMenuNode(viewMenu.submenu, LAUNCHER_MENU_ITEM)
     assert.ok(item !== undefined, 'the View menu must carry the command launcher item')
     assert.equal(item.accelerator, 'Ctrl+P', 'the launcher item must own Ctrl+P')
+    const fileItem = findMenuNode(viewMenu.submenu, 'menu.file_launcher')
+    assert.ok(fileItem !== undefined, 'the View menu must carry the quick-file item')
+    assert.equal(fileItem.accelerator, 'Ctrl+Shift+P', 'the quick-file item must own Ctrl+Shift+P')
 
     await focusOutsideEditor(activePage)
     await openLauncherFromMenu(activePage)
@@ -229,6 +275,107 @@ describe('the Ctrl+P command launcher', function () {
     await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
     const focusReturned = await activePage.locator(FILTER_INPUT).evaluate(element => element === document.activeElement)
     assert.ok(focusReturned, 'Escape must return the focus to the filter input that had it')
+  })
+
+  it('exposes the three desktop file actions through the File menu and Ctrl+P search', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const menu = await readApplicationMenu(activePage)
+    const fileMenu = findMenuNode(menu, 'file-menu')
+    assert.ok(fileMenu?.submenu !== undefined, 'the File menu must be serialised')
+    const expected = [
+      [ 'menu.open_terminal_here', 'Open terminal here' ],
+      [ 'menu.open_file_externally', 'Open file in external editor' ],
+      [ 'menu.open_file_browser_here', 'Open file browser here' ]
+    ] as const
+    for (const [ id, label ] of expected) {
+      const item = findMenuNode(fileMenu.submenu, id)
+      assert.equal(item?.label, label, `${id} must be a File-menu command`)
+
+      await focusOutsideEditor(activePage)
+      await openLauncherFromMenu(activePage)
+      await typeAndWaitForHighlight(activePage, label.toLowerCase(), label)
+      await activePage.keyboard.press('Escape')
+      await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    }
+  })
+
+  it('indexes menu breadcrumbs and deep-links the real Preferences schema', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const activeBrowser = requireInitialized(browser, 'The browser must be initialized')
+
+    // Parent-menu labels are search terms, not merely decoration. This is a
+    // command from File whose visible leaf does not itself contain "File".
+    await focusOutsideEditor(activePage)
+    await openLauncherFromMenu(activePage)
+    await typeAndWaitForHighlight(activePage, 'file rename', 'Rename file')
+    await activePage.keyboard.press('Escape')
+    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+
+    // Preferences is a browsable first-class source. The catalogue is derived
+    // from the actual form schemas, so representative settings across unrelated
+    // sections must all be present rather than a small hand-authored shortlist.
+    await openLauncherFromMenu(activePage)
+    await typeAndWaitForHighlight(activePage, 'preferences', 'Preferences')
+    await activePage.keyboard.press('Enter')
+    for (const model of [
+      'darkModeEditor',
+      'editor.fontSize',
+      'editor.lint.languageTool.active',
+      'zkn.idGen',
+      'export.cslStyle',
+      'files.dotFiles.showInFilemanager',
+      'shortcuts.ui.next-tab'
+    ]) {
+      assert.ok(
+        await activePage.locator(`${LAUNCHER} [data-preference-model="${model}"]`).count() > 0,
+        `Preferences index must expose ${model}`
+      )
+    }
+    await activePage.keyboard.press('Escape')
+    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+
+    // Search aliases include the schema path, label, model name and option
+    // labels. Selecting a result opens the separate Preferences renderer at
+    // the actual control, not just the generic Preferences window.
+    await openLauncherFromMenu(activePage)
+    await activePage.locator(LAUNCHER_INPUT).fill('preferences editor font size')
+    const fontSizeRow = activePage.locator(`${LAUNCHER} [data-preference-model="editor.fontSize"][data-highlighted]`)
+    await fontSizeRow.waitFor({ timeout: 10_000 })
+    await activePage.keyboard.press('Enter')
+    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+
+    const preferencesPage = await findPreferencesPage(activeBrowser)
+    const fontSize = preferencesPage.locator('[id="field-input-editor.fontSize"]')
+    await fontSize.waitFor({ state: 'visible', timeout: 20_000 })
+    await preferencesPage.waitForFunction(() => {
+      const input = document.getElementById('field-input-editor.fontSize')
+      return input !== null && document.activeElement === input
+    })
+    assert.match(await preferencesPage.locator('body').innerText(), /Editor/)
+    await preferencesPage.close()
+  })
+
+  it('discovers the workspace Git root and browses its public Justfile recipes', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    await focusOutsideEditor(activePage)
+    await openLauncherFromMenu(activePage)
+    await typeAndWaitForHighlight(activePage, 'justfile', 'Justfile commands')
+    await activePage.keyboard.press('Enter')
+
+    await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-check"]`).waitFor({ timeout: 10_000 })
+    assert.equal(
+      await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-hidden"]`).count(),
+      0,
+      'private Just recipes must not be exposed'
+    )
+
+    await activePage.locator(LAUNCHER_INPUT).fill('fixture-with-arg')
+    await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-with-arg"][data-highlighted]`).waitFor({ timeout: 10_000 })
+    await activePage.keyboard.press('Enter')
+    await activePage.locator(`${LAUNCHER} [data-just-recipe-arguments]`).waitFor({ timeout: 10_000 })
+    await activePage.locator(LAUNCHER_INPUT).fill('"two words"')
+    await activePage.keyboard.press('Escape')
+    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
   })
 
   it('toggles the sidebar off and on through a typed command', async function () {
@@ -296,5 +443,33 @@ describe('the Ctrl+P command launcher', function () {
     await waitUntil(async () => (await readEditorDocument(activePage)) === formsText, 'the defining document to become active')
     const definitionLine = formsText.slice(0, formsText.indexOf('{#sec-forms}')).split('\n').length
     await waitUntil(async () => (await readCursorLine(activePage)) === definitionLine, `the cursor on line ${definitionLine}`)
+  })
+
+  it('opens the quick-file navigator directly with Ctrl+Shift+P and switches documents', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const indexPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'index.md')
+    const indexText = await readFile(indexPath, 'utf8')
+
+    await activeEditor(activePage).focus()
+    await activePage.keyboard.press('Control+Shift+P')
+    await activePage.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
+    assert.equal(
+      await activePage.locator(`${LAUNCHER} [data-row-kind="file"]`).count() > 0,
+      true,
+      'Ctrl+Shift+P must open directly on the file rows rather than the launcher root'
+    )
+    assert.equal(
+      await activePage.locator(`${LAUNCHER} [data-row-kind="menu-group"]`).count(),
+      0,
+      'the quick-file view must not show command-menu groups'
+    )
+
+    await activePage.locator(LAUNCHER_INPUT).fill('index')
+    await activePage.locator(
+      `${LAUNCHER} [data-row-kind="file"][data-file-path="${indexPath}"][data-highlighted]`
+    ).waitFor({ timeout: 10_000 })
+    await activePage.keyboard.press('Enter')
+    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    await waitUntil(async () => (await readEditorDocument(activePage)) === indexText, 'Ctrl+Shift+P to open index.md')
   })
 })

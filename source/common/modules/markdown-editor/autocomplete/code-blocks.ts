@@ -101,6 +101,8 @@ function getEntries (): Completion[] {
 }
 
 export const codeBlocks: AutocompletePlugin = {
+  source: 'Code',
+  fields: [],
   applies (ctx) {
     const line = ctx.state.doc.lineAt(ctx.pos)
     const ch = ctx.pos - line.from

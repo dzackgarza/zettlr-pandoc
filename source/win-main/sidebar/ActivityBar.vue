@@ -18,13 +18,19 @@
           <ToggleGroupItem
             class="activity-bar-item"
             v-bind:value="item.id"
-            v-bind:aria-label="item.label()"
+            v-bind:aria-label="accessibleLabel(item)"
             v-bind:data-activity="item.id"
+            v-bind:data-unresolved-count="badgeCount(item.id)"
           >
             <cds-icon
               v-bind:shape="item.icon"
               role="presentation"
             ></cds-icon>
+            <span
+              v-if="badgeCount(item.id) > 0"
+              class="activity-bar-unresolved-badge"
+              aria-hidden="true"
+            >{{ badgeLabel(item.id) }}</span>
           </ToggleGroupItem>
         </TooltipTrigger>
         <TooltipPortal>
@@ -88,6 +94,8 @@ const props = defineProps<{
   /** The pressed item's id, or '' while the pane is closed. */
   pressed: string
   label: string
+  /** Dynamic unresolved-item counts keyed by activity id. */
+  badges?: Readonly<Record<string, number>>
 }>()
 
 /** Reports the pressed item, or '' when the pressed one was pressed again. */
@@ -95,6 +103,21 @@ const emit = defineEmits<(e: 'press', id: string) => void>()
 
 function onPress (value: AcceptableValue): void {
   emit('press', typeof value === 'string' ? value : '')
+}
+
+function badgeCount (id: string): number {
+  const count = props.badges?.[id]
+  return typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+}
+
+function badgeLabel (id: string): string {
+  const count = badgeCount(id)
+  return count > 99 ? '99+' : String(count)
+}
+
+function accessibleLabel (item: ActivityBarItem): string {
+  const count = badgeCount(item.id)
+  return count === 0 ? item.label() : `${item.label()}, ${count} unresolved`
 }
 </script>
 
@@ -116,10 +139,11 @@ body {
 
   // Outranks the platform button rules, which box every button.
   .activity-bar button.activity-bar-item {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
+    width: 100%;
     height: 44px;
     margin: 0;
     padding: 0;
@@ -133,6 +157,28 @@ body {
     cds-icon {
       width: 22px;
       height: 22px;
+    }
+
+    .activity-bar-unresolved-badge {
+      position: absolute;
+      top: 5px;
+      right: 4px;
+      display: inline-flex;
+      min-width: 15px;
+      height: 15px;
+      padding: 0 3px;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      border: 1px solid var(--chrome-surface);
+      border-radius: 999px;
+      background: var(--proposal-pending, var(--system-accent-color));
+      color: var(--annotation-accent-contrast, white);
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--proposal-pending, var(--system-accent-color)) 22%, transparent);
+      pointer-events: none;
     }
 
     &:hover {

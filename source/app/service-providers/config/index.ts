@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import path from 'path'
 import EventEmitter from 'events'
 import { ValidationRule, VALIDATE_RULES, VALIDATE_PROPERTIES } from './config-validation'
@@ -258,6 +259,28 @@ export default class ConfigProvider extends ProviderContract {
     * @param  {any}  readConfig  The read config from disk.
     */
   private runMigrations (readConfig: any): void {
+    // The Ctrl+Shift+P picker used to own a separate permanent extension
+    // filter. File visibility now has one authority: the file manager's
+    // permanent filters, which the picker consumes as a subset. Preserve the
+    // user's exact include/exclude lists while renaming the persisted key.
+    if (
+      typeof readConfig.fileManager === 'object' &&
+      readConfig.fileManager !== null &&
+      typeof readConfig.fileManager.filePicker === 'object' &&
+      readConfig.fileManager.filePicker !== null &&
+      readConfig.fileManager.filters === undefined
+    ) {
+      readConfig.fileManager.filters = {
+        include: Array.isArray(readConfig.fileManager.filePicker.include)
+          ? readConfig.fileManager.filePicker.include
+          : [],
+        exclude: Array.isArray(readConfig.fileManager.filePicker.exclude)
+          ? readConfig.fileManager.filePicker.exclude
+          : []
+      }
+      delete readConfig.fileManager.filePicker
+    }
+
     // After version 4.0.0, we have split up `openPaths` into separate file and
     // workspaces arrays.
     if (('openPaths' in readConfig)) {
@@ -612,7 +635,7 @@ export default class ConfigProvider extends ProviderContract {
           app.quit()
         }
       })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   }
 
   /**

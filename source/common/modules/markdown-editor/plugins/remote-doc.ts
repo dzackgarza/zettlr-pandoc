@@ -16,6 +16,7 @@
 
 // This plugin implements remote callbacks that keep the editor's document in
 // sync with a central authority
+import { reportError } from '@common/util/error-reporting'
 import {
   type Update,
   sendableUpdates,
@@ -71,13 +72,13 @@ export function hookDocumentAuthority (
       // method will create a Promise that links this plugin (and, by extension,
       // the editor state) over the IPC or websocket bridge until there are any
       // updates available.
-      this.pull().catch(err => { console.error(`Pulling updates failed: ${String(err.message)}`, err) })
+      this.pull().catch(err => { reportError(`Pulling updates failed: ${String(err.message)}`, err) })
     }
 
     update (update: ViewUpdate): void {
       // Whenever the doc changed, sync those changes with the document authority
       if (update.docChanged) {
-        this.push().catch(err => { console.error(`Pushing updates failed: ${String(err.message)}`, err) })
+        this.push().catch(err => { reportError(`Pushing updates failed: ${String(err.message)}`, err) })
       }
     }
 
@@ -103,7 +104,7 @@ export function hookDocumentAuthority (
       // Allow another push, if new updates have amassed during the push
       this.isCurrentlyPushing = false
       setTimeout(() => {
-        this.push().catch(err => { console.error(`Pushing updates failed: ${String(err.message)}`, err) })
+        this.push().catch(err => { reportError(`Pushing updates failed: ${String(err.message)}`, err) })
       }, 100)
     }
 
@@ -147,11 +148,11 @@ export function hookDocumentAuthority (
         const transaction = receiveUpdates(this.view.state, deserializedUpdates)
         this.view.dispatch(transaction)
       } catch (err: any) {
-        console.error(`Pulling updates for failed (retrying): ${String(err.message)}`, err)
+        reportError(`Pulling updates for failed (retrying): ${String(err.message)}`, err)
       }
 
       // Whether there was an error or not, schedule another pull
-      this.pull().catch(err => { console.error(`Pulling updates failed: ${String(err.message)}`, err) })
+      this.pull().catch(err => { reportError(`Pulling updates failed: ${String(err.message)}`, err) })
     }
 
     destroy (): void {

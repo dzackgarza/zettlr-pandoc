@@ -44,14 +44,14 @@ webpack({
   ],
 }, (error, stats) => {
   if (error !== null) {
-    console.error(error)
+    process.stderr.write(`${error.stack ?? error.message}\n`)
     process.exitCode = 1
     return
   }
 
   const output = stats?.toString({ colors: false, chunks: false, modules: false }) ?? ''
   if (stats?.hasErrors() === true) {
-    console.error(output)
+    process.stderr.write(`${output}\n`)
     process.exitCode = 1
     return
   }

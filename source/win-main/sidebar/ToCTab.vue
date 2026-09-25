@@ -49,6 +49,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { ref, computed, watch, toRef, onMounted } from 'vue'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { type AnyDescriptor } from '@dts/common/fsal'
@@ -151,7 +152,7 @@ function updateToCHTML () {
     .then(values => {
       tocEntryHTML.value = values
     })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 function startDragging (event: DragEvent): void {

@@ -23,6 +23,7 @@ import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
@@ -82,7 +83,7 @@ describe('Editor presents Pandoc fenced divs semantically', function () {
     const state = EditorState.create({
       doc,
       selection: { anchor },
-      extensions: [ extensions, EditorState.allowMultipleSelections.of(true) ],
+      extensions: [ configField, extensions, EditorState.allowMultipleSelections.of(true) ],
     })
     const view = new EditorView({ state, parent: document.body })
     // On a cold parser the markdown parse can miss CodeMirror's synchronous
@@ -141,6 +142,76 @@ outside`
     assert.ok(closing !== null, 'expected a collapsed closing-fence wrapper')
     assert.ok(panel?.querySelector('.preview-math mjx-container') !== null, 'inner math should remain rendered')
     assert.match(panel?.textContent ?? '', /A set has/)
+  })
+
+  it('recognizes Pandoc multiline fenced-div attributes with nested braces in quoted values', function () {
+    const doc = `:::{.theorem
+    title="{\\cite[Thm. 1.1]{AEGS25}}"
+    #thm:intro-main-theorem
+}
+The theorem body.
+:::
+
+outside`
+    const view = createEditor(doc)
+
+    const opening = view.dom.querySelector('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+    const panel = view.dom.querySelector('pandoc-div-wrapper[data-pandoc-div-family="result"]')
+    assert.ok(opening !== null, `expected a semantic theorem opening: ${view.dom.innerHTML}`)
+    assert.ok(panel !== null, 'expected the multiline opening to produce one theorem panel')
+    assert.equal(opening?.getAttribute('data-pandoc-div-label'), 'Theorem')
+    assert.equal(opening?.getAttribute('data-pandoc-authored-id'), 'thm:intro-main-theorem')
+    assert.ok(panel?.classList.contains('theorem'))
+    assert.match(opening?.getAttribute('title') ?? '', /\{\\cite\[Thm\. 1\.1\]\{AEGS25\}\}/)
+    assert.match(opening?.querySelector('.pandoc-div-header-title')?.textContent ?? '', /\\cite\[Thm\. 1\.1\]\{AEGS25\}/)
+    assert.match(panel?.textContent ?? '', /The theorem body\./)
+    assert.doesNotMatch(panel?.textContent ?? '', /title=|thm:intro-main-theorem/)
+  })
+
+  it('renders a multiline definition opener at compact header height and displays title math', function () {
+    const doc = `:::{.definition
+    title="The Symington polytope $B(\\lambda)$"
+}
+Body.
+:::
+
+outside`
+    const view = createEditor(doc)
+
+    const opening = view.dom.querySelector('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+    const header = opening?.querySelector('.pandoc-div-header')
+    const title = header?.querySelector('.pandoc-div-header-title')
+    assert.ok(opening !== null, 'the multiline definition opener must have an inactive wrapper')
+    assert.ok(header !== null, 'the opener must carry one compact rendered header')
+    assert.equal(header?.querySelector('.pandoc-div-header-label')?.textContent, 'Definition')
+    assert.match(title?.textContent ?? '', /The Symington polytope/)
+    assert.equal(title?.querySelectorAll('mjx-container').length, 1, 'inline title math must be rendered through MathJax')
+    assert.doesNotMatch(title?.textContent ?? '', /\$B\(\\lambda\)\$/)
+  })
+
+  it('renders the symmetric bilinear form definition syntax accepted by Pandoc', function () {
+    const doc = `:::{.definition title="{Symmetric Bilinear Form}" #def:symmetric-bilinear-form}
+
+Let $L$ be a $\\ZZ$-module. A **bilinear form** $\\beta$ on $L$ is a morphism $\\beta: L \\tensor_{\\ZZ} L \\to \\QQ$. We often write $v \\cdot w$ or $vw$ for $\\beta(v,w)$.
+A bilinear form $\\beta$ is:
+
+- **$\\eps$-symmetric** for $\\eps \\in \\QQ$ if $\\beta(a,b) = \\eps \\cdot \\beta(b,a)$.
+- **Symmetric** if $\\eps = 1$.
+- **Skew-symmetric** if $\\eps = -1$.
+- **Alternating** if $\\beta(a,a) = 0$ for all $a \\in L$.
+- **Integral** if its image $\\beta(L,L)$ is contained in $\\ZZ$.
+- **Nondegenerate** if the map $L\\to \\Hom_\\ZZ(L, \\ZZ)$ given by $v\\mapsto \\beta(v, \\cdot)$ is injective.
+:::
+
+outside`
+    const view = createEditor(doc)
+
+    const opening = view.dom.querySelector('pandoc-div-open-wrapper[data-pandoc-div-state="inactive"]')
+    const panel = view.dom.querySelector('pandoc-div-wrapper[data-pandoc-div-family="definition"]')
+    assert.ok(opening !== null, `expected the definition opening to render: ${view.dom.innerHTML}`)
+    assert.ok(panel !== null, 'expected the definition body to render as a semantic panel')
+    assert.equal(opening?.getAttribute('data-pandoc-authored-id'), 'def:symmetric-bilinear-form')
+    assert.equal(opening?.querySelector('.pandoc-div-header-title')?.textContent, '{Symmetric Bilinear Form}')
   })
 
   it('reveals the div shell while preserving cursor-local nested preview behavior', function () {

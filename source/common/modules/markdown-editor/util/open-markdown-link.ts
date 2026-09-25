@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import makeValidUri from '@common/util/make-valid-uri'
 import { type EditorState, type Line } from '@codemirror/state'
 import { configField } from './configuration'
@@ -81,7 +82,7 @@ export default function (url: string, view: EditorView): void {
         command: 'open-file',
         payload: { path: localPath, newTab: false, windowId }
       } as DocumentManagerIPCAPI)
-        .catch(e => console.error(e))
+        .catch(e => reportError(e))
     } else {
       // Handled by the event listener in the main process
       window.location.assign(validURI)

@@ -35,7 +35,7 @@ import type CommandProvider from '../commands'
 import type ConfigProvider from '@providers/config'
 import { md2html } from '@common/modules/markdown-utils'
 import { initializeMathJax } from '@common/util/mathtex-to-html'
-import { loadMathJaxMacros, mathJaxMacrosPath } from '../../util/load-mathjax-macros'
+import { loadCanonicalMathJaxMacros } from '../../util/load-mathjax-macros'
 import { showNativeNotification } from '@common/util/show-notification'
 import type WindowProvider from '../windows'
 
@@ -700,7 +700,7 @@ export default class UpdateProvider extends ProviderContract {
   }
 
   async boot (): Promise<void> {
-    await initializeMathJax(await loadMathJaxMacros(mathJaxMacrosPath(app.getPath('userData'))))
+    await initializeMathJax(await loadCanonicalMathJaxMacros(app.getPath('home')))
     this._registerIpcHandler()
 
     // Initiate the update check

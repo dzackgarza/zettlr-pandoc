@@ -13,20 +13,7 @@
  * END HEADER
  */
 
-/**
- * Available preference groups that are accessible from the main preferences.
- */
-export enum PreferencesGroups {
-  Advanced,
-  Appearance,
-  Autocorrect,
-  Citations,
-  Editor,
-  FileManager,
-  General,
-  ImportExport,
-  Snippets,
-  Spellchecking,
-  Zettelkasten,
-  Shortcuts
-}
+// Kept as the schema-local import path for existing callers; the identity is
+// shared because the main window's command launcher can deep-link into this
+// separate renderer process.
+export { PreferencesGroups } from '@dts/common/preferences'

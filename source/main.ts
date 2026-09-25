@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { app } from "electron";
 import path from "path";
 import { bootApplication, shutdownApplication } from "./app/lifecycle";
@@ -36,7 +37,7 @@ function logUnhandledProcessError(message: string): void {
   if (isAppServiceContainerReady()) {
     getAppServiceContainer().log.error(message);
   } else {
-    console.error(message);
+    reportError(message);
   }
 }
 
@@ -93,7 +94,7 @@ if (!app.requestSingleInstanceLock()) {
 // to a live window, and booting a whole second app instead is the wrong outcome
 // nobody asked for. Say so and stop.
 if (getCLIArgument(OPEN_IN_RUNNING_INSTANCE) === true) {
-  console.error(
+  reportError(
     "No running Zettlr instance accepted the arguments; nothing was opened.",
   );
   app.exit(1);
@@ -163,14 +164,14 @@ app
             "roots-add",
             filesBeforeOpen.concat(extractFilesFromArgv(process.argv)),
           )
-          .catch((err) => console.error(err));
+          .catch((err) => reportError(err));
       })
       .catch((err) => {
-        console.error(err);
+        reportError(err);
         app.exit(1);
       });
   })
-  .catch((e) => console.error(e));
+  .catch((e) => reportError(e));
 
 /**
  * This event will be called if another instance of Zettlr has been opened with
@@ -264,7 +265,7 @@ app.on("will-quit", function (event) {
       canQuit = true;
       app.quit();
     })
-    .catch((err) => console.error(err));
+    .catch((err) => reportError(err));
 });
 
 /**

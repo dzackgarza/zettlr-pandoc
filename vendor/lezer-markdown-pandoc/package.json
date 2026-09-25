@@ -1,0 +1,28 @@
+{
+  "name": "@lezer/markdown",
+  "version": "1.7.2",
+  "description": "Lezer Markdown fork with Pandoc 3.10.2 grammar extensions for Zettlr-Pandoc",
+  "main": "dist/index.cjs",
+  "type": "module",
+  "exports": {
+    "import": "./dist/index.js",
+    "require": "./dist/index.cjs"
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Marijn Haverbeke <marijn@haverbeke.berlin>",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "@lezer/common": "^1.5.0",
+    "@lezer/highlight": "^1.0.0",
+    "entities": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://code.haverbeke.berlin/lezer/markdown.git"
+  },
+  "scripts": {
+    "watch": "node build.js --watch",
+    "prepare": "node build.js"
+  }
+}

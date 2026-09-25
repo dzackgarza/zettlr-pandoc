@@ -48,6 +48,15 @@ import type LongRunningTaskProvider from '../long-running-tasks'
 import { trans } from 'source/common/i18n-main'
 import { readDirectoryFromDisk } from './util/read-directory'
 
+function isPathAtOrWithin (candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith('..' + path.sep) &&
+    !path.isAbsolute(relative)
+  )
+}
+
 // Re-export all interfaces necessary for other parts of the code (Document Manager)
 export {
   FSALFile,
@@ -198,6 +207,9 @@ export default class FSAL extends ProviderContract {
 
     // In unlink-events, there won't be a descriptor.
     if (event === 'unlink' || event === 'unlinkDir') {
+      if (event === 'unlinkDir') {
+        this.removeHiddenDirectoriesUnder(absPath)
+      }
       this._emitter.emit('fsal-event', { event, path: absPath })
       broadcastIPCMessage('fsal-event', { event, path: absPath })
       return
@@ -690,6 +702,18 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
+   * Re-derives a directory's ProjectSettings from its Quarto manifest and
+   * publishes the directory's new descriptor. The watcher reports a manifest
+   * edit as a change to the manifest file only, never to the directory whose
+   * book it describes, so without this event no window sees the new book.
+   */
+  public async refreshQuartoProject (src: DirDescriptor): Promise<void> {
+    await FSALDir.refreshQuartoProject(src)
+    this._emitter.emit('fsal-event', { event: 'change', descriptor: src })
+    broadcastIPCMessage('fsal-event', { event: 'change', descriptor: src })
+  }
+
+  /**
    * Creates a new project in this dir
    *
    * @param   {DirDescriptor}             src           The directory
@@ -752,6 +776,7 @@ export default class FSAL extends ProviderContract {
     const deleteOnFail: boolean = this._config.get('system.deleteOnFail')
     if (await this.pathExists(dirPath)) {
       await safeDelete(dirPath, deleteOnFail, this._logger)
+      this.removeHiddenDirectoriesUnder(dirPath)
     }
   }
 
@@ -763,6 +788,32 @@ export default class FSAL extends ProviderContract {
    */
   public async rename (oldPath: string, newPath: string): Promise<void> {
     await fs.rename(oldPath, newPath)
+    this.remapHiddenDirectories(oldPath, newPath)
+  }
+
+  private removeHiddenDirectoriesUnder (directoryPath: string): void {
+    const current = this._config.get().fileManager.hiddenDirectories
+    const next = current.filter(hiddenPath => !isPathAtOrWithin(hiddenPath, directoryPath))
+    if (next.length !== current.length) {
+      this._config.set('fileManager.hiddenDirectories', next)
+    }
+  }
+
+  private remapHiddenDirectories (oldPath: string, newPath: string): void {
+    const current = this._config.get().fileManager.hiddenDirectories
+    let changed = false
+    const next = current.map(hiddenPath => {
+      if (!isPathAtOrWithin(hiddenPath, oldPath)) {
+        return hiddenPath
+      }
+
+      changed = true
+      return path.join(newPath, path.relative(oldPath, hiddenPath))
+    })
+
+    if (changed) {
+      this._config.set('fileManager.hiddenDirectories', next)
+    }
   }
 
   /**
@@ -854,7 +905,13 @@ export default class FSAL extends ProviderContract {
     if (avoidDiskAccess) {
       const cacheHit = await this._cache.get(absPath)
       if (cacheHit !== undefined) {
-        return cacheHit
+        if (cacheHit.type !== 'file') {
+          return cacheHit
+        }
+        if (cacheHit.titleMetadataVersion === FSALFile.TITLE_METADATA_VERSION) {
+          return cacheHit
+        }
+        return await FSALFile.refreshTitleMetadata(cacheHit, this._cache)
       }
     }
 

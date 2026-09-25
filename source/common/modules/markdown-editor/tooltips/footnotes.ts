@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { EditorView, hoverTooltip, type Tooltip } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
 import { type EditorState } from '@codemirror/state'
@@ -103,7 +104,7 @@ function footnotesTooltip (view: EditorView, pos: number, side: 1 | -1): Tooltip
         .then(tooltipContent => {
           content.innerHTML = tooltipContent
         })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
 
       if (fnBody === undefined) {
         return { dom }

@@ -42,10 +42,10 @@ export async function runScriptExport (
   // The intermediate's extension follows the base profile's writer.
   const baseProfile = (await ctx.listDefaults()).find(p => p.name === script.profile)
   if (baseProfile === undefined) {
-    throw new Error(`Export script "${script.name}" references unknown base profile "${script.profile}"`)
+    throw new Error(`Export script "${script.name}" uses unknown profile "${script.profile}"`)
   }
   if (baseProfile.isInvalid) {
-    throw new Error(`Export script "${script.name}" references the unusable base profile "${script.profile}": ${baseProfile.reason}`)
+    throw new Error(`Export script "${script.name}" cannot use profile "${script.profile}": ${baseProfile.reason}`)
   }
   const baseWriter = parseReaderWriter(baseProfile.writer).name
   const intermediateExt = WRITER2EXT[baseWriter] ?? baseWriter

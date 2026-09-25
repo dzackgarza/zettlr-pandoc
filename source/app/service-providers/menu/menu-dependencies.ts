@@ -31,7 +31,11 @@ type MenuConfigWrite =
 export interface MenuConfig {
   get: {
     (): {
-      editor: { fontSize: number }
+      editor: {
+        fontSize: number
+        snippetsFile: string
+        quickTexFile: string
+      }
       shortcuts: { ui: ConfigOptions['shortcuts']['ui'] }
     }
     (key: 'system.zoomBehavior' | 'darkMode' | 'fileMeta' | 'debug'): unknown

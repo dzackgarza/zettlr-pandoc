@@ -40,6 +40,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import CodeEditor from '@common/vue/CodeEditor.vue'
 import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
@@ -71,7 +72,7 @@ ipcRenderer.invoke('css-provider', {
     lastLoadedCSS.value = cssString
     editorContents.value = cssString
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))
 
 const offCallback = ipcRenderer.on('shortcut', (event, shortcut) => {
   if (shortcut === 'save-file') {
@@ -94,7 +95,7 @@ function saveCSS (): void {
     })
     .catch(err => {
       savingStatus.value = trans('Could not save changes')
-      console.error(err)
+      reportError(err)
     })
 }
 </script>

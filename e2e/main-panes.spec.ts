@@ -164,6 +164,10 @@ describe('the main window panes', function () {
     await shutdown(browser, appProcess)
     page = await launch.call(this, 1200, 800)
     const relaunched = requireInitialized(page, 'The editor page must be initialized')
+    await waitUntil(
+      async () => Math.abs(await paneWidth(relaunched, 'navigation-sidebar') - dragged) <= 8,
+      'the splitter to restore the persisted pixel width after the host-window resize'
+    )
     const afterRelaunch = await paneWidth(relaunched, 'navigation-sidebar')
     assert.ok(Math.abs(afterRelaunch - dragged) <= 8, `the width is pixels, not a share of the window: ${dragged} -> ${afterRelaunch} at 1200 px`)
     screenshots.set('sidebar-after-relaunch.png', await relaunched.screenshot())
@@ -179,6 +183,23 @@ describe('the main window panes', function () {
     screenshots.set('narrow-window.png', await activePage.screenshot())
     await activePage.setViewportSize({ width: 1200, height: 800 })
     await activePage.waitForFunction(() => window.innerWidth === 1200, undefined, { timeout: 10_000 })
+
+    // Reka observes the host resize asynchronously, and App.vue then reasserts
+    // the user's persisted pixel widths two animation frames later. Do not let
+    // the next scenario sample the transient post-narrowing layout in between
+    // those two operations: that would compare the width before restoration
+    // with the pane that actually collapses after restoration.
+    const ui = await readUiConfig(activePage)
+    const sidebarWidth = ui.navigationSidebarWidth
+    const panelWidth = ui.annotationPanelWidth
+    assert.equal(typeof sidebarWidth, 'number')
+    assert.equal(typeof panelWidth, 'number')
+    await waitUntil(
+      async () =>
+        Math.abs(await paneWidth(activePage, 'navigation-sidebar') - (sidebarWidth as number)) <= 8 &&
+        Math.abs(await paneWidth(activePage, 'annotation-panel') - (panelWidth as number)) <= 8,
+      'both pixel panes to restore their persisted widths after leaving the narrow window'
+    )
   })
 
   it('slides a hidden pane shut, hides its handle, and hands its width to the editor', async function () {
@@ -200,7 +221,19 @@ describe('the main window panes', function () {
     assert.ok(samples.some(width => width > 0 && width < sidebar - 1), `the pane shrinks through intermediate widths: ${samples.join(', ')}`)
     await activePage.locator(PANE('navigation-sidebar')).waitFor({ state: 'hidden', timeout: 10_000 })
     await activePage.locator(HANDLE('navigation-sidebar')).waitFor({ state: 'hidden', timeout: 10_000 })
-    await waitUntil(async () => Math.abs(await paneWidth(activePage, 'editor') - (editorBefore + sidebar)) <= 3, 'the editor to take the sidebar\'s width')
+    let editorAfter = await paneWidth(activePage, 'editor')
+    const editorTarget = editorBefore + sidebar
+    const editorDeadline = Date.now() + 20_000
+    while (Date.now() < editorDeadline && Math.abs(editorAfter - editorTarget) > 3) {
+      await delay(150)
+      editorAfter = await paneWidth(activePage, 'editor')
+    }
+    const panelAfter = await paneWidth(activePage, 'annotation-panel')
+    assert.ok(
+      Math.abs(editorAfter - editorTarget) <= 3,
+      `the editor takes the hidden sidebar's width: editor ${editorBefore} -> ${editorAfter}, ` +
+        `sidebar ${sidebar}, target ${editorTarget}, annotation ${panelAfter}`
+    )
     const persisted = (await readUiConfig(activePage)).navigationSidebarWidth
     assert.ok(typeof persisted === 'number' && Math.abs(persisted - sidebar) <= 8, `hiding the pane leaves its persisted width alone: ${String(persisted)} for ${sidebar}`)
     screenshots.set('sidebar-hidden.png', await activePage.screenshot())

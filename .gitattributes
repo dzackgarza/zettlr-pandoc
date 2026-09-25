@@ -4,3 +4,7 @@
 # diffs against them. (cf. https://yarnpkg.com/getting-started/qa#which-files-should-be-gitignored)
 /.yarn/releases/** binary
 /.yarn/plugins/** binary
+# Pinned generated tikz-editor bundle; reconstruct with scripts/update-tikz-editor-vendor.mjs.
+/vendor/tikz-editor/src/** binary
+# Unified diff blank-context lines are encoded as a single space by design.
+/vendor/tikz-editor/ZETTLR.patch whitespace=-trailing-space

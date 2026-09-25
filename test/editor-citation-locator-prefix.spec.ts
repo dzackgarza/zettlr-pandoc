@@ -21,7 +21,7 @@ import {
   nodeToCiteItem,
 } from "source/common/modules/markdown-editor/parser/citation-parser";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
+import { __resetCitationRenderMemoForTests, renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
 import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 import {
@@ -29,6 +29,7 @@ import {
   configUpdateEffect,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
+import { installCitationIpcFromCallback, settleCitationWidgets } from "./citation-widget-test-helper";
 
 function polyfillJsdomForCodeMirror(): void {
   const global = globalThis as any;
@@ -82,16 +83,20 @@ function parseCitationItem(source: string): CiteItem {
 describe("Editor preserves citation suffixes beginning with Roman-numeral letters", function () {
   const views: EditorView[] = [];
   const originalCitationCallback = window.getCitationCallback;
+  let restoreCitationIpc: (() => void)|undefined;
 
   before(function () {
     polyfillJsdomForCodeMirror();
+    restoreCitationIpc = installCitationIpcFromCallback();
   });
 
   after(function () {
+    restoreCitationIpc?.();
     window.getCitationCallback = originalCitationCallback;
   });
 
   afterEach(function () {
+    __resetCitationRenderMemoForTests();
     for (const view of views.splice(0)) {
       view.destroy();
     }
@@ -129,7 +134,7 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
     assert.equal(item.suffix, " Cor. 6.2");
   });
 
-  it("renders the lemma suffix without an artificial gap", function () {
+  it("renders the lemma suffix without an artificial gap", async function () {
     window.getCitationCallback = () => (citations) =>
       citations
         .map((item) => {
@@ -140,13 +145,14 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
         .join("; ");
     const doc = "::: theorem\nBy [@Ols04 Lem. 7.1, 7.2], some result follows.\n:::";
     const view = createEditor(doc, doc.indexOf("some result"));
+    await settleCitationWidgets(view.dom);
     const citation = view.dom.querySelector<HTMLElement>(".citeproc-citation");
 
     assert.ok(citation !== null);
     assert.equal(citation.textContent, "Ols04 Lem. 7.1, 7.2");
   });
 
-  it("redraws an open citation after its bibliography becomes available", function () {
+  it("redraws an open citation after its bibliography becomes available", async function () {
     window.getCitationCallback = () => () => undefined;
     const config = getDefaultConfig();
     config.renderingMode = "preview";
@@ -158,10 +164,13 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
     });
     const view = new EditorView({ state, parent: document.body });
     views.push(view);
+    await settleCitationWidgets(view.dom);
     assert.equal(view.dom.querySelector(".citeproc-citation")?.classList.contains("error"), true);
 
     window.getCitationCallback = () => () => "(Olsson 2004)";
+    __resetCitationRenderMemoForTests();
     view.dispatch({ effects: configUpdateEffect.of({ metadata: { ...config.metadata } }) });
+    await settleCitationWidgets(view.dom);
 
     assert.equal(view.dom.querySelector(".citeproc-citation")?.textContent, "(Olsson 2004)");
   });

@@ -82,6 +82,7 @@ import { DocumentTree, type DTLeaf } from './document-tree'
 import {
   type ReviewStatus,
   collaborationSessionFor,
+  reviewFromSidecar,
 } from './review-diff-store'
 import {
   CollaborationApplicationService,
@@ -353,6 +354,14 @@ export type DocumentManagerIPCContract = {
     request: { payload: LeafLoc & { path: string } }
     response: boolean
   }
+  'close-all-tabs': {
+    request: { payload: { windowId: string } }
+    response: boolean
+  }
+  'save-all-and-close': {
+    request: { payload: { windowId: string } }
+    response: boolean
+  }
   'close-file-everywhere': {
     request: { payload: { path: string } }
     response: undefined
@@ -375,6 +384,10 @@ export type DocumentManagerIPCContract = {
   'get-collaboration-session': {
     request: { payload: { path: string } }
     response: DocumentCollaborationSession | undefined
+  }
+  'get-workspace-collaboration-sessions': {
+    request: { payload: { paths: string[] } }
+    response: DocumentCollaborationSession[]
   }
   'move-file': {
     request: {
@@ -453,6 +466,10 @@ export type ReviewChunkCommentInput = {
 
 /** Accepting every remaining chunk, under the same fence one decision uses. */
 export type ReviewAcceptAllInput = { reviewId: string } & ReviewMutationPrecondition
+export type WorkspaceReviewAcceptAllInput = {
+  path: string
+  reviewId: string
+} & ReviewMutationPrecondition
 
 /** Discarding a review, under the same fence one decision uses. */
 export type ReviewClearInput = { reviewId: string } & ReviewMutationPrecondition
@@ -521,6 +538,9 @@ export type DocumentIpcHandlers = {
   ) => ChunkCommentResponse | ReviewFailure
   'documents:accept-all-review-chunks': (
     input: ReviewAcceptAllInput,
+  ) => AcceptAllChunksResponse | ReviewFailure
+  'documents:accept-all-workspace-review-chunks': (
+    input: WorkspaceReviewAcceptAllInput,
   ) => AcceptAllChunksResponse | ReviewFailure
   'documents:clear-review': (input: ReviewClearInput) => ClearReviewResponse | ReviewFailure
   'documents:add-review-comment': (
@@ -772,6 +792,15 @@ export default class DocumentManager
       const { reviewId, ...precondition } = input
       return await this.acceptAllReviewChunks(reviewId, precondition)
     })
+    operations.handle('documents:accept-all-workspace-review-chunks', async (_event, input) => {
+      const { path, reviewId, ...precondition } = input
+      return await this._reviewApplication.acceptAllWorkspaceChunks({
+        documentId: this.ensureDocumentId(path),
+        documentPath: path,
+        reviewId,
+        precondition,
+      })
+    })
     operations.handle('documents:clear-review', async (_event, input) => {
       const { reviewId, ...precondition } = input
       return await this.clearReview(reviewId, precondition)
@@ -857,6 +886,12 @@ export default class DocumentManager
           const { windowId, leafId, path } = payload
           return await this.closeFile(windowId, leafId, path)
         }
+        case 'close-all-tabs': {
+          return await this.closeAllTabs(payload.windowId)
+        }
+        case 'save-all-and-close': {
+          return await this.saveAllAndClose(payload.windowId)
+        }
         case 'close-file-everywhere': {
           const { path } = payload
           return this.closeFileEverywhere(path)
@@ -876,6 +911,9 @@ export default class DocumentManager
         case 'get-collaboration-session': {
           const docId = this.getDocumentId(payload.path)
           return docId === undefined ? undefined : this._collaborationSessionFor(docId, payload.path)
+        }
+        case 'get-workspace-collaboration-sessions': {
+          return await this._workspaceCollaborationSessions(payload.paths)
         }
         case 'move-file': {
           const {
@@ -1552,7 +1590,13 @@ current contents from the editor somewhere else, and restart the application.`,
    * should keep those available. Resolves once the citeproc provider finishes
    * synchronizing.
    */
-  private async synchronizeDatabases (): Promise<void> {
+  /**
+   * Recompute every bibliography reachable from the currently loaded roots and
+   * synchronize Citeproc with that union. Root-management commands call this
+   * after changing the configured roots so already-open editors receive the
+   * same database update they would after opening another document.
+   */
+  public async synchronizeDatabases (): Promise<void> {
     const libraries: string[] = []
 
     for (const doc of this.documents) {
@@ -1876,6 +1920,68 @@ current contents from the editor somewhere else, and restart the application.`,
       await this.synchronizeDatabases()
     }
     return ret
+  }
+
+  /**
+   * Close every tab in one window using the ordinary per-document close path.
+   *
+   * Modified documents therefore keep the existing Save / Don't save / Cancel
+   * semantics. Pinned tabs are included because "all tabs" is explicit, but a
+   * refused/cancelled close restores the pin before aborting the bulk action.
+   */
+  public async closeAllTabs (windowId: string): Promise<boolean> {
+    const tree = this._windows[windowId]
+    if (tree === undefined) {
+      return false
+    }
+    const tabs = tree.getAllLeafs().flatMap((leaf) =>
+      leaf.tabMan.openFiles.map((file) => ({
+        leafId: leaf.id,
+        path: file.path,
+        pinned: file.pinned,
+      })),
+    )
+
+    for (const tab of tabs) {
+      const leaf = this._windows[windowId]?.findLeaf(tab.leafId)
+      if (leaf === undefined) {
+        continue
+      }
+      if (tab.pinned) {
+        leaf.tabMan.setPinnedStatus(tab.path, false)
+      }
+      const closed = await this.closeFile(windowId, tab.leafId, tab.path)
+      if (!closed) {
+        const currentLeaf = this._windows[windowId]?.findLeaf(tab.leafId)
+        if (tab.pinned && currentLeaf !== undefined) {
+          currentLeaf.tabMan.setPinnedStatus(tab.path, true)
+        }
+        return false
+      }
+    }
+    return true
+  }
+
+  /**
+   * Save every modified document represented in a window, then close all of
+   * its tabs. Since the buffers are clean before closing, ordinary unsaved-file
+   * prompts are bypassed. A refused save aborts before any tab is closed.
+   */
+  public async saveAllAndClose (windowId: string): Promise<boolean> {
+    if (!(windowId in this._windows)) {
+      return false
+    }
+    for (const document of this._windowDocuments(windowId)) {
+      if (!this.isModified(document.filePath)) {
+        continue
+      }
+      const saved = await this.saveFile(document.filePath)
+      if (!saved.ok) {
+        this._announceSaveRefusal(document.filePath, saved)
+        return false
+      }
+    }
+    return await this.closeAllTabs(windowId)
   }
 
   /**
@@ -3139,16 +3245,14 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   /** The refusal a save owes when the review could not be persisted. */
   private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
-    const message =
-      'The review could not be written to its sidecar, so the save did not complete: ' +
+    const message = 'The review could not be saved, so the document was not saved: ' +
       (err instanceof Error ? err.message : String(err))
     this._app.log.error(`[DocumentManager] Save refused for ${filePath}: ${message}`, err)
     return { reason: 'review-not-persisted', message }
   }
 
   private _announceDetachFailure(filePath: string, err: unknown): void {
-    const message =
-      'The review could not be written to its sidecar, so this document was left open: ' +
+    const message = 'The review could not be saved, so this document was left open: ' +
       (err instanceof Error ? err.message : String(err))
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err)
     const payload: SaveRefusedBroadcast = {
@@ -3217,10 +3321,11 @@ current contents from the editor somewhere else, and restart the application.`,
    * mutation that triggered it already answered its caller.
    */
   private _surfaceReviewSidecarError(documentId: string, action: string, err: unknown): void {
-    const message =
-      `Review sidecar ${action} failed for document ${documentId}: ` +
-      (err instanceof Error ? err.message : String(err))
-    this._app.log.error(`[DocumentManager] ${message}`, err)
+    const message = `Could not ${action} review state for document ${documentId}.`
+    this._app.log.error(
+      `[DocumentManager] Review sidecar ${action} failed for document ${documentId}`,
+      err,
+    )
     this.emitAgentEvent('review.sidecar-error', { documentId, message })
   }
 
@@ -3414,9 +3519,7 @@ current contents from the editor somewhere else, and restart the application.`,
         return {
           ok: false,
           code: 'DOCUMENT_CLOSED',
-          message:
-            `The reviewed document ${detached.sidecar.documentPath} is not open. ` +
-            'Open it to reattach this review, then retract this packet.',
+          message: `The reviewed document ${detached.sidecar.documentPath} is closed. Open it before retracting this proposal.`,
           reviewId: detached.sidecar.review.reviewId,
           canClearUnresolved: false,
         }
@@ -3701,6 +3804,53 @@ current contents from the editor somewhere else, and restart the application.`,
       review: this._reviewApplication.getReview(documentId),
       annotations: this._reviewApplication.getAnnotations(documentId),
     })
+  }
+
+  /**
+   * Workspace-wide collaboration projection for the annotations panel.
+   *
+   * Open documents use the same live session every editor pane receives.
+   * Closed documents are projected from their validated collaboration
+   * sidecars into that exact same renderer shape. The renderer never reads
+   * sidecars directly and never has to know whether a document is open.
+   */
+  private async _workspaceCollaborationSessions(
+    paths: readonly string[],
+  ): Promise<DocumentCollaborationSession[]> {
+    const wanted = new Set(paths)
+    const sessions: DocumentCollaborationSession[] = []
+    const livePaths = new Set<string>()
+
+    // Read live authority state first. No document id is allocated merely
+    // because a workspace contains a file with no collaboration state.
+    for (const filePath of wanted) {
+      const documentId = this.getDocumentId(filePath)
+      if (documentId === undefined) {
+        continue
+      }
+      const live = this._collaborationSessionFor(documentId, filePath)
+      if (live !== undefined) {
+        sessions.push(live)
+        livePaths.add(filePath)
+      }
+    }
+
+    // Enumerate the small set of sidecars once, then intersect it with the
+    // workspace. This avoids one failed filesystem lookup per ordinary file.
+    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
+      if (!wanted.has(sidecar.documentPath) || livePaths.has(sidecar.documentPath)) {
+        continue
+      }
+      const documentId = this.ensureDocumentId(sidecar.documentPath)
+      sessions.push(collaborationSessionFor({
+        documentId,
+        documentPath: sidecar.documentPath,
+        workingText: sidecar.workingText,
+        review: sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar),
+        annotations: sidecar.annotations,
+      }))
+    }
+    return sessions
   }
 
   /**

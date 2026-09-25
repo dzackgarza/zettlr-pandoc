@@ -11,6 +11,7 @@
         selected: isSelected,
         active: activeItem === item.path,
         project: item.type === 'directory' && item.settings.project != null,
+        'is-hidden-directory': isExplicitlyHidden,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
@@ -77,7 +78,7 @@
         v-on:drag="onDragHandler"
       >
         <template v-if="!nameEditing">
-          {{ basename }}
+          <span class="display-name">{{ basename }}</span>
         </template>
         <template v-else>
           <input
@@ -98,6 +99,28 @@
           class="dir"
         >
           &nbsp;({{ dirname }})
+        </span>
+        <span
+          v-if="projectMembership !== undefined"
+          v-bind:class="[
+            'project-membership',
+            projectMembership.status,
+            projectMembership.manifestKind
+          ]"
+          v-bind:title="projectMembershipTitle"
+          v-bind:aria-label="projectMembershipTitle"
+        >
+          <span class="membership-icon" aria-hidden="true">
+            <cds-icon
+              v-bind:shape="projectMembership.manifestKind === 'quarto' ? 'book' : 'blocks-group'"
+              role="presentation"
+            ></cds-icon>
+          </span>
+          <span
+            v-if="projectMembership.status === 'included' && projectMembership.position !== undefined"
+            class="membership-position"
+            aria-hidden="true"
+          >{{ projectMembership.position }}</span>
         </span>
       </span>
     </div>
@@ -121,7 +144,7 @@
     </div>
     <div v-if="item.type === 'directory' && !shouldBeCollapsed">
       <TreeItem
-        v-for="child in projectSortedFilteredChildren"
+        v-for="child in sortedChildren"
         v-bind:key="child.path"
         v-bind:item="child"
         v-bind:has-duplicate-name="false"
@@ -166,13 +189,14 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import generateFilename from '@common/util/generate-filename'
 import { trans } from '@common/i18n-renderer'
 import PopoverDirProps from './util/PopoverDirProps.vue'
 import PopoverFileProps from './util/PopoverFileProps.vue'
 
 import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
-import { nextTick, ref, computed, watch, onMounted, toRef } from 'vue'
+import { nextTick, ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue'
 import type { AnyDescriptor } from '@dts/common/fsal'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename, relativePath } from '@common/util/renderer-path-polyfill'
@@ -185,12 +209,15 @@ import {
   hasPDFExt,
   hasExt
 } from 'source/common/util/file-extention-checks'
-import { isDotFile } from 'source/common/util/ignore-path'
 import type { FSALEventPayload, FSALEventPayloadChange } from 'source/app/service-providers/fsal'
-import { getSorter } from 'source/common/util/directory-sorter'
 import type { WritingTarget } from 'source/app/service-providers/targets'
 import { filterDescriptorChildren } from './util/filter-children'
 import getDocumentTitle from '../util/get-document-title'
+import {
+  effectiveExplorerDisplayForDirectory,
+  projectMembershipForPath,
+  sortExplorerChildren
+} from '@common/util/explorer-ordering'
 
 const ipcRenderer = window.ipc
 
@@ -346,6 +373,10 @@ const writingTargetPercent = computed(() => {
  * Returns true if this item is a root item
  */
 const isRoot = computed(() => workspaceStore.rootDescriptors.find(rd => rd.path === props.item.path) !== undefined)
+const isExplicitlyHidden = computed(() => {
+  return props.item.type === 'directory' &&
+    configStore.config.fileManager.hiddenDirectories.includes(props.item.path)
+})
 
 /**
  * Returns true if the file manager mode is set to "combined"
@@ -365,7 +396,6 @@ const filteredChildren = computed(() => {
     return []
   }
 
-  const { files } = configStore.config
   const filter = filterDescriptorChildren()
 
   return children.value
@@ -380,7 +410,7 @@ const filteredChildren = computed(() => {
     // Filter based on our rules
     .filter(child => {
       if (!combined.value) {
-        return child.type === 'directory' && (files.dotFiles.showInFilemanager || !isDotFile(child.name))
+        return child.type === 'directory' && filter(child)
       }
 
       return filter(child)
@@ -392,47 +422,47 @@ const sortedChildren = computed(() => {
     return []
   }
 
-  const { sorting, sortFoldersFirst, fileNameDisplay, appLang, fileMetaTime } = configStore.config
+  const defaults = {
+    sortingType: configStore.config.sorting,
+    sortFoldersFirst: configStore.config.sortFoldersFirst,
+    fileNameDisplay: configStore.config.fileNameDisplay,
+    appLang: configStore.config.appLang,
+    fileMetaTime: configStore.config.fileMetaTime
+  } as const
 
-  const sorter = getSorter(
-    sorting,
-    sortFoldersFirst,
-    fileNameDisplay,
-    appLang,
-    fileMetaTime
-  )
-
-  return sorter(filteredChildren.value, props.item.settings.sorting)
+  return sortExplorerChildren(props.item, filteredChildren.value, defaults, workspaceStore.rootDescriptors)
 })
 
-/**
- * Returns a list of children that can be displayed inside the tree view, sorted
- * by project inclusion status.
- */
-const projectSortedFilteredChildren = computed(() => {
-  if (props.item.type !== 'directory' || props.item.settings.project === null) {
-    return sortedChildren.value
+const ownerDirectory = computed(() => {
+  if (props.item.type === 'directory') {
+    return undefined
   }
-
-  // Modify the order using the project files by first mapping the sorted
-  // project file paths onto the descriptors available, sorting all other files
-  // separately, and then concatenating them with the project files up top.
-  const projectFiles = props.item.settings.project.files
-    .map(filePath => sortedChildren.value.find(x => x.name === filePath))
-    .filter(x => x !== undefined)
-
-  const files: AnyDescriptor[] = []
-  for (const desc of sortedChildren.value) {
-    if (!projectFiles.includes(desc)) {
-      files.push(desc)
-    }
-  }
-
-  return projectFiles.concat(files)
+  const descriptor = workspaceStore.descriptorMap.get(props.item.dir)
+  return descriptor?.type === 'directory' ? descriptor : undefined
 })
 
 const basename = computed(() => {
-  return getDocumentTitle(props.item)
+  const display = ownerDirectory.value === undefined
+    ? configStore.config.fileNameDisplay
+    : effectiveExplorerDisplayForDirectory(ownerDirectory.value, workspaceStore.rootDescriptors, configStore.config.fileNameDisplay)
+  return getDocumentTitle(props.item, display)
+})
+
+const projectMembership = computed(() => props.item.type === 'directory'
+  ? undefined
+  : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors))
+
+const projectMembershipTitle = computed(() => {
+  const membership = projectMembership.value
+  if (membership === undefined) return ''
+  if (membership.status === 'omitted') {
+    return membership.manifestKind === 'quarto'
+      ? trans('This document is not included in the Quarto book')
+      : trans('This document is not included in the Project')
+  }
+  return membership.manifestKind === 'quarto'
+    ? trans('Book chapter %s', String(membership.position ?? ''))
+    : trans('Project file %s', String(membership.position ?? ''))
 })
 
 const isSelected = computed(() => {
@@ -480,7 +510,7 @@ watch(operationType, (newVal) => {
       // Select from the beginning until the last dot
       newObjectInput.value.setSelectionRange(0, newObjectInput.value.value.lastIndexOf('.'))
     })
-      .catch(err => console.error(err))
+      .catch(err => reportError(err))
   }
 })
 
@@ -496,9 +526,12 @@ watch(showDotFiles, async function () {
   }
 })
 
+let stopShortcutListener: (() => void)|undefined
+let stopFsalListener: (() => void)|undefined
+
 onMounted(async () => {
   if (props.item.type === 'directory') {
-    ipcRenderer.on('shortcut', (_, message) => {
+    stopShortcutListener = ipcRenderer.on('shortcut', (_, message) => {
       if (message === 'new-dir') {
         operationType.value = 'createDir'
       }
@@ -507,7 +540,7 @@ onMounted(async () => {
     await fetchChildren()
   }
 
-  ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
+  stopFsalListener = ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
     const affectedPath = payload.event === 'unlink' || payload.event === 'unlinkDir'
       ? payload.path
       : (payload as FSALEventPayloadChange).descriptor.path
@@ -536,12 +569,20 @@ onMounted(async () => {
     // Now we can be sure that the event pertains to a direct child of this item
     // and we need to handle it. We'll make it easy and simply re-fetch the list
     // of children.
-    fetchChildren().catch(err => console.error(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
+    fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
   })
 
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
     scrollIntoView()
+  }
+})
+
+onUnmounted(() => {
+  stopShortcutListener?.()
+  stopFsalListener?.()
+  if (uncollapseTimeout.value !== undefined) {
+    clearTimeout(uncollapseTimeout.value)
   }
 })
 
@@ -579,7 +620,7 @@ function scrollIntoView () {
       const pos = absBottom - treeHeight
       fileTreeRoot.scrollTo({ top: pos, behavior: 'smooth' })
     }
-  }).catch(err => console.error(err))
+  }).catch(err => reportError(err))
 }
 
 async function fetchChildren (): Promise<void> {
@@ -688,7 +729,7 @@ function handleDrop (event: DragEvent): void {
       to: props.item.path
     }
   })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
 }
 
 /**
@@ -710,7 +751,7 @@ function handleOperationFinish (newName: string): void {
         path: props.item.path,
         name: newName.trim()
       }
-    }).catch(e => console.error(e))
+    }).catch(e => reportError(e))
   } else if (operationType.value === 'createDir' && newName.trim() !== '') {
     ipcRenderer.invoke('application', {
       command: 'dir-new',
@@ -718,7 +759,7 @@ function handleOperationFinish (newName: string): void {
         path: props.item.path,
         name: newName.trim()
       }
-    }).catch(e => console.error(e))
+    }).catch(e => reportError(e))
   }
 
   operationType.value = undefined
@@ -750,12 +791,14 @@ body {
 
     .tree-item {
       white-space: nowrap;
+      content-visibility: auto;
+      contain-intrinsic-size: auto var(--chrome-row-height);
 
       // If a directory is open, ensure the containing folder remains sticked to
       // the top as the user scrolls through its (possibly long) contents.
       &.directory:not(.collapsed) {
         position: sticky;
-        top: 0px;
+        top: var(--chrome-section-height);
         z-index: 1;
       }
 
@@ -768,6 +811,7 @@ body {
       &.orange { color: var(--accent-orange); }
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
+      &.is-hidden-directory { opacity: 0.58; }
 
       .item-icon, .toggle-icon {
         display: flex;
@@ -790,10 +834,74 @@ body {
       }
 
       .display-text {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        flex: 1 1 auto;
         padding: 3px 5px;
-        overflow: hidden;
-        text-overflow: ellipsis;
         margin-right: 8px;
+
+        .display-name {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .dir {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .project-membership {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 1px;
+          margin-left: 5px;
+          color: var(--chrome-text-muted);
+          line-height: 1;
+
+          .membership-icon {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 13px;
+            height: 13px;
+
+            cds-icon {
+              width: 13px;
+              height: 13px;
+              min-width: 13px;
+              min-height: 13px;
+            }
+          }
+
+          .membership-position {
+            min-width: 7px;
+            font-size: 9px;
+            line-height: 10px;
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+          }
+
+          &.omitted {
+            opacity: 0.62;
+
+            .membership-icon::after {
+              content: '';
+              position: absolute;
+              left: -1px;
+              top: 6px;
+              width: 15px;
+              height: 1px;
+              background: currentColor;
+              transform: rotate(-45deg);
+              transform-origin: center;
+            }
+          }
+        }
       }
       // Here, the padding has to be reset in order for
       // the padding around the input element to not change

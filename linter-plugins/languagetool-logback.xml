@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LanguageTool's CLI jar ships a logback.xml whose ConsoleAppender writes to
+  System.out, where the JSON output mode also prints its result.
+  language_tool.py selects this file through logback.configurationFile so the
+  log lines go to stderr and stdout carries only the result.
+  https://logback.qos.ch/manual/appenders.html#ConsoleAppender
+-->
+<configuration>
+    <appender name="stderr" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%-5level %logger{36} %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="info">
+        <appender-ref ref="stderr" />
+    </root>
+</configuration>

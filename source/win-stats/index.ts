@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import windowRegister from '../common/modules/window-register'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -34,4 +35,4 @@ windowRegister()
       }
     })
   })
-  .catch(e => console.error(e))
+  .catch(e => reportError(e))

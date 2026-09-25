@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import EventEmitter from 'events'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
 import type { LRTIPCSyncMessage } from '.'
@@ -245,7 +246,7 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
       case 'error':
         this.status = TaskStatus.error
         this.error = error
-        console.error(error)
+        reportError(error)
         this.emit('task_errored')
         break
       case 'success':

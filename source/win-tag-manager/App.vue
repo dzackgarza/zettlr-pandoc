@@ -132,6 +132,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import TextControl from '@common/vue/form/elements/TextControl.vue'
 import ColorControl from '@common/vue/form/elements/ColorControl.vue'
@@ -230,7 +231,7 @@ function handleStatusbar (controlID: string): void {
       .then(() => {
         ipcRenderer.send('window-controls', { command: 'win-close' })
       })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
   } else if (controlID === 'close') {
     ipcRenderer.send('window-controls', { command: 'win-close' })
   }
@@ -243,7 +244,7 @@ function removeColor (tagName: string): void {
     found.desc = undefined
     hasUnsavedChanges.value = true
   } else {
-    console.error(`Could not remove color for tag ${tagName}: Tag not found`)
+    reportError(`Could not remove color for tag ${tagName}: Tag not found`)
   }
 }
 
@@ -254,7 +255,7 @@ function assignColor (tagName: string): void {
     found.desc = ''
     hasUnsavedChanges.value = true
   } else {
-    console.error(`Could not assign color to tag ${tagName}: Tag not found`)
+    reportError(`Could not assign color to tag ${tagName}: Tag not found`)
   }
 }
 

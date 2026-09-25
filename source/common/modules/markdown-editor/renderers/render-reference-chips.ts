@@ -8,8 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     Renders every RESOLVED workspace reference occurrence as
- *                  an independent compact `Type — title` chip (issue #1
- *                  Phase 4).
+ *                  an independent compact editor-local numbered chip.
  *
  *                  CONTRACT (locked by test/editor-reference-chips.spec.ts):
  *
@@ -20,13 +19,12 @@
  *                    render-citations byte-identically; mixed
  *                    bibliography/reference clusters are handled by NEITHER
  *                    renderer — they stay raw and receive an advisory
- *                    diagnostic from linters/reference-lint.ts.
+ *                    diagnostic from the standalone Flowmark reference rules.
  *                  - Each resolved item renders as one independent chip
  *                    (span.reference-chip with data-reference-key and
- *                    data-reference-family) whose text is
- *                    `<Type> — <title>` (the family display name, an
- *                    em-dash, the authored title) or `<Type> — <key>` when
- *                    no title was authored.
+ *                    data-reference-family) whose text is `<Type> N.N.N`.
+ *                    These numbers are deterministic inside Zettlr and are
+ *                    deliberately independent of export numbering.
  *                  - Authored cluster punctuation, prefixes, suffixes, and
  *                    locators are preserved verbatim around the chips: the
  *                    widget text is the authored cluster text with each
@@ -36,8 +34,9 @@
  *                    NO chip: the authored source stays raw (diagnostics own
  *                    those states; duplicates never select one definition
  *                    silently).
- *                  - The renderer NEVER displays any number for a reference:
- *                    export tools and templates exclusively own numbering.
+ *                  - Export tools and templates still exclusively own the
+ *                    number appearing in exported documents. The editor-local
+ *                    number is a stable authoring aid, not an export preview.
  *                  - The workspace view comes exclusively from
  *                    workspaceReferencesField; while the field is null
  *                    nothing renders.
@@ -68,10 +67,11 @@ import {
   followReferenceNavigationIntent,
   resolveReferenceNavigationIntent
 } from '../util/reference-navigation'
+import { referenceDisplayNumbers } from '@common/pandoc-util/reference-numbering'
 
 /**
  * One chip of a cluster widget: the authored key, its family, and the
- * display text (`Type — title`, falling back to `Type — key`).
+ * editor-local display text (`Type N.N.N`).
  */
 interface ChipSpec {
   key: string
@@ -183,6 +183,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): WidgetType|unde
   }
 
   const chips: ChipSpec[] = []
+  const displayNumbers = referenceDisplayNumbers(references.resolutions, references.projectRoots)
   for (const item of citation.items) {
     const family = referenceFamilyOf(item.id)
     if (family === undefined) {
@@ -198,11 +199,14 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): WidgetType|unde
       return undefined
     }
 
-    const { definition } = resolution
+    const displayNumber = displayNumbers.get(item.id)
+    if (displayNumber === undefined) {
+      throw new Error(`Resolved reference ${item.id} has no editor-local display number`)
+    }
     chips.push({
       key: item.id,
       family,
-      label: `${referenceFamilyDisplayName(family)} — ${definition.title ?? item.id}`
+      label: `${referenceFamilyDisplayName(family)} ${displayNumber}`
     })
   }
 
@@ -235,6 +239,6 @@ const chipTheme = EditorView.baseTheme({
 })
 
 export const renderReferenceChips = [
-  renderBlockWidgets(shouldHandleNode, createWidget),
+  renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget),
   chipTheme
 ]

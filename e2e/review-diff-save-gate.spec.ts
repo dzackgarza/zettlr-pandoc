@@ -48,8 +48,8 @@ const ARTIFACT_DIRECTORY = path.join(
   tmpdir(),
   'zettlr-review-diff-save-gate-e2e-latest'
 )
-/** The annotations panel: where every review control lives after M9. */
-const PANEL = '#annotations-panel'
+/** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
+const EDITOR = '.main-editor-wrapper .cm-editor'
 
 interface AgentClient {
   get: (route: string) => Promise<unknown>
@@ -215,7 +215,7 @@ async function openReview (
 ): Promise<string> {
   const documentId = documentIdOf(await client.get('/v1/documents'))
   const baselineSha256 = readSha256(
-    await client.get(`/v1/documents/${documentId}/content?side=working`)
+    await client.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
   )
   const reviewId = reviewIdOf(await client.post(
     `/v1/documents/${documentId}/proposals`,
@@ -232,7 +232,7 @@ async function openReview (
     }
   ))
   await page
-    .locator(`${PANEL} .suggestion-decision.accept`)
+    .locator(`${EDITOR} .suggestion-decision.accept`)
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 })
   return reviewId
@@ -248,11 +248,11 @@ async function clearReviewAndFlush (
   documentPath: string
 ): Promise<void> {
   // Disposing of the remaining chunks is the reviewer's alone, so this is the
-  // panel's own control — the gesture a user makes, carrying the fence the
-  // panel already holds. No agent route can do it.
-  await page.locator(`${PANEL} .suggestion-clear`).click()
+  // review bar.s own control — the gesture a user makes, carrying the fence the
+  // pane already holds. No agent route can do it.
+  await page.locator(`${EDITOR} .suggestion-clear`).click()
   await page
-    .locator(`${PANEL} .suggestion-decision.accept`)
+    .locator(`${EDITOR} .suggestion-decision.accept`)
     .first()
     .waitFor({ state: 'detached', timeout: 20_000 })
   assert.deepEqual(
@@ -286,7 +286,7 @@ function saveGateClosures (log: string): string {
 }
 
 async function acceptEveryChunk (page: Page, timeoutMs: number): Promise<number> {
-  const accept = page.locator(`${PANEL} .suggestion-decision.accept`)
+  const accept = page.locator(`${EDITOR} .suggestion-decision.accept`)
   await accept.first().waitFor({ state: 'visible', timeout: timeoutMs })
 
   let accepted = 0
@@ -298,7 +298,7 @@ async function acceptEveryChunk (page: Page, timeoutMs: number): Promise<number>
     }
     await accept.first().click()
     accepted += 1
-    // The panel locks every control for the round trip, so two sweeps cannot
+    // The pane locks every control for the round trip, so two sweeps cannot
     // run over one partition. Waiting for the partition to actually shrink is
     // therefore the reviewer's own pace, and it leaves the DOM settled before
     // the next click resolves a node.
@@ -314,7 +314,7 @@ async function acceptEveryChunk (page: Page, timeoutMs: number): Promise<number>
   )
   assert.ok(
     accepted > 0,
-    'The panel rendered no accept control, so nothing was proven.'
+    'The editor rendered no accept control, so nothing was proven.'
   )
   return accepted
 }
@@ -342,8 +342,8 @@ async function boot (fixture: RunningFixture, timeoutMs: number): Promise<void> 
     config: {
       agentApi,
       editor: { inputMode: 'vim' },
-      // Every review control lives in the sidebar's annotations panel (M9),
-      // so the fixture opens the sidebar on that tab.
+      // The workspace panel stays open beside the editor; every decision
+      // here is still made from the controls inside the editor.
       window: { sidebarVisible: true }
     }
   })
@@ -406,7 +406,7 @@ describe('saving after accepting a reviewed change', function () {
 
     const documentId = documentIdOf(await activeClient.get('/v1/documents'))
     const baselineSha256 = readSha256(
-      await activeClient.get(`/v1/documents/${documentId}/content?side=working`)
+      await activeClient.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
     )
 
     await activeClient.post(
@@ -484,7 +484,7 @@ describe('saving after accepting a reviewed change', function () {
       STRICT_PHRASE,
       'e2e-review-diff-save-gate-note'
     )
-    const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+    const chunksPayload = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(
       chunksPayload !== null &&
         typeof chunksPayload === 'object' &&
@@ -501,13 +501,13 @@ describe('saving after accepting a reviewed change', function () {
     // The note is the reviewer's, typed into the chunk's own field and
     // committed with Enter. What this spec is about is what happens to it
     // afterwards, so the API is polled BEFORE anything else touches the
-    // panel: the note has to be agent-visible on its own, ahead of any save.
-    const chunkCard = page.locator(`${PANEL} .suggestion-chunk[data-chunk-id="${notedChunkId}"]`)
+    // editor: the note has to be agent-visible on its own, ahead of any save.
+    const chunkCard = page.locator(`${EDITOR} .suggestion-chunk[data-chunk-id="${notedChunkId}"]`)
     const noteField = chunkCard.locator('input.suggestion-chunk-comment')
     await noteField.fill('Preserve this note across save')
     await noteField.press('Enter')
     const agentSeesNote = async (): Promise<boolean> => {
-      const payload = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+      const payload = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
       if (payload === null || typeof payload !== 'object' || !('chunks' in payload) ||
         !Array.isArray(payload.chunks)) {
         return false
@@ -548,11 +548,11 @@ describe('saving after accepting a reviewed change', function () {
     assert.equal(
       await noteField.inputValue(),
       'Preserve this note across save',
-      'FILE_SAVED must not clear the note from the panel.'
+      'FILE_SAVED must not clear the note from its field.'
     )
     // The note is agent-readable on the chunk itself, and the chunk is
     // still outstanding after the save.
-    const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}/chunks`)
+    const afterChunks = await activeClient.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(
       afterChunks !== null && typeof afterChunks === 'object' &&
         'chunks' in afterChunks && Array.isArray(afterChunks.chunks),
@@ -621,7 +621,7 @@ describe('saving after accepting a reviewed change', function () {
     )
     assert.equal(after.generation, before.generation, 'A save must not advance the review generation.')
     await page
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'visible', timeout: 20_000 })
     assert.equal(
@@ -663,7 +663,7 @@ describe('saving after accepting a reviewed change', function () {
       [activeDocumentPath]
     )
     await page
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'detached', timeout: 20_000 })
 
@@ -672,7 +672,7 @@ describe('saving after accepting a reviewed change', function () {
     const documentId = await workspaceDocumentId(activeClient, activeDocumentPath)
     await activeClient.post(`/v1/documents/${documentId}/focus`, {})
     await page
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'visible', timeout: 30_000 })
     screenshots.set('pending-review-reattached.png', await page.screenshot())
@@ -708,7 +708,9 @@ describe('saving after accepting a reviewed change', function () {
     // presentation of whatever comes back. Nothing here reaches into the
     // provider, so this is what proves a user's own save gesture now succeeds
     // on a pending review.
-    await page.locator('.cm-content').click()
+    // A document line, not the content box: the chunk's controls sit inside
+    // the content too, and the gesture belongs to the text.
+    await page.locator('.cm-line').first().click()
     await page.keyboard.press('Escape')
     await page.keyboard.type(':w')
     await page.keyboard.press('Enter')
@@ -733,7 +735,7 @@ describe('saving after accepting a reviewed change', function () {
     )
     // The review is still open and decidable after the gesture.
     await page
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'visible', timeout: 20_000 })
     screenshots.set('pending-save-vim-write.png', await page.screenshot())

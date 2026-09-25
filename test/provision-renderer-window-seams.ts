@@ -22,7 +22,13 @@ const w = globalThis as any
 if (w.window !== undefined && w.window.ipc === undefined) {
   w.window.ipc = {
     on: () => () => {},
-    invoke: async () => undefined,
+    invoke: async (channel: string, message?: { command?: string, payload?: { database?: unknown, citations?: unknown[], composite?: boolean } }) => {
+      if (channel === 'citeproc-provider' && message?.command === 'get-citation') {
+        const callback = w.window.getCitationCallback?.(message.payload?.database)
+        return callback?.(message.payload?.citations ?? [], message.payload?.composite ?? false)
+      }
+      return undefined
+    },
     send: () => {},
     sendSync: () => undefined,
   }

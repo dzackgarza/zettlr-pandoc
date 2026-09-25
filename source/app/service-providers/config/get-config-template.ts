@@ -12,15 +12,18 @@
  * END HEADER
  */
 
-import { app, nativeTheme } from 'electron'
-import * as bcp47 from 'bcp-47'
-import { v4 as uuid4 } from 'uuid'
 import getLanguageFile from '@common/util/get-language-file'
-import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
-import { type MenuShortcutName } from '../menu/shortcuts'
+import { MD_EXT } from '@common/util/file-extention-checks'
 import type { SidebarSectionId, SidebarViewId } from '@dts/common/sidebar-views'
+import * as bcp47 from 'bcp-47'
+import { app, nativeTheme } from 'electron'
+import path from 'path'
+import type { EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
+import { v4 as uuid4 } from 'uuid'
+import { type MenuShortcutName } from '../menu/shortcuts'
 
-export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'bordeaux'
+export type MarkdownTheme = 'berlin' | 'frankfurt' | 'bielefeld' | 'karl-marx-stadt' | 'bordeaux'
+export const DEFAULT_FILE_FILTER_INCLUDE = [...MD_EXT]
 
 // This is a handy interface to add groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
@@ -28,7 +31,7 @@ export type MarkdownTheme = 'berlin'|'frankfurt'|'bielefeld'|'karl-marx-stadt'|'
 // NOTE: The generics are meant so that you can restrict certain groupings.
 // E.g., FileTypeSettings<true, 'zettlr'> enforces these values for the two
 // properties.
-interface FileTypeSettings<F = boolean, O = 'zettlr'|'system'> {
+interface FileTypeSettings<F = boolean, O = 'zettlr' | 'system'> {
   showInFilemanager: F
   openWith: O
 }
@@ -39,16 +42,31 @@ interface FileTypeSettings<F = boolean, O = 'zettlr'|'system'> {
 type Extends<T, U extends T> = U // Helper type to allow for autocomplete
 export type ConfigurableEditorShortcuts = Extends<
   EditorShortcutName,
-  'nav-history-back'|'nav-history-forward'|
-  'table-align'|'table-align-col-center'|'table-align-col-left'|
-  'table-align-col-right'|'tr-zap-gremlins'|'tr-emdash-add-spaces'|
-  'tr-double-quotes-to-single'|'tr-emdash-remove-spaces'|
-  'tr-ensure-double-quotes'|'tr-italics-to-quotes'|'tr-quotes-to-italics'|
-  'tr-quotes-to-magic'|'tr-remove-line-breaks'|'tr-sentence-case'|
-  'tr-single-quotes-to-double'|'tr-straighten-quotes'|
-  'tr-strip-duplicate-spaces'|'tr-title-case'
+  | 'nav-history-back'
+  | 'nav-history-forward'
+  | 'table-align'
+  | 'table-align-col-center'
+  | 'table-align-col-left'
+  | 'table-align-col-right'
+  | 'tr-zap-gremlins'
+  | 'tr-emdash-add-spaces'
+  | 'tr-double-quotes-to-single'
+  | 'tr-emdash-remove-spaces'
+  | 'tr-ensure-double-quotes'
+  | 'tr-italics-to-quotes'
+  | 'tr-quotes-to-italics'
+  | 'tr-quotes-to-magic'
+  | 'tr-remove-line-breaks'
+  | 'tr-sentence-case'
+  | 'tr-single-quotes-to-double'
+  | 'tr-straighten-quotes'
+  | 'tr-strip-duplicate-spaces'
+  | 'tr-title-case'
 >
-export type ConfigurableUIShortcuts = Extends<MenuShortcutName, 'previous-tab'|'next-tab'|'filter-files'>
+export type ConfigurableUIShortcuts = Extends<
+  MenuShortcutName,
+  'previous-tab' | 'next-tab' | 'filter-files'
+>
 
 /**
  * This type describes an entry of the ignored rules array in the config. We
@@ -80,6 +98,12 @@ export interface AgentApiConfig {
    * file in the user-data directory once the listener is up.
    */
   port: number
+  /**
+   * Normalized Levenshtein similarity (0–1) at or above which two claims in
+   * one review submission count as sharing a description, and the submission
+   * is refused with DUPLICATE_CLAIM_DESCRIPTION.
+   */
+  claimDescriptionSimilarityThreshold: number;
 }
 
 export interface ReferenceConfig {
@@ -97,26 +121,26 @@ export interface ConfigOptions {
   references: ReferenceConfig
 
   darkMode: boolean
-  darkModeEditor: 'match'|'light'|'dark'
-  autoDarkMode: 'off'|'system'|'schedule'
+  darkModeEditor: 'match' | 'light' | 'dark';
+  autoDarkMode: 'off' | 'system' | 'schedule';
   autoDarkModeStart: string
   autoDarkModeEnd: string
 
-  openDirectory: string|null
+  openDirectory: string | null;
   attachmentExtensions: string[]
   alwaysReloadFiles: boolean
   muteLines: boolean
 
   // NOTE to everyone: These options (and possibly others) that pertain to the
   // file manager should slowly be migrated into the fileManager group below.
-  fileManagerMode: 'thin'|'combined'|'expanded'
+  fileManagerMode: 'thin' | 'combined' | 'expanded';
   fileManagerShowFiles: boolean
   fileManagerShowWorkspaces: boolean
   fileMeta: boolean
-  fileMetaTime: 'modtime'|'creationtime'
-  sorting: 'natural'|'ascii'
+  fileMetaTime: 'modtime' | 'creationtime';
+  sorting: 'natural' | 'ascii';
   sortFoldersFirst: boolean
-  fileNameDisplay: 'filename'|'title'|'heading'|'title+heading'
+  fileNameDisplay: 'filename' | 'title' | 'heading' | 'title+heading';
 
   // NOTE to everyone: The various filemanager options (see above) should over
   // time be migrated into this group.
@@ -124,6 +148,17 @@ export interface ConfigOptions {
     twoStepCollapseWorkspaces: boolean
     // If this is true, the config will never attempt to auto-sort workspaces.
     sortWorkspacesManually: boolean
+    /** Expanded directory rows in the Explorer, persisted across restarts. */
+    expandedDirectories: string[];
+    /** Explicitly hidden directory paths. Descendants are hidden by containment. */
+    hiddenDirectories: string[];
+    /** Temporarily reveal every hidden directory without clearing hidden flags. */
+    showHiddenDirectories: boolean;
+    /** Permanent inclusion/exclusion policy shared by the file manager and file picker. */
+    filters: {
+      include: string[];
+      exclude: string[];
+    };
   }
 
   newFileNamePattern: string
@@ -146,13 +181,15 @@ export interface ConfigOptions {
   tikz: {
     /** Optional Pandoc data tree for editor TikZ rendering. */
     dataDir: string
+    /** Optional centralized figure source tree; empty uses FIGURES_SOURCE_DIR or ~/.pandoc/figures. */
+    figuresDir: string;
   }
   export: {
-    dir: 'temp'|'cwd'|'ask'
+    dir: 'temp' | 'cwd' | 'ask';
     stripTags: boolean
     autoOpenExportedFiles: boolean
     enforceMarkSupport: boolean
-    stripLinks: 'full'|'unlink'|'no'
+    stripLinks: 'full' | 'unlink' | 'no';
     cslLibrary: string
     cslStyle: string
     useBundledPandoc: boolean
@@ -191,19 +228,28 @@ export interface ConfigOptions {
     idGen: string
     linkAddFileTitle: boolean
     linkWithIDIfPossible: boolean
-    linkFormat: 'link|title'|'title|link'
+    linkFormat: 'link|title' | 'title|link';
     autoSearch: boolean
     customDirectory: string
   }
   editor: {
     autocompleteSuggestEmojis: boolean
-    snippetAutocompleteTriggerCharacter: ':'
     autocompleteWithEnter: boolean
     autocompleteWithTab: boolean
-    autoSave: 'off'|'immediately'|'delayed'
+    /** Portable VS Code `.code-snippets` source file. */
+    snippetsFile: string;
+    /** Portable prose-completion additions file; new entries are appended here. */
+    proseCompletionFile: string;
+    /** Additional portable prose-completion catalogues, read-only to Zettlr. */
+    proseCompletionExtraFiles: string[];
+    /** Optional QuickTeX Vimscript configuration file. */
+    quickTexFile: string;
+    /** QuickTeX plugin root whose runtime files Neovim should execute. */
+    quickTexPluginDirectory: string;
+    autoSave: 'off' | 'immediately' | 'delayed';
     // Run flowmark over the document on every save (issue #26). Off by default.
     formatOnSave: boolean
-    citeStyle: 'in-text'|'in-text-suffix'|'regular'
+    citeStyle: 'in-text' | 'in-text-suffix' | 'regular';
     autoCloseBrackets: boolean
     showLinkPreviews: boolean
     showWhitespace: boolean
@@ -215,17 +261,16 @@ export interface ConfigOptions {
     alwaysIndentLineOnTab: boolean
     fontSize: number
     countChars: boolean
-    inputMode: 'default'|'vim'|'emacs'
-    boldFormatting: '**'|'__'
-    italicFormatting: '_'|'*'
-    highlightFormatting: 'span'|'=='
-    readabilityAlgorithm: 'dale-chall'|'gunning-fog'|'coleman-liau'|'automated-readability'
+    inputMode: 'default' | 'vim' | 'emacs';
+    boldFormatting: '**' | '__';
+    italicFormatting: '_' | '*';
+    highlightFormatting: 'span' | '==';
+    readabilityAlgorithm: 'dale-chall' | 'gunning-fog' | 'coleman-liau' | 'automated-readability';
     lint: {
-      markdown: boolean
       languageTool: {
         active: boolean
-        level: 'picky'|'default'
-        motherTongue: string // e.g., en-US, de-DE
+        level: 'picky' | 'default';
+        motherTongue: string; // e.g., en-US, de-DE
         variants: {
           en: string
           de: string
@@ -233,10 +278,14 @@ export interface ConfigOptions {
           ca: string
         }
         ignoredRules: LanguageToolIgnoredRuleEntry[]
-        provider: 'official'|'custom'
+        provider: 'cli' | 'official' | 'custom';
         customServer: string
         username: string
         apiKey: string
+      };
+      flowmark: {
+        /** How long one flowmark-lint run may take before it is reported as timed out. */
+        timeoutMs: number;
       }
     }
     autoCorrect: {
@@ -255,7 +304,7 @@ export interface ConfigOptions {
     previewModeShowSyntaxWhenCursorIsAdjacent: boolean
     imageWidth: number
     imageHeight: number
-    renderingMode: 'preview'|'raw'
+    renderingMode: 'preview' | 'raw';
     renderCitations: boolean
     renderIframes: boolean
     renderImages: boolean
@@ -308,7 +357,7 @@ export interface ConfigOptions {
     avoidNewTabs: boolean
     iframeWhitelist: string[]
     checkForUpdates: boolean
-    zoomBehavior: 'gui'|'editor'
+    zoomBehavior: 'gui' | 'editor';
   }
   shortcuts: {
     editor: Record<ConfigurableEditorShortcuts, string>
@@ -346,6 +395,7 @@ export function getConfigTemplate (): ConfigOptions {
     },
     tikz: {
       dataDir: '',
+      figuresDir: '',
     },
     window: {
       // Only use native window appearance by default on macOS. If this value
@@ -386,6 +436,13 @@ export function getConfigTemplate (): ConfigOptions {
     fileManager: {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
+      expandedDirectories: [],
+      hiddenDirectories: [],
+      showHiddenDirectories: false,
+      filters: {
+        include: [...DEFAULT_FILE_FILTER_INCLUDE],
+        exclude: [],
+      },
     },
     newFileNamePattern: '%id.md',
     newFileDontPrompt: false, // If true immediately creates files
@@ -423,9 +480,13 @@ export function getConfigTemplate (): ConfigOptions {
       autoSave: 'off',
       formatOnSave: false, // Run flowmark on save (issue #26)
       autocompleteSuggestEmojis: true,
-      snippetAutocompleteTriggerCharacter: ':',
       autocompleteWithEnter: false,
       autocompleteWithTab: true,
+      snippetsFile: path.join(app.getPath('home'), '.pandoc', 'snippets', 'snippets.code-snippets'),
+      proseCompletionFile: path.join(app.getPath('home'), '.pandoc', 'completions', 'prose.txt'),
+      proseCompletionExtraFiles: [],
+      quickTexFile: '',
+      quickTexPluginDirectory: '',
       autoCloseBrackets: true,
       showLinkPreviews: true, // Whether to fetch link previews in the editor
       showWhitespace: false,
@@ -444,7 +505,6 @@ export function getConfigTemplate (): ConfigOptions {
       highlightFormatting: '==', // Can be 'span' or ==
       readabilityAlgorithm: 'dale-chall', // The algorithm to use with readability mode.
       lint: {
-        markdown: true, // Should Markdown be linted?
         languageTool: {
           active: false, // Utilize languageTool?
           level: 'default', // API: https://languagetool.org/http-api/#!/default/post_check
@@ -459,10 +519,13 @@ export function getConfigTemplate (): ConfigOptions {
           // This is an (initially empty) array of rules the user chose to
           // ignore globally.
           ignoredRules: [],
-          provider: 'official',
+          provider: 'cli',
           customServer: '',
           username: '',
           apiKey: '',
+        },
+        flowmark: {
+          timeoutMs: 60_000,
         },
       },
       autoCorrect: {
@@ -624,13 +687,14 @@ export function getConfigTemplate (): ConfigOptions {
         'tr-strip-duplicate-spaces': '',
         'tr-title-case': '',
         'tr-zap-gremlins': '',
-    },
+      },
     },
     uuid: uuid4(), // The app's unique anonymous identifier
     // Agent API HTTP server (OpenAPI / REST) — spec: Zettlr-Pandoc Editor Agent API
     agentApi: {
       enabled: true,
       port: 27412,
+      claimDescriptionSimilarityThreshold: 0.94,
     },
     references: {
       authorityReportDebounceMs: 500,

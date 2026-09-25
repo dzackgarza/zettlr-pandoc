@@ -51,7 +51,7 @@ export interface LocatedAttribute {
 /**
  * Parses an authored attribute block and locates the full id token.
  *
- * This is the single id-token locator (review B6): reference-lint imports it
+ * This is the single id-token locator for reference extraction consumers
  * instead of keeping a parallel copy. It fails LOUD on an inconsistent
  * attribute block (an id the parser reported but the authored text does not
  * contain is a parser bug, not an authorable state) — callers must not
@@ -273,14 +273,14 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
   }
 
   const visitPandocDiv = (node: PandocDiv): void => {
-    const openLineEnd = markdown.indexOf('\n', node.from)
-    const openLine = markdown.slice(node.from, openLineEnd === -1 || openLineEnd > node.to ? node.to : openLineEnd)
-    const brace = openLine.indexOf('{')
-    if (brace === -1) {
+    if (node.attributeRange === undefined) {
       return
     }
 
-    const located = locateAttribute(openLine.slice(brace), node.from + brace)
+    const located = locateAttribute(
+      markdown.slice(node.attributeRange.from, node.attributeRange.to),
+      node.attributeRange.from
+    )
     if (located === undefined) {
       return
     }

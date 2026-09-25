@@ -27,18 +27,21 @@ import { drawSelection, dropCursor, EditorView, lineNumbers } from '@codemirror/
 import { onMounted, ref, toRef, watch } from 'vue'
 import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
 import { bracketMatching, codeFolding, foldGutter, indentOnInput, indentUnit, StreamLanguage } from '@codemirror/language'
-import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from '@common/modules/markdown-editor/theme/syntax'
+import { codeSyntaxHighlighter } from '@common/modules/markdown-editor/theme/syntax'
 import { yaml } from '@codemirror/lang-yaml'
 import { lua } from '@codemirror/legacy-modes/mode/lua'
 import { EditorState, type Extension } from '@codemirror/state'
 import { css } from '@codemirror/lang-css'
-import markdownParser from '@common/modules/markdown-editor/parser/markdown-parser'
-import { yamlLint } from '@common/modules/markdown-editor/linters/yaml-lint'
+import { json } from '@codemirror/lang-json'
 import { lintGutter } from '@codemirror/lint'
+import { externalLinterExtension } from '@common/modules/markdown-editor/diagnostics/external-linter-adapter'
+import {
+  jsonDiagnosticProvider,
+  yamlDiagnosticProvider
+} from '@common/diagnostics/providers/structured-data'
 import { showStatusbarEffect, statusbar } from '@common/modules/markdown-editor/statusbar'
 import { search } from '@codemirror/search'
 import { history } from '@codemirror/commands'
-import { snippetSyntaxExtension } from '@common/modules/markdown-utils/snippets-syntax-extension'
 import { plainLinkHighlighter } from '@common/modules/markdown-utils/plain-link-highlighter'
 import { useConfigStore } from 'source/pinia'
 import { darkMode, darkModeEffect } from '../modules/markdown-editor/theme/dark-mode'
@@ -48,7 +51,7 @@ import { type CustomEditorShortcut } from '../modules/markdown-editor/keymaps/sh
 
 const configStore = useConfigStore()
 
-type SupportedLanguage = 'css'|'yaml'|'lua'|'markdown-snippets'
+type SupportedLanguage = 'css'|'yaml'|'jsonc'|'lua'
 
 /**
  * We have to define the CodeMirror instance outside of Vue, since the Proxy-
@@ -116,26 +119,27 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
       return [
         ...extensions,
         yaml(),
-        yamlLint
+        externalLinterExtension({
+          provider: yamlDiagnosticProvider,
+          context: () => undefined
+        })
       ]
     case 'css':
       return [
         ...extensions,
         css(),
       ]
-    case 'markdown-snippets':
+    case 'jsonc':
       return [
         ...extensions,
-        snippetSyntaxExtension,
-        markdownParser({
-          // NOTE: This is not reactive to configuration changes while the code
-          // editor is on, but I can't imagine too many people making use of the
-          // linkFormat explicitly, or changing it that often (they shouldn't,
-          // after all). Should we ever need to add more configs, I can still
-          // react to changes in the parser config.
-          zknLinkParserConfig: { format: configStore.config.zkn.linkFormat }
-        }), // Comes from the main editor
-        markdownSyntaxHighlighter() // Comes from the main editor
+        json(),
+        externalLinterExtension({
+          provider: jsonDiagnosticProvider,
+          context: () => ({
+            allowComments: true,
+            allowTrailingComma: true
+          })
+        })
       ]
     case 'lua':
       return [

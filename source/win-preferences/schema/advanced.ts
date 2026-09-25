@@ -106,7 +106,7 @@ export function getAdvancedFields (config: ConfigOptions): PreferencesFieldset[]
     },
     {
       title: trans('File Treatment'),
-      infoString: trans('Decide where various file types are displayed, and how to open them.'),
+      infoString: trans('Decide where broad file-type groups are displayed, and how to open them. Permanent File filters in the File Manager preferences can further narrow what is visible.'),
       group: PreferencesGroups.Advanced,
       help: undefined, // TODO
       fields: [

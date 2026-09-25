@@ -35,6 +35,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import LogMessage from './LogMessage.vue'
 import WindowChrome from '@common/vue/window/WindowChrome.vue'
 import { nextTick, ref, computed } from 'vue'
@@ -137,7 +138,7 @@ const filteredMessages = computed<LM[]>(() => {
 
 // AUTOMATIC REFRESH INTERVAL
 setInterval(() => {
-  fetchData().catch(e => console.error('Could not fetch new log data', e))
+  fetchData().catch(e => reportError('Could not fetch new log data', e))
 }, 1000)
 
 /**

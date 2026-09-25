@@ -156,6 +156,11 @@ export class SearchProvider implements ProviderContract {
         return await this.startSearch(payload.query)
       } else if (command === 'cancel-search') {
         this.cancelSearch()
+        this.searchGeneration++
+        broadcastIPCMessage('search-provider', {
+          type: 'search-end',
+          generation: this.searchGeneration
+        } satisfies SearchProviderBroadcast)
       } else if (command === 'replace-in-files') {
         return await this.replaceInFiles(payload.targets, payload.replacement, payload.preserveCase)
       } else if (command === 'undo-last-replace') {
@@ -199,17 +204,16 @@ export class SearchProvider implements ProviderContract {
    */
   private async startSearch (query: SearchQuery): Promise<number> {
     this.cancelSearch()
+    const generation = ++this.searchGeneration
     const compiled = compileQuery(query)
     if (compiled.status === 'empty') {
-      this.searchGeneration++
-      broadcastIPCMessage('search-provider', { type: 'search-end', generation: this.searchGeneration } satisfies SearchProviderBroadcast)
+      broadcastIPCMessage('search-provider', { type: 'search-end', generation } satisfies SearchProviderBroadcast)
       return 0
     }
     if (compiled.status === 'invalid-regex') {
-      this.searchGeneration++
       broadcastIPCMessage('search-provider', {
         type: 'search-failed',
-        generation: this.searchGeneration,
+        generation,
         failure: { kind: 'invalid-query', message: compiled.message }
       } satisfies SearchProviderBroadcast)
       return 0
@@ -218,19 +222,33 @@ export class SearchProvider implements ProviderContract {
     const { openWorkspaces, openFiles } = this._config.get().app
     const roots = [...openWorkspaces]
     const candidates = (await Promise.all(roots.map(async root => await this._fsal.readDirectoryRecursively(root)))).flat()
+    if (generation !== this.searchGeneration) {
+      return 0 // A newer request took ownership while this one enumerated roots.
+    }
     const includesPath = compilePathFilter(query.include, query.exclude)
+    const queue: string[] = []
 
     for (const candidate of candidates.concat(openFiles)) {
+      if (generation !== this.searchGeneration) {
+        return 0
+      }
       if (!includesPath(this.relativePath(candidate, roots))) {
         continue
       }
-      if (await this._fsal.isFile(candidate) && !this.fileSearchQueue.includes(candidate)) {
-        this.fileSearchQueue.push(candidate)
+      const candidateIsFile = await this._fsal.isFile(candidate)
+      if (generation !== this.searchGeneration) {
+        return 0
+      }
+      if (candidateIsFile && !queue.includes(candidate)) {
+        queue.push(candidate)
       }
     }
 
-    this.searchGeneration++
-    this.currentSearch = { pattern: compiled.pattern, generation: this.searchGeneration }
+    if (generation !== this.searchGeneration) {
+      return 0
+    }
+    this.fileSearchQueue = queue
+    this.currentSearch = { pattern: compiled.pattern, generation }
     this.lastPattern = compiled.pattern
     this.sumFilesToSearch = this.fileSearchQueue.length
 

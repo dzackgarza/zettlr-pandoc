@@ -23,7 +23,7 @@ export type EditorShortcutName = 'autocomplete-invoke'|'autocomplete-accept'|
   'md-format-document'|'md-bold'|'md-italic'|'md-task-list'|'md-comment'|
   // Search
   'search-find-next'|'search-find-previous'|'search-select-matches'|
-  'search-go-to-line'|'search-select-next'|'search-references'|
+  'search-go-to-line'|'search-select-next'|'search-references'|'search-files'|
   // Per-pane session history
   'nav-history-back'|'nav-history-forward'|
   // Folding
@@ -80,6 +80,9 @@ export const defaultKeybindings: Record<EditorShortcutName, DefaultShortcut> = {
   // Workspace reference search on the freed Mod-P: the print menu items keep
   // working, they just no longer claim the accelerator.
   'search-references': { key: 'Mod-p' },
+  // This fork keeps Mod-P as the command launcher; Mod-Shift-P opens the
+  // launcher's existing workspace-file view directly.
+  'search-files': { key: 'Mod-Shift-p' },
   // Per-pane Back/Forward. These take Alt-Arrow (Ctrl-Arrow on macOS) away
   // from cursorSyntaxLeft/Right, which move to Mod-Alt-Arrow in `default.ts`.
   'nav-history-back': { key: 'Alt-ArrowLeft', mac: 'Ctrl-ArrowLeft' },

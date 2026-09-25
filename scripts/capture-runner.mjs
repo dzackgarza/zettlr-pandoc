@@ -15,6 +15,11 @@ const captures = {
     bundle: "pandoc-div-visual-bundle.js",
     driver: "test/editor-pandoc-div-visual-capture.mjs",
   },
+  "yaml-frontmatter": {
+    entry: "test/editor-yaml-frontmatter-visual-entry.ts",
+    bundle: "yaml-frontmatter-visual-bundle.js",
+    driver: "test/editor-yaml-frontmatter-visual-capture.mjs",
+  },
   "widget-indent": {
     entry: "test/editor-widget-indent-visual-entry.ts",
     bundle: "widget-indent-visual-bundle.js",
@@ -48,6 +53,7 @@ const captures = {
     entry: "test/reference-completion-visual-entry.ts",
     bundle: "reference-completion-visual-bundle.js",
     driver: "test/reference-completion-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "reference-hover": {
     entry: "test/reference-hover-visual-entry.ts",
@@ -76,6 +82,7 @@ const captures = {
     entry: "test/editor-review-diff-visual-entry.ts",
     bundle: "review-diff-visual-bundle.js",
     driver: "test/editor-review-diff-visual-capture.mjs",
+    loader: ".svg=dataurl",
   },
   "editor-annotations": {
     entry: "test/editor-annotations-visual-entry.ts",
@@ -139,4 +146,13 @@ if (capture.build !== undefined) {
 // Playwright launches Electron from inside the driver, so the driver itself
 // is a plain node process — bun cannot complete Playwright's CDP attach to
 // Electron. xvfb still supplies the display Electron needs on a headless box.
-run("xvfb-run", ["-a", "node", path.join(root, capture.driver), output]);
+// Every driver runs under the tsx loader, so a driver may import TypeScript
+// modules directly.
+run("xvfb-run", [
+  "-a",
+  "node",
+  "--import",
+  "tsx",
+  path.join(root, capture.driver),
+  output,
+]);

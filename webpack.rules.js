@@ -72,6 +72,11 @@ module.exports = [
     type: 'asset/source'
   },
   {
+    // Markdown documents shipped as text, e.g. the agent API's HELP.md
+    test: /\.md$/,
+    type: 'asset/source'
+  },
+  {
     test: /(.ts|.tsx)$/,
     exclude: /(node_modules|\.webpack)/,
     use: {

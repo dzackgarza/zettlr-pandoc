@@ -140,6 +140,7 @@
  * END HEADER
  */
 
+import { reportError } from '@common/util/error-reporting'
 import formatDate from '@common/util/format-date'
 import localiseNumber from '@common/util/localise-number'
 import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
@@ -188,9 +189,9 @@ const createdLabel = trans('Created')
 const filesLabel = trans('Files')
 const projectPropertiesLabel = trans('Project Settings…')
 const projectToggleLabel = trans('Enable Project')
-const quartoProjectLabel = trans('Quarto project settings')
-const bindManifestLabel = trans('Quarto manifest')
-const selectManifestLabel = trans('Select manifest…')
+const quartoProjectLabel = trans('Quarto book')
+const bindManifestLabel = trans('Quarto book file')
+const selectManifestLabel = trans('Select book file…')
 const unbindManifestLabel = trans('Unbind')
 const sortByNameLabel = trans('Sort by name')
 const sortByTimeLabel = trans('Sort by time')
@@ -323,9 +324,15 @@ onBeforeMount(setSorting)
  * Presets the sorting value with the sorting of the directory descriptor prop.
  */
 function setSorting (): void {
-  const [ type, direction ] = props.directory.settings.sorting.split('-') as ['name'|'time', 'up'|'down']
+  const [ type, direction ] = props.directory.settings.sorting.split('-')
+  // This legacy popover exposes only the historical name/time pair. Extended
+  // Explorer orderings are managed by the visible Explorer controls; opening
+  // Properties must not coerce one of those methods back to a legacy value.
+  if (type !== 'name' && type !== 'time') {
+    return
+  }
   sortingType.value = type
-  sortingDirection.value = direction
+  sortingDirection.value = direction === 'down' ? 'down' : 'up'
 }
 
 function openProjectPreferences (): void {
@@ -333,7 +340,7 @@ function openProjectPreferences (): void {
     command: 'open-project-preferences',
     payload: props.directory.path
   })
-    .catch(err => console.error(err))
+    .catch(err => reportError(err))
   emit('close')
 }
 
@@ -345,7 +352,7 @@ function updateIcon (iconShape: string|null): void {
       settings: { icon: iconShape }
     } satisfies DirSettingsCommandAPI
   })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function updateColor (color: string|null): void {
@@ -356,7 +363,7 @@ function updateColor (color: string|null): void {
       settings: { color }
     } satisfies DirSettingsCommandAPI
   })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function updateSorting (): void {
@@ -367,7 +374,7 @@ function updateSorting (): void {
       sorting: `${sortingType.value}-${sortingDirection.value}`
     }
   })
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 /**
@@ -432,8 +439,8 @@ function sendBinding (manifest: string|null): void {
  * @param  {unknown}  err  The error the call rejected with
  */
 function surfaceBindingFailure (err: unknown): void {
-  console.error(err)
-  showToast(trans('Could not change the Quarto manifest: %s', err instanceof Error ? err.message : String(err)), 'error')
+  reportError(err)
+  showToast(trans('Could not change the Quarto book: %s', err instanceof Error ? err.message : String(err)), 'error')
 }
 
 /**
@@ -446,9 +453,9 @@ function surfaceBindingFailure (err: unknown): void {
 function describeBindingRejection (reason: 'not-a-file'|'outside-directory'|'no-such-directory'): string {
   switch (reason) {
     case 'not-a-file':
-      return trans('No Quarto manifest at that path.')
+      return trans('No Quarto book file exists at that path.')
     case 'outside-directory':
-      return trans('A Quarto manifest must live inside the directory it describes, so that its chapters do too.')
+      return trans('Choose a Quarto book file inside this folder.')
     case 'no-such-directory':
       return trans('The directory %s is no longer open.', props.directory.name)
   }
@@ -466,13 +473,13 @@ function updateProject (): void {
       command: 'dir-new-project',
       payload: { path: props.directory.path }
     })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
   } else {
     ipcRenderer.invoke('application', {
       command: 'dir-remove-project',
       payload: { path: props.directory.path }
     })
-      .catch(e => console.error(e))
+      .catch(e => reportError(e))
   }
 }
 </script>

@@ -97,7 +97,7 @@ describe('retained integration in packaged Electron', function () {
     })
     assert.equal(submitted.status, 200, await submitted.clone().text())
     const result: Submitted = await submitted.json()
-    const read: ReadDocument = await (await fetch(`${api}/v1/documents/${result.documentId}/content`)).json()
+    const read: ReadDocument = await (await fetch(`${api}/v1/documents/${result.documentId}?includeContent=true`)).json()
     assert.equal(read.content, proposed)
     assert.equal(result.focused, true)
     await editor.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('symmetric and nondegenerate'))

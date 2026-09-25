@@ -1,3 +1,5 @@
+import { scanPandocAttributeList } from '@lezer/markdown'
+
 /**
  * Represents a parsed Pandoc LinkAttributes string (e.g., `{width=50%}`).
  */
@@ -50,18 +52,6 @@ export function formatPandocAttributes (attributes: ParsedPandocAttributes): str
   return parts.join(' ')
 }
 
-/** Pandoc Attribute Regex: {#my-id .classes .other-classes key=value attr="other value"}
- *
- *  #(?<id>[\p{L}\p{N}_\-.:]+)       => id
- *  \.(?<class>[\w\-_]+)              => class
- *  (?<key>[\w\-_]+)                  => key
- *  "(?<quoted>(?:\\.|[^"\\])*)"      => quoted values (backslash escapes,
- *                                       e.g. \" for a literal quote, per
- *                                       Pandoc's attribute syntax)
- *  (?<unquoted>[^\s"]+)              => unquoted values
- */
-const pandocAttributeRe = /(?:^|\s)(?:#(?<id>[\p{L}\p{N}_\-.:]+)(?=\s|$)|\.(?<class>[\w\-_]+)|(?<attr>(?<key>[\w\-_]+)=(?:"(?<quoted>(?:\\.|[^"\\])*)"|(?<unquoted>[^\s"]+))))/gu
-
 /**
  * Parses a Pandoc link attribute string, as defined in
  * https://pandoc.org/MANUAL.html#extension-link_attributes.
@@ -71,57 +61,41 @@ const pandocAttributeRe = /(?:^|\s)(?:#(?<id>[\p{L}\p{N}_\-.:]+)(?=\s|$)|\.(?<cl
  * @return  {ParsedPandocAttributes}  The parsed string
  */
 export function parsePandocAttributes (attrString: string): ParsedPandocAttributes {
-  attrString = attrString.trim()
-  if (attrString.startsWith('{')) {
-    attrString = attrString.slice(1)
-  }
-
-  if (attrString.endsWith('}')) {
-    attrString = attrString.slice(0, -1)
+  const trimmed = attrString.trim()
+  const source = trimmed.startsWith('{') ? trimmed : `{${trimmed}}`
+  const scanned = scanPandocAttributeList(source)
+  if (scanned.status !== 'match' || scanned.value.to !== source.length) {
+    return {}
   }
 
   const parsed: ParsedPandocAttributes = {}
-
-  let match
-  while ((match = pandocAttributeRe.exec(attrString)) !== null) {
-    // If there are no groups, then something went wrong
-    if (!match.groups) { break }
-
-    if (match.groups.id) {
-      parsed.id = match.groups.id
+  for (const token of scanned.value.tokens) {
+    if (token.kind === 'id') {
+      parsed.id = token.value
+      continue
+    }
+    if (token.kind === 'class' || token.kind === 'special') {
+      parsed.classes ??= []
+      parsed.classes.push(token.value)
+      continue
     }
 
-    if (match.groups.class) {
-      if (parsed.classes === undefined) {
-        parsed.classes = []
-      }
-      parsed.classes.push(match.groups.class)
+    const key = token.key
+    let value = token.value
+    if (key === 'id') {
+      parsed.id = value
+      continue
     }
-
-    if (match.groups.attr) {
-      const key = match.groups.key
-      // A quoted value carries backslash escapes (\" -> "), which resolve to
-      // the escaped literal character; unquoted values are taken verbatim.
-      let value = match.groups.unquoted ?? match.groups.quoted?.replace(/\\(.)/g, '$1') ?? ''
-
-      if (key.toLowerCase() === 'width') {
-        if (/^\d+$/.test(value)) {
-          value += 'px'
-        }
-      }
-
-      if (key.toLowerCase() === 'height') {
-        if (/^\d+$/.test(value)) {
-          value += 'px'
-        }
-      }
-
-      if (parsed.properties === undefined) {
-        parsed.properties = {}
-      }
-      parsed.properties[key] = value
+    if (key === 'class') {
+      parsed.classes ??= []
+      parsed.classes.push(...value.split(/\s+/).filter(Boolean))
+      continue
     }
+    if ((key.toLowerCase() === 'width' || key.toLowerCase() === 'height') && /^\d+$/.test(value)) {
+      value += 'px'
+    }
+    parsed.properties ??= {}
+    parsed.properties[key] = value
   }
-
   return parsed
 }

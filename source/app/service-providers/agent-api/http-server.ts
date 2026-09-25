@@ -21,52 +21,90 @@
  * END HEADER
  */
 
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import { sha256Text } from "@common/util/sha256";
 import type {
-  AgentApiOperations,
-  AgentApiResponseBody,
-  AgentEvent,
   AddAnnotationMessageRequest,
   AddReviewCommentRequest,
+  AgentApiOperations,
+  AgentApiResponseBody,
   AgentError,
   AgentErrorCode,
+  DocumentSummary,
   AgentErrorResponse,
+  AgentEvent,
+  FigureCreateRequest,
+  FigureSaveRequest,
+  FigureWriteRequest,
+  LintDiagnostic,
+  LintResponse,
+  LintSeverityCounts,
   PingResponse,
   ReadSide,
+  RenderBibliographyRequest,
+  RenderCitationRequest,
+  RenderCitationsRequest,
   ReviewEventsResponse,
   ReviewListEntry,
   ReviewMutationPrecondition,
+  ReviewSubmissionRequest,
   SearchDocumentRequest,
   SubmitProposalRequest,
-  ReviewSubmissionRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
+import type CiteprocProvider from "@providers/citeproc";
+import { CiteprocRenderInvariantError } from "@providers/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentManager from "@providers/documents";
-import type { AnnotationFailure, ReviewFailure } from "@providers/documents/document-collaboration-application-service";
-import type LogProvider from "@providers/log";
-import ProviderContract from "@providers/provider-contract";
-import crypto from "crypto";
-import { app } from "electron";
-import fs from "fs";
-import http from "http";
-import OpenAPIBackend, {
-  type Context,
-  type Document as OpenApiDefinition,
-} from "openapi-backend";
-import path from "path";
-import { fileURLToPath } from "url";
-import { parseDocument, type Document } from "yaml";
+import type {
+  AnnotationFailure,
+  ReviewFailure,
+} from "@providers/documents/document-collaboration-application-service";
 import {
   classifyReviewState,
-  sidecarUnresolvedChunks,
   reviewPatch,
   sidecarOutstandingChunks,
+  sidecarUnresolvedChunks,
   toWirePacket,
 } from "@providers/documents/review-diff-store";
-import { sha256Text } from "@common/util/sha256";
-import AgentDocumentQueries, {
-  SearchPatternError,
-  SearchTimeoutError,
-} from "./document-queries";
+import type FSAL from "@providers/fsal";
+import type LogProvider from "@providers/log";
+import ProviderContract from "@providers/provider-contract";
+import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import crypto from "crypto";
+import { app } from "electron";
+import { get as levenshteinDistance } from "fast-levenshtein";
+import fs from "fs";
+import http from "http";
+import OpenAPIBackend, { type Context, type Document as OpenApiDefinition } from "openapi-backend";
+import path from "path";
+import { fileURLToPath } from "url";
+import { type Document, parseDocument } from "yaml";
+import {
+  CentralFigureAlreadyExistsError,
+  CentralFigureInputError,
+  CentralFigureNotFoundError,
+  createCentralTikzFigure,
+  listCentralFigures,
+  readCentralFigure,
+  resolveCentralFiguresDirectory,
+  searchCentralFigures,
+  writeCentralFigure,
+} from "../../util/central-figures-store";
+import {
+  createDocumentLintContext,
+  lintDocumentText,
+  type DocumentLintDocumentOptions,
+} from "../../util/document-lint";
+import {
+  documentCrossReferenceSystem,
+  documentLintAuthority,
+} from "../../util/document-bibliographies";
+import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
+import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
+import { HELP_DOCUMENT } from "./help-content";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -80,6 +118,53 @@ const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
  * serves no one.
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
+
+interface ClaimDescriptionCollision {
+  firstIndex: number;
+  secondIndex: number;
+  similarity: number;
+}
+
+function normalizeClaimDescription(description: string): string {
+  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
+}
+
+/**
+ * Descriptions are per-claim review justifications, not batch labels. The
+ * configured threshold (`agentApi.claimDescriptionSimilarityThreshold`)
+ * catches copy/paste variants while leaving room for genuinely related edits
+ * to share some vocabulary. Whitespace and case are ignored so superficial
+ * formatting changes cannot evade the check.
+ */
+function findClaimDescriptionCollision(
+  claims: readonly { description: string }[],
+  threshold: number,
+): ClaimDescriptionCollision | undefined {
+  const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
+  for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < normalized.length; secondIndex += 1) {
+      const first = normalized[firstIndex];
+      const second = normalized[secondIndex];
+      const maxLength = Math.max(first.length, second.length);
+      const minLength = Math.min(first.length, second.length);
+
+      if (maxLength === 0) {
+        return { firstIndex, secondIndex, similarity: 1 };
+      }
+      // Levenshtein similarity cannot exceed minLength / maxLength, so skip
+      // pairs that cannot possibly cross the rejection threshold.
+      if (minLength / maxLength < threshold) {
+        continue;
+      }
+
+      const similarity = 1 - levenshteinDistance(first, second) / maxLength;
+      if (similarity >= threshold) {
+        return { firstIndex, secondIndex, similarity };
+      }
+    }
+  }
+  return undefined;
+}
 
 /**
  * The HTTP status an AgentErrorCode earns when a route has no code-specific
@@ -124,6 +209,11 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   METHOD_NOT_FOUND: 404,
   INVALID_PARAMS: 400,
   PERSISTENCE_FAILED: 500,
+  CITATION_DATABASE_NOT_LOADED: 404,
+  CITATION_NOT_FOUND: 404,
+  FIGURE_NOT_FOUND: 404,
+  FIGURE_ALREADY_EXISTS: 409,
+  DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
 };
 
@@ -151,7 +241,6 @@ class RequestAbandonedError extends Error {
   }
 }
 
-
 /**
  * What openapi-backend hands a handler once it has matched the request against
  * the document and validated it. Its own Context types params, query and body
@@ -167,6 +256,31 @@ type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Con
 /** The generated operations write `never` for a parameter section an operation has none of. */
 type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
 
+type OperationQuery<Id extends keyof AgentApiOperations> = OrEmpty<
+  AgentApiOperations[Id]["parameters"]["query"]
+>;
+
+/**
+ * The validator runs Ajv with `useDefaults`, so once a request has passed
+ * validation every query parameter the document gives a `default` is present.
+ * openapi-typescript keeps parameter defaults optional in the generated types;
+ * `Defaulted` names the parameters of this operation that the document
+ * defaults, and the handler reads them as present.
+ */
+type DefaultedQuery<
+  Id extends keyof AgentApiOperations,
+  Defaulted extends keyof OperationQuery<Id>,
+> = OperationQuery<Id> & Required<Pick<OperationQuery<Id>, Defaulted>>;
+
+type DefaultedOperationContext<
+  Id extends keyof AgentApiOperations,
+  Defaulted extends keyof OperationQuery<Id>,
+> = Context<
+  unknown,
+  OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
+  DefaultedQuery<Id, Defaulted>
+>;
+
 // ============================================================================
 // AgentHTTPProvider
 // ============================================================================
@@ -181,10 +295,20 @@ type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : Non
 export interface AgentApiHost {
   config: {
     get: () => {
-      agentApi?: { enabled: boolean; port: number };
+      agentApi: AgentApiConfig;
       app: { openWorkspaces: string[] };
+      export: { cslLibrary: string };
+      tikz: ConfigOptions["tikz"];
+      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
     };
   };
+  references?: { getSnapshot(): WorkspaceReferenceState };
+  fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+}
+
+export interface AgentApiRuntimeEnvironment {
+  homeDirectory: string;
+  env: NodeJS.ProcessEnv;
 }
 
 /**
@@ -217,20 +341,24 @@ export default class AgentHTTPProvider extends ProviderContract {
   private readonly _api: OpenAPIBackend;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
+  private readonly _helpText: string;
 
   constructor(
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    private readonly _citeproc?: CiteprocProvider,
     /**
      * Injectable so the request-body lifecycle tests can exercise the
      * deadline without stalling for tens of real seconds. Production callers
      * pass nothing.
      */
     private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
+    private readonly _runtimeEnvironment?: Partial<AgentApiRuntimeEnvironment>,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
+    this._helpText = HELP_DOCUMENT;
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -291,15 +419,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       // Query and path parameters arrive as strings. The document says which
       // are integers, so the validator is what turns them into numbers.
       coerceTypes: true,
+      // The document owns every optional field's meaning when it is omitted
+      // (`default:`). Ajv writes those defaults into the validated query and
+      // body, so handlers read the document's value rather than restating it.
+      ajvOpts: { useDefaults: true },
       handlers: this.operationHandlers(),
     });
   }
 
   async boot(): Promise<void> {
     const config = this._app.config.get().agentApi;
-    if (config === undefined) {
-      throw new Error("Agent API configuration is required");
-    }
     if (!config.enabled) {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
@@ -346,10 +475,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
     } catch (error) {
       await this.shutdown();
-      throw new Error(
-        `Agent API could not publish its endpoint to ${this._portFilePath}`,
-        { cause: error },
-      );
+      throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {
+        cause: error,
+      });
     }
     this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
   }
@@ -432,12 +560,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.error(
         "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
       );
-      this.sendError(
-        res,
-        400,
-        "INVALID_PARAMS",
-        "HTTP method and request target are required",
-      );
+      this.sendError(res, 400, "INVALID_PARAMS", "HTTP method and request target are required");
       return;
     }
     // The async wrapper is what makes a handler that throws synchronously
@@ -504,6 +627,25 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
     }
+    if (method === "GET") {
+      if (url.pathname === "/openapi.yaml") {
+        this.serveSpecification(req, res, false);
+        return;
+      }
+      if (url.pathname === "/openapi.json") {
+        this.serveSpecification(req, res, true);
+        return;
+      }
+      if (url.pathname === "/health") {
+        this.sendJson(res, 200, this.instanceIdentity());
+        return;
+      }
+      if (url.pathname === "/v1/help") {
+        this.serveHelp(res, req.headers.accept, url.searchParams.get("format") === "json");
+        return;
+      }
+    }
+
     await this._api.handleRequest(
       {
         method,
@@ -546,9 +688,34 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.writeHead(200, {
       "Content-Type": asJson ? "application/json" : "application/yaml",
     });
-    res.end(
-      asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString(),
-    );
+    res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
+  }
+
+  /**
+   * @param accept           The request's Accept header; absent when the
+   *                         client states no preference.
+   * @param formatQueryJson  Whether the `format` query parameter asks for JSON.
+   */
+  private serveHelp(
+    res: http.ServerResponse,
+    accept: string | undefined,
+    formatQueryJson: boolean,
+  ): void {
+    const acceptsOnlyJson =
+      accept !== undefined &&
+      accept.includes("application/json") &&
+      !accept.includes("text/markdown") &&
+      !accept.includes("text/plain");
+
+    if (acceptsOnlyJson || formatQueryJson) {
+      this.sendJson(res, 200, { help: this._helpText });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/markdown; charset=utf-8",
+    });
+    res.end(this._helpText);
   }
 
   /**
@@ -561,9 +728,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
     return {
-      getOpenApiSpec: (_c, req, res) => this.serveSpecification(req, res, false),
-      getOpenApiSpecJson: (_c, req, res) => this.serveSpecification(req, res, true),
-      health: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
+      getHelp: (c: OperationContext<"getHelp">, req, res: http.ServerResponse) =>
+        this.serveHelp(res, req.headers.accept, c.request.query.format === "json"),
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {
@@ -577,29 +743,35 @@ export default class AgentHTTPProvider extends ProviderContract {
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      listWorkspaces: (_c, _req, res) => this.handleGetWorkspaces(res),
       listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
-      listWorkspaceDocuments: (
-        c: OperationContext<"listWorkspaceDocuments">,
+      listWorkspaces: (
+        c: OperationContext<"listWorkspaces">,
         _req,
         res: http.ServerResponse,
-      ) =>
-        this.handleListWorkspaceDocuments(
-          res,
-          c.request.params.workspaceId,
-          c.request.query.query,
-        ),
+      ) => {
+        if (c.request.query.workspaceId) {
+          return this.handleListWorkspaceDocuments(
+            res,
+            c.request.query.workspaceId,
+            c.request.query.query,
+          );
+        }
+        return this.handleGetWorkspaces(res);
+      },
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
-      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) =>
-        this.handleGetDocument(res, c.request.params.documentId),
+      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
+        if (c.request.query.includeContent) {
+          return this.handleReadContent(res, c.request.params.documentId, {
+            side: c.request.query.side as ReadSide | undefined,
+            startLine: c.request.query.startLine,
+            endLine: c.request.query.endLine,
+          });
+        }
+        return this.handleGetDocument(res, c.request.params.documentId);
+      },
       focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
         this.handleFocusDocument(res, c.request.params.documentId),
-      readDocumentContent: (
-        c: OperationContext<"readDocumentContent">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleReadContent(res, c.request.params.documentId, c.request.query),
       searchDocument: (
         c: OperationContext<"searchDocument", SearchDocumentRequest>,
         _req,
@@ -616,18 +788,16 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleReviewSubmission(res, c.request.requestBody),
 
-      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) =>
-        this.handleListAnnotations(res, c.request.query.state),
-      listDocumentAnnotations: (
-        c: OperationContext<"listDocumentAnnotations">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
-        this.handleListDocumentAnnotations(
-          res,
-          c.request.params.documentId,
-          c.request.query.state,
-        ),
+      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) => {
+        if (c.request.query.documentId) {
+          return this.handleListDocumentAnnotations(
+            res,
+            c.request.query.documentId,
+            c.request.query.state,
+          );
+        }
+        return this.handleListAnnotations(res, c.request.query.state);
+      },
       getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
         this.handleGetAnnotation(res, c.request.params.annotationId),
       addAnnotationMessage: (
@@ -635,21 +805,30 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleAddAnnotationMessage(
-          res,
-          c.request.params.annotationId,
-          c.request.requestBody,
-        ),
+        this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
-      getReview: (c: OperationContext<"getReview">, _req, res: http.ServerResponse) =>
-        this.handleGetReview(res, c.request.params.reviewId),
-      getReviewDiff: (c: OperationContext<"getReviewDiff">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewDiff(res, c.request.params.reviewId),
-      getReviewChunks: (c: OperationContext<"getReviewChunks">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewChunks(res, c.request.params.reviewId),
-      getReviewPackets: (c: OperationContext<"getReviewPackets">, _req, res: http.ServerResponse) =>
-        this.handleGetReviewPackets(res, c.request.params.reviewId),
+      getReview: (
+        c: DefaultedOperationContext<"getReview", "view">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const view = c.request.query.view;
+        switch (view) {
+          case "diff":
+            return this.handleGetReviewDiff(res, c.request.params.reviewId);
+          case "chunks":
+            return this.handleGetReviewChunks(res, c.request.params.reviewId);
+          case "packets":
+            return this.handleGetReviewPackets(res, c.request.params.reviewId);
+          case "detail":
+            return this.handleGetReview(res, c.request.params.reviewId);
+          default: {
+            const unhandled: never = view;
+            throw new Error(`getReview has no handler for view ${String(unhandled)}`);
+          }
+        }
+      },
       addReviewComment: (
         c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
         _req,
@@ -661,36 +840,147 @@ export default class AgentHTTPProvider extends ProviderContract {
           c.request.requestBody.text,
           c.request.requestBody.expectedReviewGeneration,
         ),
+      retractProposal: (
+        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
       waitForReviewEvents: (
         c: OperationContext<"waitForReviewEvents">,
         _req,
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      retractProposal: (
-        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+      queryCitations: (
+        c: DefaultedOperationContext<"queryCitations", "database">,
         _req,
         res: http.ServerResponse,
-      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
+      ) => {
+        if (c.request.query.citeKey) {
+          return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
+        }
+        if (c.request.query.target === "databases") {
+          return this.handleListCitationDatabases(res);
+        }
+        return this.handleListCitationItems(res, c.request.query.database);
+      },
+      renderCitations: (
+        c: OperationContext<"renderCitations", RenderCitationsRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const body = c.request.requestBody;
+        if (body.mode === "bibliography") {
+          if (body.citekeys === undefined) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Body field 'citekeys' is required when mode=bibliography",
+            );
+            return;
+          }
+          return this.handleRenderBibliography(res, {
+            database: body.database,
+            citekeys: body.citekeys,
+          });
+        }
+        if (body.citations === undefined) {
+          this.sendError(
+            res,
+            400,
+            "INVALID_PARAMS",
+            "Body field 'citations' is required when mode=citation",
+          );
+          return;
+        }
+        return this.handleRenderCitation(res, {
+          database: body.database,
+          citations: body.citations,
+          composite: body.composite,
+        });
+      },
+      listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
+        this.handleListMacros(res, c.request.query.query),
+      queryFigures: (
+        c: DefaultedOperationContext<"queryFigures", "action">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const action = c.request.query.action;
+        if (action === "search") {
+          if (c.request.query.query === undefined) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Query parameter 'query' is required when action=search",
+            );
+            return;
+          }
+          return this.handleSearchFigures(res, c.request.query.query);
+        }
+        if (action === "read") {
+          if (!c.request.query.path) {
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "Query parameter 'path' is required when action=read",
+            );
+            return;
+          }
+          return this.handleReadFigure(res, c.request.query.path);
+        }
+        return this.handleListFigures(res);
+      },
+      saveFigure: (
+        c: OperationContext<"saveFigure", FigureSaveRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        if (c.request.requestBody.action === "create") {
+          return this.handleCreateFigure(res, {
+            path: c.request.requestBody.path,
+            content: c.request.requestBody.content,
+          });
+        }
+        return this.handleWriteFigure(res, c.request.requestBody.path, {
+          content: c.request.requestBody.content,
+          encoding: c.request.requestBody.encoding,
+        });
+      },
+      lintDocuments: (
+        c: DefaultedOperationContext<"lintDocuments", "scope" | "minimumSeverity">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleLintDocuments(res, c.request.query),
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
        * the offending field, which is more than the hand-written decoders
        * could say about a body they refused wholesale.
        */
-      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) =>
+      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) => {
+        // openapi-backend calls this handler only when validation produced
+        // errors, and it nulls an empty error list; no errors here is a
+        // contract break in the router, not an invalid request.
+        const errors = c.validation.errors;
+        if (errors === null || errors === undefined || errors.length === 0) {
+          throw new Error("validationFail was called without validation errors");
+        }
         this.sendError(
           res,
           400,
           "INVALID_PARAMS",
-          (c.validation.errors ?? [])
+          errors
             .map((error) =>
-              typeof error === "string"
-                ? error
-                : `${error.instancePath} ${error.message}`.trim(),
+              typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
             )
-            .join("; ") || "Request does not match the published schema",
-        ),
+            .join("; "),
+        );
+      },
 
       notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
         this.sendError(
@@ -711,7 +1001,10 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListDocuments(res: http.ServerResponse): Promise<void> {
-    this.sendJson(res, 200, { documents: await this._queries.listDocuments() });
+    const documents = await this._queries.listDocuments();
+    this.sendJson(res, 200, {
+      documents: await Promise.all(documents.map(async (summary) => await this.withCrossReferences(summary))),
+    });
   }
 
   private async handleGetViews(res: http.ServerResponse): Promise<void> {
@@ -769,7 +1062,18 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    this.sendJson(res, 200, summary);
+    this.sendJson(res, 200, await this.withCrossReferences(summary));
+  }
+
+  /** Adds the cross-reference system whose ID syntax (GET /help) the document uses. */
+  private async withCrossReferences(summary: DocumentSummary): Promise<DocumentSummary> {
+    if (this._app.fsal === undefined) {
+      return summary;
+    }
+    return {
+      ...summary,
+      crossReferences: await documentCrossReferenceSystem(this._app.fsal, summary.path),
+    };
   }
 
   private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {
@@ -955,25 +1259,41 @@ export default class AgentHTTPProvider extends ProviderContract {
       ? fileURLToPath(request.document.uri)
       : request.document.uri;
     if (!(await this._queries.isOpenable(requestedPath))) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is outside configured workspace scope");
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
       return;
     }
     const filePath = await fs.promises.realpath(requestedPath);
     const documentId = this._documents.ensureDocumentId(filePath);
-    const baseline = await this._queries.readDocumentContent(documentId, "working", 1, Number.MAX_SAFE_INTEGER);
+    const baseline = await this._queries.readDocumentContent(
+      documentId,
+      "working",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
     if (baseline === undefined || baseline === "OUTSIDE_WORKSPACE") {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
     }
-    const claims = request.claims !== undefined
-      ? request.claims
-      : [{ patch: request.patch!, description: request.description! }];
-    await this.handleSubmitProposal(res, documentId, {
-      baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
-      expectedReviewGeneration: baseline.reviewGeneration,
-      claims,
-      clientRequestId: request.clientRequestId,
-    }, request.focus !== false);
+    const claims =
+      request.claims !== undefined
+        ? request.claims
+        : [{ patch: request.patch!, description: request.description! }];
+    await this.handleSubmitProposal(
+      res,
+      documentId,
+      {
+        baselineSha256: request.baseline?.sha256 ?? baseline.revision.sha256,
+        expectedReviewGeneration: baseline.reviewGeneration,
+        claims,
+        clientRequestId: request.clientRequestId,
+      },
+      request.focus,
+    );
   }
 
   private async handleSubmitProposal(
@@ -982,6 +1302,26 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     focus?: boolean,
   ): Promise<void> {
+    const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
+    const descriptionCollision = findClaimDescriptionCollision(proposal.claims, similarityThreshold);
+    if (descriptionCollision !== undefined) {
+      const { firstIndex, secondIndex, similarity } = descriptionCollision;
+      const similarityPercent = Math.round(similarity * 100);
+      this.sendError(
+        res,
+        STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
+        "DUPLICATE_CLAIM_DESCRIPTION",
+        `claims[${firstIndex}] and claims[${secondIndex}] have descriptions that are ${similarityPercent}% similar ` +
+          `(limit: ${Math.round(similarityThreshold * 100)}%). ` +
+          "Give each claim its own description of the specific problem, change, and reason.",
+        {
+          conflictingClaimIndices: [firstIndex, secondIndex],
+          descriptionSimilarity: similarity,
+        },
+      );
+      return;
+    }
+
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
     // drops header parameters and could never satisfy a header requirement.
@@ -1028,7 +1368,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
-        this.sendError(res, 412, focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH", result.message);
+        this.sendError(
+          res,
+          412,
+          focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH",
+          result.message,
+        );
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
@@ -1061,7 +1406,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       const view = this._documents.getFocusedView();
       const opened = await this._documents.openFile(view?.windowId, view?.leafId, filePath, true);
       if (!opened) {
-        throw new Error(`Review ${result.reviewId} committed, but document ${documentId} could not be focused`);
+        throw new Error(
+          `Review ${result.reviewId} committed, but document ${documentId} could not be focused`,
+        );
       }
     }
     this.sendJson(res, 200, {
@@ -1103,10 +1450,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
-  private async handleGetAnnotation(
-    res: http.ServerResponse,
-    annotationId: string,
-  ): Promise<void> {
+  private async handleGetAnnotation(res: http.ServerResponse, annotationId: string): Promise<void> {
     const annotation = await this._queries.getAnnotation(annotationId);
     if (annotation === undefined) {
       this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
@@ -1140,12 +1484,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.expectedAnnotationGeneration,
       );
     if (!("messageId" in result)) {
-      this.sendError(
-        res,
-        STATUS_BY_CODE[result.code],
-        result.code,
-        result.message,
-      );
+      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
       return;
     }
     const annotationGeneration = this._documents.annotationQueries.getAnnotations(
@@ -1160,29 +1499,29 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleListReviews(res: http.ServerResponse): Promise<void> {
-    const reviews: ReviewListEntry[] = (await this._documents.reviewQueries.listReviewQueries()).map(
-      (query) => {
-        if (query.attached) {
-          return {
-            ...query.status,
-            documentId: query.documentId,
-            documentPath: query.documentPath,
-            attached: true,
-          };
-        }
-        const { sidecar } = query;
-        const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+    const reviews: ReviewListEntry[] = (
+      await this._documents.reviewQueries.listReviewQueries()
+    ).map((query) => {
+      if (query.attached) {
         return {
-          reviewId: sidecar.review.reviewId,
-          state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
-          generation: sidecar.review.generation,
-          unresolvedChunks,
-          packetCount: sidecar.review.packets.length,
-          documentPath: sidecar.documentPath,
-          attached: false,
+          ...query.status,
+          documentId: query.documentId,
+          documentPath: query.documentPath,
+          attached: true,
         };
-      },
-    );
+      }
+      const { sidecar } = query;
+      const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
+      return {
+        reviewId: sidecar.review.reviewId,
+        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        generation: sidecar.review.generation,
+        unresolvedChunks,
+        packetCount: sidecar.review.packets.length,
+        documentPath: sidecar.documentPath,
+        attached: false,
+      };
+    });
     this.sendJson(res, 200, { reviews });
   }
 
@@ -1191,10 +1530,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private async sendReviewLookupFailure(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
@@ -1205,17 +1541,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         res,
         409,
         "DOCUMENT_CLOSED",
-        `The reviewed document ${query.sidecar.documentPath} is not open. ` +
-          "Open it to reattach this review, then decide its chunks.",
+        `The reviewed document ${query.sidecar.documentPath} is closed. Open it before changing this review.`,
       );
       return;
     }
-    this.sendError(
-      res,
-      404,
-      "REVIEW_NOT_FOUND",
-      "Review not found.",
-    );
+    this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
   }
 
   private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
@@ -1248,10 +1578,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewDiff(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewDiff(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1323,11 +1650,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = await this._documents.addReviewComment(
-      reviewId,
-      text,
-      expectedReviewGeneration,
-    );
+    const result = await this._documents.addReviewComment(reviewId, text, expectedReviewGeneration);
     if (!result.ok) {
       this.sendError(
         res,
@@ -1350,10 +1673,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewChunks(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewChunks(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1385,10 +1705,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewPackets(
-    res: http.ServerResponse,
-    reviewId: string,
-  ): Promise<void> {
+  private async handleGetReviewPackets(res: http.ServerResponse, reviewId: string): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1437,6 +1754,536 @@ export default class AgentHTTPProvider extends ProviderContract {
         reviewId: result.reviewId,
         ...AgentHTTPProvider.conflictDetail(result),
       });
+    }
+  }
+
+  // ==========================================================================
+  // Citation handlers
+  // ==========================================================================
+
+  private handleListCitationDatabases(res: http.ServerResponse): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
+      return;
+    }
+    this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
+  }
+
+  private handleListCitationItems(res: http.ServerResponse, database: string): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
+      return;
+    }
+    const db = database;
+    try {
+      const items = this._citeproc.getItems(db);
+      this.sendJson(res, 200, { items, count: items.length });
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleGetCitationItem(
+    res: http.ServerResponse,
+    citeKey: string,
+    database: string,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
+      return;
+    }
+    const db = database;
+    try {
+      const item = this._citeproc.getItem(db, citeKey);
+      if (item === undefined) {
+        this.sendError(res, 404, "CITATION_NOT_FOUND", `Citation key not found: ${citeKey}`);
+        return;
+      }
+      this.sendJson(res, 200, item as AgentApiResponseBody);
+    } catch (err) {
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
+      return;
+    }
+    const db = body.database;
+    if (body.citations.length === 0) {
+      this.sendError(res, 400, "INVALID_PARAMS", "citations must name at least one item to render");
+      return;
+    }
+    if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
+      this.sendError(res, 404, "CITATION_DATABASE_NOT_LOADED", "No main citation library is configured.");
+      return;
+    }
+    try {
+      const citeItems: CiteItem[] = body.citations.map((c) => ({
+        id: c.id,
+        locator: c.locator,
+        label: c.label,
+        prefix: c.prefix,
+        suffix: c.suffix,
+      }));
+      const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
+      // With items and a loaded database, the engine declines only when a
+      // citekey is missing from that database.
+      if (rendered === undefined) {
+        this.sendError(
+          res,
+          404,
+          "CITATION_NOT_FOUND",
+          `At least one citation key is not in database ${db}: ${citeItems.map((item) => item.id).join(", ")}`,
+        );
+        return;
+      }
+      this.sendJson(res, 200, { rendered });
+    } catch (err) {
+      if (err instanceof CiteprocRenderInvariantError) {
+        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+        return;
+      }
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private handleRenderBibliography(
+    res: http.ServerResponse,
+    body: RenderBibliographyRequest,
+  ): void {
+    if (this._citeproc === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
+      return;
+    }
+    const db = body.database;
+    try {
+      const result = this._citeproc.makeBibliography(db, body.citekeys);
+      if (result === undefined) {
+        this.sendJson(res, 200, { entries: [] });
+        return;
+      }
+      const [options, entries] = result;
+      this.sendJson(res, 200, { options: { ...options }, entries });
+    } catch (err) {
+      if (err instanceof CiteprocRenderInvariantError) {
+        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+        return;
+      }
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      );
+    }
+  }
+
+  private authoringHomeDirectory(): string {
+    return this._runtimeEnvironment?.homeDirectory ?? app.getPath("home");
+  }
+
+  private centralFiguresDirectory(): string {
+    return resolveCentralFiguresDirectory(
+      this._app.config.get().tikz.figuresDir,
+      this.authoringHomeDirectory(),
+      this._runtimeEnvironment?.env ?? process.env,
+    );
+  }
+
+  private async handleListMacros(
+    res: http.ServerResponse,
+    query: string | undefined,
+  ): Promise<void> {
+    try {
+      const inventory = await loadCanonicalMacroInventory(this.authoringHomeDirectory());
+      // An omitted or blank query asks for the whole inventory.
+      const needle = query?.trim().toLocaleLowerCase("en-US");
+      const macros =
+        needle === undefined || needle === ""
+          ? inventory.macros
+          : inventory.macros.filter((macro) => {
+              if (macro.name.toLocaleLowerCase("en-US").includes(needle)) {
+                return true;
+              }
+              if (macro.mathjax?.replacement.toLocaleLowerCase("en-US").includes(needle) === true) {
+                return true;
+              }
+              return macro.declarations.some(
+                (declaration) =>
+                  declaration.sourcePath.toLocaleLowerCase("en-US").includes(needle) ||
+                  declaration.declaration.toLocaleLowerCase("en-US").includes(needle) ||
+                  declaration.context.toLocaleLowerCase("en-US").includes(needle),
+              );
+            });
+      this.sendJson(res, 200, { root: inventory.root, count: macros.length, macros });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleListFigures(res: http.ServerResponse): Promise<void> {
+    const root = this.centralFiguresDirectory();
+    try {
+      const entries = await listCentralFigures(root);
+      this.sendJson(res, 200, { root, count: entries.length, entries });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleCreateFigure(
+    res: http.ServerResponse,
+    body: FigureCreateRequest,
+  ): Promise<void> {
+    try {
+      const created = await createCentralTikzFigure(
+        this.centralFiguresDirectory(),
+        body.path,
+        body.content,
+      );
+      this.sendJson(res, 201, created);
+    } catch (error) {
+      if (error instanceof CentralFigureAlreadyExistsError) {
+        this.sendError(res, 409, "FIGURE_ALREADY_EXISTS", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "PERSISTENCE_FAILED",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleSearchFigures(res: http.ServerResponse, query: string): Promise<void> {
+    const root = this.centralFiguresDirectory();
+    try {
+      const result = await searchCentralFigures(root, query);
+      this.sendJson(res, 200, { root, query, ...result });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleReadFigure(res: http.ServerResponse, relativePath: string): Promise<void> {
+    try {
+      this.sendJson(
+        res,
+        200,
+        await readCentralFigure(this.centralFiguresDirectory(), relativePath),
+      );
+    } catch (error) {
+      if (error instanceof CentralFigureNotFoundError) {
+        this.sendError(res, 404, "FIGURE_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleWriteFigure(
+    res: http.ServerResponse,
+    relativePath: string,
+    body: FigureWriteRequest,
+  ): Promise<void> {
+    try {
+      const written = await writeCentralFigure(
+        this.centralFiguresDirectory(),
+        relativePath,
+        body.content,
+        body.encoding,
+      );
+      this.sendJson(res, 200, written);
+    } catch (error) {
+      if (error instanceof CentralFigureInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "PERSISTENCE_FAILED",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async lintDocumentAuthorityContext(
+    documentPath: string,
+  ): Promise<DocumentLintDocumentOptions> {
+    if (this._app.fsal === undefined) {
+      // Without the file system layer there is no workspace to resolve a
+      // bibliography from; Flowmark then reads the document's own metadata.
+      return {};
+    }
+    return await documentLintAuthority(
+      this._app.fsal,
+      this._app.config.get().export.cslLibrary,
+      documentPath,
+    );
+  }
+
+  private static lintCounts(diagnostics: readonly LintDiagnostic[]): LintSeverityCounts {
+    const counts: LintSeverityCounts = { error: 0, warning: 0, info: 0 };
+    for (const diagnostic of diagnostics) {
+      counts[diagnostic.severity] += 1;
+    }
+    return counts;
+  }
+
+  private static lintPosition(text: string, offset: number): { line: number; column: number } {
+    const bounded = Math.max(0, Math.min(offset, text.length));
+    let line = 1;
+    let lineStart = 0;
+    for (let index = 0; index < bounded; index += 1) {
+      if (text[index] === "\n") {
+        line += 1;
+        lineStart = index + 1;
+      }
+    }
+    return { line, column: bounded - lineStart + 1 };
+  }
+
+  private async handleLintDocuments(
+    res: http.ServerResponse,
+    query: DefaultedQuery<"lintDocuments", "scope" | "minimumSeverity">,
+  ): Promise<void> {
+    const scope = query.scope;
+    const context = await this._queries.getContext();
+    const focusedDocumentId = context.focusedDocument?.documentId;
+    type Target = {
+      documentId: string;
+      path: string;
+      name: string;
+      open: boolean;
+      focused: boolean;
+    };
+    let targets: Target[] = [];
+
+    try {
+      if (scope === "focused") {
+        if (context.focusedDocument === undefined) {
+          this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+          return;
+        }
+        if (context.focusedDocument.type !== "markdown") {
+          this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+          return;
+        }
+        targets = [
+          {
+            documentId: context.focusedDocument.documentId,
+            path: context.focusedDocument.path,
+            name: context.focusedDocument.name,
+            open: true,
+            focused: true,
+          },
+        ];
+      } else if (scope === "open") {
+        targets = context.openDocuments
+          .filter((document) => document.type === "markdown")
+          .map((document) => ({
+            documentId: document.documentId,
+            path: document.path,
+            name: document.name,
+            open: true,
+            focused: document.documentId === focusedDocumentId,
+          }));
+      } else {
+        const workspaceFiles = await this._queries.listWorkspaceFiles();
+        if (scope === "document") {
+          if (query.documentId === undefined || query.documentId === "") {
+            this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
+            return;
+          }
+          const open = context.openDocuments.find(
+            (document) => document.documentId === query.documentId,
+          );
+          const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
+          if (open === undefined && workspaceFile === undefined) {
+            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+            return;
+          }
+          const documentPath = open?.path ?? workspaceFile!.path;
+          if (!hasMarkdownExt(documentPath)) {
+            this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
+            return;
+          }
+          targets = [
+            {
+              documentId: query.documentId,
+              path: documentPath,
+              name: open?.name ?? workspaceFile!.name,
+              open: open !== undefined || workspaceFile?.open === true,
+              focused: query.documentId === focusedDocumentId,
+            },
+          ];
+        } else {
+          if (scope === "workspace") {
+            if (query.workspaceId === undefined || query.workspaceId === "") {
+              this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
+              return;
+            }
+            if (
+              !this._queries
+                .listWorkspaces()
+                .some((workspace) => workspace.workspaceId === query.workspaceId)
+            ) {
+              this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+              return;
+            }
+          }
+          const selected =
+            scope === "workspace"
+              ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
+              : workspaceFiles;
+          const seen = new Set<string>();
+          targets = selected
+            .filter((file) => hasMarkdownExt(file.path))
+            .filter((file) => {
+              if (seen.has(file.path)) {
+                return false;
+              }
+              seen.add(file.path);
+              return true;
+            })
+            .map((file) => ({
+              documentId: file.documentId,
+              path: file.path,
+              name: file.name,
+              open: file.open,
+              focused: file.documentId === focusedDocumentId,
+            }));
+        }
+      }
+
+      const runtimeEnv = this._runtimeEnvironment?.env ?? process.env;
+      const config = this._app.config.get();
+      const lintContext = await createDocumentLintContext({
+        homeDirectory: this.authoringHomeDirectory(),
+        env: runtimeEnv,
+        referenceState: this._app.references?.getSnapshot(),
+        tikzRenderConfig: resolveTikzRenderConfig(
+          config.tikz.dataDir,
+          config.tikz.figuresDir,
+          this.authoringHomeDirectory(),
+          app.getPath("userData"),
+          runtimeEnv,
+        ),
+        flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
+      });
+      const severityWeight = { info: 0, warning: 1, error: 2 } as const;
+      const minimum = query.minimumSeverity;
+      const documents: LintResponse["documents"] = [];
+
+      for (const target of targets) {
+        const read = await this._queries.readDocumentContent(
+          target.documentId,
+          "working",
+          1,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+          throw new Error(`Could not read selected lint document ${target.path}`);
+        }
+        const authorityContext = await this.lintDocumentAuthorityContext(target.path);
+        const sourceDiagnostics = await lintDocumentText(
+          read.content,
+          target.path,
+          lintContext,
+          authorityContext,
+        );
+        const diagnostics: LintDiagnostic[] = sourceDiagnostics
+          .filter((diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum])
+          .map((diagnostic) => {
+            const start = AgentHTTPProvider.lintPosition(read.content, diagnostic.from);
+            const end = AgentHTTPProvider.lintPosition(read.content, diagnostic.to);
+            return {
+              from: diagnostic.from,
+              to: diagnostic.to,
+              line: start.line,
+              column: start.column,
+              endLine: end.line,
+              endColumn: end.column,
+              severity: diagnostic.severity,
+              message: diagnostic.message,
+              source: diagnostic.source,
+              ...(diagnostic.rule === undefined ? {} : { rule: diagnostic.rule }),
+              ...(diagnostic.suggestions === undefined
+                ? {}
+                : { suggestions: diagnostic.suggestions }),
+              ...(diagnostic.data === undefined ? {} : { data: diagnostic.data }),
+            };
+          });
+        documents.push({
+          ...target,
+          revision: read.revision,
+          diagnostics,
+          counts: AgentHTTPProvider.lintCounts(diagnostics),
+        });
+      }
+
+      const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+      this.sendJson(res, 200, {
+        scope,
+        documents,
+        documentCount: documents.length,
+        diagnosticCount: allDiagnostics.length,
+        counts: AgentHTTPProvider.lintCounts(allDiagnostics),
+      });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 

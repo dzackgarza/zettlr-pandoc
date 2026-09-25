@@ -2,22 +2,25 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        LaTeX math environments
+ * Contains:        Pandoc Markdown LaTeX-environment classification
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Pandoc renders \begin{align} and its siblings as display
- *                  math, whether or not a blank line separates them from the
- *                  prose around them. The editor recognized four delimiters
- *                  ($, $$, \( \), \[ \]) and no environments at all, so an
- *                  author writing an aligned derivation saw the source text
- *                  and had no way to tell that the export would differ.
+ * Description:     Pandoc's Markdown reader does NOT promote bare LaTeX
+ *                  environments such as \begin{align} to Markdown Math nodes.
+ *                  With raw_tex enabled, LaTeX-reader inline environments are
+ *                  RawInline(tex); other environments may be RawBlock(tex).
+ *                  Only Pandoc's explicit Markdown math delimiters ($, $$,
+ *                  \( \), \[ \]) produce Math nodes. The editor may still
+ *                  visualize Pandoc RawInline(tex) math environments without
+ *                  changing that syntax classification.
  *
- *                  The set of environments below is the one real Pandoc
- *                  treats as math; it was read off the binary rather than
- *                  recalled. `center` stands for everything outside that set,
- *                  which stays ordinary text here exactly as it does there.
+ *                  The executable Pandoc JSON reader is the oracle. Source:
+ *                  Pandoc 3.10.2 commit
+ *                  f2ee5dfee866aab007a33552acc6bc01810c6918,
+ *                  Markdown.hs `math` / `rawLaTeXInline'` and LaTeX.hs
+ *                  `rawLaTeXInline` / `rawLaTeXBlock`.
  *
  * END HEADER
  */
@@ -30,8 +33,24 @@ import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 import { md2html } from 'source/common/modules/markdown-utils/markdown-to-html'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { stripMathDelimiters } from 'source/common/util/math-delimiters'
+import { execPandocReference } from './pandoc-reference'
 
 const RENDER_OPTS = { onCitation: () => undefined, zknLinkFormat: 'link|title' as const }
+const PANDOC_READER = 'markdown+raw_tex+tex_math_dollars+tex_math_single_backslash'
+
+function pandocTreatsEnvironmentAsMath (environment: string): boolean {
+  const source = `\\begin{${environment}}\nx = y\n\\end{${environment}}`
+  const raw = execPandocReference([ '-f', PANDOC_READER, '-t', 'json' ], { input: source })
+  const document = JSON.parse(raw) as { blocks: Array<{ t: string, c?: unknown }> }
+  const first = document.blocks[0]
+  if (first?.t !== 'Para' || !Array.isArray(first.c)) {
+    return false
+  }
+  return first.c.some((inline) => {
+    return typeof inline === 'object' && inline !== null &&
+      (inline as { t?: string }).t === 'Math'
+  })
+}
 
 async function rendersAsDisplayMath (markdown: string): Promise<boolean> {
   const html = await md2html(markdown, RENDER_OPTS)
@@ -67,33 +86,28 @@ function editorMath (doc: string): { display: boolean, equation: string } | null
 
 const ALIGN = '\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}'
 
-describe('Editor renders LaTeX math environments', function () {
+describe('Pandoc Markdown LaTeX-environment classification', function () {
   before(async function () {
     this.timeout(60000)
     await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
   })
 
   describe('the HTML conversion', function () {
-    it('renders an align environment standing alone as display math', async function () {
-      assert.equal(await rendersAsDisplayMath(ALIGN), true)
-    })
-
-    it('renders it glued to the prose above, as Pandoc does', async function () {
-      assert.equal(await rendersAsDisplayMath(`Consider the identity\n${ALIGN}\nwhich holds.`), true)
-    })
-
-    it('renders equation, gather, multline and cases', async function () {
-      for (const env of [ 'equation', 'gather', 'multline', 'cases' ]) {
+    it('matches Pandoc for standalone LaTeX environment classification', async function () {
+      for (const env of [
+        'equation', 'gather', 'multline', 'align', 'align*', 'flalign',
+        'dmath', 'subequations',
+        // Ordinary TeX math environments that Pandoc keeps as raw TeX when
+        // they stand alone in Markdown.
+        'cases', 'matrix', 'aligned', 'center'
+      ]) {
+        const expected = pandocTreatsEnvironmentAsMath(env)
         assert.equal(
           await rendersAsDisplayMath(`\\begin{${env}}\nx = y\n\\end{${env}}`),
-          true,
-          `\\begin{${env}} must render as display math`
+          expected,
+          `\\begin{${env}} must match Pandoc's block classification`
         )
       }
-    })
-
-    it('renders a starred environment', async function () {
-      assert.equal(await rendersAsDisplayMath('\\begin{align*}\na &= b\n\\end{align*}'), true)
     })
 
     it('leaves a non-math environment as ordinary text', async function () {
@@ -104,25 +118,11 @@ describe('Editor renders LaTeX math environments', function () {
   })
 
   describe('the editor preview', function () {
-    it('hands MathJax the whole environment, which is what makes align align', function () {
-      const math = editorMath(ALIGN)
-      assert.notEqual(math, null, 'the editor must produce a math node for an environment')
-      assert.equal(math?.display, true)
-      assert.equal(
-        math?.equation,
-        ALIGN,
-        'the \\begin and \\end must survive: MathJax needs them to set up the alignment'
-      )
-    })
-
-    it('produces the same math node when the environment follows prose', function () {
-      const math = editorMath(`Consider the identity\n${ALIGN}\nwhich holds.`)
-      assert.equal(math?.equation, ALIGN)
-      assert.equal(math?.display, true)
-    })
-
-    it('does not treat a non-math environment as math', function () {
+    it('does not reclassify Pandoc raw-TeX environments as Markdown Math nodes', function () {
+      assert.equal(editorMath(ALIGN), null)
+      assert.equal(editorMath('\\begin{equation}\nx = y\n\\end{equation}'), null)
       assert.equal(editorMath('\\begin{center}\nhello\n\\end{center}'), null)
+      assert.equal(editorMath('\\begin{cases}\nx = y\n\\end{cases}'), null)
     })
 
     it('leaves an unterminated environment alone rather than eating the document', function () {

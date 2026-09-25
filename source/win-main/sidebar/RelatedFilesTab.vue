@@ -61,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import { RecycleScroller } from 'vue-virtual-scroller'
 import { ref, computed, watch } from 'vue'
@@ -117,7 +118,7 @@ const roots = computed(() => workspaceStore.rootDescriptors)
 const lastLeafId = computed(() => documentTreeStore.lastLeafId)
 
 watch(lastActiveFile, () => {
-  recomputeRelatedFiles().catch(err => console.error('Could not recompute related files:', err))
+  recomputeRelatedFiles().catch(err => reportError('Could not recompute related files:', err))
 })
 
 watch(roots, () => {
@@ -240,7 +241,7 @@ function beginDragRelatedFile (event: DragEvent, filePath: string): void {
   const descriptor = workspaceStore.descriptorMap.get(filePath)
 
   if (descriptor === undefined) {
-    console.error('Cannot begin dragging related file: Descriptor not found')
+    reportError('Cannot begin dragging related file: Descriptor not found')
     return
   }
 
@@ -261,7 +262,7 @@ function requestFile (event: MouseEvent, filePath: string): void {
       newTab: event.type === 'mousedown' && event.button === 1
     }
   } as DocumentManagerIPCAPI)
-    .catch(e => console.error(e))
+    .catch(e => reportError(e))
 }
 
 function getTagsLabel (tagList: string[]): string {

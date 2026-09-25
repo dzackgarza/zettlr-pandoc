@@ -7,7 +7,7 @@
       ></cds-icon>
       <span class="annotation-header-title">{{ trans('Annotations') }}</span>
       <span class="annotation-header-count annotation-muted">
-        <span class="annotation-open-count">({{ openCount }})</span>
+        <span class="annotation-open-count">({{ outstandingCount }})</span>
       </span>
       <ShortcutDisplay
         v-if="shortcut !== undefined"
@@ -29,45 +29,14 @@
       </button>
     </div>
     <div class="annotation-view-row">
-      <DropdownMenuRoot>
-        <DropdownMenuTrigger class="annotation-view-selector">
-          <cds-icon
-            shape="view-list"
-            role="presentation"
-          ></cds-icon>
-          <span>{{ viewLabel }}</span>
-          <cds-icon
-            shape="angle"
-            direction="down"
-            role="presentation"
-          ></cds-icon>
-        </DropdownMenuTrigger>
-        <DropdownMenuPortal>
-          <DropdownMenuContent
-            class="annotation-view-menu"
-            align="start"
-            v-bind:side-offset="4"
-          >
-            <DropdownMenuRadioGroup
-              v-bind:model-value="props.view"
-              v-on:update:model-value="onSelectView"
-            >
-              <DropdownMenuRadioItem
-                class="annotation-view-option"
-                value="open"
-              >
-                {{ trans('Open') }}
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem
-                class="annotation-view-option"
-                value="resolved"
-              >
-                {{ trans('Resolved') }}
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenuPortal>
-      </DropdownMenuRoot>
+      <button
+        v-if="acceptAllCount > 0"
+        type="button"
+        class="annotation-button annotation-global-accept-all"
+        v-bind:disabled="busy"
+        v-on:click="emit('accept-all')"
+      >{{ trans('Accept all') }} ({{ acceptAllCount }})</button>
+      <span v-else class="annotation-header-spacer"></span>
       <button
         type="button"
         class="annotation-icon-button annotations-filter-toggle"
@@ -104,44 +73,32 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The panel's header: one body-size title row (glyph,
- *                  "Annotations", the open count (S10: open only), the
- *                  panel toggle's shortcut chip read from the application
- *                  menu, close) and the view row (the Open / Resolved
- *                  selector over the store's showResolved, the filter
- *                  toggle). The count prop is the single source both this
- *                  header and the list read.
+ * Description:     Workspace panel header: total outstanding collaboration
+ *                  work, a global Accept all action for proposed review
+ *                  changes, filter, shortcut chip, and close. Document-level
+ *                  grouping and Accept all live in AnnotationsTab.
  *
  * END HEADER
  */
 
 import { computed, onBeforeMount, onBeforeUnmount, ref } from 'vue'
-import {
-  DropdownMenuContent,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuRoot,
-  DropdownMenuTrigger,
-  type AcceptableValue
-} from 'reka-ui'
 import { trans } from '@common/i18n-renderer'
 import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { explodeAccelerator } from '@common/util/shortcuts'
 import { menuProviderMessageSchema } from '@dts/common/serialized-menu'
 import { allMenuLeafRows } from '../../launcher/launcher-rows'
 
-export type AnnotationListView = 'open' | 'resolved'
 
 const props = defineProps<{
-  openCount: number
+  outstandingCount: number
+  acceptAllCount: number
   query: string
-  view: AnnotationListView
+  busy: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:query', value: string): void
-  (e: 'set-view', view: AnnotationListView): void
+  (e: 'accept-all'): void
   (e: 'close'): void
 }>()
 
@@ -151,12 +108,6 @@ const closeLabel = trans('Close')
 const filterLabel = trans('Filter annotations')
 
 const filterOpen = ref(false)
-
-const viewLabel = computed(() => props.view === 'resolved' ? trans('Resolved') : trans('Open'))
-
-function onSelectView (value: AcceptableValue): void {
-  emit('set-view', value === 'resolved' ? 'resolved' : 'open')
-}
 
 // The panel toggle's shortcut, from the one definition of that command: the
 // application menu item the menu provider serialises.

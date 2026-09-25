@@ -28,6 +28,7 @@
 </template>
 
 <script setup lang="ts">
+import { reportError } from '@common/util/error-reporting'
 import { trans } from 'source/common/i18n-renderer'
 import { ref, onMounted, watch } from 'vue'
 import { resolveLangCode } from 'source/common/util/map-lang-code'
@@ -94,11 +95,11 @@ function changeAppLang () {
           emit('app-lang-changed')
           retranslate()
         })
-        .catch(err => console.error(err))
+        .catch(err => reportError(err))
     })
     .catch(err => {
       appLang.value = originalLanguage
-      console.error(err)
+      reportError(err)
     })
     .finally(() => {
       emit('enable-navigation')

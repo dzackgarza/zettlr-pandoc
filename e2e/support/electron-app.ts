@@ -597,7 +597,7 @@ export async function launchElectron (
 export function observeRenderer (page: Page, rendererEvents: string[]): void {
   page.on('console', message => {
     if (message.type() === 'error') {
-      rendererEvents.push(`console.error: ${message.text()}`)
+      rendererEvents.push(`console-error: ${message.text()}`)
     }
   })
   page.on('pageerror', error => {

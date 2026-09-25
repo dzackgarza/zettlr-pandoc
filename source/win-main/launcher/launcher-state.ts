@@ -16,13 +16,14 @@
  */
 
 import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { GroupPath } from './launcher-rows'
+import type { DynamicGroupId, GroupPath, JustRecipeRow } from './launcher-rows'
 
 export type LauncherView =
   | { kind: 'root' }
   | { kind: 'menu-group', path: GroupPath }
-  | { kind: 'dynamic-group', id: 'go-to-file' | 'go-to-heading' | 'export' }
+  | { kind: 'dynamic-group', id: Exclude<DynamicGroupId, 'search-references'> }
   | { kind: 'references', request: ReferenceSearchRequest }
+  | { kind: 'just-arguments', recipe: JustRecipeRow }
 
 export type LauncherState =
   | { open: false }
