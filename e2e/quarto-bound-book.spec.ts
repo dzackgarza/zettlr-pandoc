@@ -145,7 +145,7 @@ describe('a workspace bound to the manifest in its assembly directory', function
     await activePage.locator(MANIFEST_FIELD).fill(BINDING)
     await activePage.locator(MANIFEST_FIELD).press('Enter')
 
-    await activePage.locator(POPOVER).getByText(`Quarto project settings: ${BINDING}`).waitFor({ timeout: 10_000 })
+    await activePage.locator(POPOVER).getByText(`Quarto book: ${BINDING}`).waitFor({ timeout: 10_000 })
     await activePage.locator(`${POPOVER} #unbind-quarto-manifest`).waitFor({ state: 'visible', timeout: 10_000 })
     screenshots.set('properties-bound.png', await activePage.screenshot())
 
