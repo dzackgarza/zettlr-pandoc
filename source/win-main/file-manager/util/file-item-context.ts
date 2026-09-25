@@ -15,7 +15,7 @@
 import { reportError } from '@common/util/error-reporting'
 import { trans } from '@common/i18n-renderer'
 import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
-import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor, ProjectSettings } from '@dts/common/fsal'
+import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from '@dts/common/fsal'
 import type { WindowControlsIPCAPI } from 'source/app/service-providers/windows'
 import { useConfigStore, useWorkspaceStore } from 'source/pinia'
 import { projectMembershipForPath } from '@common/util/explorer-ordering'
@@ -144,11 +144,7 @@ export function displayFileContext (event: MouseEvent, fileObject: MDFileDescrip
                 placement: { kind: 'book-end' }
               }
             }
-          }).then((fresh: ProjectSettings) => {
-            const root = workspaceStore.descriptorMap.get(membership.rootPath)
-            if (root?.type === 'directory') {
-              root.settings.project = fresh
-            }
+          }).then(() => {
             showToast(trans('Added %s to the Quarto book.', fileObject.name))
           }).catch(err => {
             reportError('Could not add file to the Quarto book', err)

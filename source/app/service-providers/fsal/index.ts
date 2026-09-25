@@ -701,9 +701,16 @@ export default class FSAL extends ProviderContract {
     await FSALDir.unbindQuartoManifest(src)
   }
 
-  /** Re-derives a directory's ProjectSettings from its Quarto manifest. */
+  /**
+   * Re-derives a directory's ProjectSettings from its Quarto manifest and
+   * publishes the directory's new descriptor. The watcher reports a manifest
+   * edit as a change to the manifest file only, never to the directory whose
+   * book it describes, so without this event no window sees the new book.
+   */
   public async refreshQuartoProject (src: DirDescriptor): Promise<void> {
     await FSALDir.refreshQuartoProject(src)
+    this._emitter.emit('fsal-event', { event: 'change', descriptor: src })
+    broadcastIPCMessage('fsal-event', { event: 'change', descriptor: src })
   }
 
   /**

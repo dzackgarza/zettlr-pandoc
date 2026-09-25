@@ -158,7 +158,7 @@
 import { computed, ref, watch } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import { isInsideRoot, pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
-import type { MDFileDescriptor, ProjectNavigationItem, ProjectSettings } from '@dts/common/fsal'
+import type { MDFileDescriptor, ProjectNavigationItem } from '@dts/common/fsal'
 import { useWorkspaceStore } from 'source/pinia'
 import { buildQuartoBookOutline } from './quarto-book-outline'
 import { projectRelativePath } from '@common/util/explorer-ordering'
@@ -315,13 +315,11 @@ function placementForNewChapter (): QuartoChapterPlacement {
 
 async function editBook (edit: QuartoBookEdit): Promise<void> {
   try {
-    const fresh = await window.ipc.invoke('application', {
+    // The refreshed book reaches this view as the root directory's FSAL change event.
+    await window.ipc.invoke('application', {
       command: 'quarto-book-edit',
       payload: { rootPath: props.rootPath, edit }
-    }) as ProjectSettings
-    if (projectRoot.value !== undefined) {
-      projectRoot.value.settings.project = fresh
-    }
+    })
   } catch (err) {
     reportError('Could not edit the Quarto book', err)
     showToast(
