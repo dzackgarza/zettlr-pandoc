@@ -45,8 +45,8 @@ import {
   type AgentClient
 } from './support/electron-app'
 
-/** The annotations panel: where every review control lives after M9. */
-const PANEL = '#annotations-panel'
+/** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
+const EDITOR = '.main-editor-wrapper .cm-editor'
 
 const BASELINE = [
   '# Persistence', '',
@@ -258,8 +258,8 @@ describe('a review that cannot be persisted', function () {
       documentContents: BASELINE,
       config: {
         agentApi: { enabled: true, port: 0 },
-        // Every review control lives in the sidebar's annotations panel (M9),
-        // so the fixture opens the sidebar on that tab.
+        // The workspace panel stays open beside the editor; every decision
+        // here is still made from the controls inside the editor.
         window: { sidebarVisible: true }
       }
     })
@@ -320,7 +320,7 @@ describe('a review that cannot be persisted', function () {
     assert.deepEqual(reviews.reviews, [], 'a refused proposal must open no review')
     assert.deepEqual(await sidecarBytes(directory), {})
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-inspector`).count(),
+      await activePage.locator(`${EDITOR} .cm-collaborationControl`).count(),
       0,
       'a refused proposal must not mount review controls'
     )
@@ -336,7 +336,7 @@ describe('a review that cannot be persisted', function () {
       'reviewId'
     )
     await activePage
-      .locator(`${PANEL} .suggestion-decision.accept`)
+      .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()
       .waitFor({ state: 'visible', timeout: 30_000 })
     assert.deepEqual(
@@ -354,8 +354,8 @@ describe('a review that cannot be persisted', function () {
 
     const before = await reviewSummary(activeApi, activeReviewId)
     const beforeSidecars = await sidecarBytes(directory)
-    // The card names its chunk by the claim description.
-    const card = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise alpha' })
+    // The controls name their chunk by the claim description.
+    const card = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise alpha' })
     const accept = card.locator('.suggestion-decision.accept')
 
     await breakSidecarWrites(directory)
@@ -416,7 +416,7 @@ describe('a review that cannot be persisted', function () {
         }
       ]
     })
-    const noted = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
+    const noted = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
     // The note is committed with Enter, and the provider answering with it is
     // the acknowledgment — the sidecar is only broken AFTER this write has
     // landed, so what the later scenarios refuse is never this one.
@@ -489,7 +489,7 @@ describe('a review that cannot be persisted', function () {
     const beforeSidecars = await sidecarBytes(directory)
 
     await breakSidecarWrites(directory)
-    await activePage.locator('.cm-content').click()
+    await activePage.locator('.cm-line').first().click()
     await activePage.keyboard.press('Control+End')
     await activePage.keyboard.type('refused-edit')
     // The push is refused in main and logged here; waiting for that is what
@@ -509,7 +509,7 @@ describe('a review that cannot be persisted', function () {
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' }).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' }).count(),
       1,
       'the annotated chunk must still be rendered'
     )
@@ -533,7 +533,7 @@ describe('a review that cannot be persisted', function () {
       file => isRecord(file) && file.path === activePath
     )
     await activeApi.post(`/v1/documents/${stringField(entry, 'documentId')}/focus`, {})
-    const reopened = activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
+    const reopened = activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasText: 'Revise bravo' })
     await reopened
       .locator('input.suggestion-chunk-comment')
       .waitFor({ state: 'visible', timeout: 30_000 })
@@ -543,7 +543,7 @@ describe('a review that cannot be persisted', function () {
       'the reattached review restores the note into its field'
     )
 
-    await activePage.locator('.cm-content').click()
+    await activePage.locator('.cm-line').first().click()
     await activePage.keyboard.press('Control+End')
     await activePage.keyboard.type('accepted-edit')
     await waitForWorkingText(activeApi, text => text.includes('accepted-edit'), 30_000)
@@ -572,14 +572,14 @@ describe('a review that cannot be persisted', function () {
       `only the proposed claim remains adjudicable: ${JSON.stringify(pending)}`
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).filter({ hasNotText: 'Revise bravo' }).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).filter({ hasNotText: 'Revise bravo' }).count(),
       0,
-      'the typed line gets no card of its own'
+      'the typed line gets no controls of its own'
     )
     assert.equal(
-      await activePage.locator(`${PANEL} .suggestion-chunk`).count(),
+      await activePage.locator(`${EDITOR} .suggestion-chunk`).count(),
       1,
-      'the annotated chunk is the only one the panel offers a decision on'
+      'the annotated chunk is the only one the editor offers a decision on'
     )
     assert.deepEqual(
       await activePage.evaluate(

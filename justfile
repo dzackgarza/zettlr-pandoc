@@ -280,7 +280,7 @@ capture-review-diff output: sync-dependencies
 # marker, a point target's hollow marker at its deletion seam, an orphaned
 # target's marker with no span, and overlapping targets collapsed to one
 # marker with a count — light and dark. Scoped to what the editor alone
-# renders (no panel, no thread, no button — invariant I4); M10 assembles the
+# renders as locators (marks and gutter markers); M10 assembles the
 # full twelve-scene `just capture-annotations` around these.
 capture-editor-annotations output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" editor-annotations "{{output}}"

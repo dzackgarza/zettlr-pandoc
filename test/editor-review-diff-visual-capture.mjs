@@ -35,18 +35,14 @@ async function capture (view, spec) {
 
   const diagnostics = await view.page.evaluate(() => window.reviewDiffVisualDiagnostics())
   console.log(spec.name, JSON.stringify(diagnostics))
-  // The M9 structural gate, executable: both chunks are LOCATED in the
-  // editor — a struck-through deletion and a highlighted insertion each —
-  // and nothing in the editor can adjudicate them (I4). Adjudication is the
-  // annotations panel's, captured by annotations-sidebar-visual-capture.
+  // Both chunks are LOCATED in the editor — a struck-through deletion and a
+  // highlighted insertion each. The controls under them are the pane's and
+  // are captured by the review e2e specs.
   if (diagnostics.chunks !== 3 || diagnostics.deletions !== 2 || diagnostics.insertions !== 2) {
     throw new Error(`${spec.name} did not render the two inline chunks plus the table-owned chunk: ${JSON.stringify(diagnostics)}`)
   }
   if (diagnostics.tableReviewIndicators !== 1 || diagnostics.tableReviewSuggestionCount !== '1') {
     throw new Error(`${spec.name} did not surface the review chunk hidden by the rendered table: ${JSON.stringify(diagnostics)}`)
-  }
-  if (diagnostics.buttons !== 0 || diagnostics.inputs !== 0 || diagnostics.panels !== 0) {
-    throw new Error(`${spec.name} renders an adjudication control inside the editor: ${JSON.stringify(diagnostics)}`)
   }
   if (diagnostics.contentScrollWidth > diagnostics.contentClientWidth + 1) {
     throw new Error(`${spec.name} has horizontal editor overflow`)

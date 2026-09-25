@@ -15,7 +15,6 @@ declare global {
     annotationsVisualDiagnostics: () => {
       marks: number
       markers: number
-      buttons: number
       contentClientWidth: number|undefined
       contentScrollWidth: number|undefined
     }
@@ -139,7 +138,6 @@ async function mount (): Promise<void> {
     return {
       marks: document.querySelectorAll('.cm-textAnnotation-mark').length,
       markers: document.querySelectorAll('.cm-textAnnotation-gutterMarker').length,
-      buttons: document.querySelectorAll('button').length,
       contentClientWidth: content?.clientWidth,
       contentScrollWidth: content?.scrollWidth
     }

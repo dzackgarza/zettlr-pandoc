@@ -220,12 +220,11 @@ function scriptReviewScene (): void {
   const config = (): ReviewChunksConfig => ({ suggestions })
 
   /**
-   * What the provider's broadcast does to this pane when the owner
-   * adjudicates a chunk in the annotations panel: the decided suggestion
-   * leaves the set, and a rejection puts its removed text back. The editor
-   * itself raises nothing — it carries locators only — so the demo drives
-   * the decision the way the real broadcast does rather than by clicking a
-   * control that no longer exists there.
+   * What the provider's broadcast does to this pane when the owner decides
+   * a chunk: the decided suggestion leaves the set, and a rejection puts its
+   * removed text back. The demo mounts the review extension without a host
+   * for the chunk controls, so it drives the decision the way the real
+   * broadcast does.
    */
   const decide = (chunkId: string, decision: 'accept'|'reject'): void => {
     const suggestion = suggestions.find(candidate => candidate.suggestionId === chunkId)

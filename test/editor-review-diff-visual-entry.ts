@@ -17,12 +17,6 @@ declare global {
     captureReady: Promise<void>
     reviewDiffVisualDiagnostics: () => {
       chunks: number
-      /** Every element in the editor that could adjudicate: a button, an
-       *  input, or the status panel the review UI used to mount. The
-       *  structural gate expects zero of each (I4). */
-      buttons: number
-      inputs: number
-      panels: number
       deletions: number
       insertions: number
       tableReviewIndicators: number
@@ -156,9 +150,6 @@ async function mount (): Promise<void> {
     const content = document.querySelector<HTMLElement>('.cm-content')
     return {
       chunks: chunks?.length ?? -1,
-      buttons: view.dom.querySelectorAll('button').length,
-      inputs: view.dom.querySelectorAll('input, textarea, select').length,
-      panels: view.dom.querySelectorAll('.cm-panels').length,
       deletions: view.dom.querySelectorAll('del.cm-deletedText').length,
       insertions: view.dom.querySelectorAll('.cm-changedText').length,
       tableReviewIndicators: view.dom.querySelectorAll('.cm-table-review-indicator').length,
