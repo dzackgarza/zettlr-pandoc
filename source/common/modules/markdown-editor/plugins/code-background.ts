@@ -21,6 +21,12 @@ export const codeblockBackground = layer({
         return;
       }
 
+      // The Pandoc grammar gives inline math a CodeText payload; only block
+      // code owns a line background.
+      if (node.name === "CodeText" && node.node.parent?.name === "InlineCode") {
+        return false;
+      }
+
       let start = node.from;
       let end = node.to;
 
