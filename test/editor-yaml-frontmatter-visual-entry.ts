@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderYamlFrontmatter } from 'source/common/modules/markdown-editor/renderers/render-yaml-frontmatter'
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 
 declare global {
   interface Window {
@@ -47,6 +48,7 @@ async function mount (): Promise<void> {
         EditorView.lineWrapping,
         editorTheme,
         dark ? defaultDark : defaultLight,
+        configField,
         renderYamlFrontmatter
       ]
     }),

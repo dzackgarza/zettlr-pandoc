@@ -185,12 +185,15 @@ function renderNodeAttributes(node: ASTNode): string {
  */
 function addAttribute(node: ASTNode, attributeName: string, ...values: string[]): void {
   const attr = node.attributes;
-  attr[attributeName] = attr[attributeName] ?? [];
+  const existing: string | string[] | undefined = attr[attributeName];
 
-  if (!Array.isArray(attr[attributeName])) {
-    attr[attributeName] = [attr[attributeName]];
+  if (existing === undefined) {
+    attr[attributeName] = [...values];
+  } else if (Array.isArray(existing)) {
+    existing.push(...values);
+  } else {
+    attr[attributeName] = [existing, ...values];
   }
-  attr[attributeName].push(...values);
 }
 
 /**

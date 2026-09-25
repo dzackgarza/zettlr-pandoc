@@ -20,6 +20,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
@@ -57,7 +58,7 @@ describe('Editor mounts math widgets for LaTeX delimiters', function () {
     const state = EditorState.create({
       doc,
       selection: { anchor },
-      extensions: [ markdownParser(), renderMath ]
+      extensions: [ markdownParser(), configField, renderMath ]
     })
     const view = new EditorView({ state, parent: document.body })
     return view.dom

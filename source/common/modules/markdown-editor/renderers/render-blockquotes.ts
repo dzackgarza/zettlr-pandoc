@@ -26,8 +26,7 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 function showBlockquoteWrappers(view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = [];
-  const includeAdjacent =
-    view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {

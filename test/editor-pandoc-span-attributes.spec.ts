@@ -10,6 +10,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 
 function polyfillJsdomForCodeMirror (): void {
   if (typeof globalThis.requestAnimationFrame !== 'function') {
@@ -49,7 +50,7 @@ describe('Pandoc bracketed-span attribute parsing', function () {
       state: EditorState.create({
         doc,
         selection: { anchor: doc.length },
-        extensions: [ markdownParser(), renderPandoc ]
+        extensions: [ markdownParser(), configField, renderPandoc ]
       })
     })
     try {

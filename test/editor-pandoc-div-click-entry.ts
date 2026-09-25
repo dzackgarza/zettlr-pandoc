@@ -6,6 +6,7 @@ import markdownParser from 'source/common/modules/markdown-editor/parser/markdow
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 
 const doc = `Before outside.
@@ -80,6 +81,7 @@ async function mount (): Promise<void> {
         EditorView.lineWrapping,
         editorTheme,
         defaultLight,
+        configField,
         renderPandoc,
         renderMath,
       ],

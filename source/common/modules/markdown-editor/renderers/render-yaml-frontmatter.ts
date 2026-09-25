@@ -323,7 +323,7 @@ class YamlFrontmatterWidget extends WidgetType {
 
 function createFrontmatterDecorations (state: EditorState): DecorationSet {
   const ranges: Range<Decoration>[] = []
-  const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   syntaxTree(state).iterate({
     enter (node) {

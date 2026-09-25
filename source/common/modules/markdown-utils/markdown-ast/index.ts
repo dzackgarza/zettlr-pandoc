@@ -35,7 +35,10 @@
 import { mathDisplayForOpen } from "@common/util/math-delimiters";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
 import { type SyntaxNode } from "@lezer/common";
-import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
+import {
+  parsePandocAttributes,
+  type ParsedPandocAttributes,
+} from "source/common/pandoc-util/parse-pandoc-attributes";
 import { type Citation, nodeToCiteItem } from "../../markdown-editor/parser/citation-parser";
 import { genericTextNode } from "./generic-text-node";
 import { getWhitespaceBeforeNode } from "./get-whitespace-before-node";
@@ -581,6 +584,31 @@ export type ASTNode =
 export type ASTNodeType = ASTNode["type"];
 
 /**
+ * The AST attributes of a Pandoc div or span. As in Pandoc's HTML writer, `id`
+ * appears only when the source names an identifier, and `class` only when the
+ * attribute list or the div's bare class names at least one class.
+ *
+ * @param   {ParsedPandocAttributes}  parsed        The authored attribute list
+ * @param   {string[]}                bareClasses   Classes named outside it
+ *
+ * @return  {Record<string, string | string[]>}    The node attributes
+ */
+function pandocNodeAttributes(
+  parsed: ParsedPandocAttributes,
+  bareClasses: readonly string[],
+): Record<string, string | string[]> {
+  const attributes: Record<string, string | string[]> = { ...parsed.properties };
+  if (parsed.id !== undefined) {
+    attributes.id = parsed.id;
+  }
+  const classes = parsed.classes === undefined ? [...bareClasses] : [...parsed.classes, ...bareClasses];
+  if (classes.length > 0) {
+    attributes.class = classes;
+  }
+  return attributes;
+}
+
+/**
  * Parses a single Lezer style SyntaxNode to an ASTNode.
  *
  * @param   {SyntaxNode}  node      The node to convert
@@ -979,24 +1007,14 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const attr = node.getChild("PandocAttribute");
       const attributes = attr ? parsePandocAttributes(markdown.substring(attr.from, attr.to)) : {};
 
+      // The legacy bare-class spelling (`::: theorem`) names one class.
       const info = node.getChild("PandocDivInfo");
-      const divName = info ? markdown.substring(info.from, info.to) : "";
-
-      const id = attributes.id ?? "";
-      const classes = attributes.classes ?? [];
-
-      if (info) {
-        classes.push(divName);
-      }
+      const bareClasses = info ? [markdown.substring(info.from, info.to)] : [];
 
       const astNode: PandocDiv = {
         type: "PandocDiv",
         name: "PandocDiv",
-        attributes: {
-          id: id,
-          class: classes,
-          ...attributes.properties,
-        },
+        attributes: pandocNodeAttributes(attributes, bareClasses),
         from: node.from,
         to: node.to,
         attributeRange: attr === null ? undefined : { from: attr.from, to: attr.to },
@@ -1014,17 +1032,10 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const attr = node.getChild("PandocAttribute");
       const attributes = attr ? parsePandocAttributes(markdown.substring(attr.from, attr.to)) : {};
 
-      const id = attributes.id ?? "";
-      const classes = attributes.classes ?? "";
-
       const astNode: PandocSpan = {
         type: "PandocSpan",
         name: "PandocSpan",
-        attributes: {
-          id: id,
-          class: classes,
-          ...attributes.properties,
-        },
+        attributes: pandocNodeAttributes(attributes, []),
         from: node.from,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),

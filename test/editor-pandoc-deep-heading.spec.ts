@@ -6,6 +6,7 @@ import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { headingGutter, renderHeadings } from 'source/common/modules/markdown-editor/renderers/render-headings'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
@@ -42,7 +43,7 @@ describe('Editor renders Pandoc deep headings', function () {
       state: EditorState.create({
         doc: source,
         selection: { anchor: source.length },
-        extensions: [ markdownParser(), headingGutter, renderHeadings, renderMath ]
+        extensions: [ markdownParser(), configField, headingGutter, renderHeadings, renderMath ]
       }),
       parent: document.body
     })

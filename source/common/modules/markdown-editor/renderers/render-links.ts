@@ -30,8 +30,7 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
   const hiddenDeco = Decoration.replace({});
-  const includeAdjacent =
-    view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     if (node.name !== "Link" && node.name !== "ZknLink") {

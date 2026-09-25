@@ -3,6 +3,7 @@ import { EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { renderYamlFrontmatter } from 'source/common/modules/markdown-editor/renderers/render-yaml-frontmatter'
 import { defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 
 const doc = `---
 title: Cursor mapping proof
@@ -57,6 +58,7 @@ async function mount (): Promise<void> {
         EditorView.lineWrapping,
         editorTheme,
         defaultLight,
+        configField,
         renderYamlFrontmatter
       ]
     }),

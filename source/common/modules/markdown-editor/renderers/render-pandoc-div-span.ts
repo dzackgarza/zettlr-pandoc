@@ -42,8 +42,7 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
   const ranges: Range<Decoration>[] = [];
 
-  const includeAdjacent =
-    view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {
@@ -77,17 +76,18 @@ function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
     }
 
     // Parse the classes and other attributes to render in the decoration.
+    // An identifier or class list the span does not name is not rendered: an
+    // empty `id` is not a valid HTML identifier.
     const attributes = parsePandocAttributes(view.state.sliceDoc(attrs.from, attrs.to));
-    const classes = attributes.classes ?? [];
-    const id = attributes.id ?? "";
+    const markAttributes: Record<string, string> = { ...attributes.properties };
+    if (attributes.id !== undefined) {
+      markAttributes.id = attributes.id;
+    }
+    if (attributes.classes !== undefined) {
+      markAttributes.class = attributes.classes.join(" ");
+    }
 
-    const deco = Decoration.mark({
-      attributes: {
-        id,
-        class: classes.join(" "),
-        ...attributes.properties,
-      },
-    });
+    const deco = Decoration.mark({ attributes: markAttributes });
 
     ranges.push(deco.range(from, to));
   });
@@ -365,8 +365,7 @@ function collectDocumentDivs(state: EditorState): PandocDivModel[] {
 
 function createDivHeaderDecorations(state: EditorState): DecorationSet {
   const ranges: Range<Decoration>[] = [];
-  const includeAdjacent =
-    state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
   const divs = collectDocumentDivs(state);
   const active = activeDivs(divs, state.selection, includeAdjacent);
 
@@ -399,8 +398,7 @@ const pandocDivHeaderField = StateField.define<DecorationSet>({
 
 function createDivDecorations(view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = [];
-  const includeAdjacent =
-    view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
   const divs = collectVisibleDivs(view);
   const active = activeDivs(divs, view.state.selection, includeAdjacent);
 

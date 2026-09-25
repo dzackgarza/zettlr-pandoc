@@ -74,8 +74,7 @@ export class SpaceWidget extends WidgetType {
 function hideFormattingCharacters(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
   const hiddenDeco = Decoration.replace({});
-  const includeAdjacent =
-    view.state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     // Do not hide any characters if a selection is inside here

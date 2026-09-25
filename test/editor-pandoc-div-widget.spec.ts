@@ -23,6 +23,7 @@ import { renderEmphasis } from 'source/common/modules/markdown-editor/renderers/
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
 import { renderMath } from 'source/common/modules/markdown-editor/renderers/render-math'
 import { renderPandoc } from 'source/common/modules/markdown-editor/renderers/render-pandoc-div-span'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 
@@ -82,7 +83,7 @@ describe('Editor presents Pandoc fenced divs semantically', function () {
     const state = EditorState.create({
       doc,
       selection: { anchor },
-      extensions: [ extensions, EditorState.allowMultipleSelections.of(true) ],
+      extensions: [ configField, extensions, EditorState.allowMultipleSelections.of(true) ],
     })
     const view = new EditorView({ state, parent: document.body })
     // On a cold parser the markdown parse can miss CodeMirror's synchronous

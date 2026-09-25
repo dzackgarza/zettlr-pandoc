@@ -36,6 +36,7 @@ import {
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
 import { rangeInPreviewSuppression } from 'source/common/modules/markdown-editor/util/range-in-preview-suppression'
 import { renderLinks } from 'source/common/modules/markdown-editor/renderers/render-links'
+import { configField } from 'source/common/modules/markdown-editor/util/configuration'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 
 function polyfillJsdomForCodeMirror (): void {
@@ -391,7 +392,7 @@ describe('Editor review-chunk view', function () {
       parent: document.body,
       state: EditorState.create({
         doc: working,
-        extensions: [ markdownParser(), renderLinks, reviewCompartment.of([]) ]
+        extensions: [ markdownParser(), configField, renderLinks, reviewCompartment.of([]) ]
       })
     })
     views.push(view)

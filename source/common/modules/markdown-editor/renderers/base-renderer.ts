@@ -180,14 +180,16 @@ function renderWidgets(
     visibleRanges = [{ from: 0, to: state.doc.length }];
   }
 
-  const includeAdjacent =
-    state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true;
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
   const specsByNodeType = new Map<string, RendererSpec[]>();
   for (const spec of specs) {
     for (const nodeType of spec.nodeTypes) {
-      const candidates = specsByNodeType.get(nodeType) ?? [];
-      candidates.push(spec);
-      specsByNodeType.set(nodeType, candidates);
+      const candidates = specsByNodeType.get(nodeType);
+      if (candidates === undefined) {
+        specsByNodeType.set(nodeType, [spec]);
+      } else {
+        candidates.push(spec);
+      }
     }
   }
 

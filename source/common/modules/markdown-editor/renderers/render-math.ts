@@ -98,7 +98,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
   // and then remove the leading and trailing dollars. Also, pass a stable node
   // reference (SyntaxNodeRef will be dropped, but the SyntaxNode itself will
   // stay, and keep its position updated depending on what happens in the doc)
-  const includeAdjacent = state.field(configField, false)?.previewModeShowSyntaxWhenCursorIsAdjacent ?? true
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   // Don't render if the selection is within the node
   if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
