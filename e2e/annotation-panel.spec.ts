@@ -27,6 +27,8 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type Browser, type Locator, type Page } from 'playwright'
+import type { TextAnnotation } from '../source/types/common/annotation-domain'
+import type { DocumentCollaborationSession } from '../source/types/common/document-collaboration'
 import {
   assertCleanExit,
   attach,
@@ -57,22 +59,17 @@ function inlineThread (page: Page, annotationId: string): Locator {
   return page.locator(`${EDITOR} .cm-collaborationControl-annotation-thread [data-annotation-detail][data-annotation-id="${annotationId}"]`)
 }
 
-/** The annotation half of the provider's collaboration session, as this spec reads it. */
-interface ProviderAnnotation {
-  annotationId: string
-  state: 'open' | 'resolved'
-  messages: Array<{ author: string, text: string }>
-}
-
 let indexPath: string | undefined
 
-async function collaborationSessionOf (page: Page): Promise<{ annotations: { generation: number, items: ProviderAnnotation[] } }> {
-  return await page.evaluate(async pathInPage => await window.ipc.invoke('documents-provider', {
+async function collaborationSessionOf (page: Page): Promise<DocumentCollaborationSession> {
+  const session = await page.evaluate(async pathInPage => await window.ipc.invoke('documents-provider', {
     command: 'get-collaboration-session', payload: { path: pathInPage }
   }), requireInitialized(indexPath, 'index.md path'))
+  assert.ok(session !== undefined, 'the provider holds a collaboration session for index.md')
+  return session
 }
 
-async function annotationOf (page: Page, annotationId: string): Promise<ProviderAnnotation> {
+async function annotationOf (page: Page, annotationId: string): Promise<TextAnnotation> {
   const found = (await collaborationSessionOf(page)).annotations.items.find(item => item.annotationId === annotationId)
   assert.ok(found !== undefined, `the provider holds no annotation ${annotationId}`)
   return found
