@@ -31,7 +31,6 @@ const captures = {
     entry: "test/editor-tikz-visual-entry.ts",
     bundle: "tikz-visual-bundle.js",
     driver: "test/editor-tikz-visual-capture.mjs",
-    nodeArgs: ["--import", "tsx"],
   },
   "pandoc-help": {
     build: "test/visual-build.cjs",
@@ -147,10 +146,13 @@ if (capture.build !== undefined) {
 // Playwright launches Electron from inside the driver, so the driver itself
 // is a plain node process — bun cannot complete Playwright's CDP attach to
 // Electron. xvfb still supplies the display Electron needs on a headless box.
+// Every driver runs under the tsx loader, so a driver may import TypeScript
+// modules directly.
 run("xvfb-run", [
   "-a",
   "node",
-  ...(capture.nodeArgs ?? []),
+  "--import",
+  "tsx",
   path.join(root, capture.driver),
   output,
 ]);

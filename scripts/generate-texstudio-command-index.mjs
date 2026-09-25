@@ -10,8 +10,7 @@ const inputDirectory = process.argv[2]
 const outputFile = process.argv[3] ?? path.resolve('source/common/data/texstudio-command-index.json')
 
 if (inputDirectory === undefined) {
-  console.error('Usage: node scripts/generate-texstudio-command-index.mjs <texstudio-completion-dir> [output-json]')
-  process.exit(2)
+  throw new Error('Usage: node scripts/generate-texstudio-command-index.mjs <texstudio-completion-dir> [output-json]')
 }
 
 const cwlFiles = fs.readdirSync(inputDirectory)

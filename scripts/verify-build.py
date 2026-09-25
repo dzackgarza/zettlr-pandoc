@@ -54,6 +54,19 @@ def source_fingerprint() -> str:
     ).stdout.strip()
 
 
+def xdg_cache_home() -> pathlib.Path:
+    """The user's cache directory, resolved as the XDG Base Directory
+    Specification defines it: "If $XDG_CACHE_HOME is either not set or empty,
+    a default equal to $HOME/.cache should be used." An empty value is the
+    unset state, not the current directory. Reference implementation:
+    platformdirs.unix.Unix.user_cache_dir.
+    """
+    configured = os.environ.get("XDG_CACHE_HOME")
+    if configured is None or configured.strip() == "":
+        return pathlib.Path.home() / ".cache"
+    return pathlib.Path(configured)
+
+
 def electron_packager_zip_dir() -> pathlib.Path:
     """Return a local Electron ZIP directory suitable for electronZipDir.
 
@@ -86,10 +99,7 @@ def electron_packager_zip_dir() -> pathlib.Path:
             f"Electron package/runtime version mismatch: package={version}, dist={dist_version}"
         )
 
-    cache_home = pathlib.Path(
-        os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
-    )
-    zip_dir = cache_home / "zettlr-pandoc" / "electron-packager"
+    zip_dir = xdg_cache_home() / "zettlr-pandoc" / "electron-packager"
     zip_path = zip_dir / f"electron-v{version}-linux-x64.zip"
 
     def valid_cached_zip() -> bool:
@@ -181,14 +191,9 @@ def terminate_process_tree(root_pid: int) -> None:
             pass
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
-        alive = []
-        for pid in pids:
-            try:
-                os.kill(pid, 0)
-                alive.append(pid)
-            except ProcessLookupError:
-                pass
-        if not alive:
+        # A process exists exactly while its /proc entry does (kill(2)'s
+        # signal-0 existence check answers the same question with ESRCH).
+        if not any(pathlib.Path("/proc", str(pid)).exists() for pid in pids):
             return
         time.sleep(0.05)
     for pid in pids:
