@@ -17,14 +17,27 @@
 import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
 import { rm } from 'node:fs/promises'
+import { type EditorView } from '@codemirror/view'
 import { type Browser, type Page } from 'playwright'
 import {
   attach,
   createFixture,
   findEditorPage,
   hideDevServerOverlay,
+  requireInitialized,
   shutdown
 } from './support/electron-app'
+
+/** The production editor's content element; CodeMirror keeps its view on the element's tile. */
+type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } }
+
+/** A message the embedded Quiver host posts to Zettlr (vendor/quiver/src/zettlr-host.mjs). */
+interface QuiverBridgeMessage {
+  type: string
+  sessionId?: string|null
+  source?: string
+  message?: string
+}
 
 const DOCUMENT = String.raw`# TikZ live integration
 
@@ -224,24 +237,30 @@ describe('TikZ microlocal live preview in the assembled app', function () {
         centerOffsetX: x + width / 2 - canvasRect.width / 2,
         centerOffsetY: y + height / 2 - contentHeight / 2,
       }
-    }) as { ratio: number, centerOffsetX: number, centerOffsetY: number }|null
+    })
     assert.ok(stableBefore !== null && Number.isFinite(stableBefore.ratio), 'a stable zoomed viewer state must exist before editing')
     const previousSvgPath = await preview.locator('.tikz-live-preview-figure').getAttribute('data-svg-path')
     assert.ok(previousSvgPath !== null, 'the live viewer must name its current rendered SVG')
 
-    await page.evaluate(`(() => {
-      window.__tikzZoomSamples = []
-      window.__tikzZoomSampling = true
-      const tick = () => {
-        const image = document.querySelector('.tikz-live-preview-figure .viewer-canvas img')
-        if (image instanceof HTMLImageElement && image.naturalWidth > 0) {
-          const width = Number.parseFloat(image.style.width)
-          if (Number.isFinite(width)) window.__tikzZoomSamples.push(width / image.naturalWidth)
+    const zoomSampler = await page.evaluateHandle(() => {
+      const samples: number[] = []
+      const sampler = {
+        sampling: true,
+        samples,
+        // A method, not a named arrow: the test transpiler wraps named
+        // functions in a helper the page does not define.
+        tick (): void {
+          const image = document.querySelector('.tikz-live-preview-figure .viewer-canvas img')
+          if (image instanceof HTMLImageElement && image.naturalWidth > 0) {
+            const width = Number.parseFloat(image.style.width)
+            if (Number.isFinite(width)) sampler.samples.push(width / image.naturalWidth)
+          }
+          if (sampler.sampling) requestAnimationFrame(() => sampler.tick())
         }
-        if (window.__tikzZoomSampling) requestAnimationFrame(tick)
       }
-      requestAnimationFrame(tick)
-    })()`)
+      requestAnimationFrame(() => sampler.tick())
+      return sampler
+    })
 
     const validEdit = await page.evaluate(`(() => {
       const view = document.querySelector('.cm-content')?.cmTile?.root?.view
@@ -279,8 +298,8 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       0,
       'the busy indicator disappears as soon as the recompile finishes'
     )
-    const stableAfter = await page.evaluate(() => {
-      ;(window as any).__tikzZoomSampling = false
+    const stableAfter = await page.evaluate(sampler => {
+      sampler.sampling = false
       const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
       const canvas = viewer?.querySelector('.viewer-canvas')
       const image = canvas?.querySelector('img')
@@ -294,13 +313,13 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0
       const contentHeight = Math.max(0, canvasRect.height - footerHeight)
       return {
-        identity: viewer.dataset.e2eStableEditIdentity ?? null,
+        identity: viewer.dataset.e2eStableEditIdentity,
         ratio: width / image.naturalWidth,
         centerOffsetX: x + width / 2 - canvasRect.width / 2,
         centerOffsetY: y + height / 2 - contentHeight / 2,
-        samples: (window as any).__tikzZoomSamples as number[]
+        samples: sampler.samples
       }
-    }) as { identity: string|null, ratio: number, centerOffsetX: number, centerOffsetY: number, samples: number[] }|null
+    }, zoomSampler)
     assert.ok(stableAfter !== null, 'the updated TikZ viewer must remain mounted')
     assert.strictEqual(stableAfter.identity, 'same-viewer-across-compile', 'a successful compile updates the existing Viewer.js instance')
     assert.ok(Math.abs(stableAfter.ratio - stableBefore.ratio) < 0.02, `zoom ratio survives a valid edit: before=${stableBefore.ratio}, after=${stableAfter.ratio}`)
@@ -407,7 +426,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await quiverFrame.locator('body').click({ position: { x: 20, y: 20 } })
     await page.keyboard.press('Escape')
     assert.strictEqual(await preview.isVisible(), true, 'Escape in embedded Quiver does not close the RHS preview')
-    assert.strictEqual(await preview.getAttribute('class').then(value => value?.includes('fullscreen') ?? false), false)
+    assert.strictEqual(await preview.evaluate(element => element.classList.contains('fullscreen')), false)
 
     // The one pane-level expand control promotes whichever renderer is active.
     // Mark the iframe and prove fullscreen promotion/collapse preserves it.
@@ -454,40 +473,50 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     const quiverLabel = quiverFrame.locator('input.label-input')
     await quiverLabel.waitFor({ state: 'visible', timeout: 20_000 })
     assert.strictEqual(await quiverLabel.isEnabled(), true, 'selecting a Quiver vertex enables its own label editor')
-    await page.evaluate(() => {
-      ;(window as any).__quiverBridgeMessages = []
-      window.addEventListener('message', (event) => {
+    const bridgeLog = await page.evaluateHandle(() => {
+      const messages: QuiverBridgeMessage[] = []
+      // The window also receives messages that are not Quiver's (other
+      // frames, dev tooling), so only the Quiver bridge's own types are kept.
+      window.addEventListener('message', (event: MessageEvent<QuiverBridgeMessage|null>) => {
         const type = event.data?.type
-        if (typeof type === 'string' && type.startsWith('zettlr-quiver:')) {
-          ;(window as any).__quiverBridgeMessages.push({ type, source: event.data?.source ?? null, message: event.data?.message ?? null })
+        if (event.data !== null && typeof type === 'string' && type.startsWith('zettlr-quiver:')) {
+          messages.push(event.data)
         }
       }, { once: false })
+      return messages
     })
     await quiverLabel.fill('\\fiberprod{X}{S}{Y}')
     await page.waitForTimeout(250)
-    const bridgeMessages = await page.evaluate(() => (window as any).__quiverBridgeMessages as Array<{ type: string, source: string|null, message: string|null }>)
+    const bridgeMessages = await bridgeLog.jsonValue()
     const quiverChange = bridgeMessages.findLast(message => message.type === 'zettlr-quiver:change')
     assert.ok(quiverChange !== undefined, `Quiver History must emit a change through the host bridge: ${JSON.stringify(bridgeMessages)}`)
-    assert.match(quiverChange.source ?? '', /\\fiberprod\{X\}\{S\}\{Y\}/u, 'Quiver canonical source contains the semantic fibre-product label')
+    assert.match(
+      requireInitialized(quiverChange.source, `a Quiver change message must carry its canonical source: ${JSON.stringify(quiverChange)}`),
+      /\\fiberprod\{X\}\{S\}\{Y\}/u,
+      'Quiver canonical source contains the semantic fibre-product label'
+    )
     const syncOutcome = await page.waitForFunction(() => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      if (view?.state.doc.toString().includes('\\fiberprod{X}{S}{Y}') === true) return { ok: true }
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
+      if (view.state.doc.toString().includes('\\fiberprod{X}{S}{Y}')) return { ok: true }
       const error = document.querySelector('.tikz-quiver-error')?.textContent?.trim()
       return error ? { ok: false, error } : null
-    }, undefined, { timeout: 20_000 }).then(handle => handle.jsonValue()) as { ok: boolean, error?: string }
+    }, undefined, { timeout: 20_000 }).then(handle => handle.jsonValue())
     assert.deepStrictEqual(syncOutcome, { ok: true }, `Quiver edit must synchronize into CodeMirror: ${JSON.stringify(syncOutcome)}`)
     await firstVertex.locator('.label .katex').waitFor({ state: 'visible', timeout: 20_000 })
     assert.strictEqual(await firstVertex.locator('.katex-error').count(), 0, 'the central three-argument \\fiberprod macro renders through Quiver/KaTeX')
 
     await quiverFrame.locator('.toolbar .action[data-name="undo"]').click()
     await page.waitForFunction(() => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return !(view?.state.doc.toString() ?? '').includes('\\fiberprod{X}{S}{Y}')
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
+      return !view.state.doc.toString().includes('\\fiberprod{X}{S}{Y}')
     }, undefined, { timeout: 20_000 })
     await quiverFrame.locator('.toolbar .action[data-name="redo"]').click()
     await page.waitForFunction(() => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return view?.state.doc.toString().includes('\\fiberprod{X}{S}{Y}') === true
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
+      return view.state.doc.toString().includes('\\fiberprod{X}{S}{Y}')
     }, undefined, { timeout: 20_000 })
 
     // Toggle the same RHS pane to the compiler-backed preview. No source-mode
@@ -571,9 +600,10 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     // as upstream's own path-tools E2E does. The generated source must flow back
     // into Zettlr without touching the complex hand-authored constructs.
     const sourceBeforeCanvasDrag = await page.evaluate(() => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      return view?.state.doc.toString() ?? ''
-    }) as string
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
+      return view.state.doc.toString()
+    })
     const rectTool = tikzEditorFrame.locator('button[aria-label="Rect"]').first()
     await rectTool.waitFor({ state: 'visible', timeout: 20_000 })
     await rectTool.click()
@@ -588,8 +618,9 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await page.mouse.move(dragStartX + 120, dragStartY + 80, { steps: 8 })
     await page.mouse.up()
     await page.waitForFunction(previous => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      const source = view?.state.doc.toString() ?? ''
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
+      const source = view.state.doc.toString()
       return source !== previous &&
         source.includes('\\foreach \\x in {0,1,2}') &&
         source.includes('.. controls +(0,0.5) and +(0,-0.5) ..')
@@ -618,7 +649,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
 async function expectSourceInEmbeddedEditor (frame: ReturnType<Page['frameLocator']>, needle: string): Promise<void> {
   await frame.locator('.cm-content').first().waitFor({ state: 'visible', timeout: 20_000 })
   await frame.locator('.cm-content').first().evaluate((element, expected) => {
-    if (!(element.textContent ?? '').includes(expected as string)) {
+    if (element.textContent?.includes(expected) !== true) {
       throw new Error(`embedded tikz-editor source does not contain ${String(expected)}`)
     }
   }, needle)

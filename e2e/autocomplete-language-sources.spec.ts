@@ -5,6 +5,7 @@ import { strict as assert } from 'node:assert'
 import { type ChildProcess } from 'node:child_process'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { type EditorView } from '@codemirror/view'
 import { type Browser, type Page } from 'playwright'
 import {
   attach,
@@ -33,6 +34,9 @@ Central macro: $\fiberpr$
 Added phrase: as a r
 `
 
+/** The production editor's content element; CodeMirror keeps its view on the element's tile. */
+type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } }
+
 describe('language-aware completion sources in the assembled editor', function () {
   this.timeout(240_000)
 
@@ -51,9 +55,9 @@ describe('language-aware completion sources in the assembled editor', function (
     proseFile = path.join(fixture.root, 'portable-prose.txt')
     await writeFile(proseFile, '# fixture-owned portable catalogue\non the other hand\ntherefore\n', 'utf8')
     const configPath = path.join(fixture.configDirectory, 'config.json')
-    const config = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, any>
+    const config: Record<string, unknown> = JSON.parse(await readFile(configPath, 'utf8'))
+    assert.ok(!('editor' in config), `the fixture writes no editor group for this spec to extend: ${JSON.stringify(config)}`)
     config.editor = {
-      ...(config.editor ?? {}),
       proseCompletionFile: proseFile,
       proseCompletionExtraFiles: [],
     }
@@ -74,8 +78,8 @@ describe('language-aware completion sources in the assembled editor', function (
   async function replaceFixtureText (needle: string, replacement: string): Promise<void> {
     assert.ok(page !== undefined)
     const replaced = await page.evaluate(({ target, insert }) => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      if (!view) return false
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
       const at = view.state.doc.toString().indexOf(target)
       if (at < 0) return false
       view.dispatch({ changes: { from: at, to: at + target.length, insert } })
@@ -88,8 +92,8 @@ describe('language-aware completion sources in the assembled editor', function (
     assert.ok(page !== undefined)
     await page.keyboard.press('Escape')
     const positioned = await page.evaluate((target) => {
-      const view = (document.querySelector('.cm-content') as any)?.cmTile?.root?.view
-      if (!view) return false
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('the production editor exposes no CodeMirror view')
       const at = view.state.doc.toString().indexOf(target)
       if (at < 0) return false
       view.dispatch({ selection: { anchor: at + target.length } })
@@ -121,7 +125,9 @@ describe('language-aware completion sources in the assembled editor', function (
     )
     const info = page.locator('.cm-completionInfo .zettlr-completion-info')
     await info.waitFor({ state: 'visible', timeout: 10_000 })
-    return (await info.textContent()) ?? ''
+    const text = await info.textContent()
+    assert.ok(text !== null, `the completion info for ${expectedLabel} must carry text`)
+    return text
   }
 
   it('offers prose phrases, LaTeX in math, and LaTeX plus TikZ inside TikZ', async function () {
@@ -155,7 +161,12 @@ describe('language-aware completion sources in the assembled editor', function (
     const templateCommands = templateCompletions.map(entry => entry.label)
     const mathJaxMacros = await page.evaluate(async () => await window.ipc.invoke('mathjax-macros')) as Record<string, unknown>
     const workshop = JSON.parse(await readFile(path.join(process.cwd(), 'static/autocomplete/latex-workshop-commands.json'), 'utf8')) as Record<string, unknown>
-    const standardCommands = new Set(Object.keys(workshop).map(key => `\\${(/^[A-Za-z@]+/u.exec(key)?.[0] ?? '')}`).filter(label => label !== '\\'))
+    // Keys such as `(` or `[` name control symbols, not control words; only a
+    // control word can collide with a template macro name.
+    const standardCommands = new Set(Object.keys(workshop).flatMap(key => {
+      const word = /^[A-Za-z@]+/u.exec(key)
+      return word === null ? [] : [`\\${word[0]}`]
+    }))
     const generatedTikzSource = await readFile(path.join(process.cwd(), 'source/common/modules/markdown-editor/autocomplete/generated-tikz-commands.ts'), 'utf8')
     const generatedTikz = new Set([...generatedTikzSource.matchAll(/"(\\\\[A-Za-z@]+)"/gu)].map(match => JSON.parse(`"${match[1]}"`) as string))
     const mathJaxMacroCommands = new Set(Object.keys(mathJaxMacros).map(name => `\\${name}`))

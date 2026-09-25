@@ -25,6 +25,8 @@ import { readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { type Browser, type Page } from 'playwright'
+import type { DirectorySettings } from '@dts/common/fsal'
+import type { ConfigOptions } from '@providers/config/get-config-template'
 import {
   assertCleanExit,
   attach,
@@ -182,8 +184,12 @@ describe('a workspace bound to the manifest in its assembly directory', function
     await omittedRow.waitFor({ state: 'visible', timeout: 20_000 })
     const includedMembership = includedRow.locator('.project-membership.included.quarto')
     const omittedMembership = omittedRow.locator('.project-membership.omitted.quarto')
-    assert.match(await includedMembership.getAttribute('title') ?? '', /Book chapter 2/)
-    assert.match(await omittedMembership.getAttribute('title') ?? '', /not included in the Quarto book/i)
+    const includedTitle = await includedMembership.getAttribute('title')
+    const omittedTitle = await omittedMembership.getAttribute('title')
+    assert.ok(includedTitle !== null, 'the included chapter badge must explain its membership')
+    assert.ok(omittedTitle !== null, 'the omitted file badge must explain its membership')
+    assert.match(includedTitle, /Book chapter 2/)
+    assert.match(omittedTitle, /not included in the Quarto book/i)
     assert.equal(await includedMembership.locator('cds-icon').getAttribute('shape'), 'book')
     assert.equal(await includedMembership.locator('.membership-position').textContent(), '2')
     assert.equal(await omittedMembership.locator('cds-icon').getAttribute('shape'), 'book')
@@ -231,17 +237,22 @@ describe('a workspace bound to the manifest in its assembly directory', function
     await cobleChild.waitFor({ state: 'visible', timeout: 10_000 })
 
     await waitUntil(async () => {
-      const settings = JSON.parse(await readFile(path.join(root, '.ztr-directory'), 'utf8')) as any
+      // The binding step above already made the app write these settings.
+      const settings: DirectorySettings = JSON.parse(await readFile(path.join(root, '.ztr-directory'), 'utf8'))
       return settings.sorting === 'filename-down' &&
-        settings.explorer?.displayName === 'filename' &&
-        settings.explorer?.foldersFirst === false &&
-        settings.explorer?.projectFilter === 'omitted'
+        settings.explorer.displayName === 'filename' &&
+        settings.explorer.foldersFirst === false &&
+        settings.explorer.projectFilter === 'omitted'
     }, 'all Explorer view preferences to reach .ztr-directory')
 
     await waitUntil(async () => {
-      const config = JSON.parse(await readFile(path.join(requireInitialized(configDirectory, 'config directory'), 'config.json'), 'utf8')) as any
-      return Array.isArray(config.fileManager?.expandedDirectories) &&
-        config.fileManager.expandedDirectories.includes(coblePath)
+      // Until the app first persists its configuration, config.json holds only
+      // the keys the fixture wrote, and those carry no fileManager group.
+      const config: ConfigOptions | { fileManager?: undefined } = JSON.parse(await readFile(path.join(requireInitialized(configDirectory, 'config directory'), 'config.json'), 'utf8'))
+      if (config.fileManager === undefined) {
+        return false
+      }
+      return config.fileManager.expandedDirectories.includes(coblePath)
     }, 'expanded Explorer folders to reach persistent app config')
 
     // Relaunch against the same profile and workspace. The non-default view

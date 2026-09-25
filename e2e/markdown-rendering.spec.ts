@@ -115,8 +115,14 @@ describe('assembled Markdown rendering', function () {
     assert.ok(!proseText.includes('https://example.com'), `link target remains visible: ${JSON.stringify(proseText)}`)
 
     assert.ok(await page.locator('.preview-math[data-equation="x+y"]').count() > 0, 'inline math must render')
-    const equations = await page.locator('.preview-math').evaluateAll(elements =>
-      elements.map(element => (element as HTMLElement).dataset.equation ?? '')
+    // Every math widget the editor mounts records its TeX source in
+    // data-equation (render-math.ts); a widget without it is a broken render.
+    const equations = await page.locator('.preview-math').evaluateAll((elements: HTMLElement[]) =>
+      elements.map(element => {
+        const equation = element.dataset.equation
+        if (equation === undefined) throw new Error(`a math widget carries no data-equation: ${element.outerHTML}`)
+        return equation
+      })
     )
     for (const equation of [
       ' \\overline{{ \\mathcal{M}_{g, n} }} ',
@@ -129,13 +135,14 @@ describe('assembled Markdown rendering', function () {
         `assembled editor did not render Pandoc \\( … \\) equation ${JSON.stringify(equation)}; rendered equations: ${JSON.stringify(equations)}`
       )
     }
-    const alignWidgets = await page.locator('.preview-math').evaluateAll(elements =>
+    const alignWidgets = await page.locator('.preview-math').evaluateAll((elements: HTMLElement[]) =>
       elements
-        .filter(element => ((element as HTMLElement).dataset.equation ?? '').startsWith('\\begin{align*}'))
-        .map(element => ({
-          equation: (element as HTMLElement).dataset.equation ?? '',
-          display: element.querySelector('mjx-container')?.getAttribute('display') ?? null
-        }))
+        .filter(element => element.dataset.equation?.startsWith('\\begin{align*}') === true)
+        .map(element => {
+          const container = element.querySelector('mjx-container')
+          if (container === null) throw new Error(`MathJax rendered no container for ${element.outerHTML}`)
+          return { equation: element.dataset.equation, display: container.getAttribute('display') }
+        })
     )
     assert.equal(alignWidgets.length, 2, `expected both align* environments to render; got ${JSON.stringify(alignWidgets)}`)
     assert.ok(
