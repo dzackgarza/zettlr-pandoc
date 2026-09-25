@@ -607,6 +607,15 @@ watch(isActiveTab, active => {
     .catch(reportDocumentLoadError)
 })
 
+// The focus event reaches this pane before main moves lastLeafId here, so
+// the pane's own events are refused ownership until that move lands. Publish
+// once it does, or the window keeps the previous pane's document info.
+watch(() => documentTreeStore.lastLeafId, leafId => {
+  if (leafId === props.leafId && currentEditor !== null) {
+    publishActiveEditorState(currentEditor)
+  }
+})
+
 // DATA SETUP
 const mainEditorWrapper = ref<HTMLDivElement|null>(null)
 const editorHost = ref<HTMLDivElement|null>(null)
