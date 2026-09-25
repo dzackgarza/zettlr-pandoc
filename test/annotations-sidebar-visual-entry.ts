@@ -441,14 +441,38 @@ async function mount (): Promise<void> {
   }
 
   const setSession = async (session: typeof sceneSession): Promise<void> => {
+    // The provider double answers every later session read from this one,
+    // so the store cannot re-fetch the previous scenario over it.
+    setAnnotationsSceneSession(session)
     // The broadcast handler's own effect on the cache, without a broadcast
     // to wait for: the panel and the pane read the same session either way.
     collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH] = session
     await settle()
   }
 
+  // Selecting an annotation in the app goes through a navigation that
+  // brings its target into view; CodeMirror renders the thread's block
+  // widget only inside the viewport.
   window.annotationsSceneSelect = async (annotationId) => {
+    if (annotationId === null) {
+      collaborationStore.selectAnnotation(null)
+      await settle()
+      return
+    }
+    const session = collaborationStore.sessionsByDocumentPath[SCENE_DOCUMENT_PATH]
+    if (session === undefined) {
+      throw new Error('the scene document has no collaboration session')
+    }
+    const annotation = session.annotations.items.find(item => item.annotationId === annotationId)
+    if (annotation === undefined) {
+      throw new Error(`the scene session holds no annotation ${annotationId}`)
+    }
     collaborationStore.selectAnnotation(annotationId)
+    if (annotation.anchor.state === 'range') {
+      pane.dispatch({ effects: EditorView.scrollIntoView(annotation.anchor.from, { y: 'center' }) })
+    } else if (annotation.anchor.state === 'point') {
+      pane.dispatch({ effects: EditorView.scrollIntoView(annotation.anchor.at, { y: 'center' }) })
+    }
     await settle()
   }
   window.annotationsSceneSetShowResolved = async (value) => {

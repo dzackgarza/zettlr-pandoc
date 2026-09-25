@@ -17,6 +17,7 @@ import type { DocumentCollaborationSession } from '@dts/common/document-collabor
 import type { LeafNodeJSON } from '@dts/common/documents'
 import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
 import { SCENE_DOCUMENT_PATH } from './annotations-sidebar-scene-fixture'
+import editorConfig from './fixtures/editor-config.json'
 
 /**
  * One request the page raised, as it reached the preload bridge: the
@@ -60,6 +61,13 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return message.command.startsWith('documents:') ? { ok: true } : undefined
   }
 })
+
+// The window-state and config stores read the config at construction, as
+// they do in a real window; the capture serves the same snapshot the tab
+// persistence harness uses.
+documentCollaborationIpcDouble.setSendSyncResponder((channel, message) =>
+  channel === 'config-provider' && message?.command === 'get-config' ? editorConfig : undefined
+)
 
 export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {
   sceneSession = session
