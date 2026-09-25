@@ -132,9 +132,8 @@ export const AnnotationSetSchema = Type.Unsafe<AnnotationSet>(
   ),
 );
 
-const validateAnnotationSetShape = new Ajv({ allErrors: true }).compile<AnnotationSet>(
-  AnnotationSetSchema,
-);
+const annotationSetAjv = new Ajv({ allErrors: true });
+const validateAnnotationSetShape = annotationSetAjv.compile<AnnotationSet>(AnnotationSetSchema);
 
 export type AnnotationDomainValidationCode =
   | "ANNOTATION_SCHEMA_INVALID"
@@ -167,14 +166,17 @@ export function normalizeAnnotationInstruction(instruction: string): string {
   return instruction.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US");
 }
 
+/** Called only after validateAnnotationSetShape rejected a value, so Ajv has recorded why. */
 function schemaIssue(): AnnotationDomainValidationIssue {
+  const errors = validateAnnotationSetShape.errors;
+  if (errors === null || errors === undefined || errors.length === 0) {
+    throw new Error("Annotation schema validation failed without reporting errors");
+  }
   return {
     code: "ANNOTATION_SCHEMA_INVALID",
     message:
       "Stored annotation data is invalid: " +
-      (validateAnnotationSetShape.errors ?? [])
-        .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
-        .join("; "),
+      annotationSetAjv.errorsText(errors, { dataVar: "annotations", separator: "; " }),
   };
 }
 
