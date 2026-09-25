@@ -73,6 +73,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   it("runs the pinned submodule linter and treats TeX math as math, not Markdown emphasis", async function () {
     const result = await lintMarkdownText(
       "The classes $x_i$, \\(y_j\\), and \\underline{z_k} are mathematical.\n",
+      { timeoutMs: 60_000 },
     );
     assert.equal(result.ok, true, "the vendored Flowmark linter must launch successfully");
     if (result.ok) {
@@ -85,7 +86,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   });
 
   it("does not turn formatter normalization into editor lint", async function () {
-    const result = await lintMarkdownText("Use _emphasis_ in prose.\n");
+    const result = await lintMarkdownText("Use _emphasis_ in prose.\n", { timeoutMs: 60_000 });
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.deepEqual(
@@ -99,6 +100,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   it("reports mathematical defects that normalization cannot decide", async function () {
     const result = await lintMarkdownText(
       "The map $Hom_R(M,N)$ has component $x_i_j$ and value $x_{i$.\n",
+      { timeoutMs: 60_000 },
     );
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -117,6 +119,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
         "---\ncsl: styles/does-not-exist.csl\n---\n\n[missing](does-not-exist.md)\n",
         {
           sourcePath: path.join(dir, "document.md"),
+          timeoutMs: 60_000,
         },
       );
       assert.equal(result.ok, true);

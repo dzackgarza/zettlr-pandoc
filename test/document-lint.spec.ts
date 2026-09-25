@@ -36,6 +36,7 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(
@@ -68,6 +69,7 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(
@@ -104,6 +106,7 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
@@ -125,6 +128,7 @@ describe("main-process document lint", function () {
     const context = await createDocumentLintContext({
       homeDirectory: home,
       env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
         tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
         templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),

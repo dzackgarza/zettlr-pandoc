@@ -470,6 +470,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               dataDir: path.join(__dirname, "../static/tikz"),
               figuresDir: figuresRoot,
             },
+            editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
           }),
         },
       },
@@ -726,6 +727,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           app: { openWorkspaces: [scratch] },
           export: { cslLibrary: "" },
           tikz: { dataDir: "", figuresDir: "" },
+          editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
           agentApi: {
             enabled: true,
             port: takenPort,
@@ -1622,6 +1624,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               app: { openWorkspaces: [scratch] },
               export: { cslLibrary: "" },
               tikz: { dataDir: "", figuresDir: "" },
+              editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,

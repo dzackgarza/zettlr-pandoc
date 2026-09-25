@@ -38,6 +38,7 @@ describe('Flowmark lint service', function () {
     })
     const result = await lintMarkdownText('ignored input', {
       command: process.execPath,
+      timeoutMs: 60_000,
       args: [ '-e', `process.stdout.write(${JSON.stringify(payload)})` ]
     })
 
@@ -59,6 +60,7 @@ describe('Flowmark lint service', function () {
   it('rejects malformed linter output instead of inventing clean diagnostics', async function () {
     const result = await lintMarkdownText('text', {
       command: process.execPath,
+      timeoutMs: 60_000,
       args: [ '-e', 'process.stdout.write("not-json")' ]
     })
     assert.equal(result.ok, false)
@@ -70,6 +72,7 @@ describe('Flowmark lint service', function () {
   it('reports a missing runner as a typed failure', async function () {
     const result = await lintMarkdownText('text', {
       command: 'zettlr-no-such-flowmark-runner-xyzzy',
+      timeoutMs: 60_000,
       args: []
     })
     assert.equal(result.ok, false)

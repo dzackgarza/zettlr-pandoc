@@ -13,6 +13,8 @@ export interface DocumentLintSharedContext {
   macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
   tikzRenderConfig: TikzRenderConfig;
+  /** `editor.lint.flowmark.timeoutMs` from the app config. */
+  flowmarkLintTimeoutMs: number;
 }
 
 export interface CreateDocumentLintContextOptions {
@@ -20,7 +22,11 @@ export interface CreateDocumentLintContextOptions {
   env: NodeJS.ProcessEnv;
   referenceState?: WorkspaceReferenceState;
   tikzRenderConfig: TikzRenderConfig;
+  flowmarkLintTimeoutMs: number;
 }
+
+/** Every diagnostic this adapter emits names the Flowmark rule or failure kind behind it. */
+type RuledSourceLintDiagnostic = SourceLintDiagnostic & { rule: string };
 
 /** Omitting `bibliographies` lets Flowmark use the document's own `bibliography` metadata. */
 export interface DocumentLintDocumentOptions {
@@ -56,7 +62,7 @@ export async function lintDocumentText(
   context: DocumentLintSharedContext,
   options: DocumentLintDocumentOptions = {},
 ): Promise<SourceLintDiagnostic[]> {
-  const diagnostics: SourceLintDiagnostic[] = [];
+  const diagnostics: RuledSourceLintDiagnostic[] = [];
   const flowmarkContext = await buildFlowmarkLintContext(
     text,
     documentPath,
@@ -67,6 +73,7 @@ export async function lintDocumentText(
   const flowmark = await lintMarkdownText(text, {
     sourcePath: documentPath,
     context: flowmarkContext,
+    timeoutMs: context.flowmarkLintTimeoutMs,
   });
   if (flowmark.ok) {
     for (const diagnostic of flowmark.diagnostics) {
@@ -97,6 +104,6 @@ export async function lintDocumentText(
       a.from - b.from ||
       a.to - b.to ||
       a.severity.localeCompare(b.severity) ||
-      (a.rule ?? "").localeCompare(b.rule ?? ""),
+      a.rule.localeCompare(b.rule),
   );
 }

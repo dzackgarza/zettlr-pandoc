@@ -298,6 +298,7 @@ export interface AgentApiHost {
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
       tikz: ConfigOptions["tikz"];
+      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
@@ -2183,18 +2184,19 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
 
       const runtimeEnv = this._runtimeEnvironment?.env ?? process.env;
-      const tikzConfig = this._app.config.get().tikz;
+      const config = this._app.config.get();
       const lintContext = await createDocumentLintContext({
         homeDirectory: this.authoringHomeDirectory(),
         env: runtimeEnv,
         referenceState: this._app.references?.getSnapshot(),
         tikzRenderConfig: resolveTikzRenderConfig(
-          tikzConfig.dataDir,
-          tikzConfig.figuresDir,
+          config.tikz.dataDir,
+          config.tikz.figuresDir,
           this.authoringHomeDirectory(),
           app.getPath("userData"),
           runtimeEnv,
         ),
+        flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
       });
       const severityWeight = { info: 0, warning: 1, error: 2 } as const;
       const minimum = query.minimumSeverity;

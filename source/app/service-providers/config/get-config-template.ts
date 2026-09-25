@@ -283,6 +283,10 @@ export interface ConfigOptions {
         username: string;
         apiKey: string;
       };
+      flowmark: {
+        /** How long one flowmark-lint run may take before it is reported as timed out. */
+        timeoutMs: number;
+      };
     };
     autoCorrect: {
       active: boolean;
@@ -519,6 +523,9 @@ export function getConfigTemplate(): ConfigOptions {
           customServer: "",
           username: "",
           apiKey: "",
+        },
+        flowmark: {
+          timeoutMs: 60_000,
         },
       },
       autoCorrect: {

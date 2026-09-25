@@ -62,8 +62,10 @@ export async function buildFlowmarkLintContext(
   return {
     tex: {
       home_directory: source.homeDirectory,
-      texinputs: source.env.TEXINPUTS ?? "",
-      project_roots: options.projectRoots ?? [],
+      // Absent keys mean "not set": an unset TEXINPUTS leaves TeX's own
+      // search path, and a document outside any project has no project root.
+      ...(source.env.TEXINPUTS === undefined ? {} : { texinputs: source.env.TEXINPUTS }),
+      ...(options.projectRoots === undefined ? {} : { project_roots: options.projectRoots }),
       macro_sources: [...source.macroSources],
       // Pandoc's default LaTeX template loads these for mathematical output.
       // Keep this host compile environment in context rather than pretending

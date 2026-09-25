@@ -44,18 +44,19 @@ async function runFlowmarkBackend (
     ? (mainLibrary === '' ? [] : [mainLibrary])
     : (await documentLintAuthority(app.fsal, mainLibrary, sourcePath)).bibliographies
   const projectRoots = strings(request.context?.projectRoots)
-  const tikz = app.config.get().tikz
+  const config = app.config.get()
   const shared = await createDocumentLintContext({
     homeDirectory: electronApp.getPath('home'),
     env: process.env,
     referenceState: app.references.getSnapshot(),
     tikzRenderConfig: resolveTikzRenderConfig(
-      tikz?.dataDir ?? '',
-      tikz?.figuresDir ?? '',
+      config.tikz.dataDir,
+      config.tikz.figuresDir,
       electronApp.getPath('home'),
       electronApp.getPath('userData'),
       process.env
-    )
+    ),
+    flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs
   })
   const diagnostics = await lintDocumentText(
     request.text,

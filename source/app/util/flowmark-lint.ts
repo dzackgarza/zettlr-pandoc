@@ -30,13 +30,12 @@ import type {
   FlowmarkLintSuggestion
 } from '@dts/common/flowmark-lint'
 
-const FLOWMARK_LINT_TIMEOUT_MS = 60_000
-
 export interface FlowmarkLintOptions {
   command?: string
   args?: string[]
   env?: NodeJS.ProcessEnv
-  timeoutMs?: number
+  /** `editor.lint.flowmark.timeoutMs` from the app config. */
+  timeoutMs: number
   /** Real document path used by Flowmark to resolve relative links. */
   sourcePath?: string
   /** JSON-serializable data Flowmark's rules read as lint context. */
@@ -122,7 +121,7 @@ function parseWirePayload (raw: string): FlowmarkLintWirePayload | undefined {
  */
 export async function lintMarkdownText (
   text: string,
-  options: FlowmarkLintOptions = {}
+  options: FlowmarkLintOptions
 ): Promise<FlowmarkLintResult> {
   const lintArgs = [ '--format', 'json', '--exit-zero' ]
   if (options.sourcePath !== undefined && options.sourcePath !== '') {
@@ -147,7 +146,7 @@ export async function lintMarkdownText (
       ),
       input: text,
       env: options.env,
-      timeoutMs: options.timeoutMs ?? FLOWMARK_LINT_TIMEOUT_MS
+      timeoutMs: options.timeoutMs
     })
   } finally {
     if (contextDirectory !== undefined) {
