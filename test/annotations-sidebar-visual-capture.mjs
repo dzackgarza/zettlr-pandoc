@@ -1,30 +1,35 @@
-// Captures the M7 annotations panel structural-conformance scenes (plan
-// section 4, M7's structural gate: 03/05/10/11 against mockup 4). Loads the
-// webpack bundle produced by visual-build.cjs once, then drives the mounted
-// AnnotationsTab's real Pinia store through the window functions the entry
-// exposes (select an annotation, toggle the resolved disclosure, resize for
-// the narrow-container drilldown) between screenshots.
+// Captures the collaboration scenes of the plan's capture suite (section 10:
+// 03/05/10/11, then M10's 04/06/12) plus the review controls, in the current
+// design: the workspace list in the right-hand panel, and the chunk
+// controls, the review bar and the annotation thread inside the editor
+// pane. Loads the webpack bundle produced by visual-build.cjs once, then
+// drives the real Pinia store and the real components through the window
+// functions the entry exposes between screenshots.
 //
 // Usage: node test/annotations-sidebar-visual-capture.mjs <outputDirectory>
 
 import { strict as assert } from 'node:assert'
 import { openScene } from './visual/scene.mjs'
 
+const SCENE_DOCUMENT_PATH = '/tmp/annotations-scene-note.md'
 const SCENE_THREAD_ID = 'annotation-thread'
 const SCENE_PROPOSAL_ID = 'annotation-proposal'
+const SCENE_RESOLVED_ID = 'annotation-resolved'
 const SCENE_ORPHANED_ID = 'annotation-orphaned'
 const SCENE_MULTITURN_ID = 'annotation-multiturn'
 const SCENE_PARTIAL_ID = 'annotation-partial-proposal'
 const SCENE_CHUNK_TASKS_ID = 'suggestion-tasks'
-const SCENE_CHUNK_GOAL_ID = 'suggestion-goal'
 const SCENE_REVIEW_ID = 'review-scene'
 const SCENE_REVIEW_GENERATION = 4
 const SCENE_WORKING_SHA256 = 'a'.repeat(64)
 const SCENE_CHUNK_GOAL_NOTE = 'Check this against the published erratum first.'
+// The goal chunk's working span ("to work with it"), which the proposal
+// annotation's linked packet produced (annotations-sidebar-scene-fixture.ts).
+const SCENE_GOAL_TEXT = 'to work with it'
 
-const WIDE = { width: 440, height: 760 }
-const NARROW = { width: 320, height: 760 }
-const DARK_COMPLETE = { width: 900, height: 760 }
+const WIDE = { width: 980, height: 760, panel: 340 }
+const NARROW = { width: 620, height: 760, panel: 240 }
+const DARK_COMPLETE = { width: 1400, height: 760, panel: 340 }
 
 // The fixture's messages are minutes after its BASE_TIME
 // (annotations-sidebar-scene-fixture.ts), the latest thirty minutes after
@@ -33,7 +38,8 @@ const DARK_COMPLETE = { width: 900, height: 760 }
 const SCENE_NOW = Date.parse('2026-05-20T10:31:00.000Z')
 
 const scene = await openScene({
-  ...WIDE,
+  width: WIDE.width,
+  height: WIDE.height,
   args: ['--ozone-platform=x11', '--disable-gpu']
 })
 const { page } = scene
@@ -42,17 +48,20 @@ await page.clock.install({ time: SCENE_NOW })
 async function openSceneDocument (dark) {
   const background = dark ? '#1e1e1e' : '#ffffff'
   const foreground = dark ? '#e5e7eb' : '#222222'
+  const border = dark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.12)'
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-    html, body { margin: 0; min-height: 100%; background: ${background}; color: ${foreground}; }
-    body { font-family: sans-serif; box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: ${background}; color: ${foreground}; }
+    body { font-family: sans-serif; box-sizing: border-box; --scene-panel-width: ${WIDE.panel}px; }
     #scene-layout { display: flex; height: 100%; }
-    /* Scene 12 only: hidden (and out of layout) for every other scene, so
-       adding it cannot shift the M7 structural-gate captures above. */
-    #editor-complete { display: none; width: 480px; height: 100%; flex-shrink: 0; overflow: hidden; }
-    #app { flex: 1 1 auto; height: 100%; min-width: 0; }
+    /* Scene 12 only: hidden (and out of layout) for every other scene. */
+    #editor-complete { display: none; width: 440px; height: 100%; flex-shrink: 0; overflow: auto; border-right: 1px solid ${border}; }
+    #editor { flex: 1 1 auto; min-width: 0; height: 100%; overflow: auto; }
+    #editor .cm-editor { min-height: 100%; }
+    #app { width: var(--scene-panel-width); flex-shrink: 0; height: 100%; border-left: 1px solid ${border}; }
   </style></head><body class="${dark ? 'dark' : ''}">
     <div id="scene-layout">
       <div id="editor-complete"></div>
+      <div id="editor"></div>
       <div id="app"></div>
     </div>
     <script src="./annotations-sidebar-visual-bundle.js"></script>
@@ -63,11 +72,25 @@ async function openSceneDocument (dark) {
   await page.evaluate(() => window.captureReady)
 }
 
+async function setLayout ({ width, height, panel }) {
+  await page.evaluate(value => { document.body.style.setProperty('--scene-panel-width', `${value}px`) }, panel)
+  await scene.setSize(width, height)
+}
+
 const diagnostics = async () => await page.evaluate(() => window.annotationsSceneDiagnostics())
 const select = async id => { await page.evaluate(id => window.annotationsSceneSelect(id), id) }
 const setShowResolved = async value => { await page.evaluate(value => window.annotationsSceneSetShowResolved(value), value) }
 const setReview = async active => { await page.evaluate(active => window.annotationsSceneSetReview(active), active) }
 const acceptChunk = async index => await page.evaluate(index => window.annotationsSceneAcceptChunk(index), index)
+
+/** Horizontal overflow of every element a scene must keep inside its box. */
+async function overflowing (selectors) {
+  return await page.evaluate(list => list.flatMap(selector =>
+    [...document.querySelectorAll(selector)]
+      .filter(element => element.scrollWidth > element.clientWidth + 1)
+      .map(element => ({ selector, scroll: element.scrollWidth, client: element.clientWidth }))
+  ), selectors)
+}
 
 await openSceneDocument(false)
 
@@ -82,29 +105,20 @@ assert.deepStrictEqual(
   'the right activity-bar icon must visibly and accessibly report unresolved collaboration work'
 )
 
-// Scene 03: the compact list above the detail inspector, a card's thread
-// selected — the wide (list + detail) arrangement mockup 4 shows.
-await select(SCENE_THREAD_ID)
+// Scene 03: a thread opened from its gutter chip, inline under its target,
+// with the workspace list beside the editor.
 let diag = await diagnostics()
-if (!diag.inspectorPresent || diag.inspectorMode !== 'detail' || diag.listCardCount !== 2 || diag.openCount !== 2) {
-  throw new Error(`03-selected-thread-light: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
-// M8: a body-size header row carrying the toggle's shortcut, the composer
-// mounted with the detail, one Resolve, and relative times against the
-// page's clock.
-if (diag.headingCount !== 0) {
-  throw new Error(`03-selected-thread-light: the panel renders ${diag.headingCount} heading element(s); the header is a body-size row`)
-}
-if (diag.shortcutChip === '') {
-  throw new Error('03-selected-thread-light: the header carries no shortcut chip for the panel toggle')
-}
-if (!diag.composerPresent) {
-  throw new Error('03-selected-thread-light: the composer must be mounted with the detail, not behind a Reply click')
-}
-if (diag.resolveCount !== 1) {
-  throw new Error(`03-selected-thread-light: Resolve must render exactly once, got ${diag.resolveCount}`)
-}
-assert.deepStrictEqual(diag.messageTimes, ['31 min. ago', '29 min. ago'], '03-selected-thread-light: relative times against the page clock')
+assert.deepStrictEqual(diag.threadIds, [], '03: no thread is open before the owner opens one')
+await page.evaluate(() => window.annotationsSceneClickChip(3))
+diag = await diagnostics()
+assert.deepStrictEqual(diag.threadIds, [SCENE_THREAD_ID], '03: the chip on line 3 opens that annotation\'s thread in the editor')
+assert.equal(diag.annotationRowCount, 2, '03: the panel lists the two open annotations')
+assert.equal(diag.headingCount, 0, '03: the panel header is a body-size row, not a heading')
+assert.notEqual(diag.shortcutChip, '', '03: the header carries the panel toggle\'s shortcut chip')
+assert.equal(diag.composerPresent, true, '03: the composer is mounted with the thread, not behind a Reply click')
+assert.equal(diag.resolveCount, 1, '03: Resolve renders exactly once')
+assert.equal(diag.threadLifecycle, 'Open')
+assert.deepStrictEqual(diag.messageTimes, ['31 min. ago', '29 min. ago'], '03: relative times against the page clock')
 await scene.capture('03-selected-thread-light')
 
 // The clock moves two minutes: every relative time moves with it, with no
@@ -113,107 +127,107 @@ await page.clock.runFor(2 * 60_000)
 diag = await diagnostics()
 assert.deepStrictEqual(diag.messageTimes, ['33 min. ago', '31 min. ago'], 'relative times must follow the clock')
 
-// Mod-Enter in the composer sends the trimmed draft to the provider as the
-// owner's message on the selected annotation; Escape discards a draft.
+// Mod-Enter in the thread's composer sends the trimmed draft to the
+// provider as the owner's message on that annotation; Escape discards a
+// draft.
 const reply = await page.evaluate(() => window.annotationsSceneComposeReply('  Please cite the erratum.  '))
 assert.equal(reply?.channel, 'documents:add-annotation-message', 'the composer must raise the owner message request')
 assert.equal(reply.message.annotationId, SCENE_THREAD_ID)
 assert.equal(reply.message.text, 'Please cite the erratum.')
 assert.equal(await page.evaluate(() => window.annotationsSceneComposeEscape('a draft to discard')), '', 'Escape must clear the composer')
 
+// The chip toggles: a second press closes the thread it opened.
+await page.evaluate(() => window.annotationsSceneClickChip(3))
+diag = await diagnostics()
+assert.deepStrictEqual(diag.threadIds, [], 'a second press on the chip closes its thread')
+
 // The header's close hands the panel's parent the intent to hide the pane.
 assert.equal(await page.evaluate(() => window.annotationsSceneClickClose()), 1, 'close must reach the parent once')
 
-// Scene 05: a different card selected, one whose thread carries a pending
-// linked proposal — ProposalActionCard and the "Show proposal" action.
-await select(SCENE_PROPOSAL_ID)
+// Scene 05: a thread opened from its row in the workspace panel, one that
+// carries a pending linked proposal — the proposal card and its "Show diff".
+const navigations = await page.evaluate(id => window.annotationsSceneClickRow(id), SCENE_PROPOSAL_ID)
+assert.equal(navigations.length, 1)
+assert.equal(navigations[0].documentPath, SCENE_DOCUMENT_PATH)
+assert.equal(navigations[0].annotationId, SCENE_PROPOSAL_ID, 'an annotation row names its annotation')
 diag = await diagnostics()
-if (!diag.inspectorPresent || diag.inspectorMode !== 'detail') {
-  throw new Error(`05-linked-proposal-pending: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
-if (diag.showProposalLabel !== 'Show diff') {
-  throw new Error(`05-linked-proposal-pending: the proposal card's affordance reads ${JSON.stringify(diag.showProposalLabel)}`)
-}
+assert.deepStrictEqual(diag.threadIds, [SCENE_PROPOSAL_ID], '05: the row opens that annotation\'s thread in the editor')
+assert.equal(diag.showProposalLabel, 'Show diff', '05: the proposal card\'s one affordance')
 await scene.capture('05-linked-proposal-pending')
 
-// Scene 10: back to the list, resolved disclosure opened — the resolved
-// card appears ONLY once expanded, behind the "View resolved" control.
-await select(null)
+// Scene 10: resolved annotations shown. The panel lists outstanding work
+// only; a resolved annotation is read where it was made — its highlight in
+// the editor, and its thread there, marked Resolved and offering Reopen.
 await setShowResolved(true)
+await select(SCENE_RESOLVED_ID)
 diag = await diagnostics()
-if (diag.inspectorMode !== 'list' || !diag.resolvedDisclosurePresent || diag.listCardCount !== 3) {
-  throw new Error(`10-resolved-annotations-view: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
+assert.deepStrictEqual(diag.threadIds, [SCENE_RESOLVED_ID], '10: the resolved annotation\'s thread opens once resolved ones are shown')
+assert.equal(diag.threadLifecycle, 'Resolved')
+assert.equal(diag.resolveLabel, 'Reopen', '10: a resolved thread offers Reopen in Resolve\'s place')
+assert.equal(diag.annotationRowCount, 2, '10: the panel still lists only the outstanding annotations')
+assert.equal(await page.locator('#editor .cm-textAnnotation-mark-resolved').count(), 1, '10: the resolved target is highlighted in the editor')
 await scene.capture('10-resolved-annotations-view')
 
-// Scene 11: narrow container width — the drilldown arrangement. Selecting
-// a card must hide the list behind the detail (and its back button)
-// rather than the wide stacked layout.
+// Scene 11: a narrow window. Nothing drills down any more: the panel's rows
+// wrap their whole reason, and the thread wraps inside the narrowed editor.
+// Neither may scroll sideways.
 await setShowResolved(false)
 await select(SCENE_THREAD_ID)
-await scene.setSize(NARROW.width, NARROW.height)
-// The list must still be in the DOM and hidden — a list that never mounted
-// would prove nothing.
-await page.waitForFunction(() => {
-  const list = document.querySelector('#app .annotation-list')
-  return list !== null && getComputedStyle(list).display === 'none'
-}, undefined, { timeout: 5000 })
+await setLayout(NARROW)
+diag = await diagnostics()
+assert.deepStrictEqual(diag.threadIds, [SCENE_THREAD_ID])
+assert.deepStrictEqual(
+  await overflowing(['#annotations-panel', '.annotation-workspace-row', '#editor .cm-content', '.annotation-inline-thread']),
+  [],
+  '11: nothing in the narrow layout scrolls sideways'
+)
 await scene.capture('11-narrow-sidebar-drilldown')
 
-// M10 scene 04 (04-ai-reply-no-proposal): a genuinely multi-turn thread —
-// owner, agent, owner, agent — carrying NO linked proposal, so
-// ProposalActionCard must not mount for it.
-await scene.setSize(WIDE.width, WIDE.height)
+// Scene 04 (04-ai-reply-no-proposal): a genuinely multi-turn thread —
+// owner, agent, owner, agent — carrying NO linked proposal, so the proposal
+// card must not mount in it.
+await setLayout(WIDE)
 await page.evaluate(() => window.annotationsSceneSetM10CapturesScenario(true))
 await select(SCENE_MULTITURN_ID)
 diag = await diagnostics()
-if (!diag.inspectorPresent || diag.inspectorMode !== 'detail') {
-  throw new Error(`04-ai-reply-no-proposal: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
-if (await page.locator('#app .proposal-action-card').count() > 0) {
-  throw new Error('04-ai-reply-no-proposal: a thread with no linked proposal must not render ProposalActionCard')
-}
+assert.deepStrictEqual(diag.threadIds, [SCENE_MULTITURN_ID])
+assert.equal(diag.messageTimes.length, 4, '04: all four turns render')
+assert.equal(diag.proposalCardText, null, '04: a thread with no linked proposal renders no proposal card')
 await scene.capture('04-ai-reply-no-proposal')
 
-// M10 scene 06 (06-linked-proposal-partial): two linked proposalActions,
-// one already decided and one still pending — ProposalActionCard's
-// "pending" reading, with the review's own remaining outstanding chunks
-// visible below.
+// Scene 06 (06-linked-proposal-partial): two linked proposals, one decided
+// and one pending — the proposal card's "pending" reading — with the
+// review's remaining chunks in the same editor, each carrying its controls,
+// and the review bar below.
 await select(SCENE_PARTIAL_ID)
 diag = await diagnostics()
-if (!diag.inspectorPresent || diag.suggestionChunkCount !== 2) {
-  throw new Error(`06-linked-proposal-partial: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
-const partialProposalSummary = await page.evaluate(
-  () => document.querySelector('#app .proposal-action-card')?.textContent ?? null
-)
-if (partialProposalSummary === null || !partialProposalSummary.includes('pending')) {
-  throw new Error(`06-linked-proposal-partial: expected a pending proposal summary, got ${JSON.stringify(partialProposalSummary)}`)
-}
+assert.deepStrictEqual(diag.threadIds, [SCENE_PARTIAL_ID])
+assert.ok(diag.proposalCardText?.includes('pending'), `06: expected a pending proposal summary, got ${JSON.stringify(diag.proposalCardText)}`)
+assert.equal(diag.chunkControlCount, 2, '06: both remaining chunks carry their controls')
+assert.equal(diag.reviewBarLabel, '2 changes pending')
 await scene.capture('06-linked-proposal-partial')
 
 await page.evaluate(() => window.annotationsSceneSetM10CapturesScenario(false))
 
-// M9: the review adjudication controls the editor used to carry. The
-// structural gate's other half — the editor's own capture proves no
-// control renders there; this proves they render HERE, and that clicking
-// one raises the fenced provider request rather than deciding locally.
+// The review controls: under each chunk in the editor, Accept, Reject and
+// the note; in the review bar, the pending count, the review comment,
+// Reject all and Accept all; in the panel, the document's rows and its
+// Accept all. A click raises the fenced provider request rather than
+// deciding locally.
 await select(null)
 await setReview(true)
 diag = await diagnostics()
-if (!diag.suggestionInspectorPresent || diag.suggestionChunkCount !== 2) {
-  throw new Error(`review-suggestion-inspector: the panel did not render both chunks ${JSON.stringify(diag)}`)
-}
-if (diag.acceptCount !== 2 || diag.rejectCount !== 2) {
-  throw new Error(`review-suggestion-inspector: expected one Accept and one Reject per chunk, got ${JSON.stringify(diag)}`)
-}
-if (diag.massActionCount !== 2 || !diag.reviewCommentPresent) {
-  throw new Error(`review-suggestion-inspector: the mass actions or the review comment are missing ${JSON.stringify(diag)}`)
-}
-if (diag.chunkNoteValues.length !== 2 || diag.chunkNoteValues[0] !== '' || diag.chunkNoteValues[1] !== SCENE_CHUNK_GOAL_NOTE) {
-  throw new Error(`review-suggestion-inspector: a chunk note field is not prefilled from the provider ${JSON.stringify(diag.chunkNoteValues)}`)
-}
-await scene.capture('review-suggestion-inspector-light')
+assert.equal(diag.chunkControlCount, 2, 'review: the editor carries one control block per chunk')
+assert.equal(diag.acceptCount, 2, 'review: one Accept per chunk')
+assert.equal(diag.rejectCount, 2, 'review: one Reject per chunk')
+assert.deepStrictEqual(diag.chunkNoteValues, ['', SCENE_CHUNK_GOAL_NOTE], 'review: each note field is prefilled from the provider, its own chunk\'s only')
+assert.equal(diag.reviewBarPresent, true)
+assert.equal(diag.reviewBarMassActionCount, 2, 'review: the bar offers Reject all and Accept all')
+assert.equal(diag.reviewCommentPresent, true)
+assert.equal(diag.suggestionRowCount, 2, 'review: the panel lists both outstanding changes')
+assert.equal(diag.documentAcceptAllCount, 1, 'review: the document group offers its Accept all')
+assert.equal(diag.globalAcceptAllPresent, true, 'review: the panel header offers the workspace Accept all')
+await scene.capture('review-inline-controls-light')
 
 assert.deepStrictEqual(
   await acceptChunk(0),
@@ -227,16 +241,12 @@ assert.deepStrictEqual(
       expectedWorkingSha256: SCENE_WORKING_SHA256
     }
   },
-  'review-suggestion-inspector: Accept raised the wrong request'
+  'review: Accept raised the wrong request'
 )
-// The panel decided nothing locally: only the provider's broadcast may.
+// Nothing was decided locally: only the provider's broadcast may.
 diag = await diagnostics()
-if (diag.suggestionChunkCount !== 2) {
-  throw new Error(`review-suggestion-inspector: the panel applied a decision itself ${JSON.stringify(diag)}`)
-}
-if (diag.outstandingLabel !== '2 outstanding') {
-  throw new Error(`review-suggestion-inspector: outstanding label reads ${JSON.stringify(diag.outstandingLabel)}`)
-}
+assert.equal(diag.chunkControlCount, 2, 'review: the pane applied a decision itself')
+assert.equal(diag.reviewBarLabel, '2 changes pending')
 
 // A chunk note commits on blur, trimmed, addressing its own chunk.
 assert.deepStrictEqual(
@@ -267,50 +277,47 @@ assert.deepStrictEqual(
   }
 )
 
-// Every commit is a review mutation, and its broadcast re-renders this
-// panel. A reviewer still typing in a note field must keep the characters
-// they have not sent, and the caret with them.
+// Every commit is a review mutation, and its broadcast re-renders the
+// controls. A reviewer still typing in a note field must keep the
+// characters they have not sent, and the caret with them.
 assert.deepStrictEqual(
   await page.evaluate(() => window.annotationsSceneTypeThroughEcho(0, 'first second')),
   { value: 'first second', focused: true },
   'the commit echo must not eat unsent keystrokes or focus'
 )
 
-// The review ends: its whole surface leaves with it rather than standing
-// as a bar of dead controls.
+// The review ends: its controls leave the editor with it rather than
+// standing as dead controls.
 await setReview(false)
 diag = await diagnostics()
-if (diag.suggestionInspectorPresent || diag.acceptCount !== 0) {
-  throw new Error(`review-suggestion-inspector: a resolved review left controls behind ${JSON.stringify(diag)}`)
-}
+assert.equal(diag.chunkControlCount, 0, 'review: an ended review left chunk controls behind')
+assert.equal(diag.reviewBarPresent, false, 'review: an ended review left its bar behind')
 await setReview(true)
 
-// The panel at its narrowest: every decision must stay reachable, and the
-// chunk rows must not push the sidebar into horizontal scrolling.
-await scene.setSize(NARROW.width, NARROW.height)
-const overflow = await page.evaluate(() => {
-  const element = document.querySelector('.suggestion-inspector')
-  return { scroll: element.scrollWidth, client: element.clientWidth }
-})
-if (overflow.scroll > overflow.client + 1) {
-  throw new Error(`review-suggestion-inspector-narrow: horizontal overflow ${JSON.stringify(overflow)}`)
-}
-await scene.capture('review-suggestion-inspector-narrow')
+// The narrow window: every decision must stay reachable, and neither the
+// chunk controls nor the bar may push the editor into sideways scrolling.
+await setLayout(NARROW)
+assert.deepStrictEqual(
+  await overflowing(['#editor .cm-content', '.suggestion-chunk', '.suggestion-review-bar', '#annotations-panel']),
+  [],
+  'review-narrow: horizontal overflow'
+)
+await scene.capture('review-inline-controls-narrow')
 
-await scene.setSize(WIDE.width, WIDE.height)
+await setLayout(WIDE)
 await openSceneDocument(true)
 await setReview(true)
 diag = await diagnostics()
-if (!diag.suggestionInspectorPresent || diag.acceptCount !== 2) {
-  throw new Error(`review-suggestion-inspector-dark: unexpected diagnostics ${JSON.stringify(diag)}`)
-}
-await scene.capture('review-suggestion-inspector-dark')
+assert.equal(diag.acceptCount, 2, 'review-dark: the controls render in the dark theme too')
+await scene.capture('review-inline-controls-dark')
 
-// M10 scene 12 (12-dark-mode-complete): every distinguishable editor
-// state (plan section 3) alongside the panel, in dark theme, in one
-// frame — this scene has no light variant, so it only runs here.
+// Scene 12 (12-dark-mode-complete): every surface in the dark theme in one
+// frame — the locator states of plan section 3 in the composite editor, and
+// beside it the pane with an open thread, both chunks' controls and the
+// review bar, and the workspace panel. This scene has no light variant.
+await select(SCENE_PROPOSAL_ID)
 await page.evaluate(() => { document.querySelector('#editor-complete').style.display = 'block' })
-await scene.setSize(DARK_COMPLETE.width, DARK_COMPLETE.height)
+await setLayout(DARK_COMPLETE)
 const editorDiag = await page.evaluate(() => window.annotationsSceneEditorDiagnostics())
 if (
   editorDiag.marks !== 5 ||
@@ -327,41 +334,44 @@ if (
 if (editorDiag.contentScrollWidth > editorDiag.contentClientWidth + 1) {
   throw new Error(`12-dark-mode-complete: editor content overflows horizontally ${JSON.stringify(editorDiag)}`)
 }
+diag = await diagnostics()
+assert.deepStrictEqual(diag.threadIds, [SCENE_PROPOSAL_ID], '12: the open thread renders in the dark pane')
+assert.equal(diag.chunkControlCount, 2, '12: the chunk controls render in the dark pane')
+assert.equal(diag.reviewBarPresent, true, '12: the review bar renders in the dark pane')
 await scene.capture('12-dark-mode-complete')
-await scene.setSize(WIDE.width, WIDE.height)
+await setLayout(WIDE)
 await page.evaluate(() => { document.querySelector('#editor-complete').style.display = 'none' })
 
-process.stderr.write('annotations-sidebar-visual-capture: all ten scenes captured and structurally verified\n')
+process.stderr.write('annotations-sidebar-visual-capture: all scenes captured and structurally verified\n')
 
-// M10 (S7): "Show proposal" must find and mark the SPECIFIC outstanding
-// chunk this annotation's linked proposal produced — the panel was
-// already visible (a review is active), so revealing it proves nothing;
-// resolving the packetId link does. SCENE_PROPOSAL_ID's proposalActions
-// name packet-1, which annotations-sidebar-scene-fixture.ts's
-// buildSceneReview links to SCENE_CHUNK_GOAL_ID alone.
-await select(SCENE_PROPOSAL_ID)
-const linkedChunkIds = await page.evaluate(() => window.annotationsSceneClickShowProposal())
-if (JSON.stringify(linkedChunkIds) !== JSON.stringify([SCENE_CHUNK_GOAL_ID])) {
-  throw new Error(`show-proposal: expected the linked ${SCENE_CHUNK_GOAL_ID} chunk focused, got ${JSON.stringify(linkedChunkIds)}`)
-}
+// S7: "Show diff" must reveal the SPECIFIC outstanding chunk this
+// annotation's linked proposal produced. SCENE_PROPOSAL_ID's proposalActions
+// name packet-1, which buildSceneReview links to the goal chunk alone, so
+// the pane must be asked to reveal exactly that chunk's working span.
+const revealedRanges = await page.evaluate(() => window.annotationsSceneClickShowProposal())
+const goalFrom = (await page.evaluate(() => window.annotationsSceneWorkingText)).indexOf(SCENE_GOAL_TEXT)
+assert.notEqual(goalFrom, -1, 'the scene document carries the goal chunk\'s text')
+assert.deepStrictEqual(
+  revealedRanges,
+  [{ from: goalFrom, to: goalFrom + SCENE_GOAL_TEXT.length }],
+  'show-proposal: the pane must be asked to reveal the linked chunk'
+)
 
-// M10 (S8/I6): Reattach only ever emits an intent (an annotation id) —
-// clicking it must hand the panel's parent (App.vue's role) that exact id.
+// S8/I6: Reattach only ever emits an intent (an annotation id) — the pane,
+// which owns the selection, supplies the range.
 await setReview(false)
 await page.evaluate(() => window.annotationsSceneSetOrphanScenario(true))
 await select(SCENE_ORPHANED_ID)
+diag = await diagnostics()
+assert.equal(diag.reattachPresent, true, 'reattach: an orphaned thread offers Reattach')
 const reattachAnnotationIds = await page.evaluate(() => window.annotationsSceneClickReattach())
-if (JSON.stringify(reattachAnnotationIds) !== JSON.stringify([SCENE_ORPHANED_ID])) {
-  throw new Error(`begin-reattach: expected the panel to emit ${SCENE_ORPHANED_ID}, got ${JSON.stringify(reattachAnnotationIds)}`)
-}
+assert.deepStrictEqual(reattachAnnotationIds, [SCENE_ORPHANED_ID], 'reattach: exactly the orphaned annotation\'s id reaches the pane')
 
-process.stderr.write('annotations-sidebar-visual-capture: show-proposal and begin-reattach wiring verified\n')
+process.stderr.write('annotations-sidebar-visual-capture: show-diff and reattach wiring verified\n')
 
-// Printed as the LAST stdout line so annotations-sidebar.spec.ts can parse
-// it — every other line above goes to stderr for exactly this reason.
 console.log(JSON.stringify({
-  showProposalLinkedChunkIds: linkedChunkIds,
-  beginReattachAnnotationIds: reattachAnnotationIds
+  showProposalRevealedRanges: revealedRanges,
+  reattachAnnotationIds
 }))
 
 await scene.close()

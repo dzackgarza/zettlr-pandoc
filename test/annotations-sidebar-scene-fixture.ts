@@ -17,7 +17,7 @@
  *                  The same fixture also carries the OTHER half of a
  *                  collaboration session on demand: buildSceneSessionWithReview
  *                  adds two outstanding suggestions over the same working
- *                  text, which is what the SuggestionInspector (M9) reads.
+ *                  text, which is what the editor's chunk controls read.
  *
  * END HEADER
  */
@@ -147,7 +147,7 @@ export const SCENE_CHUNK_GOAL_NOTE = 'Check this against the published erratum f
 /**
  * Two outstanding suggestions over the SAME working text the annotations
  * above anchor into — a replacement early in the document and one late, so
- * the panel's chunk order and line locators are both observable. One of them
+ * the chunk order and placement in the editor are both observable. One of them
  * already carries a reviewer note, which is what proves the note field is
  * prefilled from the provider rather than starting empty.
  */
@@ -174,7 +174,7 @@ export function buildSceneReview (): ReviewDiffSession {
         seam: goal.from,
         description: 'Frame the goal as collaboration, not replacement.',
         // The chunk SCENE_ANNOTATION_PROPOSAL_ID's proposalActions link to
-        // (action-1 / packet-1) — how "Show proposal" finds this one card
+        // (action-1 / packet-1) — how "Show diff" finds this one chunk
         // among the review's outstanding chunks (S7).
         packetId: 'packet-1'
       }

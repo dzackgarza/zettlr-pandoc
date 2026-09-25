@@ -294,16 +294,18 @@ capture-editor-annotations output: sync-dependencies
 capture-selection-composer output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" selection-composer "{{output}}"
 
-# M7 annotations panel structural-conformance scenes (plan section 4: 03
-# selected-thread, 05 linked-proposal-pending, 10 resolved-annotations-view,
-# 11 narrow-sidebar-drilldown), extended by M9 with the review-suggestion-
-# inspector scenes and by M10 with 04 (a genuinely multi-turn thread with no
-# linked proposal), 06 (a partially-decided proposal alongside the review's
-# remaining outstanding chunks), and 12 (every distinguishable editor state
-# from plan section 3, dark theme, beside the panel — this scene's only
-# variant). Captured in isolated offscreen Electron against a real Pinia
-# store and a fixture DocumentCollaborationSession. This never starts Forge,
-# a dev server, xdg-open, or the system browser.
+# The collaboration scenes of the plan's capture suite, in the current
+# design (workspace list in the panel; chunk controls, review bar and the
+# annotation thread inside the editor): 03 a thread opened from its chip,
+# 05 a thread opened from its panel row with a pending linked proposal, 10
+# a resolved thread shown in the editor, 11 the narrow window, 04 a
+# multi-turn thread with no linked proposal, 06 a partially decided proposal
+# beside the review's remaining chunk controls, the review-inline-controls
+# scenes (light, narrow, dark), and 12 every surface in the dark theme,
+# with the locator states of plan section 3. Captured in isolated offscreen
+# Electron against a real Pinia store and a fixture
+# DocumentCollaborationSession. This never starts Forge, a dev server,
+# xdg-open, or the system browser.
 capture-annotations-panel output: sync-dependencies
     {{bun}} run "{{justfile_directory()}}/scripts/capture-runner.mjs" annotations-panel "{{output}}"
 
