@@ -268,8 +268,8 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   a CodeMirror linter of its own. Macro-sensitive rules load the declared macro
   sources themselves, so the same checks run from `flowmark-lint`; do not
   precompute a GUI-owned macro inventory for linting. The
-  project's own source-code linter is ESLint
-  (`eslint.config.mjs`).
+  project's own source code is checked by the global ai-review-ci bun
+  profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)
 
@@ -280,6 +280,11 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
+- Files that also exist in upstream Zettlr keep upstream's formatting (single
+  quotes, no semicolons, upstream's import order) on every line they share with
+  upstream; never run a formatter over them. A reformatted shared file conflicts
+  with every upstream edit. Upstream's `eslint.config.mjs`
+  (`git show upstream/develop:eslint.config.mjs`) is the style authority.
 
 # Review Guidelines
 
