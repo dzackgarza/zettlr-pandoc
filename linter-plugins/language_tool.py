@@ -10,18 +10,21 @@ only a transport/presentation client.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from flowmark.lint_rules import pandoc_math_regions
 from flowmark.pandoc_lint import parse_pandoc_for_lint, walk_pandoc
 
 TRAILING_PUNCT = re.compile(r"([,.;:!?])\s*$")
+LOGBACK_CONFIGURATION = Path(__file__).with_name("languagetool-logback.xml")
 
 
 class Variants(TypedDict):
@@ -316,7 +319,10 @@ def _cli_check(text: str, context: LanguageToolContext) -> LTResponse:
     if context["motherTongue"].strip():
         args.extend(["-m", context["motherTongue"].strip()])
     args.append("-")
-    completed = subprocess.run(args, input=text, text=True, capture_output=True, check=True)
+    # The JVM reads JAVA_TOOL_OPTIONS itself, so the system property reaches
+    # LanguageTool through its launcher script unchanged.
+    environment = {**os.environ, "JAVA_TOOL_OPTIONS": f"-Dlogback.configurationFile={LOGBACK_CONFIGURATION}"}
+    completed = subprocess.run(args, input=text, text=True, capture_output=True, check=True, env=environment)
     response: LTResponse = json.loads(completed.stdout)
     return response
 
