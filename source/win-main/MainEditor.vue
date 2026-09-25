@@ -41,6 +41,13 @@
       @saved="closeAnnotationComposer()"
       @close="closeAnnotationComposer()"
     />
+    <InlineCollaborationControls
+      :document-path="props.file.path"
+      :blocks="collaborationBlocks"
+      @reveal-range="revealRange($event)"
+      @reattach="reattachAnnotation($event)"
+      @step-chunk="stepReviewChunk($event)"
+    />
   </div>
 </template>
 
@@ -77,6 +84,9 @@ import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescr
 import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
+import InlineCollaborationControls, { type CollaborationBlock } from './editor-collaboration/InlineCollaborationControls.vue'
+import type { CollaborationControl } from '@common/modules/markdown-editor/plugins/collaboration-controls'
+import { selectNextReviewChunk, selectPreviousReviewChunk } from '@common/modules/markdown-editor/plugins/review-chunks'
 import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
 import { resolveReattachSelection } from './util/annotation-reattach-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
@@ -176,7 +186,6 @@ const emit = defineEmits<{
   (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
-  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const windowStateStore = useWindowStateStore()
@@ -226,6 +235,40 @@ function requestAnnotationComposer (event: Event): void {
  */
 function closeAnnotationComposer (): void {
   annotationComposerRequest.value = null
+}
+
+/**
+ * The blocks this pane's editor has placed for review chunks, the review bar
+ * and the open annotation thread. The editor calls
+ * mountCollaborationControl when it places one and the returned function
+ * when it drops it; InlineCollaborationControls renders into each.
+ */
+const collaborationBlocks = shallowRef<CollaborationBlock[]>([])
+let collaborationBlockSerial = 0
+
+function mountCollaborationControl (dom: HTMLElement, control: CollaborationControl): () => void {
+  const block: CollaborationBlock = { key: ++collaborationBlockSerial, dom, control }
+  collaborationBlocks.value = [ ...collaborationBlocks.value, block ]
+  return () => {
+    collaborationBlocks.value = collaborationBlocks.value.filter(existing => existing !== block)
+  }
+}
+
+function revealRange (range: SourceRange): void {
+  currentEditor?.selectSourceRange(range)
+}
+
+function stepReviewChunk (direction: 1 | -1): void {
+  if (currentEditor === null) {
+    return
+  }
+  const view = currentEditor.instance
+  if (direction === 1) {
+    selectNextReviewChunk(view)
+  } else {
+    selectPreviousReviewChunk(view)
+  }
+  view.focus()
 }
 
 // UNREFFED STUFF
@@ -837,25 +880,15 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
 })
 
 /**
- * S8/I6: the annotations panel's Reattach only ever names an annotation
- * (component-contracts.ts) — the replacement range is whatever the owner
- * has just selected in THIS, the last focused pane for the document. There
- * is no arming step and no background guess: an empty selection means the
- * owner has not picked a location yet, so this refuses with a toast that
- * says exactly that, rather than silently doing nothing or fabricating a
- * point range.
+ * S8/I6: the thread's Reattach names only the annotation — the replacement
+ * range is whatever the owner has selected in THIS pane, the one whose
+ * thread was clicked. There is no arming step and no background guess: an
+ * empty selection means the owner has not picked a location yet, so this
+ * refuses with a toast that says exactly that, rather than silently doing
+ * nothing or fabricating a point range.
  */
-watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
-  if (props.activeFile?.path !== props.file.path || currentEditor === null) {
-    return
-  }
-  if (documentTreeStore.lastLeafId !== props.leafId) {
-    // Mirrors executeCommand/replaceSelection above: an unfocused pane
-    // showing the same file is not where the owner's selection lives.
-    return
-  }
-  const data = props.editorCommands.data
-  if (typeof data !== 'object' || data === undefined || !('annotationId' in data) || data.filePath !== props.file.path) {
+function reattachAnnotation (annotationId: string): void {
+  if (currentEditor === null) {
     return
   }
   const selection = resolveReattachSelection(currentEditor.instance)
@@ -863,14 +896,14 @@ watch(toRef(props.editorCommands, 'beginAnnotationReattach'), () => {
     showToast(trans('Select the new location for this annotation, then click Reattach again.'), 'error')
     return
   }
-  collaborationStore.reattachAnnotation(props.file.path, data.annotationId, selection.from, selection.to)
+  collaborationStore.reattachAnnotation(props.file.path, annotationId, selection.from, selection.to)
     .then(result => {
       if ('ok' in result && !result.ok) {
         showToast(result.message, 'error')
       }
     })
     .catch(err => reportError('[MainEditor] Could not reattach the annotation', err))
-})
+}
 
 watch(toRef(props.editorCommands, 'replaceSelection'), () => {
   if (props.activeFile?.path !== props.file.path) {
@@ -1123,12 +1156,16 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
     emit('fileSearch')
   })
 
-  // A gutter chip was clicked. Opening the annotations panel is the
-  // window's business, so relay the annotation up to App.vue, which owns
-  // both directions of the panel's visibility.
+  // A gutter chip was clicked: open that annotation's inline thread, or
+  // close it when it is the one already open, as an editor comment glyph
+  // toggles its thread.
   editor.on('annotation-selected', (annotationId: string) => {
-    emit('openAnnotation', annotationId)
+    collaborationStore.selectAnnotation(
+      collaborationStore.selectedAnnotationId === annotationId ? null : annotationId
+    )
   })
+
+  editor.setCollaborationControls(mountCollaborationControl)
 
   // An in-editor help link (the completion info panel, issue #1 review A2)
   // requested the searchable Pandoc quick help: relay up to App.vue's

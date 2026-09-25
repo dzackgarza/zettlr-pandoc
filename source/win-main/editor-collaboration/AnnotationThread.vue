@@ -41,7 +41,7 @@
  *                  instruction — there is no separate title or instruction
  *                  field rendered here, only the thread. Each message is an
  *                  author row (avatar glyph, name, relative time against
- *                  the panel's clock) over its body.
+ *                  the host's minute clock) over its body.
  *
  * END HEADER
  */
@@ -51,7 +51,7 @@ import { AvatarFallback, AvatarRoot } from 'reka-ui'
 import type { DateTime } from 'luxon'
 import { trans } from '@common/i18n-renderer'
 import type { AnnotationMessage } from '@dts/common/annotation-domain'
-import { threadMessageView } from './annotation-presentation'
+import { threadMessageView } from '../sidebar/annotations/annotation-presentation'
 
 const props = defineProps<{
   messages: AnnotationMessage[]

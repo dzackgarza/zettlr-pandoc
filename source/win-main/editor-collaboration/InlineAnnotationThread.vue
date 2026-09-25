@@ -1,31 +1,20 @@
 <template>
   <div
-    class="annotation-inspector"
+    class="annotation-inline-thread"
     data-annotation-detail
     v-bind:data-annotation-id="card.annotation.annotationId"
+    v-bind:class="card.annotation.state"
   >
-    <div class="annotation-inspector-header">
-      <button
-        type="button"
-        class="annotation-icon-button annotation-inspector-back"
-        v-bind:title="trans('Back to the annotation list')"
-        v-bind:aria-label="trans('Back to the annotation list')"
-        v-on:click="emit('back')"
-      >
-        <cds-icon
-          shape="arrow"
-          direction="left"
-          role="presentation"
-        ></cds-icon>
-      </button>
-      <span class="annotation-inspector-eyebrow annotation-muted">{{ eyebrowLabel }}</span>
+    <div class="annotation-inline-thread-header">
+      <span class="annotation-ordinal">{{ card.ordinal }}</span>
       <span
         class="annotation-lifecycle-pill"
         v-bind:class="card.annotation.state"
       >{{ lifecycleLabel }}</span>
+      <span class="annotation-inline-thread-spacer"></span>
       <button
         type="button"
-        class="annotation-icon-button annotation-inspector-close"
+        class="annotation-icon-button annotation-inline-thread-close"
         v-bind:title="trans('Close')"
         v-bind:aria-label="trans('Close')"
         v-on:click="emit('close')"
@@ -37,22 +26,12 @@
       </button>
     </div>
 
-    <section class="annotation-card annotation-inspector-source">
-      <div class="annotation-card-row">
-        <span class="annotation-card-label">{{ trans('Selected text') }}</span>
-        <button
-          v-if="card.lineNumber !== undefined"
-          type="button"
-          class="annotation-line-locator"
-          v-on:click="emit('jump-to-line', card.lineNumber)"
-        >{{ lineLabel }}</button>
-        <span
-          v-else
-          class="annotation-muted"
-        >{{ card.lineLocator }}</span>
-      </div>
-      <blockquote class="annotation-selected-quote">{{ card.quotedText }}</blockquote>
-    </section>
+    <!-- A live target is highlighted right above this thread; only a lost
+         one needs its text spelled out, since nothing marks it any more. -->
+    <blockquote
+      v-if="actionRow.canReattach"
+      class="annotation-selected-quote"
+    >{{ card.quotedText }}</blockquote>
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
@@ -66,11 +45,10 @@
     ></ProposalActionCard>
 
     <AnnotationComposer
-      v-bind:document-name="documentName"
       v-on:submit="emit('reply', $event)"
     ></AnnotationComposer>
 
-    <div class="annotation-inspector-actions">
+    <div class="annotation-inline-thread-actions">
       <button
         type="button"
         class="annotation-button annotation-action-delete"
@@ -87,6 +65,8 @@
         type="button"
         class="annotation-button annotation-action-reattach"
         data-annotation-action="reattach"
+        v-bind:title="trans('Select the new target text in the document, then click here')"
+        v-on:mousedown.prevent
         v-on:click="emit('begin-reattach')"
       >
         <cds-icon
@@ -96,7 +76,7 @@
       </button>
       <button
         type="button"
-        class="annotation-button annotation-button-primary annotation-inspector-resolve"
+        class="annotation-button annotation-button-primary annotation-inline-thread-resolve"
         data-annotation-action="resolve"
         v-on:click="emit('resolve-toggle')"
       >
@@ -109,8 +89,8 @@
 
     <!--
       Resolving keeps the thread; deleting takes the annotation, its thread
-      and its proposals away for good, and nothing in the panel brings them
-      back. So it asks.
+      and its proposals away for good, and nothing brings them back. So it
+      asks.
     -->
     <AlertDialogRoot v-model:open="confirmingDelete">
       <AlertDialogPortal>
@@ -139,26 +119,24 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        AnnotationInspector
+ * Contains:        InlineAnnotationThread
  * CVM-Role:        View
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The detail half of the panel (S3): everything the owner
- *                  reads or clicks about ONE annotation lives here — the
- *                  selected text card, the thread, the linked proposal card
- *                  (if any, with its one "Show diff" affordance), the
- *                  always-visible composer and the bottom action row (S8:
- *                  Delete, Reattach when the anchor is orphaned, and the one
- *                  primary Resolve). Delete asks first, because it takes the
- *                  thread with it and nothing here brings it back, while
- *                  Resolve keeps everything and can be reopened. Reattach
- *                  only emits an intent:
- *                  recovering an anchor needs a fresh editor selection,
- *                  which this panel does not own, so it never calls
- *                  reattachAnnotation itself (I6 — a visible action, never
- *                  a background guess, and never one this panel could
- *                  fabricate a range for).
+ * Description:     One annotation's thread, opened in the editor under the
+ *                  text it targets (the editor comment-widget pattern): the
+ *                  conversation, the linked proposal card with its "Show
+ *                  diff" affordance, the reply composer, and the action row —
+ *                  Delete, Reattach while the target is lost, and the one
+ *                  primary Resolve. Delete asks first, because it takes the
+ *                  thread with it, while Resolve keeps everything.
+ *
+ *                  Reattach only emits an intent: the replacement range is
+ *                  the owner's current editor selection, which the pane
+ *                  owns, so this never fabricates a range (I6). Its
+ *                  mousedown is swallowed so pressing it does not disturb
+ *                  that selection.
  *
  * END HEADER
  */
@@ -179,19 +157,15 @@ import {
   AlertDialogRoot,
   AlertDialogTitle
 } from 'reka-ui'
-import { deriveActionRow, type AnnotationCardView } from './annotation-panel-model'
+import { deriveActionRow, type AnnotationCardView } from '../sidebar/annotations/annotation-panel-model'
 
 const props = defineProps<{
   card: AnnotationCardView
   now: DateTime
-  /** The active document's name, for the composer's context chip. */
-  documentName?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'back'): void
-  (e: 'jump-to-line', line: number): void
   (e: 'reply', text: string): void
   (e: 'show-proposal'): void
   (e: 'begin-reattach'): void
@@ -204,71 +178,51 @@ const confirmingDelete = ref(false)
 
 const actionRow = computed(() => deriveActionRow(props.card.annotation))
 const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
-const eyebrowLabel = computed(() => trans('Annotation %s', String(props.card.ordinal)))
-const lineLabel = computed(() => {
-  const { lineNumber, endLineNumber } = props.card
-  if (lineNumber === undefined || endLineNumber === undefined || endLineNumber <= lineNumber) {
-    return trans('Line %s', String(lineNumber))
-  }
-  return trans('Lines %s–%s', String(lineNumber), String(endLineNumber))
-})
 const resolveLabel = computed(() => actionRow.value.resolveLabel === 'Reopen' ? trans('Reopen') : trans('Resolve'))
 </script>
 
 <style lang="less">
+@import '../sidebar/annotations/annotation-panel.less';
+
 body {
-  .annotation-inspector {
+  .annotation-inline-thread {
     display: flex;
     flex-direction: column;
     gap: var(--annotation-gap);
-    padding: var(--annotation-gap) 0;
-    border-top: 1px solid var(--annotation-border);
+    max-width: 42em;
+    padding: 8px 10px;
+    border: 1px solid var(--annotation-border);
+    border-left: 3px solid var(--annotation-accent);
+    border-radius: 0 var(--annotation-radius) var(--annotation-radius) 0;
+    background-color: var(--annotation-surface);
     color: var(--annotation-text);
     font-size: var(--annotation-font-size);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+    &.resolved {
+      border-left-color: var(--annotation-resolved);
+    }
   }
 
-  .annotation-inspector-header {
+  .annotation-inline-thread-header {
     display: flex;
     align-items: center;
     gap: 6px;
-
-    .annotation-inspector-back { display: none; }
-
-    .annotation-inspector-eyebrow {
-      flex: 1 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 
-  .annotation-inspector-source {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-
-    .annotation-selected-quote {
-      position: relative;
-      margin: 0;
-      padding: 6px 8px 6px 24px;
-      border: 1px solid var(--annotation-border);
-      border-radius: 6px;
-      background-color: var(--annotation-surface-muted);
-
-      &::before {
-        content: '“';
-        position: absolute;
-        left: 8px;
-        top: 2px;
-        font-size: 18px;
-        line-height: 1;
-        color: var(--annotation-text-muted);
-      }
-    }
+  .annotation-inline-thread-spacer {
+    flex: 1 1 auto;
   }
 
-  .annotation-inspector-actions {
+  .annotation-selected-quote {
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px dashed var(--annotation-warning);
+    border-radius: 6px;
+    color: var(--annotation-text-muted);
+  }
+
+  .annotation-inline-thread-actions {
     display: flex;
     justify-content: flex-end;
     gap: 6px;

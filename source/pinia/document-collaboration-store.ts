@@ -20,18 +20,20 @@
  *
  *                  The workspace panel also asks this store for one merged
  *                  projection spanning loaded workspace paths, including
- *                  detached sidecars supplied by DocumentManager. Editor
- *                  locator state (selectedAnnotationId/showResolved) remains
- *                  here because MainEditor renders it; it is not sidebar
- *                  drilldown state. Mutation actions never write cached
- *                  sessions directly — provider state returns through the
- *                  collaboration broadcast or an explicit workspace refresh.
+ *                  detached sidecars supplied by DocumentManager.
+ *                  selectedAnnotationId names the annotation whose thread
+ *                  is open in the editor; showResolved decides whether
+ *                  resolved annotations render there. Mutation actions never
+ *                  write cached sessions directly — provider state returns
+ *                  through the collaboration broadcast or an explicit
+ *                  workspace refresh.
  *
  *                  Both halves of the session are mutated from here, and
  *                  both go over the provider's typed operation channels:
  *                  the annotation calls on 'documents:*-annotation', the
- *                  review calls (M9, moved out of the editor's chunk
- *                  widgets) on 'documents:*-review-*'. The payload and the
+ *                  review calls on 'documents:*-review-*'. The editor's
+ *                  inline controls and the workspace panel are the
+ *                  callers. The payload and the
  *                  response of each are the main-process handler's own
  *                  signature, so a wrong field here is a compile error
  *                  rather than a runtime refusal.
@@ -222,7 +224,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   /**
    * The fence an annotation mutation carries: which document, which
-   * annotation, and the generation of the snapshot the panel rendered that
+   * annotation, and the generation of the snapshot the thread rendered that
    * annotation from. Every one of the five calls below names it, and two of
    * them add a field of their own. No call names an actor: the handlers
    * hardcode 'owner' and their input types declare no such field, so the
@@ -238,7 +240,7 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   /**
    * Every one of these five calls is the whole of what an owner control in
-   * the panel is allowed to do: ask CollaborationApplicationService, over
+   * an annotation thread is allowed to do: ask CollaborationApplicationService, over
    * IPC, for the mutation, and hand the caller its result. None of them
    * touches sessionsByDocumentPath — the resulting DocumentCollaborationSession
    * reaches this cache only through the DP_EVENTS.DOCUMENT_COLLABORATION
@@ -277,13 +279,13 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   /**
    * The fence a review mutation carries: the generation and the exact working
-   * bytes of the snapshot the panel rendered the chunk from. Both come out of
+   * bytes of the snapshot the chunk controls rendered from. Both come out of
    * the cached DocumentCollaborationSession, which is also what the owner is
    * looking at — an owner keystroke on a reviewed document rebroadcasts, so
    * this pair moves with the text rather than going stale behind it.
    *
    * A mutation with no cached review has no chunk to name, so this throws
-   * instead of inventing a fence: the panel only offers these controls while
+   * instead of inventing a fence: the editor only places these controls while
    * `session.review` exists.
    */
   function reviewFence (documentPath: string): { reviewId: string } & ReviewMutationPrecondition {
@@ -299,9 +301,9 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
   }
 
   /**
-   * Review adjudication calls retained on the shared renderer store. The
-   * workspace panel uses the bulk-accept variants; other callers can still
-   * address an individual chunk without introducing a second state owner.
+   * Review adjudication calls. The editor's inline controls decide, note,
+   * accept all, clear and comment on the review of the document they show;
+   * the workspace panel uses the workspace accept-all variants.
    * Like the annotation mutations above, none of them writes
    * sessionsByDocumentPath: the resulting session reaches this cache only
    * through the DP_EVENTS.DOCUMENT_COLLABORATION broadcast the mutation

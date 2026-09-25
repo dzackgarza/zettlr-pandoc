@@ -26,7 +26,6 @@ const editorCommands: EditorCommands = {
   replaceSelection: false,
   insertPandoc: false,
   executeCommand: false,
-  beginAnnotationReattach: false,
   setLanguageToolLanguage: false,
   data: undefined,
 };

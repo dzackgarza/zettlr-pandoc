@@ -70,7 +70,6 @@
           @file-search="openFileLauncher()"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
-          @open-annotation="openAnnotation($event)"
         />
         <EditorBranch
           v-else-if="paneConfiguration !== undefined"
@@ -83,7 +82,6 @@
           @file-search="openFileLauncher()"
           @create-reference-label="openCreateReferenceLabel($event)"
           @open-pandoc-quick-help="showPandocQuickHelp = true"
-          @open-annotation="openAnnotation($event)"
         />
       </SplitterPanel>
       <SplitterResizeHandle
@@ -566,7 +564,6 @@ const editorCommands = ref<EditorCommands>({
   replaceSelection: false,
   insertPandoc: false,
   executeCommand: false,
-  beginAnnotationReattach: false,
   setLanguageToolLanguage: false,
   data: undefined
 })
@@ -1035,7 +1032,14 @@ function insertPandoc (spec: { type: string, attributes: string }): void {
   editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc
 }
 
-function navigateToWorkspaceCollaboration (target: { documentPath: string, range?: SourceRange }): void {
+/**
+ * A panel row was clicked: open its document at the target range. An
+ * annotation row also opens that annotation's thread in the editor.
+ */
+function navigateToWorkspaceCollaboration (target: { documentPath: string, range?: SourceRange, annotationId?: string }): void {
+  if (target.annotationId !== undefined) {
+    collaborationStore.selectAnnotation(target.annotationId)
+  }
   ipcRenderer.invoke('documents-provider', {
     command: 'open-file',
     payload: {
@@ -1116,14 +1120,6 @@ function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
 }
 
 /**
- * S8/I6: forwards the panel's Reattach intent (an annotation id — never a
- * range the panel guessed) to the last focused editor pane for the active
- * document. The pane itself decides whether the owner's current selection
- * is a usable replacement range (component-contracts.ts EditorCommands).
- *
- * @param   {string}  annotationId  The orphaned annotation to reattach
- */
-/**
  * An icon on the left activity bar: it opens the drawer on that view, or
  * closes the drawer when the view it already shows is pressed again.
  */
@@ -1134,26 +1130,6 @@ function pressSidebarView (id: string): void {
     return
   }
   configStore.setConfigValue('window.fileManagerVisible', false)
-}
-
-/**
- * A gutter chip was clicked in an editor. Keep that annotation's locator
- * active in the document and expose the workspace-wide collaboration panel.
- */
-function openAnnotation (annotationId: string): void {
-  collaborationStore.selectAnnotation(annotationId)
-  if (!sidebarVisible.value) {
-    configStore.setConfigValue('window.sidebarVisible', true)
-  }
-}
-
-function beginAnnotationReattach (annotationId: string): void {
-  const doc = documentTreeStore.lastLeafActiveFile
-  if (doc === undefined) {
-    return
-  }
-  editorCommands.value.data = { filePath: doc.path, annotationId }
-  editorCommands.value.beginAnnotationReattach = !editorCommands.value.beginAnnotationReattach
 }
 
 function moveSection (data: { from: number, to: number }): void {

@@ -48,8 +48,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The owner's always-visible input at the bottom of the
- *                  detail (S8). Mod-Enter or the send icon submits the
+ * Description:     The owner's always-visible reply input in an annotation
+ *                  thread (S8). Mod-Enter or the send icon submits the
  *                  trimmed draft; Escape clears it. Submitting never mutates
  *                  the panel's own state; it emits the text, and the caller
  *                  sends it over IPC (documentCollaborationStore
@@ -63,7 +63,7 @@ import { computed, ref } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { explodeAccelerator } from '@common/util/shortcuts'
-import { composerSubmission } from './annotation-presentation'
+import { composerSubmission } from '../sidebar/annotations/annotation-presentation'
 
 const props = defineProps<{
   /** The document the reply belongs to, shown as the context chip. */

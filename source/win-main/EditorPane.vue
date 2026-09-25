@@ -59,7 +59,6 @@
             @file-search="emit('fileSearch')"
             @create-reference-label="emit('createReferenceLabel', $event)"
             @open-pandoc-quick-help="emit('openPandocQuickHelp')"
-            @open-annotation="emit('openAnnotation', $event)"
           />
         </Teleport>
       </template>
@@ -182,7 +181,6 @@ const emit = defineEmits<{
   (e: 'fileSearch'): void
   (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
   (e: 'openPandocQuickHelp'): void
-  (e: 'openAnnotation', annotationId: string): void
 }>()
 
 const documentTabDrag = ref<boolean>(false)

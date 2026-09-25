@@ -2,13 +2,14 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Annotations panel pure view model
+ * Contains:        Collaboration pure view model
  * CVM-Role:        Model
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Everything the annotations panel derives from a
- *                  DocumentCollaborationSession, with no framework and no
+ * Description:     Everything the workspace annotations panel and the
+ *                  editor's inline review and annotation controls derive
+ *                  from a DocumentCollaborationSession, with no framework and no
  *                  IPC — one function per derived fact, so each is provable
  *                  on its own. This is where invariant I8 lives: a card's
  *                  title is computed here, every render, from the
@@ -258,60 +259,27 @@ export function buildSuggestionNavigatorRows (review: ReviewDiffSession): Sugges
 }
 
 /**
- * One outstanding suggestion as the SuggestionInspector shows it (M9). The
- * editor renders the same chunk as a locator — a struck-through deletion and
- * a highlighted insertion in the document flow — so this card carries the
- * identity the owner adjudicates on: which claim, which line, and both sides
- * of the change.
+ * One outstanding suggestion as the controls under its chunk show it. The
+ * editor draws the change itself — a struck-through deletion and a
+ * highlighted insertion in the document flow — so the card carries only what
+ * the owner decides on: the claim that proposed it and the owner's note.
  */
 export interface SuggestionCardView {
   suggestionId: string
-  /** The packet this chunk came from — how a linked annotation's "Show
-   *  proposal" finds it (plan S7). Undefined only for a fixture that never
-   *  named one. */
-  packetId: string | undefined
   /** The packet's claim: why the agent proposed this change. */
   description: string
-  lineLocator: string
-  /** The line the chunk starts on, as a jump-to-line target. */
-  lineNumber: number
-  /** Exact source range the workspace panel opens in the editor. */
-  range: SourceRange
-  /** What the chunk takes out of the working text; '' for a pure insertion. */
-  removedText: string
-  /** What it puts in, read out of the working text the anchors index; ''
-   *  for a pure deletion, which has no span on the working side. */
-  insertedText: string
   /** The reviewer's own note on this chunk; '' when none was written. */
   comment: string
 }
 
-/**
- * The panel's view of a review's outstanding chunks, in the order the
- * provider projected them. `insertedText` is sliced out of the SAME
- * workingText the anchors were mapped against — the snapshot's own bytes —
- * so a card can never show a span from a different moment of the document
- * than the offsets that produced it.
- */
+/** A review's outstanding chunks, in the order the provider projected them. */
 export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCardView[] {
-  return review.suggestions.map(suggestion => {
-    const firstAnchor = suggestion.anchors[0] ?? { from: suggestion.seam, to: suggestion.seam }
-    const position = firstAnchor.from
-    return {
-      suggestionId: suggestion.suggestionId,
-      packetId: suggestion.packetId,
-      description: suggestion.description,
-      lineLocator: `Ln ${lineOfPosition(position, review.workingText)}`,
-      lineNumber: lineOfPosition(position, review.workingText),
-      range: { from: firstAnchor.from, to: firstAnchor.to },
-      removedText: suggestion.removedText,
-      insertedText: suggestion.anchors
-        .map(span => review.workingText.slice(span.from, span.to))
-        .join(''),
-      comment: review.chunkComments
-        .find(note => note.chunkId === suggestion.suggestionId)?.comment ?? ''
-    }
-  })
+  return review.suggestions.map(suggestion => ({
+    suggestionId: suggestion.suggestionId,
+    description: suggestion.description,
+    comment: review.chunkComments
+      .find(note => note.chunkId === suggestion.suggestionId)?.comment ?? ''
+  }))
 }
 
 /**

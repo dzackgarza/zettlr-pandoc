@@ -7,11 +7,10 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     S8/I6: the annotations panel's Reattach control only ever
- *                  names an annotation (component-contracts.ts
- *                  EditorCommands.beginAnnotationReattach) — the replacement
- *                  range is whatever the owner has just selected in the
- *                  editor. Extracted out of MainEditor.vue's watcher so the
+ * Description:     S8/I6: the inline thread's Reattach control only ever
+ *                  names an annotation — the replacement range is whatever
+ *                  the owner has just selected in the editor. Extracted out
+ *                  of MainEditor.vue's reattachAnnotation so the
  *                  decision (a real range, or a refusal because nothing is
  *                  selected) is directly testable against a real
  *                  EditorView, the same way annotate-selection.ts's

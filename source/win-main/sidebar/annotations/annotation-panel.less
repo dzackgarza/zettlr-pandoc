@@ -1,5 +1,6 @@
-// The annotation review panel's tokens and primitives, defined once here and
-// read by every panel component. The tokens are the collaboration set of
+// The collaboration tokens and primitives, defined once here and read by the
+// workspace panel and by the review and annotation controls the editor shows
+// inline. The tokens are the collaboration set of
 // Design-AI-Annotations-UI.md §11 plus the panel's type scale; light values
 // on :root, dark values on body.dark. No component states a colour of its own.
 
@@ -82,6 +83,23 @@ body.dark {
   color: var(--annotation-text-muted);
   font-size: var(--annotation-small-font-size);
   white-space: nowrap;
+}
+
+// An annotation's ordinal: the number its gutter chip carries.
+.annotation-ordinal {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background-color: var(--annotation-accent);
+  color: var(--annotation-accent-contrast);
+  font-size: var(--annotation-small-font-size);
+  font-weight: 600;
 }
 
 // The lifecycle pill: the state a card is in, always spelled out.

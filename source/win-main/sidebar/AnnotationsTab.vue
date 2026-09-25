@@ -97,11 +97,14 @@
  * License:         GNU GPL v3
  *
  * Description:     Workspace-wide outstanding collaboration work, grouped by
- *                  document. Rows are navigation only: annotation details and
- *                  review changes are read in the document itself. Rows lead
- *                  with the full owner reason or proposal claim and never
- *                  duplicate navigation metadata or the diff. Each document owns an Accept all
- *                  action and the panel header owns the workspace-wide one.
+ *                  document. Rows are navigation only: a row opens its
+ *                  document at the target, and an annotation row also opens
+ *                  that annotation's thread there. Every single decision,
+ *                  note and reply happens in the editor, under the change or
+ *                  the annotated text. Rows lead with the full owner reason
+ *                  or proposal claim and never duplicate navigation metadata
+ *                  or the diff. Each document owns an Accept all action and
+ *                  the panel header owns the workspace-wide one.
  *
  * END HEADER
  */
@@ -133,7 +136,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'navigate', target: { documentPath: string, range?: SourceRange }): void
+  (e: 'navigate', target: { documentPath: string, range?: SourceRange, annotationId?: string }): void
   (e: 'close'): void
 }>()
 
@@ -189,7 +192,7 @@ function navigate (documentPath: string, range?: SourceRange): void {
 }
 
 function navigateAnnotation (documentPath: string, card: AnnotationCardView): void {
-  navigate(documentPath, annotationRange(card))
+  emit('navigate', { documentPath, range: annotationRange(card), annotationId: card.annotation.annotationId })
 }
 
 async function acceptAllDocument (documentPath: string): Promise<void> {

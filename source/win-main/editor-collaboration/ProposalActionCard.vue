@@ -39,10 +39,9 @@
  *
  * Description:     S7: a proposal is a distinct element, not a message — a
  *                  count plus the one affordance to open it. "Show diff"
- *                  brings the linked chunks of the review surface below
- *                  into view; the proposal is never applied from here as an
- *                  inline edit — the owner adjudicates it in the suggestion
- *                  inspector.
+ *                  moves the editor to the first linked chunk; the proposal
+ *                  is never applied from here — the owner decides each
+ *                  chunk with the controls under it.
  *
  * END HEADER
  */
@@ -50,7 +49,7 @@
 import { computed } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import type { AnnotationProposalAction } from '@dts/common/annotation-domain'
-import { proposalCardView } from './annotation-presentation'
+import { proposalCardView } from '../sidebar/annotations/annotation-presentation'
 
 const props = defineProps<{
   actions: readonly AnnotationProposalAction[]
@@ -69,7 +68,7 @@ const countLabel = computed(() => {
 })
 
 const noteLabel = computed(() => view.value.pendingCount > 0
-  ? trans('%s of %s pending. Accept or reject each change in the diff below.', String(view.value.pendingCount), String(view.value.totalCount))
+  ? trans('%s of %s pending. Accept or reject each change where it appears in the document.', String(view.value.pendingCount), String(view.value.totalCount))
   : trans('All changes have been accepted or rejected.'))
 </script>
 

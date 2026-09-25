@@ -2,29 +2,25 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Annotations panel (M7) tests
+ * Contains:        Collaboration view model and store tests
  * CVM-Role:        Test
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Proves the workspace collaboration panel model and store.
- *                  The panel aggregates every workspace document carrying
- *                  open annotations or outstanding review suggestions, groups
- *                  rows by document, and treats each row as navigation into
- *                  the editor rather than reproducing annotation detail or a
- *                  review diff in the sidebar. Review suggestions expose
- *                  Accept all at document and workspace scope.
- *
- *                  Legacy per-document annotation/editor state is still
- *                  exercised where the editor consumes it; workspace tests
- *                  prove the new multi-document snapshot and bulk-action
- *                  fences over the same provider IPC boundary.
+ * Description:     Proves the collaboration view model and the renderer
+ *                  store both collaboration surfaces read: the workspace
+ *                  panel, which aggregates every workspace document carrying
+ *                  open annotations or outstanding review suggestions and
+ *                  offers Accept all at document and workspace scope, and
+ *                  the editor's inline chunk controls and annotation
+ *                  threads. Store tests prove each owner action's fence over
+ *                  the real provider IPC boundary.
  *
  * END HEADER
  */
 
 import { strict as assert } from "assert";
-import { mkdtempSync, readFileSync } from "fs";
+import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 // Must be the first local import: it installs window.ipc as a side effect,
@@ -265,14 +261,6 @@ describe("useDocumentCollaborationStore panel surface", function () {
     assert.equal(store.cardsByDocumentPath[session.documentPath]?.length, session.annotations.items.length);
   });
 
-  it("selectAnnotation controls the editor locator selection without creating sidebar drilldown state", function () {
-    const store = useDocumentCollaborationStore();
-    store.selectAnnotation(SCENE_ANNOTATION_THREAD_ID);
-    assert.equal(store.selectedAnnotationId, SCENE_ANNOTATION_THREAD_ID);
-    store.selectAnnotation(null);
-    assert.equal(store.selectedAnnotationId, null);
-    assert.equal("inspectorMode" in store, false);
-  });
 
   it("toggleShowResolved flips the disclosure, and accepts an explicit value", function () {
     const store = useDocumentCollaborationStore();
@@ -403,7 +391,7 @@ describe("workspace suggestion navigator model", function () {
   });
 });
 
-describe("suggestion inspector model", function () {
+describe("inline chunk controls model", function () {
   const review = buildSceneReview();
   const cards = buildSuggestionCards(review);
 
@@ -413,19 +401,6 @@ describe("suggestion inspector model", function () {
       "Say which tasks automation actually handles.",
       "Frame the goal as collaboration, not replacement.",
     ]);
-  });
-
-  it("reads both sides of a chunk out of the same working text its anchors index", function () {
-    // The insertion is SLICED from review.workingText, never carried
-    // alongside it: a card cannot show a span from a different moment of the
-    // document than the offsets that produced it.
-    assert.deepEqual(cards.map(card => card.insertedText), ["well-defined tasks", "to work with it"]);
-    assert.deepEqual(cards.map(card => card.removedText), ["narrow tasks", "to replace it"]);
-  });
-
-  it("locates each chunk on its own source line", function () {
-    assert.deepEqual(cards.map(card => card.lineLocator), ["Ln 7", "Ln 11"]);
-    assert.deepEqual(cards.map(card => card.lineNumber), [7, 11]);
   });
 
   it("prefills a chunk's note field from the provider, and only its own chunk's", function () {
@@ -688,33 +663,6 @@ describe("useDocumentCollaborationStore review surface", function () {
 
     assert.deepEqual(accepted.sort(), [session.documentPath, secondPath].sort());
     assert.equal(results.length, 2);
-  });
-});
-
-describe("workspace annotations panel structure", function () {
-  it("groups by document, exposes both Accept-all scopes, navigates rows, and renders no sidebar diff", function () {
-    const panel = readFileSync("source/win-main/sidebar/AnnotationsTab.vue", "utf8");
-    const header = readFileSync("source/win-main/sidebar/annotations/AnnotationHeader.vue", "utf8");
-    const app = readFileSync("source/win-main/App.vue", "utf8");
-
-    assert.match(panel, /annotation-document-group/);
-    assert.match(panel, /annotation-document-accept-all/);
-    assert.match(header, /annotation-global-accept-all/);
-    assert.match(panel, /emit\('navigate'/);
-    assert.doesNotMatch(panel, /SuggestionInspector|AnnotationInspector/);
-    assert.doesNotMatch(panel, /suggestion-removed|suggestion-inserted/);
-    assert.doesNotMatch(panel, /annotation-line-locator/);
-    assert.doesNotMatch(panel, /annotation-workspace-kind/);
-    assert.doesNotMatch(panel, /trans\('Change'\)|trans\('Annotation'\)/);
-    assert.match(panel, /annotation-workspace-context/);
-    assert.match(panel, /card\.quotedText/);
-    assert.match(panel, /suggestion\.contextText/);
-    const summaryStyle = panel.match(/\.annotation-workspace-summary,\s*\.annotation-workspace-context\s*\{([\s\S]*?)\}/)?.[1] ?? "";
-    assert.doesNotMatch(summaryStyle, /text-overflow:\s*ellipsis/);
-    assert.doesNotMatch(summaryStyle, /white-space:\s*nowrap/);
-    assert.match(summaryStyle, /white-space:\s*normal/);
-    assert.match(app, /workspaceUnresolvedCount/);
-    assert.match(app, /targetRange: target\.range/);
   });
 });
 
