@@ -24,6 +24,7 @@ import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
 import '@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js'
 import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
 import { HandlerType } from '@mathjax/src/cjs/input/tex/HandlerTypes.js'
+import { AbstractParseMap } from '@mathjax/src/cjs/input/tex/TokenMap.js'
 import { type LiteDocument } from '@mathjax/src/cjs/adaptors/lite/Document.js'
 import { LiteElement, type LiteNode } from '@mathjax/src/cjs/adaptors/lite/Element.js'
 import { type LiteText } from '@mathjax/src/cjs/adaptors/lite/Text.js'
@@ -104,10 +105,6 @@ let completionCatalogue: MathJaxCompletionCatalogue = {
   environments: []
 }
 
-interface EnumerableMathJaxTokenMap {
-  map?: Map<string, unknown>
-}
-
 function mapKeysForHandler<N, T, D> (tex: TeX<N, T, D>, handlerType: HandlerType): string[] {
   const handler = tex.parseOptions.handlers.get(handlerType)
   if (handler === undefined) {
@@ -116,10 +113,17 @@ function mapKeysForHandler<N, T, D> (tex: TeX<N, T, D>, handlerType: HandlerType
 
   const keys: string[] = []
   for (const mapName of handler.toString().split(', ').filter(Boolean)) {
-    const tokenMap = handler.retrieve(mapName) as unknown as EnumerableMathJaxTokenMap
-    if (tokenMap.map instanceof Map) {
-      keys.push(...tokenMap.map.keys())
+    const tokenMap = handler.retrieve(mapName)
+    // Only parse maps hold a finite token table. Pattern maps (RegExpMap:
+    // letters, digits) match open-ended token classes and name no commands.
+    if (!(tokenMap instanceof AbstractParseMap)) {
+      continue
     }
+    // MathJax exposes no public enumeration of a parse map; its table is the
+    // `private map: Map<string, K>` of AbstractParseMap
+    // (mathjax/MathJax-src ts/input/tex/TokenMap.ts). Element access reads
+    // that declared field with its declared type.
+    keys.push(...tokenMap['map'].keys())
   }
   return keys
 }
