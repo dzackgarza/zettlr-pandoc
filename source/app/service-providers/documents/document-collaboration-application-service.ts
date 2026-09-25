@@ -318,7 +318,9 @@ function persistenceFailure(action: string, error: unknown): ReviewFailure {
   return {
     ok: false,
     code: "PERSISTENCE_FAILED",
-    message: `Couldn't save the review state, so ${action} was not applied.`,
+    message:
+      `Couldn't save the review state, so ${action} was not applied: ` +
+      (error instanceof Error ? error.message : String(error)),
   };
 }
 

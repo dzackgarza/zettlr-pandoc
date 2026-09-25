@@ -3245,13 +3245,15 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   /** The refusal a save owes when the review could not be persisted. */
   private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
-    const message = 'The review could not be saved, so the document was not saved.'
+    const message = 'The review could not be saved, so the document was not saved: ' +
+      (err instanceof Error ? err.message : String(err))
     this._app.log.error(`[DocumentManager] Save refused for ${filePath}: ${message}`, err)
     return { reason: 'review-not-persisted', message }
   }
 
   private _announceDetachFailure(filePath: string, err: unknown): void {
-    const message = 'The review could not be saved, so this document was left open.'
+    const message = 'The review could not be saved, so this document was left open: ' +
+      (err instanceof Error ? err.message : String(err))
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err)
     const payload: SaveRefusedBroadcast = {
       filePath,

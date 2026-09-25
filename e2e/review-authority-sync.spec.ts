@@ -758,9 +758,7 @@ describe('a review decision waits for the document authority', function () {
     await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
     assert.equal(
       await toast.first().locator('span').first().innerText(),
-      'The document text changed after this decision was formed, so the chunk ' +
-        'it names is not the chunk that would be decided. Re-read the chunks ' +
-        'and decide again.',
+      'The document changed after this decision was prepared. Reload the review and try again.',
       'the refusal must name the hash precondition, not a generic failure'
     )
 
