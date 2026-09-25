@@ -3,34 +3,12 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const PANDOC_VERSION = '3.10.2'
-const PANDOC_COMMIT = 'f2ee5dfee866aab007a33552acc6bc01810c6918'
-const RAW_ROOT = `https://raw.githubusercontent.com/jgm/pandoc/${PANDOC_COMMIT}/src/Text/Pandoc/Readers`
-
-const SOURCES = {
-  latex: {
-    url: `${RAW_ROOT}/LaTeX.hs`,
-    sha256: '8274bb482ba80eba3408b1a29ea1d3253aa8bea5edb458cafdf728dfcef255e3',
-  },
-  inline: {
-    url: `${RAW_ROOT}/LaTeX/Inline.hs`,
-    sha256: '0d9dd3cdf747b5b740872106d023edcf7fcbd1dd13b7c9288f32e2e43985d639',
-  },
-  citation: {
-    url: `${RAW_ROOT}/LaTeX/Citation.hs`,
-    sha256: 'c4bb5b0ab8bb1f5a81d9f1f3929befbc20e49dec9bcb82037c168c73050e46b6',
-  },
-  lang: {
-    url: `${RAW_ROOT}/LaTeX/Lang.hs`,
-    sha256: '82769ad742cb8d2be36758ef997a5ec93ed85e888bfbf3721a8903c14aac820d',
-  },
-  siunitx: {
-    url: `${RAW_ROOT}/LaTeX/SIunitx.hs`,
-    sha256: '3e547ff56e3110cb14e0877104b47814fe0d4fc2f1246aa0b7aa10ae29cb7a94',
-  },
-}
-
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+// The Pandoc release this grammar mirrors; scripts/setup-ci-toolchain.sh
+// installs the same release as the pandoc-reference oracle.
+const pandocReference = JSON.parse(
+  await readFile(path.join(repoRoot, 'scripts/pandoc-reference.json'), 'utf8'),
+)
 const pandocSourceRoot = path.join(repoRoot, 'vendor/lezer-markdown-pandoc/src/pandoc')
 const outputPaths = {
   block: path.join(pandocSourceRoot, 'pandoc-block-commands.ts'),
@@ -310,7 +288,7 @@ function renderSet (exportName, provenance, names) {
   return `/**
  * GENERATED FILE. Do not hand-edit.
  *
- * Source: Pandoc ${PANDOC_VERSION}, commit ${PANDOC_COMMIT}
+ * Source: Pandoc ${pandocReference.version}, commit ${pandocReference.commit}
  * ${provenance}
  * Generator: scripts/generate-pandoc-parser-reference-data.mjs
  */
@@ -331,7 +309,7 @@ function renderStrategies (strategies) {
   return `/**
  * GENERATED FILE. Do not hand-edit.
  *
- * Source: Pandoc ${PANDOC_VERSION}, commit ${PANDOC_COMMIT}
+ * Source: Pandoc ${pandocReference.version}, commit ${pandocReference.commit}
  * Text/Pandoc/Readers/LaTeX.hs inlineCommands and imported parser maps.
  * Generator: scripts/generate-pandoc-parser-reference-data.mjs
  */
@@ -345,7 +323,8 @@ ${rows}
 }
 
 async function fetchPinnedSource (label, spec) {
-  const response = await fetch(spec.url)
+  const url = `https://raw.githubusercontent.com/jgm/pandoc/${pandocReference.commit}/${spec.path}`
+  const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Could not fetch pinned Pandoc ${label}: HTTP ${response.status}`)
   }
@@ -360,7 +339,7 @@ async function fetchPinnedSource (label, spec) {
 }
 
 const entries = await Promise.all(
-  Object.entries(SOURCES).map(async ([ label, spec ]) => [
+  Object.entries(pandocReference.readerSources).map(async ([ label, spec ]) => [
     label,
     await fetchPinnedSource(label, spec),
   ]),

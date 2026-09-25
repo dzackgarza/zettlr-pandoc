@@ -3,8 +3,14 @@ set -euo pipefail
 
 readonly pandoc_version='3.9.0.2'
 readonly pandoc_sha256='ce4ac48f48aa7eadc1f5dbdf3449a1739f188ecb8c5421c5adc070fe7479e567'
-readonly pandoc_reference_version='3.10.2'
-readonly pandoc_reference_sha256='6c06b69b49ae95087573631a6fcafb233ab7ab51e5cfa73f7539d6c964a2640d'
+# The grammar oracle's release is owned by scripts/pandoc-reference.json,
+# which also pins the Pandoc sources the editor grammar is generated from.
+pandoc_reference_manifest="$(dirname "${BASH_SOURCE[0]}")/pandoc-reference.json"
+readonly pandoc_reference_manifest
+pandoc_reference_version="$(jq --exit-status --raw-output '.version' "${pandoc_reference_manifest}")"
+readonly pandoc_reference_version
+pandoc_reference_sha256="$(jq --exit-status --raw-output '.linuxAmd64DebSha256' "${pandoc_reference_manifest}")"
+readonly pandoc_reference_sha256
 readonly crossref_release='0.3.24a'
 readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
 readonly pandoc_config_dir="${HOME}/.pandoc"

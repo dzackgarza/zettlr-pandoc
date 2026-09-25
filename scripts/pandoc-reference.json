@@ -1,0 +1,27 @@
+{
+  "version": "3.10.2",
+  "commit": "f2ee5dfee866aab007a33552acc6bc01810c6918",
+  "linuxAmd64DebSha256": "6c06b69b49ae95087573631a6fcafb233ab7ab51e5cfa73f7539d6c964a2640d",
+  "readerSources": {
+    "latex": {
+      "path": "src/Text/Pandoc/Readers/LaTeX.hs",
+      "sha256": "8274bb482ba80eba3408b1a29ea1d3253aa8bea5edb458cafdf728dfcef255e3"
+    },
+    "inline": {
+      "path": "src/Text/Pandoc/Readers/LaTeX/Inline.hs",
+      "sha256": "0d9dd3cdf747b5b740872106d023edcf7fcbd1dd13b7c9288f32e2e43985d639"
+    },
+    "citation": {
+      "path": "src/Text/Pandoc/Readers/LaTeX/Citation.hs",
+      "sha256": "c4bb5b0ab8bb1f5a81d9f1f3929befbc20e49dec9bcb82037c168c73050e46b6"
+    },
+    "lang": {
+      "path": "src/Text/Pandoc/Readers/LaTeX/Lang.hs",
+      "sha256": "82769ad742cb8d2be36758ef997a5ec93ed85e888bfbf3721a8903c14aac820d"
+    },
+    "siunitx": {
+      "path": "src/Text/Pandoc/Readers/LaTeX/SIunitx.hs",
+      "sha256": "3e547ff56e3110cb14e0877104b47814fe0d4fc2f1246aa0b7aa10ae29cb7a94"
+    }
+  }
+}
