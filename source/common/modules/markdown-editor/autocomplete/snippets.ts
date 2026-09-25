@@ -199,7 +199,7 @@ function filePatternMatches (pattern: string, filePath: string): boolean {
 function applicableSnippets (state: EditorState, pos: number): UserSnippet[] {
   const scopes = snippetScopesAt(state, pos)
   const filePath = state.field(configField).metadata.path
-  return (state.field(snippetsUpdateField, false) ?? []).filter(userSnippet => {
+  return state.field(snippetsUpdateField).filter(userSnippet => {
     const scopeMatches = userSnippet.scopes.length === 0 || userSnippet.scopes.some(scope => scopes.has(scope))
     const pathIncluded = userSnippet.include.length === 0 || userSnippet.include.some(pattern => filePatternMatches(pattern, filePath))
     const pathExcluded = userSnippet.exclude.some(pattern => filePatternMatches(pattern, filePath))

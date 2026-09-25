@@ -29,9 +29,22 @@ import { withCompletionSource } from './completion-presentation'
 
 const texstudioIndex = indexJson as TexstudioCommandIndex
 
-export const texDocumentKind = Facet.define<TexDocumentKind, TexDocumentKind>({
-  combine: kinds => kinds[0] ?? 'markdown'
+/**
+ * The kind of document the TeX knowledge describes. CodeMirror combines an
+ * unprovided facet to its default; that default is `undefined` here, because
+ * an editor without texKnowledgeExtensions() has no TeX document kind.
+ */
+export const texDocumentKind = Facet.define<TexDocumentKind, TexDocumentKind|undefined>({
+  combine: kinds => kinds.length === 0 ? undefined : kinds[0]
 })
+
+function documentKind (state: EditorState): TexDocumentKind {
+  const kind = state.facet(texDocumentKind)
+  if (kind === undefined) {
+    throw new Error('TeX completion ran in an editor without texKnowledgeExtensions(kind); install them in its extension set.')
+  }
+  return kind
+}
 
 export const texMacroSourcesUpdate = StateEffect.define<readonly TexMacroSource[]>()
 
@@ -57,7 +70,7 @@ function resolveKnowledge (state: EditorState): ResolvedTexKnowledge {
   const declaration = collectTexContext(
     texstudioIndex,
     source,
-    state.facet(texDocumentKind),
+    documentKind(state),
     state.field(texMacroSourcesField)
   )
   const baseAuthority = buildTexCommandAuthority(
@@ -80,10 +93,25 @@ function resolveKnowledge (state: EditorState): ResolvedTexKnowledge {
 
 function commandVisibleAt (context: CompletionContext, from: number): boolean {
   const source = context.state.doc.toString()
-  const kind = context.state.facet(texDocumentKind)
-  const visible = texCommandSurface(source, kind)
+  const visible = texCommandSurface(source, documentKind(context.state))
   return texCommandMayStartAt(source, from) &&
     visible.slice(from, context.pos) === source.slice(from, context.pos)
+}
+
+/**
+ * The active packages that provide a non-user command. Every such command is
+ * active only because an active package declares it, so the reverse index
+ * built from the same TeXstudio index always knows it.
+ */
+function activeProviders (
+  command: string,
+  knowledge: ResolvedTexKnowledge
+): readonly string[] {
+  const providers = knowledge.authority.providersByCommand.get(command)
+  if (providers === undefined) {
+    throw new Error(`TeX command ${command} is active, but no TeXstudio provider declares it; activeCommands and providersByCommand must come from the same index.`)
+  }
+  return providers.filter(provider => knowledge.authority.activePackages.has(provider))
 }
 
 function completionDetail (
@@ -93,8 +121,7 @@ function completionDetail (
   if (knowledge.userCommands.has(command)) {
     return '[user macro]'
   }
-  const active = (knowledge.authority.providersByCommand.get(command) ?? [])
-    .filter(provider => knowledge.authority.activePackages.has(provider))
+  const active = activeProviders(command, knowledge)
   return active.length === 0 ? '[TeX core]' : '[' + active.slice(0, 3).join(', ') + ']'
 }
 
@@ -105,8 +132,7 @@ function completionInfo (
   if (knowledge.userCommands.has(command)) {
     return command + '\n\nUser-defined TeX macro active in this document or a declared macro source.'
   }
-  const active = (knowledge.authority.providersByCommand.get(command) ?? [])
-    .filter(provider => knowledge.authority.activePackages.has(provider))
+  const active = activeProviders(command, knowledge)
   return active.length === 0
     ? command + '\n\nTeX/LaTeX core command.'
     : command + '\n\nProvided by active package' + (active.length === 1 ? ': ' : 's: ') + active.join(', ')

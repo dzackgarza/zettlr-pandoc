@@ -70,24 +70,21 @@ function sortCitationKeysByUsage(state: EditorState): Completion[] {
   // Then, retrieve the already existing citations
   const existingCitations = citationNodes.flatMap((c) => c.items.map((item) => item.id));
 
-  // Create a counter
-  const citationCounts: Record<string, number> = {};
+  // Every database entry has a usage count, starting at zero; citations of
+  // keys outside the database do not rank anything.
+  const ranked = entries.map((entry) => ({ entry, uses: 0 }));
+  const rankedByKey = new Map(ranked.map((item) => [item.entry.label, item]));
   for (const key of existingCitations) {
-    if (!(key in citationCounts)) {
-      citationCounts[key] = 0;
+    const item = rankedByKey.get(key);
+    if (item !== undefined) {
+      item.uses += 1;
     }
-
-    citationCounts[key] += 1;
   }
 
   // Now sort the entries based on the existing citation counts
-  entries.sort((a, b) => {
-    const countA: number = citationCounts[a.label] ?? 0;
-    const countB: number = citationCounts[b.label] ?? 0;
-    return countB - countA;
-  });
+  ranked.sort((a, b) => b.uses - a.uses);
 
-  return entries;
+  return ranked.map((item) => item.entry);
 }
 
 /**

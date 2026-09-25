@@ -37,9 +37,14 @@ interface LatexWorkshopEntry {
 
 interface LatexWorkshopEnvironment {
   name: string;
+  /**
+   * Present when LaTeX Workshop supplies a snippet. A non-empty `format`
+   * means the snippet is the environment's argument group; an empty one means
+   * the snippet is the environment's body.
+   */
   arg?: {
-    format?: string;
-    snippet?: string;
+    format: string;
+    snippet: string;
   };
 }
 
@@ -182,7 +187,41 @@ function latexWorkshopOptions(): Completion[] {
 
 const STANDARD_LATEX_OPTIONS = latexWorkshopOptions();
 
+/** One description per environment in latex-workshop-environments.json. */
 const ENVIRONMENT_DESCRIPTION: Record<string, string> = {
+  document: "Body of a LaTeX document.",
+  table: "Floating table with an optional caption.",
+  math: "Inline mathematics.",
+  displaymath: "Unnumbered display mathematics.",
+  array: "Array of math cells with a column specification.",
+  subarray: "Compact single-column array for stacked limits.",
+  eqnarray: "Legacy numbered equation array with three columns.",
+  subequations: "Equations numbered as subdivisions of one parent number.",
+  "subequations*": "Starred subequations group.",
+  multline: "Single numbered equation broken across lines.",
+  "multline*": "Unnumbered single equation broken across lines.",
+  "gather*": "Centered stack of unnumbered display equations.",
+  alignedat: "Aligned block with explicit column pairs inside a display.",
+  flalign: "Display equations aligned and spread to the full line width.",
+  "flalign*": "Unnumbered equations aligned and spread to the full line width.",
+  xalignat: "Aligned equation columns with expanded spacing.",
+  "xalignat*": "Unnumbered aligned equation columns with expanded spacing.",
+  definition: "LaTeX definition environment.",
+  example: "LaTeX example environment.",
+  remark: "LaTeX remark environment.",
+  center: "Centered lines of text.",
+  flushleft: "Left-aligned lines of text.",
+  flushright: "Right-aligned lines of text.",
+  minipage: "Box of given width containing paragraphs.",
+  quotation: "Long quotation with paragraph indentation.",
+  quote: "Short quotation.",
+  verbatim: "Text typeset exactly as written.",
+  verse: "Poetry with line breaks preserved.",
+  picture: "LaTeX picture drawing environment.",
+  tabbing: "Text aligned at tab stops.",
+  tabular: "Table of cells with a column specification.",
+  thebibliography: "Manually written bibliography list.",
+  titlepage: "Title page without a page number.",
   matrix: "Matrix with no surrounding delimiters.",
   bmatrix: "Matrix delimited by square brackets [ ].",
   Bmatrix: "Matrix delimited by braces { }.",
@@ -209,11 +248,28 @@ const ENVIRONMENT_DESCRIPTION: Record<string, string> = {
   proof: "LaTeX proof environment.",
 };
 
-function environmentTemplateSource(environment: LatexWorkshopEnvironment): string {
-  const hasSeparateArgument = (environment.arg?.format ?? "") !== "";
-  const argument = hasSeparateArgument ? (environment.arg?.snippet ?? "") : "";
-  const body = hasSeparateArgument ? "\n\t$0" : (environment.arg?.snippet ?? "\n\t$0");
-  return `\\begin{${environment.name}}${argument}${body}\n\\end{${environment.name}}`;
+function environmentTemplateSource({ name, arg }: LatexWorkshopEnvironment): string {
+  const begin = `\\begin{${name}}`;
+  const end = `\n\\end{${name}}`;
+  const emptyBody = "\n\t$0";
+  if (arg === undefined) {
+    return `${begin}${emptyBody}${end}`;
+  }
+  if (arg.format === "") {
+    return `${begin}${arg.snippet}${end}`;
+  }
+  return `${begin}${arg.snippet}${emptyBody}${end}`;
+}
+
+function environmentDescription(name: string): string {
+  const description: string | undefined = ENVIRONMENT_DESCRIPTION[name];
+  if (description === undefined) {
+    throw new Error(
+      `LaTeX environment "${name}" from static/autocomplete/latex-workshop-environments.json ` +
+        "has no ENVIRONMENT_DESCRIPTION entry in autocomplete/tex-commands.ts; add one.",
+    );
+  }
+  return description;
 }
 
 function latexEnvironmentOptions(): Completion[] {
@@ -222,12 +278,12 @@ function latexEnvironmentOptions(): Completion[] {
       {
         label: environment.name,
         type: "type",
-        detail: ENVIRONMENT_DESCRIPTION[environment.name] ?? "LaTeX environment",
+        detail: environmentDescription(environment.name),
         info: () =>
           completionInfoPanel({
             title: environment.name,
             source: "LaTeX",
-            description: ENVIRONMENT_DESCRIPTION[environment.name] ?? "LaTeX environment.",
+            description: environmentDescription(environment.name),
             insertion: environmentTemplateSource(environment),
           }),
         apply(view, completion, from, to) {

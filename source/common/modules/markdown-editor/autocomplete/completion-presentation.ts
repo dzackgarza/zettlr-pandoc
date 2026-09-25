@@ -146,11 +146,13 @@ export function completionInfoPanel (spec: CompletionInfoSpec): HTMLElement {
     panel.appendChild(code)
   }
 
-  for (const note of spec.notes ?? []) {
-    const row = document.createElement('div')
-    row.className = 'zettlr-completion-info-note'
-    row.textContent = note
-    panel.appendChild(row)
+  if (spec.notes !== undefined) {
+    for (const note of spec.notes) {
+      const row = document.createElement('div')
+      row.className = 'zettlr-completion-info-note'
+      row.textContent = note
+      panel.appendChild(row)
+    }
   }
 
   return panel

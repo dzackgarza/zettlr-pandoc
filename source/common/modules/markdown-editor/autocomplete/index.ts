@@ -22,7 +22,7 @@ import {
   CompletionContext,
   completeAnyWord,
 } from '@codemirror/autocomplete'
-import { type StateField } from '@codemirror/state'
+import { type Extension } from '@codemirror/state'
 import { codeBlocks } from './code-blocks'
 import { atSymbols } from './at-symbols'
 import { snippets } from './snippets'
@@ -77,7 +77,20 @@ export interface AutocompletePlugin {
    * @return  {Completion[]}              The list of available completions
    */
   entries: (ctx: CompletionContext, query: string) => Completion[]
-  fields?: Array<StateField<any>>
+  /**
+   * The state fields this provider reads. The autocomplete extension installs
+   * them for every provider; a provider that keeps no state lists none.
+   */
+  fields: Extension[]
+}
+
+/**
+ * A completion's rank after a source-level adjustment. CodeMirror reads an
+ * absent `Completion.boost` as no rank adjustment of the option's own, so the
+ * source adjustment is then the whole boost.
+ */
+function adjustedBoost (option: Completion, adjustment: number): number {
+  return option.boost === undefined ? adjustment : option.boost + adjustment
 }
 
 const forbiddenTokens = [
@@ -117,7 +130,7 @@ export function autocompleteSourceFor (
         const enriched = withDefaultCompletionInfo(sourced, sourced.zettlrSource)
         return {
           ...enriched,
-          boost: Math.max(-99, Math.min(99, (option.boost ?? 0) + boost))
+          boost: Math.max(-99, Math.min(99, adjustedBoost(option, boost)))
         }
       })
     }
@@ -134,7 +147,7 @@ export const bufferWordSource: CompletionSource = ctx => {
     ...result,
     options: result.options.map(option => ({
       ...withCompletionSource(option, 'Buffer'),
-      boost: (option.boost ?? 0) - 20
+      boost: adjustedBoost(option, -20)
     }))
   }
 }
@@ -183,14 +196,9 @@ export const autocomplete = [
   // Make sure any configuration fields will be inserted into the state so that
   // the plugins can look them up and function correctly. These fields are not
   // required by the main class (MarkdownEditor), hence we do not have to re-
-  // export them here.
-  codeBlocks.fields ?? [],
-  // atSymbols carries both the citation field and the references field, so
-  // each is registered exactly once through this single entry.
-  atSymbols.fields ?? [],
-  files.fields ?? [],
-  tags.fields ?? [],
-  snippets.fields ?? [],
+  // export them here. atSymbols carries both the citation field and the
+  // references field, so each is registered exactly once through its entry.
+  AUTOCOMPLETE_PROVIDERS.flatMap(provider => provider.fields),
   phraseCompletionsField
 ]
 

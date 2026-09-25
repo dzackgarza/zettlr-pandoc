@@ -82,8 +82,9 @@ export function buildTexCommandAuthority (
 ): TexCommandAuthority {
   const activePackages = closeTexstudioPackages(index, [ ...index.b, ...packageRoots ])
   const activeCommands = new Set<string>()
+  // closeTexstudioPackages admits only providers that have an index record.
   for (const packageName of activePackages) {
-    for (const command of index.p[packageName]?.c ?? []) {
+    for (const command of index.p[packageName].c) {
       activeCommands.add(command)
     }
   }

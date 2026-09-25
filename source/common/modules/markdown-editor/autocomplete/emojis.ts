@@ -12,7 +12,13 @@ function applyEmoji (view: EditorView, completion: Completion, from: number, to:
   })
 }
 
-const entries: Completion[] = gemoji.map(emoji => ({
+/** Every gemoji entry carries its names and tags as searchable text. */
+interface EmojiCompletion extends Completion {
+  detail: string
+  info: string
+}
+
+const entries: EmojiCompletion[] = gemoji.map(emoji => ({
   label: emoji.emoji,
   detail: emoji.names.join(', '),
   section: emoji.category,
@@ -22,6 +28,7 @@ const entries: Completion[] = gemoji.map(emoji => ({
 
 export const emojis: AutocompletePlugin = {
   source: 'Emoji',
+  fields: [],
   applies (ctx) {
     if (!ctx.state.field(configField).autocompleteSuggestEmojis) {
       return false
@@ -38,9 +45,7 @@ export const emojis: AutocompletePlugin = {
   entries (_ctx, query) {
     const lowered = query.toLowerCase()
     return entries.filter(entry => {
-      const detail = entry.detail?.toLowerCase() ?? ''
-      const info = typeof entry.info === 'string' ? entry.info.toLowerCase() : ''
-      return detail.includes(lowered) || info.includes(lowered)
+      return entry.detail.toLowerCase().includes(lowered) || entry.info.toLowerCase().includes(lowered)
     })
   }
 }
