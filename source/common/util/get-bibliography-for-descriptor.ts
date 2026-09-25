@@ -92,9 +92,8 @@ export async function resolveProjectForDescriptor(
   descriptorMap: Map<string, AnyDescriptor>,
   lookup: DirectoryLookup,
 ): Promise<ProjectSettings | null> {
-  return (
-    (await resolveProjectContextForDescriptor(descriptor, descriptorMap, lookup))?.project ?? null
-  );
+  const context = await resolveProjectContextForDescriptor(descriptor, descriptorMap, lookup);
+  return context === null ? null : context.project;
 }
 
 /**

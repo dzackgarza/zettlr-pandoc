@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { Notification, nativeImage } from 'electron'
+import { app, Notification, nativeImage } from 'electron'
 import path from 'path'
 import { spawnSync } from 'child_process'
 
@@ -27,7 +27,8 @@ const defaultIcon = nativeImage.createFromPath(path.join(__dirname, '../img/imag
 * the function returns false.
 *
 * @param   {string}   message   The message (body) of the notification
-* @param   {string}   title     The (optional) title; default is "Zettlr"
+* @param   {string}   title     The (optional) title; an untitled notification
+*                               is headed by the application's name
 * @param   {void}     callback  Optional callback, invoked when user clicks the notification
 *
 * @return  {boolean}            False if the platform doesn't support notifications.
@@ -37,15 +38,18 @@ export function showNativeNotification (
   title?: string,
   callback?: () => void
 ): boolean {
+  // Electron resolves the application's name from package.json `productName`.
+  const appName = app.getName()
+  const heading = title === undefined ? appName : title
   if (!Notification.isSupported()) {
     // Electron's Linux notification support depends on the desktop session.
     // `notify-send` is the standard freedesktop/libnotify client and gives us
     // the same dismissible notification surface without owning another UI.
     if (process.platform === 'linux') {
       const result = spawnSync('notify-send', [
-        '--app-name=Zettlr-Pandoc',
+        `--app-name=${appName}`,
         '--urgency=normal',
-        title ?? 'Zettlr-Pandoc',
+        heading,
         message
       ], { stdio: 'ignore' })
       return result.error === undefined && result.status === 0
@@ -54,7 +58,7 @@ export function showNativeNotification (
   }
 
   const notification = new Notification({
-    title: title ?? 'Zettlr',
+    title: heading,
     body: message,
     silent: true,
     icon: defaultIcon,

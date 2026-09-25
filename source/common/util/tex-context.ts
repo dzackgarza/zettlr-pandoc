@@ -108,7 +108,7 @@ function yamlHeaderIncludesSurface (source: string): string {
       return maskNonNewlines(line)
     }
 
-    const indentation = /^\s*/u.exec(line)?.[0].length ?? 0
+    const indentation = line.length - line.trimStart().length
     if (indentation > headerIndent) {
       return line
     }

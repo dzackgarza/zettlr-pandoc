@@ -56,8 +56,8 @@ export function tikzCompilerLogHeadline(log: string): string {
   if (excerpt === "") {
     return "";
   }
-  const lines = excerpt.split("\n");
-  const salient =
-    lines.find((line) => SALIENT_LINE.test(line)) ?? lines.find((line) => line.trim() !== "") ?? "";
-  return salient.trim();
+  // The excerpt is trimmed and non-empty, so it has at least one meaningful line.
+  const meaningful = excerpt.split("\n").filter((line) => line.trim() !== "");
+  const salient = meaningful.find((line) => SALIENT_LINE.test(line));
+  return (salient === undefined ? meaningful[0] : salient).trim();
 }

@@ -80,7 +80,9 @@ export function texCommandDeclarationEntries(source: string): TexCommandDeclarat
     while (lineIndex + 1 < lineStarts.length && lineStarts[lineIndex + 1] <= match.index) {
       lineIndex += 1;
     }
-    const declaration = sourceLines[lineIndex]?.trim() ?? "";
+    // lineStarts and sourceLines both split at every "\n", so lineIndex is a
+    // valid source line.
+    const declaration = sourceLines[lineIndex].trim();
     const contextStart = Math.max(0, lineIndex - 1);
     const contextEnd = Math.min(sourceLines.length, lineIndex + 4);
     entries.push({

@@ -78,10 +78,9 @@ export function documentTitleMetadataFromAST (ast: ASTNode): DocumentTitleMetada
   })
   const firstHeading = firstHeadingNode === undefined
     ? null
-    : extractTextnodes(firstHeadingNode)
+    : titleCandidate(extractTextnodes(firstHeadingNode)
       .map(node => node.whitespaceBefore + node.value)
-      .join('')
-      .trim() || null
+      .join(''))
 
   const paragraph = ast.children.find(node => node.type === 'Generic' && node.name === 'Paragraph')
   if (paragraph === undefined || paragraph.type !== 'Generic') {
@@ -93,8 +92,14 @@ export function documentTitleMetadataFromAST (ast: ASTNode): DocumentTitleMetada
     return { firstHeading, firstSentence: null }
   }
 
-  const firstSentence = (prose.match(/^.*?[.!?](?=\s|$)/u)?.[0] ?? prose).trim()
-  return { firstHeading, firstSentence: firstSentence || null }
+  const firstSentence = prose.match(/^.*?[.!?](?=\s|$)/u)?.[0] ?? prose
+  return { firstHeading, firstSentence: titleCandidate(firstSentence) }
+}
+
+/** A heading or sentence that is only whitespace offers no title. */
+function titleCandidate (text: string): string | null {
+  const trimmed = text.trim()
+  return trimmed === '' ? null : trimmed
 }
 
 export function documentTitleMetadata (content: string): DocumentTitleMetadata {
