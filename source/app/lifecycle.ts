@@ -13,33 +13,22 @@
  * END HEADER
  */
 
-import { app, ipcMain } from "electron";
-// Developer tools
-import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
-import path from "path";
-import {
-  AppServiceContainer,
-  getAppServiceContainer,
-  isAppServiceContainerReady,
-  setAppServiceContainer,
-} from "./app-service-container";
-import addToPath from "./util/add-to-PATH";
-import { attachAppNavigationHandlers } from "./util/attach-app-navigation-handlers";
 // Helper/Utility functions
-import registerCustomProtocols from "./util/custom-protocols";
-import environmentCheck from "./util/environment-check";
-import { getProgramVersion } from "./util/get-program-version";
-import {
-  loadCanonicalMathJaxMacros,
-  loadCanonicalTexMacroCommands,
-} from "./util/load-mathjax-macros";
-import { projectQuiverMacros, type QuiverMacrosIPCResponse } from "./util/quiver-macros";
-import resolveTimespanMs from "./util/resolve-timespan-ms";
-import {
-  resolveTikzTemplatePath,
-  type TikzCompletionIPCResponse,
-  tikzTemplateCompletions,
-} from "./util/tikz-render";
+import registerCustomProtocols from './util/custom-protocols'
+import environmentCheck from './util/environment-check'
+import addToPath from './util/add-to-PATH'
+import resolveTimespanMs from './util/resolve-timespan-ms'
+import path from 'path'
+import { getProgramVersion } from './util/get-program-version'
+
+// Developer tools
+import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
+import { AppServiceContainer, getAppServiceContainer, isAppServiceContainerReady, setAppServiceContainer } from './app-service-container'
+import { app, ipcMain } from 'electron'
+import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
+import { loadCanonicalMathJaxMacros, loadCanonicalTexMacroCommands } from './util/load-mathjax-macros'
+import { projectQuiverMacros, type QuiverMacrosIPCResponse } from './util/quiver-macros'
+import { resolveTikzTemplatePath, type TikzCompletionIPCResponse, tikzTemplateCompletions } from './util/tikz-render'
 
 /**
  * What the bare 'mathjax-macros' invoke channel answers with — the loader's
@@ -47,87 +36,82 @@ import {
  * composed into the renderer's invoke type in
  * source/types/renderer/ipc-bridge.ts.
  */
-export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
-export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
-export type { QuiverMacrosIPCResponse, TikzCompletionIPCResponse };
+export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>
+export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>
+export type { QuiverMacrosIPCResponse, TikzCompletionIPCResponse }
 
 // Statistics: Record the uptime of the application
-let upTimestamp: number;
+let upTimestamp: number
 
 /**
  * Boots the application
  *
  * @return  {void}    Nothing to return
  */
-export async function bootApplication(): Promise<AppServiceContainer> {
-  upTimestamp = Date.now();
+export async function bootApplication (): Promise<AppServiceContainer> {
+  upTimestamp = Date.now()
 
   // First of all we MUST perform the environment check, since everything else
   // depends on this.
-  await environmentCheck();
+  await environmentCheck()
 
   // We need to instantiate the service container right away to have access to
   // the log and config providers. Then we just need to remember to boot it
   // before we access anything important.
-  const appServiceContainer = new AppServiceContainer();
-  const config = appServiceContainer.config;
-  const log = appServiceContainer.log;
+  const appServiceContainer = new AppServiceContainer()
+  const config = appServiceContainer.config
+  const log = appServiceContainer.log
 
-  log.info(`こんにちは！ Booting Zettlr at ${(new Date()).toString()}.`);
+  log.info(`こんにちは！ Booting Zettlr at ${(new Date()).toString()}.`)
 
   // Before we begin, let's load the Vue.js DevTools for debugging
   if (!app.isPackaged) {
     try {
       // Load Vue developer extension
-      log.info("Installing developer extensions ...");
-      const extension = await installExtension(VUEJS_DEVTOOLS);
-      log.info(`Added extension: ${extension.name} v${extension.version}`);
+      log.info('Installing developer extensions ...')
+      const extension = await installExtension(VUEJS_DEVTOOLS)
+      log.info(`Added extension: ${extension.name} v${extension.version}`)
     } catch (err: unknown) {
-      log.error(
-        `Could not install extension: ${err instanceof Error ? err.message : "unknown error"}`,
-        err,
-      );
+      log.error(`Could not install extension: ${err instanceof Error ? err.message : 'unknown error'}`, err)
     }
   }
 
-  registerCustomProtocols(log);
+  registerCustomProtocols(log)
 
   // Prevent navigation away from our main windows and the creation of arbitrary
   // browser windows with external URLs
-  attachAppNavigationHandlers(log);
+  attachAppNavigationHandlers(log)
 
   // Register the central macro projection BEFORE the service container boots:
   // onboarding/renderers may request it during startup. ~/.pandoc is the only
-  // semantic authority; there is deliberately no app-local seed or fallback.
-  ipcMain.handle("mathjax-macros", async () => {
-    return await loadCanonicalMathJaxMacros(app.getPath("home"));
-  });
-  ipcMain.handle("tex-macro-commands", async (): Promise<TexMacroCommandsIPCResponse> => {
-    return await loadCanonicalTexMacroCommands(app.getPath("home"));
-  });
-  ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
-    return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
-  });
-  ipcMain.handle("quiver-macros", async (): Promise<QuiverMacrosIPCResponse> => {
-    const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
-    return projectQuiverMacros(macros, resolveTikzTemplatePath(app.getPath("home")));
-  });
+  // semantic authority.
+  ipcMain.handle('mathjax-macros', async () => {
+    return await loadCanonicalMathJaxMacros(app.getPath('home'))
+  })
+  ipcMain.handle('tex-macro-commands', async (): Promise<TexMacroCommandsIPCResponse> => {
+    return await loadCanonicalTexMacroCommands(app.getPath('home'))
+  })
+  ipcMain.handle('tikz-completion-commands', (): TikzCompletionIPCResponse => {
+    return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath('home')))
+  })
+  ipcMain.handle('quiver-macros', async (): Promise<QuiverMacrosIPCResponse> => {
+    const macros = await loadCanonicalMathJaxMacros(app.getPath('home'))
+    return projectQuiverMacros(macros, resolveTikzTemplatePath(app.getPath('home')))
+  })
 
   // Now boot up the service container
-  await appServiceContainer.boot();
+  await appServiceContainer.boot()
 
   // Now make the service container available for the rest of the main process.
-  setAppServiceContainer(appServiceContainer);
+  setAppServiceContainer(appServiceContainer)
 
   // If we have a bundled pandoc, unshift its path to env.PATH in order to have
   // the system search there first for the binary, and not use the internal
   // one.
-  const useBundledPandoc = Boolean(config.get("export.useBundledPandoc"));
+  const useBundledPandoc = Boolean(config.get('export.useBundledPandoc'))
   if (process.env.PANDOC_PATH !== undefined && useBundledPandoc) {
-    addToPath(log, path.dirname(process.env.PANDOC_PATH), "unshift");
-    log.info(
-      "[Application] The bundled pandoc executable is now in PATH. If you do not want to use the bundled pandoc, uncheck the corresponding setting and reboot the app.",
-    );
+    addToPath(log, path.dirname(process.env.PANDOC_PATH), 'unshift')
+    log.info('[Application] The bundled pandoc executable is now in PATH. If you do not want to use the bundled pandoc, uncheck the corresponding setting and reboot the app.')
   }
 
   // NOTE: Normally, we should check the Pandoc version in the environment check.
@@ -136,13 +120,13 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   // extract the version string, since we may get any of the two but need the
   // correct version string of the version that will actually be used.
   try {
-    const version = await getProgramVersion("pandoc");
-    process.env.PANDOC_VERSION = String(version);
+    const version = await getProgramVersion('pandoc')
+    process.env.PANDOC_VERSION = String(version)
   } catch {
     // No Pandoc available.
   }
 
-  return appServiceContainer;
+  return appServiceContainer
 }
 
 /**
@@ -150,38 +134,36 @@ export async function bootApplication(): Promise<AppServiceContainer> {
  *
  * @return  {Promise<void>}  Resolves always
  */
-export async function shutdownApplication(): Promise<void> {
+export async function shutdownApplication (): Promise<void> {
   if (!isAppServiceContainerReady()) {
-    return;
+    return
   }
-  const appServiceContainer = getAppServiceContainer();
-  const log = appServiceContainer.log;
-  log.info(`さようなら！ Shutting down at ${(new Date()).toString()}`);
+  const appServiceContainer = getAppServiceContainer()
+  const log = appServiceContainer.log
+  log.info(`さようなら！ Shutting down at ${(new Date()).toString()}`)
 
-  const downTimestamp = Date.now();
+  const downTimestamp = Date.now()
 
   // Get a nice resolved timespan with right properties
-  const span = resolveTimespanMs(downTimestamp - upTimestamp);
+  const span = resolveTimespanMs(downTimestamp - upTimestamp)
 
   // Now construct the message. Always include minutes, seconds, and milliseconds
-  let uptimeMessage: string = `${span.minutes} minutes, and ${span.seconds}.${span.ms} seconds`;
+  let uptimeMessage: string = `${span.minutes} minutes, and ${span.seconds}.${span.ms} seconds`
   if (span.hours > 0) {
-    uptimeMessage = `${span.hours} hours, ${uptimeMessage}`;
+    uptimeMessage = `${span.hours} hours, ${uptimeMessage}`
   }
   if (span.days > 0) {
-    uptimeMessage = `${span.days} days, ${uptimeMessage}`;
+    uptimeMessage = `${span.days} days, ${uptimeMessage}`
   }
   if (span.weeks > 0) {
-    uptimeMessage = `${span.weeks} weeks, ${uptimeMessage}`;
+    uptimeMessage = `${span.weeks} weeks, ${uptimeMessage}`
   }
 
-  log.info(`Application uptime was: ${uptimeMessage}.`);
+  log.info(`Application uptime was: ${uptimeMessage}.`)
 
   if (span.days > 0 || span.weeks > 0) {
-    log.warning(
-      "Zettlr has run for more than one day. Please make sure to regularly reboot your computer.",
-    );
+    log.warning('Zettlr has run for more than one day. Please make sure to regularly reboot your computer.')
   }
 
-  await appServiceContainer.shutdown();
+  await appServiceContainer.shutdown()
 }
