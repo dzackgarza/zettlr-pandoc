@@ -6,7 +6,9 @@ import {
   renderTikz,
   resolveTikzDataDir,
   resolveTikzTemplatePath,
-} from "../source/app/util/tikz-render";
+} from "../packages/tikz-workbench/tikz-render";
+import { projectQuiverMacros } from "../packages/tikz-workbench/quiver-macros";
+import { parseMathJaxMacros } from "../packages/tikz-workbench/mathjax-config";
 
 const input = Bun.argv[2];
 if (input === undefined || path.extname(input) !== ".tikz") {
@@ -60,8 +62,38 @@ const server = Bun.serve({
       );
       return Response.json(result);
     }
+    if (url.pathname === "/api/quiver-macros" && request.method === "GET") {
+      const macros = parseMathJaxMacros(JSON.parse(await readFile(path.join(home, ".pandoc/templates/css/mathjax-macros.json"), "utf8")));
+      return Response.json(projectQuiverMacros(macros, config.templatePath));
+    }
     if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
-    if (url.pathname === "/") return new Response(Bun.file(path.join(import.meta.dir, "tikz-standalone.html")));
+    if (url.pathname === "/") return new Response(Bun.file(path.join(root, "packages/tikz-workbench/index.html")));
+    if (url.pathname === "/host.js") return new Response(Bun.file(path.join(import.meta.dir, "tikz-standalone-host.js")));
+    if (url.pathname.startsWith("/tikz-image/")) {
+      const documentDir = path.dirname(documentPath);
+      const relative = decodeURIComponent(url.pathname.slice("/tikz-image/".length));
+      const asset = path.resolve(documentDir, relative);
+      if (!asset.startsWith(`${documentDir}${path.sep}`)) return new Response("Not found", { status: 404 });
+      if (!new Set([".png", ".jpg", ".jpeg", ".svg"]).has(path.extname(asset).toLowerCase())) {
+        return new Response("Unsupported image format", { status: 415 });
+      }
+      let actual: string;
+      try {
+        actual = await realpath(asset);
+      } catch {
+        return new Response("Not found", { status: 404 });
+      }
+      if (!actual.startsWith(`${documentDir}${path.sep}`)) return new Response("Not found", { status: 404 });
+      const file = Bun.file(actual);
+      return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 });
+    }
+    if (url.pathname.startsWith("/quiver/")) {
+      const quiverRoot = path.join(root, "vendor/quiver/src");
+      const asset = path.resolve(quiverRoot, `.${url.pathname.slice("/quiver".length)}`);
+      if (!asset.startsWith(`${quiverRoot}${path.sep}`)) return new Response("Not found", { status: 404 });
+      const file = Bun.file(asset);
+      return await file.exists() ? new Response(file) : new Response("Not found", { status: 404 });
+    }
     if (!url.pathname.startsWith("/tikz-editor/")) return new Response("Not found", { status: 404 });
     const asset = path.resolve(assetRoot, `.${url.pathname.slice("/tikz-editor".length)}`);
     if (!asset.startsWith(`${assetRoot}${path.sep}`)) return new Response("Not found", { status: 404 });

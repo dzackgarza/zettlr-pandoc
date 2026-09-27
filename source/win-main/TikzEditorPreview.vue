@@ -113,6 +113,7 @@ function sendFullLoad(): void {
     source: active.source.source,
     autosave: 0,
     fileName: props.target.docPath === "" ? "diagram.tikz" : props.target.docPath,
+    imageBaseUrl: props.target.docPath === "" ? "" : new URL("./", `file://${encodeURI(props.target.docPath).replaceAll("#", "%23").replaceAll("?", "%3F")}`).href,
     settings: {
       general: {
         colorScheme: currentTheme(),

@@ -31,6 +31,7 @@ type HostMessage = {
 	modified?: boolean;
 	fullscreen?: boolean;
 	settings?: HostSettingsPatch;
+	imageBaseUrl?: string;
 };
 
 type PendingEditorMessage = {
@@ -57,6 +58,8 @@ let lastSavedSource = DEFAULT_SOURCE;
 let lastKnownSvg = '';
 let currentFileName = 'document.tikz';
 let currentHostRevision = 0;
+let imageBaseUrl = '';
+let imageBaseErrorReported = false;
 const persistenceValues = new Map<string, string>();
 
 function postToHost(message: Record<string, unknown>) {
@@ -392,6 +395,8 @@ function HostBridge() {
 			if (!message) return;
 			const action = message.action || message.event;
 			if (action === 'load') {
+				imageBaseUrl = message.imageBaseUrl ?? '';
+				imageBaseErrorReported = false;
 				if (typeof message.revision === 'number' && Number.isInteger(message.revision)) {
 					currentHostRevision = message.revision;
 				}
@@ -430,8 +435,24 @@ function HostBridge() {
 		};
 
 		window.addEventListener('message', handleMessage);
+		const imageObserver = new MutationObserver(() => {
+			const images = document.querySelectorAll<SVGImageElement>('image[data-image-file]');
+			if (!imageBaseUrl && images.length > 0 && !imageBaseErrorReported) {
+				imageBaseErrorReported = true;
+				postToHost({ event: 'error', message: 'Image rendering requires a document image base URL.' });
+				return;
+			}
+			for (const image of images) {
+				const fileName = image.dataset.imageFile;
+				if (!fileName) continue;
+				const url = new URL(fileName, imageBaseUrl).href;
+				if (image.getAttribute('href') !== url) image.setAttribute('href', url);
+			}
+		});
+		imageObserver.observe(document.body, { childList: true, subtree: true });
 		window.addEventListener('keydown', handleKeydown, true);
 		return () => {
+			imageObserver.disconnect();
 			unsubscribe();
 			window.removeEventListener('message', handleMessage);
 			window.removeEventListener('keydown', handleKeydown, true);

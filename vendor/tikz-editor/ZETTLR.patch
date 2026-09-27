@@ -1,3 +1,66 @@
+diff --git a/apps/landing/scripts/generate-tool-svgs.mts b/apps/landing/scripts/generate-tool-svgs.mts
+index 4b04e6f..5d64541 100644
+--- a/apps/landing/scripts/generate-tool-svgs.mts
++++ b/apps/landing/scripts/generate-tool-svgs.mts
+@@ -158,6 +158,18 @@ const previews: readonly ToolPreview[] = [
+     mode: "addCircle",
+     source: String.raw`\draw (0,0) circle (0.47cm);`
+   },
++  {
++    mode: "addPoint",
++    source: String.raw`\fill (0,0) circle (1pt);`
++  },
++  {
++    mode: "addImage",
++    source: String.raw`\node[draw] at (0,0) {Image};`
++  },
++  {
++    mode: "addArc",
++    source: String.raw`\draw (0.48,0) arc (0:135:0.48cm);`
++  },
+   {
+     mode: "addBucket",
+     source: String.raw`\draw[fill=green!18, draw=black] (-1,-0.25) rectangle (1,0.25);`
+diff --git a/apps/landing/src/App.tsx b/apps/landing/src/App.tsx
+index ac3169d..d3c1b60 100644
+--- a/apps/landing/src/App.tsx
++++ b/apps/landing/src/App.tsx
+@@ -177,6 +177,15 @@ const TOOL_COPY: Record<ToolPreviewMode, { name?: string; description: ReactNode
+   addCircle: {
+     description: "Draw a circle path."
+   },
++  addPoint: {
++    description: "Place a filled point."
++  },
++  addImage: {
++    description: "Place an image file in a TikZ node."
++  },
++  addArc: {
++    description: "Draw an arc from a center, start point, and end point."
++  },
+   addBucket: {
+     description: "Apply a fill color to an existing closed region."
+   }
+diff --git a/apps/landing/src/generated/tool-svgs.ts b/apps/landing/src/generated/tool-svgs.ts
+index 9dde7f6..566e2d8 100644
+--- a/apps/landing/src/generated/tool-svgs.ts
++++ b/apps/landing/src/generated/tool-svgs.ts
+@@ -44,6 +44,15 @@ export const LANDING_TOOL_SVGS = {
+   "addCircle": {
+     "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-51.5064 -17.0615 103.0128 34.123\" role=\"img\" aria-label=\"TikZ SVG preview\"><path data-source-id=\"path:0\" d=\"M -46.947 19.9169 L 46.947 19.9169 L 46.947 -19.9169 L -46.947 -19.9169 Z\" stroke=\"none\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><circle data-source-id=\"path:1\" cx=\"0\" cy=\"0\" r=\"13.3728\" stroke=\"black\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><g class=\"landingExactSelectionOverlay\"><polygon fill=\"none\" stroke=\"rgba(13, 95, 182, 0.9)\" stroke-dasharray=\"5 3\" stroke-width=\"0.4047\" points=\"-13.3728,-13.3728 13.3728,-13.3728 13.3728,13.3728 -13.3728,13.3728\" /></g><g class=\"landingExactHandleOverlay\"><rect x=\"-1.1957\" y=\"-14.5685\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"12.1771\" y=\"-1.1957\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"-1.1957\" y=\"12.1771\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"-14.5685\" y=\"-1.1957\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"-14.5685\" y=\"-14.5685\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"12.1771\" y=\"-14.5685\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"12.1771\" y=\"12.1771\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /><rect x=\"-14.5685\" y=\"12.1771\" width=\"2.3914\" height=\"2.3914\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.4415\" /></g></svg>"
+   },
++  "addPoint": {
++    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-23.2837 -7.7127 46.5674 15.4255\" role=\"img\" aria-label=\"TikZ SVG preview\"><path data-source-id=\"path:0\" d=\"M -46.947 19.9169 L 46.947 19.9169 L 46.947 -19.9169 L -46.947 -19.9169 Z\" stroke=\"none\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><path data-source-id=\"path:1\" d=\"M 0 0 M 1 0 A 1 1 0 0 0 -1 0 A 1 1 0 0 0 1 0 Z\" stroke=\"none\" fill=\"black\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><g class=\"landingExactSelectionOverlay\"><polygon fill=\"none\" stroke=\"rgba(13, 95, 182, 0.9)\" stroke-dasharray=\"5 3\" stroke-width=\"0.1829\" points=\"-1,-1 1,-1 1,1 -1,1\" /></g><g class=\"landingExactHandleOverlay\"><rect x=\"-1.5405\" y=\"-1.5405\" width=\"1.081\" height=\"1.081\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.1996\" /><rect x=\"0.4595\" y=\"-1.5405\" width=\"1.081\" height=\"1.081\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.1996\" /><rect x=\"0.4595\" y=\"0.4595\" width=\"1.081\" height=\"1.081\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.1996\" /><rect x=\"-1.5405\" y=\"0.4595\" width=\"1.081\" height=\"1.081\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.1996\" /></g></svg>"
++  },
++  "addImage": {
++    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-34.5663 -11.4501 69.1326 22.9002\" role=\"img\" aria-label=\"TikZ SVG preview\"><path data-source-id=\"path:0\" d=\"M -46.947 19.9169 L 46.947 19.9169 L 46.947 -19.9169 L -46.947 -19.9169 Z\" stroke=\"none\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><path data-source-id=\"path:1\" d=\"M -16.4787 7.7614 L 16.4787 7.7614 L 16.4787 -7.7614 L -16.4787 -7.7614 Z\" stroke=\"black\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><svg data-source-id=\"path:1\" data-text-renderer=\"mathjax\" data-paragraph-id=\"paragraph-30\" data-text-layout-kind=\"single-line\" data-scene-text-id=\"scene-text:path:1:node:1:2\" x=\"-13.1457\" y=\"-4.4284\" width=\"26.2914\" height=\"8.8568\" viewBox=\"0 -683 2639 889\" color=\"#000000\" opacity=\"1\" overflow=\"visible\"><g stroke=\"currentColor\" fill=\"currentColor\" stroke-width=\"0\" transform=\"scale(1,-1)\"><g data-mml-node=\"math\" data-latex=\"\\parbox[t]{26.39pt}{Image}\"><g data-mml-node=\"mpadded\" data-overflow=\"linebreak\" data-vertical-align=\"top\" data-latex=\"\\parbox[t]{26.39pt}{Image}\" data-align=\"left\" data-paragraph-id=\"paragraph-30\"><g data-mml-node=\"mtext\"><path data-c=\"49\" d=\"M180 3C257 3 308 2 333 0L333 39L304 39C268 39 246 41 239 46C232 51 228 63 228 81L228 602C228 620 232 631 239 636C246 641 268 644 304 644L333 644L333 683C308 681 257 680 181 680C104 680 53 681 28 683L28 644L57 644C93 644 115 641 122 636C129 631 133 620 133 602L133 81C133 63 129 51 122 46C115 41 93 39 57 39L28 39L28 0C53 2 104 3 180 3Z\"></path><path data-c=\"6D\" d=\"M315 413C361 413 384 378 384 307L384 79C384 60 381 48 374 44C367 40 344 38 307 38L307 0L423 3L538 0L538 38C501 38 479 40 472 44C465 48 461 60 461 79L461 259C461 339 513 413 590 413C637 413 660 378 660 307L660 79C660 60 656 48 649 44C642 40 619 38 582 38L582 0L698 3L813 0L813 38C781 38 760 39 750 42C740 45 736 52 736 64L736 251C736 298 734 331 731 350C721 411 676 442 597 442C534 442 487 413 455 354C441 413 397 442 322 442C259 442 211 412 179 352L179 442L32 431L32 393C68 393 90 390 98 384C106 378 109 365 109 342L109 79C109 60 105 48 98 44C91 40 69 38 32 38L32 0L148 3L263 0L263 38C226 38 203 40 196 44C189 48 185 60 185 79L185 259C185 340 238 413 315 413Z\" transform=\"translate(361,0)\"></path><path data-c=\"61\" d=\"M483 91L483 150L451 150L451 91C451 52 440 32 419 32C399 32 387 57 387 77L387 274C387 309 383 335 376 353C352 412 283 448 213 448C136 448 60 405 60 333C60 300 77 283 110 283C143 283 159 299 159 332C159 361 144 378 113 381C135 406 168 419 211 419C273 419 311 362 311 297L311 264C233 259 174 247 133 228C66 197 32 154 32 97C32 71 42 49 61 32C93 3 137-11 193-11C252-11 294 14 320 65C327 27 355-6 398-6C451-6 483 36 483 91M200 18C154 18 116 52 116 98C116 191 213 231 311 236L311 141C311 74 267 18 200 18Z\" transform=\"translate(1194,0)\"></path><path data-c=\"67\" d=\"M431 453C393 453 358 438 326 408C296 431 262 442 223 442C137 442 59 378 59 294C59 252 74 218 104 192C85 168 75 141 75 110C75 72 88 43 113 24C71 10 28-26 28-77C28-120 56-154 111-178C153-197 199-206 249-206C300-206 347-197 389-178C444-154 471-120 471-75C471-22 449 17 405 42C359 67 308 70 234 70C190 70 166 70 161 71C133 75 113 102 113 133C113 148 117 162 126 174C154 155 186 145 223 145C309 145 386 209 386 293C386 332 373 364 347 389C372 412 399 423 428 423C423 418 420 410 420 400C420 378 431 367 453 367C474 367 485 378 485 401C485 432 461 453 431 453M223 411C277 411 304 372 304 294C304 215 277 175 223 175C168 175 141 214 141 293C141 372 168 411 223 411M164 4L222 4C274 4 316 1 348-6C391-15 412-39 412-77C412-109 392-134 352-153C321-168 287-175 250-175C214-175 180-168 148-153C107-134 87-109 87-77C87-35 123 4 164 4Z\" transform=\"translate(1694,0)\"></path><path data-c=\"65\" d=\"M415 251C415 366 348 448 236 448C176 448 126 425 85 378C47 334 28 281 28 220C28 157 49 104 91 58C133 12 185-11 247-11C304-11 348 9 378 48C403 81 415 105 415 121C415 131 409 136 398 136C390 136 385 131 382 120C360 54 317 21 253 21C208 21 173 42 146 85C127 116 118 163 117 227L387 227C409 227 415 229 415 251M326 349C337 316 342 284 342 255L118 255C121 321 138 366 168 389C193 409 215 419 236 419C281 419 311 396 326 349Z\" transform=\"translate(2194,0)\"></path></g></g></g></g></svg><g class=\"landingExactSelectionOverlay\"><polygon fill=\"none\" stroke=\"rgba(13, 95, 182, 0.9)\" stroke-dasharray=\"5 3\" stroke-width=\"0.2716\" points=\"-16.4787,-7.7614 16.4787,-7.7614 16.4787,7.7614 -16.4787,7.7614\" /></g><g class=\"landingExactHandleOverlay\"><rect x=\"-17.2811\" y=\"-8.5638\" width=\"1.6049\" height=\"1.6049\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2963\" /><rect x=\"15.6763\" y=\"-8.5638\" width=\"1.6049\" height=\"1.6049\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2963\" /><rect x=\"15.6763\" y=\"6.959\" width=\"1.6049\" height=\"1.6049\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2963\" /><rect x=\"-17.2811\" y=\"6.959\" width=\"1.6049\" height=\"1.6049\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2963\" /></g></svg>"
++  },
++  "addArc": {
++    "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-64.9422 -27.0032 133.8845 44.3492\" role=\"img\" aria-label=\"TikZ SVG preview\"><path data-source-id=\"path:0\" d=\"M -46.947 19.9169 L 46.947 19.9169 L 46.947 -19.9169 L -46.947 -19.9169 Z\" stroke=\"none\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><path data-source-id=\"path:1\" d=\"M 13.6573 0 A 13.6573 13.6573 0 0 0 -9.6572 -9.6572\" stroke=\"black\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><g class=\"landingExactHandleOverlay\"><rect x=\"12.1033\" y=\"-1.554\" width=\"3.108\" height=\"3.108\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.5738\" /></g></svg>"
++  },
+   "addBucket": {
+     "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-32.6095 -10.8019 65.2189 21.6038\" role=\"img\" aria-label=\"TikZ SVG preview\"><path data-source-id=\"path:0\" d=\"M -46.947 19.9169 L 46.947 19.9169 L 46.947 -19.9169 L -46.947 -19.9169 Z\" stroke=\"none\" fill=\"none\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><path data-source-id=\"path:1\" d=\"M -28.4528 7.1132 M -28.4528 7.1132 L 28.4528 7.1132 L 28.4528 -7.1132 L -28.4528 -7.1132 Z\" stroke=\"#000000\" fill=\"#d1ffd1\" stroke-width=\"0.4\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\" stroke-opacity=\"1\" fill-opacity=\"1\" /><g class=\"landingExactSelectionOverlay\"><polygon fill=\"none\" stroke=\"rgba(13, 95, 182, 0.9)\" stroke-dasharray=\"5 3\" stroke-width=\"0.2562\" points=\"-28.4528,-7.1132 28.4528,-7.1132 28.4528,7.1132 -28.4528,7.1132\" /></g><g class=\"landingExactHandleOverlay\"><rect x=\"-29.2098\" y=\"-7.8702\" width=\"1.514\" height=\"1.514\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2795\" /><rect x=\"27.6958\" y=\"-7.8702\" width=\"1.514\" height=\"1.514\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2795\" /><rect x=\"27.6958\" y=\"6.3562\" width=\"1.514\" height=\"1.514\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2795\" /><rect x=\"-29.2098\" y=\"6.3562\" width=\"1.514\" height=\"1.514\" fill=\"#fff\" stroke=\"#1060b0\" stroke-width=\"0.2795\" /></g></svg>"
+   }
 diff --git a/packages/app/src/app-menu/default-menu.ts b/packages/app/src/app-menu/default-menu.ts
 index 59fab7a..8cc20ff 100644
 --- a/packages/app/src/app-menu/default-menu.ts
@@ -12,6 +75,27 @@ index 59fab7a..8cc20ff 100644
        },
        { kind: "separator" },
        {
+diff --git a/packages/app/src/store/types.ts b/packages/app/src/store/types.ts
+index 450957d..ff2ba52 100644
+--- a/packages/app/src/store/types.ts
++++ b/packages/app/src/store/types.ts
+@@ -14,6 +14,8 @@ export type ToolMode =
+   | "magnify"
+   | "addBucket"
+   | "addNode"
++  | "addPoint"
++  | "addImage"
+   | "addMatrix"
+   | "addShape"
+   | "addPath"
+@@ -23,6 +25,7 @@ export type ToolMode =
+   | "addRect"
+   | "addEllipse"
+   | "addCircle"
++  | "addArc"
+   | "addArrow"
+   | "addBezier";
+ export type CanvasDragKind = "element" | "resize" | "rotate" | "handle" | "pan" | "marquee" | "tool-create";
 diff --git a/packages/app/src/ui/SettingsModal.tsx b/packages/app/src/ui/SettingsModal.tsx
 index e849b25..134cf65 100644
 --- a/packages/app/src/ui/SettingsModal.tsx
@@ -35,6 +119,602 @@ index e849b25..134cf65 100644
  ];
  
  const CATEGORIES: { id: CategoryId; label: string }[] = [
+diff --git a/packages/app/src/ui/StatusBar.tsx b/packages/app/src/ui/StatusBar.tsx
+index 681cb41..1de10d5 100644
+--- a/packages/app/src/ui/StatusBar.tsx
++++ b/packages/app/src/ui/StatusBar.tsx
+@@ -309,12 +309,15 @@ function resolveToolCreateModifierHint(toolMode: ToolMode, keys: ModifierKeyLabe
+     case "magnify":
+     case "addBucket":
+     case "addNode":
++    case "addPoint":
++    case "addImage":
+     case "addMatrix":
+     case "addShape":
+     case "addPath":
+     case "addFreehand":
+     case "addLine":
+     case "addCircle":
++    case "addArc":
+     case "addArrow":
+     case "addBezier":
+       return snapHint;
+diff --git a/packages/app/src/ui/canvas-panel/CanvasPanel.tsx b/packages/app/src/ui/canvas-panel/CanvasPanel.tsx
+index 4e22ccf..ca33536 100644
+--- a/packages/app/src/ui/canvas-panel/CanvasPanel.tsx
++++ b/packages/app/src/ui/canvas-panel/CanvasPanel.tsx
+@@ -119,6 +119,7 @@ type SnapDebugPoint
+ import { createSourceRenderOffsetMap } from "./text-offset-map";
+ import { applyTextMeasureFont,collectLogicalLineRanges,createVisualTextLayout,resolveVisualLineLeft } from "./text-visual-layout";
+ import type {
++ArcDraft,
+ ApplyActionFeedback,
+ CanvasSnapshot,
+ DragState,
+@@ -917,6 +918,7 @@ export const CanvasPanel = memo(function CanvasPanel({
+   const [toolDraft, setToolDraft] = useState<Extract<DragState, { kind: "tool-create" }> | null>(null);
+   const [bezierBendDraft, setBezierBendDraft] = useState<Extract<DragState, { kind: "tool-bezier-bend" }> | null>(null);
+   const [pendingBezier, setPendingBezier] = useState<PendingBezier | null>(null);
++  const [arcDraft, setArcDraft] = useState<ArcDraft | null>(null);
+   const [marqueeDraft, setMarqueeDraft] = useState<Extract<DragState, { kind: "marquee" }> | null>(null);
+   const [nodeAnchorOverlay, setNodeAnchorOverlay] = useState<NodeAnchorOverlayState | null>(null);
+   const [canvasTextEditState, setCanvasTextEditState] = useState(INITIAL_CANVAS_TEXT_EDIT_STATE);
+@@ -1866,6 +1868,7 @@ export const CanvasPanel = memo(function CanvasPanel({
+     pathDraft,
+     pathSegmentDraft,
+     pendingBezier,
++    arcDraft,
+     bezierBendDraft,
+     canvasTransform
+   });
+@@ -3226,6 +3229,8 @@ export const CanvasPanel = memo(function CanvasPanel({
+     canvasTransform,
+     interactionSvgRef,
+     pendingBezier,
++    arcDraft,
++    setArcDraft,
+     snapshot,
+     source,
+     setWarning,
+diff --git a/packages/app/src/ui/canvas-panel/types.ts b/packages/app/src/ui/canvas-panel/types.ts
+index dac6b0b..20eb1bf 100644
+--- a/packages/app/src/ui/canvas-panel/types.ts
++++ b/packages/app/src/ui/canvas-panel/types.ts
+@@ -269,6 +269,8 @@ export type PendingBezier = {
+   endWorld: WorldPoint;
+ };
+ 
++export type ArcDraft = { center: WorldPoint; start?: WorldPoint };
++
+ export type PathAppendTarget = {
+   elementId: string;
+   end: "start" | "end";
+diff --git a/packages/app/src/ui/canvas-panel/useCanvasDerivedState.ts b/packages/app/src/ui/canvas-panel/useCanvasDerivedState.ts
+index de0ccae..37c85eb 100644
+--- a/packages/app/src/ui/canvas-panel/useCanvasDerivedState.ts
++++ b/packages/app/src/ui/canvas-panel/useCanvasDerivedState.ts
+@@ -16,7 +16,7 @@ import {
+ } from "./path-tool";
+ import { resolveFreehandPreviewSegments } from "./freehand-tool";
+ import { buildAnchoredGridPreviewLines } from "./panel-helpers";
+-import type { CanvasSnapshot, DragState, FreehandToolDraft, PathToolDraft, PendingBezier } from "./types";
++import type { ArcDraft, CanvasSnapshot, DragState, FreehandToolDraft, PathToolDraft, PendingBezier } from "./types";
+ import type { ToolPreview } from "./overlays";
+ 
+ const TOOL_PREVIEW_CIRCLE_RADIUS_PT = 0.8 * PT_PER_CM;
+@@ -38,6 +38,7 @@ export type UseCanvasDerivedStateArgs = {
+   pathDraft: PathToolDraft | null;
+   pathSegmentDraft: Extract<DragState, { kind: "tool-path-segment" }> | null;
+   pendingBezier: PendingBezier | null;
++  arcDraft: ArcDraft | null;
+   bezierBendDraft: Extract<DragState, { kind: "tool-bezier-bend" }> | null;
+   canvasTransform: CanvasTransform;
+ };
+@@ -54,6 +55,7 @@ export function useCanvasDerivedState(args: UseCanvasDerivedStateArgs) {
+     pathDraft,
+     pathSegmentDraft,
+     pendingBezier,
++    arcDraft,
+     bezierBendDraft,
+     canvasTransform
+   } = args;
+@@ -63,7 +65,27 @@ export function useCanvasDerivedState(args: UseCanvasDerivedStateArgs) {
+       return null;
+     }
+ 
+-    if (toolMode === "addNode" || toolMode === "addMatrix" || (toolMode === "addShape" && !toolDraft)) {
++    if (toolMode === "addArc" && arcDraft) {
++      const center = worldToSvgPoint(arcDraft.center, svgResult.viewBox);
++      const cursor = toolCursorWorld ? worldToSvgPoint(toolCursorWorld, svgResult.viewBox) : center;
++      if (!arcDraft.start) {
++        return { kind: "line", x1: center.x, y1: center.y, x2: cursor.x, y2: cursor.y, arrow: false };
++      }
++      const radius = Math.hypot(arcDraft.start.x - arcDraft.center.x, arcDraft.start.y - arcDraft.center.y);
++      const startAngle = Math.atan2(arcDraft.start.y - arcDraft.center.y, arcDraft.start.x - arcDraft.center.x);
++      const endAngle = toolCursorWorld
++        ? Math.atan2(toolCursorWorld.y - arcDraft.center.y, toolCursorWorld.x - arcDraft.center.x)
++        : startAngle;
++      const end = worldToSvgPoint(
++        wp(arcDraft.center.x + radius * Math.cos(endAngle), arcDraft.center.y + radius * Math.sin(endAngle)),
++        svgResult.viewBox
++      );
++      const start = worldToSvgPoint(arcDraft.start, svgResult.viewBox);
++      const delta = endAngle - startAngle;
++      return { kind: "path", d: `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${Math.abs(delta) > Math.PI ? 1 : 0} ${delta < 0 ? 1 : 0} ${end.x} ${end.y}` };
++    }
++
++    if (toolMode === "addNode" || toolMode === "addPoint" || toolMode === "addImage" || toolMode === "addMatrix" || (toolMode === "addShape" && !toolDraft)) {
+       const liveWorld = toolDraft?.currentWorld ?? toolCursorWorld;
+       if (!liveWorld) {
+         return null;
+@@ -404,7 +426,7 @@ export function useCanvasDerivedState(args: UseCanvasDerivedStateArgs) {
+       cy: start.y,
+       r: radius > 1e-4 ? radius : TOOL_PREVIEW_CIRCLE_RADIUS_PT
+     };
+-  }, [bezierBendDraft, canvasTransform.scale, freehandDraft, freehandSmoothingPx, pathDraft, pathSegmentDraft, pendingBezier, selectedAddShape, svgResult, toolCursorWorld, toolDraft, toolMode]);
++  }, [arcDraft, bezierBendDraft, canvasTransform.scale, freehandDraft, freehandSmoothingPx, pathDraft, pathSegmentDraft, pendingBezier, selectedAddShape, svgResult, toolCursorWorld, toolDraft, toolMode]);
+ 
+   return {
+     toolPreview
+diff --git a/packages/app/src/ui/canvas-panel/useCanvasElementInteractions.ts b/packages/app/src/ui/canvas-panel/useCanvasElementInteractions.ts
+index c69a45a..81e67af 100644
+--- a/packages/app/src/ui/canvas-panel/useCanvasElementInteractions.ts
++++ b/packages/app/src/ui/canvas-panel/useCanvasElementInteractions.ts
+@@ -445,7 +445,10 @@ export function useCanvasElementInteractions(args: UseCanvasElementInteractionsA
+         return;
+       }
+ 
+-      const textTarget = resolvedTargetId === targetId ? resolveEditableTextTarget(targetId, region) : null;
++      const isImage = snapshot.scene?.elements.some(
++        (element) => element.sourceRef.sourceId === targetId && element.kind === "Text" && element.textRenderInfo?.mode === "image"
++      );
++      const textTarget = resolvedTargetId === targetId && !isImage ? resolveEditableTextTarget(targetId, region) : null;
+       if (!additiveSelection && textTarget) {
+         const draggedIds = alreadySelected && selectedElementIds.size > 0 ? [...selectedElementIds] : [resolvedTargetId];
+         const supportsDeferredTextDrag = snapshot.editHandles.some(
+@@ -569,6 +572,7 @@ export function useCanvasElementInteractions(args: UseCanvasElementInteractionsA
+       startElementDrag,
+       scopeOverlay,
+       snapshot.editHandles,
++      snapshot.scene,
+       svgResult,
+       toolMode,
+       viewportRef
+diff --git a/packages/app/src/ui/canvas-panel/useCanvasToolInteractions.ts b/packages/app/src/ui/canvas-panel/useCanvasToolInteractions.ts
+index 709cc1b..ce2a0a5 100644
+--- a/packages/app/src/ui/canvas-panel/useCanvasToolInteractions.ts
++++ b/packages/app/src/ui/canvas-panel/useCanvasToolInteractions.ts
+@@ -13,6 +13,7 @@ import { isToolCreateMode } from "../tool-config";
+ import { formatTooltipCoordinateRows } from "./interaction-helpers";
+ import type { MatrixCellAnchorHint } from "./endpoint-anchor-snap";
+ import type {
++  ArcDraft,
+   ApplyActionWithFeedbackFn,
+   CanvasDispatch,
+   CanvasEditParseOptions,
+@@ -43,6 +44,8 @@ export type UseCanvasToolInteractionsArgs = {
+   canvasTransform: CanvasTransform;
+   interactionSvgRef: RefObject<SVGSVGElement | null>;
+   pendingBezier: PendingBezier | null;
++  arcDraft: ArcDraft | null;
++  setArcDraft: StateSetter<ArcDraft | null>;
+   snapshot: CanvasSnapshot;
+   source: string;
+   setWarning: StateSetter<string | null>;
+@@ -97,6 +100,8 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+     canvasTransform,
+     interactionSvgRef,
+     pendingBezier,
++    arcDraft,
++    setArcDraft,
+     snapshot,
+     source,
+     setWarning,
+@@ -137,6 +142,17 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+     freehandDraft,
+     parseOptions
+   } = args;
++  useEffect(() => {
++    if (toolMode !== "addArc") setArcDraft(null);
++  }, [toolMode, setArcDraft]);
++
++  useEffect(() => {
++    function cancelArc(event: KeyboardEvent) {
++      if (event.key === "Escape") setArcDraft(null);
++    }
++    window.addEventListener("keydown", cancelArc);
++    return () => window.removeEventListener("keydown", cancelArc);
++  }, [setArcDraft]);
+   const finalizePendingTouchViewportTap = useCallback(
+     (pointerId: number) => {
+       const pending = pendingTouchViewportRef.current;
+@@ -200,6 +216,8 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+         !pendingBezier &&
+         !freehandDraft &&
+         (toolMode === "addNode" ||
++          toolMode === "addPoint" ||
++          toolMode === "addImage" ||
+           toolMode === "addMatrix" ||
+           (isToolCreateMode(toolMode) && toolMode !== "addFreehand"));
+ 
+@@ -351,6 +369,37 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+         setToolCursorWorld(resolvedStart);
+         event.preventDefault();
+ 
++        if (toolMode === "addArc") {
++          const draft = arcDraft;
++          if (draft === null) {
++            setArcDraft({ center: resolvedStart });
++            return;
++          }
++          if (draft.start === undefined) {
++            if (distanceSquared(draft.center, resolvedStart) > 1e-8) {
++              setArcDraft({ ...draft, start: resolvedStart });
++            }
++            return;
++          }
++          if (distanceSquared(draft.center, resolvedStart) <= 1e-8) return;
++          queueSelectionForAddedElement(draft.start);
++          const result = applyActionWithFeedback({
++            kind: "addElement",
++            template: { kind: "arc", start: draft.start, end: resolvedStart, strokeColor: creationStrokeColor },
++            at: draft.center
++          });
++          if (!result.sourceChanged) {
++            pendingAddedSelectionRef.current = null;
++            return;
++          }
++          setArcDraft(null);
++          suppressNextBackgroundClickRef.current = true;
++          dispatch({ type: "SET_TOOL_MODE", mode: "select" });
++          setToolCursorWorld(null);
++          setSnapLines([]);
++          return;
++        }
++
+         if (toolMode === "addFreehand") {
+           const nextFreehandDraft = createFreehandToolDraft(resolvedStart, canvasTransform.scale);
+           setPathDraft(null);
+@@ -515,7 +564,7 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+           return;
+         }
+ 
+-        if (toolMode === "addNode" || toolMode === "addMatrix") {
++        if (toolMode === "addNode" || toolMode === "addPoint" || toolMode === "addImage" || toolMode === "addMatrix") {
+           event.preventDefault();
+           event.stopPropagation();
+           setDragTooltip(null);
+@@ -535,6 +584,12 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+             toolCursorWorld != null &&
+             distanceSquared(world, toolCursorWorld) <= previewToleranceWorld * previewToleranceWorld;
+           const nodeAt = previewMatchesClick ? toolCursorWorld : snapResult.snappedPoint ?? world;
++          const imageFileName = toolMode === "addImage" ? window.prompt("Image path relative to this document:") : null;
++          if (toolMode === "addImage" && !imageFileName) return;
++          if (imageFileName && (!/^[A-Za-z0-9_./ -]+\.(?:png|jpe?g|svg)$/iu.test(imageFileName.trim()) || imageFileName.includes("..") || imageFileName.startsWith("/"))) {
++            setWarning("Image path must name a relative PNG, JPEG, or SVG file.");
++            return;
++          }
+           setSnapLines(snapResult.lines);
+           logSnapDebug({
+             phase: "tool-add-node",
+@@ -558,7 +613,11 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+                   columns: selectedAddMatrixColumns,
+                   matrixKind: "nodes"
+                 }
+-              : { kind: "node", strokeColor: creationStrokeColor },
++              : toolMode === "addPoint"
++                ? { kind: "filledCircle", edge: worldPoint(pt(nodeAt.x + 1), pt(nodeAt.y)) }
++                : toolMode === "addImage"
++                  ? { kind: "image", fileName: imageFileName! }
++                : { kind: "node", strokeColor: creationStrokeColor },
+             at: nodeAt
+           });
+           if (!ok.sourceChanged) {
+@@ -669,6 +728,8 @@ export function useCanvasToolInteractions(args: UseCanvasToolInteractionsArgs) {
+       nodeAnchorTargets,
+       matrixCellAnchorHints,
+       pendingBezier,
++      arcDraft,
++      setArcDraft,
+       toolMode,
+       toolCursorWorld,
+       snapGuideInput,
+diff --git a/packages/app/src/ui/capabilities.ts b/packages/app/src/ui/capabilities.ts
+index b20b72b..c9deb6f 100644
+--- a/packages/app/src/ui/capabilities.ts
++++ b/packages/app/src/ui/capabilities.ts
+@@ -34,6 +34,10 @@ const TOOL_CHECKS: Record<ToolMode, readonly CapabilityCheck[]> = {
+     { feature: "path_statement", layers: ["parser", "semantic", "svg"], label: "node statement pipeline" },
+     { feature: "svg_text", layers: ["semantic", "svg"], label: "text node rendering" }
+   ],
++  addPoint: [
++    { feature: "shape_circle", layers: ["parser", "semantic", "svg"], label: "point rendering" }
++  ],
++  addImage: [],
+   addMatrix: [
+     { feature: "matrix_node", layers: ["parser", "semantic", "svg", "edit"], label: "matrix of nodes pipeline" }
+   ],
+@@ -95,6 +99,9 @@ const TOOL_CHECKS: Record<ToolMode, readonly CapabilityCheck[]> = {
+   ],
+   addCircle: [
+     { feature: "shape_circle", layers: ["parser", "semantic", "svg"], label: "circle shape rendering" }
++  ],
++  addArc: [
++    { feature: "keyword_arc", layers: ["parser", "semantic", "svg"], label: "arc path rendering" }
+   ]
+ };
+ 
+diff --git a/packages/app/src/ui/tool-config.tsx b/packages/app/src/ui/tool-config.tsx
+index 0101870..86ee099 100644
+--- a/packages/app/src/ui/tool-config.tsx
++++ b/packages/app/src/ui/tool-config.tsx
+@@ -32,6 +32,14 @@ function NodeIcon({ size = 20 }: { size?: number }) {
+   );
+ }
+ 
++function PointIcon({ size = 20 }: { size?: number }) {
++  return <svg viewBox="0 0 20 20" width={size} height={size}><circle cx="10" cy="10" r="2.5" fill="currentColor" /></svg>;
++}
++
++function ImageIcon({ size = 20 }: { size?: number }) {
++  return <svg viewBox="0 0 20 20" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="16" height="14" rx="1" /><circle cx="7" cy="8" r="1.5" /><path d="m3 15 5-5 3 3 2-2 4 4" /></svg>;
++}
++
+ function MatrixIcon({ size = 20 }: { size?: number }) {
+   return (
+     <svg viewBox="0 0 20 20" width={size} height={size} fill="none" strokeLinecap="round" strokeLinejoin="round">
+@@ -135,6 +143,15 @@ function CircleIcon({ size = 20 }: { size?: number }) {
+   );
+ }
+ 
++function ArcIcon({ size = 20 }: { size?: number }) {
++  return (
++    <svg viewBox="0 0 20 20" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
++      <path d="M3 16a7 7 0 0 1 14 0" />
++      <circle cx="10" cy="16" r="1" fill="currentColor" stroke="none" />
++    </svg>
++  );
++}
++
+ function BucketIcon({ size = 20 }: { size?: number }) {
+   return (
+     <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor">
+@@ -175,6 +192,8 @@ export const TOOL_BUTTONS: readonly ToolButtonDef[] = [
+   { mode: "select",     label: "Select",   title: "Select (V)",   shortcut: "v", icon: SelectIcon },
+   { mode: "magnify",    label: "Magnify",  title: "Magnify (M)",  shortcut: "m", icon: MagnifyIcon },
+   { mode: "addNode",    label: "Node",     title: "Node (N)",     shortcut: "n", icon: NodeIcon,     separatorBefore: true },
++  { mode: "addPoint",   label: "Point",    title: "Point",                    icon: PointIcon },
++  { mode: "addImage",   label: "Image",    title: "Image",                    icon: ImageIcon },
+   { mode: "addShape",   label: "Shape",    title: "Shape (S)",    shortcut: "s", icon: ShapeIcon,    popupKind: "shape-picker" },
+   { mode: "addMatrix",  label: "Matrix",   title: "Matrix",                      icon: MatrixIcon,   popupKind: "matrix-picker" },
+   { mode: "addLine",    label: "Line",     title: "Line (L)",     shortcut: "l", icon: LineIcon,     separatorBefore: true },
+@@ -186,6 +205,7 @@ export const TOOL_BUTTONS: readonly ToolButtonDef[] = [
+   { mode: "addRect",    label: "Rect",     title: "Rectangle (R)", shortcut: "r", icon: RectIcon },
+   { mode: "addEllipse", label: "Ellipse",  title: "Ellipse (E)",  shortcut: "e", icon: EllipseIcon },
+   { mode: "addCircle",  label: "Circle",   title: "Circle (C)",   shortcut: "c", icon: CircleIcon },
++  { mode: "addArc",     label: "Arc",      title: "Arc",                       icon: ArcIcon },
+   { mode: "addBucket",  label: "Bucket",   title: "Bucket",                      icon: BucketIcon,   popupKind: "bucket-color", separatorBefore: true },
+ ];
+ 
+@@ -262,6 +282,7 @@ export const TOOL_HINTS: Partial<Record<ToolMode, string>> = {
+   addEllipse: "Hold Shift to constrain to a circle",
+   addGrid: "Hold Shift to constrain to a square",
+   addCircle: "Drag from center to edge",
++  addArc: "Click center, start point, then end point",
+   addPath: "Click to add points, drag to bend. Click start to close, or double-click/press Enter/Esc to finish.",
+   addFreehand: "Press and drag to draw",
+   addBezier: "Two drags: endpoints then curve",
+@@ -270,10 +291,12 @@ export const TOOL_HINTS: Partial<Record<ToolMode, string>> = {
+   addShape: "Drag to set size",
+   addMatrix: "Pick rows/columns, then click to place",
+   addNode: "Click to place text",
++  addPoint: "Click to place a point",
++  addImage: "Click to place an image from a relative file path",
+ };
+ 
+ export function isCreationToolMode(mode: ToolMode): boolean {
+-  return TOOL_CREATE_MODE_SET.has(mode as ToolCreateMode);
++  return mode === "addArc" || mode === "addPoint" || mode === "addImage" || TOOL_CREATE_MODE_SET.has(mode as ToolCreateMode);
+ }
+ 
+ export function toolSupportsStroke(mode: ToolMode): boolean {
+diff --git a/packages/core/src/edit/actions/resize-element.ts b/packages/core/src/edit/actions/resize-element.ts
+index 07f3731..bd1a575 100644
+--- a/packages/core/src/edit/actions/resize-element.ts
++++ b/packages/core/src/edit/actions/resize-element.ts
+@@ -205,6 +205,36 @@ export function applyResizeElementAction(
+     : pointerDelta;
+   const requestedWidth = 2 * Math.abs(localPointerDelta.x);
+   const requestedHeight = 2 * Math.abs(localPointerDelta.y);
++  const imageElement = semantic.scene.elements.find(
++    (element) => element.sourceRef.sourceId === elementId && element.kind === "Text" && element.textRenderInfo?.mode === "image"
++  );
++  if (imageElement?.kind === "Text" && imageElement.textRenderInfo?.mode === "image" && imageElement.textSourceSpan) {
++    const text = source.slice(imageElement.textSourceSpan.from, imageElement.textSourceSpan.to);
++    const match = /^(\\includegraphics\[)([^\]]+)(\]\{[^{}]+\})$/u.exec(text);
++    if (!match) return { kind: "unsupported", reason: "Could not resolve image size options." };
++    const image = imageElement.textRenderInfo;
++    const insetX = Math.max(0, (imageElement.nodeVisualWidth ?? image.widthPt) - image.widthPt);
++    const insetY = Math.max(0, (imageElement.nodeVisualHeight ?? image.heightPt) - image.heightPt);
++    const width = Math.max(1, requestedWidth - insetX);
++    const height = Math.max(1, requestedHeight - insetY);
++    let options = match[2];
++    if (affectsWidth) {
++      options = options.replace(/(^|,)\s*width\s*=\s*[^,]+/u, `$1width=${formatNumber(width * CM_PER_PT)}cm`);
++    }
++    if (affectsHeight && !action.preserveAspect) {
++      const value = `height=${formatNumber(height * CM_PER_PT)}cm`;
++      options = /(^|,)\s*height\s*=/u.test(options)
++        ? options.replace(/(^|,)\s*height\s*=\s*[^,]+/u, `$1${value}`)
++        : `${options},${value}`;
++    }
++    if (affectsWidth && affectsHeight && action.preserveAspect && /(^|,)\s*height\s*=/u.test(options)) {
++      const proportionalHeight = image.heightPt * width / image.widthPt;
++      options = options.replace(/(^|,)\s*height\s*=\s*[^,]+/u, `$1height=${formatNumber(proportionalHeight * CM_PER_PT)}cm`);
++    }
++    const rewritten = applySpanTextReplacement(source, imageElement.textSourceSpan, `${match[1]}${options}${match[3]}`);
++    if (!rewritten) return { kind: "unsupported", reason: "Resize would not change image size." };
++    return { kind: "success", newSource: rewritten.source, patches: [rewritten.patch], changedSourceIds: [elementId] };
++  }
+   const intrinsicWorldWidth = floorBounds.maxX - floorBounds.minX;
+   const intrinsicWorldHeight = floorBounds.maxY - floorBounds.minY;
+   const intrinsicLocal = nodeLinearTransform
+diff --git a/packages/core/src/edit/element-templates.ts b/packages/core/src/edit/element-templates.ts
+index 3f807ed..2a5ee7d 100644
+--- a/packages/core/src/edit/element-templates.ts
++++ b/packages/core/src/edit/element-templates.ts
+@@ -19,6 +19,8 @@ export type ElementTemplate =
+   | { kind: "rectangle"; corner?: WorldPoint; strokeColor?: string; fillColor?: string }
+   | { kind: "ellipse"; corner?: WorldPoint; strokeColor?: string; fillColor?: string }
+   | { kind: "circle"; edge?: WorldPoint; strokeColor?: string; fillColor?: string }
++  | { kind: "arc"; start: WorldPoint; end: WorldPoint; strokeColor?: string }
++  | { kind: "image"; fileName: string }
+   | { kind: "filledCircle"; edge?: WorldPoint };
+ 
+ export type ComplexPathSegment =
+@@ -131,6 +133,24 @@ export function generateElementSource(template: ElementTemplate, at: WorldPoint)
+       return `\\draw${circleOptions} ${atCoord} circle (${formatNumber(radiusPt * CM_PER_PT)}cm);`;
+     }
+ 
++    case "arc": {
++      const radiusPt = circleRadiusPt(at, template.start);
++      const startAngle = Math.atan2(template.start.y - at.y, template.start.x - at.x) * 180 / Math.PI;
++      const endAngle = Math.atan2(template.end.y - at.y, template.end.x - at.x) * 180 / Math.PI;
++      const arcOptions = buildDrawOptions(template.strokeColor, undefined, false);
++      return `\\draw${arcOptions} ${formatPointCm(template.start)} arc (${formatNumber(startAngle)}:${formatNumber(endAngle)}:${formatNumber(radiusPt * CM_PER_PT)}cm);`;
++    }
++
++    case "image": {
++      // tikz-draw exports image nodes with \includegraphics and a source-relative filename.
++      // https://github.com/keplerg/tikz-draw
++      const fileName = template.fileName.trim();
++      if (!/^[A-Za-z0-9_./ -]+\.(?:png|jpe?g|svg)$/iu.test(fileName) || fileName.includes("..") || fileName.startsWith("/")) {
++        throw new Error("Image path must name a relative PNG, JPEG, or SVG file.");
++      }
++      return `\\node[inner sep=0pt] at ${atCoord} {\\includegraphics[width=4cm]{${fileName}}};`;
++    }
++
+     case "filledCircle": {
+       const radiusPt = circleRadiusPt(at, template.edge);
+       return `\\fill ${atCoord} circle (${formatNumber(radiusPt * CM_PER_PT)}cm);`;
+diff --git a/packages/core/src/render/index.ts b/packages/core/src/render/index.ts
+index 11af402..20e7e86 100644
+--- a/packages/core/src/render/index.ts
++++ b/packages/core/src/render/index.ts
+@@ -8,6 +8,7 @@ import { createMathJaxNodeTextEngine } from "../text/mathjax-engine.js";
+ import type { NodeTextEngine } from "../text/types.js";
+ import type { NodeItem } from "../ast/types.js";
+ import { parseNodeParts } from "../semantic/nodes/multipart.js";
++import { parseImageNodeText } from "../semantic/nodes/layout.js";
+ 
+ let mathJaxEngineUnavailable = false;
+ let mathJaxEngineUnavailableReason: string | null = null;
+@@ -99,6 +100,7 @@ export async function renderTikzToSvgAsync(source: string, opts: RenderTikzOptio
+             if (isMatrixNode(node)) {
+               return null;
+             }
++            if (parseImageNodeText(node.text)) return null;
+             return textEngine?.validate(normalizeNodeTextForValidation(node.text)) ?? null;
+           }
+         : undefined)
+diff --git a/packages/core/src/semantic/nodes/layout.ts b/packages/core/src/semantic/nodes/layout.ts
+index 1d9b491..2475471 100644
+--- a/packages/core/src/semantic/nodes/layout.ts
++++ b/packages/core/src/semantic/nodes/layout.ts
+@@ -17,6 +17,29 @@ const PLAIN_TEXT_SERIF_FONT_STACK = "MJX-NCM, CMU Serif, Latin Modern Roman, Tim
+ const PLAIN_TEXT_SANS_FONT_STACK = "MJX-NCM-Sans, CMU Sans Serif, Latin Modern Sans, Helvetica, Arial, sans-serif";
+ const PLAIN_TEXT_MONO_FONT_STACK = "MJX-NCM-Monospace, Latin Modern Mono, CMU Typewriter Text, Courier New, monospace";
+ 
++// Match the \includegraphics node form exported by tikz-draw.
++// https://github.com/keplerg/tikz-draw
++export function parseImageNodeText(text: string): { fileName: string; widthPt: number; heightPt: number; angleDeg: number } | null {
++  const match = /^\\includegraphics\[([^\]]+)\]\{([^{}\r\n]+)\}$/u.exec(text.trim());
++  if (!match) return null;
++  const options = new Map<string, string>();
++  for (const part of match[1].split(",")) {
++    const option = /^\s*([a-z]+)\s*=\s*([^,]+)\s*$/iu.exec(part);
++    if (!option) return null;
++    options.set(option[1].toLowerCase(), option[2]);
++  }
++  const widthPt = parseLength(options.get("width") ?? "", "pt");
++  if (widthPt == null || widthPt <= 0) return null;
++  const heightRaw = options.get("height");
++  const heightPt = heightRaw === undefined ? widthPt : parseLength(heightRaw, "pt");
++  if (heightPt == null || heightPt <= 0) return null;
++  const angleDeg = Number(options.get("angle") ?? "0");
++  if (!Number.isFinite(angleDeg)) return null;
++  const fileName = match[2].trim();
++  if (fileName.startsWith("/") || fileName.includes("..") || /^[a-z]+:/iu.test(fileName)) return null;
++  return { fileName, widthPt, heightPt, angleDeg };
++}
++
+ let plainTextMeasureContext: CanvasRenderingContext2D | null | undefined;
+ 
+ type PlainTextBlockMetrics = {
+@@ -142,6 +165,37 @@ export function resolveNodeLayout(
+   const explicitLineBreaksActive = textWidth != null || noWidthHalignEnabled;
+   const normalizedText = normalizeTextForLineBreakPolicy(text, explicitLineBreaksActive);
+ 
++  const image = parseImageNodeText(normalizedText);
++  if (image) {
++    const width = image.widthPt + innerXSep * 2;
++    const height = image.heightPt + innerYSep * 2;
++    const visualWidth = Math.max(width, minWidth);
++    const visualHeight = Math.max(height, minHeight);
++    const resolvedOuterX = outerXSep ?? outerSep;
++    const resolvedOuterY = outerYSep ?? outerSep;
++    return {
++      textLines: [normalizedText],
++      textBlockWidth: image.widthPt,
++      textBlockHeight: image.heightPt,
++      textRenderInfo: { mode: "image", ...image },
++      naturalWidth: width,
++      naturalHeight: height,
++      minimumWidth: minWidth,
++      minimumHeight: minHeight,
++      lineWidth: style.lineWidth,
++      outerXSep: resolvedOuterX,
++      outerYSep: resolvedOuterY,
++      visualWidth,
++      visualHeight,
++      visualRadius: Math.max(visualWidth, visualHeight) / 2,
++      anchorHalfWidth: visualWidth / 2 + resolvedOuterX,
++      anchorHalfHeight: visualHeight / 2 + resolvedOuterY,
++      anchorRadius: Math.max(visualWidth / 2 + resolvedOuterX, visualHeight / 2 + resolvedOuterY),
++      baseLineY: 0,
++      midLineY: 0
++    };
++  }
++
+   let textRenderInfo: NodeTextRenderInfo = { mode: "plain" };
+   let textLines = computeNodeTextLines(normalizedText, textWidth, charWidth);
+   let textNaturalWidth: number;
+diff --git a/packages/core/src/svg/emit.ts b/packages/core/src/svg/emit.ts
+index b524a12..a2dce54 100644
+--- a/packages/core/src/svg/emit.ts
++++ b/packages/core/src/svg/emit.ts
+@@ -505,6 +505,21 @@ export function emitSvgModel(scene: SceneFigure, opts: EmitSvgOptions = {}): Svg
+     const rotation = element.rotation ?? 0;
+     const hasRotation = Math.abs(rotation) > 1e-6;
+     const svgElementTransform = element.transform ? worldTransformToSvgTransform(element.transform, viewBox) : null;
++    if (element.textRenderInfo?.mode === "image") {
++      const image = element.textRenderInfo;
++      const transforms: string[] = [];
++      if (svgElementTransform) transforms.push(formatMatrix(svgElementTransform));
++      if (hasRotation) transforms.push(`rotate(${fmt(-rotation)} ${fmt(position.x)} ${fmt(position.y)})`);
++      if (Math.abs(image.angleDeg) > 1e-6) transforms.push(`rotate(${fmt(-image.angleDeg)} ${fmt(position.x)} ${fmt(position.y)})`);
++      const transformAttr = transforms.length > 0 ? ` transform="${transforms.join(" ")}"` : "";
++      appendPart(
++        `${element.id}:image`,
++        element.sourceRef.sourceId,
++        element.id,
++        `<image data-source-id="${escapeAttr(element.sourceRef.sourceId)}" data-image-file="${escapeAttr(image.fileName)}" href="${escapeAttr(image.fileName)}" x="${fmt(position.x - image.widthPt / 2)}" y="${fmt(position.y - image.heightPt / 2)}" width="${fmt(image.widthPt)}" height="${fmt(image.heightPt)}" preserveAspectRatio="xMidYMid meet"${transformAttr} />`
++      );
++      continue;
++    }
+     if (element.textRenderInfo?.mode === "mathjax") {
+       const rendered = opts.textEngine?.renderFromCache(element.textRenderInfo.cacheKey) ?? null;
+       if (!rendered) {
 diff --git a/packages/core/src/text/mathjax-engine.ts b/packages/core/src/text/mathjax-engine.ts
 index e992116..2e35053 100644
 --- a/packages/core/src/text/mathjax-engine.ts
@@ -67,3 +747,21 @@ index e992116..2e35053 100644
        load: loaderLoad
      },
      tex: {
+diff --git a/packages/core/src/text/types.ts b/packages/core/src/text/types.ts
+index 1be8c49..cfe86d6 100644
+--- a/packages/core/src/text/types.ts
++++ b/packages/core/src/text/types.ts
+@@ -46,6 +46,13 @@ export type NodeTextRenderInfo =
+   | {
+       mode: "plain";
+     }
++  | {
++      mode: "image";
++      fileName: string;
++      widthPt: number;
++      heightPt: number;
++      angleDeg: number;
++    }
+   | {
+       mode: "mathjax";
+       cacheKey: string;

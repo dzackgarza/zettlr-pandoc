@@ -19,6 +19,10 @@ default:
 tikz-standalone file:
     {{bun}} run "{{justfile_directory()}}/scripts/tikz-standalone.ts" "{{file}}"
 
+# Rebuild the pinned source-aware TikZ editor and local MathJax assets.
+update-tikz-editor-vendor:
+    {{bun}} run "{{justfile_directory()}}/scripts/update-tikz-editor-vendor.mjs"
+
 [private]
 sync-dependencies:
     {{bun}} install --frozen-lockfile
