@@ -140,4 +140,12 @@ describe("TikZ preview mode capabilities", function () {
     assert.strictEqual(resolvedTikzPreviewMode("quiver", tikzcd), "quiver");
     assert.strictEqual(resolvedTikzPreviewMode("visual", tikz), "tikz");
   });
+
+  it("keeps a recognized tikzcd in Quiver when its source cannot be written back", function () {
+    const source = "\\begin{tikzcd}\nX & Y\n\\end{tikzcd}";
+    const mixed = nestedTarget(source, "tikzcd");
+    mixed.authoredSource = mixed.authoredSource.replace("\n  \\end", "\n> \\end");
+    assert.equal(defaultTikzPreviewMode(mixed), "quiver");
+    assert.equal(resolvedTikzPreviewMode("quiver", mixed), "quiver");
+  });
 });
