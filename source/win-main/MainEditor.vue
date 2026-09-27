@@ -683,11 +683,15 @@ const quickTex = computed(() => windowStateStore.quickTex)
 const phraseCompletions = computed(() => windowStateStore.phraseCompletions)
 const tags = computed(() => tagStore.tags)
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path))
-const tikzPreviewTarget = computed<TikzLivePreviewTarget|null>(() => activeTikzSource.value === null
+const tikzPreviewTarget = computed<TikzLivePreviewTarget|null>(() => activeTikzSource.value === null || activeEditorView.value === null
   ? null
   : {
       ...activeTikzSource.value,
-      docPath: props.file.path
+      docPath: props.file.path,
+      authoredSource: activeEditorView.value.state.sliceDoc(
+        activeTikzSource.value.sourceFrom,
+        activeTikzSource.value.sourceTo
+      )
     })
 
 const activeFileDescriptor = ref<undefined|MDFileDescriptor|CodeFileDescriptor>(undefined)

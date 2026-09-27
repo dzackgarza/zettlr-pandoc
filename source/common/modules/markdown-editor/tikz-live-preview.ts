@@ -22,6 +22,8 @@ import type { TikzSourceBlock } from './tikz-block'
 
 export interface TikzLivePreviewTarget extends TikzSourceBlock {
   docPath: string
+  /** Exact Markdown bytes spanning the semantic source, including container prefixes. */
+  authoredSource: string
 }
 
 export type TikzRenderSuccess = Extract<TikzRenderResult, { ok: true }>

@@ -33,6 +33,7 @@ function target(source: string, from = 10): TikzLivePreviewTarget {
     sourceFrom: from,
     sourceTo: from + source.length,
     source,
+    authoredSource: source,
     sourceLineRanges: contiguousSourceLineRanges(source, from),
     kind: "raw",
     language: "tikzcd",

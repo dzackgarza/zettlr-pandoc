@@ -18,6 +18,7 @@
  */
 
 import { rawTikzEnvironment, tikzBlockHasContiguousSource } from "./tikz-block";
+import { quiverCanEditBlock } from "./tikz-quiver";
 import type { TikzLivePreviewTarget } from "./tikz-live-preview";
 
 export type TikzPreviewModeId = "tikz" | "quiver" | "visual";
@@ -50,11 +51,11 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
     id: "quiver",
     label: "Quiver editor",
     refreshable: false,
-    supports: (target) => target.language === "tikzcd" && tikzBlockHasContiguousSource(target),
+    supports: quiverCanEditBlock,
     unavailableTitle: (target) =>
       target.language !== "tikzcd"
         ? "Quiver is available only for tikzcd diagrams"
-        : "Move this diagram out of the surrounding Markdown block to edit it in Quiver",
+        : "Quiver cannot preserve this diagram's Markdown line prefixes",
   },
   {
     id: "visual",
@@ -71,7 +72,7 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
 ];
 
 export function defaultTikzPreviewMode(target: TikzLivePreviewTarget): TikzPreviewModeId {
-  return target.language === "tikzcd" && tikzBlockHasContiguousSource(target) ? "quiver" : "tikz";
+  return quiverCanEditBlock(target) ? "quiver" : "tikz";
 }
 
 export function resolvedTikzPreviewMode(

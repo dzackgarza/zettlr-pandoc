@@ -18,6 +18,7 @@ function target(source: string, language: "tikz" | "tikzcd"): TikzLivePreviewTar
     sourceFrom: 0,
     sourceTo: source.length,
     source,
+    authoredSource: source,
     sourceLineRanges: contiguousSourceLineRanges(source, 0),
     kind: "raw",
     language,
@@ -27,8 +28,11 @@ function target(source: string, language: "tikz" | "tikzcd"): TikzLivePreviewTar
 
 function nestedTarget(source: string, language: "tikz" | "tikzcd"): TikzLivePreviewTarget {
   const result = target(source, language);
+  result.authoredSource = source.split("\n").join("\n  ");
+  result.to = result.authoredSource.length;
+  result.sourceTo = result.authoredSource.length;
   result.sourceLineRanges = result.sourceLineRanges.map((range, index) =>
-    index === 0 ? range : { from: range.from + 2, to: range.to + 2 },
+    index === 0 ? range : { from: range.from + 2 * index, to: range.to + 2 * index },
   );
   return result;
 }
@@ -90,7 +94,7 @@ describe("TikZ preview mode capabilities", function () {
     const block = activeTikzBlock(state);
     assert.ok(block, "the editor recognizes the diagram");
     assert.equal(block.language, "tikzcd");
-    assert.equal(quiver?.supports({ ...block, docPath: "/notes/diagram.md" }), true);
+    assert.equal(quiver?.supports({ ...block, authoredSource: doc.slice(block.sourceFrom, block.sourceTo), docPath: "/notes/diagram.md" }), true);
   });
 
   it("offers Quiver for a tikzcd block inside a Markdown list", function () {
@@ -110,7 +114,7 @@ describe("TikZ preview mode capabilities", function () {
     });
     const block = activeTikzBlock(state);
     assert.ok(block);
-    assert.equal(quiver?.supports({ ...block, docPath: "/notes/diagram.md" }), true);
+    assert.equal(quiver?.supports({ ...block, authoredSource: doc.slice(block.sourceFrom, block.sourceTo), docPath: "/notes/diagram.md" }), true);
   });
 
   it("falls back to the target default if a requested provider is unsupported", function () {
@@ -124,16 +128,16 @@ describe("TikZ preview mode capabilities", function () {
     );
   });
 
-  it("uses compiler preview for raw blocks nested in Markdown containers", function () {
+  it("uses Quiver for uniform Markdown prefixes and keeps other editors restricted", function () {
     const tikzcd = nestedTarget("\\begin{tikzcd}\nA & B\n\\end{tikzcd}", "tikzcd");
     const tikz = nestedTarget(
       "\\begin{tikzpicture}\n\\draw (0,0)--(1,1);\n\\end{tikzpicture}",
       "tikz",
     );
-    assert.strictEqual(defaultTikzPreviewMode(tikzcd), "tikz");
-    assert.strictEqual(quiver?.supports(tikzcd), false);
+    assert.strictEqual(defaultTikzPreviewMode(tikzcd), "quiver");
+    assert.strictEqual(quiver?.supports(tikzcd), true);
     assert.strictEqual(visual?.supports(tikz), false);
-    assert.strictEqual(resolvedTikzPreviewMode("quiver", tikzcd), "tikz");
+    assert.strictEqual(resolvedTikzPreviewMode("quiver", tikzcd), "quiver");
     assert.strictEqual(resolvedTikzPreviewMode("visual", tikz), "tikz");
   });
 });

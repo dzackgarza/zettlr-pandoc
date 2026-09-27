@@ -1,4 +1,8 @@
 import { strict as assert } from "node:assert";
+import { EditorState } from "@codemirror/state";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
+import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import type { TikzSourceBlock } from "source/common/modules/markdown-editor/tikz-block";
 import {
   quiverReplacement,
@@ -8,26 +12,28 @@ import {
 } from "source/common/modules/markdown-editor/tikz-quiver";
 import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
 
-function rawBlock(source: string): TikzSourceBlock {
+function rawBlock(source: string): TikzSourceBlock & { authoredSource: string } {
   return {
     from: 10,
     to: 10 + source.length,
     sourceFrom: 10,
     sourceTo: 10 + source.length,
     source,
+    authoredSource: source,
     sourceLineRanges: contiguousSourceLineRanges(source, 10),
     kind: "raw",
     language: "tikzcd",
   };
 }
 
-function fencedBlock(body: string): TikzSourceBlock {
+function fencedBlock(body: string): TikzSourceBlock & { authoredSource: string } {
   return {
     from: 20,
     to: 20 + body.length + 14,
     sourceFrom: 30,
     sourceTo: 30 + body.length,
     source: body,
+    authoredSource: body,
     sourceLineRanges: contiguousSourceLineRanges(body, 30),
     kind: "fence",
     language: "tikzcd",
@@ -79,11 +85,35 @@ describe("TikZ-cd ↔ Quiver source bridge", function () {
     assert.strictEqual(sourceForQuiverExport(session, exported), exported);
   });
 
-  it("refuses source replacement across Markdown container-marker gaps", function () {
-    const block = rawBlock("\\begin{tikzcd}\nA & B\n\\end{tikzcd}");
+  it("writes Quiver edits back into a list without changing its Markdown prefixes", function () {
+    const doc = "- Diagram:\n\n  \\begin{tikzcd}\n  X \\arrow[r] & Y\n  \\end{tikzcd}\n\n- Next item\n";
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf("\\arrow") },
+      extensions: [markdownParser(), configField],
+    });
+    const block = activeTikzBlock(state);
+    assert.ok(block);
+    const session = quiverSessionForBlock({
+      ...block,
+      authoredSource: doc.slice(block.sourceFrom, block.sourceTo),
+    });
+    const exported = '\\begin{tikzcd}\nX \\arrow[r, "f"] & Y \\\\\nP & Q\n\\end{tikzcd}';
+    const replacement = quiverReplacement(session, exported);
+    const changed = state.update({ changes: replacement }).state.doc.toString();
+    assert.ok(changed.includes('  X \\arrow[r, "f"] & Y \\\\\n  P & Q\n  \\end{tikzcd}'));
+    assert.ok(changed.endsWith("\n- Next item\n"));
+    assert.equal(replacement.next.source, exported);
+    assert.equal(replacement.next.authoredSource, replacement.insert);
+  });
+
+  it("rejects inconsistent Markdown line prefixes", function () {
+    const block = rawBlock("\\begin{tikzcd}\nX & Y\n\\end{tikzcd}");
+    block.authoredSource = block.source.replace("\n", "\n  ").replace("\n\\end", "\n> \\end");
     block.sourceLineRanges = block.sourceLineRanges.map((range, index) =>
-      index === 0 ? range : { from: range.from + 2, to: range.to + 2 },
+      index === 0 ? range : { from: range.from + 2 * index, to: range.to + 2 * index },
     );
-    assert.throws(() => quiverSessionForBlock(block), /nested inside another Markdown block/u);
+    block.sourceTo = block.sourceFrom + block.authoredSource.length;
+    assert.throws(() => quiverSessionForBlock(block), /line prefixes/u);
   });
 });

@@ -14,7 +14,11 @@
  * END HEADER
  */
 
-import { type TikzSourceBlock, tikzBlockHasContiguousSource } from "./tikz-block";
+import type { TikzSourceBlock } from "./tikz-block";
+
+export interface QuiverEditableBlock extends TikzSourceBlock {
+  authoredSource: string;
+}
 
 export interface TikzQuiverSourceSession {
   kind: "raw" | "fence";
@@ -24,15 +28,47 @@ export interface TikzQuiverSourceSession {
   sourceTo: number;
   /** Exact source bytes currently stored in [sourceFrom, sourceTo). */
   source: string;
+  /** Markdown bytes in that range, including list or quote prefixes. */
+  authoredSource: string;
+  /** Exact separator between semantic lines in the Markdown document. */
+  lineJoiner: string;
 }
 
-export function quiverSessionForBlock(block: TikzSourceBlock): TikzQuiverSourceSession {
+function lineJoinerForBlock(block: QuiverEditableBlock): string | null {
+  const lines = block.source.split("\n");
+  const ranges = block.sourceLineRanges;
+  if (ranges.length !== lines.length || block.authoredSource.length !== block.sourceTo - block.sourceFrom) {
+    return null;
+  }
+  if (ranges[0].from !== block.sourceFrom || ranges[ranges.length - 1].to !== block.sourceTo) {
+    return null;
+  }
+  let joiner = "\n";
+  for (let index = 1; index < ranges.length; index += 1) {
+    const gap = block.authoredSource.slice(
+      ranges[index - 1].to - block.sourceFrom,
+      ranges[index].from - block.sourceFrom,
+    );
+    if (!gap.startsWith("\n") || (index > 1 && gap !== joiner)) {
+      return null;
+    }
+    joiner = gap;
+  }
+  return lines.join(joiner) === block.authoredSource ? joiner : null;
+}
+
+export function quiverCanEditBlock(block: QuiverEditableBlock): boolean {
+  return block.language === "tikzcd" && lineJoinerForBlock(block) !== null;
+}
+
+export function quiverSessionForBlock(block: QuiverEditableBlock): TikzQuiverSourceSession {
   if (block.language !== "tikzcd") {
     throw new Error(`Quiver can only edit tikzcd diagrams, not ${block.language}`);
   }
-  if (!tikzBlockHasContiguousSource(block)) {
+  const lineJoiner = lineJoinerForBlock(block);
+  if (lineJoiner === null) {
     throw new Error(
-      "Quiver cannot edit this diagram while it is nested inside another Markdown block",
+      "Quiver cannot preserve this diagram's Markdown line prefixes",
     );
   }
   return {
@@ -42,6 +78,8 @@ export function quiverSessionForBlock(block: TikzSourceBlock): TikzQuiverSourceS
     sourceFrom: block.sourceFrom,
     sourceTo: block.sourceTo,
     source: block.source,
+    authoredSource: block.authoredSource,
+    lineJoiner,
   };
 }
 
@@ -87,16 +125,18 @@ export function quiverReplacement(
   exported: string,
 ): TikzQuiverReplacement {
   const insert = sourceForQuiverExport(session, exported);
-  const delta = insert.length - session.source.length;
+  const authoredInsert = insert.split("\n").join(session.lineJoiner);
+  const delta = authoredInsert.length - session.authoredSource.length;
   return {
     from: session.sourceFrom,
     to: session.sourceTo,
-    insert,
+    insert: authoredInsert,
     next: {
       ...session,
       blockTo: session.blockTo + delta,
       sourceTo: session.sourceTo + delta,
       source: insert,
+      authoredSource: authoredInsert,
     },
   };
 }

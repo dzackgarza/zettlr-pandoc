@@ -182,7 +182,7 @@ function onMessage (event: MessageEvent<QuiverHostMessage>): void {
       if (typeof message.source !== 'string') return
       const active = session.value
       const current = props.editorView.state.sliceDoc(active.source.sourceFrom, active.source.sourceTo)
-      if (current !== active.source.source) {
+      if (current !== active.source.authoredSource) {
         // CodeMirror changed first. Its ordinary change event will update the
         // target prop and reload Quiver from the newer authority bytes; never
         // overwrite that source with a stale iframe export.

@@ -22,6 +22,7 @@ describe("tikz-editor source bridge", function () {
       sourceFrom: 40,
       sourceTo: 40 + text.length,
       source: text,
+      authoredSource: text,
       sourceLineRanges: contiguousSourceLineRanges(text, 40),
       kind: "raw",
       language: "tikz",
