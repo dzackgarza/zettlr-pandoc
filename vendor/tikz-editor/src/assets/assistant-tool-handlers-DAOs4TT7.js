@@ -1,4 +1,4 @@
-import{P as a}from"./index-EAblZvNe.js";function X(i,t){const s=t.parseResult?.diagnostics??[],e=t.semanticResult?.diagnostics??[],c=[...s,...e];if(c.length===0)return null;const r=i.split(`
+import{P as a}from"./index-D1al5M6O.js";function X(i,t){const s=t.parseResult?.diagnostics??[],e=t.semanticResult?.diagnostics??[],c=[...s,...e];if(c.length===0)return null;const r=i.split(`
 `),n=o=>{let l=1;for(let d=0;d<o&&d<i.length;d++)i[d]===`
 `&&l++;return l};return c.map(o=>{const l=n(o.span.from),d=o.code?` [${o.code}]`:"",u=r[l-1],x=u?` | ${u.trimStart()}`:"";return`${o.severity} (line ${l})${d}: ${o.message}${x}`}).join(`
 `)}function _(i,t){const s=t.figures;if(s.length<=1)return null;const e=t.activeFigureId,c=s.findIndex(u=>u.id===e);if(c<0)return null;const r=s[c],n=i.slice(r.span.from,r.span.to),o=i.slice(0,r.span.from).split(`

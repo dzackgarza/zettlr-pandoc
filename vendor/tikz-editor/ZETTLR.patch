@@ -75,6 +75,88 @@ index 59fab7a8..8cc20ff6 100644
        },
        { kind: "separator" },
        {
+diff --git a/packages/app/src/store/reducer.ts b/packages/app/src/store/reducer.ts
+index e0845d6e..186e4624 100644
+--- a/packages/app/src/store/reducer.ts
++++ b/packages/app/src/store/reducer.ts
+@@ -33,12 +33,6 @@ const DEFAULT_ADD_MATRIX_ROWS = 2;
+ const DEFAULT_ADD_MATRIX_COLUMNS = 2;
+ const DEFAULT_CREATION_STROKE_COLOR = "black";
+ const DEFAULT_CREATION_FILL_COLOR = "none";
+-const MAX_DEVELOPER_LOGS = 80;
+-const MAX_DEVELOPER_LOG_MESSAGE_CHARS = 500;
+-const MAX_DEVELOPER_LOG_STRING_CHARS = 1_000;
+-const MAX_DEVELOPER_LOG_ARRAY_ITEMS = 20;
+-const MAX_DEVELOPER_LOG_OBJECT_KEYS = 24;
+-const MAX_DEVELOPER_LOG_DEPTH = 4;
+ 
+ function initialUiState(): WorkspaceEphemeralState {
+   return {
+@@ -107,63 +101,7 @@ function prependDeveloperLog(
+   logs: WorkspaceEphemeralState["developerLogs"],
+   entry: WorkspaceEphemeralState["developerLogs"][number]
+ ): WorkspaceEphemeralState["developerLogs"] {
+-  return [compactDeveloperLogEntry(entry), ...logs].slice(0, MAX_DEVELOPER_LOGS);
+-}
+-
+-function compactDeveloperLogEntry(
+-  entry: WorkspaceEphemeralState["developerLogs"][number]
+-): WorkspaceEphemeralState["developerLogs"][number] {
+-  return {
+-    ...entry,
+-    message: truncateDeveloperLogString(entry.message, MAX_DEVELOPER_LOG_MESSAGE_CHARS),
+-    data: entry.data === undefined ? undefined : compactDeveloperLogData(entry.data, 0)
+-  };
+-}
+-
+-function compactDeveloperLogData(value: unknown, depth: number): unknown {
+-  if (value == null || typeof value === "number" || typeof value === "boolean") {
+-    return value;
+-  }
+-  if (typeof value === "string") {
+-    return truncateDeveloperLogString(value, MAX_DEVELOPER_LOG_STRING_CHARS);
+-  }
+-  if (typeof value === "bigint") {
+-    return value.toString();
+-  }
+-  if (typeof value === "function" || typeof value === "symbol") {
+-    return `[${typeof value}]`;
+-  }
+-  if (depth >= MAX_DEVELOPER_LOG_DEPTH) {
+-    return "[truncated]";
+-  }
+-  if (Array.isArray(value)) {
+-    const compacted = value
+-      .slice(0, MAX_DEVELOPER_LOG_ARRAY_ITEMS)
+-      .map((item) => compactDeveloperLogData(item, depth + 1));
+-    if (value.length > MAX_DEVELOPER_LOG_ARRAY_ITEMS) {
+-      compacted.push(`[${value.length - MAX_DEVELOPER_LOG_ARRAY_ITEMS} more]`);
+-    }
+-    return compacted;
+-  }
+-  if (value instanceof Map) {
+-    return compactDeveloperLogData(Object.fromEntries([...value.entries()].slice(0, MAX_DEVELOPER_LOG_OBJECT_KEYS)), depth + 1);
+-  }
+-  if (value instanceof Set) {
+-    return compactDeveloperLogData([...value].slice(0, MAX_DEVELOPER_LOG_ARRAY_ITEMS), depth + 1);
+-  }
+-  const output: Record<string, unknown> = {};
+-  const entries = Object.entries(value as Record<string, unknown>);
+-  for (const [key, nested] of entries.slice(0, MAX_DEVELOPER_LOG_OBJECT_KEYS)) {
+-    output[key] = compactDeveloperLogData(nested, depth + 1);
+-  }
+-  if (entries.length > MAX_DEVELOPER_LOG_OBJECT_KEYS) {
+-    output.__truncatedKeys = entries.length - MAX_DEVELOPER_LOG_OBJECT_KEYS;
+-  }
+-  return output;
+-}
+-
+-function truncateDeveloperLogString(value: string, maxChars: number): string {
+-  return value.length > maxChars ? `${value.slice(0, maxChars - 3)}...` : value;
++  return [entry, ...logs];
+ }
+ 
+ function applyEditWarningToDocument(doc: DocumentSession, message: string | null): DocumentSession {
 diff --git a/packages/app/src/store/types.ts b/packages/app/src/store/types.ts
 index 450957d0..ff2ba523 100644
 --- a/packages/app/src/store/types.ts
@@ -97,10 +179,72 @@ index 450957d0..ff2ba523 100644
    | "addBezier";
  export type CanvasDragKind = "element" | "resize" | "rotate" | "handle" | "pan" | "marquee" | "tool-create";
 diff --git a/packages/app/src/ui/DevPanel.tsx b/packages/app/src/ui/DevPanel.tsx
-index 4d4cfa95..7ceea539 100644
+index 4d4cfa95..b5595dc3 100644
 --- a/packages/app/src/ui/DevPanel.tsx
 +++ b/packages/app/src/ui/DevPanel.tsx
-@@ -662,7 +662,7 @@ function EmptyState({ text }: { text: string }) {
+@@ -18,7 +18,6 @@ type DiagnosticRow = Diagnostic & {
+ const PANEL_TITLE_ID = "developer-panel-title";
+ const PANEL_INITIAL_WIDTH = 940;
+ const PANEL_INITIAL_HEIGHT = 680;
+-const MAX_LIST_ROWS = 80;
+ 
+ export function DevPanel() {
+   const showDevPanel = useEditorStore((s) => s.showDevPanel);
+@@ -267,7 +266,7 @@ function SelectionTab({
+           <EmptyState text="No scene elements selected." />
+         ) : (
+           <div className={css.itemList}>
+-            {selectedElements.slice(0, MAX_LIST_ROWS).map((element) => (
++            {selectedElements.map((element) => (
+               <article key={element.runtimeId} className={css.item}>
+                 <div className={css.itemHeader}>
+                   <span className={css.itemTitle}>{element.kind}</span>
+@@ -354,7 +353,7 @@ function EditingTab({
+                   <tr key={`${patch.oldSpan.from}-${patch.oldSpan.to}-${index}`}>
+                     <td><code>{patch.oldSpan.from}:{patch.oldSpan.to}</code></td>
+                     <td><code>{patch.newSpan.from}:{patch.newSpan.to}</code></td>
+-                    <td><code>{truncate(patch.replacement.replace(/\n/g, "\\n"), 80)}</code></td>
++                    <td><code>{patch.replacement.replace(/\n/g, "\\n")}</code></td>
+                   </tr>
+                 ))}
+               </tbody>
+@@ -406,7 +405,7 @@ function LogsTab({
+   snapshot: ReturnType<typeof useEditorStore.getState>["snapshot"];
+ }) {
+   const syntheticLogs = buildSyntheticLogs({ lastEditWarningMessage, snapshot });
+-  const logs = [...syntheticLogs, ...developerLogs].slice(0, MAX_LIST_ROWS);
++  const logs = [...syntheticLogs, ...developerLogs];
+   return (
+     <div className={css.stack}>
+       <Section title="Event Log">
+@@ -501,7 +500,7 @@ function DependenciesTab({
+           <EmptyState text="No named geometry resources recorded." />
+         ) : (
+           <div className={css.itemList}>
+-            {resources.slice(0, MAX_LIST_ROWS).map((node) => (
++            {resources.map((node) => (
+               <div key={node.id} className={css.compactRow}>
+                 <code>{node.kind === "resource" ? node.resourceKind : node.id}</code>
+                 <span>{node.kind === "resource" ? node.resourceKey : ""}</span>
+@@ -519,7 +518,7 @@ function DependenciesTab({
+           ]}
+         />
+         {unresolvedSymbols.length > 0 ? (
+-          <pre className={css.json}>{stringifyDebug(unresolvedSymbols.slice(0, 30))}</pre>
++          <pre className={css.json}>{stringifyDebug(unresolvedSymbols)}</pre>
+         ) : null}
+       </Section>
+ 
+@@ -598,7 +597,7 @@ function PipelineTab({
+         {pipelineView === "snapshot" ? (
+           <pre className={css.json}>{stringifyDebug({
+             revision: snapshot.revision,
+-            source: snapshot.source.slice(0, 500) + (snapshot.source.length > 500 ? "..." : ""),
++            source: snapshot.source,
+             activeFigureId: snapshot.activeFigureId,
+             figures: snapshot.figures,
+             editHandles: snapshot.editHandles.length,
+@@ -662,7 +661,7 @@ function EmptyState({ text }: { text: string }) {
  function DiagnosticList({ diagnostics }: { diagnostics: readonly DiagnosticRow[] }) {
    return (
      <div className={css.itemList}>
@@ -109,6 +253,56 @@ index 4d4cfa95..7ceea539 100644
          <article key={`${diagnostic.source}-${diagnostic.span.from}-${diagnostic.span.to}-${index}`} className={`${css.diagnostic} ${diagnostic.severity === "error" ? css.diagnosticError : css.diagnosticWarning}`}>
            <div className={css.itemHeader}>
              <span className={css.itemTitle}>{diagnostic.source} {diagnostic.severity}</span>
+@@ -679,7 +678,7 @@ function DiagnosticList({ diagnostics }: { diagnostics: readonly DiagnosticRow[]
+ function HandleList({ activeHandleId, handles }: { activeHandleId: string | null; handles: readonly EditHandle[] }) {
+   return (
+     <div className={css.itemList}>
+-      {handles.slice(0, MAX_LIST_ROWS).map((handle) => (
++      {handles.map((handle) => (
+         <article key={handle.runtimeId} className={`${css.item} ${handle.id === activeHandleId ? css.itemActive : ""}`}>
+           <div className={css.itemHeader}>
+             <span className={css.itemTitle}>{handle.handleType} / {handle.kind}</span>
+@@ -692,7 +691,7 @@ function HandleList({ activeHandleId, handles }: { activeHandleId: string | null
+               ["rewrite mode", handle.rewriteMode],
+               ["coordinate form", handle.coordinateForm],
+               ["world", formatPoint(handle.world)],
+-              ["source text", truncate(handle.sourceText, 80)],
++              ["source text", handle.sourceText],
+               ["rewrite target", handle.rewriteTargetHandleId ?? "none"],
+               ["positioning", "positioningContext" in handle && handle.positioningContext ? `${handle.positioningContext.direction} of ${handle.positioningContext.targetNodeName}` : "none"],
+               ["path attachment", "pathAttachmentContext" in handle && handle.pathAttachmentContext ? `${handle.pathAttachmentContext.hostPathSourceId} @ ${handle.pathAttachmentContext.pos}` : "none"]
+@@ -705,9 +704,9 @@ function HandleList({ activeHandleId, handles }: { activeHandleId: string | null
+ }
+ 
+ function SourcePreview({ source, span }: { source: string; span: { from: number; to: number } }) {
+-  const preview = source.slice(span.from, span.to).trim().replace(/\s+/g, " ");
++  const preview = source.slice(span.from, span.to).trim();
+   if (!preview) return null;
+-  return <pre className={css.sourcePreview}>{truncate(preview, 260)}</pre>;
++  return <pre className={css.sourcePreview}>{preview}</pre>;
+ }
+ 
+ function collectDiagnostics(snapshot: ReturnType<typeof useEditorStore.getState>["snapshot"]): DiagnosticRow[] {
+@@ -853,7 +852,7 @@ function summarizeStyle(element: SceneElement): string {
+ 
+ function summarizeGeometry(element: SceneElement): string {
+   if (element.kind === "Text") {
+-    return `pos ${formatPoint(element.position)}, text "${truncate(element.text, 60)}"`;
++    return `pos ${formatPoint(element.position)}, text "${element.text}"`;
+   }
+   if (element.kind === "Circle") {
+     return `center ${formatPoint(element.center)}, r ${formatNumber(element.radius)}`;
+@@ -915,10 +914,6 @@ function joinList(values: readonly string[]): string {
+   return values.length > 0 ? values.join(", ") : "none";
+ }
+ 
+-function truncate(value: string, maxLength: number): string {
+-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+-}
+-
+ function stringifyDebug(value: unknown): string {
+   const replacer = (_key: string, current: unknown): unknown => {
+     if (current instanceof Map) {
 diff --git a/packages/app/src/ui/SettingsModal.tsx b/packages/app/src/ui/SettingsModal.tsx
 index e849b257..134cf65d 100644
 --- a/packages/app/src/ui/SettingsModal.tsx
