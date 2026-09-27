@@ -34,14 +34,21 @@ export interface TikzQuiverSourceSession {
   lineJoiner: string;
 }
 
-function lineJoinerForBlock(block: QuiverEditableBlock): string | null {
+type QuiverLineMapping =
+  | { ok: true; lineJoiner: string }
+  | { ok: false; reason: string };
+
+function lineMappingForBlock(block: QuiverEditableBlock): QuiverLineMapping {
   const lines = block.source.split("\n");
   const ranges = block.sourceLineRanges;
-  if (ranges.length !== lines.length || block.authoredSource.length !== block.sourceTo - block.sourceFrom) {
-    return null;
+  if (ranges.length !== lines.length) {
+    return { ok: false, reason: `The TikZ-cd parser mapped ${ranges.length} source lines, but the diagram has ${lines.length} lines.` };
+  }
+  if (block.authoredSource.length !== block.sourceTo - block.sourceFrom) {
+    return { ok: false, reason: `The Markdown source range has ${block.sourceTo - block.sourceFrom} characters, but the editor supplied ${block.authoredSource.length}.` };
   }
   if (ranges[0].from !== block.sourceFrom || ranges[ranges.length - 1].to !== block.sourceTo) {
-    return null;
+    return { ok: false, reason: "The TikZ-cd source line boundaries differ from the Markdown source range." };
   }
   let joiner = "\n";
   for (let index = 1; index < ranges.length; index += 1) {
@@ -49,28 +56,34 @@ function lineJoinerForBlock(block: QuiverEditableBlock): string | null {
       ranges[index - 1].to - block.sourceFrom,
       ranges[index].from - block.sourceFrom,
     );
-    if (!gap.startsWith("\n") || (index > 1 && gap !== joiner)) {
-      return null;
+    if (!gap.startsWith("\n")) {
+      return { ok: false, reason: `Diagram line ${index + 1} has no mapped line break before its TikZ-cd source.` };
+    }
+    if (index > 1 && gap !== joiner) {
+      return { ok: false, reason: `Diagram line ${index + 1} uses Markdown prefix ${JSON.stringify(gap.slice(1))}; the preceding diagram lines use ${JSON.stringify(joiner.slice(1))}.` };
     }
     joiner = gap;
   }
-  return lines.join(joiner) === block.authoredSource ? joiner : null;
+  if (lines.join(joiner) !== block.authoredSource) {
+    return { ok: false, reason: "The parsed TikZ-cd source does not match the Markdown text at its mapped positions." };
+  }
+  return { ok: true, lineJoiner: joiner };
+}
+
+export function quiverSourceError(block: QuiverEditableBlock): string | null {
+  if (block.language !== "tikzcd") return `Quiver edits tikzcd diagrams; this block is ${block.language}.`;
+  const mapping = lineMappingForBlock(block);
+  return mapping.ok ? null : mapping.reason;
 }
 
 export function quiverCanEditBlock(block: QuiverEditableBlock): boolean {
-  return block.language === "tikzcd" && lineJoinerForBlock(block) !== null;
+  return quiverSourceError(block) === null;
 }
 
 export function quiverSessionForBlock(block: QuiverEditableBlock): TikzQuiverSourceSession {
-  if (block.language !== "tikzcd") {
-    throw new Error(`Quiver can only edit tikzcd diagrams, not ${block.language}`);
-  }
-  const lineJoiner = lineJoinerForBlock(block);
-  if (lineJoiner === null) {
-    throw new Error(
-      "Quiver cannot preserve this diagram's Markdown line prefixes",
-    );
-  }
+  if (block.language !== "tikzcd") throw new Error(`Quiver edits tikzcd diagrams; this block is ${block.language}.`);
+  const mapping = lineMappingForBlock(block);
+  if (!mapping.ok) throw new Error(mapping.reason);
   return {
     kind: block.kind,
     blockFrom: block.from,
@@ -79,7 +92,7 @@ export function quiverSessionForBlock(block: QuiverEditableBlock): TikzQuiverSou
     sourceTo: block.sourceTo,
     source: block.source,
     authoredSource: block.authoredSource,
-    lineJoiner,
+    lineJoiner: mapping.lineJoiner,
   };
 }
 

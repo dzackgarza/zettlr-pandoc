@@ -114,6 +114,6 @@ describe("TikZ-cd ↔ Quiver source bridge", function () {
       index === 0 ? range : { from: range.from + 2 * index, to: range.to + 2 * index },
     );
     block.sourceTo = block.sourceFrom + block.authoredSource.length;
-    assert.throws(() => quiverSessionForBlock(block), /line prefixes/u);
+    assert.throws(() => quiverSessionForBlock(block), /Diagram line 3 uses Markdown prefix/u);
   });
 });

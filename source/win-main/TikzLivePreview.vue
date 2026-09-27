@@ -18,7 +18,7 @@
           type="button"
           :class="{ active: displayMode === provider.id }"
           :aria-pressed="displayMode === provider.id"
-          :disabled="!provider.supports(props.target)"
+          :disabled="!provider.supports(props.target) && displayMode !== provider.id"
           :title="provider.supports(props.target) ? '' : provider.unavailableTitle(props.target)"
           @click="selectProvider(provider.id)"
         >
@@ -26,7 +26,7 @@
         </button>
       </div>
 
-      <span class="tikz-live-preview-status">{{ activeStatus }}</span>
+      <span class="tikz-live-preview-status">{{ unavailableMessage !== '' ? 'Unavailable' : activeStatus }}</span>
       <LoadingSpinner
         v-if="activeBusy"
         class="tikz-live-preview-spinner"
@@ -55,7 +55,14 @@
     </header>
 
     <div class="tikz-live-preview-content">
+      <div v-if="unavailableMessage !== ''" class="tikz-live-preview-unavailable" role="alert">
+        <strong>{{ activeProvider.label }} cannot edit this diagram</strong>
+        <button type="button" @click="copyUnavailableMessage">Copy error</button>
+        <pre>{{ unavailableMessage }}</pre>
+        <span v-if="copyError !== ''" role="alert">{{ copyError }}</span>
+      </div>
       <component
+        v-else
         :is="activeProvider.component"
         ref="previewHandle"
         :key="`${activeProvider.id}\0${targetIdentity(props.target)}`"
@@ -95,9 +102,9 @@ import {
 } from '@common/modules/markdown-editor/tikz-live-preview'
 import {
   defaultTikzPreviewMode,
-  resolvedTikzPreviewMode,
   type TikzPreviewModeId
 } from '@common/modules/markdown-editor/tikz-preview-modes'
+import { reportError } from '@common/util/error-reporting'
 import LoadingSpinner from 'source/common/vue/LoadingSpinner.vue'
 import {
   TIKZ_PREVIEW_PROVIDERS,
@@ -113,9 +120,10 @@ const fullscreen = ref(false)
 const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target))
 const activeStatus = ref('')
 const activeBusy = ref(false)
+const copyError = ref('')
 const previewHandle = ref<{ refresh?: () => void }|null>(null)
 const providers: readonly TikzPreviewProvider[] = TIKZ_PREVIEW_PROVIDERS
-const displayMode = computed(() => resolvedTikzPreviewMode(requestedMode.value, props.target))
+const displayMode = requestedMode
 const activeProvider = computed(() => {
   const provider = providers.find(candidate => candidate.id === displayMode.value)
   if (provider === undefined) {
@@ -123,6 +131,23 @@ const activeProvider = computed(() => {
   }
   return provider
 })
+const unavailableMessage = computed(() => activeProvider.value.supports(props.target)
+  ? ''
+  : activeProvider.value.unavailableTitle(props.target))
+
+watch(unavailableMessage, message => {
+  copyError.value = ''
+  if (message !== '') {
+    reportError(`TikZ editor mode unavailable in ${props.target.docPath}:${props.target.sourceFrom}`, message)
+  }
+}, { immediate: true })
+
+function copyUnavailableMessage (): void {
+  void navigator.clipboard.writeText(unavailableMessage.value).catch(error => {
+    copyError.value = error instanceof Error ? error.message : String(error)
+    reportError('Could not copy TikZ editor error', error)
+  })
+}
 
 function targetIdentity (target: TikzLivePreviewTarget): string {
   return `${target.docPath}\0${target.kind}\0${target.language}\0${target.from}`
@@ -274,6 +299,19 @@ onBeforeUnmount(() => {
   width: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.tikz-live-preview-unavailable {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  color: #a93226;
+  user-select: text;
+  -webkit-user-select: text;
+
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  button { margin-left: 8px; cursor: pointer; }
 }
 
 :global(body.dark .tikz-live-preview) {
