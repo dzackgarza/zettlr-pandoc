@@ -1,4 +1,8 @@
 import { strict as assert } from "node:assert";
+import { EditorState } from "@codemirror/state";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
+import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import type { TikzLivePreviewTarget } from "source/common/modules/markdown-editor/tikz-live-preview";
 import {
   defaultTikzPreviewMode,
@@ -67,6 +71,46 @@ describe("TikZ preview mode capabilities", function () {
       quiver.supports(target("\\begin{tikzpicture}\n\\end{tikzpicture}", "tikz")),
       false,
     );
+  });
+
+  it("offers Quiver for an indented tikzcd block", function () {
+    const doc = [
+      "",
+      " \\begin{tikzcd}",
+      '  X \\arrow[r, "f"] & Y \\\\',
+      "  P & Q",
+      "  \\end{tikzcd}",
+      "",
+    ].join("\n");
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf("\\arrow") },
+      extensions: [markdownParser(), configField],
+    });
+    const block = activeTikzBlock(state);
+    assert.ok(block, "the editor recognizes the diagram");
+    assert.equal(block.language, "tikzcd");
+    assert.equal(quiver?.supports({ ...block, docPath: "/notes/diagram.md" }), true);
+  });
+
+  it("offers Quiver for a tikzcd block inside a Markdown list", function () {
+    const doc = [
+      "- Diagram:",
+      "",
+      "  \\begin{tikzcd}",
+      "  X \\arrow[r] & Y",
+      "  \\end{tikzcd}",
+      "",
+      "- Next item",
+    ].join("\n");
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf("\\arrow") },
+      extensions: [markdownParser(), configField],
+    });
+    const block = activeTikzBlock(state);
+    assert.ok(block);
+    assert.equal(quiver?.supports({ ...block, docPath: "/notes/diagram.md" }), true);
   });
 
   it("falls back to the target default if a requested provider is unsupported", function () {
