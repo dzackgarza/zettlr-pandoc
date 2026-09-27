@@ -52,7 +52,7 @@ describe('Toast action affordance (review A5)', function () {
     assert.strictEqual(toasts().length, 0, 'the acted-on toast must dismiss itself')
   })
 
-  it('dismissing the toast body never runs the action', function () {
+  it('keeps toast text available when the body is clicked and closes only from its button', function () {
     let actionRuns = 0
     showToast('Renamed with pending undo.', 'info', 6000, {
       label: 'Undo',
@@ -62,8 +62,11 @@ describe('Toast action affordance (review A5)', function () {
     const toast = toasts()[0]
     assert.notStrictEqual(toast, undefined, 'the toast must render')
     toast.click()
-    assert.strictEqual(toasts().length, 0, 'clicking the body must dismiss the toast')
+    assert.strictEqual(toasts().length, 1, 'clicking the body leaves the message available')
     assert.strictEqual(actionRuns, 0, 'dismissal is not the action')
+    assert.equal(getComputedStyle(toast).userSelect, 'text')
+    toast.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')?.click()
+    assert.strictEqual(toasts().length, 0)
   })
 
   it('action-free toasts render no action button', function () {
@@ -75,5 +78,14 @@ describe('Toast action affordance (review A5)', function () {
       null,
       'a toast without an action must not grow a button'
     )
+  })
+
+  it('keeps error text visible and gives it a copy control', async function () {
+    showToast('Flowmark failed: full diagnostic', 'error', 10)
+    const toast = toasts()[0]
+    assert.ok(toast)
+    assert.equal(toast.querySelector('button[data-toast-copy]')?.textContent, 'Copy')
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(toasts().length, 1, 'an error stays until explicitly dismissed')
   })
 })
