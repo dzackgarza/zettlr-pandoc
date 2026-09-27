@@ -135,10 +135,10 @@ const unavailableMessage = computed(() => activeProvider.value.supports(props.ta
   ? ''
   : activeProvider.value.unavailableTitle(props.target))
 
-watch(unavailableMessage, message => {
+watch([unavailableMessage, () => props.target.docPath, () => props.target.sourceFrom], ([message, docPath, sourceFrom]) => {
   copyError.value = ''
   if (message !== '') {
-    reportError(`TikZ editor mode unavailable in ${props.target.docPath}:${props.target.sourceFrom}`, message)
+    reportError(`TikZ editor mode unavailable in ${docPath}:${sourceFrom}`, message)
   }
 }, { immediate: true })
 
