@@ -15,6 +15,10 @@ ai_review_ci_default_branch := "develop"
 default:
     @just --list
 
+# Edit and compile one TikZ file without launching Zettlr.
+tikz-standalone file:
+    {{bun}} run "{{justfile_directory()}}/scripts/tikz-standalone.ts" "{{file}}"
+
 [private]
 sync-dependencies:
     {{bun}} install --frozen-lockfile
