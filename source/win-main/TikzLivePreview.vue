@@ -2,15 +2,15 @@
   <aside
     class="tikz-live-preview"
     :class="{ fullscreen }"
-    aria-label="TikZ preview"
+    aria-label="TikZ workbench"
     :data-tikz-language="props.target.language"
   >
     <header class="tikz-live-preview-header">
-      <span class="tikz-live-preview-label">Preview:</span>
+      <span class="tikz-live-preview-label">TikZ:</span>
       <div
         class="tikz-live-preview-modes"
         role="group"
-        aria-label="Preview mode"
+        aria-label="TikZ mode"
       >
         <button
           v-for="provider in providers"
@@ -174,13 +174,12 @@ onBeforeUnmount(() => {
 
 <style scoped lang="less">
 .tikz-live-preview {
-  flex: 0 0 42%;
-  min-width: 260px;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid #d5d5d5;
   background: #f7f7f7;
   color: inherit;
 
@@ -191,7 +190,6 @@ onBeforeUnmount(() => {
     width: auto;
     height: auto;
     min-width: 0;
-    border-left: 0;
   }
 }
 
@@ -199,6 +197,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   min-height: 32px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 4px 8px 4px 12px;
@@ -213,6 +212,7 @@ onBeforeUnmount(() => {
 
 .tikz-live-preview-modes {
   display: inline-flex;
+  flex-wrap: wrap;
   padding: 2px;
   border-radius: 5px;
   background: color-mix(in srgb, currentColor 7%, transparent);
@@ -277,7 +277,6 @@ onBeforeUnmount(() => {
 }
 
 :global(body.dark .tikz-live-preview) {
-  border-left-color: #505050;
   background: #252526;
 }
 

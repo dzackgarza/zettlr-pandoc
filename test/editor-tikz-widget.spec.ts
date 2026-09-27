@@ -603,9 +603,10 @@ describe("TikZ editor widgets (issue #14)", function () {
   it("surfaces the real compiler log when a compile failure has no mapped source-line diagnostic", async function () {
     const compilerLog = [
       "This is pdfTeX, Version 3.141592653",
+      ...Array.from({ length: 60 }, (_, index) => `Package metadata ${index}`),
       "! Package pgf Error: No shape named `missing-node` is known.",
       "See the pgf package documentation for explanation.",
-      "l.17 \\draw (missing-node) -- (0,0);",
+      "l.142 \\draw (missing-node) -- (0,0);",
       "Fatal error occurred, no output PDF file produced!",
     ].join("\n");
     respond = (request) =>
@@ -632,6 +633,12 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.ok(
       text.includes("\\draw (missing-node) -- (0,0);"),
       `the compiler-cited source is visible: ${text}`,
+    );
+    assert.ok(text.includes("Package metadata 0"), "the start of the log is available");
+    assert.ok(text.includes("Package metadata 59"), "the end of the log is available");
+    assert.ok(
+      view.dom.querySelector<HTMLButtonElement>(".tikz-error button")?.textContent === "Copy diagnostics",
+      "the complete log has a copy action",
     );
     assert.ok(
       !/no diagnostic|see the render log/i.test(text),
@@ -680,6 +687,11 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.equal(view.state.selection.main.from, selectionBefore.from);
     assert.equal(view.state.selection.main.to, selectionBefore.to);
     assert.equal(getComputedStyle(box).userSelect, "text");
+    const edit = Array.from(box.querySelectorAll("button")).find((button) => button.textContent === "Edit source");
+    assert.ok(edit, "failed figures expose their authored source");
+    edit.click();
+    assert.ok(view.state.selection.main.to > view.state.selection.main.from);
+    assert.match(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to), /\\begin\{tikzcd\}/u);
   });
 
   it("names the missing tools when the toolchain is absent", async function () {

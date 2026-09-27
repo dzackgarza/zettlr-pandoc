@@ -41,14 +41,14 @@ function supportsVisualEditor(target: TikzLivePreviewTarget): boolean {
 export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
   {
     id: "tikz",
-    label: "TikZ",
+    label: "Compiled preview",
     refreshable: true,
     supports: () => true,
     unavailableTitle: () => "",
   },
   {
     id: "quiver",
-    label: "Quiver",
+    label: "Quiver editor",
     refreshable: false,
     supports: (target) => target.language === "tikzcd" && tikzBlockHasContiguousSource(target),
     unavailableTitle: (target) =>
@@ -58,7 +58,7 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
   },
   {
     id: "visual",
-    label: "Visual",
+    label: "Visual editor",
     refreshable: false,
     supports: supportsVisualEditor,
     unavailableTitle: (target) =>

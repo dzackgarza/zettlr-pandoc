@@ -29,7 +29,6 @@
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
-import { tikzCompilerLogExcerpt } from "@common/util/tikz-compiler-log";
 import { type SyntaxNodeRef } from "@lezer/common";
 import type { TikzRenderResult } from "source/app/util/tikz-render";
 import type { TikzSourceBlock } from "../tikz-block";
@@ -109,7 +108,7 @@ function normalizeSvgTypography(
   svg.style.width = "100%";
 }
 
-function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string): void {
+function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string, editSource: () => void): void {
   if (result.ok) {
     const figure = figureNodes(result.html);
     const frame = document.createElement("div");
@@ -137,6 +136,7 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
   box.classList.add("tikz-error");
   const title = document.createElement("strong");
   box.appendChild(title);
+  let diagnosticText = "";
 
   switch (result.kind) {
     case "missing-tools":
@@ -150,7 +150,7 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       title.textContent = `TikZ could not check whether ${result.tool} is usable: the check failed with ${result.code}`;
       break;
     case "compile-error": {
-      title.textContent = "TikZ figure failed to compile";
+      title.textContent = "TikZ compilation failed";
       for (const error of result.errors) {
         const line = document.createElement("div");
         const where = document.createElement("span");
@@ -161,34 +161,26 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
         line.appendChild(source);
         box.appendChild(line);
       }
-      const compilerLog = tikzCompilerLogExcerpt(result.log, 24);
-      if (result.errors.length === 0) {
-        if (compilerLog !== "") {
-          const log = document.createElement("pre");
-          log.classList.add("tikz-compiler-log");
-          log.textContent = compilerLog;
-          box.appendChild(log);
-        } else {
-          const note = document.createElement("div");
-          note.textContent = "TikZ compilation failed without any compiler output.";
-          box.appendChild(note);
-        }
-      } else if (compilerLog !== "") {
-        const details = document.createElement("details");
-        const summary = document.createElement("summary");
-        summary.textContent = "Compiler log";
+      diagnosticText = result.log || result.errors.map((error) =>
+        `line ${error.line}: ${error.message}\n${error.sourceLine}`,
+      ).join("\n\n");
+      if (result.log !== "") {
         const log = document.createElement("pre");
         log.classList.add("tikz-compiler-log");
-        log.textContent = compilerLog;
-        details.append(summary, log);
-        box.appendChild(details);
+        log.textContent = result.log;
+        box.appendChild(log);
+      } else if (result.errors.length === 0) {
+        const note = document.createElement("div");
+        note.textContent = "The compiler returned no output.";
+        box.appendChild(note);
       }
       break;
     }
     case "pandoc-error": {
       title.textContent = "TikZ render failed (pandoc error)";
+      diagnosticText = result.log;
       const log = document.createElement("pre");
-      log.textContent = result.log.split("\n").slice(-8).join("\n");
+      log.textContent = result.log;
       box.appendChild(log);
       break;
     }
@@ -197,8 +189,9 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       // reporting anything about the figure, and the user needs to know the
       // difference to act on it.
       title.textContent = `TikZ render was killed by ${result.signal} before it finished`;
+      diagnosticText = result.log;
       const log = document.createElement("pre");
-      log.textContent = result.log.split("\n").slice(-8).join("\n");
+      log.textContent = result.log;
       box.appendChild(log);
       break;
     }
@@ -210,6 +203,21 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       );
     }
   }
+
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.textContent = "Copy diagnostics";
+  copy.addEventListener("click", () => {
+    void navigator.clipboard.writeText(diagnosticText || title.textContent || "").catch((error) => {
+      reportError("Could not copy TikZ diagnostics", error);
+    });
+  });
+  box.insertBefore(copy, title);
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.textContent = "Edit source";
+  edit.addEventListener("click", editSource);
+  box.insertBefore(edit, title);
 
   elem.replaceChildren(box);
 }
@@ -247,6 +255,10 @@ class TikzWidget extends WidgetType {
     // its absence is a wiring defect and reads as one.
     const docPath = view.state.field(configField).metadata.path;
     const editTitle = "Click to edit TikZ source";
+    const editSource = (): void => {
+      view.focus();
+      view.dispatch({ selection: { anchor: this.block.from, head: this.block.to } });
+    };
     requestTikzRender({
       source: this.block.source,
       kind: this.block.kind,
@@ -254,7 +266,7 @@ class TikzWidget extends WidgetType {
       docPath,
     }).then(
       (result) => {
-        populate(elem, result, editTitle);
+        populate(elem, result, editTitle, editSource);
       },
       // Only the IPC round-trip is handled here. A failure to reach the main
       // process is a render failure the user must see; a failure raised by
@@ -270,6 +282,7 @@ class TikzWidget extends WidgetType {
             log: err instanceof Error ? err.message : String(err),
           },
           editTitle,
+          editSource,
         );
       },
     );
@@ -285,8 +298,7 @@ class TikzWidget extends WidgetType {
       }
       event.preventDefault();
       event.stopPropagation();
-      view.focus();
-      view.dispatch({ selection: { anchor: this.block.from, head: this.block.to } });
+      editSource();
     });
     return elem;
   }
@@ -380,6 +392,17 @@ export const renderTikzFigures = [
     ".tikz-error *": {
       userSelect: "text",
       WebkitUserSelect: "text",
+    },
+    ".tikz-error button": {
+      display: "block",
+      marginBottom: "0.4em",
+      cursor: "pointer",
+    },
+    ".tikz-compiler-log": {
+      maxHeight: "18rem",
+      maxWidth: "min(80vw, 64rem)",
+      overflow: "auto",
+      whiteSpace: "pre-wrap",
     },
   }),
 ];

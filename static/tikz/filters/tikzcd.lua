@@ -75,7 +75,6 @@ local function emit_figure_compile_error(log_path, figure_body, preamble_lines)
     body_lines[#body_lines + 1] = line
   end
 
-  local emitted = false
   local log_lines = {}
   for line in (log_text .. "\n"):gmatch("(.-)\n") do
     log_lines[#log_lines + 1] = line
@@ -94,7 +93,6 @@ local function emit_figure_compile_error(log_path, figure_body, preamble_lines)
             -- that may contain a literal `|` in practice — tikz source rarely
             -- does — so the app splits on the FIRST two pipes only).
             io.stderr:write("[tikzcd-figure-error] " .. body_line .. "|" .. message .. "|" .. src .. "\n")
-            emitted = true
           end
           break
         end
@@ -114,7 +112,7 @@ local function emit_figure_compile_error(log_path, figure_body, preamble_lines)
     io.stderr:write("\n")
   end
   io.stderr:write("[tikzcd-pdflatex-log-end]\n")
-  return emitted
+  return true
 end
 
 -- Shared compilation core: given full LaTeX source, compile to PDF then SVG.
@@ -142,8 +140,7 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   -- conversion may truncate its destination, which would destroy the
   -- lightbox/cache file for the last-good image the editor is still showing.
 
-  local tmp = "/tmp/" .. tmp_prefix .. "-" .. hash
-  os.execute("mkdir -p " .. tmp)
+  return system.with_temporary_directory(tmp_prefix .. "-" .. hash, function(tmp)
   local tex_path = tmp .. "/tikz.tex"
 
   local f = io.open(tex_path, "w")
@@ -161,19 +158,24 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
     inputs_env = 'TEXINPUTS="' .. styles_dir .. ':' .. figures_inputs .. '::" '
   end
 
-  -- Discard pdflatex's stdout+stderr: a pandoc filter's stdout is its output
+  -- Capture pdflatex's stdout+stderr in the private scratch directory: a pandoc filter's stdout is its output
   -- channel and must stay clean. The compile log would otherwise prepend to the
   -- rendered document, breaking a downstream `pandoc -f latex` re-parse of the
   -- output (the figure renders, but the log corrupts the stream). Diagnostics on
-  -- failure come from the .log file via emit_figure_compile_error, not this stream.
-  local cmd1 = inputs_env .. "pdflatex -interaction=nonstopmode -output-directory=" .. tmp .. " " .. tex_path .. " >/dev/null 2>&1"
-  local ok1 = os.execute(cmd1)
+  -- failure come from the .log file or this command transcript, never stdout.
+  local latex_command_log = tmp .. "/pdflatex-command.log"
+  local cmd1 = inputs_env .. "pdflatex -interaction=nonstopmode -output-directory=" .. tmp .. " " .. tex_path .. " >" .. latex_command_log .. " 2>&1"
+  local ok1, _, latex_exit = os.execute(cmd1)
   if not ok1 then
     -- Surface the figure-compile diagnostic (mapped to the figure source line)
     -- before tearing down the tmp dir, so the failure reaches the app instead of
     -- being dropped to a bare stderr note (Phase D / D-6 / P95).
-    emit_figure_compile_error(tmp .. "/tikz.log", figure_body, preamble_lines)
-    os.execute("rm -rf " .. tmp)
+    if not emit_figure_compile_error(tmp .. "/tikz.log", figure_body, preamble_lines) then
+      local command_file = io.open(latex_command_log, "r")
+      local output = command_file and command_file:read("*a") or ""
+      if command_file then command_file:close() end
+      io.stderr:write("[tikzcd] pdflatex failed (exit " .. tostring(latex_exit) .. ") without a TeX log:\n" .. output .. "\n")
+    end
     return nil, nil
   end
 
@@ -182,12 +184,13 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
   -- The PDF is already a successful pdflatex product and remains useful to
   -- LaTeX-output callers even when SVG conversion later fails.
   os.execute("cp " .. tmp_pdf .. " " .. pdf_path)
-  local ok2 = os.execute("pdf2svg " .. tmp_pdf .. " " .. tmp_svg .. " >/dev/null 2>&1")
+  local conversion_log = tmp .. "/pdf2svg.log"
+  local ok2, _, conversion_exit = os.execute("pdf2svg " .. tmp_pdf .. " " .. tmp_svg .. " >" .. conversion_log .. " 2>&1")
   if ok2 then
     -- Stage in the cache directory, then rename over the old SVG. `cp` may fail
     -- part-way (disk full, permissions); that must leave the old svg_path
     -- untouched. The final rename is within one directory/filesystem.
-    local staged_svg = svg_path .. ".new"
+    local staged_svg = svg_path .. "." .. tmp:match("[^/]+$") .. ".new"
     local staged = os.execute("cp " .. tmp_svg .. " " .. staged_svg)
     if staged then
       ok2 = os.rename(staged_svg, svg_path)
@@ -198,13 +201,18 @@ local function run_pdflatex_and_convert(tex_source, tmp_prefix, hash, doc_dir, f
       os.remove(staged_svg)
     end
   end
-  os.execute("rm -rf " .. tmp)
-
   if not ok2 then
+    local conversion_file = io.open(conversion_log, "r")
+    if conversion_file then
+      local conversion_text = conversion_file:read("*a")
+      conversion_file:close()
+      io.stderr:write("[tikzcd] pdf2svg failed (exit " .. tostring(conversion_exit) .. "):\n" .. conversion_text .. "\n")
+    end
     return nil, pdf_path
   end
 
   return svg_path, pdf_path
+  end)
 end
 
 local function try_open_file(candidate)
@@ -480,7 +488,6 @@ if FORMAT:match 'html' then
       -- not aborting the whole render, is what makes a template swap observable in
       -- the live preview. Return the raw latex block unchanged: pandoc's HTML
       -- writer omits non-HTML raw blocks, so the failed figure leaves no element.
-      io.stderr:write("[tikzcd] figure did not compile under the active per-figure template; omitting it from the preview\n")
       return el
     end
     log("RawBlock (html): compiled to " .. svg_path)

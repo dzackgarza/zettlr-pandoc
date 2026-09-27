@@ -11,17 +11,26 @@
       'tikz-live-preview-open': tikzPreviewTarget !== null
     }"
   >
-    <div class="main-editor-workspace">
-      <div
-        ref="editorHost"
-        class="main-editor-host"
-      />
-      <TikzLivePreview
+    <SplitterGroup direction="horizontal" class="main-editor-workspace">
+      <SplitterPanel :default-size="58" :min-size="20">
+        <div ref="editorHost" class="main-editor-host" />
+      </SplitterPanel>
+      <SplitterResizeHandle
         v-if="tikzPreviewTarget !== null && activeEditorView !== null"
-        :target="tikzPreviewTarget"
-        :editor-view="activeEditorView"
+        class="tikz-editor-resize-handle"
+        aria-label="Resize TikZ editor pane"
       />
-    </div>
+      <SplitterPanel
+        v-if="tikzPreviewTarget !== null && activeEditorView !== null"
+        :default-size="42"
+        :min-size="20"
+      >
+        <TikzLivePreview
+          :target="tikzPreviewTarget"
+          :editor-view="activeEditorView"
+        />
+      </SplitterPanel>
+    </SplitterGroup>
     <RenameReferencePreviewDialog
       v-if="renamePreviewPrompt !== undefined"
       :old-key="renamePreviewPrompt.intent.oldKey"
@@ -133,6 +142,7 @@ import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor
 import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
 import TikzLivePreview from './TikzLivePreview.vue'
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { activeTikzBlock as findActiveTikzBlock, type TikzSourceBlock } from '@common/modules/markdown-editor/tikz-block'
 import type { TikzLivePreviewTarget } from '@common/modules/markdown-editor/tikz-live-preview'
 import {
@@ -1796,6 +1806,15 @@ function maybeHighlightSearchResults (): void {
     overflow: hidden;
 
     > .cm-editor { width: 100%; }
+  }
+
+  .tikz-editor-resize-handle {
+    flex: 0 0 5px;
+    cursor: col-resize;
+    background: #d5d5d5;
+
+    &[data-resize-handle-state="hover"],
+    &[data-resize-handle-state="drag"] { background: #808080; }
   }
 
   .cm-editor {

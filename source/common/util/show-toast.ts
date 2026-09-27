@@ -28,7 +28,7 @@ function toastContainer (): HTMLElement {
     container.id = CONTAINER_ID
     container.style.cssText = [
       'position: fixed', 'right: 16px', 'bottom: 16px', 'z-index: 1000',
-      'display: flex', 'flex-direction: column', 'gap: 8px', 'max-width: 360px'
+      'display: flex', 'flex-direction: column', 'gap: 8px', 'width: min(600px, calc(100vw - 32px))'
     ].join(';')
     document.body.appendChild(container)
   }
@@ -49,8 +49,8 @@ export interface ToastAction {
 }
 
 /**
- * Shows one closable toast. The toast dismisses itself after the timeout or
- * immediately on click.
+ * Shows one closable toast. Error messages remain until dismissed. Other
+ * messages use the supplied timeout. The message itself stays selectable.
  *
  * @param   {string}                     message  The message to show
  * @param   {'info'|'error'}             kind     The visual severity
@@ -63,7 +63,8 @@ export default function showToast (message: string, kind: 'info'|'error' = 'info
   toast.setAttribute('role', 'status')
   toast.style.cssText = [
     'display: flex', 'align-items: baseline', 'gap: 10px',
-    'padding: 10px 14px', 'border-radius: 8px', 'cursor: pointer',
+    'padding: 10px 14px', 'border-radius: 8px', 'max-height: 60vh',
+    'overflow: auto', 'user-select: text', '-webkit-user-select: text',
     'box-shadow: 0 8px 24px rgba(0, 0, 0, .25)',
     'font: 13px/1.4 system-ui, sans-serif',
     kind === 'error'
@@ -73,14 +74,36 @@ export default function showToast (message: string, kind: 'info'|'error' = 'info
 
   const text = document.createElement('span')
   text.textContent = message
-  text.style.cssText = 'flex: 1 1 auto'
+  text.style.cssText = 'flex: 1 1 auto; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text'
 
-  const close = document.createElement('span')
+  const close = document.createElement('button')
+  close.type = 'button'
   close.textContent = '✕'
   close.setAttribute('aria-label', 'Dismiss')
-  close.style.cssText = 'flex: 0 0 auto; opacity: .7'
+  close.style.cssText = 'flex: 0 0 auto; opacity: .7; color: inherit; background: transparent; border: 0; cursor: pointer; font: inherit'
 
-  const dismiss = (): void => { toast.remove() }
+  let timer: ReturnType<typeof setTimeout>|undefined
+  const dismiss = (): void => {
+    if (timer !== undefined) clearTimeout(timer)
+    toast.remove()
+  }
+  close.addEventListener('click', dismiss)
+
+  if (kind === 'error') {
+    const copy = document.createElement('button')
+    copy.type = 'button'
+    copy.textContent = 'Copy'
+    copy.setAttribute('data-toast-copy', '')
+    copy.style.cssText = 'flex: 0 0 auto; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; cursor: pointer; font: inherit'
+    copy.addEventListener('click', () => {
+      void Promise.resolve().then(() => navigator.clipboard.writeText(message)).then(() => {
+        copy.textContent = 'Copied'
+      }, (error: Error) => {
+        copy.textContent = `Copy failed: ${error.message}`
+      })
+    })
+    toast.appendChild(copy)
+  }
 
   if (action !== undefined) {
     const button = document.createElement('button')
@@ -93,20 +116,18 @@ export default function showToast (message: string, kind: 'info'|'error' = 'info
       'border: 1px solid currentColor', 'border-radius: 6px',
       'font: inherit', 'cursor: pointer'
     ].join(';')
-    button.addEventListener('click', event => {
-      // The action is not the dismissal: keep the body's dismiss handler
-      // out of the click, run the action exactly once, then dismiss.
-      event.stopPropagation()
+    button.addEventListener('click', () => {
       dismiss()
       action.onAction()
     })
-    toast.append(text, button, close)
+    toast.prepend(text)
+    toast.append(button, close)
   } else {
-    toast.append(text, close)
+    toast.prepend(text)
+    toast.append(close)
   }
 
-  toast.addEventListener('click', dismiss)
-  setTimeout(dismiss, timeout)
+  if (kind !== 'error' && timeout > 0) timer = setTimeout(dismiss, timeout)
 
   toastContainer().appendChild(toast)
 }

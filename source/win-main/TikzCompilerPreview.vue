@@ -1,8 +1,9 @@
 <template>
   <div class="tikz-compiler-preview">
     <div
+      v-if="state.failure === null"
       class="tikz-compiler-preview-canvas tikz-live-preview-canvas"
-      :class="{ stale: state.stale || state.failure !== null }"
+      :class="{ stale: state.stale }"
     >
       <TikzFigureViewer
         v-if="state.lastGood !== null"
@@ -30,13 +31,11 @@
       class="tikz-compiler-preview-error tikz-live-preview-error"
       role="status"
     >
-      <div class="tikz-compiler-preview-error-summary">
-        {{ failureSummary }}
+      <div class="tikz-compiler-preview-error-header">
+        <strong>{{ failureSummary }}</strong>
+        <button type="button" @click="copyDiagnostics">Copy diagnostics</button>
       </div>
-      <details v-if="failureDetails !== ''">
-        <summary>{{ failureDetailsLabel }}</summary>
-        <pre>{{ failureDetails }}</pre>
-      </details>
+      <pre v-if="failureDetails !== ''">{{ failureDetails }}</pre>
     </div>
   </div>
 </template>
@@ -67,7 +66,7 @@ import {
   type TikzRenderFailure,
 } from "@common/modules/markdown-editor/tikz-live-preview";
 import { reportError } from "@common/util/error-reporting";
-import { tikzCompilerLogExcerpt, tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
+import { tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
 import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import TikzFigureViewer from "./TikzFigureViewer.vue";
@@ -140,7 +139,7 @@ watch(
 
 const statusText = computed(() => {
   if (state.value.failure !== null) {
-    return state.value.lastGood === null ? "Render failed" : "Last good render";
+    return "Render failed";
   }
   if (state.value.pending) {
     return state.value.lastGood === null ? "Rendering…" : "Updating…";
@@ -176,7 +175,7 @@ function summarizeFailure(failure: TikzRenderFailure): string {
     case "toolchain-probe-failed":
       return `Could not check ${failure.tool}: ${failure.code}`;
     case "pandoc-error":
-      return "TikZ render failed.";
+      return tikzCompilerLogHeadline(failure.log) || "Pandoc returned no diagnostic.";
     case "render-terminated":
       return `TikZ render was terminated by ${failure.signal}.`;
     default: {
@@ -196,21 +195,21 @@ const failureDetails = computed(() => {
     return "";
   }
   if (failure.kind === "compile-error") {
-    const mapped = failure.errors
+    return failure.log || failure.errors
       .map((error) => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
       .join("\n\n");
-    const compilerLog = tikzCompilerLogExcerpt(failure.log, 32);
-    return [mapped, compilerLog].filter((part) => part !== "").join("\n\nCompiler log:\n");
   }
   if (failure.kind === "pandoc-error" || failure.kind === "render-terminated") {
-    return failure.log.split("\n").slice(-12).join("\n");
+    return failure.log;
   }
   return "";
 });
 
-const failureDetailsLabel = computed(() =>
-  state.value.failure?.kind === "compile-error" ? "Compiler diagnostics" : "Details",
-);
+function copyDiagnostics(): void {
+  void navigator.clipboard.writeText(failureDetails.value || failureSummary.value).catch((error) => {
+    reportError("Could not copy TikZ diagnostics", error);
+  });
+}
 
 function refresh(): void {
   controller.forceRender();
@@ -258,8 +257,8 @@ onBeforeUnmount(() => {
 }
 
 .tikz-compiler-preview-error {
-  flex: 0 0 auto;
-  max-height: 32%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border-top: 1px solid rgba(192, 57, 43, 0.38);
   padding: 7px 10px;
@@ -275,13 +274,17 @@ onBeforeUnmount(() => {
     -webkit-user-select: text;
   }
 
-  details { margin-top: 4px; }
-  summary { cursor: pointer; opacity: 0.8; }
+  .tikz-compiler-preview-error-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  button { cursor: pointer; }
   pre {
-    margin: 6px 0 0;
-    max-height: 10rem;
-    overflow: auto;
+    margin: 8px 0 0;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     font-size: 0.75rem;
   }
 }
