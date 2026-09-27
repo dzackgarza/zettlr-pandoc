@@ -25,6 +25,16 @@ describe("TikZ compiler-log presentation", function () {
     assert.equal(tikzCompilerLogHeadline(log), "! Undefined control sequence.");
   });
 
+  it("selects the TeX failure after package-loading messages", function () {
+    const fullLog = [
+      "Package: infwarerr 2019/12/03 Providing info/warning/error messages",
+      "Package pgfplots Warning: running in backwards compatibility mode",
+      "! Undefined control sequence.",
+      "l.19 \\badmacro",
+    ].join("\n");
+    assert.equal(tikzCompilerLogHeadline(fullLog), "! Undefined control sequence.");
+  });
+
   it("falls back to actual trailing output when a compiler emits no recognizable bang-error", function () {
     const unusual = "pdflatex started\nbackend exited unexpectedly\nno PDF produced\n";
     assert.match(tikzCompilerLogExcerpt(unusual), /backend exited unexpectedly/u);
