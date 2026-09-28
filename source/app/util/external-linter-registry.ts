@@ -125,7 +125,6 @@ async function runLanguageToolBackend (
     argv: [
       'run',
       '--project', vendoredFlowmarkProjectPath(),
-      '--isolated',
       '--frozen',
       'python',
       externalLinterPluginPath('language_tool.py')

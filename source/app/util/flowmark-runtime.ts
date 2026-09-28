@@ -75,13 +75,13 @@ export function vendoredFlowmarkArgs (
   // package/version, and Flowmark's source-archive fallback version is stable;
   // even `--refresh-package flowmark` can therefore execute an older locally
   // built wheel after the vendored checkout changes. `uv run --project` makes
-  // the project checkout itself the editable import source. `--isolated`
-  // prevents an ambient active venv from changing dependencies, while
-  // `--frozen` requires the vendored uv.lock instead of resolving new ones.
+  // the project checkout itself the editable import source, synced into the
+  // project's own .venv and reused across calls; uv ignores an active venv
+  // without `--active`. `--frozen` requires the vendored uv.lock instead of
+  // resolving new ones.
   return [
     'run',
     '--project', projectPath,
-    '--isolated',
     '--frozen',
     entrypoint,
     ...args
