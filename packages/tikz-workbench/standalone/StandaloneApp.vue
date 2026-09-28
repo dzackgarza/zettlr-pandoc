@@ -5,8 +5,9 @@
       <button type="button" :disabled="document === null || !dirty" @click="save">Save</button>
       <span class="tikz-standalone-status" role="status">{{ status }}</span>
     </header>
-    <main v-if="document !== null && target !== null">
+    <main v-if="document !== null && target !== null" :class="{ 'visual-mode': mode === 'visual' }">
       <SourceEditor
+        v-show="mode !== 'visual'"
         class="tikz-standalone-source"
         :source="source"
         :theme="theme"
@@ -17,6 +18,7 @@
         :target="target"
         :host="host"
         :theme="theme"
+        @mode="mode = $event"
       />
     </main>
     <pre v-else-if="loadError !== ''" class="tikz-standalone-error" role="alert">{{ loadError }}</pre>
@@ -34,6 +36,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../src/host";
 import type { TikzLivePreviewTarget } from "../src/live-preview";
+import type { TikzPreviewModeId } from "../src/preview-modes";
 import type { QuiverMacroProjection } from "../src/quiver-macros";
 import { contiguousSourceLineRanges, rawTikzEnvironment } from "../src/source-block";
 import type { TikzRenderResult } from "../src/tikz-render";
@@ -50,6 +53,8 @@ const source = ref("");
 const savedSource = ref("");
 const loadError = ref("");
 const hostError = ref("");
+// The visual editor has its own source pane, so the page hides its own in that mode.
+const mode = ref<TikzPreviewModeId>("tikz");
 const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
 const theme = ref<TikzWorkbenchTheme>(darkScheme.matches ? "dark" : "light");
 
@@ -211,6 +216,11 @@ main {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+}
+
+main.visual-mode {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .tikz-standalone-source {

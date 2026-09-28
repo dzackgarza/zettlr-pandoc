@@ -1,8 +1,8 @@
 // Drives the standalone TikZ workbench page served by
 // packages/tikz-workbench/standalone/server.ts. It compiles the file, opens the
-// visual editor, edits the source pane, saves, and then saves again after the
-// file changed on disk. It prints a JSON report and leaves one screenshot per
-// state in the output directory.
+// visual editor (which hides the page source pane), edits the source pane,
+// saves, and then saves again after the file changed on disk. It prints a JSON
+// report and leaves one screenshot per state in the output directory.
 //
 // Usage: node test/tikz-standalone-drive.mjs <url> <file.tikz> <outputDirectory>
 
@@ -32,9 +32,13 @@ try {
     undefined,
     { timeout: 60_000 },
   );
-  await page.frameLocator('iframe[title="TikZ visual editor"]').getByTestId("app-menubar").waitFor();
+  const editorFrame = page.frameLocator('iframe[title="TikZ visual editor"]');
+  await editorFrame.getByTestId("app-menubar").waitFor();
+  await editorFrame.getByText(/^Computing/u).first().waitFor({ state: "hidden", timeout: 60_000 });
   const visualStatus = await page.locator(".tikz-live-preview-status").textContent();
   await scene.capture("02-visual-editor");
+  const sourcePaneVisibleInVisualMode = await page.locator(".tikz-source-editor").isVisible();
+  await page.getByRole("button", { name: "Compiled preview" }).click();
 
   const appended = "\n% saved from the standalone workbench";
   await page.locator(".tikz-source-editor .cm-content").click();
@@ -62,6 +66,7 @@ try {
     JSON.stringify({
       figureSvg,
       visualStatus,
+      sourcePaneVisibleInVisualMode,
       dirtyStatus,
       savedFile,
       externalEdit,

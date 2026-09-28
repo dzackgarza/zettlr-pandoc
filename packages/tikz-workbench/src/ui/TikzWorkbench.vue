@@ -113,6 +113,12 @@ const props = defineProps<{
   theme: TikzWorkbenchTheme
 }>()
 
+// The host may lay itself out around the active mode; the visual editor, for
+// one, carries its own source pane.
+const emit = defineEmits<{
+  (e: 'mode', mode: TikzPreviewModeId): void
+}>()
+
 const fullscreen = ref(false)
 const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target))
 const activeStatus = ref('')
@@ -160,10 +166,12 @@ watch(
 
 watch(
   displayMode,
-  () => {
+  mode => {
     activeStatus.value = ''
     activeBusy.value = false
-  }
+    emit('mode', mode)
+  },
+  { immediate: true }
 )
 
 function selectProvider (mode: TikzPreviewModeId): void {
