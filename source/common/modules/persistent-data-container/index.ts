@@ -51,6 +51,13 @@ export default class PersistentDataContainer<T = any> {
   private _timeout: NodeJS.Timeout|undefined
 
   /**
+   * The write to disk that is currently in progress, if any
+   *
+   * @var {Promise<void>|undefined}
+   */
+  private _write: Promise<void>|undefined
+
+  /**
    * The delay (in milliseconds) of wait before actually writing the data to
    * disk.
    *
@@ -182,7 +189,15 @@ export default class PersistentDataContainer<T = any> {
       this._timeout = undefined
     }
 
-    await writeFileAtomic(this._filePath, this.stringify(), { encoding: 'utf-8' })
+    const write = writeFileAtomic(this._filePath, this.stringify(), { encoding: 'utf-8' })
+    this._write = write
+    try {
+      await write
+    } finally {
+      if (this._write === write) {
+        this._write = undefined
+      }
+    }
   }
 
   /**
@@ -201,12 +216,16 @@ export default class PersistentDataContainer<T = any> {
 
   /**
    * Shuts the container down: a write still waiting out its delay happens
-   * now, and the caller can wait for it. The process is on its way out, so
-   * an unawaited write here is a write that may never land.
+   * now, and the returned promise resolves once every write has landed. The
+   * process is on its way out, so an unawaited write here is a write that may
+   * never land.
    */
   public async shutdown (): Promise<void> {
     if (this._timeout !== undefined) {
       await this.flushToDisk()
+    }
+    if (this._write !== undefined) {
+      await this._write
     }
   }
 }

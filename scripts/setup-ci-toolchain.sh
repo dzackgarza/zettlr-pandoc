@@ -38,7 +38,7 @@ readonly setup_dir
 trap 'rm -r -- "${setup_dir}"' EXIT
 
 sudo apt-get update
-sudo apt-get install --yes biber latexmk pdf2svg texlive-latex-extra texlive-pictures xvfb
+sudo apt-get install --yes biber latexmk pdf2svg texlive-latex-extra texlive-luatex texlive-pictures xvfb
 
 readonly pandoc_package="${setup_dir}/pandoc.deb"
 curl --fail --location --silent --show-error \

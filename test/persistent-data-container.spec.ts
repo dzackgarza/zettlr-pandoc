@@ -55,7 +55,7 @@ describe('Modules#PersistentDataContainer', function () {
     await container.init(testData)
 
     await assert.doesNotReject(async () => await container.get(), 'The container complained despite being initialized')
-    container.shutdown()
+    await container.shutdown()
   })
 
   it('should return the same data as was provided', async function () {
@@ -63,13 +63,13 @@ describe('Modules#PersistentDataContainer', function () {
     await container1.init(testData)
     let retData = await container1.get()
     assert.deepStrictEqual(retData, testData, 'The provided and returned data was not the same (JSON)')
-    container1.shutdown()
+    await container1.shutdown()
 
     const container2 = new PersistentDataContainer(filePath, 'yaml', delay)
     await container2.init(testData)
     retData = await container2.get()
     assert.deepStrictEqual(retData, testData, 'The provided and returned data was not the same (YAML)')
-    container2.shutdown()
+    await container2.shutdown()
   })
 
   it('should correctly update stored data', async function () {
@@ -83,13 +83,13 @@ describe('Modules#PersistentDataContainer', function () {
       setTimeout(resolve, delay + 100) // We add 100ms to make sure the write was successful
     })
 
-    container.shutdown()
+    await container.shutdown()
 
     // Then check that the correct data has been written by creating a new container
     const newContainer = new PersistentDataContainer(filePath, 'json', delay)
     const newData = await newContainer.get()
     assert.deepStrictEqual(newData, updatedData)
-    newContainer.shutdown()
+    await newContainer.shutdown()
   })
 
   it('should not accept null or undefined as data', async function () {
