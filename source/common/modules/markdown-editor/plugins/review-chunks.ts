@@ -181,6 +181,64 @@ export function selectPreviousReviewChunk (view: EditorView): boolean {
   return selectReviewChunk(view, -1)
 }
 
+/** The working-side stretch a suggestion covers: its seam and its anchors. */
+function suggestionExtent (suggestion: ReviewSuggestionView): { from: number, to: number } {
+  const ends = [suggestion.seam, ...suggestion.anchors.flatMap(anchor => [anchor.from, anchor.to])]
+  return { from: Math.min(...ends), to: Math.max(...ends) }
+}
+
+/** One suggestion written as CriticMarkup, followed by its justification. */
+function criticMarkup (removed: string, inserted: string, description: string): string {
+  const change = removed === ''
+    ? `{++${inserted}++}`
+    : inserted === '' ? `{--${removed}--}` : `{~~${removed}~>${inserted}~~}`
+  return `${change}{>>${description}<<}`
+}
+
+/**
+ * The main selection as CriticMarkup (https://criticmarkup.com/spec.php),
+ * or null when it touches no pending suggestion. A suggestion the selection
+ * touches is written whole: its removed text, the text it put in, and the
+ * claim that justifies it. CodeMirror's own copy (`copiedRange` in
+ * @codemirror/view) writes only document text, so the struck-through
+ * removed text, which is a widget, would otherwise never reach the
+ * clipboard.
+ */
+export function reviewSelectionAsCriticMarkup (state: EditorState): string|null {
+  const suggestions = getReviewChunks(state)
+  const { from, to } = state.selection.main
+  if (suggestions === null || from === to) {
+    return null
+  }
+  const touched = suggestions
+    .map(suggestion => ({ suggestion, extent: suggestionExtent(suggestion) }))
+    .filter(({ extent }) => extent.from <= to && extent.to >= from)
+    .sort((left, right) => left.extent.from - right.extent.from)
+  if (touched.length === 0) {
+    return null
+  }
+  let text = ''
+  let cursor = Math.min(from, touched[0].extent.from)
+  for (const { suggestion, extent } of touched) {
+    text += state.sliceDoc(cursor, extent.from)
+    text += criticMarkup(suggestion.removedText, state.sliceDoc(extent.from, extent.to), suggestion.description)
+    cursor = extent.to
+  }
+  return text + state.sliceDoc(cursor, Math.max(to, cursor))
+}
+
+const reviewCopyHandler = EditorView.domEventHandlers({
+  copy (event, view) {
+    const text = reviewSelectionAsCriticMarkup(view.state)
+    if (text === null || event.clipboardData === null) {
+      return false
+    }
+    event.clipboardData.setData('text/plain', text)
+    event.preventDefault()
+    return true
+  }
+})
+
 const reviewChunkKeymap = keymap.of([
   { key: 'F8', run: selectNextReviewChunk },
   { key: 'Shift-F8', run: selectPreviousReviewChunk }
@@ -196,6 +254,7 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
     // element's class attribute (a resize re-measure, a focus change).
     EditorView.editorAttributes.of({ class: 'review-diff-active' }),
     reviewChunkKeymap,
+    reviewCopyHandler,
     reviewChunksTheme
   ]
 }

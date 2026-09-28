@@ -25,6 +25,7 @@ import {
   getReviewChunks,
   reviewSuggestionsInRange,
   reviewChunksExtension,
+  reviewSelectionAsCriticMarkup,
   selectNextReviewChunk,
   selectPreviousReviewChunk
 } from 'source/common/modules/markdown-editor/plugins/review-chunks'
@@ -567,5 +568,25 @@ describe('Editor review-chunk view', function () {
 
     assert.equal(chunksOf(view).length, 1)
     assert.equal(view.dom.querySelectorAll('.cm-collapsedLines').length, 0)
+  })
+
+  it('copies a selection over a suggestion as CriticMarkup with its justification', function () {
+    const working = '::: {#def-forms .title="Forms"}\n\nBody.\n'
+    const suggestion = replacementSuggestion(
+      working, '}\n\n## Forms', ' .title="Forms"}', 'title', 'Move the heading into the title attribute'
+    )
+    const view = createReviewView(working, [suggestion])
+    view.dispatch({ selection: { anchor: 0, head: working.indexOf('Body.') + 'Body.'.length } })
+    assert.equal(
+      reviewSelectionAsCriticMarkup(view.state),
+      '::: {#def-forms{~~}\n\n## Forms~> .title="Forms"}~~}{>>Move the heading into the title attribute<<}\n\nBody.'
+    )
+  })
+
+  it('leaves a copy that touches no suggestion to the editor', function () {
+    const working = 'plain line\nAGENT text\n'
+    const view = createReviewView(working, [replacementSuggestion(working, 'old', 'AGENT')])
+    view.dispatch({ selection: { anchor: 0, head: 'plain'.length } })
+    assert.equal(reviewSelectionAsCriticMarkup(view.state), null)
   })
 })
