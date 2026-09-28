@@ -15,6 +15,17 @@ if (url === undefined || documentPath === undefined) {
 }
 
 const scene = await openScene({ width: 1400, height: 900, args: ["--ozone-platform=x11", "--disable-gpu"] });
+// The page's own account of a failed step: console output, uncaught errors
+// and failed requests, printed with the page text when a step throws.
+const pageLog = [];
+scene.page.on("console", (message) => pageLog.push(`console.${message.type()}: ${message.text()}`));
+scene.page.on("pageerror", (error) => pageLog.push(`pageerror: ${error.stack}`));
+scene.page.on("requestfailed", (request) =>
+  pageLog.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`),
+);
+scene.page.on("response", (response) => {
+  if (response.status() >= 400) pageLog.push(`response ${response.status()}: ${response.url()}`);
+});
 try {
   const { page } = scene;
   await page.goto(url);
@@ -74,6 +85,10 @@ try {
       staleSaveButtonEnabled,
     }),
   );
+} catch (error) {
+  const pageText = await scene.page.evaluate(() => document.body.innerText);
+  console.error(`page text:\n${pageText}\npage log:\n${pageLog.join("\n")}`);
+  throw error;
 } finally {
   await scene.close();
 }
