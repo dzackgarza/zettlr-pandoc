@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, type ExecFileException, execFile, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -58,12 +58,23 @@ describe("standalone TikZ workbench", function () {
     const root = process.cwd();
     server = spawn("bun", ["run", path.join(root, "packages/tikz-workbench/standalone/server.ts"), documentPath]);
     const url = await serverUrl(server);
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      ["-a", "node", path.join(root, "test/tikz-standalone-drive.mjs"), url, documentPath, directory],
-      { maxBuffer: 16 * 1024 * 1024 },
-    );
-    report = JSON.parse(stdout) as StandaloneReport;
+    let serverOutput = "";
+    server.stdout.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
+    server.stderr.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
+    try {
+      const { stdout } = await execFileAsync(
+        "xvfb-run",
+        ["-a", "node", path.join(root, "test/tikz-standalone-drive.mjs"), url, documentPath, directory],
+        { maxBuffer: 16 * 1024 * 1024 },
+      );
+      report = JSON.parse(stdout) as StandaloneReport;
+    } catch (error) {
+      const failure = error as ExecFileException & { stdout: string; stderr: string };
+      throw new Error(
+        `The standalone driver failed (exit code ${failure.code}, signal ${failure.signal}).\n` +
+          `driver stdout:\n${failure.stdout}\ndriver stderr:\n${failure.stderr}\nserver output:\n${serverOutput}`,
+      );
+    }
   });
 
   after(async function () {

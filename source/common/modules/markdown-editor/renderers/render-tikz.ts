@@ -137,20 +137,21 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
   const title = document.createElement("strong");
   box.appendChild(title);
   let diagnosticText = "";
+  let summary: string;
 
   switch (result.kind) {
     case "missing-tools":
-      title.textContent = `TikZ rendering requires tools that were not found: ${result.missing.join(", ")}`;
+      summary = `TikZ rendering requires tools that were not found: ${result.missing.join(", ")}`;
       break;
     case "toolchain-probe-failed":
       // Deliberately not "install this tool": the tool may well be installed.
       // The errno is the whole diagnosis — EACCES is a permission bit, EAGAIN
       // is resource exhaustion — and telling the user to install something
       // instead would send them after the wrong problem.
-      title.textContent = `TikZ could not check whether ${result.tool} is usable: the check failed with ${result.code}`;
+      summary = `TikZ could not check whether ${result.tool} is usable: the check failed with ${result.code}`;
       break;
     case "compile-error": {
-      title.textContent = "TikZ compilation failed";
+      summary = "TikZ compilation failed";
       for (const error of result.errors) {
         const line = document.createElement("div");
         const where = document.createElement("span");
@@ -177,7 +178,7 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       break;
     }
     case "pandoc-error": {
-      title.textContent = "TikZ render failed (pandoc error)";
+      summary = "TikZ render failed (pandoc error)";
       diagnosticText = result.log;
       const log = document.createElement("pre");
       log.textContent = result.log;
@@ -188,7 +189,7 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       // Naming the signal is the point: a killed render is not pandoc
       // reporting anything about the figure, and the user needs to know the
       // difference to act on it.
-      title.textContent = `TikZ render was killed by ${result.signal} before it finished`;
+      summary = `TikZ render was killed by ${result.signal} before it finished`;
       diagnosticText = result.log;
       const log = document.createElement("pre");
       log.textContent = result.log;
@@ -203,12 +204,13 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       );
     }
   }
+  title.textContent = summary;
 
   const copy = document.createElement("button");
   copy.type = "button";
   copy.textContent = "Copy diagnostics";
   copy.addEventListener("click", () => {
-    void navigator.clipboard.writeText(diagnosticText || title.textContent || "").catch((error) => {
+    void navigator.clipboard.writeText(diagnosticText === "" ? summary : diagnosticText).catch((error) => {
       reportError("Could not copy TikZ diagnostics", error);
     });
   });

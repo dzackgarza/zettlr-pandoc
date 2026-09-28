@@ -56,7 +56,13 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
     label: "Quiver editor",
     refreshable: false,
     supports: quiverCanEditBlock,
-    unavailableTitle: (target) => quiverSourceError(target) ?? "",
+    unavailableTitle: (target) => {
+      const error = quiverSourceError(target);
+      if (error === null) {
+        throw new Error("Quiver can edit this block, so it has no unavailable title");
+      }
+      return error;
+    },
   },
   {
     id: "visual",

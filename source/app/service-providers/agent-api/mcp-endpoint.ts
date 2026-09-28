@@ -63,23 +63,27 @@ function operationTool(operation: Operation): OperationTool {
   const required: string[] = [];
   const pathParameters: string[] = [];
   const queryParameters: string[] = [];
-  for (const parameter of operation.parameters ?? []) {
-    if ("$ref" in parameter) {
-      throw new Error(`Operation ${operationId} has an unresolved parameter ${parameter.$ref}`);
-    }
-    if (parameter.in === "path") {
-      pathParameters.push(parameter.name);
-    } else if (parameter.in === "query") {
-      queryParameters.push(parameter.name);
-    } else {
-      throw new Error(`Operation ${operationId} has a ${parameter.in} parameter; MCP tools carry none`);
-    }
-    properties[parameter.name] = {
-      ...parameter.schema,
-      ...(parameter.description === undefined ? {} : { description: parameter.description }),
-    };
-    if (parameter.required === true) {
-      required.push(parameter.name);
+  // OpenAPI omits `parameters` from an operation that takes none.
+  const parameters = operation.parameters;
+  if (parameters !== undefined) {
+    for (const parameter of parameters) {
+      if ("$ref" in parameter) {
+        throw new Error(`Operation ${operationId} has an unresolved parameter ${parameter.$ref}`);
+      }
+      if (parameter.in === "path") {
+        pathParameters.push(parameter.name);
+      } else if (parameter.in === "query") {
+        queryParameters.push(parameter.name);
+      } else {
+        throw new Error(`Operation ${operationId} has a ${parameter.in} parameter; MCP tools carry none`);
+      }
+      properties[parameter.name] = {
+        ...parameter.schema,
+        ...(parameter.description === undefined ? {} : { description: parameter.description }),
+      };
+      if (parameter.required === true) {
+        required.push(parameter.name);
+      }
     }
   }
   const requestBody = operation.requestBody;
@@ -157,7 +161,7 @@ export default class AgentMcpEndpoint {
       tools: [...this._tools.values()].map((entry) => entry.tool),
     }));
     server.server.setRequestHandler(CallToolRequestSchema, (request) =>
-      this.callTool(request.params.name, request.params.arguments ?? {}, apiOrigin),
+      this.callTool(request.params.name, request.params.arguments, apiOrigin),
     );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -173,7 +177,8 @@ export default class AgentMcpEndpoint {
 
   private async callTool(
     name: string,
-    args: ToolArguments,
+    // MCP omits `arguments` from a call that passes none.
+    args: ToolArguments | undefined,
     apiOrigin: string,
   ): Promise<CallToolResult> {
     const entry = this._tools.get(name);
@@ -182,7 +187,7 @@ export default class AgentMcpEndpoint {
     }
     let route = entry.path;
     for (const parameter of entry.pathParameters) {
-      const value = args[parameter];
+      const value = args?.[parameter];
       if (typeof value !== "string" && typeof value !== "number") {
         return {
           isError: true,
@@ -193,7 +198,7 @@ export default class AgentMcpEndpoint {
     }
     const url = new URL(route, apiOrigin);
     for (const parameter of entry.queryParameters) {
-      const value = args[parameter];
+      const value = args?.[parameter];
       if (value === undefined) {
         continue;
       }
@@ -201,7 +206,7 @@ export default class AgentMcpEndpoint {
         url.searchParams.append(parameter, item);
       }
     }
-    const body = args[BODY_ARGUMENT];
+    const body = args?.[BODY_ARGUMENT];
     const response = await fetch(url, {
       method: entry.method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },

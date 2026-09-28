@@ -50,7 +50,7 @@ export async function collectTikzCompilerFindings(
         from: block.sourceFrom,
         to: Math.max(block.sourceFrom, block.sourceTo),
         message:
-          headline === "" ? "TikZ compilation failed." : "TikZ compilation failed: " + headline,
+          headline === null ? "TikZ compilation failed." : "TikZ compilation failed: " + headline,
       });
     }
   }

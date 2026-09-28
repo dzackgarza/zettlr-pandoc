@@ -164,16 +164,18 @@ function summarizeFailure(failure: TikzRenderFailure): string {
   switch (failure.kind) {
     case "compile-error": {
       const first = failure.errors[0];
-      return first === undefined
-        ? tikzCompilerLogHeadline(failure.log) || "TikZ failed to compile without compiler output."
-        : `TikZ line ${first.line}: ${first.message}`;
+      if (first !== undefined) return `TikZ line ${first.line}: ${first.message}`;
+      const headline = tikzCompilerLogHeadline(failure.log);
+      return headline === null ? "TikZ failed to compile without compiler output." : headline;
     }
     case "missing-tools":
       return `TikZ tools not found: ${failure.missing.join(", ")}`;
     case "toolchain-probe-failed":
       return `Could not check ${failure.tool}: ${failure.code}`;
-    case "pandoc-error":
-      return tikzCompilerLogHeadline(failure.log) || "Pandoc returned no diagnostic.";
+    case "pandoc-error": {
+      const headline = tikzCompilerLogHeadline(failure.log);
+      return headline === null ? "Pandoc returned no diagnostic." : headline;
+    }
     case "render-terminated":
       return `TikZ render was terminated by ${failure.signal}.`;
     default: {
