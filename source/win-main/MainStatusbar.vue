@@ -128,6 +128,7 @@
       </button>
     </div>
     <div class="main-statusbar-group main-statusbar-right">
+      <NotificationCenter></NotificationCenter>
       <button
         id="statusbar-pomodoro"
         type="button"
@@ -191,8 +192,9 @@
  *                  store (project, MagicQuotes, rendering mode, readability,
  *                  cursor, counts, input mode, LanguageTool, diagnostics);
  *                  its right group carries the window-level items: the
- *                  Pomodoro ring, the long-running-task indicator and, when
- *                  an update exists, the update item. The bar computes
+ *                  notification center, the Pomodoro ring, the
+ *                  long-running-task indicator and, when an update
+ *                  exists, the update item. The bar computes
  *                  nothing about the document; it renders and emits.
  *
  * END HEADER
@@ -201,6 +203,7 @@
 import { computed } from 'vue'
 import { trans } from '@common/i18n-renderer'
 import IrisIndicator from '@common/vue/IrisIndicator.vue'
+import NotificationCenter from './NotificationCenter.vue'
 import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
 import localiseNumber from '@common/util/localise-number'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
