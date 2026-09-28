@@ -134,13 +134,28 @@ async function editLines (page: Page, input: EditInput): Promise<string> {
       throw new Error('The mounted pane exposes no CodeMirror view')
     }
 
+    // Changes only the characters that differ, as typing does: the text the
+    // two versions of the line share is left in place.
     const replaceLine = (from: string, to: string): void => {
       const doc = view.state.doc
       for (let number = 1; number <= doc.lines; number++) {
         const line = doc.line(number)
         if (line.text === from) {
+          const shorter = Math.min(from.length, to.length)
+          let prefix = 0
+          while (prefix < shorter && from[prefix] === to[prefix]) {
+            prefix++
+          }
+          let suffix = 0
+          while (suffix < shorter - prefix && from[from.length - 1 - suffix] === to[to.length - 1 - suffix]) {
+            suffix++
+          }
           view.dispatch({
-            changes: { from: line.from, to: line.to, insert: to },
+            changes: {
+              from: line.from + prefix,
+              to: line.to - suffix,
+              insert: to.slice(prefix, to.length - suffix)
+            },
             userEvent: 'input.type'
           })
           return
@@ -516,7 +531,7 @@ describe('a review decision waits for the document authority', function () {
     )
   })
 
-  it('rejects the edited chunk back to its reference text', async function () {
+  it('rejects the edited chunk back to its reference text and keeps the owner\'s edits', async function () {
     const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activeReviewId = requireInitialized(reviewId, 'the review must be open')
@@ -545,8 +560,8 @@ describe('a review decision waits for the document authority', function () {
     assert.deepEqual(await toastMessages(activePage), [])
     assert.equal(
       await workingText(activeApi),
-      textAtClick.replace('bravo proposed one two', 'bravo original'),
-      'rejecting the edited chunk restores its reference text and nothing else'
+      textAtClick.replace('bravo proposed one two', 'bravo original one two'),
+      'rejecting the edited chunk restores its reference text and keeps what the owner typed'
     )
   })
 
@@ -594,9 +609,9 @@ describe('a review decision waits for the document authority', function () {
     const noted = chunks.filter(chunk => chunk.comment !== undefined)
     assert.equal(noted.length, 1, `exactly one chunk must carry the note: ${JSON.stringify(chunks)}`)
     assert.equal(
-      noted[0].workingText,
-      'charlie proposed one two',
-      'the note must land on the edited chunk, not the one the pane was drawn with'
+      noted[0].chunkId,
+      notedChunk,
+      'the note must land on the chunk the owner edited around'
     )
   })
 
@@ -637,7 +652,7 @@ describe('a review decision waits for the document authority', function () {
     )
   })
 
-  it('rejects every remaining chunk, discarding the edits inside them', async function () {
+  it('rejects every remaining chunk and keeps the owner\'s edits beside them', async function () {
     const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
     const activePage = requireInitialized(page, 'the editor page must be initialized')
     const activePath = requireInitialized(documentPath, 'the document path must be initialized')
@@ -672,8 +687,8 @@ describe('a review decision waits for the document authority', function () {
 
     await waitFor(
       async () => await workingText(activeApi),
-      text => text === before,
-      'the rejected proposal to leave the text it was made against'
+      text => text === before.replace('echo proposed', 'echo proposed one two'),
+      'the rejected proposal to restore its reference text beside what the owner typed'
     )
     await waitForNoCards(activePage)
     assert.deepEqual(await toastMessages(activePage), [])
@@ -786,7 +801,7 @@ describe('a review decision waits for the document authority', function () {
     )
 
     // Leave the window closable: resolve the review and flush the buffer.
-    await toast.first().click()
+    await toast.first().locator('button[aria-label="Dismiss"]').click()
     // Disposing of the remaining chunks is the reviewer's: the review bar's
     // own control, which is the only surface that offers it. The other
     // pane's edits reach this pane as remote changes, so its bar is inert

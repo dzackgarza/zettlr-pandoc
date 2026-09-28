@@ -313,7 +313,6 @@ describe("suggestions through owner edits and later claims", function () {
     const before = structuredClone(noted.nextReview!);
     const edit = prepareWorkingTextEdit({
       review: noted.nextReview!,
-      textBefore: workingText,
       workingText: baseline,
       changes: ChangeSet.of(
         { from: 0, to: workingText.length, insert: baseline },
@@ -338,7 +337,6 @@ describe("suggestions through owner edits and later claims", function () {
       workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
     const edit = prepareWorkingTextEdit({
       review,
-      textBefore: workingText,
       workingText: edited,
       changes: ChangeSet.of(
         { from: insertionAt, insert: ownerText },
@@ -353,6 +351,31 @@ describe("suggestions through owner edits and later claims", function () {
     });
     assert.ok(!isTransitionError(rejected));
     assert.equal(rejected.nextWorkingText, "one OWNER middle two\n");
+  });
+
+  it("keeps the owner's text when rejecting a suggestion the owner wrote over", function () {
+    const { review, workingText } = withReview("alpha beta\n", "alpha GAMMA\n");
+    const from = workingText.indexOf("GAMMA");
+    const edited = workingText.replace("GAMMA", "OWNER");
+    const edit = prepareWorkingTextEdit({
+      review,
+      workingText: edited,
+      changes: ChangeSet.of(
+        { from, to: from + "GAMMA".length, insert: "OWNER" },
+        workingText.length,
+      ),
+    });
+    // No plan means the edit left the review as it was.
+    const reviewAfterEdit = edit?.nextReview ?? review;
+    assert.equal(
+      reviewAfterEdit.suggestions[0].state,
+      "proposed",
+      "the suggestion keeps its identity while it has text to restore",
+    );
+
+    const rejected = prepareClear({ review: reviewAfterEdit, workingText: edited });
+    assert.ok(!isTransitionError(rejected));
+    assert.equal(rejected.nextWorkingText, "alpha betaOWNER\n");
   });
 
   it("maps an earlier suggestion through a later claim and later rejection", function () {
@@ -456,7 +479,6 @@ describe("suggestions through owner edits and later claims", function () {
     const edited = workingText.slice(0, anchor.from) + workingText.slice(anchor.to);
     const edit = prepareWorkingTextEdit({
       review,
-      textBefore: workingText,
       workingText: edited,
       changes: ChangeSet.of({ from: anchor.from, to: anchor.to }, workingText.length),
     });

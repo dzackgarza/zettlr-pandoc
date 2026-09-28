@@ -4,14 +4,9 @@ import type { SuggestionSpan } from "@dts/common/review-domain";
 export interface MappedSuggestion {
   anchors: SuggestionSpan[];
   seam: number;
-  /** What the mapped region held before the review touched it. */
-  removedText: string;
   changed: boolean;
   destroyed: boolean;
 }
-
-/** The text a suggestion was anchored in before the changes were applied. */
-export type SliceBefore = (from: number, to: number) => string;
 
 interface Edit {
   fromA: number;
@@ -23,18 +18,17 @@ interface Edit {
 /**
  * Project one suggestion through a set of document changes.
  *
- * Two shapes of owner edit meet a suggestion, and they mean different things:
+ * Every owner edit is the owner's own text, never the agent's, as in Fidus
+ * Writer's track changes (`amend_transaction.js`): text the owner inserts or
+ * writes over a suggestion stays outside its anchors, and the anchors keep
+ * only the agent's characters that survive. Rejecting the suggestion
+ * therefore removes only agent text and restores only what the agent took
+ * out; the owner's typing is never discarded.
  *
- * - Text INSERTED inside the suggestion is the owner's, not the agent's, so
- *   the anchors split around it and it stays outside the region.
- * - Text the owner REPLACES is a rewrite of the region under review, so the
- *   suggestion absorbs the whole replaced stretch: its anchors cover what the
- *   owner wrote, and its reference grows to hold whatever that stretch read
- *   before the review — so rejecting it still restores the original passage,
- *   not just the words the agent put there.
- *
- * A deletion that puts nothing back replaces nothing: it leaves the split
- * path, where an anchor that loses all its text destroys the suggestion.
+ * A suggestion whose agent text is all gone keeps its identity while it
+ * still has something to restore: its anchors collapse to one seam where the
+ * text stood. A pure insertion with nothing left has nothing to decide, and
+ * is destroyed.
  */
 export function mapSuggestionThroughChanges(
   suggestion: {
@@ -43,7 +37,6 @@ export function mapSuggestionThroughChanges(
     removedText: string;
   },
   changes: ChangeDesc,
-  sliceBefore: SliceBefore,
 ): MappedSuggestion {
   const { anchors, seam, removedText } = suggestion;
   const edits: Edit[] = [];
@@ -52,83 +45,25 @@ export function mapSuggestionThroughChanges(
     true,
   );
 
-  const replacements = replacementsOver(anchors, edits);
-  const mapped =
-    replacements.length > 0
-      ? absorbReplacements(anchors, removedText, replacements, changes, sliceBefore)
-      : { anchors: splitAroundEdits(anchors, edits, changes), removedText };
+  let mappedAnchors = splitAroundEdits(anchors, edits, changes);
+  if (mappedAnchors.length === 0 && anchors.length > 0 && removedText !== "") {
+    const point = changes.mapPos(anchors[0].from, -1);
+    mappedAnchors = [{ from: point, to: point }];
+  }
 
-  const first = mapped.anchors[0];
+  const first = mappedAnchors[0];
   const mappedSeam = first === undefined ? changes.mapPos(seam, 1) : first.from;
   return {
-    anchors: mapped.anchors,
+    anchors: mappedAnchors,
     seam: mappedSeam,
-    removedText: mapped.removedText,
     changed:
       seam !== mappedSeam ||
-      removedText !== mapped.removedText ||
-      anchors.length !== mapped.anchors.length ||
+      anchors.length !== mappedAnchors.length ||
       anchors.some((span, index) => {
-        const next = mapped.anchors[index];
+        const next = mappedAnchors[index];
         return next === undefined || span.from !== next.from || span.to !== next.to;
       }),
-    destroyed: anchors.length > 0 && mapped.anchors.length === 0,
-  };
-}
-
-/**
- * The edits that rewrote part of this suggestion: they delete some of it and
- * put text back. An edit that only inserts, or only deletes, is not one.
- */
-function replacementsOver(anchors: readonly SuggestionSpan[], edits: readonly Edit[]): Edit[] {
-  if (anchors.length === 0) {
-    return [];
-  }
-  const from = anchors[0].from;
-  const to = anchors[anchors.length - 1].to;
-  return edits.filter(
-    (edit) => edit.toA > edit.fromA && edit.toB > edit.fromB && edit.fromA < to && edit.toA > from,
-  );
-}
-
-/**
- * The owner rewrote part of the region: one anchor over the whole rewritten
- * stretch, and a reference that holds what the stretch read before the
- * review.
- */
-// ponytail: one replacement that spans TWO suggestions is claimed by both,
-// and the sidecar refuses the overlap rather than corrupting the review.
-// Merging the two into one suggestion is the answer if that gesture matters.
-function absorbReplacements(
-  anchors: readonly SuggestionSpan[],
-  removedText: string,
-  replacements: readonly Edit[],
-  changes: ChangeDesc,
-  sliceBefore: SliceBefore,
-): { anchors: SuggestionSpan[]; removedText: string } {
-  const region = {
-    from: anchors[0].from,
-    to: anchors[anchors.length - 1].to,
-  };
-  const low = Math.min(region.from, ...replacements.map((edit) => edit.fromA));
-  const high = Math.max(region.to, ...replacements.map((edit) => edit.toA));
-  // The reference is the absorbed stretch as it stood before the review: the
-  // owner's own text where the anchors are not, and the removed text where
-  // they are.
-  let reference = "";
-  let cursor = low;
-  for (const [index, span] of anchors.entries()) {
-    reference += sliceBefore(cursor, span.from);
-    if (index === 0) {
-      reference += removedText;
-    }
-    cursor = span.to;
-  }
-  reference += sliceBefore(cursor, high);
-
-  return {
-    anchors: [{ from: changes.mapPos(low, -1), to: changes.mapPos(high, 1) }],
-    removedText: reference,
+    destroyed: anchors.length > 0 && mappedAnchors.length === 0,
   };
 }
 
@@ -143,7 +78,7 @@ function editMissesSpan(edit: Edit, span: SuggestionSpan, cursor: number): boole
   return edit.toA < cursor || (edit.fromA < span.from && edit.toA <= span.from);
 }
 
-/** One anchor's stretches that no edit inserted into, in document order. */
+/** One anchor's stretches that no edit touched, in document order. */
 function splitSpan(
   span: SuggestionSpan,
   edits: readonly Edit[],
@@ -179,7 +114,7 @@ function splitSpan(
   return kept;
 }
 
-/** The anchors with every inserted stretch inside them left out. */
+/** The anchors with every stretch an edit touched left out. */
 function splitAroundEdits(
   anchors: readonly SuggestionSpan[],
   edits: readonly Edit[],

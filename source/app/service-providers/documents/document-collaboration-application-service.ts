@@ -534,12 +534,8 @@ export class CollaborationApplicationService {
       return;
     }
 
-    // Read before commitDocument: the authority still holds the text the
-    // owner's changes were made against, which is what a suggestion the edit
-    // rewrites has to restore. A review without its document is not a state
-    // to map anchors in.
-    const textBefore = this.deps.authority.readWorkingText(documentId);
-    if (textBefore === undefined) {
+    // A review without its document is not a state to map anchors in.
+    if (this.deps.authority.readWorkingText(documentId) === undefined) {
       throw new Error(`Document ${documentId} has collaboration state but is not open`);
     }
 
@@ -547,7 +543,7 @@ export class CollaborationApplicationService {
     const reviewPlan =
       review === undefined
         ? undefined
-        : prepareWorkingTextEdit({ review, textBefore, workingText: nextWorkingText, changes });
+        : prepareWorkingTextEdit({ review, workingText: nextWorkingText, changes });
     const annotationPlan =
       annotationState === undefined
         ? undefined

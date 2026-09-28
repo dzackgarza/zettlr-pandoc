@@ -314,17 +314,12 @@ function changeSetForTextTransition(before: string, after: string): ChangeSet {
 function mapSuggestionAnchors(
   suggestions: ReviewSuggestion[],
   changes: ChangeDesc,
-  textBefore: string,
 ): boolean {
   let changed = false;
 
   for (const suggestion of suggestions) {
     if (suggestion.state !== "proposed") {continue;}
-    const mapped = mapSuggestionThroughChanges(
-      suggestion,
-      changes,
-      (from, to) => textBefore.slice(from, to),
-    );
+    const mapped = mapSuggestionThroughChanges(suggestion, changes);
     changed ||= mapped.changed;
     suggestion.anchors = mapped.anchors;
     suggestion.seam = mapped.seam;
@@ -333,13 +328,12 @@ function mapSuggestionAnchors(
       changed = true;
       continue;
     }
-    // The restoration and the kind are the reference read two other ways, so
-    // both are re-derived from it rather than mapped beside it.
-    suggestion.removedText = mapped.removedText;
-    suggestion.restorations = mapped.removedText === ""
+    // The restoration lands at the seam, and the kind follows what is left
+    // of the agent's text.
+    suggestion.restorations = suggestion.removedText === ""
       ? []
-      : [{ at: mapped.seam, text: mapped.removedText }];
-    suggestion.kind = mapped.removedText === ""
+      : [{ at: mapped.seam, text: suggestion.removedText }];
+    suggestion.kind = suggestion.removedText === ""
       ? "insertion"
       : mapped.anchors.every((anchor) => anchor.from === anchor.to)
         ? "deletion"
@@ -783,7 +777,6 @@ export function prepareProposalSubmission(input: {
     mapSuggestionAnchors(
       next.suggestions,
       changeSetForTextTransition(textBefore, step.textAfter),
-      textBefore,
     );
     next.suggestions.push(suggestionForClaim(textBefore, step.textAfter, packetId));
     next.generation += 1;
@@ -872,7 +865,7 @@ export function prepareChunkDecision(input: {
     const changes = rejectionChangeSet([suggestion], workingText.length);
     nextWorkingText = applyChangeSet(workingText, changes);
     suggestion.state = "rejected";
-    mapSuggestionAnchors(next.suggestions, changes, workingText);
+    mapSuggestionAnchors(next.suggestions, changes);
   }
   const unresolvedChunks = next.suggestions.filter(
     (candidate) => candidate.state === "proposed",
@@ -1192,7 +1185,7 @@ export function prepareRetraction(input: {
   );
   next.generation += 1;
   const nextWorkingText = normalizeText(reverted);
-  mapSuggestionAnchors(next.suggestions, retractionChanges, workingText);
+  mapSuggestionAnchors(next.suggestions, retractionChanges);
   const unresolvedChunks = next.suggestions.filter(
     (suggestion) => suggestion.state === "proposed",
   ).length;
@@ -1231,18 +1224,12 @@ export function prepareRetraction(input: {
  */
 export function prepareWorkingTextEdit(input: {
   review: ActiveReviewState;
-  /** The text the edit was made against — the reference the owner rewrote. */
-  textBefore: string;
   workingText: string;
   changes: ChangeDesc;
 }): ReviewMutationPlan<void> | undefined {
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const anchorsChanged = mapSuggestionAnchors(
-    next.suggestions,
-    input.changes,
-    normalizeText(input.textBefore),
-  );
+  const anchorsChanged = mapSuggestionAnchors(next.suggestions, input.changes);
   if (!anchorsChanged) {
     return undefined;
   }

@@ -70,19 +70,10 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
     }
     if (tr.docChanged) {
       const suggestions = value.suggestions.flatMap(suggestion => {
-        const mapped = mapSuggestionThroughChanges(
-          suggestion,
-          tr.changes,
-          (from, to) => tr.startState.doc.sliceString(from, to)
-        )
+        const mapped = mapSuggestionThroughChanges(suggestion, tr.changes)
         return mapped.destroyed
           ? []
-          : [{
-              ...suggestion,
-              anchors: mapped.anchors,
-              seam: mapped.seam,
-              removedText: mapped.removedText
-            }]
+          : [{ ...suggestion, anchors: mapped.anchors, seam: mapped.seam }]
       })
       return { ...buildFieldValue(tr.state, suggestions), synced: false }
     }
