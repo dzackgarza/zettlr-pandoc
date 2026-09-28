@@ -28,6 +28,7 @@ import type {
   LintResponse,
   MacroInventoryResponse,
   ReadDocumentResponse,
+  WorkspaceSearchResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -54,6 +55,7 @@ import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import DocumentManager from "source/app/service-providers/documents";
+import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
 import { sha256Text } from "source/common/util/sha256";
 import { parse as parseYaml } from "yaml";
@@ -340,6 +342,27 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return manager;
   }
 
+  // The Search view's provider over the scratch workspace. The FSAL seam walks
+  // and reads the real files, and open documents are read through the real
+  // document manager, so the search sees what the editor shows.
+  function createSearch(): SearchProvider {
+    return new SearchProvider(
+      new LogProvider(),
+      {
+        readDirectoryRecursively: async (workspacePath: string) =>
+          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => path.join(entry.parentPath, entry.name)),
+        isFile: async (filePath: string) => statSync(filePath).isFile(),
+        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+        loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
+      },
+      { get: () => ({ app: { openWorkspaces, openFiles: [] } }) },
+      provider,
+      userData,
+    );
+  }
+
   async function openFile(filePath: string, content: string): Promise<string> {
     writeFileSync(filePath, content, "utf8");
     await provider.getDocument(filePath);
@@ -475,6 +498,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
           }),
         },
+        search: createSearch(),
       },
       undefined,
       undefined,
@@ -737,6 +761,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
         }),
       },
+      search: createSearch(),
     });
 
     try {
@@ -902,8 +927,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(
       operations.length,
-      27,
-      "the consolidated OpenAPI spec must define exactly 27 operations",
+      28,
+      "the consolidated OpenAPI spec must define exactly 28 operations",
     );
     for (const { route, method, operation } of operations) {
       assert.equal(
@@ -1127,6 +1152,79 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("GET /v1/workspace/search finds text across closed files and live buffers", async function () {
+    const openPath = path.join(scratch, "open.md");
+    const openId = await openFile(openPath, "saved text\n");
+    const buffered = await httpRequest("GET", `/v1/documents/${openId}?includeContent=true`);
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: openPath, range: { from: 0, to: 5 }, insert: "lattice" },
+    ]);
+    assert.equal(buffered.status, 200);
+    const closedPath = path.join(scratch, "notes", "closed.md");
+    mkdirSync(path.dirname(closedPath), { recursive: true });
+    writeFileSync(closedPath, "first line\nan even lattice and a Lattice\n");
+
+    const found = await httpRequest("GET", "/v1/workspace/search?text=lattice");
+    assert.equal(found.status, 200);
+    const body = JSON.parse(found.body) as WorkspaceSearchResponse;
+    assertMatchesSchema(body, "WorkspaceSearchResponse");
+    assert.equal(body.truncated, false);
+    assert.equal(body.matchCount, 3);
+    const byPath = new Map(body.files.map((file) => [file.path, file]));
+    const open = byPath.get(openPath);
+    assert.ok(open !== undefined, "the unsaved buffer text must be searched");
+    assert.equal(open.documentId, openId);
+    assert.equal(open.open, true);
+    const closed = byPath.get(closedPath);
+    assert.ok(closed !== undefined);
+    assert.equal(closed.open, false);
+    assert.equal(closed.workspaceId !== undefined, true);
+    assert.deepEqual(
+      closed.matches.map((match) => [match.line, match.preview.inside]),
+      [
+        [2, "lattice"],
+        [2, "Lattice"],
+      ],
+    );
+    const closedRead = JSON.parse(
+      (await httpRequest("GET", `/v1/documents/${closed.documentId}?includeContent=true`)).body,
+    ) as ReadDocumentResponse;
+    assert.equal(closedRead.content, "first line\nan even lattice and a Lattice\n");
+
+    const cased = JSON.parse(
+      (await httpRequest("GET", "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md"))
+        .body,
+    ) as WorkspaceSearchResponse;
+    assert.deepEqual(
+      cased.files.map((file) => file.path),
+      [closedPath],
+    );
+    assert.equal(cased.matchCount, 1);
+
+    const capped = JSON.parse(
+      (await httpRequest("GET", "/v1/workspace/search?text=lattice&maxMatches=2")).body,
+    ) as WorkspaceSearchResponse;
+    assert.equal(capped.matchCount, 2);
+    assert.equal(capped.truncated, true);
+
+    const invalid = await httpRequest("GET", "/v1/workspace/search?text=(&regex=true");
+    assert.equal(invalid.status, 400);
+    assert.equal((JSON.parse(invalid.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+
+    // A catastrophic pattern is stopped at the per-file deadline, and the
+    // refusal names the file it could not finish.
+    const stallPath = path.join(scratch, "stall.md");
+    writeFileSync(stallPath, `${"a".repeat(40)}!\n`);
+    const stalled = await httpRequest(
+      "GET",
+      `/v1/workspace/search?regex=true&text=${encodeURIComponent("(a+)+$")}`,
+    );
+    assert.equal(stalled.status, 422);
+    const refusal = JSON.parse(stalled.body) as AgentErrorResponse;
+    assert.equal(refusal.error.code, "SEARCH_TIMEOUT");
+    assert.ok(refusal.error.message.includes(stallPath), refusal.error.message);
   });
 
   it("GET /v1/documents/{id} returns document metadata", async function () {
@@ -1668,6 +1766,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               },
             }),
           },
+          search: createSearch(),
         },
         undefined,
         DEADLINE_MS,

@@ -112,6 +112,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspace/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find text across every file in the workspaces
+         * @description The editor's find-in-files over every file in the open workspaces. Open documents are searched in their live buffer. Text is literal unless regex is true. Each file carries the documentId that the document routes take.
+         */
+        get: operations["searchWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workspaces": {
         parameters: {
             query?: never;
@@ -681,6 +701,37 @@ export interface components {
         };
         WorkspaceFilesResponse: {
             files: components["schemas"]["WorkspaceFileEntry"][];
+        };
+        WorkspaceSearchMatch: {
+            /** @description Character offsets into the file text, end exclusive. */
+            range: {
+                from: number;
+                to: number;
+            };
+            /** @description One-based line of the match start. */
+            line: number;
+            /** @description The line of the match: text before it (trimmed), the match, and text after it. */
+            preview: {
+                before: string;
+                inside: string;
+                after: string;
+            };
+        };
+        WorkspaceSearchFile: {
+            documentId: string;
+            path: string;
+            name: string;
+            /** @description The workspace that holds the file; absent for an open file outside every workspace. */
+            workspaceId?: string;
+            /** @description Whether the file is currently loaded in the editor. */
+            open: boolean;
+            matches: components["schemas"]["WorkspaceSearchMatch"][];
+        };
+        WorkspaceSearchResponse: {
+            files: components["schemas"]["WorkspaceSearchFile"][];
+            matchCount: number;
+            /** @description True when the search stopped at maxMatches; narrow the query or the globs. */
+            truncated: boolean;
         };
         SearchDocumentResponse: {
             documentId: string;
@@ -1272,6 +1323,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceFilesResponse"];
+                };
+            };
+        };
+    };
+    searchWorkspace: {
+        parameters: {
+            query: {
+                /** @description The text or regular expression to find. */
+                text: string;
+                /** @description Match letter case exactly. */
+                matchCase?: boolean;
+                /** @description Match only at word boundaries. */
+                wholeWord?: boolean;
+                /** @description Read text as a JavaScript regular expression. */
+                regex?: boolean;
+                /** @description Comma-separated globs relative to the workspace root; a file must match one. A glob without a slash matches at any depth, for example `*.md`. */
+                include?: string;
+                /** @description Comma-separated globs; a file that matches one is skipped. */
+                exclude?: string;
+                /** @description The search stops after this many matches and sets truncated. */
+                maxMatches?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The matching files, in workspace order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSearchResponse"];
+                };
+            };
+            /** @description Empty text or invalid regular expression */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Matching one file did not finish within the server deadline */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
                 };
             };
         };

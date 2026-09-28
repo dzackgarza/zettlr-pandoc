@@ -44,6 +44,7 @@ import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentManager from "source/app/service-providers/documents";
+import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
 import { sha256Text } from "@common/util/sha256";
 
@@ -177,6 +178,27 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     return manager;
   }
 
+  // The Search view's provider over the scratch workspace. The FSAL seam walks
+  // and reads the real files, and open documents are read through the real
+  // document manager, so the search sees what the editor shows.
+  function createSearch(): SearchProvider {
+    return new SearchProvider(
+      new LogProvider(),
+      {
+        readDirectoryRecursively: async (workspacePath: string) =>
+          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => path.join(entry.parentPath, entry.name)),
+        isFile: async (filePath: string) => statSync(filePath).isFile(),
+        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+        loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
+      },
+      { get: () => ({ app: { openWorkspaces, openFiles: [] } }) },
+      provider,
+      userData,
+    );
+  }
+
   async function openFile(filePath: string, content: string): Promise<string> {
     writeFileSync(filePath, content, "utf8");
     await provider.getDocument(filePath);
@@ -251,6 +273,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           agentApi: { enabled: true, port: 0, claimDescriptionSimilarityThreshold: 0.94 },
         }),
       },
+      search: createSearch(),
     });
     await httpProvider.boot();
     httpPort = Number.parseInt(

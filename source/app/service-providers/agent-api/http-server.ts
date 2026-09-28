@@ -72,6 +72,7 @@ import type FSAL from "@providers/fsal";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import type { SearchProvider } from "@providers/search";
 import crypto from "crypto";
 import { app } from "electron";
 import { get as levenshteinDistance } from "fast-levenshtein";
@@ -103,7 +104,11 @@ import {
 } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
-import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
+import AgentDocumentQueries, {
+  SEARCH_DEADLINE_MS,
+  SearchPatternError,
+  SearchTimeoutError,
+} from "./document-queries";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
 
@@ -305,6 +310,7 @@ export interface AgentApiHost {
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
+  search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
 }
 
@@ -760,6 +766,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
       listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
+      searchWorkspace: (
+        c: DefaultedOperationContext<
+          "searchWorkspace",
+          "matchCase" | "wholeWord" | "regex" | "include" | "exclude" | "maxMatches"
+        >,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleSearchWorkspace(res, c.request.query),
       listWorkspaces: (
         c: OperationContext<"listWorkspaces">,
         _req,
@@ -1048,6 +1062,62 @@ export default class AgentHTTPProvider extends ProviderContract {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /**
+   * GET /v1/workspace/search — the Search view's find-in-files, run to
+   * completion: every file across the workspaces that matches, with each
+   * match's line, offsets and preview, and the documentId the other routes
+   * take.
+   */
+  private async handleSearchWorkspace(
+    res: http.ServerResponse,
+    query: DefaultedQuery<
+      "searchWorkspace",
+      "matchCase" | "wholeWord" | "regex" | "include" | "exclude" | "maxMatches"
+    >,
+  ): Promise<void> {
+    const outcome = await this._app.search.searchWorkspace(
+      {
+        text: query.text,
+        matchCase: query.matchCase,
+        wholeWord: query.wholeWord,
+        regex: query.regex,
+        include: query.include,
+        exclude: query.exclude,
+      },
+      query.maxMatches,
+      SEARCH_DEADLINE_MS,
+    );
+    if (outcome.status === "invalid-query") {
+      this.sendError(res, 400, "INVALID_PARAMS", outcome.message);
+      return;
+    }
+    if (outcome.status === "timeout") {
+      this.sendError(
+        res,
+        422,
+        "SEARCH_TIMEOUT",
+        `Search did not finish within the server deadline in ${outcome.documentPath}; simplify the pattern`,
+      );
+      return;
+    }
+    const workspaces = this._app.config.get().app.openWorkspaces;
+    const loaded = new Set(this._documents.loadedDocuments.map((document) => document.filePath));
+    this.sendJson(res, 200, {
+      files: outcome.results.map((result) => ({
+        documentId: this._documents.ensureDocumentId(result.documentPath),
+        path: result.documentPath,
+        name: path.basename(result.documentPath),
+        workspaceId: workspaces.find((workspace) =>
+          result.documentPath.startsWith(`${workspace}${path.sep}`),
+        ),
+        open: loaded.has(result.documentPath),
+        matches: result.matches,
+      })),
+      matchCount: outcome.matchCount,
+      truncated: outcome.truncated,
+    });
   }
 
   private async handleListWorkspaceDocuments(

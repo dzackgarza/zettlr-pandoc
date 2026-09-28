@@ -44,7 +44,7 @@ import {
 } from "@providers/documents/review-diff-store";
 
 const SEARCH_CONTEXT_DEFAULT = 3;
-const SEARCH_DEADLINE_MS = 1000;
+export const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
 
 export class SearchPatternError extends Error {

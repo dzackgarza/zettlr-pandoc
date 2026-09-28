@@ -347,6 +347,9 @@ export class AppServiceContainer {
   public get references (): ReferenceProvider {
     return this._referenceProvider
   }
+  public get search (): SearchProvider {
+    return this._searchProvider
+  }
   public get stats (): StatsProvider {
     return this._statsProvider
   }

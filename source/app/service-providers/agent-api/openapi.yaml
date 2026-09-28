@@ -679,6 +679,85 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceFileEntry'
+    WorkspaceSearchMatch:
+      type: object
+      required:
+        - range
+        - line
+        - preview
+      properties:
+        range:
+          type: object
+          description: Character offsets into the file text, end exclusive.
+          required:
+            - from
+            - to
+          properties:
+            from:
+              type: integer
+            to:
+              type: integer
+        line:
+          type: integer
+          description: One-based line of the match start.
+        preview:
+          type: object
+          description: 'The line of the match: text before it (trimmed), the match, and
+            text after it.'
+          required:
+            - before
+            - inside
+            - after
+          properties:
+            before:
+              type: string
+            inside:
+              type: string
+            after:
+              type: string
+    WorkspaceSearchFile:
+      type: object
+      required:
+        - documentId
+        - path
+        - name
+        - open
+        - matches
+      properties:
+        documentId:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
+          description: The workspace that holds the file; absent for an open file outside
+            every workspace.
+        open:
+          type: boolean
+          description: Whether the file is currently loaded in the editor.
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceSearchMatch'
+    WorkspaceSearchResponse:
+      type: object
+      required:
+        - files
+        - matchCount
+        - truncated
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceSearchFile'
+        matchCount:
+          type: integer
+        truncated:
+          type: boolean
+          description: True when the search stopped at maxMatches; narrow the query or the
+            globs.
     SearchDocumentResponse:
       type: object
       required:
@@ -1997,6 +2076,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkspaceFilesResponse'
+  /v1/workspace/search:
+    get:
+      operationId: searchWorkspace
+      x-openai-isConsequential: false
+      summary: Find text across every file in the workspaces
+      description: >-
+        The editor's find-in-files over every file in the open workspaces. Open
+        documents are searched in their live buffer. Text is literal unless
+        regex is true. Each file carries the documentId that the document
+        routes take.
+      parameters:
+        - name: text
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+          description: The text or regular expression to find.
+        - name: matchCase
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Match letter case exactly.
+        - name: wholeWord
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Match only at word boundaries.
+        - name: regex
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Read text as a JavaScript regular expression.
+        - name: include
+          in: query
+          schema:
+            type: string
+            default: ''
+          description: Comma-separated globs relative to the workspace root; a file must
+            match one. A glob without a slash matches at any depth, for example
+            `*.md`.
+        - name: exclude
+          in: query
+          schema:
+            type: string
+            default: ''
+          description: Comma-separated globs; a file that matches one is skipped.
+        - name: maxMatches
+          in: query
+          schema:
+            type: integer
+            default: 200
+            minimum: 1
+            maximum: 1000
+          description: The search stops after this many matches and sets truncated.
+      responses:
+        '200':
+          description: The matching files, in workspace order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceSearchResponse'
+        '400':
+          description: Empty text or invalid regular expression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '422':
+          description: Matching one file did not finish within the server deadline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/workspaces:
     get:
       operationId: listWorkspaces

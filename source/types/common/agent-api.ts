@@ -36,6 +36,7 @@ export type SearchDocumentRequest =
   operations["searchDocument"]["requestBody"]["content"]["application/json"];
 export type SearchDocumentResponse = Schemas["SearchDocumentResponse"];
 export type SearchHit = SearchDocumentResponse["hits"][number];
+export type WorkspaceSearchResponse = Schemas["WorkspaceSearchResponse"];
 export type ProposalClaim = Schemas["ProposalClaim"];
 
 /**

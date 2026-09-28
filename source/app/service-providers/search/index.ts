@@ -33,12 +33,13 @@ import {
 import { compilePathFilter } from './util/search-globs'
 import type FSAL from '../fsal'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import type ConfigProvider from '../config'
+import type { ConfigOptions } from '../config/get-config-template'
 import type DocumentManager from '../documents'
 import path from 'path'
+import vm from 'vm'
 import { hashDocumentSource } from '@common/pandoc-util/extract-references'
 import type { WorkspaceTextEdit } from '@dts/common/references'
-import { runWorkspaceEditTransaction } from '../references/workspace-edit-transaction'
+import { runWorkspaceEditTransaction, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
 
 export type { SearchMatch, SearchQuery } from './util/search-query'
 
@@ -62,6 +63,12 @@ export interface ReplaceTarget {
   sourceHash: string
   ranges: Array<{ from: number, to: number }>
 }
+
+/** A search run to completion for the agent API. */
+export type WorkspaceSearchOutcome =
+  | { status: 'ok', results: FileSearchResult[], matchCount: number, truncated: boolean }
+  | { status: 'invalid-query', message: string }
+  | { status: 'timeout', documentPath: string }
 
 export type ReplaceOutcome =
   | { status: 'applied', documentsChanged: string[], matchesReplaced: number }
@@ -135,10 +142,10 @@ export class SearchProvider implements ProviderContract {
 
   constructor (
     private readonly _logger: LogProvider,
-    private readonly _fsal: FSAL,
-    private readonly _config: ConfigProvider,
+    private readonly _fsal: Pick<FSAL, 'readDirectoryRecursively' | 'isFile' | 'getDescriptorForAnySupportedFile' | 'loadAnySupportedFile'>,
+    private readonly _config: { get: () => { app: Pick<ConfigOptions['app'], 'openWorkspaces' | 'openFiles'> } },
     /** The document authority: open Markdown buffers are searched and replaced through it. */
-    private readonly _documents: DocumentManager,
+    private readonly _documents: WorkspaceEditAuthority & Pick<DocumentManager, 'saveFile'>,
     /** Where the workspace-edit transaction keeps its journal. */
     private readonly _journalDirectory: string
   ) {
@@ -219,33 +226,9 @@ export class SearchProvider implements ProviderContract {
       return 0
     }
 
-    const { openWorkspaces, openFiles } = this._config.get().app
-    const roots = [...openWorkspaces]
-    const candidates = (await Promise.all(roots.map(async root => await this._fsal.readDirectoryRecursively(root)))).flat()
-    if (generation !== this.searchGeneration) {
-      return 0 // A newer request took ownership while this one enumerated roots.
-    }
-    const includesPath = compilePathFilter(query.include, query.exclude)
-    const queue: string[] = []
-
-    for (const candidate of candidates.concat(openFiles)) {
-      if (generation !== this.searchGeneration) {
-        return 0
-      }
-      if (!includesPath(this.relativePath(candidate, roots))) {
-        continue
-      }
-      const candidateIsFile = await this._fsal.isFile(candidate)
-      if (generation !== this.searchGeneration) {
-        return 0
-      }
-      if (candidateIsFile && !queue.includes(candidate)) {
-        queue.push(candidate)
-      }
-    }
-
-    if (generation !== this.searchGeneration) {
-      return 0
+    const queue = await this.filesToSearch(query, () => generation === this.searchGeneration)
+    if (queue === undefined) {
+      return 0 // A newer request took ownership while this one enumerated the workspaces.
     }
     this.fileSearchQueue = queue
     this.currentSearch = { pattern: compiled.pattern, generation }
@@ -254,6 +237,100 @@ export class SearchProvider implements ProviderContract {
 
     this.searchNextFile()
     return this.sumFilesToSearch
+  }
+
+  /**
+   * Runs a query to completion and returns every file's matches at once, for
+   * a caller that cannot listen to the view's broadcasts (the agent API).
+   * The files, the matching and the previews are the Search view's. Matching
+   * one file runs under a deadline, because the pattern comes from outside
+   * the app and a catastrophic regular expression would otherwise stall the
+   * main process. The search stops at maxMatches matches and says so.
+   */
+  public async searchWorkspace (query: SearchQuery, maxMatches: number, fileDeadlineMs: number): Promise<WorkspaceSearchOutcome> {
+    const compiled = compileQuery(query)
+    if (compiled.status === 'empty') {
+      return { status: 'invalid-query', message: 'The search text is empty' }
+    }
+    if (compiled.status === 'invalid-regex') {
+      return { status: 'invalid-query', message: compiled.message }
+    }
+
+    const queue = await this.filesToSearch(query, () => true)
+    if (queue === undefined) {
+      throw new Error('[Search Provider] A workspace search without a generation was superseded')
+    }
+    const results: FileSearchResult[] = []
+    let matchCount = 0
+    for (const absPath of queue) {
+      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath)
+      if (descriptor.type === 'other') {
+        continue
+      }
+      const source = await this.readSource(absPath)
+      let matches: SearchMatch[]
+      try {
+        // The same watchdog the single-document agent search runs under:
+        // Node interrupts the script, and the regular expression inside it,
+        // once the timeout passes.
+        matches = vm.runInNewContext(
+          'matchDocument(source, pattern)',
+          { matchDocument, source, pattern: compiled.pattern },
+          { timeout: fileDeadlineMs }
+        ) as SearchMatch[]
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
+          return { status: 'timeout', documentPath: absPath }
+        }
+        throw err
+      }
+      if (matches.length === 0) {
+        continue
+      }
+      const kept = matches.slice(0, maxMatches - matchCount)
+      results.push({
+        documentPath: absPath,
+        sourceHash: hashDocumentSource(source),
+        replaceable: descriptor.type === 'file',
+        matches: kept
+      })
+      matchCount += kept.length
+      if (kept.length < matches.length) {
+        return { status: 'ok', results, matchCount, truncated: true }
+      }
+    }
+    return { status: 'ok', results, matchCount, truncated: false }
+  }
+
+  /**
+   * The files a query admits, in workspace order and without duplicates:
+   * every file under the open workspaces, then the open files, filtered by
+   * the query's globs. Undefined when isCurrent reports that a newer search
+   * took over while the workspaces were walked.
+   */
+  private async filesToSearch (query: SearchQuery, isCurrent: () => boolean): Promise<string[]|undefined> {
+    const { openWorkspaces, openFiles } = this._config.get().app
+    const roots = [...openWorkspaces]
+    const candidates = (await Promise.all(roots.map(async root => await this._fsal.readDirectoryRecursively(root)))).flat()
+    if (!isCurrent()) {
+      return undefined
+    }
+    const includesPath = compilePathFilter(query.include, query.exclude)
+    const queue: string[] = []
+
+    for (const candidate of candidates.concat(openFiles)) {
+      if (!includesPath(this.relativePath(candidate, roots))) {
+        continue
+      }
+      const candidateIsFile = await this._fsal.isFile(candidate)
+      if (!isCurrent()) {
+        return undefined
+      }
+      if (candidateIsFile && !queue.includes(candidate)) {
+        queue.push(candidate)
+      }
+    }
+    return queue
   }
 
   /**
