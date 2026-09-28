@@ -32,6 +32,7 @@ try {
     undefined,
     { timeout: 60_000 },
   );
+  await page.frameLocator('iframe[title="TikZ visual editor"]').getByTestId("app-menubar").waitFor();
   const visualStatus = await page.locator(".tikz-live-preview-status").textContent();
   await scene.capture("02-visual-editor");
 

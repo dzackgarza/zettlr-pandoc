@@ -4,6 +4,17 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: import.meta.dirname,
   plugins: [vue()],
+  resolve: {
+    // The repository's patch to @tikz-editor/lang-tikz
+    // (patches/@tikz-editor%2Flang-tikz@0.5.1.patch) points its imports at the
+    // CommonJS builds, which Zettlr's webpack bundle uses. This ES module build
+    // must load the same ES module copies as every other import, or CodeMirror
+    // sees two instances of @codemirror/state.
+    alias: [
+      { find: /^.*\/@codemirror\/language\/dist\/index\.cjs$/u, replacement: "@codemirror/language" },
+      { find: /^.*\/@lezer\/highlight\/dist\/index\.cjs$/u, replacement: "@lezer/highlight" },
+    ],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
