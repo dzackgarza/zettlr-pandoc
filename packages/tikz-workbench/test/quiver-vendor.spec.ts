@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
 describe('vendored Quiver fork', function () {
-  const root = path.join(process.cwd(), 'vendor', 'quiver')
+  const root = path.join(__dirname, '..', 'vendor', 'quiver')
 
   it('pins upstream provenance and carries the MIT license locally', async function () {
     const provenance = await readFile(path.join(root, 'PROVENANCE.toml'), 'utf8')
@@ -48,7 +48,7 @@ describe('vendored Quiver fork', function () {
   })
 
   it('ships the deterministic vendor refresh command', async function () {
-    const refresh = await readFile(path.join(process.cwd(), 'scripts', 'update-quiver-vendor.mjs'), 'utf8')
+    const refresh = await readFile(path.join(__dirname, '..', 'scripts', 'update-quiver-vendor.mjs'), 'utf8')
     assert.match(refresh, /git.*apply/su)
     assert.match(refresh, /katex\.zip/u)
     assert.match(refresh, /upstream_commit/u)

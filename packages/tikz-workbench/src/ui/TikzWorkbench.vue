@@ -1,7 +1,7 @@
 <template>
   <aside
     class="tikz-live-preview"
-    :class="{ fullscreen }"
+    :class="{ fullscreen, dark: props.theme === 'dark' }"
     aria-label="TikZ workbench"
     :data-tikz-language="props.target.language"
   >
@@ -27,10 +27,9 @@
       </div>
 
       <span class="tikz-live-preview-status">{{ unavailableMessage !== '' ? 'Unavailable' : activeStatus }}</span>
-      <LoadingSpinner
+      <span
         v-if="activeBusy"
         class="tikz-live-preview-spinner"
-        :spinner-size="14"
         aria-hidden="true"
       />
       <button
@@ -68,7 +67,8 @@
         :key="`${activeProvider.id}\0${targetIdentity(props.target)}`"
         class="tikz-live-preview-provider"
         :target="props.target"
-        :editor-view="props.editorView"
+        :host="props.host"
+        :theme="props.theme"
         :fullscreen="fullscreen"
         @exit-fullscreen="fullscreen = false"
         @status="activeStatus = $event"
@@ -83,11 +83,11 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Provider-driven TikZ preview sidecar
+ * Contains:        TikZ workbench shell
  * CVM-Role:        View
  * License:         GNU GPL v3
  *
- * Description:     One RHS surface for TikZ authoring whose preview/editor
+ * Description:     One surface for TikZ authoring whose preview/editor
  *                  modes are registered providers. The shell owns only mode
  *                  selection, status, refresh dispatch and fullscreen geometry;
  *                  each provider owns its rendering and source synchronization.
@@ -96,24 +96,21 @@
  */
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { EditorView } from '@codemirror/view'
-import {
-  type TikzLivePreviewTarget
-} from '@common/modules/markdown-editor/tikz-live-preview'
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from '../host'
+import type { TikzLivePreviewTarget } from '../live-preview'
 import {
   defaultTikzPreviewMode,
   type TikzPreviewModeId
-} from '@common/modules/markdown-editor/tikz-preview-modes'
-import { reportError } from '@common/util/error-reporting'
-import LoadingSpinner from 'source/common/vue/LoadingSpinner.vue'
+} from '../preview-modes'
 import {
   TIKZ_PREVIEW_PROVIDERS,
   type TikzPreviewProvider
-} from './tikz-preview-providers'
+} from './providers'
 
 const props = defineProps<{
   target: TikzLivePreviewTarget
-  editorView: EditorView
+  host: TikzWorkbenchHost
+  theme: TikzWorkbenchTheme
 }>()
 
 const fullscreen = ref(false)
@@ -138,14 +135,14 @@ const unavailableMessage = computed(() => activeProvider.value.supports(props.ta
 watch([unavailableMessage, () => props.target.docPath, () => props.target.sourceFrom], ([message, docPath, sourceFrom]) => {
   copyError.value = ''
   if (message !== '') {
-    reportError(`TikZ editor mode unavailable in ${docPath}:${sourceFrom}`, message)
+    props.host.reportError(`TikZ editor mode unavailable in ${docPath}:${sourceFrom}`, message)
   }
 }, { immediate: true })
 
 function copyUnavailableMessage (): void {
   void navigator.clipboard.writeText(unavailableMessage.value).catch(error => {
     copyError.value = error instanceof Error ? error.message : String(error)
-    reportError('Could not copy TikZ editor error', error)
+    props.host.reportError('Could not copy TikZ editor error', error)
   })
 }
 
@@ -270,7 +267,17 @@ onBeforeUnmount(() => {
 
 .tikz-live-preview-spinner {
   flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
   opacity: 0.72;
+  animation: tikz-live-preview-spin 0.8s linear infinite;
+}
+
+@keyframes tikz-live-preview-spin {
+  to { transform: rotate(360deg); }
 }
 
 .tikz-live-preview-action {
@@ -314,12 +321,9 @@ onBeforeUnmount(() => {
   button { margin-left: 8px; cursor: pointer; }
 }
 
-:global(body.dark .tikz-live-preview) {
+.tikz-live-preview.dark {
   background: #252526;
-}
 
-:global(body.dark .tikz-live-preview-header) {
-  border-bottom-color: #444;
+  .tikz-live-preview-header { border-bottom-color: #444; }
 }
-
 </style>

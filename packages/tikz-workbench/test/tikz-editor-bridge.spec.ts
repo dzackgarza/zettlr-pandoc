@@ -2,9 +2,9 @@ import { strict as assert } from "node:assert";
 import {
   tikzEditorReplacement,
   tikzEditorSessionForBlock,
-} from "source/common/modules/markdown-editor/tikz-editor-bridge";
-import type { TikzLivePreviewTarget } from "source/common/modules/markdown-editor/tikz-live-preview";
-import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
+} from "../src/editor-bridge";
+import type { TikzLivePreviewTarget } from "../src/live-preview";
+import { contiguousSourceLineRanges } from "../src/source-block";
 
 describe("tikz-editor source bridge", function () {
   const source = String.raw`\begin{tikzpicture}

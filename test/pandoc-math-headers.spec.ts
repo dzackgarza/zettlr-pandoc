@@ -10,7 +10,7 @@ import YAML from 'yaml'
 import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
 import { injectPandocMathHeaders } from 'source/app/service-providers/commands/exporter/pandoc-math-headers'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
-import type { MathJaxMacro } from 'source/common/util/mathjax-config'
+import type { MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 
 // Example macro fixture loaded through the real loader; the app ships none.
 let macros: Record<string, MathJaxMacro>

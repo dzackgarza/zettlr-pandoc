@@ -68,3 +68,6 @@ __pycache__/
 # fingerprint depends on this).
 .agents
 .hermes
+
+# Vite build of the standalone TikZ workbench page
+packages/tikz-workbench/standalone/dist

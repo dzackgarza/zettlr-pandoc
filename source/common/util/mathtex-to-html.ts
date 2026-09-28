@@ -33,7 +33,7 @@ import { type MmlNode } from '@mathjax/src/cjs/core/MmlTree/MmlNode.js'
 import { HTMLDocument } from '@mathjax/src/cjs/handlers/html/HTMLDocument.js'
 import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
 import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js'
-import { mathJaxPackages, type MathJaxMacro } from './mathjax-config'
+import { mathJaxPackages, type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 
 import './mathjax-newcm-dynamic'
 

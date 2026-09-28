@@ -15,13 +15,18 @@ ai_review_ci_default_branch := "develop"
 default:
     @just --list
 
-# Edit and compile one TikZ file without launching Zettlr.
+# Edit and compile one .tikz or .tikzcd file in the standalone TikZ workbench.
+[no-cd]
 tikz-standalone file:
-    {{bun}} run "{{justfile_directory()}}/scripts/tikz-standalone.ts" "{{file}}"
+    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/standalone/server.ts" "{{file}}"
 
 # Rebuild the pinned source-aware TikZ editor and local MathJax assets.
 update-tikz-editor-vendor:
-    {{bun}} run "{{justfile_directory()}}/scripts/update-tikz-editor-vendor.mjs"
+    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/scripts/update-tikz-editor-vendor.mjs"
+
+# Rebuild the pinned Quiver fork and its local KaTeX distribution.
+update-quiver-vendor:
+    {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/scripts/update-quiver-vendor.mjs"
 
 [private]
 sync-dependencies:

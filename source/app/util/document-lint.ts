@@ -4,7 +4,7 @@ import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import path from "node:path";
 import { lintMarkdownText } from "./flowmark-lint";
-import type { TikzRenderConfig } from "./tikz-render";
+import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
 import { buildFlowmarkLintContext } from "./flowmark-lint-context";
 
 export interface DocumentLintSharedContext {

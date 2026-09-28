@@ -3,14 +3,14 @@ import { EditorState } from "@codemirror/state";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import type { TikzSourceBlock } from "source/common/modules/markdown-editor/tikz-block";
+import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import {
   quiverReplacement,
   quiverSessionForBlock,
   quiverSourceForSession,
   sourceForQuiverExport,
-} from "source/common/modules/markdown-editor/tikz-quiver";
-import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
+} from "tikz-workbench/src/quiver-bridge";
+import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
 
 function rawBlock(source: string): TikzSourceBlock & { authoredSource: string } {
   return {

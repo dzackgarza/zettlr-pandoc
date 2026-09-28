@@ -13,7 +13,7 @@ import {
   snippet as codeMirrorSnippet,
   startCompletion,
 } from "@codemirror/autocomplete";
-import type { MathJaxMacro } from "@common/util/mathjax-config";
+import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import { mathJaxCompletionCatalogue } from "@common/util/mathtex-to-html";
 import { standardTexControlWords } from "@common/util/standard-tex-control-words";
 import latexWorkshopCommands from "../../../../../static/autocomplete/latex-workshop-commands.json";

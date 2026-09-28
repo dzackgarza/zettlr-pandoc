@@ -8,7 +8,7 @@ import YAML from 'yaml'
 import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
 import { runScriptExport } from 'source/app/service-providers/commands/exporter/script-exporter'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
-import type { MathJaxMacro } from 'source/common/util/mathjax-config'
+import type { MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import type { ExporterAPI, ExporterOptions } from 'source/app/service-providers/commands/exporter/types'
 
 const execFileAsync = promisify(execFile)

@@ -25,7 +25,7 @@ import {
 const here = import.meta.dirname
 
 async function computeResponses () {
-  const { renderTikz } = await import('../source/app/util/tikz-render.ts')
+  const { renderTikz } = await import('../packages/tikz-workbench/src/tikz-render.ts')
   const {
     SCENE_DOC,
     TEXTBOOK_MEDIUM_SCENE_DOC,
@@ -52,8 +52,8 @@ async function computeResponses () {
   // something it reads for itself; the harness states the one it is asking
   // for.
   const config = {
-    tikzAssetDir: path.join(here, '../static/tikz'),
-    templatePath: path.join(here, '../static/tikz/templates/standalone-tikz.tex'),
+    tikzAssetDir: path.join(here, '../packages/tikz-workbench/test/fixtures/tikz-data'),
+    templatePath: path.join(here, '../packages/tikz-workbench/test/fixtures/tikz-data/templates/standalone-tikz.tex'),
     cacheDir: path.join(outputDirectory, 'tikz-cache'),
     env: process.env
   }
@@ -152,7 +152,7 @@ async function capture (view, responses, spec) {
       figures: document.querySelectorAll('.tikz-figure').length,
       svgs: document.querySelectorAll('.tikz-figure svg').length,
       livePreview: document.querySelector('.tikz-live-preview') !== null,
-      liveViewer: document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs') !== null,
+      liveViewer: document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs') !== null,
       liveStatus: document.querySelector('.tikz-live-preview-status')?.textContent ?? null,
       editorWidth,
       editorFontPx,
@@ -222,7 +222,7 @@ async function capture (view, responses, spec) {
     // the exact Viewer.js node remains mounted; there is no Viewer.js modal or
     // second lightbox surface.
     const marked = await view.page.evaluate(() => {
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       if (!(viewer instanceof HTMLElement)) return false
       viewer.dataset.visualIdentity = 'same-rhs-viewer'
       return true
@@ -232,11 +232,11 @@ async function capture (view, responses, spec) {
     }
     await view.page.locator('.tikz-live-preview-expand').click()
     await view.page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') === true)
-    const expandedIdentity = await view.page.locator('.tikz-live-preview-figure .zettlr-tikz-viewerjs').getAttribute('data-visual-identity')
+    const expandedIdentity = await view.page.locator('.tikz-live-preview-figure .tikz-workbench-viewerjs').getAttribute('data-visual-identity')
     if (expandedIdentity !== 'same-rhs-viewer') {
       throw new Error(`${spec.name}: pane fullscreen replaced the Viewer.js instance`)
     }
-    if (await view.page.locator('.zettlr-tikz-viewerjs.viewer-fixed').count() !== 0) {
+    if (await view.page.locator('.tikz-workbench-viewerjs.viewer-fixed').count() !== 0) {
       throw new Error(`${spec.name}: unified pane expansion must not enter Viewer.js modal mode`)
     }
     await view.page.locator('.tikz-live-preview-expand').click()

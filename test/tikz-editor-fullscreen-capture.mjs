@@ -8,7 +8,7 @@ if (typeof outputDirectory !== "string" || outputDirectory === "") {
 }
 
 await cp(
-  path.join(process.cwd(), "vendor/tikz-editor/src"),
+  path.join(process.cwd(), "packages/tikz-workbench/vendor/tikz-editor/src"),
   path.join(outputDirectory, "tikz-editor"),
   { recursive: true },
 );

@@ -1,5 +1,5 @@
 import assert from 'assert'
-import { type MathJaxMacro } from 'source/common/util/mathjax-config'
+import { type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import { projectMathJaxHeader, projectTexHeader } from 'source/app/service-providers/commands/exporter/macro-projections'
 
 const macros = {

@@ -10,7 +10,7 @@ import {
 import { REFERENCE_FAMILIES } from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
-import { renderTikz, type TikzRenderConfig } from "./tikz-render";
+import { renderTikz, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
 
 export interface FlowmarkLintContextSource {
   homeDirectory: string;

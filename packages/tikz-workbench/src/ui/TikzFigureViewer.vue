@@ -1,7 +1,7 @@
 <template>
   <div
     class="tikz-figure-viewer"
-    :data-svg-path="svgPath"
+    :class="{ dark: props.theme === 'dark' }"
   >
     <img
       ref="imageElement"
@@ -33,10 +33,11 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Viewer from 'viewerjs'
 import 'viewerjs/dist/viewer.css'
-import makeValidUri from '@common/util/make-valid-uri'
+import type { TikzWorkbenchTheme } from '../host'
 
 const props = withDefaults(defineProps<{
-  svgPath: string
+  src: string
+  theme: TikzWorkbenchTheme
   showFullscreenButton?: boolean
 }>(), {
   showFullscreenButton: true
@@ -44,7 +45,7 @@ const props = withDefaults(defineProps<{
 
 
 const imageElement = ref<HTMLImageElement|null>(null)
-const sourceUri = ref(makeValidUri(props.svgPath))
+const sourceUri = ref(props.src)
 let viewer: Viewer|null = null
 let fitAnimationFrame: number|null = null
 let hasInitialFit = false
@@ -94,7 +95,7 @@ function fitToAvailableSpace (): void {
     return
   }
 
-  const viewerElement = source.parentElement?.querySelector('.zettlr-tikz-viewerjs')
+  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
   const canvas = viewerElement?.querySelector('.viewer-canvas')
   const image = canvas?.querySelector('img')
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
@@ -133,7 +134,7 @@ function currentViewerTransform (): ViewerTransformSnapshot|null {
     return null
   }
 
-  const viewerElement = source.parentElement?.querySelector('.zettlr-tikz-viewerjs')
+  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
   const canvas = viewerElement?.querySelector('.viewer-canvas')
   const image = canvas?.querySelector('img')
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
@@ -170,7 +171,7 @@ function restoreViewerTransform (snapshot: ViewerTransformSnapshot): void {
     return
   }
 
-  const viewerElement = source.parentElement?.querySelector('.zettlr-tikz-viewerjs')
+  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
   const canvas = viewerElement?.querySelector('.viewer-canvas')
   const image = canvas?.querySelector('img')
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
@@ -233,7 +234,7 @@ onMounted(() => {
   }
 
   viewer = new Viewer(image, {
-    // There is deliberately only one viewer mode in Zettlr. Viewer.js' inline
+    // There is deliberately only one viewer mode in the workbench. Viewer.js' inline
     // instance owns its own full()/exit() transition, so a sidecar promoted to
     // lightbox is the same viewer node rather than a second modal viewer.
     inline: true,
@@ -259,7 +260,7 @@ onMounted(() => {
     zoomOnTouch: true,
     zoomOnWheel: true,
     initialCoverage: 0.9,
-    className: 'zettlr-tikz-viewerjs',
+    className: 'tikz-workbench-viewerjs',
     // This is a live vector preview, so transitions between intermediate
     // geometries are visual noise. Viewer.js still owns every transform and
     // gesture, but applies view/zoom/move immediately.
@@ -282,12 +283,12 @@ onMounted(() => {
 })
 
 watch(
-  () => props.svgPath,
-  async newPath => {
+  () => props.src,
+  async newSource => {
     const revision = ++sourceRevision
     const image = imageElement.value
     if (viewer === null || image === null) {
-      sourceUri.value = makeValidUri(newPath)
+      sourceUri.value = newSource
       return
     }
 
@@ -303,7 +304,7 @@ watch(
       // natural-size layout.
       hasInitialFit = false
     }
-    sourceUri.value = makeValidUri(newPath)
+    sourceUri.value = newSource
     await nextTick()
     // Keep Viewer.js' existing canvas on screen while the replacement SVG is
     // loaded invisibly by its source element. Updating only after that load
@@ -348,7 +349,7 @@ onBeforeUnmount(() => {
  * readability rule, but apply it to Viewer.js' one canonical image surface so
  * inline and full mode cannot diverge.
  */
-:global(body.dark .zettlr-tikz-viewerjs .viewer-canvas > img) {
+.tikz-figure-viewer.dark :deep(.tikz-workbench-viewerjs .viewer-canvas > img) {
   filter: invert(0.85) hue-rotate(180deg);
 }
 </style>

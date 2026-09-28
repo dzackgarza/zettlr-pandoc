@@ -36,7 +36,7 @@ import type ConfigProvider from '@providers/config'
 import { enableExtension, parseReaderWriter, readerWriterToString } from '@common/pandoc-util/parse-reader-writer'
 import { EXT2READER, isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
 import { injectPandocMathHeaders } from './pandoc-math-headers'
-import { type MathJaxMacro } from '@common/util/mathjax-config'
+import { type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import { loadCanonicalMathJaxMacros } from '../../../util/load-mathjax-macros'
 
 /**

@@ -20,7 +20,7 @@ import registerDefaultContextMenu from './register-default-context'
 import loadIcons from './load-icons'
 import { loadData } from '@common/i18n-renderer'
 import { initializeMathJax } from '@common/util/mathtex-to-html'
-import type { MathJaxMacro } from '@common/util/mathjax-config'
+import type { MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import { reportError } from '@common/util/error-reporting'
 
 let rendererErrorCaptureInstalled = false

@@ -31,7 +31,7 @@ import {
 /** The production editor's content element; CodeMirror keeps its view on the element's tile. */
 type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } }
 
-/** A message the embedded Quiver host posts to Zettlr (vendor/quiver/src/zettlr-host.mjs). */
+/** A message the embedded Quiver host posts to Zettlr (packages/tikz-workbench/vendor/quiver/src/zettlr-host.mjs). */
 interface QuiverBridgeMessage {
   type: string
   sessionId?: string|null
@@ -156,10 +156,10 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       `the dedicated viewer must default to a useful contain fit rather than the SVG's tiny intrinsic size: ${JSON.stringify(initialFit)}`
     )
 
-    const inlineViewer = preview.locator('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+    const inlineViewer = preview.locator('.tikz-live-preview-figure .tikz-workbench-viewerjs')
     await inlineViewer.locator('.viewer-canvas').click({ position: { x: 8, y: 8 } })
     assert.strictEqual(
-      await page.locator('.zettlr-tikz-viewerjs.viewer-fixed').count(),
+      await page.locator('.tikz-workbench-viewerjs.viewer-fixed').count(),
       0,
       'the RHS canvas has no competing Viewer.js modal path'
     )
@@ -173,7 +173,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     // Viewer.js node, promote the pane, and require the same viewer instance to
     // remain mounted while it refits to the larger canvas.
     await page.evaluate(() => {
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       if (!(viewer instanceof HTMLElement)) throw new Error('inline Viewer.js surface missing')
       viewer.dataset.e2eViewerIdentity = 'editing-instance'
     })
@@ -192,7 +192,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       'editing-instance',
       'fullscreen promotion preserves the exact RHS Viewer.js instance'
     )
-    assert.strictEqual(await page.locator('.zettlr-tikz-viewerjs').count(), 1, 'fullscreen does not create a second viewer')
+    assert.strictEqual(await page.locator('.tikz-workbench-viewerjs').count(), 1, 'fullscreen does not create a second viewer')
     assert.strictEqual(await inlineViewer.locator('input[type="number"]').count(), 0, 'the removed numeric zoom field remains absent')
     await preview.locator('.tikz-live-preview-expand').click()
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') !== true)
@@ -219,7 +219,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     // the user's viewport. Sample every painted frame while the real TeX render
     // runs so a transient shrink-to-natural-size/rezoom cycle is a failure too.
     const stableBefore = await page.evaluate(() => {
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       const canvas = viewer?.querySelector('.viewer-canvas')
       const image = canvas?.querySelector('img')
       if (!(viewer instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return null
@@ -300,7 +300,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     )
     const stableAfter = await page.evaluate(sampler => {
       sampler.sampling = false
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       const canvas = viewer?.querySelector('.viewer-canvas')
       const image = canvas?.querySelector('img')
       if (!(viewer instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return null

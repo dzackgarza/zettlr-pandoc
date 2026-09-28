@@ -32,24 +32,6 @@ export const MATH_DELIMITERS: MathDelimiterPair[] = [
   { open: '$', close: '$', display: false }
 ]
 
-const ENVIRONMENT_OPEN_RE = /^\\begin\{([A-Za-z]+\*?)\}/
-
-/**
- * The LaTeX environment name if `text` (ignoring trailing whitespace) is
- * exactly one `\begin{name}…\end{name}` block, or null otherwise. Agnostic of
- * which environment it is. This helper is used only after the Markdown AST has
- * already established a Pandoc RawBlock; it helps the TikZ renderer narrow that
- * raw TeX block to one of its supported figure environments. It is not a
- * Markdown syntax recognizer or linter.
- */
-export function wholeEnvironment (text: string): string|null {
-  const match = ENVIRONMENT_OPEN_RE.exec(text)
-  if (match === null) {
-    return null
-  }
-  return text.trimEnd().endsWith(`\\end{${match[1]}}`) ? match[1] : null
-}
-
 /**
  * The math a code node carries, from the parts the Markdown AST keeps. Pandoc's
  * Markdown reader recognizes only the delimiter forms here; LaTeX environments

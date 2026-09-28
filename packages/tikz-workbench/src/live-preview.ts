@@ -17,8 +17,8 @@
  * END HEADER
  */
 
-import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
-import type { TikzSourceBlock } from './tikz-block'
+import type { TikzRenderRequest, TikzRenderResult } from './tikz-render'
+import type { TikzSourceBlock } from './source-block'
 
 export interface TikzLivePreviewTarget extends TikzSourceBlock {
   docPath: string

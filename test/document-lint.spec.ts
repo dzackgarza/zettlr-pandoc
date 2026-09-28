@@ -38,7 +38,7 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
         templatePath: path.join(
           repositoryRoot,
           "static",
@@ -71,7 +71,7 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
         templatePath: path.join(
           repositoryRoot,
           "static",
@@ -108,8 +108,8 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
-        templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
         cacheDir,
         env: process.env,
       },
@@ -130,8 +130,8 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "static", "tikz"),
-        templatePath: path.join(repositoryRoot, "static", "tikz", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
         cacheDir,
         env: process.env,
       },

@@ -47,9 +47,9 @@ import {
   tikzTemplateCommands,
   tikzTemplateCompletions,
   tikzTemplateDependencyHash,
-} from "source/app/util/tikz-render";
+} from "../src/tikz-render";
 
-const TIKZ_ASSET_DIR = path.join(process.cwd(), "static/tikz");
+const TIKZ_ASSET_DIR = path.join(__dirname, "fixtures", "tikz-data");
 const TIKZ_TEMPLATE = path.join(TIKZ_ASSET_DIR, "templates/standalone-tikz.tex");
 
 /**

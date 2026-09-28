@@ -1,5 +1,5 @@
 <template>
-  <div class="tikz-compiler-preview">
+  <div class="tikz-compiler-preview" :class="{ dark: props.theme === 'dark' }">
     <div
       v-if="state.failure === null"
       class="tikz-compiler-preview-canvas tikz-live-preview-canvas"
@@ -9,7 +9,9 @@
         v-if="state.lastGood !== null"
         ref="figureViewer"
         class="tikz-compiler-preview-figure tikz-live-preview-figure"
-        :svg-path="state.lastGood.result.svgPath"
+        :src="props.host.figureUrl(state.lastGood.result)"
+        :data-svg-path="state.lastGood.result.svgPath"
+        :theme="props.theme"
         :show-fullscreen-button="false"
       />
       <div
@@ -49,8 +51,7 @@
  * CVM-Role:        View
  * License:         GNU GPL v3
  *
- * Description:     Owns the debounced Pandoc/TeX preview renderer formerly
- *                  embedded in TikzLivePreview. It implements the same provider
+ * Description:     Owns the debounced Pandoc/TeX preview renderer. It implements the same provider
  *                  surface as Quiver and the visual editor: target in, status
  *                  out, optional refresh handle. The outer sidecar therefore
  *                  has no compiler-specific rendering branch.
@@ -58,22 +59,22 @@
  * END HEADER
  */
 
-import type { EditorView } from "@codemirror/view";
 import {
   TikzLivePreviewController,
   type TikzLivePreviewState,
   type TikzLivePreviewTarget,
   type TikzRenderFailure,
-} from "@common/modules/markdown-editor/tikz-live-preview";
-import { reportError } from "@common/util/error-reporting";
-import { tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+} from "../live-preview";
+import { tikzCompilerLogHeadline } from "../compiler-log";
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
+import type { TikzRenderRequest, TikzRenderResult } from "../tikz-render";
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import TikzFigureViewer from "./TikzFigureViewer.vue";
 
 const props = defineProps<{
   target: TikzLivePreviewTarget;
-  editorView: EditorView;
+  host: TikzWorkbenchHost;
+  theme: TikzWorkbenchTheme;
   fullscreen: boolean;
 }>();
 
@@ -88,12 +89,9 @@ interface FigureViewerHandle {
 
 async function render(request: TikzRenderRequest): Promise<TikzRenderResult> {
   try {
-    return await window.ipc.invoke("application", {
-      command: "tikz-render",
-      payload: request,
-    });
+    return await props.host.render(request);
   } catch (error) {
-    reportError("TikZ live preview IPC failed", error);
+    props.host.reportError("TikZ render request failed", error);
     return {
       ok: false,
       kind: "pandoc-error",
@@ -207,7 +205,7 @@ const failureDetails = computed(() => {
 
 function copyDiagnostics(): void {
   void navigator.clipboard.writeText(failureDetails.value || failureSummary.value).catch((error) => {
-    reportError("Could not copy TikZ diagnostics", error);
+    props.host.reportError("Could not copy TikZ diagnostics", error);
   });
 }
 
@@ -289,7 +287,7 @@ onBeforeUnmount(() => {
   }
 }
 
-:global(body.dark .tikz-compiler-preview-error) {
+.tikz-compiler-preview.dark .tikz-compiler-preview-error {
   color: #e67e73;
   background: rgba(192, 57, 43, 0.08);
 }

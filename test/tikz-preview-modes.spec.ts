@@ -3,12 +3,12 @@ import { EditorState } from "@codemirror/state";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import type { TikzLivePreviewTarget } from "source/common/modules/markdown-editor/tikz-live-preview";
+import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
 import {
   defaultTikzPreviewMode,
   TIKZ_PREVIEW_MODES,
-} from "source/common/modules/markdown-editor/tikz-preview-modes";
-import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
+} from "tikz-workbench/src/preview-modes";
+import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
 
 function target(source: string, language: "tikz" | "tikzcd"): TikzLivePreviewTarget {
   return {

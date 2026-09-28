@@ -2,7 +2,7 @@
 
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 const failure: TikzRenderResult = {
   ok: false,

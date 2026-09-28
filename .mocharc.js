@@ -11,5 +11,5 @@ module.exports = {
   "node-option": ["import=tsx"],
   require: ['./test/setup.js'],
   extension: ["ts"],
-  spec: ["test/**/*.js", "test/**/*.spec.ts"]
+  spec: ["test/**/*.js", "test/**/*.spec.ts", "packages/*/test/**/*.spec.ts"]
 };

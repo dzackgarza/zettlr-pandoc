@@ -16,18 +16,19 @@
         <div ref="editorHost" class="main-editor-host" />
       </SplitterPanel>
       <SplitterResizeHandle
-        v-if="tikzPreviewTarget !== null && activeEditorView !== null"
+        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
         class="tikz-editor-resize-handle"
         aria-label="Resize TikZ editor pane"
       />
       <SplitterPanel
-        v-if="tikzPreviewTarget !== null && activeEditorView !== null"
+        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
         :default-size="42"
         :min-size="20"
       >
-        <TikzLivePreview
+        <TikzWorkbench
           :target="tikzPreviewTarget"
-          :editor-view="activeEditorView"
+          :host="tikzWorkbenchHost"
+          :theme="configStore.config.darkMode ? 'dark' : 'light'"
         />
       </SplitterPanel>
     </SplitterGroup>
@@ -141,10 +142,12 @@ import type { WorkspaceReferenceEdit } from '@dts/common/references'
 import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
 import { isEditorCommandName } from '@dts/common/shortcut-names'
 import getDocumentTitle from './util/get-document-title'
-import TikzLivePreview from './TikzLivePreview.vue'
+import TikzWorkbench from 'tikz-workbench/src/ui/TikzWorkbench.vue'
+import { zettlrTikzWorkbenchHost } from './tikz-workbench-host'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import { activeTikzBlock as findActiveTikzBlock, type TikzSourceBlock } from '@common/modules/markdown-editor/tikz-block'
-import type { TikzLivePreviewTarget } from '@common/modules/markdown-editor/tikz-live-preview'
+import { activeTikzBlock as findActiveTikzBlock } from '@common/modules/markdown-editor/tikz-block'
+import type { TikzSourceBlock } from 'tikz-workbench/src/source-block'
+import type { TikzLivePreviewTarget } from 'tikz-workbench/src/live-preview'
 import {
   declaredTexMacroSources,
   type TexDocumentKind,
@@ -683,6 +686,7 @@ const quickTex = computed(() => windowStateStore.quickTex)
 const phraseCompletions = computed(() => windowStateStore.phraseCompletions)
 const tags = computed(() => tagStore.tags)
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path))
+const tikzWorkbenchHost = computed(() => activeEditorView.value === null ? null : zettlrTikzWorkbenchHost(activeEditorView.value))
 const tikzPreviewTarget = computed<TikzLivePreviewTarget|null>(() => activeTikzSource.value === null || activeEditorView.value === null
   ? null
   : {

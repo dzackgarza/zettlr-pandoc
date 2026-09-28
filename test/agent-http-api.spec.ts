@@ -467,7 +467,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               claimDescriptionSimilarityThreshold: 0.94,
             },
             tikz: {
-              dataDir: path.join(__dirname, "../static/tikz"),
+              dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
               figuresDir: figuresRoot,
             },
             editor: { lint: { flowmark: { timeoutMs: 60_000 } } },

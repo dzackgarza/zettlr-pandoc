@@ -32,7 +32,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetTikzRenderMemoForTests,

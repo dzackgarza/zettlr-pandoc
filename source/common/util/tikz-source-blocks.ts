@@ -6,75 +6,13 @@
 
 import { markdownToAST } from "@common/modules/markdown-utils";
 import type { ASTNode } from "@common/modules/markdown-utils/markdown-ast";
-import { wholeEnvironment } from "@common/util/math-delimiters";
-
-export const FIGURE_ENVIRONMENTS: ReadonlySet<string> = new Set(["tikzcd", "tikzpicture"]);
+import {
+  contiguousSourceLineRanges,
+  rawTikzEnvironment,
+  type TikzSourceBlock,
+} from "tikz-workbench/src/source-block";
 
 export const INPUT_TIKZ_RE = /^\s*\\input\s*\{\s*([^}]+?\.(?:tikz|tikzcd))\s*\}\s*$/u;
-
-export interface TikzSourceBlock {
-  from: number;
-  to: number;
-  sourceFrom: number;
-  sourceTo: number;
-  source: string;
-  sourceLineRanges: ReadonlyArray<{ from: number; to: number }>;
-  kind: "raw" | "fence";
-  language: "tikz" | "tikzcd";
-}
-
-export function contiguousSourceLineRanges(
-  source: string,
-  sourceFrom: number,
-): Array<{ from: number; to: number }> {
-  const ranges: Array<{ from: number; to: number }> = [];
-  let offset = 0;
-  for (const line of source.split("\n")) {
-    ranges.push({
-      from: sourceFrom + offset,
-      to: sourceFrom + offset + line.length,
-    });
-    offset += line.length + 1;
-  }
-  return ranges;
-}
-
-/**
- * Whether the semantic TikZ source is stored as one contiguous authored range.
- * Raw blocks inside Markdown containers (for example blockquotes and list
- * items) may omit container markers from their semantic source; those blocks
- * are renderable but cannot safely be replaced wholesale by a visual editor.
- */
-export function tikzBlockHasContiguousSource(block: TikzSourceBlock): boolean {
-  if (block.sourceLineRanges.length === 0) {
-    return block.source.length === 0 && block.sourceFrom === block.sourceTo;
-  }
-  if (
-    block.sourceLineRanges[0].from !== block.sourceFrom ||
-    block.sourceLineRanges[block.sourceLineRanges.length - 1].to !== block.sourceTo
-  ) {
-    return false;
-  }
-
-  let semanticLength = 0;
-  for (let index = 0; index < block.sourceLineRanges.length; index += 1) {
-    const range = block.sourceLineRanges[index];
-    semanticLength += range.to - range.from;
-    if (index > 0) {
-      const previous = block.sourceLineRanges[index - 1];
-      if (range.from !== previous.to + 1) {
-        return false;
-      }
-      semanticLength += 1;
-    }
-  }
-  return semanticLength === block.source.length;
-}
-
-export function rawTikzEnvironment(paragraphText: string): string | null {
-  const environment = wholeEnvironment(paragraphText);
-  return environment !== null && FIGURE_ENVIRONMENTS.has(environment) ? environment : null;
-}
 
 export function rawTikzInput(paragraphText: string): string | null {
   const match = INPUT_TIKZ_RE.exec(paragraphText);

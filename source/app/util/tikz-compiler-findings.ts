@@ -1,6 +1,7 @@
-import { tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
-import { type TikzSourceBlock, tikzSourceBlocksInMarkdown } from "@common/util/tikz-source-blocks";
-import type { TikzRenderRequest, TikzRenderResult } from "./tikz-render";
+import { tikzCompilerLogHeadline } from "tikz-workbench/src/compiler-log";
+import { tikzSourceBlocksInMarkdown } from "@common/util/tikz-source-blocks";
+import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 export interface TikzCompilerFinding {
   from: number;

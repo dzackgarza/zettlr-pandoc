@@ -16,11 +16,11 @@
  */
 
 import isFile from "@common/util/is-file";
-import { type MathJaxMacro, parseMathJaxMacros } from "@common/util/mathjax-config";
+import { type MathJaxMacro, parseMathJaxMacros } from "tikz-workbench/src/mathjax-config";
 import {
   texCommandDeclarationEntries,
   texCommandDeclarations,
-} from "@common/util/tex-command-declarations";
+} from "tikz-workbench/src/tex-command-declarations";
 import { type Dirent, promises as fs } from "fs";
 import path from "path";
 

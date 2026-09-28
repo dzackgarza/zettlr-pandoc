@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "types": [
+      "bun"
+    ]
+  },
+  "include": [
+    "src/**/*",
+    "standalone/**/*"
+  ],
+  "exclude": [
+    "standalone/dist"
+  ]
+}

@@ -30,8 +30,8 @@ import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { type SyntaxNodeRef } from "@lezer/common";
-import type { TikzRenderResult } from "source/app/util/tikz-render";
-import type { TikzSourceBlock } from "../tikz-block";
+import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
+import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import { tikzBlockForNode } from "../tikz-block";
 import { tikzWidthEm } from "../tikz-display-size";
 import { requestTikzRender } from "../tikz-render-client";
@@ -69,7 +69,7 @@ function figureNodes(html: string): Node[] {
     throw new Error(
       "render-tikz: the render service reported a successful figure whose markup carries no <svg> element. " +
         `Markup received (${html.length} chars): ${html.slice(0, 200)}. ` +
-        "renderTikz in source/app/util/tikz-render.ts only returns ok after matching <svg>…</svg> in the " +
+        "renderTikz in tikz-workbench/src/tikz-render.ts only returns ok after matching <svg>…</svg> in the " +
         "pandoc output, so either that check or this widget must change.",
     );
   }
@@ -199,7 +199,7 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
       const unhandled: never = result;
       throw new Error(
         `render-tikz: unhandled TikzRenderResult case ${JSON.stringify(unhandled)}. ` +
-          "The union lives in source/app/util/tikz-render.ts; every case it declares must be presented here.",
+          "The union lives in tikz-workbench/src/tikz-render.ts; every case it declares must be presented here.",
       );
     }
   }
