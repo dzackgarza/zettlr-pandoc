@@ -32,6 +32,7 @@ import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
   diffWordsWithSpace,
+  formatPatch,
   parsePatch,
   reversePatch,
   structuredPatch,
@@ -700,21 +701,6 @@ function invertPatch(patchText: string): string {
     throw new Error("Cannot invert a multi-file patch");
   }
   return formatPatch(reversePatch(patches)[0]);
-}
-
-function formatPatch(patch: StructuredPatch): string {
-  const lines: string[] = [];
-  lines.push(`--- ${patch.oldFileName ?? "document"}`);
-  lines.push(`+++ ${patch.newFileName ?? "document"}`);
-  for (const hunk of patch.hunks) {
-    lines.push(
-      `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-    );
-    for (const line of hunk.lines) {
-      lines.push(line);
-    }
-  }
-  return lines.join("\n") + "\n";
 }
 
 /**
