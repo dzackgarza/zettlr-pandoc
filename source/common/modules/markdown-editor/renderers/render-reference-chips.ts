@@ -132,24 +132,35 @@ class ReferenceChipClusterWidget extends WidgetType {
     // platform Mod-click instead follows the clicked chip's reference to its
     // definition (issue #1 Phase 5). Widget mouse events never reach the
     // clickListeners() mousedown path (ignoreEvent below), so the navigation
-    // branch lives on the widget listener itself.
+    // branch lives on the widget listener itself. It runs on mousedown: the
+    // browser's default mousedown puts the caret beside the cluster, which
+    // un-renders this widget before any click event could reach it.
     const revealAuthoredSource = clickAndSelect(view)
-    elem.addEventListener('click', event => {
+    let navigatedOnMousedown = false
+    elem.addEventListener('mousedown', event => {
+      navigatedOnMousedown = false
       const cmd = event.metaKey && process.platform === 'darwin'
       const ctrl = event.ctrlKey && process.platform !== 'darwin'
-      if (cmd || ctrl) {
-        const chip = event.target instanceof HTMLElement
-          ? event.target.closest<HTMLElement>('.reference-chip')
-          : null
-        const pos = view.posAtDOM(elem)
-        const intent = resolveReferenceNavigationIntent(view, pos, chip?.dataset.referenceKey)
-        if (intent !== null) {
-          event.preventDefault()
-          followReferenceNavigationIntent(view, intent)
-          return
-        }
+      if (!cmd && !ctrl) {
+        return
       }
-
+      const chip = event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>('.reference-chip')
+        : null
+      const pos = view.posAtDOM(elem)
+      const intent = resolveReferenceNavigationIntent(view, pos, chip?.dataset.referenceKey)
+      if (intent === null) {
+        return
+      }
+      event.preventDefault()
+      navigatedOnMousedown = true
+      followReferenceNavigationIntent(view, intent)
+    })
+    elem.addEventListener('click', event => {
+      if (navigatedOnMousedown) {
+        navigatedOnMousedown = false
+        return
+      }
       revealAuthoredSource(event)
     })
 
