@@ -196,7 +196,10 @@ components:
     ProposalClaim:
       type: object
       description: >-
-        One independently reviewable edit. Keep unrelated edits in separate claims.
+        One reviewable change: exactly one unified-diff hunk, justified by
+        its own description. The reviewer keeps or undoes each claim on its
+        own. An edit that repeats at several places in the document is
+        several claims, each with its own description.
       required:
         - description
         - patch
@@ -205,7 +208,8 @@ components:
           type: string
           minLength: 1
           description: >-
-            Explain what is wrong, what this edit changes, and why. Each claim
+            Justify this one change: what is wrong in these lines, what the
+            edit changes, and why. Each claim
             in one submission needs a distinct description; duplicate or
             near-duplicate descriptions are rejected as
             DUPLICATE_CLAIM_DESCRIPTION.
@@ -218,6 +222,10 @@ components:
             document's absolute path (a git-style a/ or b/ prefix is
             allowed); any other filename, a create/delete/rename/binary/mode
             patch, or a diff that leaves the text unchanged is PATCH_INVALID.
+            The change must be exactly one hunk when diffed with three lines
+            of context (as `diff -u` and `git diff` do): changes more than six
+            unchanged lines apart are separate hunks, and a patch whose change
+            is two or more hunks is CLAIM_NOT_ATOMIC.
         addressesAnnotationIds:
           type: array
           items:
@@ -320,6 +328,7 @@ components:
             - REVIEW_INVALIDATED
             - PATCH_INVALID
             - PATCH_NOT_APPLICABLE
+            - CLAIM_NOT_ATOMIC
             - PACKET_NOT_RETRACTABLE
             - CHUNK_NOT_FOUND
             - ANNOTATION_NOT_FOUND

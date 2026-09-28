@@ -527,11 +527,11 @@ export interface components {
             content: string;
             truncated: boolean;
         };
-        /** @description One independently reviewable edit. Keep unrelated edits in separate claims. */
+        /** @description One reviewable change: exactly one unified-diff hunk, justified by its own description. The reviewer keeps or undoes each claim on its own. An edit that repeats at several places in the document is several claims, each with its own description. */
         ProposalClaim: {
-            /** @description Explain what is wrong, what this edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
+            /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
             description: string;
-            /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. */
+            /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. The change must be exactly one hunk when diffed with three lines of context (as `diff -u` and `git diff` do): changes more than six unchanged lines apart are separate hunks, and a patch whose change is two or more hunks is CLAIM_NOT_ATOMIC. */
             patch: string;
             /** @description Open annotation IDs this claim answers. If any ID is missing, resolved, or no longer points to text, the submission is rejected. Successful proposals appear on the addressed annotations. */
             addressesAnnotationIds?: string[];
@@ -560,7 +560,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];

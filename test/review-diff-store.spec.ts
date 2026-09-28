@@ -107,6 +107,34 @@ describe("pure review transitions", function () {
     assert.deepEqual(result.nextReview?.submissions[0].packetIds, result.response.packetIds);
   });
 
+  it("makes one suggestion of a claim that rewrites adjacent lines", function () {
+    const baseline = "Intro.\n\n::: {#def-forms}\n\n## Forms\n\nBody.\n:::\n";
+    const proposed = "Intro.\n\n::: {#def-forms .title=\"Forms\"}\n\nBody.\n:::\n";
+    const { review, workingText } = withReview(baseline, proposed);
+    assert.equal(review.suggestions.length, 1);
+    const [suggestion] = review.suggestions;
+    const [anchor] = suggestion.anchors;
+    assert.equal(workingText.slice(anchor.from, anchor.to), " .title=\"Forms\"}");
+    assert.equal(suggestion.removedText, "}\n\n## Forms");
+  });
+
+  it("refuses a claim whose change is two separate hunks", function () {
+    const filler = "same\n".repeat(7);
+    const baseline = `alpha\n${filler}omega\n`;
+    const result = prepareProposalSubmission({
+      review: undefined,
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      workingText: baseline,
+      diskSha256: sha256Text(baseline),
+      claims: [{ patch: patch(baseline, `ALPHA\n${filler}OMEGA\n`), description: "capitalize" }],
+      clientRequestId: "compound",
+      requestFingerprint: sha256Text("compound"),
+    });
+    assertTransitionError(result, "CLAIM_NOT_ATOMIC");
+    assert.match((result as ReviewTransitionError).message, /lines 1, 6/);
+  });
+
   it("refuses a patch that does not apply and leaves no candidate state", function () {
     const baseline = "alpha\nbeta\n";
     const result = prepareProposalSubmission({
@@ -296,15 +324,16 @@ describe("suggestions through owner edits and later claims", function () {
     assert.deepEqual(noted.nextReview, before);
   });
 
-  it("maps each deletion restoration when owner text changes between seams", function () {
+  it("maps a deletion restoration when owner text lands before its seam", function () {
     const baseline = "one middle two\n";
-    const proposed = " middle \n";
+    const proposed = "one middle\n";
     const { review, workingText } = withReview(baseline, proposed);
-    assert.ok(review.suggestions.every((suggestion) =>
-      suggestion.anchors.every((anchor) => anchor.from === anchor.to),
-    ));
-    const insertionAt = workingText.indexOf("dle");
-    const ownerText = "OWNER";
+    assert.deepEqual(
+      review.suggestions.map((suggestion) => suggestion.anchors),
+      [[{ from: 10, to: 10 }]],
+    );
+    const insertionAt = workingText.indexOf("middle");
+    const ownerText = "OWNER ";
     const edited =
       workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
     const edit = prepareWorkingTextEdit({
@@ -323,7 +352,7 @@ describe("suggestions through owner edits and later claims", function () {
       workingText: edited,
     });
     assert.ok(!isTransitionError(rejected));
-    assert.equal(rejected.nextWorkingText, "one midOWNERdle two\n");
+    assert.equal(rejected.nextWorkingText, "one OWNER middle two\n");
   });
 
   it("maps an earlier suggestion through a later claim and later rejection", function () {

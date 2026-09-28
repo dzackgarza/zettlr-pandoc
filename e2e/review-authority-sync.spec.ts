@@ -446,10 +446,15 @@ describe('a review decision waits for the document authority', function () {
     await definePageNameHelper(page)
     await hideDevServerOverlay(page)
 
-    const proposed = BASELINE.replace(/ original/g, ' proposed')
-    reviewId = await propose(api, page, 'authority-sync-1', [
-      { description: 'Rewrite every line', patch: patch(fixture.documentPath, BASELINE, proposed) }
-    ])
+    // One claim per line: each change carries its own justification.
+    const claims: Array<{ description: string, patch: string }> = []
+    let text = BASELINE
+    for (const word of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) {
+      const next = text.replace(`${word} original`, `${word} proposed`)
+      claims.push({ description: `Rewrite the ${word} line`, patch: patch(fixture.documentPath, text, next) })
+      text = next
+    }
+    reviewId = await propose(api, page, 'authority-sync-1', claims)
   })
 
   after(async function () {

@@ -283,23 +283,22 @@ describe('review-diff closure contract composite lifecycle', function () {
     const page = await findEditorPage(browser, this.timeout())
 
     const step1 = BASELINE.replace('alpha baseline', 'alpha proposal')
-    // Two identical occurrences must remain independently actionable: the
-    // first is edited and accepted, while the second is rejected.
-    const step2 = step1.replace('same\n\nsame', 'DIFF\n\nDIFF')
+    // Two identical occurrences are two claims, each justified on its own:
+    // the first is edited and accepted, while the second is rejected.
+    const firstRepeated = step1.replace('same\n\nsame', 'DIFF\n\nsame')
+    const step2 = firstRepeated.replace('DIFF\n\nsame', 'DIFF\n\nDIFF')
     const proposed = step2.replace('x = 1', 'x = 7').replace('y = 2', 'y = 8')
     const blankProposed = proposed.replace('tail\n', 'tail\n\n')
     const reviewId = await submitBatch(api, [
       { description: 'Revise alpha wording', patch: patch(documentPath, BASELINE, step1) },
-      { description: 'Change both repeated occurrences', patch: patch(documentPath, step1, step2) },
+      { description: 'Change the first repeated occurrence', patch: patch(documentPath, step1, firstRepeated) },
+      { description: 'Change the second repeated occurrence', patch: patch(documentPath, firstRepeated, step2) },
       { description: 'Rewrite the display-math environment', patch: patch(documentPath, step2, proposed) },
       { description: 'Preserve the intentional blank line', patch: patch(documentPath, proposed, blankProposed) }
     ])
     await waitForReview(page)
-    // One claim can yield two independently actionable chunks when it edits
-    // two identical occurrences; every packet still retains its description.
-    // Six here: alpha, the two repeated occurrences, the two lines of the
-    // display-math rewrite, and the blank line.
-    assert.equal(await reviewPane(page).locator('.suggestion-chunk-description').count(), 6)
+    // One chunk per claim, each with its own description.
+    assert.equal(await reviewPane(page).locator('.suggestion-chunk-description').count(), 5)
 
     // Accept alpha through its own controls. They name the chunk by the
     // claim description, not the replaced reference text.
@@ -310,13 +309,13 @@ describe('review-diff closure contract composite lifecycle', function () {
 
     // Edit the repeated proposal in the ordinary editor, then accept the
     // edited proposal: the provider must accept the bytes now displayed.
-    const repeatedCards = chunkControls(page).filter({ hasText: 'Change both repeated occurrences' })
+    const repeatedCards = chunkControls(page).filter({ hasText: 'repeated occurrence' })
     await repeatedCards.nth(1).waitFor({ state: 'visible' })
     // Named by id before the edit: a rewrite re-anchors the chunk, so what it
     // reads afterwards is the provider's answer, not something to predict.
     const repeatedBefore = (await chunkViews(api, reviewId))
-      .filter(chunk => chunk.descriptions.includes('Change both repeated occurrences'))
-    assert.equal(repeatedBefore.length, 2, 'the repeated claim must be two decidable chunks')
+      .filter(chunk => chunk.descriptions.some(description => description.includes('repeated occurrence')))
+    assert.equal(repeatedBefore.length, 2, 'the two repeated claims must be two decidable chunks')
     const editedChunkId = repeatedBefore[0].chunkId
 
     const diffLine = page.locator('.cm-line').filter({ hasText: 'DIFF' }).first()
@@ -417,7 +416,8 @@ describe('review-diff closure contract composite lifecycle', function () {
       reopenedPackets.packets.map(packet => isRecord(packet) ? packet.description : undefined),
       [
         'Revise alpha wording',
-        'Change both repeated occurrences',
+        'Change the first repeated occurrence',
+        'Change the second repeated occurrence',
         'Rewrite the display-math environment',
         'Preserve the intentional blank line'
       ],
@@ -437,28 +437,19 @@ describe('review-diff closure contract composite lifecycle', function () {
     await waitForReview(restartedPage)
     const outstanding = await restartedApi.get(`/v1/reviews/${reviewId}?view=chunks`)
     assert.ok(isRecord(outstanding) && Array.isArray(outstanding.chunks))
-    // The display-math claim rewrote two lines, so it is outstanding as two
-    // regions — and the note the reviewer wrote sits on the one they wrote it
-    // on, not on the claim as a whole.
-    assert.equal(outstanding.chunks.length, 2)
-    for (const chunk of outstanding.chunks) {
-      assert.ok(isRecord(chunk))
-      assert.ok(Array.isArray(chunk.packetIds) && chunk.packetIds.length > 0)
-      assert.ok(Array.isArray(chunk.descriptions))
-      assert.ok(chunk.descriptions.includes('Rewrite the display-math environment'))
-    }
-    assert.deepEqual(
-      outstanding.chunks.map(chunk => isRecord(chunk) ? chunk.comment : undefined),
-      ['check the constants', undefined],
-      'the restored note names the region it was written on'
-    )
+    // The display-math claim is outstanding as the one chunk it is, with the
+    // note the reviewer wrote on it.
+    assert.equal(outstanding.chunks.length, 1)
+    const [mathChunk] = outstanding.chunks
+    assert.ok(isRecord(mathChunk))
+    assert.ok(Array.isArray(mathChunk.packetIds) && mathChunk.packetIds.length > 0)
+    assert.ok(Array.isArray(mathChunk.descriptions))
+    assert.ok(mathChunk.descriptions.includes('Rewrite the display-math environment'))
+    assert.equal(mathChunk.comment, 'check the constants', 'the restored note stays on its chunk')
 
     // Resolve the annotated block through the UI and prove exact final bytes.
-    // Each region is its own decision; the last controls leave with the last of
-    // them, and the review itself outlives them until the save that closes it.
+    // The review itself outlives its last chunk until the save that closes it.
     const cards = chunkControls(restartedPage)
-    await cards.first().locator('.suggestion-decision.accept').click()
-    await cards.nth(1).waitFor({ state: 'detached', timeout: 30_000 })
     await cards.first().locator('.suggestion-decision.accept').click()
     await cards.first().waitFor({ state: 'detached', timeout: 30_000 })
     const resolvedSave = await invokeSave(restartedPage, documentPath)

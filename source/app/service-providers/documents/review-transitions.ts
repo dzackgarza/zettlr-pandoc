@@ -31,10 +31,10 @@ import { randomUUID } from "crypto";
 import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
 import {
   applyPatch,
-  type Change,
   diffWordsWithSpace,
   parsePatch,
   reversePatch,
+  structuredPatch,
   type StructuredPatch,
 } from "diff";
 import path from "path";
@@ -90,6 +90,7 @@ export interface ReviewTransitionError {
   code:
     | "PATCH_INVALID"
     | "PATCH_NOT_APPLICABLE"
+    | "CLAIM_NOT_ATOMIC"
     | "REVIEW_NOT_FOUND"
     | "REVIEW_INVALIDATED"
     | "REVISION_MISMATCH"
@@ -233,92 +234,53 @@ function cloneReview(review: ActiveReviewState): ActiveReviewState {
   };
 }
 
-/** One changed region: what the claim took out, and what it put in. */
-interface ChangedRegion {
-  removedText: string;
-  addedText: string;
-}
-
-/** One region, and how many diff parts it took to say it. */
-interface ReadRegion {
-  region: ChangedRegion | string;
-  parts: number;
+/**
+ * The line each unified-diff hunk of a change starts at in the text after
+ * it. Hunks are recomputed from the two texts with three lines of context,
+ * the default of GNU `diff -u` and `git diff`, so changes within six lines of
+ * each other form one hunk however the agent wrote its patch.
+ */
+function hunkStartLines(before: string, after: string): number[] {
+  return structuredPatch("document", "document", before, after, "", "", { context: 3 })
+    .hunks.map((hunk) => hunk.newStart);
 }
 
 /**
- * The region beginning at one diff part. A replacement reaches us as two
- * adjacent parts — the removal and the insertion, in either order — and they
- * are one region, which is why this answers with a part count rather than
- * stepping one at a time.
- *
- * A part with nothing on its other side took text out and put none back, or
- * put text in and took none out. The empty string there is the region's other
- * side, not a stand-in for a value that went missing.
+ * The one suggestion a claim becomes: the shortest span that covers the
+ * claim's change, found by trimming the text the two sides share at either
+ * end (the pre-pass of every Myers diff, e.g. jsdiff's and CodeMirror's
+ * `findDiff` in @codemirror/view domchange.ts). A claim is one hunk
+ * (applyClaimSequence refuses any other), so the claim's description
+ * justifies exactly the change the reviewer keeps or undoes, and a later
+ * claim on the same line still owns only its own characters.
  */
-function regionAt(parts: readonly Change[], index: number): ReadRegion {
-  const part = parts[index];
-  if (!part.added && !part.removed) {
-    return { region: part.value, parts: 1 };
+function suggestionForClaim(before: string, after: string, packetId: string): ReviewSuggestion {
+  const shorter = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < shorter && before[prefix] === after[prefix]) {
+    prefix += 1;
   }
-  const next = parts[index + 1];
-  if (part.removed && next?.added) {
-    return { region: { removedText: part.value, addedText: next.value }, parts: 2 };
+  let suffix = 0;
+  while (
+    suffix < shorter - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  ) {
+    suffix += 1;
   }
-  if (part.added && next?.removed) {
-    return { region: { removedText: next.value, addedText: part.value }, parts: 2 };
-  }
-  return part.removed
-    ? { region: { removedText: part.value, addedText: "" }, parts: 1 }
-    : { region: { removedText: "", addedText: part.value }, parts: 1 };
-}
-
-/** The word diff read as regions, in document order. */
-function changedRegions(before: string, after: string): Array<ChangedRegion | string> {
-  const parts = diffWordsWithSpace(before, after);
-  const regions: Array<ChangedRegion | string> = [];
-  for (let index = 0; index < parts.length;) {
-    const read = regionAt(parts, index);
-    regions.push(read.region);
-    index += read.parts;
-  }
-  return regions;
-}
-
-/**
- * One suggestion per changed region, not per claim. A claim that rewrites two
- * identical occurrences, or five lines, is adjudicated region by region: the
- * reviewer accepts the ones they want and rejects the rest. Merging a claim's
- * regions into one suggestion would make a claim all-or-nothing and hand the
- * reviewer a chunk whose text spans the whole document.
- */
-function suggestionsForChange(
-  before: string,
-  after: string,
-  packetId: string,
-): ReviewSuggestion[] {
-  const suggestions: ReviewSuggestion[] = [];
-  let afterOffset = 0;
-  for (const region of changedRegions(before, after)) {
-    if (typeof region === "string") {
-      afterOffset += region.length;
-      continue;
-    }
-    const { removedText, addedText } = region;
-    suggestions.push({
-      suggestionId: randomUUID(),
-      packetId,
-      kind: removedText === ""
-        ? "insertion"
-        : addedText === "" ? "deletion" : "substitution",
-      removedText,
-      restorations: removedText === "" ? [] : [{ at: afterOffset, text: removedText }],
-      anchors: [{ from: afterOffset, to: afterOffset + addedText.length }],
-      seam: afterOffset,
-      state: "proposed",
-    });
-    afterOffset += addedText.length;
-  }
-  return suggestions;
+  const removedText = before.slice(prefix, before.length - suffix);
+  const addedLength = after.length - suffix - prefix;
+  return {
+    suggestionId: randomUUID(),
+    packetId,
+    kind: removedText === ""
+      ? "insertion"
+      : addedLength === 0 ? "deletion" : "substitution",
+    removedText,
+    restorations: removedText === "" ? [] : [{ at: prefix, text: removedText }],
+    anchors: [{ from: prefix, to: prefix + addedLength }],
+    seam: prefix,
+    state: "proposed",
+  };
 }
 
 function changeSetForTextTransition(before: string, after: string): ChangeSet {
@@ -709,6 +671,19 @@ export function applyClaimSequence(
         message: `${label} does not change the target document.`,
       };
     }
+    // A claim is one reviewable change: its description must justify
+    // exactly the hunk the reviewer keeps or undoes.
+    const hunkStarts = hunkStartLines(text, textAfter);
+    if (hunkStarts.length !== 1) {
+      return {
+        ok: false,
+        code: "CLAIM_NOT_ATOMIC",
+        message:
+          `${label} changes ${hunkStarts.length} separate places (unified-diff hunks starting at lines ${hunkStarts.join(", ")} of the result). ` +
+          "A claim must be exactly one hunk, and its description must justify that one change. " +
+          `Split it into ${hunkStarts.length} claims, one per hunk, each with its own description.`,
+      };
+    }
     steps.push({
       patch: claims[i].patch,
       description: claims[i].description,
@@ -824,7 +799,7 @@ export function prepareProposalSubmission(input: {
       changeSetForTextTransition(textBefore, step.textAfter),
       textBefore,
     );
-    next.suggestions.push(...suggestionsForChange(textBefore, step.textAfter, packetId));
+    next.suggestions.push(suggestionForClaim(textBefore, step.textAfter, packetId));
     next.generation += 1;
     packetIds.push(packet.packetId);
     textBefore = step.textAfter;
