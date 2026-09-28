@@ -87,6 +87,22 @@ Compute the discriminant group of $U \oplus E_8(2)$ and verify that it is
 $2$-elementary of length eight.
 :::
 
+::: {.construction #cons:halphen-surface}
+Blow up the plane in the nine base points of a Halphen pencil of index $m$;
+the pencil lifts to an elliptic fibration with a multiple fiber of
+multiplicity $m$.
+:::
+
+::: {.notation #not:e10-lattice}
+Write $E_{10}$ for the even unimodular lattice of signature $(1, 9)$ and
+$E_{10}(2)$ for its scaling by two.
+:::
+
+::: {.convention #conv:root-sign}
+Roots have square $-2$, and a reflection $s_r$ acts by
+$s_r(x) = x + (x \cdot r)\, r$.
+:::
+
 ::: {.theorem #thm:}
 This near-miss has an empty key and therefore defines no reference target.
 :::

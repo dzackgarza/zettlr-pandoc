@@ -161,7 +161,7 @@ describe('extractReferences() against the real Pandoc AST oracle', function () {
   // other files keep the collector itself honest.
   const ORACLE_FILES: Array<{ relativePath: string, supportedIdentifierCount: number }> = [
     { relativePath: path.join('ProjectA', 'Coble_Lattice_Table.md'), supportedIdentifierCount: 5 },
-    { relativePath: path.join('ProjectA', 'Theorems.md'), supportedIdentifierCount: 15 },
+    { relativePath: path.join('ProjectA', 'Theorems.md'), supportedIdentifierCount: 18 },
     { relativePath: path.join('ProjectA', 'Halphen_Surfaces.md'), supportedIdentifierCount: 0 },
     { relativePath: path.join('ProjectB', 'Other_Paper.md'), supportedIdentifierCount: 2 },
     { relativePath: 'Standalone_Notes.md', supportedIdentifierCount: 1 },

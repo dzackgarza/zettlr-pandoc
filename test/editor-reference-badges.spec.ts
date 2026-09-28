@@ -188,7 +188,7 @@ describe('Reference definition badges (issue #1 Phase 4)', function () {
     // Fixture invariant: the proof div, the empty-key near-miss, and the
     // unsupported table: prefix never become definitions.
     const keys = payload.snapshot.definitions.map(definition => definition.key)
-    assert.strictEqual(keys.length, 15, 'the fixture must define one target per supported theorem family')
+    assert.strictEqual(keys.length, 18, 'the fixture must define one target per supported theorem family')
     assert.ok(!keys.includes('thm:should-not-index'), 'proof divs are never definitions')
 
     const badges = labelBadges(view)

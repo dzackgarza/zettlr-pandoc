@@ -137,10 +137,10 @@ In a Quarto document the caption attribute is `lst-cap`:
 
 ## Theorem-like blocks
 
-### pandoc-crossref documents
-
-A theorem-like block is a fenced div with the family's class and an ID with
-the family's prefix. The title is optional:
+Theorem-like blocks use one syntax in every document, in the Quarto book and
+in the pandoc-crossref papers. A block is a fenced div with the family's full
+lowercase class and an ID with the family's prefix and a colon. The title is
+optional:
 
 ```markdown
 ::: {.theorem #thm:nikulin title="Nikulin"}
@@ -153,29 +153,11 @@ $(r, a, \delta)$.
 :::
 ```
 
-Refer to it like a figure: `@thm:nikulin`, `[@thm:nikulin; @lem:gluing]`,
-`[-@thm:nikulin]` (number only). Proofs (`.proof`, `.sketch`, `.solution`) are
-unnumbered and take no ID.
+Refer to it like a figure: `@thm:nikulin` ("Theorem 2.9"),
+`[@thm:nikulin; @lem:gluing]`, `[-@thm:nikulin]` (number only). Proofs
+(`.proof`, `.sketch`, `.solution`) are unnumbered and take no ID.
 
 <!-- theorem-families -->
-
-### Quarto book (`writing/.book`)
-
-The book numbers blocks with the `custom-numbered-blocks` filter. The class is
-capitalised, the ID keeps a colon (Quarto reserves `thm-`, `lem-`, `def-` and
-the other hyphen prefixes for its own theorems), and an optional title is the
-first heading inside the block:
-
-```markdown
-::: {.Theorem #thm:nikulin}
-### Nikulin
-An even hyperbolic 2-elementary lattice is determined up to isometry by
-$(r, a, \delta)$.
-:::
-```
-
-Refer to it with `\ref{thm:nikulin}` (number only) or `\longref{thm:nikulin}`
-("Theorem 2.9").
 
 ## Citations
 

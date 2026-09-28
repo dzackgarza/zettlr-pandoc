@@ -64,6 +64,9 @@ const FAMILY_BY_THEOREM_PREFIX: Record<TheoremFamilyPrefix, PandocDivFamily> = {
   clm: 'result',
   def: 'definition',
   ass: 'definition',
+  cons: 'definition',
+  not: 'definition',
+  conv: 'definition',
   rmk: 'explanation',
   ex: 'explanation',
   obs: 'explanation',
@@ -91,8 +94,6 @@ const FAMILY_BY_FLOAT_PREFIX: Record<string, PandocDivFamily> = {
  * proof-like classes, which pandoc-crossref never numbers or labels.
  */
 const UNREFERENCEABLE_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  construction: 'definition',
-  notation: 'definition',
   fact: 'explanation',
   caution: 'warning',
   danger: 'warning',

@@ -135,6 +135,9 @@ export const THEOREM_FAMILY_METADATA = [
   { prefix: 'ass', divClass: 'assumption', displayName: 'Assumption' },
   { prefix: 'warn', divClass: 'warning', displayName: 'Warning' },
   { prefix: 'exr', divClass: 'exercise', displayName: 'Exercise' },
+  { prefix: 'cons', divClass: 'construction', displayName: 'Construction' },
+  { prefix: 'not', divClass: 'notation', displayName: 'Notation' },
+  { prefix: 'conv', divClass: 'convention', displayName: 'Convention' },
 ] as const satisfies readonly TheoremFamilyMetadata[]
 
 export type TheoremFamilyPrefix = typeof THEOREM_FAMILY_METADATA[number]['prefix']

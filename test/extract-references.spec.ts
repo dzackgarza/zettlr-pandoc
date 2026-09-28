@@ -97,7 +97,7 @@ function occurrence (
   }
 }
 
-// Every one of the fifteen theorem prefixes is defined once in Theorems.md.
+// Every one of the eighteen theorem prefixes is defined once in Theorems.md.
 const THEOREM_FIXTURE_DEFINITIONS: Array<{ key: string, family: TheoremFamily, title: string | undefined }> = [
   { key: 'thm:torelli', family: 'thm', title: 'Torelli for Enriques' },
   { key: 'lem:kodaira:embedding', family: 'lem', title: undefined },
@@ -113,7 +113,10 @@ const THEOREM_FIXTURE_DEFINITIONS: Array<{ key: string, family: TheoremFamily, t
   { key: 'prob:classify-actions', family: 'prob', title: undefined },
   { key: 'ass:very-general', family: 'ass', title: undefined },
   { key: 'warn:signature-convention', family: 'warn', title: undefined },
-  { key: 'exr:compute-discriminant', family: 'exr', title: undefined }
+  { key: 'exr:compute-discriminant', family: 'exr', title: undefined },
+  { key: 'cons:halphen-surface', family: 'cons', title: undefined },
+  { key: 'not:e10-lattice', family: 'not', title: undefined },
+  { key: 'conv:root-sign', family: 'conv', title: undefined }
 ]
 
 describe('extractReferences()', function () {
