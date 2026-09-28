@@ -19,6 +19,7 @@ interface StandaloneReport {
 
 // A wide figure: an arrow to (2,1) with a label, and a unit-diameter circle.
 const SOURCE = [
+  "% Figure 3: the map f leaves the unit disc.",
   "\\begin{tikzpicture}",
   "\\draw[->] (0,0) -- (2,1) node[right] {$f$};",
   "\\draw (0,0) circle (0.5);",

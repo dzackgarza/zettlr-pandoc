@@ -9,15 +9,15 @@
  * Description:     Declares the preview/editor modes which may host one active
  *                  TikZ source block. Availability is source-semantic rather
  *                  than a view concern: tikzcd may use Quiver, while the
- *                  vendored tikz-editor is deliberately restricted to an
- *                  authored tikzpicture environment. The renderer shell
+ *                  vendored tikz-editor needs source that contains a
+ *                  tikzpicture environment. The renderer shell
  *                  consumes these descriptors instead of hard-coding mode
  *                  branches.
  *
  * END HEADER
  */
 
-import { rawTikzEnvironment, tikzBlockHasContiguousSource } from "./source-block";
+import { tikzBlockHasContiguousSource } from "./source-block";
 import { quiverCanEditBlock, quiverSourceError } from "./quiver-bridge";
 import type { TikzLivePreviewTarget } from "./live-preview";
 
@@ -31,10 +31,14 @@ export interface TikzPreviewModeDescriptor {
   unavailableTitle: (target: TikzLivePreviewTarget) => string;
 }
 
+// tikz-editor edits a whole TikZ file: setup before the environment and
+// comments after it are part of the source it round-trips.
+const TIKZPICTURE_RE = /\\begin\{tikzpicture\}[\s\S]*\\end\{tikzpicture\}/u;
+
 function supportsVisualEditor(target: TikzLivePreviewTarget): boolean {
   return (
     target.language === "tikz" &&
-    rawTikzEnvironment(target.source) === "tikzpicture" &&
+    TIKZPICTURE_RE.test(target.source) &&
     tikzBlockHasContiguousSource(target)
   );
 }
@@ -64,7 +68,7 @@ export const TIKZ_PREVIEW_MODES: readonly TikzPreviewModeDescriptor[] = [
         ? "The visual editor is for tikzpicture diagrams; tikzcd uses Quiver"
         : !tikzBlockHasContiguousSource(target)
           ? "Move this diagram out of the surrounding Markdown block to use the visual editor"
-          : "The visual editor requires a \\begin{tikzpicture} ... \\end{tikzpicture} block",
+          : "The visual editor requires a \\begin{tikzpicture} ... \\end{tikzpicture} environment",
   },
 ];
 

@@ -56,6 +56,16 @@ describe("TikZ preview mode capabilities", function () {
       ),
       true,
     );
+    // A .tikz file: style setup before the environment, a comment after it.
+    assert.strictEqual(
+      visual.supports(
+        target(
+          "\\tikzset{every node/.style={draw}}\n\\begin{tikzpicture}\n\\node (a) at (0,0) {A};\n\\end{tikzpicture}\n% from figure 3",
+          "tikz",
+        ),
+      ),
+      true,
+    );
     assert.strictEqual(visual.supports(target("\\draw (0,0) -- (1,1);", "tikz")), false);
     assert.strictEqual(visual.supports(target("\\input{figures/a.tikz}", "tikz")), false);
     assert.strictEqual(
