@@ -14,7 +14,7 @@
  * END HEADER
  */
 
-import type { TikzSourceBlock } from "./tikz-block";
+import type { TikzSourceBlock } from "./source-block";
 
 export interface QuiverEditableBlock extends TikzSourceBlock {
   authoredSource: string;

@@ -1,5 +1,5 @@
 <template>
-  <div class="tikz-editor-preview">
+  <div class="tikz-editor-preview" :class="{ dark: props.theme === 'dark' }">
     <div
       v-if="errorMessage !== ''"
       class="tikz-editor-error"
@@ -10,7 +10,7 @@
     <iframe
       ref="frame"
       class="tikz-editor-frame"
-      src="./tikz-editor/index.html"
+      :src="props.host.editorUrl"
       title="TikZ visual editor"
     />
   </div>
@@ -26,7 +26,7 @@
  * License:         GNU GPL v3
  *
  * Description:     Hosts the pinned DominikPeters/tikz-editor fork in an
- *                  isolated iframe. CodeMirror remains the source authority;
+ *                  isolated iframe. The host document remains the source authority;
  *                  tikz-editor owns TikZ parsing, semantics, canvas editing,
  *                  edit capabilities and history. The bridge sends complete
  *                  source in both directions and rejects stale iframe writes.
@@ -34,14 +34,13 @@
  * END HEADER
  */
 
-import type { EditorView } from "@codemirror/view";
 import {
   type TikzEditorSourceSession,
   tikzEditorReplacement,
   tikzEditorSessionForBlock,
-} from "@common/modules/markdown-editor/tikz-editor-bridge";
-import type { TikzLivePreviewTarget } from "@common/modules/markdown-editor/tikz-live-preview";
-import { reportError } from "@common/util/error-reporting";
+} from "../editor-bridge";
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
+import type { TikzLivePreviewTarget } from "../live-preview";
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 
 interface PreviewSession {
@@ -62,7 +61,8 @@ interface TikzEditorHostMessage {
 
 const props = defineProps<{
   target: TikzLivePreviewTarget;
-  editorView: EditorView;
+  host: TikzWorkbenchHost;
+  theme: TikzWorkbenchTheme;
   fullscreen: boolean;
 }>();
 
@@ -81,14 +81,9 @@ const session = shallowRef<PreviewSession>({
 const hostReady = ref(false);
 const loaded = ref(false);
 const errorMessage = ref("");
-let themeObserver: MutationObserver | null = null;
 
 function sameBlockIdentity(a: TikzEditorSourceSession, b: TikzEditorSourceSession): boolean {
   return a.kind === b.kind && a.blockFrom === b.blockFrom;
-}
-
-function currentTheme(): "light" | "dark" {
-  return document.body.classList.contains("dark") ? "dark" : "light";
 }
 
 function postToEditor(message: Record<string, unknown>): void {
@@ -113,10 +108,10 @@ function sendFullLoad(): void {
     source: active.source.source,
     autosave: 0,
     fileName: props.target.docPath === "" ? "diagram.tikz" : props.target.docPath,
-    imageBaseUrl: props.target.docPath === "" ? "" : new URL("./", `file://${encodeURI(props.target.docPath).replaceAll("#", "%23").replaceAll("?", "%3F")}`).href,
+    imageBaseUrl: props.host.imageBaseUrl(props.target.docPath),
     settings: {
       general: {
-        colorScheme: currentTheme(),
+        colorScheme: props.theme,
         canvasInvert: false,
       },
     },
@@ -130,7 +125,7 @@ function sendTheme(): void {
   }
   postToEditor({
     action: "settings",
-    settings: { general: { colorScheme: currentTheme(), canvasInvert: false } },
+    settings: { general: { colorScheme: props.theme, canvasInvert: false } },
   });
 }
 
@@ -159,6 +154,8 @@ watch(
     }
   },
 );
+
+watch(() => props.theme, sendTheme);
 
 watch(
   () => props.fullscreen,
@@ -192,23 +189,21 @@ function applyEditorSource(source: string, revision: number | undefined): void {
     return;
   }
 
-  // CodeMirror may have changed after tikz-editor began this edit. Never let
+  // The host document may have changed after tikz-editor began this edit. Never let
   // a delayed iframe message overwrite newer authoritative source bytes.
-  const current = props.editorView.state.sliceDoc(active.source.sourceFrom, active.source.sourceTo);
+  const current = props.host.readSource(active.source.sourceFrom, active.source.sourceTo);
   if (current !== active.source.source) {
     return;
   }
 
   try {
     const replacement = tikzEditorReplacement(active.source, source);
-    props.editorView.dispatch({
-      changes: { from: replacement.from, to: replacement.to, insert: replacement.insert },
-    });
+    props.host.writeSource(replacement.from, replacement.to, replacement.insert);
     session.value = { ...active, source: replacement.next };
     errorMessage.value = "";
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
-    reportError("Could not synchronize tikz-editor source into CodeMirror", error);
+    props.host.reportError("Could not synchronize tikz-editor source into the document", error);
   }
 }
 
@@ -281,14 +276,10 @@ emit("busy", false);
 
 onMounted(() => {
   window.addEventListener("message", onMessage);
-  themeObserver = new MutationObserver(sendTheme);
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("message", onMessage);
-  themeObserver?.disconnect();
-  themeObserver = null;
 });
 </script>
 
@@ -321,7 +312,7 @@ onBeforeUnmount(() => {
   font-size: 0.8rem;
 }
 
-:global(body.dark .tikz-editor-error) {
+.tikz-editor-preview.dark .tikz-editor-error {
   color: #e67e73;
 }
 </style>

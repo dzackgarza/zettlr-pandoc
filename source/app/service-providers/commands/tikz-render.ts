@@ -8,7 +8,7 @@
  *
  * Description:     Renders a TikZ figure to inline SVG for the editor's
  *                  live preview (issue #14). Thin IPC seam over the
- *                  render service in app/util/tikz-render. The filter may
+ *                  render service in tikz-workbench/src/tikz-render. The filter may
  *                  come from an explicitly configured Pandoc data tree or the
  *                  live ~/.pandoc tree; snippet preamble
  *                  ownership is stricter: ~/.pandoc/templates/
@@ -22,7 +22,7 @@ import { Mutex } from "async-mutex";
 import { app } from "electron";
 import { type AppServiceContainer } from "../../app-service-container";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
-import { renderTikz, type TikzRenderRequest, type TikzRenderResult } from "../../util/tikz-render";
+import { renderTikz, type TikzRenderRequest, type TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {

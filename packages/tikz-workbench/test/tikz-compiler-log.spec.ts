@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { tikzCompilerLogHeadline } from "@common/util/tikz-compiler-log";
+import { tikzCompilerLogHeadline } from "../src/compiler-log";
 
 describe("TikZ compiler-log presentation", function () {
   const log = [

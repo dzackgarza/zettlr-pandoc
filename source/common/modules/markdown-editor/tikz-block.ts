@@ -18,25 +18,13 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
+import { rawTikzInput, tikzLanguageForFenceInfo, usesOwnedTikzTemplate } from "@common/util/tikz-source-blocks";
+import type { SyntaxNodeRef } from "@lezer/common";
 import {
   contiguousSourceLineRanges,
   rawTikzEnvironment,
-  rawTikzInput,
   type TikzSourceBlock,
-  tikzLanguageForFenceInfo,
-  usesOwnedTikzTemplate,
-} from "@common/util/tikz-source-blocks";
-import type { SyntaxNodeRef } from "@lezer/common";
-
-export {
-  FIGURE_ENVIRONMENTS,
-  INPUT_TIKZ_RE,
-  rawTikzEnvironment,
-  rawTikzInput,
-  type TikzSourceBlock,
-  tikzBlockHasContiguousSource,
-  usesOwnedTikzTemplate,
-} from "@common/util/tikz-source-blocks";
+} from "tikz-workbench/src/source-block";
 
 /**
  * Converts one Markdown syntax node into the TikZ source it represents.

@@ -15,7 +15,7 @@
  * END HEADER
  */
 
-import { type TikzSourceBlock, tikzBlockHasContiguousSource } from "./tikz-block";
+import { type TikzSourceBlock, tikzBlockHasContiguousSource } from "./source-block";
 
 export interface TikzEditorSourceSession {
   kind: "raw" | "fence";

@@ -7,7 +7,7 @@ import { promisify } from 'util'
 import YAML from 'yaml'
 import { writeDefaults } from 'source/app/service-providers/commands/exporter/index'
 import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
-import type { MathJaxMacro } from 'source/common/util/mathjax-config'
+import type { MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 
 const execFileAsync = promisify(execFile)
 

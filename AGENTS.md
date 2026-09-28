@@ -139,7 +139,7 @@ Desktop entry → wrapper → splash → boot script:
 - **App load:** `source/app/util/load-mathjax-macros.ts` resolves that central generated
   file and fails loudly when it is absent. The `mathjax-macros` IPC in
   `source/app/lifecycle.ts` serves the same read-only projection to renderer consumers.
-- **Format/validation:** `source/common/util/mathjax-config.ts` (`parseMathJaxMacros`;
+- **Format/validation:** `packages/tikz-workbench/src/mathjax-config.ts` (`parseMathJaxMacros`;
   malformed central projections fail rather than being replaced with bundled defaults).
 - **Render:** `source/common/util/mathtex-to-html.ts` (`initializeMathJax`, local
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
@@ -241,6 +241,24 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.
 - In ChatGPT, the app uses Connection: Tunnel with that tunnel ID. Tool calls fail
   while the editor is closed; the tunnel itself stays up.
+
+### 7. TikZ workbench module
+
+- **Module:** `packages/tikz-workbench` (Bun workspace package `tikz-workbench`). It owns
+  the TikZ editing surface — compiled preview, visual editor, Quiver, compiler
+  diagnostics — plus the TeX compiler (`src/tikz-render.ts`), the Quiver macro
+  projection, and the vendored forks `vendor/tikz-editor` and `vendor/quiver`. It must
+  import nothing from `source/`; Zettlr imports it as `tikz-workbench/src/…`.
+- **Host contract:** `src/host.ts` (`TikzWorkbenchHost`). Zettlr's host is
+  `source/win-main/tikz-workbench-host.ts` (a CodeMirror range + IPC), mounted by
+  `MainEditor.vue`. The standalone host is `standalone/` (`just tikz-standalone
+  file.tikz`): a Bun server plus a Vite page with a source pane. A workbench change
+  goes into `packages/tikz-workbench`, not into a host.
+- **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
+  `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
+- **Install layout:** `bunfig.toml` pins Bun's hoisted linker. The workspace would
+  otherwise select the isolated linker, and webpack/Forge resolve transitive
+  dependencies from the hoisted `node_modules`.
 
 ## Debugging entry points
 

@@ -1,7 +1,9 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
-import { type Component, createApp, nextTick } from "vue";
+import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
+import { createApp, nextTick } from "vue";
+import { zettlrTikzWorkbenchHost } from "source/win-main/tikz-workbench-host";
+import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
 
 declare global {
   interface Window {
@@ -10,19 +12,6 @@ declare global {
 }
 
 const source = ["\\begin{tikzpicture}", "\\draw (0,0) -- (1,1);", "\\end{tikzpicture}"].join("\n");
-const previewContext = require.context("../source/win-main/", false, /TikzLivePreview\.vue$/);
-
-function tikzLivePreviewComponent(): Component {
-  const key = previewContext.keys().find((candidate) => candidate.includes("TikzLivePreview"));
-  if (key === undefined) {
-    throw new Error("source/win-main/TikzLivePreview.vue is missing from the renderer bundle");
-  }
-  const module = previewContext(key) as { default?: unknown };
-  if (module.default === undefined) {
-    throw new Error("source/win-main/TikzLivePreview.vue has no default component export");
-  }
-  return module.default as Component;
-}
 
 async function mount(): Promise<void> {
   const ipcSeam = {
@@ -58,7 +47,7 @@ async function mount(): Promise<void> {
     state: EditorState.create({ doc: source }),
     parent: editorHost,
   });
-  createApp(tikzLivePreviewComponent(), {
+  createApp(TikzWorkbench, {
     target: {
       from: 0,
       to: source.length,
@@ -69,8 +58,10 @@ async function mount(): Promise<void> {
       kind: "raw",
       language: "tikz",
       docPath: "/tmp/fullscreen-probe.tikz",
+      authoredSource: source,
     },
-    editorView: view,
+    host: zettlrTikzWorkbenchHost(view),
+    theme: "light",
   }).mount(previewHost);
   await nextTick();
 }

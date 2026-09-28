@@ -15,9 +15,10 @@ import { renderTikzFigures } from 'source/common/modules/markdown-editor/rendere
 import { defaultDark, defaultLight, editorTheme } from 'source/common/modules/markdown-editor/theme/editor'
 import { markdownSyntaxHighlighter } from 'source/common/modules/markdown-editor/theme/syntax'
 import { configField } from 'source/common/modules/markdown-editor/util/configuration'
-import TikzLivePreview from 'source/win-main/TikzLivePreview.vue'
+import TikzWorkbench from 'tikz-workbench/src/ui/TikzWorkbench.vue'
+import { zettlrTikzWorkbenchHost } from 'source/win-main/tikz-workbench-host'
 import { activeTikzBlock } from 'source/common/modules/markdown-editor/tikz-block'
-import type { TikzRenderRequest, TikzRenderResult } from 'source/app/util/tikz-render'
+import type { TikzRenderRequest, TikzRenderResult } from 'tikz-workbench/src/tikz-render'
 
 declare global {
   interface Window {
@@ -104,7 +105,11 @@ async function mount (): Promise<void> {
     if (previewHost === null) {
       throw new Error('Live TikZ visual preview host is missing')
     }
-    createApp(TikzLivePreview, { target: { ...block, docPath: '' }, editorView: view }).mount(previewHost)
+    createApp(TikzWorkbench, {
+      target: { ...block, docPath: '', authoredSource: view.state.sliceDoc(block.sourceFrom, block.sourceTo) },
+      host: zettlrTikzWorkbenchHost(view),
+      theme: dark ? 'dark' : 'light'
+    }).mount(previewHost)
     // The visual corpus exercises the compiler-backed TikZ rendering surface;
     // tikzcd correctly defaults to Quiver in production, so opt into TikZ here.
     previewHost.querySelector<HTMLButtonElement>('.tikz-live-preview-modes button:first-child')?.click()
@@ -116,7 +121,7 @@ async function mount (): Promise<void> {
   for (let round = 0; round < 200; round++) {
     const svgs = document.querySelectorAll('.tikz-figure svg').length
     const errors = document.querySelectorAll('.tikz-error').length
-    const liveViewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs') !== null
+    const liveViewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs') !== null
     if (
       (scene?.startsWith('stacks-') === true && svgs >= (scene === 'stacks-01JO' ? 3 : 1)) ||
       (scene?.startsWith('textbook-') === true && svgs >= (scene === 'textbook-small' ? 4 : 3)) ||
@@ -128,7 +133,7 @@ async function mount (): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, 25))
   }
   const errorTexts = Array.from(document.querySelectorAll('.tikz-error')).map(box => box.textContent?.slice(0, 160))
-  throw new Error(`TikZ widgets never reached the expected rendered state: live=${String(livePreview)} figures=${document.querySelectorAll('.tikz-figure').length} svgs=${document.querySelectorAll('.tikz-figure svg').length} liveViewer=${String(document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs') !== null)} errors=${JSON.stringify(errorTexts)}`)
+  throw new Error(`TikZ widgets never reached the expected rendered state: live=${String(livePreview)} figures=${document.querySelectorAll('.tikz-figure').length} svgs=${document.querySelectorAll('.tikz-figure svg').length} liveViewer=${String(document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs') !== null)} errors=${JSON.stringify(errorTexts)}`)
 }
 
 window.captureReady = mount()

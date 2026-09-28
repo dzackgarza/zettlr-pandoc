@@ -1,6 +1,6 @@
 /** Shared renderer-side TikZ request memo for widgets, lint, and preview consumers. */
 
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 let renderMemo = new Map<string, Promise<TikzRenderResult>>();
 

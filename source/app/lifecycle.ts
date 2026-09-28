@@ -27,8 +27,8 @@ import { AppServiceContainer, getAppServiceContainer, isAppServiceContainerReady
 import { app, ipcMain } from 'electron'
 import { attachAppNavigationHandlers } from './util/attach-app-navigation-handlers'
 import { loadCanonicalMathJaxMacros, loadCanonicalTexMacroCommands } from './util/load-mathjax-macros'
-import { projectQuiverMacros, type QuiverMacrosIPCResponse } from './util/quiver-macros'
-import { resolveTikzTemplatePath, type TikzCompletionIPCResponse, tikzTemplateCompletions } from './util/tikz-render'
+import { projectQuiverMacros, type QuiverMacrosIPCResponse } from 'tikz-workbench/src/quiver-macros'
+import { resolveTikzTemplatePath, type TikzCompletionIPCResponse, tikzTemplateCompletions } from 'tikz-workbench/src/tikz-render'
 
 /**
  * What the bare 'mathjax-macros' invoke channel answers with — the loader's

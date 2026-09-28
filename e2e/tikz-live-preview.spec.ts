@@ -31,7 +31,7 @@ import {
 /** The production editor's content element; CodeMirror keeps its view on the element's tile. */
 type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } }
 
-/** A message the embedded Quiver host posts to Zettlr (vendor/quiver/src/zettlr-host.mjs). */
+/** A message the embedded Quiver host posts to Zettlr (packages/tikz-workbench/vendor/quiver/src/zettlr-host.mjs). */
 interface QuiverBridgeMessage {
   type: string
   sessionId?: string|null
@@ -107,9 +107,9 @@ describe('TikZ microlocal live preview in the assembled app', function () {
 
     const preview = page.locator('.tikz-live-preview')
     await preview.waitFor({ state: 'visible', timeout: 20_000 })
-    const tikzMode = preview.getByRole('button', { name: 'TikZ', exact: true })
-    const quiverMode = preview.getByRole('button', { name: 'Quiver', exact: true })
-    const visualMode = preview.getByRole('button', { name: 'Visual', exact: true })
+    const tikzMode = preview.getByRole('button', { name: 'Compiled preview', exact: true })
+    const quiverMode = preview.getByRole('button', { name: 'Quiver editor', exact: true })
+    const visualMode = preview.getByRole('button', { name: 'Visual editor', exact: true })
     assert.strictEqual(await quiverMode.getAttribute('aria-pressed'), 'true', 'tikzcd defaults the unified RHS preview to Quiver')
     assert.strictEqual(await tikzMode.getAttribute('aria-pressed'), 'false')
     assert.strictEqual(await visualMode.isDisabled(), true, 'ordinary visual TikZ editing is never offered for tikzcd')
@@ -156,10 +156,10 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       `the dedicated viewer must default to a useful contain fit rather than the SVG's tiny intrinsic size: ${JSON.stringify(initialFit)}`
     )
 
-    const inlineViewer = preview.locator('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+    const inlineViewer = preview.locator('.tikz-live-preview-figure .tikz-workbench-viewerjs')
     await inlineViewer.locator('.viewer-canvas').click({ position: { x: 8, y: 8 } })
     assert.strictEqual(
-      await page.locator('.zettlr-tikz-viewerjs.viewer-fixed').count(),
+      await page.locator('.tikz-workbench-viewerjs.viewer-fixed').count(),
       0,
       'the RHS canvas has no competing Viewer.js modal path'
     )
@@ -173,7 +173,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     // Viewer.js node, promote the pane, and require the same viewer instance to
     // remain mounted while it refits to the larger canvas.
     await page.evaluate(() => {
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       if (!(viewer instanceof HTMLElement)) throw new Error('inline Viewer.js surface missing')
       viewer.dataset.e2eViewerIdentity = 'editing-instance'
     })
@@ -192,7 +192,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
       'editing-instance',
       'fullscreen promotion preserves the exact RHS Viewer.js instance'
     )
-    assert.strictEqual(await page.locator('.zettlr-tikz-viewerjs').count(), 1, 'fullscreen does not create a second viewer')
+    assert.strictEqual(await page.locator('.tikz-workbench-viewerjs').count(), 1, 'fullscreen does not create a second viewer')
     assert.strictEqual(await inlineViewer.locator('input[type="number"]').count(), 0, 'the removed numeric zoom field remains absent')
     await preview.locator('.tikz-live-preview-expand').click()
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.classList.contains('fullscreen') !== true)
@@ -219,7 +219,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     // the user's viewport. Sample every painted frame while the real TeX render
     // runs so a transient shrink-to-natural-size/rezoom cycle is a failure too.
     const stableBefore = await page.evaluate(() => {
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       const canvas = viewer?.querySelector('.viewer-canvas')
       const image = canvas?.querySelector('img')
       if (!(viewer instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return null
@@ -300,7 +300,7 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     )
     const stableAfter = await page.evaluate(sampler => {
       sampler.sampling = false
-      const viewer = document.querySelector('.tikz-live-preview-figure .zettlr-tikz-viewerjs')
+      const viewer = document.querySelector('.tikz-live-preview-figure .tikz-workbench-viewerjs')
       const canvas = viewer?.querySelector('.viewer-canvas')
       const image = canvas?.querySelector('img')
       if (!(viewer instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return null
@@ -403,8 +403,8 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await inlineTikzCd.locator('svg').click()
     await preview.waitFor({ state: 'visible', timeout: 20_000 })
 
-    const rhsTikzMode = preview.getByRole('button', { name: 'TikZ', exact: true })
-    const rhsQuiverMode = preview.getByRole('button', { name: 'Quiver', exact: true })
+    const rhsTikzMode = preview.getByRole('button', { name: 'Compiled preview', exact: true })
+    const rhsQuiverMode = preview.getByRole('button', { name: 'Quiver editor', exact: true })
     assert.strictEqual(await rhsQuiverMode.getAttribute('aria-pressed'), 'true', 'rendered tikzcd activation defaults the RHS pane to Quiver')
     assert.strictEqual(await rhsQuiverMode.isEnabled(), true)
     assert.strictEqual(await rhsTikzMode.getAttribute('aria-pressed'), 'false')
@@ -546,9 +546,9 @@ describe('TikZ microlocal live preview in the assembled app', function () {
     await ordinaryFigure.locator('svg').click()
     await preview.waitFor({ state: 'visible', timeout: 20_000 })
     await page.waitForFunction(() => document.querySelector('.tikz-live-preview')?.getAttribute('data-tikz-language') === 'tikz', undefined, { timeout: 20_000 })
-    const ordinaryTikz = preview.getByRole('button', { name: 'TikZ', exact: true })
-    const ordinaryQuiver = preview.getByRole('button', { name: 'Quiver', exact: true })
-    const ordinaryVisual = preview.getByRole('button', { name: 'Visual', exact: true })
+    const ordinaryTikz = preview.getByRole('button', { name: 'Compiled preview', exact: true })
+    const ordinaryQuiver = preview.getByRole('button', { name: 'Quiver editor', exact: true })
+    const ordinaryVisual = preview.getByRole('button', { name: 'Visual editor', exact: true })
     assert.strictEqual(await ordinaryTikz.getAttribute('aria-pressed'), 'true', 'tikzpicture defaults to TikZ preview')
     assert.strictEqual(await ordinaryQuiver.isDisabled(), true, 'Quiver toggle is disabled for non-tikzcd source')
     assert.strictEqual(await ordinaryVisual.isEnabled(), true, 'the visual editor is enabled for an authored tikzpicture')

@@ -2,8 +2,8 @@ import { strict as assert } from 'node:assert'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { projectQuiverMacros } from 'source/app/util/quiver-macros'
-import { tikzTemplateQuiverMacros } from 'source/app/util/tikz-render'
+import { projectQuiverMacros } from '../src/quiver-macros'
+import { tikzTemplateQuiverMacros } from '../src/tikz-render'
 
 describe('Quiver macro projection', function () {
   let root: string

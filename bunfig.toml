@@ -1,0 +1,5 @@
+# The tikz-workbench workspace would otherwise switch Bun to its isolated
+# linker; Electron Forge and webpack resolve transitive dependencies from the
+# hoisted layout. https://bun.com/docs/install/isolated
+[install]
+linker = "hoisted"

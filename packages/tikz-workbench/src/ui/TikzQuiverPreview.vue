@@ -1,5 +1,5 @@
 <template>
-  <div class="tikz-quiver-preview">
+  <div class="tikz-quiver-preview" :class="{ dark: props.theme === 'dark' }">
     <div
       v-if="errorMessage !== ''"
       class="tikz-quiver-error"
@@ -10,7 +10,7 @@
     <iframe
       ref="frame"
       class="tikz-quiver-frame"
-      src="./quiver/zettlr-host.html"
+      :src="props.host.quiverUrl"
       title="Quiver diagram editor"
     />
   </div>
@@ -27,7 +27,7 @@
  *
  * Description:     Reusable local host for the forked/vendored Quiver editor.
  *                  The RHS preview pane owns presentation mode and fullscreen
- *                  geometry; this component owns only the live CodeMirror ↔
+ *                  geometry; this component owns only the live document ↔
  *                  Quiver source bridge, macro projection and theme forwarding.
  *                  Embedded and fullscreen states therefore use the same iframe
  *                  and Quiver history rather than competing editor instances.
@@ -36,16 +36,15 @@
  */
 
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import type { EditorView } from '@codemirror/view'
-import type { QuiverMacrosIPCResponse } from 'source/app/lifecycle'
-import type { TikzLivePreviewTarget } from '@common/modules/markdown-editor/tikz-live-preview'
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from '../host'
+import type { TikzLivePreviewTarget } from '../live-preview'
+import type { QuiverMacroProjection } from '../quiver-macros'
 import {
   quiverReplacement,
   quiverSessionForBlock,
   quiverSourceForSession,
   type TikzQuiverSourceSession
-} from '@common/modules/markdown-editor/tikz-quiver'
-import { reportError } from '@common/util/error-reporting'
+} from '../quiver-bridge'
 
 interface PreviewSession {
   id: string
@@ -69,7 +68,8 @@ interface QuiverHostMessage {
 
 const props = defineProps<{
   target: TikzLivePreviewTarget
-  editorView: EditorView
+  host: TikzWorkbenchHost
+  theme: TikzWorkbenchTheme
   fullscreen: boolean
 }>()
 
@@ -83,13 +83,11 @@ const session = shallowRef<PreviewSession>({
   id: crypto.randomUUID(),
   source: quiverSessionForBlock(props.target)
 })
-const macroProjection = shallowRef<QuiverMacrosIPCResponse|null>(null)
+const macroProjection = shallowRef<QuiverMacroProjection|null>(null)
 const hostReady = ref(false)
 const diagnostics = ref<QuiverDiagnostic[]>([])
 const errorMessage = ref('')
-let themeObserver: MutationObserver|null = null
 
-const currentTheme = (): 'light'|'dark' => document.body.classList.contains('dark') ? 'dark' : 'light'
 
 function sameBlockIdentity (a: TikzQuiverSourceSession, b: TikzQuiverSourceSession): boolean {
   return a.kind === b.kind && a.blockFrom === b.blockFrom
@@ -107,7 +105,7 @@ function sendFullLoad (): void {
     type: 'zettlr-quiver:load',
     source: quiverSourceForSession(session.value.source),
     macros: macroProjection.value.macros,
-    theme: currentTheme()
+    theme: props.theme
   })
   postToQuiver({ type: 'zettlr-quiver:display', fullscreen: props.fullscreen })
 }
@@ -152,6 +150,12 @@ watch(
   }
 )
 
+watch(() => props.theme, theme => {
+  if (hostReady.value) {
+    postToQuiver({ type: 'zettlr-quiver:theme', theme })
+  }
+})
+
 watch(
   () => props.fullscreen,
   fullscreen => {
@@ -181,23 +185,21 @@ function onMessage (event: MessageEvent<QuiverHostMessage>): void {
     case 'zettlr-quiver:change': {
       if (typeof message.source !== 'string') return
       const active = session.value
-      const current = props.editorView.state.sliceDoc(active.source.sourceFrom, active.source.sourceTo)
+      const current = props.host.readSource(active.source.sourceFrom, active.source.sourceTo)
       if (current !== active.source.authoredSource) {
-        // CodeMirror changed first. Its ordinary change event will update the
+        // The host document changed first. The host will update the
         // target prop and reload Quiver from the newer authority bytes; never
         // overwrite that source with a stale iframe export.
         return
       }
       try {
         const replacement = quiverReplacement(active.source, message.source)
-        props.editorView.dispatch({
-          changes: { from: replacement.from, to: replacement.to, insert: replacement.insert }
-        })
+        props.host.writeSource(replacement.from, replacement.to, replacement.insert)
         session.value = { ...active, source: replacement.next }
         errorMessage.value = ''
       } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : String(error)
-        reportError('Could not synchronize Quiver source into the editor', error)
+        props.host.reportError('Could not synchronize Quiver source into the document', error)
       }
       break
     }
@@ -227,26 +229,18 @@ watch(statusText, text => { emit('status', text) }, { immediate: true })
 
 onMounted(async () => {
   window.addEventListener('message', onMessage)
-  themeObserver = new MutationObserver(() => {
-    if (hostReady.value) {
-      postToQuiver({ type: 'zettlr-quiver:theme', theme: currentTheme() })
-    }
-  })
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: [ 'class' ] })
 
   try {
-    macroProjection.value = await window.ipc.invoke('quiver-macros')
+    macroProjection.value = await props.host.quiverMacros()
     sendFullLoad()
   } catch (error) {
     errorMessage.value = `Could not load Quiver macros: ${error instanceof Error ? error.message : String(error)}`
-    reportError('Quiver macro projection failed', error)
+    props.host.reportError('Quiver macro projection failed', error)
   }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
-  themeObserver?.disconnect()
-  themeObserver = null
 })
 </script>
 
@@ -279,7 +273,7 @@ onBeforeUnmount(() => {
   font-size: 0.8rem;
 }
 
-:global(body.dark .tikz-quiver-error) {
+.tikz-quiver-preview.dark .tikz-quiver-error {
   color: #e67e73;
 }
 </style>

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { mathJaxPackages, type MathJaxMacro } from '@common/util/mathjax-config'
+import { mathJaxPackages, type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import { parseReaderWriter } from '@common/pandoc-util/parse-reader-writer'
 import { isHtmlWriter, isTexWriter } from '@common/pandoc-util/pandoc-maps'
 import { projectTexHeader } from './macro-projections'

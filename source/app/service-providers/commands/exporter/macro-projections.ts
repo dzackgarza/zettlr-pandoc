@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { isMathJaxMacro, type MathJaxMacro } from '@common/util/mathjax-config'
+import { isMathJaxMacro, type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 
 function assertMacroDefinition (name: string, definition: unknown): asserts definition is MathJaxMacro {
   if (!isMathJaxMacro(definition)) {

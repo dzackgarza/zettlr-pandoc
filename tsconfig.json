@@ -28,7 +28,9 @@
     // The source files need to be compiled and linted; as do the test files.
     "source/**/*",
     "test/**/*",
-    "e2e/**/*"
+    "e2e/**/*",
+    "packages/*/src/**/*",
+    "packages/*/test/**/*"
   ],
   "ts-node": {
     "require": ["tsconfig-paths/register"]

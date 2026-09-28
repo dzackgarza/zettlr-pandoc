@@ -25,7 +25,7 @@ const plugins = [
         // Quiver is a forked, vendored dependency. Keep its complete editor DOM,
         // CSS, icons and local KaTeX distribution isolated under the main
         // renderer rather than rebundling/reimplementing that interface in Vue.
-        from: "vendor/quiver/src",
+        from: "packages/tikz-workbench/vendor/quiver/src",
         to: "main_window/quiver",
         globOptions: { ignore: ["**/tests/**"] },
       },
@@ -33,7 +33,7 @@ const plugins = [
         // Ordinary TikZ visual editing is delegated to the pinned vendored
         // tikz-editor fork. Its React/editor runtime stays isolated in an iframe
         // exactly as Quiver does instead of entering Zettlr's Vue bundle.
-        from: "vendor/tikz-editor/src",
+        from: "packages/tikz-workbench/vendor/tikz-editor/src",
         to: "main_window/tikz-editor",
       },
     ],

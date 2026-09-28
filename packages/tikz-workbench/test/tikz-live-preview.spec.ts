@@ -16,13 +16,13 @@
  */
 
 import { strict as assert } from "assert";
-import type { TikzRenderRequest, TikzRenderResult } from "source/app/util/tikz-render";
+import type { TikzRenderRequest, TikzRenderResult } from "../src/tikz-render";
 import {
   TikzLivePreviewController,
   type TikzLivePreviewState,
   type TikzLivePreviewTarget,
-} from "source/common/modules/markdown-editor/tikz-live-preview";
-import { contiguousSourceLineRanges } from "source/common/util/tikz-source-blocks";
+} from "../src/live-preview";
+import { contiguousSourceLineRanges } from "../src/source-block";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
 
