@@ -723,6 +723,11 @@ export default class DocumentManager
         this.closeFileEverywhere(changedPath).catch((err: unknown) =>
           this._app.log.error(err instanceof Error ? err.message : String(err)),
         )
+      } else if (!this.documents.some((doc) => doc.filePath === changedPath)) {
+        // Every open tab is watched so that a deletion closes it, but only a
+        // tab an editor has shown has a loaded document. An unloaded tab has
+        // no buffer to reconcile: it reads the file from disk when shown.
+        this._app.log.info(`[DocumentManager] ${changedPath} is not loaded; nothing to reload`)
       } else {
         this.handleRemoteChange(changedPath).catch((err: unknown) => {
           if (this._remoteChangeErrorShownFor.includes(changedPath)) {
