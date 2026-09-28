@@ -43,10 +43,13 @@ sudo apt-get install --yes pdf2svg xvfb
 # TeX comes from upstream TeX Live, as on the workstation: the central
 # preamble loads packages (luahyperbolic among them) that the distribution's
 # frozen TeX Live does not ship. The repository is rolling, so it has no
-# checksum to pin; tlmgr verifies each package's signature instead.
+# checksum to pin; tlmgr verifies each package's signature instead. The
+# repository is one fixed mirror: mirror.ctan.org redirects to a random
+# mirror, and some of those serve a certificate curl cannot verify.
+readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
 curl --fail --location --silent --show-error \
-  https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz \
+  "${texlive_repository}/install-tl-unx.tar.gz" \
   --output "${setup_dir}/install-tl.tar.gz"
 mkdir "${setup_dir}/install-tl"
 tar --extract --gzip --file "${setup_dir}/install-tl.tar.gz" --directory "${setup_dir}/install-tl" --strip-components 1
@@ -68,7 +71,7 @@ tlpdbopt_install_srcfiles 0
 tlpdbopt_autobackup 0
 instopt_adjustpath 0
 PROFILE
-"${setup_dir}/install-tl/install-tl" --no-interaction --profile "${setup_dir}/texlive.profile"
+"${setup_dir}/install-tl/install-tl" --no-interaction --repository "${texlive_repository}" --profile "${setup_dir}/texlive.profile"
 readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"
 "${tlmgr}" install bbm bbm-macros latexmk
 sudo "${tlmgr}" path add
