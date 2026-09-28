@@ -382,7 +382,7 @@ describe('a review that cannot be persisted', function () {
     assert.equal(await reviewSummary(activeApi, activeReviewId), before)
     assert.deepEqual(await sidecarBytes(directory), beforeSidecars)
 
-    await toast.first().click()
+    await toast.first().locator('button[aria-label="Dismiss"]').click()
     await allowSidecarWrites(directory)
     await accept.click()
     await card.waitFor({ state: 'detached', timeout: 30_000 })
@@ -627,7 +627,7 @@ describe('a review that cannot be persisted', function () {
       .locator('input.suggestion-chunk-comment')
       .waitFor({ state: 'visible', timeout: 5_000 })
 
-    await toast.first().click()
+    await toast.first().locator('button[aria-label="Dismiss"]').click()
     await allowSidecarWrites(directory)
     assert.equal(
       await closeFileInPane(activePage, activePath),

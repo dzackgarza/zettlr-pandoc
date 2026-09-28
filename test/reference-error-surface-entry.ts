@@ -149,8 +149,12 @@ window.errorSurfaceProbeDismiss = (): boolean => {
   if (toast === null) {
     return false
   }
-  // The toast's own contract: it dismisses on click.
-  toast.click()
+  // The toast's own contract: its Dismiss button removes it.
+  const dismiss = toast.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')
+  if (dismiss === null) {
+    return false
+  }
+  dismiss.click()
   return true
 }
 
