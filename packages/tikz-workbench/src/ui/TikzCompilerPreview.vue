@@ -1,9 +1,9 @@
 <template>
   <div class="tikz-compiler-preview" :class="{ dark: props.theme === 'dark' }">
     <div
-      v-if="state.failure === null"
+      v-if="state.failure === null || state.lastGood !== null"
       class="tikz-compiler-preview-canvas tikz-live-preview-canvas"
-      :class="{ stale: state.stale }"
+      :class="{ stale: state.stale || state.failure !== null }"
     >
       <TikzFigureViewer
         v-if="state.lastGood !== null"
@@ -137,7 +137,7 @@ watch(
 
 const statusText = computed(() => {
   if (state.value.failure !== null) {
-    return "Render failed";
+    return state.value.lastGood === null ? "Render failed" : "Last good render";
   }
   if (state.value.pending) {
     return state.value.lastGood === null ? "Rendering…" : "Updating…";
@@ -237,6 +237,12 @@ onBeforeUnmount(() => {
 }
 
 .tikz-compiler-preview-canvas.stale .tikz-compiler-preview-figure { opacity: 0.78; }
+
+// With a last good figure above it, the complete log takes at most half the height.
+.tikz-compiler-preview-canvas + .tikz-compiler-preview-error {
+  flex: 0 1 auto;
+  max-height: 50%;
+}
 
 .tikz-compiler-preview-figure {
   width: 100%;
