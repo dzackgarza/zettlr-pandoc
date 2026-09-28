@@ -105,6 +105,7 @@ import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, { SearchPatternError, SearchTimeoutError } from "./document-queries";
 import { HELP_DOCUMENT } from "./help-content";
+import AgentMcpEndpoint from "./mcp-endpoint";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -340,6 +341,8 @@ export default class AgentHTTPProvider extends ProviderContract {
    * there is no second route table to keep in step with it.
    */
   private readonly _api: OpenAPIBackend;
+  /** The same operations as MCP tools at /mcp. Built at boot from the dereferenced document. */
+  private _mcp: AgentMcpEndpoint | undefined;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
   private readonly _helpText: string;
@@ -438,6 +441,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     // Compiles the document's route table and validation schemas. Done before
     // the listener binds, so the first request does not pay for it.
     await this._api.init();
+    this._mcp = new AgentMcpEndpoint(this._api.getOperations(), {
+      name: "zettlr-pandoc",
+      version: this._protocolVersion,
+    });
 
     const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
       this.handleRequest(req, res);
@@ -627,6 +634,14 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 400, "INVALID_PARAMS", "Invalid JSON body");
         return;
       }
+    }
+    if (url.pathname === "/mcp") {
+      const address = this._server?.address();
+      if (this._mcp === undefined || address === undefined || address === null || typeof address === "string") {
+        throw new Error("Agent API received an MCP request before boot finished");
+      }
+      await this._mcp.handle(req, res, body, `http://127.0.0.1:${address.port}`);
+      return;
     }
     if (method === "GET") {
       if (url.pathname === "/openapi.yaml") {

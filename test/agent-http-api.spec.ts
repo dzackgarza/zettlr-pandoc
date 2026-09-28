@@ -30,6 +30,8 @@ import type {
   ReadDocumentResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
@@ -1090,6 +1092,40 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assertMatchesSchema(body, "DocumentListResponse");
     for (const document of body.documents) {
       assertMatchesSchema(document, "DocumentSummary");
+    }
+  });
+
+  it("serves every operation as an MCP tool at /mcp", async function () {
+    const filePath = path.join(scratch, "mcp.md");
+    const docId = await openFile(filePath, "mcp content\n");
+    const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+    );
+    try {
+      const { tools } = await client.listTools();
+      const operationIds = Object.values(openApiDocument.paths).flatMap((methods) =>
+        Object.values(methods).map((operation) => operation.operationId),
+      );
+      assert.deepEqual(tools.map((tool) => tool.name).sort(), operationIds.sort());
+
+      const read = await client.callTool({
+        name: "getDocument",
+        arguments: { documentId: docId, includeContent: true },
+      });
+      assert.equal(read.isError, false);
+      const [content] = read.content as Array<{ type: "text"; text: string }>;
+      const document = JSON.parse(content.text) as ReadDocumentResponse;
+      assert.equal(document.content, "mcp content\n");
+      assertMatchesSchema(document, "ReadDocumentResponse");
+
+      const missing = await client.callTool({
+        name: "getDocument",
+        arguments: { documentId: "no-such-document" },
+      });
+      assert.equal(missing.isError, true);
+    } finally {
+      await client.close();
     }
   });
 
