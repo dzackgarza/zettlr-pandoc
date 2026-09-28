@@ -27,6 +27,27 @@ left as literal text or treated as a missing citation.
 
 Keys are lowercase words joined by hyphens: `tbl:coble-lattices`.
 
+## Attribute blocks
+
+Every `{…}` after a heading, image, code fence, caption or `:::` fence is a
+Pandoc attribute block. It holds three kinds of entry, separated by spaces:
+
+| Entry | Syntax | Example |
+|---|---|---|
+| ID | `#` then the ID | `#thm:nikulin` |
+| class | `.` then the class name, with no value | `.theorem` |
+| key–value attribute | `key="value"`, with no leading `.` or `#` | `title="Nikulin"` |
+
+A dot before a key–value attribute makes the whole block invalid:
+
+```markdown
+::: {.theorem #thm:nikulin .title="Nikulin"}
+```
+
+Pandoc then does not open the div. The fence line, the braces and the body
+all render as plain paragraph text, in the editor and in the PDF. Write
+`title="Nikulin"`.
+
 ## Tables
 
 Write a pipe table, a blank line, then a caption paragraph that starts with
