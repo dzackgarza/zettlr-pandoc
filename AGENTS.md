@@ -393,7 +393,7 @@ Watch for code-level laundering: hard-coded consumer names, support for local re
 
 ## Before a PR Leaves Draft
 
-A PR is ready when its gates are green and its review feedback has converged. Finished milestones do not make it ready, and neither does a plan card, a PR body, or a green local test run. Every push to a PR branch runs `deterministic-diff`, `qc-doctor`, `app-boot`, `pr-description-checklist`, `thread-resolution` and `slop-review`, beside `Unit Tests / Lint` and `qc-ci / qc`. Two automated reviewers post threads on the diff: the slop review as `github-actions`, and the bridge-burning policy scanner as `github-advanced-security`. Their findings land on the branch's own new code and they are the review this repository gives a PR.
+A PR is ready when its gates are green and its review feedback has converged. Finished milestones do not make it ready, and neither does a plan card, a PR body, or a green local test run. Every push to a PR branch runs `deterministic-diff`, `qc-doctor`, `app-boot`, `pr-description-checklist` and `thread-resolution`, beside `Unit Tests / Lint` and `qc-ci / qc`. The bridge-burning policy scanner posts threads on the diff as `github-advanced-security`. Its findings land on the branch's own new code.
 
 Read both surfaces before `gh pr ready`:
 
