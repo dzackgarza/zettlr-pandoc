@@ -225,6 +225,23 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `latexmk`, `pdflatex`, `biber`, or `~/.pandoc/justfile` are missing in the app's
   runtime environment.
 
+### 6. Agent API MCP tunnel
+
+- The agent API listens on `127.0.0.1:27412` only and has no authentication. It
+  serves the OpenAPI routes and, at `/mcp`, the same operations as an MCP server
+  (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- ChatGPT reaches `/mcp` only through the OpenAI Secure MCP Tunnel
+  `tunnel_6aba3fe9f56081919348c7060b52188f`. The user unit
+  `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs
+  [`tunnel-client`](https://github.com/openai/tunnel-client) from
+  `~/.local/bin`. It long-polls `api.openai.com` with `CONTROL_PLANE_API_KEY` from
+  `~/.envrc`, so it needs no inbound port and no public hostname.
+- Recipes: `just install-systemd-tunnel`, `just start-systemd-tunnel`,
+  `just status-systemd-tunnel`. The tunnel-client health and web UI listener is
+  `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.
+- In ChatGPT, the app uses Connection: Tunnel with that tunnel ID. Tool calls fail
+  while the editor is closed; the tunnel itself stays up.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

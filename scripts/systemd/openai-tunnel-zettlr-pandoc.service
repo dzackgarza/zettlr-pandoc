@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenAI Secure MCP Tunnel for the Zettlr-Pandoc Agent API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# tunnel-client (github.com/openai/tunnel-client) long-polls api.openai.com for
+# the MCP requests that ChatGPT sends to this tunnel and forwards each one to the
+# agent API's /mcp on loopback. It needs only outbound HTTPS. CONTROL_PLANE_API_KEY
+# comes from ~/.envrc; the health and /ui listener is loopback port 27414.
+# The tunnel may outlive the editor: tool calls fail while the editor is closed.
+ExecStart=/bin/direnv exec %h %h/.local/bin/tunnel-client run --control-plane.tunnel-id tunnel_6aba3fe9f56081919348c7060b52188f --mcp.server-url http://127.0.0.1:27412/mcp --health.listen-addr 127.0.0.1:27414
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

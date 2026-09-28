@@ -1,6 +1,6 @@
 # Launch the MathJax-rendering fork spike.
 bun := "bun"
-zettlr_agent_tunnel_service := "cloudflared-zettlr-pandoc.service"
+zettlr_agent_tunnel_service := "openai-tunnel-zettlr-pandoc.service"
 
 # ai-review-ci contract consumed by doctor and the shared workflow triggers.
 ai_review_ci_schema_version := "1"
@@ -31,7 +31,7 @@ sync-dependencies:
 install-desktop-launcher:
     bash "{{justfile_directory()}}/scripts/install-desktop-launcher.sh"
 
-# Install the repo-owned systemd user service for the Agent API tunnel.
+# Install the repo-owned systemd user service for the Agent API OpenAI MCP tunnel.
 install-systemd-tunnel:
     bash "{{justfile_directory()}}/scripts/install-systemd-tunnel.sh"
 
