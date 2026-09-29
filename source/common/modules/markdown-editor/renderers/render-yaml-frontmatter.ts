@@ -297,7 +297,12 @@ class YamlFrontmatterWidget extends WidgetType {
     }
     this.outsidePointerDocument.addEventListener('mousedown', this.outsidePointerHandler, true)
 
-    return card
+    // CodeMirror measures a block widget by its border box, so the space
+    // around the card is padding on this root, never a margin on the card.
+    const block = document.createElement('div')
+    block.classList.add('yaml-frontmatter-block')
+    block.append(card)
+    return block
   }
 
   // A nested editor is an independent editing surface. The outer CodeMirror
@@ -376,12 +381,15 @@ const frontmatterField = StateField.define<DecorationSet>({
 export const renderYamlFrontmatter = [
   frontmatterField,
   EditorView.baseTheme({
+    '.yaml-frontmatter-block': {
+      display: 'block',
+      padding: '0.65em 0 1em'
+    },
     '.yaml-frontmatter-card': {
       display: 'block',
       boxSizing: 'border-box',
       width: '100%',
       maxWidth: '100%',
-      margin: '0.65em 0 1em',
       overflow: 'hidden',
       color: 'inherit',
       backgroundColor: 'color-mix(in srgb, currentColor 2.5%, transparent)',
