@@ -280,10 +280,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - **Logs:** launcher `~/.cache/zettlr-pandoc-dev.log`; app `~/.config/Zettlr-Pandoc/logs/`.
 - **In-editor Markdown linter** is the standalone Flowmark linter
   (`flowmark-lint`). Flowmark is a system tool like pandoc, not a vendored copy:
-  `just install-flowmark` installs `flowmark` and `flowmark-lint` as a uv tool
-  from the main branch of `dzackgarza/pandoc-flowmark`, the desktop launcher
-  runs it before every start, and preflight fails loudly when either command is
-  missing. The LanguageTool plugin runs under that tool's Python
+  at every start the app runs `uv tool install --upgrade` for the main branch of
+  `dzackgarza/pandoc-flowmark` in the background
+  (`source/app/util/flowmark-update.ts`). A failed update (no network, a broken
+  main) keeps the installed Flowmark and shows a desktop notification; it never
+  stops the app. `just install-flowmark` installs the same source for CI and
+  tests. The LanguageTool plugin runs under that tool's Python
   (`flowmarkToolPython`). The editor has no rule/linter layer of
   its own: external providers implement the editor-neutral contract in
   `source/common/diagnostics/external-linter.ts`, and exactly one

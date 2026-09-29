@@ -91,15 +91,15 @@ bump level:
     fi
     git commit -m "chore(release): v$version" -- package.json
 
-# Tag and publish the package.json version with its AppImage and SHA256SUMS.txt.
-release title: release-assets
+# Tag the package.json version and push the tag; the Release workflow builds and publishes the AppImage.
+release title:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
+    test -z "$(git status --porcelain)" || { echo "Working tree is not clean" >&2; exit 1; }
     version="$(jq -r .version package.json)"
     git tag -a "v$version" -m "{{title}}"
     git push origin "refs/tags/v$version"
-    gh release create "v$version" --verify-tag --title "{{title}}" --generate-notes release/*
 
 # Build the AppImage and its checksum list into release/ from a clean, verified
 # package of HEAD.

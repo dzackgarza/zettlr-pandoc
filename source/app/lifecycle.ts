@@ -20,6 +20,8 @@ import addToPath from './util/add-to-PATH'
 import resolveTimespanMs from './util/resolve-timespan-ms'
 import path from 'path'
 import { getProgramVersion } from './util/get-program-version'
+import { updateFlowmark } from './util/flowmark-update'
+import { showNativeNotification } from '@common/util/show-notification'
 
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
@@ -63,6 +65,18 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   const log = appServiceContainer.log
 
   log.info(`こんにちは！ Booting Zettlr at ${(new Date()).toString()}.`)
+
+  // Upgrade Flowmark from its main branch in the background. A failed check
+  // keeps whatever Flowmark is installed and tells the user why.
+  void updateFlowmark().then(outcome => {
+    if (outcome.ok) {
+      log.info('[Flowmark] Up to date with pandoc-flowmark main.')
+      return
+    }
+    log.warning(`[Flowmark] Could not update from pandoc-flowmark main: ${outcome.message}`)
+    const reason = outcome.message.trim().split('\n').pop() ?? outcome.message
+    showNativeNotification(`Could not update Flowmark from GitHub: ${reason}`, 'Flowmark')
+  })
 
   // Before we begin, let's load the Vue.js DevTools for debugging
   if (!app.isPackaged) {

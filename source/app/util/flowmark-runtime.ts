@@ -9,10 +9,10 @@
  *
  * Description:     The single main-process execution seam for Flowmark.
  *                  Formatting and linting run the `flowmark` and
- *                  `flowmark-lint` commands of the uv tool that the desktop
- *                  launcher installs from Flowmark's main branch
- *                  (`just install-flowmark`).  Nothing in Zettlr owns a
- *                  Markdown grammar.
+ *                  `flowmark-lint` commands of the uv tool that the app
+ *                  upgrades from Flowmark's main branch at every start
+ *                  (flowmark-update.ts).  Nothing in Zettlr owns a Markdown
+ *                  grammar.
  *
  * END HEADER
  */
