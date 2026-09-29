@@ -39,6 +39,7 @@ import {
   createLineIndex,
   deriveActionRow,
   deriveCardTitle,
+  describeAcceptFailures,
   filterCards,
   lineNumberFor,
   openAnnotationCount,
@@ -663,6 +664,24 @@ describe("useDocumentCollaborationStore review surface", function () {
 
     assert.deepEqual(accepted.sort(), [session.documentPath, secondPath].sort());
     assert.equal(results.length, 2);
+  });
+});
+
+describe("describeAcceptFailures", function () {
+  it("names every failing document under its error code and reason", function () {
+    const invalidated = "The file changed on disk, so this review is no longer current.";
+    const report = describeAcceptFailures([
+      { path: "/w/a.md", result: { ok: false, code: "REVIEW_INVALIDATED", message: invalidated } },
+      { path: "/w/b.md", result: { ok: false, code: "REVIEW_GENERATION_MISMATCH", message: "The review changed." } },
+      { path: "/w/c.md", result: { ok: false, code: "REVIEW_INVALIDATED", message: invalidated } },
+    ]);
+    assert.equal(report, [
+      `REVIEW_INVALIDATED: ${invalidated}`,
+      "  /w/a.md",
+      "  /w/c.md",
+      "REVIEW_GENERATION_MISMATCH: The review changed.",
+      "  /w/b.md",
+    ].join("\n"));
   });
 });
 

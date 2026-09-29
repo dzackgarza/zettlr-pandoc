@@ -115,9 +115,11 @@ import { reportError } from '@common/util/error-reporting'
 import showToast from '@common/util/show-toast'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import type { SourceRange } from '@dts/common/references'
+import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 import AnnotationHeader from './annotations/AnnotationHeader.vue'
 import {
   buildSuggestionNavigatorRows,
+  describeAcceptFailures,
   filterCards,
   type AnnotationCardView,
   type SuggestionNavigatorView
@@ -195,6 +197,16 @@ function navigateAnnotation (documentPath: string, card: AnnotationCardView): vo
   emit('navigate', { documentPath, range: annotationRange(card), annotationId: card.annotation.annotationId })
 }
 
+/** Logs and shows which documents an Accept all could not accept, and why. */
+function reportAcceptFailures (failures: Array<{ path: string, result: ReviewFailure }>): void {
+  const heading = failures.length === 1
+    ? trans('Could not accept all changes in 1 document.')
+    : trans('Could not accept all changes in %s documents.', String(failures.length))
+  const report = describeAcceptFailures(failures)
+  reportError(`[AnnotationsTab] ${heading}\n${report}`)
+  showToast(`${heading}\n${report}`, 'error')
+}
+
 async function acceptAllDocument (documentPath: string): Promise<void> {
   if (acceptingDocuments.has(documentPath)) {
     return
@@ -203,7 +215,7 @@ async function acceptAllDocument (documentPath: string): Promise<void> {
   try {
     const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath)
     if (!result.ok) {
-      showToast(trans(result.message), 'error')
+      reportAcceptFailures([{ path: documentPath, result }])
     }
   } catch (err) {
     reportError('[AnnotationsTab] Could not accept document review', err)
@@ -219,14 +231,9 @@ async function acceptAllWorkspace (): Promise<void> {
   globalAcceptBusy.value = true
   try {
     const results = await collaborationStore.acceptAllWorkspaceReviews()
-    const failures = results.filter(({ result }) => !result.ok)
+    const failures = results.flatMap(({ path, result }) => result.ok ? [] : [{ path, result }])
     if (failures.length > 0) {
-      showToast(
-        failures.length === 1
-          ? trans('Could not accept all changes in 1 document.')
-          : trans('Could not accept all changes in %s documents.', String(failures.length)),
-        'error'
-      )
+      reportAcceptFailures(failures)
     }
   } catch (err) {
     reportError('[AnnotationsTab] Could not accept workspace reviews', err)

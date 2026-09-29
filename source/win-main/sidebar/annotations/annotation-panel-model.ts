@@ -23,6 +23,7 @@ import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-do
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { ReviewDiffSession } from '@dts/common/review-diff'
 import type { SourceRange } from '@dts/common/references'
+import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
 
 export interface AnnotationCardView {
   annotation: TextAnnotation
@@ -297,4 +298,20 @@ export function buildSuggestionCards (review: ReviewDiffSession): SuggestionCard
 export function chunkNoteCommit (card: SuggestionCardView, value: string): string | undefined {
   const text = value.trim()
   return text === card.comment ? undefined : text
+}
+
+/**
+ * The failed documents of an Accept all, grouped by error code and reason.
+ * Each group is a "CODE: message" line followed by one indented line per
+ * document path, in the order the documents were tried.
+ */
+export function describeAcceptFailures (failures: Array<{ path: string, result: ReviewFailure }>): string {
+  const groups = new Map<string, string[]>()
+  for (const { path, result } of failures) {
+    const reason = `${result.code}: ${result.message}`
+    const paths = groups.get(reason) ?? []
+    paths.push(path)
+    groups.set(reason, paths)
+  }
+  return [...groups].flatMap(([ reason, paths ]) => [ reason, ...paths.map(path => `  ${path}`) ]).join('\n')
 }
