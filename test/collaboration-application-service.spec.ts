@@ -222,43 +222,170 @@ describe("CollaborationApplicationService", function () {
     );
   });
 
-  it("discards a detached review whose file changed on disk, keeping the file text", async function () {
-    const baseline = "alpha\n";
-    const proposed = "ALPHA\n";
-    const { authority, service, emitted } = harness({ diskText: baseline });
-    const submitted = await service.submitProposal({
-      documentId: DOCUMENT_ID,
-      baselineSha256: sha256Text(baseline),
-      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
-      clientRequestId: "request-detached-drift",
-      expectedReviewGeneration: 0,
-    });
-    assert.equal(submitted.ok, true);
-    if (!submitted.ok) {
-      return;
-    }
-    await service.detachCollaboration(DOCUMENT_ID);
-    authority.setDiskText(proposed);
+  describe("an invalidated review", function () {
+    const baseline = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
+    const proposed = "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\nTHETA\n";
+    const firstOnly = "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
+    const claims = [
+      { patch: makePatch(baseline, firstOnly), description: "capitalize the first word" },
+      { patch: makePatch(firstOnly, proposed), description: "capitalize the last word" },
+    ];
 
-    const accepted = await service.acceptAllWorkspaceChunks({
-      documentId: DOCUMENT_ID,
-      documentPath: DOCUMENT_PATH,
-      reviewId: submitted.reviewId,
-      precondition: {
+    /** A review with two suggestions, closed, whose file then changed on disk. */
+    async function detachedThenDrifted(diskText: string): Promise<Harness & { reviewId: string; generation: number }> {
+      const opened = harness({ diskText: baseline });
+      const submitted = await opened.service.submitProposal({
+        documentId: DOCUMENT_ID,
+        baselineSha256: sha256Text(baseline),
+        claims,
+        clientRequestId: "request-invalidated",
+        expectedReviewGeneration: 0,
+      });
+      assert.ok(submitted.ok);
+      assert.equal(submitted.unresolvedChunks, 2);
+      await opened.service.detachCollaboration(DOCUMENT_ID);
+      opened.authority.close();
+      opened.authority.setDiskText(diskText);
+      return { ...opened, reviewId: submitted.reviewId, generation: submitted.reviewGeneration };
+    }
+
+    /** Accept all on the closed file, which finds the drift and freezes the review. */
+    async function invalidatedByAcceptAll(diskText: string): Promise<Harness & { reviewId: string; generation: number }> {
+      const drifted = await detachedThenDrifted(diskText);
+      const accepted = await drifted.service.acceptAllWorkspaceChunks({
+        ...target(drifted.reviewId),
+        precondition: { expectedReviewGeneration: drifted.generation, expectedWorkingSha256: sha256Text(proposed) },
+      });
+      assert.equal(!accepted.ok && accepted.code, "REVIEW_INVALIDATED");
+      return drifted;
+    }
+
+    function target(reviewId: string): { documentId: string; documentPath: string; reviewId: string } {
+      return { documentId: DOCUMENT_ID, documentPath: DOCUMENT_PATH, reviewId };
+    }
+
+    it("stays frozen in its sidecar when Accept all finds the file changed", async function () {
+      const { service, authority, emitted } = await invalidatedByAcceptAll(proposed);
+
+      const persisted = await service.readSidecar(DOCUMENT_PATH);
+      assert.equal(persisted?.review?.invalidated, true);
+      assert.equal(persisted?.review?.invalidated === true && persisted.review.frozenText, proposed);
+      assert.equal(persisted?.review?.suggestions.filter(suggestion => suggestion.state === "proposed").length, 2);
+      assert.equal(authority.currentDiskText(), proposed);
+      assert.ok(emitted.some(event => event.event === "review.invalidated"));
+    });
+
+    it("stays frozen when its drifted file opens again, and the buffer is the file", async function () {
+      const drifted = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta and more\n";
+      const { service, authority, reviewId } = await detachedThenDrifted(drifted);
+      authority.reopen();
+      authority.reloadFromDisk();
+
+      const restored = await service.reattachCollaboration(DOCUMENT_ID, DOCUMENT_PATH, drifted);
+
+      assert.equal(restored?.workingText, undefined);
+      const review = service.getReview(DOCUMENT_ID);
+      assert.equal(review?.reviewId, reviewId);
+      assert.equal(review?.invalidated, true);
+      assert.equal(review?.invalidated === true && review.frozenText, proposed);
+      assert.equal(authority.readWorkingText(DOCUMENT_ID), drifted);
+    });
+
+    it("reapplies onto a closed file that carries every suggestion, and then accepts", async function () {
+      const { service, reviewId, generation } = await invalidatedByAcceptAll(proposed);
+
+      const reapplied = await service.reapplyReview({ ...target(reviewId), expectedReviewGeneration: generation });
+
+      assert.ok(reapplied.ok);
+      assert.deepEqual(reapplied.withdrawnChunkIds, []);
+      assert.equal(reapplied.unresolvedChunks, 2);
+      const persisted = await service.readSidecar(DOCUMENT_PATH);
+      assert.equal(persisted?.review?.invalidated, false);
+      assert.equal(persisted?.diskFenceSha256, sha256Text(proposed));
+
+      const accepted = await service.acceptAllWorkspaceChunks({
+        ...target(reviewId),
+        precondition: { expectedReviewGeneration: reapplied.reviewGeneration, expectedWorkingSha256: sha256Text(proposed) },
+      });
+      assert.ok(accepted.ok);
+      assert.equal(accepted.acceptedChunks, 2);
+    });
+
+    it("withdraws on reapply each suggestion whose text the current file lacks", async function () {
+      const { service, reviewId, generation } = await invalidatedByAcceptAll(firstOnly);
+
+      const reapplied = await service.reapplyReview({ ...target(reviewId), expectedReviewGeneration: generation });
+
+      assert.ok(reapplied.ok);
+      assert.equal(reapplied.unresolvedChunks, 1);
+      assert.equal(reapplied.withdrawnChunkIds.length, 1);
+      const persisted = await service.readSidecar(DOCUMENT_PATH);
+      assert.equal(persisted?.workingText, firstOnly);
+      const live = persisted?.review?.suggestions.filter(suggestion => suggestion.state === "proposed") ?? [];
+      assert.deepEqual(
+        live.map(suggestion => firstOnly.slice(suggestion.anchors[0].from, suggestion.anchors[0].to)),
+        ["ALPHA"],
+      );
+    });
+
+    it("reapplies an open review onto the live buffer", async function () {
+      const { authority, service } = harness({ diskText: baseline });
+      const submitted = await service.submitProposal({
+        documentId: DOCUMENT_ID,
+        baselineSha256: sha256Text(baseline),
+        claims,
+        clientRequestId: "request-open-invalidated",
+        expectedReviewGeneration: 0,
+      });
+      assert.ok(submitted.ok);
+      authority.setDiskText(proposed);
+      await service.invalidateOnDiskDrift(DOCUMENT_ID);
+      assert.equal(service.getReview(DOCUMENT_ID)?.invalidated, true);
+
+      const reapplied = await service.reapplyReview({
+        ...target(submitted.reviewId),
         expectedReviewGeneration: submitted.reviewGeneration,
+      });
+
+      assert.ok(reapplied.ok);
+      assert.equal(reapplied.unresolvedChunks, 2);
+      const accepted = await service.acceptAllChunks(submitted.reviewId, {
+        expectedReviewGeneration: reapplied.reviewGeneration,
         expectedWorkingSha256: sha256Text(proposed),
-      },
+      });
+      assert.ok(accepted.ok);
     });
 
-    assert.equal(accepted.ok, false);
-    if (accepted.ok) {
-      return;
-    }
-    assert.equal(accepted.code, "REVIEW_INVALIDATED");
-    const persisted = await service.readSidecar(DOCUMENT_PATH);
-    assert.ok(persisted === undefined || persisted.review === null, "the dead review must not stay in the sidecar");
-    assert.equal(authority.currentDiskText(), proposed);
-    assert.ok(emitted.some(event => event.event === "review.invalidated"));
+    it("is removed by an explicit discard, which leaves the file as it is", async function () {
+      const { service, authority, emitted, reviewId, generation } = await invalidatedByAcceptAll(proposed);
+
+      const discarded = await service.discardInvalidatedReview({ ...target(reviewId), expectedReviewGeneration: generation });
+
+      assert.ok(discarded.ok);
+      assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
+      assert.equal(authority.currentDiskText(), proposed);
+      assert.ok(emitted.some(event => event.event === "review.discarded"));
+    });
+
+    it("refuses reapply and discard on a review that is still current", async function () {
+      const { authority, service } = harness({ diskText: baseline });
+      const submitted = await service.submitProposal({
+        documentId: DOCUMENT_ID,
+        baselineSha256: sha256Text(baseline),
+        claims,
+        clientRequestId: "request-current",
+        expectedReviewGeneration: 0,
+      });
+      assert.ok(submitted.ok);
+      const input = { ...target(submitted.reviewId), expectedReviewGeneration: submitted.reviewGeneration };
+
+      const reapplied = await service.reapplyReview(input);
+      const discarded = await service.discardInvalidatedReview(input);
+
+      assert.equal(!reapplied.ok && reapplied.code, "REVIEW_NOT_INVALIDATED");
+      assert.equal(!discarded.ok && discarded.code, "REVIEW_NOT_INVALIDATED");
+      assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
+    });
   });
 
   it("rejects only agent text after the owner edits inside a suggestion (#68)", async function () {
