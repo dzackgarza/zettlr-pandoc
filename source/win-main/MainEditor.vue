@@ -504,7 +504,7 @@ const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
     // retries the whole thing.
     if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
       const editor = currentEditor
-      editor.runFormatter(ipcMarkdownFormatter)
+      editor.runFormatter(ipcMarkdownFormatter(props.file.path))
         .then(async result => {
           surfaceFormatResult(result)
           await editor.whenSynced()
@@ -1195,7 +1195,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // A keystroke (Mod-Alt-l) requested a flowmark format (issue #26). Run the
   // IPC format here in the renderer and surface any absence/error as a toast.
   editor.on('format-document', () => {
-    editor.runFormatter(ipcMarkdownFormatter)
+    editor.runFormatter(ipcMarkdownFormatter(props.file.path))
       .then(surfaceFormatResult)
       .catch(e => { reportError('Format document failed', e) })
   })

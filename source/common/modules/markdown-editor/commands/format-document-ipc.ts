@@ -27,15 +27,18 @@ import { type FormatResult, type MarkdownFormatter } from "./format-document";
 const ipcRenderer = window.ipc;
 
 /**
- * The production formatter: sends the buffer text to the main-process flowmark
- * service and returns its typed result.
+ * The production formatter for one document: sends the buffer text to the
+ * main-process flowmark service and returns its typed result. The path names
+ * the document in the status bar while the format runs.
  */
-export const ipcMarkdownFormatter: MarkdownFormatter = async (text) => {
-  return (await window.ipc.invoke("application", {
-    command: "format-document",
-    payload: text,
-  })) as FormatResult;
-};
+export function ipcMarkdownFormatter(path: string): MarkdownFormatter {
+  return async (text) => {
+    return (await window.ipc.invoke("application", {
+      command: "format-document",
+      payload: { text, path },
+    })) as FormatResult;
+  };
+}
 
 /** Surfaces a failed format to the user as a toast; a success is silent. */
 export function surfaceFormatResult(result: FormatResult): void {

@@ -22,6 +22,7 @@ import path from 'path'
 import { getProgramVersion } from './util/get-program-version'
 import { updateFlowmark } from './util/flowmark-update'
 import { showNativeNotification } from '@common/util/show-notification'
+import { trans } from '@common/i18n-main'
 
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
@@ -68,14 +69,17 @@ export async function bootApplication (): Promise<AppServiceContainer> {
 
   // Upgrade Flowmark from its main branch in the background. A failed check
   // keeps whatever Flowmark is installed and tells the user why.
+  const flowmarkTask = appServiceContainer.lrt.registerTask(trans('Updating Flowmark'), 'pandoc-flowmark main', undefined, false)
   void updateFlowmark().then(outcome => {
     if (outcome.ok) {
+      appServiceContainer.lrt.settleTask(flowmarkTask)
       log.info('[Flowmark] Up to date with pandoc-flowmark main.')
       void appServiceContainer.documentLint.flowmarkUpdated()
       return
     }
     log.warning(`[Flowmark] Could not update from pandoc-flowmark main: ${outcome.message}`)
     const reason = outcome.message.trim().split('\n').pop() ?? outcome.message
+    appServiceContainer.lrt.settleTask(flowmarkTask, new Error(reason))
     showNativeNotification(`Could not update Flowmark from GitHub: ${reason}`, 'Flowmark')
   })
 

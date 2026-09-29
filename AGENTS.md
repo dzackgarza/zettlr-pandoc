@@ -330,6 +330,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `inputsKey`, or results go stale silently. Adding or removing a resource
   file (an image, an `\input` target) does not yet invalidate closed
   documents.
+- **Background work is visible:** a Flowmark format, the background lint
+  queue and the startup Flowmark update each register a long-running task
+  (`LongRunningTaskProvider`). The status bar names the newest running task
+  with its elapsed time; its indicator opens the task list. A routine task
+  ends through `settleTask`: a success leaves the list, a failure stays
+  listed with its error. New background work registers a task the same way.
 - The project's own source code is checked by the global ai-review-ci bun
   profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 

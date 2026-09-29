@@ -57,7 +57,7 @@ import enumDictFiles from '@common/util/enum-dict-files'
 import RenameTag from './rename-tag'
 import RenameReference from './rename-reference'
 import TikzRender from './tikz-render'
-import FormatDocument from './format-document'
+import FormatDocument, { type FormatDocumentRequest } from './format-document'
 import WorkspaceSort from './ws-sort'
 import type { CustomExportIPCAPI, ExportIPCAPI } from './export'
 import type { ForceOpenAPI } from './force-open'
@@ -227,7 +227,7 @@ export type ApplicationIPCContract = {
     response: unknown
   }
   'format-document': {
-    request: { payload: string }
+    request: { payload: FormatDocumentRequest }
     response: FormatResult
   }
   // Answered inline by run(): enumDictFiles().map(elem => elem.tag).

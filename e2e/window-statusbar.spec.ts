@@ -230,6 +230,19 @@ describe('the window status bar', function () {
     await activePage.keyboard.press('Escape')
   })
 
+  it('names a running Flowmark format in the status bar until it finishes', async function () {
+    const activePage = requireInitialized(page, 'The editor page must be initialized')
+    const activeDocument = await activePage.locator('.editor-pane [role="tab"].active').first().getAttribute('data-path')
+    assert.ok(activeDocument !== null, 'an active document tab')
+    await activePage.locator('.editor-pane .cm-content').first().click()
+    await activePage.keyboard.press('Control+Alt+l')
+    const running = activePage.locator(ITEM('running-task'), { hasText: `Formatting "${path.basename(activeDocument)}"` })
+    await running.waitFor({ timeout: 10_000 })
+    screenshots.set('statusbar-format-task.png', await activePage.screenshot())
+    // A successful format leaves nothing to report, so its task leaves the bar.
+    await running.waitFor({ state: 'detached', timeout: 60_000 })
+  })
+
   it('switches the rendering mode and toggles the diagnostics panel from its items', async function () {
     const activePage = requireInitialized(page, 'The editor page must be initialized')
     await activePage.locator(ITEM('rendering-mode')).click()

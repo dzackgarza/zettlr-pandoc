@@ -195,6 +195,23 @@ export default class LongRunningTaskProvider extends ProviderContract {
   }
 
   /**
+   * Ends a routine task, such as a format or a lint. A success leaves nothing
+   * to report, so the task leaves the list; a failure stays listed until the
+   * user clears it.
+   *
+   * @param   {LongRunningTask}  task   The task to end
+   * @param   {Error}            error  Why the task failed, if it failed
+   */
+  public settleTask (task: LongRunningTask, error?: Error) {
+    if (error !== undefined) {
+      task.endTask('error', error)
+      return
+    }
+    task.endTask('success')
+    this.deleteTask(task.id)
+  }
+
+  /**
    * Deletes a task from the provider.
    *
    * @param   {string}  id  The ID for the task to be deleted
@@ -202,6 +219,7 @@ export default class LongRunningTaskProvider extends ProviderContract {
   public deleteTask (id: string) {
     const idx = this.tasks.findIndex(t => t.id === id)
     if (idx > -1) {
+      this.tasks[idx].markDeleted()
       this.tasks.splice(idx, 1)
       broadcastIPCMessage('lrt-provider', { command: 'delete-task', payload: { id } } as LRTIPCSyncMessage)
     }

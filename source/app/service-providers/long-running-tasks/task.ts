@@ -152,6 +152,14 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
   private debounceFlag: boolean
 
   /**
+   * Set when the provider deleted this task. A deleted task broadcasts
+   * nothing, or a debounced update would add it back to every renderer.
+   *
+   * @var {boolean}
+   */
+  private deleted = false
+
+  /**
    * Creates a new LRT representation object.
    *
    * @param  {string}  id         A unique ID that can be attached to this LRT.
@@ -175,6 +183,10 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
    * a debounce mechanism to ensure the updates are throttled.
    */
   private broadcastChange () {
+    if (this.deleted) {
+      return
+    }
+
     if (this.debouncePromise !== undefined) {
       this.debounceFlag = true
       return
@@ -257,6 +269,13 @@ export class LongRunningTask extends EventEmitter<LRT_EventMap> {
   }
 
   //
+
+  /**
+   * Marks the task deleted, so it broadcasts no further change.
+   */
+  public markDeleted (): void {
+    this.deleted = true
+  }
 
   public getElapsed (): Duration {
     const end = (this.endTime ?? DateTime.now())

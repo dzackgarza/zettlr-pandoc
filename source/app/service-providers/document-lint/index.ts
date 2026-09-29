@@ -25,7 +25,8 @@
  *                  when a reader finds a stale entry, it re-lints each
  *                  document whose key no longer matches. The cache persists
  *                  in userData, so a restart keeps every result whose inputs
- *                  have not changed.
+ *                  have not changed. While the queue runs, it is one
+ *                  long-running task with its progress.
  *
  * END HEADER
  */
@@ -36,6 +37,9 @@ import { availableParallelism } from 'os'
 import path from 'path'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
+import type LongRunningTaskProvider from '@providers/long-running-tasks'
+import type { LongRunningTask } from '@providers/long-running-tasks/task'
+import { trans } from 'source/common/i18n-main'
 import type { FSALEventPayload } from '@providers/fsal'
 import type FSAL from '@providers/fsal'
 import type { ConfigOptions } from '@providers/config/get-config-template'
@@ -89,6 +93,8 @@ export interface DocumentLintDependencies {
   buffers: { readMarkdownBufferContent: (filePath: string) => string | undefined }
   references?: { getSnapshot: () => WorkspaceReferenceState }
   fsal?: Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor' | 'getAllLoadedDescriptors' | 'on' | 'off'>
+  /** Shows the background queue in the status bar. */
+  lrt?: Pick<LongRunningTaskProvider, 'registerTask' | 'settleTask'>
   homeDirectory: string
   env: NodeJS.ProcessEnv
   userDataDirectory: string
@@ -175,6 +181,8 @@ export default class DocumentLintProvider extends ProviderContract {
   private readonly queue = new Set<string>()
   private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>()
   private activeWorkers = 0
+  /** The status bar task of the running queue, from its first document until it drains. */
+  private batch: { task: LongRunningTask, total: number, done: number, failed: number } | undefined
   private flowmarkIdentity: string | undefined
   private reconcileTimer: NodeJS.Timeout | undefined
   private persistTimer: NodeJS.Timeout | undefined
@@ -405,7 +413,10 @@ export default class DocumentLintProvider extends ProviderContract {
     if (this.stopped || this.flowmarkIdentity === undefined) {
       return
     }
-    this.queue.add(documentPath)
+    if (!this.queue.has(documentPath)) {
+      this.queue.add(documentPath)
+      this.countQueued()
+    }
     while (this.activeWorkers < WORKER_COUNT && this.queue.size > 0) {
       this.activeWorkers += 1
       void this.work()
@@ -422,9 +433,50 @@ export default class DocumentLintProvider extends ProviderContract {
         await this.lint(documentPath, await this.currentText(documentPath))
       } catch (error) {
         this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error)
+        if (this.batch !== undefined) {
+          this.batch.failed += 1
+        }
+      }
+      if (this.batch !== undefined) {
+        this.batch.done += 1
+        this.showProgress(this.batch)
       }
     }
     this.activeWorkers -= 1
+    if (this.activeWorkers === 0 && this.queue.size === 0) {
+      this.settleBatch()
+    }
+  }
+
+  private countQueued (): void {
+    if (this.deps.lrt === undefined) {
+      return
+    }
+    if (this.batch === undefined) {
+      const task = this.deps.lrt.registerTask(trans('Linting workspace documents'), undefined, undefined, false)
+      this.batch = { task, total: 0, done: 0, failed: 0 }
+    }
+    this.batch.total += 1
+    this.showProgress(this.batch)
+  }
+
+  private showProgress (batch: { task: LongRunningTask, total: number, done: number }): void {
+    batch.task.update({
+      info: trans('%s of %s documents', batch.done, batch.total),
+      percentage: batch.done / batch.total
+    })
+  }
+
+  private settleBatch (): void {
+    const batch = this.batch
+    if (batch === undefined || this.deps.lrt === undefined) {
+      return
+    }
+    this.batch = undefined
+    this.deps.lrt.settleTask(
+      batch.task,
+      batch.failed === 0 ? undefined : new Error(trans('%s documents could not be linted; the log names each one', batch.failed))
+    )
   }
 
   private async loadCache (): Promise<void> {

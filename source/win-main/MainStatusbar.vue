@@ -149,6 +149,16 @@
         class="main-statusbar-tasks"
         data-statusbar-item="tasks"
       >
+        <button
+          v-if="runningLabel !== ''"
+          type="button"
+          class="main-statusbar-item"
+          data-statusbar-item="running-task"
+          v-bind:title="runningTitle"
+          v-on:click="emit('tasks')"
+        >
+          {{ runningLabel }}
+        </button>
         <IrisIndicator
           id="long-running-tasks"
           v-bind:tasks-in-progress="taskCount(TaskStatus.ongoing)"
@@ -193,14 +203,16 @@
  *                  cursor, counts, input mode, LanguageTool, diagnostics);
  *                  its right group carries the window-level items: the
  *                  notification center, the Pomodoro ring, the
- *                  long-running-task indicator and, when an update
+ *                  long-running-task indicator with the name and elapsed
+ *                  time of the newest running task and, when an update
  *                  exists, the update item. The bar computes
  *                  nothing about the document; it renders and emits.
  *
  * END HEADER
  */
 
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { DateTime } from 'luxon'
 import { trans } from '@common/i18n-renderer'
 import IrisIndicator from '@common/vue/IrisIndicator.vue'
 import NotificationCenter from './NotificationCenter.vue'
@@ -284,6 +296,37 @@ function taskCount (status: TaskStatus): number {
   return tasks.value.filter(task => task.status === status).length
 }
 
+// Newest first: the task the user most likely just started.
+const runningTasks = computed(() => tasks.value
+  .filter(task => task.status === TaskStatus.ongoing)
+  .toSorted((a, b) => b.startTime.localeCompare(a.startTime)))
+
+// The elapsed time ticks once a second while a task runs.
+const now = ref(DateTime.now())
+let clock: ReturnType<typeof setInterval> | undefined
+watch(() => runningTasks.value.length > 0, running => {
+  clearInterval(clock)
+  clock = undefined
+  if (running) {
+    now.value = DateTime.now()
+    clock = setInterval(() => { now.value = DateTime.now() }, 1000)
+  }
+}, { immediate: true })
+onBeforeUnmount(() => { clearInterval(clock) })
+
+const runningLabel = computed(() => {
+  const [ newest, ...others ] = runningTasks.value
+  if (newest === undefined) {
+    return ''
+  }
+  const seconds = Math.max(0, Math.floor(now.value.diff(DateTime.fromISO(newest.startTime)).as('seconds')))
+  const label = `${newest.title} (${seconds}s)`
+  return others.length === 0 ? label : `${label} · ${trans('%s more', others.length)}`
+})
+const runningTitle = computed(() => runningTasks.value
+  .map(task => task.info === undefined ? task.title : `${task.title}: ${task.info}`)
+  .join('\n'))
+
 function toggleRenderingMode (): void {
   configStore.setConfigValue('display.renderingMode', renderingMode.value === 'preview' ? 'raw' : 'preview')
 }
@@ -366,6 +409,13 @@ body .main-statusbar {
     align-items: center;
     gap: 4px;
     white-space: nowrap;
+  }
+
+  .main-statusbar-tasks {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
   }
 
   .main-statusbar-chip {

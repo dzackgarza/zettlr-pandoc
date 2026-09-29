@@ -172,6 +172,7 @@ export class AppServiceContainer {
       buffers: this._documentManager,
       references: this._referenceProvider,
       fsal: this._fsal,
+      lrt: this._lrtProvider,
       homeDirectory: app.getPath('home'),
       env: process.env,
       userDataDirectory: app.getPath('userData'),
