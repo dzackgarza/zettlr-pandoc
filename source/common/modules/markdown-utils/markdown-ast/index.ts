@@ -73,6 +73,16 @@ export interface MDNode {
    * such as {.className})
    */
   attributes: Record<string, string | string[]>;
+  /**
+   * Exact authored source range of the node's braced Pandoc attribute list:
+   * the last one when a node carries several, and the info string of a
+   * fenced code block written as `{…}`. Undefined when the node has none.
+   *
+   * Consumers that need token coordinates must use this parsed range rather
+   * than search the source again — Pandoc attribute lists may span several
+   * lines and quoted values may contain braces.
+   */
+  attributeRange?: { from: number; to: number };
 }
 
 /**
@@ -470,15 +480,6 @@ export interface Comment extends MDNode {
  */
 export interface PandocDiv extends MDNode {
   type: 'PandocDiv'
-  /**
-   * Exact authored source range of the div's braced Pandoc attribute list.
-   * Undefined for the legacy bare-class spelling (`::: theorem`).
-   *
-   * Consumers that need token coordinates must use this parsed range rather
-   * than re-scanning the opening physical line — Pandoc attribute lists may
-   * span several lines.
-   */
-  attributeRange?: { from: number; to: number };
   /**
    * The string value of the content node.
    */
@@ -965,6 +966,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         attributes: {},
         from: node.from,
         to: node.to,
+        attributeRange: info !== null && markdown[info.from] === '{' ? { from: info.from, to: info.to } : undefined,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         info: info !== null ? markdown.substring(info.from, info.to) : '',
         source: source !== null ? markdown.substring(source.from, source.to) : '',
@@ -1038,6 +1040,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         attributes: pandocNodeAttributes(attributes, []),
         from: node.from,
         to: node.to,
+        attributeRange: attr === null ? undefined : { from: attr.from, to: attr.to },
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         value: content,
         children: [],

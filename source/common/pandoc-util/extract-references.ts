@@ -9,7 +9,8 @@
 
 import { markdownToAST } from '../modules/markdown-utils'
 import type { ASTNode, FencedCode, Heading, PandocDiv } from '../modules/markdown-utils/markdown-ast'
-import { parsePandocAttributes, type ParsedPandocAttributes } from './parse-pandoc-attributes'
+import { scanPandocAttributeList } from '@lezer/markdown'
+import { isPandocIdentifierToken, pandocAttributesFromTokens, type ParsedPandocAttributes } from './parse-pandoc-attributes'
 import { isReferenceableDivClass } from '../util/pandoc-quick-reference'
 import { SEMANTIC_DIV_CLASSES } from './pandoc-div-model'
 import { sha256Text } from '../util/sha256'
@@ -36,49 +37,46 @@ export function hashDocumentSource (markdown: string): string {
 }
 
 /**
- * An authored `{…}` attribute block, located at an exact document offset,
- * with the full (colon-preserving) id token recovered from the authored text.
+ * An authored `{…}` attribute list with an identifier, and the exact range of
+ * the attribute that supplies that identifier.
  */
 export interface LocatedAttribute {
   /** The full authored id. */
   key: string
-  /** The exact range of the id token including its `#` sigil */
+  /** The range of the identifier attribute: `#key` or `id="key"` */
   range: SourceRange
-  /** The parsed attribute block (classes and properties) */
+  /** The parsed attribute list (classes and properties) */
   attributes: ParsedPandocAttributes
 }
 
 /**
- * Parses an authored attribute block and locates the full id token.
+ * Scans the attribute list the parser found at `attributeRange` and locates
+ * the attribute that supplies its identifier.
  *
- * This is the single id-token locator for reference extraction consumers
- * instead of keeping a parallel copy. It fails LOUD on an inconsistent
- * attribute block (an id the parser reported but the authored text does not
- * contain is a parser bug, not an authorable state) — callers must not
- * downgrade that into a silent skip.
+ * This is the single id-token locator for reference extraction consumers.
+ * The range comes from the parser, so a scan that does not reproduce it is a
+ * parser defect and throws.
  *
- * @param   {string}  attrText  The authored `{…}` substring
- * @param   {number}  offset    The document offset of the substring
+ * @param   {string}       markdown        The full markdown source
+ * @param   {SourceRange}  attributeRange  The parser's range of the `{…}` list
  *
- * @return  {LocatedAttribute|undefined}  The located id, if one is authored
+ * @return  {LocatedAttribute|undefined}   The located id, if one is authored
  */
-export function locateAttribute (attrText: string, offset: number): LocatedAttribute|undefined {
-  const attributes = parsePandocAttributes(attrText)
-  if (attributes.id === undefined) {
+export function locateAttribute (markdown: string, attributeRange: SourceRange): LocatedAttribute|undefined {
+  const scanned = scanPandocAttributeList(markdown, attributeRange.from)
+  if (scanned.status !== 'match' || scanned.value.to !== attributeRange.to) {
+    throw new Error(`Parser attribute range [${attributeRange.from},${attributeRange.to}] is not one Pandoc attribute list`)
+  }
+
+  const identifier = scanned.value.tokens.findLast(isPandocIdentifierToken)
+  if (identifier === undefined) {
     return undefined
   }
 
-  const idStart = attrText.indexOf('#' + attributes.id)
-  if (idStart === -1) {
-    throw new Error(`Inconsistent attribute block: id "${attributes.id}" not found in "${attrText}"`)
-  }
-
-  const idEnd = idStart + 1 + attributes.id.length
-
   return {
-    key: attributes.id,
-    range: { from: offset + idStart, to: offset + idEnd },
-    attributes
+    key: identifier.value,
+    range: { from: identifier.from, to: identifier.to },
+    attributes: pandocAttributesFromTokens(scanned.value.tokens)
   }
 }
 
@@ -221,12 +219,8 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
   }
 
   const visitHeading = (node: Heading): void => {
-    const slice = markdown.slice(node.from, node.to)
-    const brace = typeof node.attributes.id === 'string' && node.attributes.id !== ''
-      ? slice.lastIndexOf('{')
-      : -1
-    if (brace !== -1) {
-      const located = locateAttribute(slice.slice(brace), node.from + brace)
+    if (node.attributeRange !== undefined) {
+      const located = locateAttribute(markdown, node.attributeRange)
       if (located !== undefined) {
         const title = headingText(node)
         pushDefinition(
@@ -277,10 +271,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
       return
     }
 
-    const located = locateAttribute(
-      markdown.slice(node.attributeRange.from, node.attributeRange.to),
-      node.attributeRange.from
-    )
+    const located = locateAttribute(markdown, node.attributeRange)
     if (located === undefined) {
       return
     }
@@ -330,16 +321,11 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
   }
 
   const visitFencedCode = (node: FencedCode): void => {
-    if (!node.info.startsWith('{')) {
+    if (node.attributeRange === undefined) {
       return
     }
 
-    const infoOffset = markdown.slice(node.from, node.to).indexOf(node.info)
-    if (infoOffset === -1) {
-      throw new Error(`Inconsistent fenced code node: info string not found in [${node.from},${node.to}]`)
-    }
-
-    const located = locateAttribute(node.info, node.from + infoOffset)
+    const located = locateAttribute(markdown, node.attributeRange)
     if (located !== undefined) {
       pushDefinition(
         located, 'crossref-attr',
@@ -351,20 +337,13 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
 
   // Handles attributes the parser attached to an enclosing block (table
   // caption lines, display math paragraphs, image paragraphs): the attribute
-  // block trails the structure, so it is the last brace group of the node's
-  // own slice.
+  // list trails the structure.
   const visitAttributedBlock = (node: ASTNode): void => {
-    if (typeof node.attributes.id !== 'string' || node.attributes.id === '') {
+    if (node.attributeRange === undefined) {
       return
     }
 
-    const slice = markdown.slice(node.from, node.to)
-    const brace = slice.lastIndexOf('{')
-    if (brace === -1) {
-      throw new Error(`Inconsistent attributed node: no attribute block in [${node.from},${node.to}]`)
-    }
-
-    const located = locateAttribute(slice.slice(brace), node.from + brace)
+    const located = locateAttribute(markdown, node.attributeRange)
     if (located === undefined) {
       return
     }
@@ -375,7 +354,7 @@ export function extractReferencesFromAST (documentPath: string, markdown: string
       title = firstImageAlt(node)
     } else if (family === 'tbl') {
       // A table caption line is authored as `: Caption {#tbl:key}`
-      const caption = slice.slice(0, brace).trim()
+      const caption = markdown.slice(node.from, node.attributeRange.from).trim()
       if (caption.startsWith(':')) {
         title = caption.slice(1).trim()
       }

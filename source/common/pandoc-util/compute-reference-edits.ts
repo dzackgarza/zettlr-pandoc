@@ -28,9 +28,9 @@
  *   - `unknown-key`: `oldKey` has no definition in the given snapshots.
  *
  * - EDITS (on acceptance):
- *   - One edit per definition of `oldKey` replacing the full authored id
- *     token: `range` is exactly the definition's extracted range (spanning
- *     `#oldKey` including the `#` sigil), `insert` is `'#' + newKey`.
+ *   - One edit per definition of `oldKey` replacing the full authored
+ *     identifier attribute: `range` is exactly the definition's extracted
+ *     range (spanning `#oldKey` or `id="oldKey"`), `insert` is `'#' + newKey`.
  *   - One edit per occurrence of `oldKey` replacing the authored `@` token:
  *     `range` is exactly the occurrence's extracted range (spanning
  *     `@oldKey` including the `@` sigil), `insert` is `'@' + newKey`. This

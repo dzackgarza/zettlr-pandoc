@@ -149,6 +149,7 @@ export function parseChildren<T extends { children: ASTNode[] } & MDNode> (
       // TODO: Check what the *previous* child was, and if it can have attributes
       // Docs: https://pandoc.org/MANUAL.html#extension-attributes
       astNode.attributes = parseAttributeNode(astNode.attributes, currentChild, markdown)
+      astNode.attributeRange = { from: currentChild.from, to: currentChild.to }
     } else {
       astNode.children.push(parseNode(currentChild, markdown))
     }

@@ -14,7 +14,7 @@
  *                  now differs from the last-known snapshot's key, the
  *                  extension emits EXACTLY ONE prompt intent
  *                  { documentPath, oldKey, newKey, range } where range spans
- *                  the post-edit authored id token including its '#' sigil.
+ *                  the post-edit authored identifier attribute.
  *
  *                  The intent is a SIGNAL only: acting on it (confirming and
  *                  running the workspace rename over the
@@ -50,7 +50,7 @@ export interface ReferenceKeyEditPromptIntent {
   oldKey: string
   /** The authored replacement key currently in the buffer */
   newKey: string
-  /** The exact post-edit range of the authored id token (with '#' sigil) */
+  /** The exact post-edit range of the authored identifier attribute */
   range: SourceRange
 }
 

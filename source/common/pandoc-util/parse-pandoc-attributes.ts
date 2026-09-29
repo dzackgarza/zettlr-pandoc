@@ -1,4 +1,11 @@
-import { scanPandocAttributeList } from '@lezer/markdown'
+import { scanPandocAttributeList, type PandocAttributeToken } from '@lezer/markdown'
+
+/**
+ * A scanned token that sets the element identifier: `#id` or `id=…`.
+ */
+export type PandocIdentifierToken =
+  Extract<PandocAttributeToken, { kind: 'id' }> |
+  (Extract<PandocAttributeToken, { kind: 'key-value' }> & { key: 'id' })
 
 /**
  * Represents a parsed Pandoc LinkAttributes string (e.g., `{width=50%}`).
@@ -68,9 +75,33 @@ export function parsePandocAttributes (attrString: string): ParsedPandocAttribut
     return {}
   }
 
+  return pandocAttributesFromTokens(scanned.value.tokens)
+}
+
+/**
+ * Whether a scanned token sets the element identifier. Pandoc's `keyValAttr`
+ * reads `id="…"` as the identifier, exactly like `identifierAttr` reads `#…`.
+ *
+ * @param   {PandocAttributeToken}  token  The scanned token
+ *
+ * @return  {boolean}                      True for `#id` and `id=…`
+ */
+export function isPandocIdentifierToken (token: PandocAttributeToken): token is PandocIdentifierToken {
+  return token.kind === 'id' || (token.kind === 'key-value' && token.key === 'id')
+}
+
+/**
+ * Folds the scanned tokens of one attribute list into its parsed attributes.
+ * A later identifier replaces an earlier one, as in Pandoc.
+ *
+ * @param   {PandocAttributeToken[]}  tokens  The tokens of one attribute list
+ *
+ * @return  {ParsedPandocAttributes}          The parsed attributes
+ */
+export function pandocAttributesFromTokens (tokens: readonly PandocAttributeToken[]): ParsedPandocAttributes {
   const parsed: ParsedPandocAttributes = {}
-  for (const token of scanned.value.tokens) {
-    if (token.kind === 'id') {
+  for (const token of tokens) {
+    if (isPandocIdentifierToken(token)) {
       parsed.id = token.value
       continue
     }
@@ -82,10 +113,6 @@ export function parsePandocAttributes (attrString: string): ParsedPandocAttribut
 
     const key = token.key
     let value = token.value
-    if (key === 'id') {
-      parsed.id = value
-      continue
-    }
     if (key === 'class') {
       parsed.classes ??= []
       parsed.classes.push(...value.split(/\s+/).filter(Boolean))

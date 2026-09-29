@@ -172,8 +172,9 @@ export type ReferenceSourceKind = 'crossref-attr' | 'theorem-div'
  *
  * Contract details relied upon by the reference specs:
  *
- * - `range` spans the authored id token including its `#` sigil (for
- *   `{#thm:key}` the range covers exactly `#thm:key`).
+ * - `range` spans the authored attribute that supplies the identifier (for
+ *   `{#thm:key}` exactly `#thm:key`, for `{id="thm:key"}` exactly
+ *   `id="thm:key"`).
  * - `title` is the authored `title="…"` attribute for theorem divs, the
  *   caption text for tables, the alt text for figures, the `caption="…"`
  *   attribute for listings, the heading text for sections, and `undefined`
