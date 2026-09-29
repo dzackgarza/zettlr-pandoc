@@ -33,6 +33,7 @@ import type {
   RetractProposalResponse,
   ReviewDetailResponse,
   ReviewMutationPrecondition,
+  SearchDocumentResponse,
   WorkspaceSearchResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
@@ -1227,6 +1228,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       (await httpRequest("GET", `/v1/documents/${closed.documentId}?includeContent=true`)).body,
     ) as ReadDocumentResponse;
     assert.equal(closedRead.content, "first line\nan even lattice and a Lattice\n");
+    const closedSearch = await httpRequest("POST", `/v1/documents/${closed.documentId}/search`, {
+      body: JSON.stringify({ literal: "Lattice" }),
+    });
+    assert.equal(closedSearch.status, 200, closedSearch.body);
+    const closedHits = JSON.parse(closedSearch.body) as SearchDocumentResponse;
+    assertMatchesSchema(closedHits, "SearchDocumentResponse");
+    assert.deepEqual(closedHits.hits.map((hit) => [hit.line, hit.column]), [[2, 24]]);
 
     const cased = JSON.parse(
       (await httpRequest("GET", "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md"))
