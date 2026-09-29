@@ -182,6 +182,11 @@ export interface ReapplyReviewResponse {
   state: ReviewState;
 }
 
+/** Why a frozen review refuses a change, and the ways out. */
+export const INVALIDATED_REVIEW_MESSAGE =
+  "The file changed on disk after this review opened, so its suggestions are frozen. " +
+  "Reapply the review to the current text, or discard it.";
+
 /** A frozen review removed; the file keeps its text. */
 export interface DiscardReviewResponse {
   ok: true;
@@ -739,7 +744,7 @@ export function prepareProposalSubmission(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The file changed on disk, so this review is no longer current.",
+      message: INVALIDATED_REVIEW_MESSAGE,
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -863,7 +868,7 @@ export function prepareChunkDecision(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The file changed on disk, so this review is no longer current.",
+      message: INVALIDATED_REVIEW_MESSAGE,
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -948,7 +953,7 @@ export function prepareChunkComment(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The file changed on disk, so this review is no longer current.",
+      message: INVALIDATED_REVIEW_MESSAGE,
     };
   }
   const workingText = normalizeText(input.workingText);
@@ -1011,7 +1016,7 @@ export function prepareAcceptAll(input: {
     return {
       ok: false,
       code: "REVIEW_INVALIDATED",
-      message: "The file changed on disk, so this review is no longer current.",
+      message: INVALIDATED_REVIEW_MESSAGE,
     };
   }
   const workingText = normalizeText(input.workingText);

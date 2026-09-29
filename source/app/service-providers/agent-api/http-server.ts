@@ -40,6 +40,7 @@ import type {
   LintResponse,
   LintSeverityCounts,
   PingResponse,
+  ReapplyReviewRequest,
   ReadSide,
   RenderBibliographyRequest,
   RenderCitationRequest,
@@ -66,6 +67,7 @@ import {
   reviewPatch,
   sidecarOutstandingChunks,
   sidecarUnresolvedChunks,
+  suggestionText,
   toWirePacket,
 } from "@providers/documents/review-diff-store";
 import type FSAL from "@providers/fsal";
@@ -195,6 +197,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   REVIEW_GENERATION_MISMATCH: 409,
   REVIEW_NOT_FOUND: 404,
   REVIEW_INVALIDATED: 409,
+  REVIEW_NOT_INVALIDATED: 409,
   PATCH_INVALID: 400,
   PATCH_NOT_APPLICABLE: 400,
   CLAIM_NOT_ATOMIC: 400,
@@ -868,6 +871,16 @@ export default class AgentHTTPProvider extends ProviderContract {
           res,
           c.request.params.reviewId,
           c.request.requestBody.text,
+          c.request.requestBody.expectedReviewGeneration,
+        ),
+      reapplyReview: (
+        c: OperationContext<"reapplyReview", ReapplyReviewRequest>,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleReapplyReview(
+          res,
+          c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
       retractProposal: (
@@ -1674,7 +1687,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       const { sidecar } = query;
       this.sendJson(res, 200, {
         reviewId: sidecar.review.reviewId,
-        patch: reviewPatch(sidecar.review.suggestions, sidecar.workingText),
+        patch: reviewPatch(sidecar.review.suggestions, suggestionText(sidecar.review, sidecar.workingText)),
         generation: sidecar.review.generation,
       });
       return;
@@ -1718,6 +1731,36 @@ export default class AgentHTTPProvider extends ProviderContract {
     return result.actual === undefined
       ? undefined
       : { actual: result.actual, reviewGeneration: result.reviewGeneration };
+  }
+
+  /**
+   * POST /v1/reviews/{reviewId}/reapply — map an invalidated review's frozen
+   * suggestions onto the current text, open or closed.
+   */
+  private async handleReapplyReview(
+    res: http.ServerResponse,
+    reviewId: string,
+    expectedReviewGeneration: number,
+  ): Promise<void> {
+    const result = await this._documents.reapplyReview(reviewId, expectedReviewGeneration);
+    if (!result.ok) {
+      this.sendError(
+        res,
+        STATUS_BY_CODE[result.code],
+        result.code,
+        result.message,
+        AgentHTTPProvider.conflictDetail(result),
+      );
+      return;
+    }
+    this.sendJson(res, 200, {
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+      reviewGeneration: result.reviewGeneration,
+      unresolvedChunks: result.unresolvedChunks,
+      withdrawnChunkIds: result.withdrawnChunkIds,
+      state: result.state,
+    });
   }
 
   /**

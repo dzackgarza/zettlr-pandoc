@@ -93,16 +93,19 @@ import {
   type ReviewFailure,
   type ReviewMutationPrecondition,
   type ReviewQueryPort,
+  type ReviewRecoveryInput,
   type ReviewSavePreparation,
   type SubmittedProposal,
 } from './document-collaboration-application-service'
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
+  type DiscardReviewResponse,
   type ChunkCommentResponse,
   type ChunkDecision,
   type ChunkDecisionResponse,
   type ClearReviewResponse,
+  type ReapplyReviewResponse,
   type RetractProposalResponse,
 } from './review-transitions'
 
@@ -528,6 +531,12 @@ export interface ReattachAnnotationIpcInput {
  * bridge composes it, so a wrong payload or a changed return type is a
  * compile error at the call site with no second map to keep in step.
  */
+/** A recovery action on a frozen review, from the owner. */
+export interface ReviewRecoveryIpcInput {
+  reviewId: string
+  expectedReviewGeneration: number
+}
+
 export type DocumentIpcHandlers = {
   'documents:save-file': (input: SaveFileInput) => SaveFileResult
   'documents:decide-review-chunk': (
@@ -546,6 +555,12 @@ export type DocumentIpcHandlers = {
   'documents:add-review-comment': (
     input: ReviewCommentInput,
   ) => AddReviewCommentResponse | ReviewFailure
+  'documents:reapply-review': (
+    input: ReviewRecoveryIpcInput,
+  ) => ReapplyReviewResponse | ReviewFailure
+  'documents:discard-invalidated-review': (
+    input: ReviewRecoveryIpcInput,
+  ) => DiscardReviewResponse | ReviewFailure
   'documents:create-annotation': (
     input: CreateAnnotationIpcInput,
   ) => TextAnnotation | AnnotationFailure
@@ -812,6 +827,12 @@ export default class DocumentManager
     })
     operations.handle('documents:add-review-comment', async (_event, input) => {
       return await this.addReviewComment(input.reviewId, input.text, input.expectedReviewGeneration)
+    })
+    operations.handle('documents:reapply-review', async (_event, input) => {
+      return await this.reapplyReview(input.reviewId, input.expectedReviewGeneration)
+    })
+    operations.handle('documents:discard-invalidated-review', async (_event, input) => {
+      return await this.discardInvalidatedReview(input.reviewId, input.expectedReviewGeneration)
     })
     // The owner-facing annotation channels. Each resolves `path` to a
     // documentId before touching the application service, and each
@@ -2386,9 +2407,9 @@ current contents from the editor somewhere else, and restart the application.`,
     // renderers to reload themselves with getDocument, which will automatically
     // open the new document.
     // Detach before the splice: the sidecar export reads the working text
-    // through the live document. (After external drift the review arrives
-    // here invalidated, and detaching an invalidated review deletes its
-    // sidecar — reloading from disk remains the terminal resolution.)
+    // through the live document. After external drift the review arrives
+    // here invalidated, and it is stored frozen until it is reapplied or
+    // discarded.
     const _id = this.getDocumentId(filePath)
     if (_id !== undefined) {
       try {
@@ -2981,6 +3002,40 @@ current contents from the editor somewhere else, and restart the application.`,
     )
   }
 
+  /** Map a frozen review onto the current text; see prepareReapply. */
+  public async reapplyReview (
+    reviewId: string,
+    expectedReviewGeneration: number,
+  ): Promise<ReapplyReviewResponse | ReviewFailure> {
+    const input = await this._reviewRecoveryInput(reviewId, expectedReviewGeneration)
+    return 'ok' in input ? input : await this._reviewApplication.reapplyReview(input)
+  }
+
+  /** Remove a frozen review; the file keeps its text. */
+  public async discardInvalidatedReview (
+    reviewId: string,
+    expectedReviewGeneration: number,
+  ): Promise<DiscardReviewResponse | ReviewFailure> {
+    const input = await this._reviewRecoveryInput(reviewId, expectedReviewGeneration)
+    return 'ok' in input ? input : await this._reviewApplication.discardInvalidatedReview(input)
+  }
+
+  /** The document a review belongs to, open or closed. */
+  private async _reviewRecoveryInput (
+    reviewId: string,
+    expectedReviewGeneration: number,
+  ): Promise<ReviewRecoveryInput | ReviewFailure> {
+    const query = await this._reviewApplication.findReviewQuery(reviewId)
+    if (query === undefined) {
+      return { ok: false, code: 'REVIEW_NOT_FOUND', message: `Review ${reviewId} not found.` }
+    }
+    if (query.attached) {
+      return { documentId: query.documentId, documentPath: query.documentPath, reviewId, expectedReviewGeneration }
+    }
+    const documentPath = query.sidecar.documentPath
+    return { documentId: this.ensureDocumentId(documentPath), documentPath, reviewId, expectedReviewGeneration }
+  }
+
   /**
    * Returns the reason a review blocks saving `filePath`, or undefined when the
    * save may proceed. Presentation is the renderer's job — see SaveRefusal.
@@ -3222,14 +3277,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * DETACH, not destroy: write the review through to its sidecar, then drop
    * the in-memory state. Closing a reviewed file is free — reopening the
    * file reattaches the review. Must run while the document is still in
-   * `documents`: the export needs its working text.
-   *
-   * An invalidated review is the one exception. Its in-process resolution
-   * was always destruction (the disk moved underneath it, and reloading
-   * from disk closes it), so detaching would only preserve a review that
-   * can never be decided again — it is dropped instead. The same document's
-   * annotations are written through regardless: they outlive the review
-   * that was answering them.
+   * `documents`: the export needs its working text. An invalidated review
+   * is written through frozen, like any other.
    *
    * A failed write ABORTS the close. It throws, the review stays in memory,
    * the document stays open, and the sidecar keeps its previous valid state.
@@ -3339,11 +3388,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * Find the sidecar by canonical path, settle any interrupted save, verify
    * the disk fence, then restore the buffer to the working text and the
    * review to its reference. A fence mismatch is external drift observed
-   * across a gap in time instead of within a process, and gets the same
-   * terminal treatment drift-then-reload gets in-process: the review is
-   * announced invalidated and destroyed, and the file opens with the disk
-   * content preserved. The document's annotations survive that; their
-   * anchors become `orphaned` and wait for the owner to reattach them.
+   * across a gap in time instead of within a process: the review is frozen
+   * and announced invalidated, and the file opens with the disk content.
+   * The document's annotations survive that; their anchors become
+   * `orphaned` and wait for the owner to reattach them.
    */
   private async _reattachCollaborationSidecar(doc: Document): Promise<void> {
     try {

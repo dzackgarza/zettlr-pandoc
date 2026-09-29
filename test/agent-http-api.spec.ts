@@ -927,8 +927,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(
       operations.length,
-      28,
-      "the consolidated OpenAPI spec must define exactly 28 operations",
+      29,
+      "the consolidated OpenAPI spec must define exactly 29 operations",
     );
     for (const { route, method, operation } of operations) {
       assert.equal(
@@ -1421,6 +1421,62 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
     assert.equal(provider.reviewQueries.getReview(documentId)?.reviewId, submitted.reviewId);
+  });
+
+  it("reads a review frozen by disk drift, and reapplies it onto the current file", async function () {
+    const filePath = path.join(scratch, "frozen-review.md");
+    writeFileSync(filePath, "alpha\nbeta\n", "utf8");
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, leafId, filePath), true);
+    const documentId = provider.getDocumentId(filePath);
+    assert.ok(documentId !== undefined);
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [{
+        description: "capitalize beta",
+        patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
+      }],
+      "frozen-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    const live = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/reapply`, {
+      body: JSON.stringify({ expectedReviewGeneration: submitted.reviewGeneration }),
+    });
+    assert.equal(live.status, 409);
+    assert.equal(JSON.parse(live.body).error.code, "REVIEW_NOT_INVALIDATED");
+
+    saveDialogResponse = 0;
+    assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
+    writeFileSync(filePath, "alpha\nBETA\ngamma\n", "utf8");
+    const reopenedLeafId = provider.leafIds(windowId)[0];
+    assert.ok(reopenedLeafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
+
+    const frozen = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}`);
+    assert.equal(frozen.status, 200, frozen.body);
+    const frozenBody = JSON.parse(frozen.body);
+    assert.equal(frozenBody.state, "invalidated");
+    const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
+    assert.equal(chunks.status, 200, chunks.body);
+    assert.equal(JSON.parse(chunks.body).chunks.length, 1);
+
+    const reapplied = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/reapply`, {
+      body: JSON.stringify({ expectedReviewGeneration: frozenBody.generation }),
+    });
+    assert.equal(reapplied.status, 200, reapplied.body);
+    const body = JSON.parse(reapplied.body);
+    assertMatchesSchema(body, "ReapplyReviewResponse");
+    assert.equal(body.unresolvedChunks, 1);
+    assert.deepEqual(body.withdrawnChunkIds, []);
+    assert.equal(body.state, "active");
   });
 
   it("returns a patch refusal without opening an unopened document", async function () {

@@ -107,6 +107,7 @@ import {
   type ChunkDecisionResponse,
   type ClaimInput,
   type ClearReviewResponse,
+  INVALIDATED_REVIEW_MESSAGE,
   type ReapplyReviewResponse,
   type DiscardReviewResponse,
   type ReviewMutationPlan,
@@ -268,12 +269,6 @@ export interface ReviewSavePreparation {
   survivesSave: boolean;
 }
 
-/**
- * What a document got back when it opened. `workingText` is present only
- * when a review was restored: only a review gives the persisted text a claim
- * on the buffer, and an annotation-bearing document without one opens on
- * its file.
- */
 /** A recovery action on a review, named by its document and generation. */
 export interface ReviewRecoveryInput {
   documentId: string;
@@ -287,6 +282,12 @@ type RecoverableReview =
   | { attached: true; review: ActiveReviewState; diskText: string; workingText: string }
   | { attached: false; review: ActiveReviewState; diskText: string; sidecar: CollaborationSidecarData };
 
+/**
+ * What a document got back when it opened. `workingText` is present only
+ * when a review was restored: only a review gives the persisted text a claim
+ * on the buffer, and an annotation-bearing document without one opens on
+ * its file.
+ */
 export interface ReattachedCollaboration {
   review: ActiveReviewState | undefined;
   annotations: AnnotationSet;
@@ -325,9 +326,6 @@ interface AnnotationDocumentState {
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
 
 /** Every refusal of a decision on a frozen review names its recovery. */
-const INVALIDATED_REVIEW_MESSAGE =
-  "The file changed on disk after this review opened, so its suggestions are frozen. " +
-  "Reapply the review to the current text, or discard it.";
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
   if (error instanceof AnnotationDomainValidationError) {

@@ -29,6 +29,11 @@ components:
           pattern: '^[0-9a-f]{64}$'
     ReviewState:
       type: string
+      description: >-
+        invalidated means the file changed on disk under the review. Its
+        suggestions are frozen against the text they were made in: read them
+        with view=chunks or view=diff, and call reapplyReview to map them onto
+        the current text. The owner can also discard the review.
       enum:
         - active
         - resolved-awaiting-save
@@ -326,6 +331,7 @@ components:
             - REVIEW_GENERATION_MISMATCH
             - REVIEW_NOT_FOUND
             - REVIEW_INVALIDATED
+            - REVIEW_NOT_INVALIDATED
             - PATCH_INVALID
             - PATCH_NOT_APPLICABLE
             - CLAIM_NOT_ATOMIC
@@ -891,6 +897,47 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProposalPacket'
+    ReapplyReviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedReviewGeneration
+      properties:
+        expectedReviewGeneration:
+          type: integer
+          minimum: 0
+          description: >-
+            See ReviewMutationPrecondition. Reapply maps the review onto the
+            current text, whatever it is, so it carries no working hash.
+    ReapplyReviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - reviewId
+        - documentId
+        - reviewGeneration
+        - unresolvedChunks
+        - withdrawnChunkIds
+        - state
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
+        reviewGeneration:
+          type: integer
+        unresolvedChunks:
+          type: integer
+        withdrawnChunkIds:
+          type: array
+          description: >-
+            The suggestions whose text the current file no longer holds. They
+            are withdrawn; submit them again as new proposals if they still
+            apply.
+          items:
+            type: string
+        state:
+          $ref: '#/components/schemas/ReviewState'
     RetractProposalResponse:
       type: object
       required:
@@ -2650,6 +2697,47 @@ paths:
                 $ref: '#/components/schemas/AgentErrorResponse'
         '409':
           description: Document closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/reapply:
+    post:
+      operationId: reapplyReview
+      x-openai-isConsequential: false
+      summary: Reapply an invalidated review to the current text
+      description: >-
+        Maps the frozen suggestions of an invalidated review onto the current
+        text (the open buffer, or the file on disk). A suggestion whose text
+        is still there is live again; the rest are withdrawn and listed in
+        withdrawnChunkIds.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReapplyReviewRequest'
+      responses:
+        '200':
+          description: The review is live again.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReapplyReviewResponse'
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: The review is still current, or its generation moved.
           content:
             application/json:
               schema:

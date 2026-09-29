@@ -359,6 +359,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reviews/{reviewId}/reapply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reapply an invalidated review to the current text
+         * @description Maps the frozen suggestions of an invalidated review onto the current text (the open buffer, or the file on disk). A suggestion whose text is still there is live again; the rest are withdrawn and listed in withdrawnChunkIds.
+         */
+        post: operations["reapplyReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/proposals/{packetId}/retract": {
         parameters: {
             query?: never;
@@ -486,7 +506,10 @@ export interface components {
         DocumentRevision: {
             sha256: string;
         };
-        /** @enum {string} */
+        /**
+         * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, and call reapplyReview to map them onto the current text. The owner can also discard the review.
+         * @enum {string}
+         */
         ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
         ReviewSummary: {
             reviewId: string;
@@ -580,7 +603,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "REVIEW_NOT_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -781,6 +804,19 @@ export interface components {
             /** @description Absent while the reviewed file is closed. */
             documentId?: string;
             packets: components["schemas"]["ProposalPacket"][];
+        };
+        ReapplyReviewRequest: {
+            /** @description See ReviewMutationPrecondition. Reapply maps the review onto the current text, whatever it is, so it carries no working hash. */
+            expectedReviewGeneration: number;
+        };
+        ReapplyReviewResponse: {
+            reviewId: string;
+            documentId: string;
+            reviewGeneration: number;
+            unresolvedChunks: number;
+            /** @description The suggestions whose text the current file no longer holds. They are withdrawn; submit them again as new proposals if they still apply. */
+            withdrawnChunkIds: string[];
+            state: components["schemas"]["ReviewState"];
         };
         RetractProposalResponse: {
             /** @constant */
@@ -1913,6 +1949,50 @@ export interface operations {
                 };
             };
             /** @description Document closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    reapplyReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReapplyReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The review is live again. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReapplyReviewResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The review is still current, or its generation moved. */
             409: {
                 headers: {
                     [name: string]: unknown;
