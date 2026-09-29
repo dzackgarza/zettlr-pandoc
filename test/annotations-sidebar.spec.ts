@@ -39,7 +39,6 @@ import {
   createLineIndex,
   deriveActionRow,
   deriveCardTitle,
-  describeAcceptFailures,
   filterCards,
   lineNumberFor,
   openAnnotationCount,
@@ -665,23 +664,39 @@ describe("useDocumentCollaborationStore review surface", function () {
     assert.deepEqual(accepted.sort(), [session.documentPath, secondPath].sort());
     assert.equal(results.length, 2);
   });
-});
 
-describe("describeAcceptFailures", function () {
-  it("names every failing document under its error code and reason", function () {
-    const invalidated = "The file changed on disk, so this review is no longer current.";
-    const report = describeAcceptFailures([
-      { path: "/w/a.md", result: { ok: false, code: "REVIEW_INVALIDATED", message: invalidated } },
-      { path: "/w/b.md", result: { ok: false, code: "REVIEW_GENERATION_MISMATCH", message: "The review changed." } },
-      { path: "/w/c.md", result: { ok: false, code: "REVIEW_INVALIDATED", message: invalidated } },
-    ]);
-    assert.equal(report, [
-      `REVIEW_INVALIDATED: ${invalidated}`,
-      "  /w/a.md",
-      "  /w/c.md",
-      "REVIEW_GENERATION_MISMATCH: The review changed.",
-      "  /w/b.md",
-    ].join("\n"));
+  it("global Accept all records every failed document with its path and failure in the application log", async function () {
+    const secondPath = "/tmp/second-workspace-note.md";
+    const second = {
+      ...session,
+      documentId: "doc-second",
+      documentPath: secondPath,
+      workingSha256: "d".repeat(64),
+      review: { ...session.review!, id: "review-second", documentPath: secondPath, reviewGeneration: 9 },
+    };
+    const invalidated = { ok: false, code: "REVIEW_INVALIDATED", message: "The file changed on disk, so this review is no longer current." };
+    const logged: unknown[] = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      if (message.command === "get-workspace-collaboration-sessions") {
+        return [session, second];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        return (message.payload as { path: string }).path === secondPath ? invalidated : { ok: true, acceptedChunks: 2 };
+      }
+      if (message.command === "log-provider") {
+        logged.push(message.payload);
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath, secondPath]);
+
+    await store.acceptAllWorkspaceReviews();
+
+    assert.equal(logged.length, 1);
+    const record = logged[0] as { command: string, payload: { details: string } };
+    assert.equal(record.command, "record-error");
+    assert.deepEqual(JSON.parse(record.payload.details), [{ path: secondPath, result: invalidated }]);
   });
 });
 

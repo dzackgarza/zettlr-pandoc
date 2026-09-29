@@ -197,14 +197,12 @@ function navigateAnnotation (documentPath: string, card: AnnotationCardView): vo
   emit('navigate', { documentPath, range: annotationRange(card), annotationId: card.annotation.annotationId })
 }
 
-/** Logs and shows which documents an Accept all could not accept, and why. */
+/** Shows which documents an Accept all could not accept, and why. */
 function reportAcceptFailures (failures: Array<{ path: string, result: ReviewFailure }>): void {
   const heading = failures.length === 1
     ? trans('Could not accept all changes in 1 document.')
     : trans('Could not accept all changes in %s documents.', String(failures.length))
-  const report = describeAcceptFailures(failures)
-  reportError(`[AnnotationsTab] ${heading}\n${report}`)
-  showToast(`${heading}\n${report}`, 'error')
+  showToast(`${heading}\n${describeAcceptFailures(failures)}`, 'error')
 }
 
 async function acceptAllDocument (documentPath: string): Promise<void> {

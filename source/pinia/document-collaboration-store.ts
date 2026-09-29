@@ -338,6 +338,8 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     }) as AcceptAllChunksResponse | ReviewFailure
     if (result.ok) {
       await refreshWorkspaceSessions(workspaceDocumentPaths.value)
+    } else {
+      reportError('[documentCollaborationStore] Accept all failed', [{ path: documentPath, result }])
     }
     return result
   }
@@ -353,6 +355,10 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
         ...reviewFence(path)
       }) as AcceptAllChunksResponse | ReviewFailure
       results.push({ path, result })
+    }
+    const failures = results.filter(({ result }) => !result.ok)
+    if (failures.length > 0) {
+      reportError('[documentCollaborationStore] Accept all failed', failures)
     }
     await refreshWorkspaceSessions(workspaceDocumentPaths.value)
     return results
