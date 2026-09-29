@@ -98,7 +98,7 @@ release title: release-assets
     cd "{{justfile_directory()}}"
     version="$(jq -r .version package.json)"
     git tag -a "v$version" -m "{{title}}"
-    git push origin HEAD "refs/tags/v$version"
+    git push origin "refs/tags/v$version"
     gh release create "v$version" --verify-tag --title "{{title}}" --generate-notes release/*
 
 # Build the AppImage and its checksum list into release/ from a clean, verified
