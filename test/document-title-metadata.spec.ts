@@ -23,6 +23,7 @@ function descriptor (path = '/tmp/title.md'): MDFileDescriptor {
     firstHeading: null,
     firstSentence: null,
     yamlTitle: undefined,
+    aliases: [],
     frontmatter: null,
     linefeed: '\n',
     references: {

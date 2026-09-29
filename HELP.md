@@ -203,3 +203,26 @@ do not.
 Keep citations and cross-references in separate brackets and join them with a
 word: `@fig:cusp and [@FS86]`. In one bracket, or in two adjacent brackets,
 the output reads as if the figure came from the cited work.
+
+## Links to other documents
+
+Link to another document of the workspace with a wikilink that names it, not
+with a path: `[[cusp-correspondence|the cusp correspondence]]`. The editor
+resolves the name in this order, ignoring case, and the first kind that matches
+decides:
+
+1. the document's `id` (Zettelkasten ID);
+2. a path suffix: the file name without `.md`, or the end of its path
+   relative to the workspace (`programs/cusp-correspondence`);
+3. an entry of the document's YAML `aliases`;
+4. the document's YAML `title`.
+
+Write the shortest name that matches one document only. A name survives a move
+of either file; a relative path such as `[[../programs/cusp-correspondence.md]]`
+does not. `#` and a heading after the name go to that heading:
+`[[cusp-correspondence#Main result]]`.
+
+The linter reports a name that matches no document
+(`link/missing-wikilink-target`), a name that matches more than one
+(`link/ambiguous-wikilink`) and a relative path (`link/relative-wikilink`),
+with a fix to the shortest unique name.

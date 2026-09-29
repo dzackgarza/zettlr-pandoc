@@ -2,6 +2,7 @@
 
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import path from "node:path";
 import { lintMarkdownText } from "./flowmark-lint";
 import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
@@ -12,6 +13,7 @@ export interface DocumentLintSharedContext {
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
+  wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
   /** `editor.lint.flowmark.timeoutMs` from the app config. */
   flowmarkLintTimeoutMs: number;
@@ -21,6 +23,7 @@ export interface CreateDocumentLintContextOptions {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   referenceState?: WorkspaceReferenceState;
+  wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
   flowmarkLintTimeoutMs: number;
 }

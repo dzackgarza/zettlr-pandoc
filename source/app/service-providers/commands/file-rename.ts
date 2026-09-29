@@ -17,7 +17,7 @@ import ZettlrCommand from './zettlr-command'
 import sanitize from 'sanitize-filename'
 import { dialog } from 'electron'
 import { trans } from '@common/i18n-main'
-import replaceLinks from '@common/util/replace-links'
+import { retargetLinks } from '@common/util/replace-links'
 import { hasAnyRecognizedFileExtension } from '@common/util/file-extention-checks'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import pathExists from 'source/common/util/path-exists'
@@ -132,8 +132,8 @@ export default class FileRename extends ZettlrCommand {
     try {
       // We need to retrieve the inboundLinks before we rename the file, since
       // afterwards the links won't be valid anymore.
-      const oldName = file.name
       const inboundLinks = this._app.links.retrieveInbound(file.path)
+      const indexBefore = this._app.links.index
 
       // Before renaming the file, let's see if it is a root file. Because if it
       // is, we have to close it first.
@@ -169,13 +169,14 @@ export default class FileRename extends ZettlrCommand {
           return // Do not update the links.
         }
 
-        // So ... update. We'll basically take the rename-tag command as a template.
-        for (const file of inboundLinks) {
-          const content = await this._app.fsal.readTextFile(file)
-          const newContent = replaceLinks(content, oldName, newName)
+        await this._app.links.reindex()
+        const indexAfter = this._app.links.index
+        for (const source of inboundLinks) {
+          const content = await this._app.fsal.readTextFile(source)
+          const newContent = retargetLinks(content, source, { from: file.path, to: newPath }, indexBefore, indexAfter)
           if (newContent !== content) {
-            await this._app.fsal.writeTextFile(file, newContent)
-            this._app.log.info(`[Application] Replaced link to ${oldName} with ${newName} in file ${file}`)
+            await this._app.fsal.writeTextFile(source, newContent)
+            this._app.log.info(`[Application] Updated the links to ${newPath} in file ${source}`)
           }
         }
       }

@@ -43,7 +43,6 @@ import { type FilesystemMetadata, getFilesystemMetadata } from './util/get-fs-me
 import { ignorePath } from 'source/common/util/ignore-path'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
 import type { EventName } from 'chokidar/handler.js'
-import { getIDRE } from 'source/common/regular-expressions'
 import type LongRunningTaskProvider from '../long-running-tasks'
 import { trans } from 'source/common/i18n-main'
 import { readDirectoryFromDisk } from './util/read-directory'
@@ -420,35 +419,6 @@ export default class FSAL extends ProviderContract {
     }
 
     return allDescriptors
-  }
-
-  /**
-   * Searches for a file using the query, which can be either an ID (as
-   * recognized by the RegExp pattern) or a filename (with or without extension)
-   *
-   * @param  {string}  query  What to search for
-   */
-  public async findExact (query: string): Promise<MDFileDescriptor|undefined> {
-    const allFileDescriptors = (await this.getAllLoadedDescriptors())
-      .filter(descriptor => descriptor.type === 'file')
-
-    const { zkn } = this._config.get()
-    const isQueryID = getIDRE(zkn.idRE, true).test(query)
-    const hasMdExt = hasMarkdownExt(query)
-
-    for (const descriptor of allFileDescriptors) {
-      if (isQueryID && descriptor.id === query) {
-        return descriptor
-      }
-
-      if (hasMdExt && descriptor.name === query) {
-        return descriptor
-      }
-
-      if (descriptor.name === query + descriptor.ext) {
-        return descriptor
-      }
-    }
   }
 
   /**
@@ -904,14 +874,8 @@ export default class FSAL extends ProviderContract {
   public async getDescriptorFor (absPath: string, avoidDiskAccess: boolean = true): Promise<AnyDescriptor> {
     if (avoidDiskAccess) {
       const cacheHit = await this._cache.get(absPath)
-      if (cacheHit !== undefined) {
-        if (cacheHit.type !== 'file') {
-          return cacheHit
-        }
-        if (cacheHit.titleMetadataVersion === FSALFile.TITLE_METADATA_VERSION) {
-          return cacheHit
-        }
-        return await FSALFile.refreshTitleMetadata(cacheHit, this._cache)
+      if (cacheHit !== undefined && (cacheHit.type !== 'file' || cacheHit.parserVersion === FSALFile.PARSER_VERSION)) {
+        return cacheHit
       }
     }
 

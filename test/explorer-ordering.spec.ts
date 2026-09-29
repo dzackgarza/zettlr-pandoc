@@ -75,6 +75,7 @@ function markdown (
     charCount: 0,
     firstHeading: options.heading ?? null,
     yamlTitle: options.title,
+    aliases: [],
     frontmatter: { ...(options.frontmatter ?? {}), ...(options.title === undefined ? {} : { title: options.title }) },
     linefeed: '\n',
     references: { documentPath: filePath, sourceHash: '', definitions: [], occurrences: [] }

@@ -264,6 +264,29 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   otherwise select the isolated linker, and webpack/Forge resolve transitive
   dependencies from the hoisted `node_modules`.
 
+### 8. Workspace wikilinks
+
+- **Resolution:** `source/common/util/wikilink-resolution.ts` (`WikilinkIndex`).
+  A `[[target#heading|label]]` target is a relative path (`./`, `../`, absolute:
+  resolved against the source file) or a name. A name matches, case-insensitively
+  and in this tier order, the Zettelkasten `id`, a path suffix relative to the
+  file's workspace root, a YAML `aliases` entry, the YAML `title`. The first tier
+  with a match decides; two matches in it are ambiguous, never a first match.
+  The written form (`canonical`) is the shortest suffix that names the file alone.
+- **Owner:** `LinkProvider` (`service-providers/links`) rebuilds the index on every
+  FSAL event. The root of a file is the innermost open workspace that contains it.
+  Every consumer resolves through it: force-open (with `#heading` → `jump-to-line`),
+  hover preview, backlinks, graph, autocomplete (`get-link-targets`) and
+  rename (`retargetLinks` rewrites only links whose resolution the rename changed).
+- **Lint:** Zettlr sends `wikilinks.resolutions` in the Flowmark context
+  (`flowmark-lint-context.ts`); the rules `link/missing-wikilink-target`,
+  `link/ambiguous-wikilink` and `link/relative-wikilink` live in pandoc-flowmark.
+  The lint cache key includes those resolutions, so a rename elsewhere refreshes
+  the diagnostics of the documents it affects.
+- **YAML `aliases`** is parsed by `fsal/util/file-parser.ts`. A change to what the
+  parser extracts must bump `PARSER_VERSION` in `fsal-file.ts`; cached descriptors
+  of another version are parsed again.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

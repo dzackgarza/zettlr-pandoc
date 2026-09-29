@@ -14,6 +14,12 @@
  * END HEADER
  */
 
+/** A wikilink target, and the document it resolves to when it names exactly one. */
+export interface WikilinkEdge {
+  target: string
+  path: string|undefined
+}
+
 export type LinkProviderIPCContract = {
   'get-inbound-links': {
     request: { payload: { filePath: string } }
@@ -21,6 +27,10 @@ export type LinkProviderIPCContract = {
   }
   'get-link-database': {
     request: { payload?: undefined }
-    response: Record<string, string[]>
+    response: Record<string, WikilinkEdge[]>
+  }
+  'get-link-targets': {
+    request: { payload?: undefined }
+    response: Record<string, string>
   }
 }

@@ -148,6 +148,7 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
 import { activeTikzBlock as findActiveTikzBlock } from '@common/modules/markdown-editor/tikz-block'
 import type { TikzSourceBlock } from 'tikz-workbench/src/source-block'
 import type { TikzLivePreviewTarget } from 'tikz-workbench/src/live-preview'
+import type { WikilinkEdge } from 'source/app/service-providers/links/ipc-contract'
 import {
   declaredTexMacroSources,
   type TexDocumentKind,
@@ -1146,6 +1147,7 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
       command: 'force-open',
       payload: {
         linkContents,
+        sourcePath: props.file.path,
         newTab: undefined, // let open-file command decide based on preferences
         leafId: props.leafId,
         windowId: props.windowId
@@ -1734,26 +1736,24 @@ async function updateFileDatabase (): Promise<void> {
   // Get all our files ...
   const fileDatabase: Array<{ filename: string, displayName: string, id: string }> = []
 
-  // ... and the unique links that are part of the link database
-  const rawLinks: Record<string, string[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
-  const linkDatabase = [...new Set(Object.values(rawLinks).flat())]
+  // ... under the wikilink target each one is written as, and the links that
+  // name no document yet
+  const linkTargets: Record<string, string> = await ipcRenderer.invoke('link-provider', { command: 'get-link-targets' })
+  const linkDatabase: Record<string, WikilinkEdge[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
 
-  // First, add all existing files to the database ...
   for (const file of fsalFiles.value) {
-    fileDatabase.push({
-      filename: pathBasename(file.name, file.ext),
-      displayName: getDocumentTitle(file),
-      id: file.id
-    })
+    const target = linkTargets[file.path]
+    if (target === undefined) {
+      continue // Not part of an indexed workspace yet
+    }
+    fileDatabase.push({ filename: target, displayName: getDocumentTitle(file), id: file.id })
   }
 
-  // ... before going through the link database to add those links that link to
-  // not yet existing files
-  for (const link of linkDatabase) {
-    const existingFile = fileDatabase.find(file => file.filename === link || file.id === link)
-    if (existingFile === undefined) {
-      fileDatabase.push({ filename: link, displayName: link, id: '' })
-    }
+  const unresolved = new Set(Object.values(linkDatabase).flat()
+    .filter(edge => edge.path === undefined)
+    .map(edge => edge.target))
+  for (const target of unresolved) {
+    fileDatabase.push({ filename: target, displayName: target, id: '' })
   }
 
   currentEditor?.setCompletionDatabase('files', fileDatabase)

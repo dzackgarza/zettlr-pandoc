@@ -72,6 +72,7 @@ function makeDescriptor (documentPath: string): MDFileDescriptor {
     linefeed: '\n',
     firstHeading: null,
     yamlTitle: undefined,
+    aliases: [],
     frontmatter: null,
     references: { documentPath, sourceHash: '', definitions: [], occurrences: [] }
   }

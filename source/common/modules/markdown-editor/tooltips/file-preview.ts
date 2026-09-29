@@ -25,6 +25,7 @@ import type { FindFileAndReturnMetadataResult } from 'source/app/service-provide
 import { pathDirname } from 'source/common/util/renderer-path-polyfill'
 import makeValidUri from 'source/common/util/make-valid-uri'
 import type { ForceOpenAPI } from 'source/app/service-providers/commands/force-open'
+import { splitWikilinkTarget } from '@common/util/wikilink-resolution'
 
 const ipcRenderer = window.ipc
 
@@ -44,10 +45,11 @@ async function filePreviewTooltip (view: EditorView, pos: number, side: 1 | -1):
   }
 
   const fileToDisplay = view.state.sliceDoc(contentNode.from, contentNode.to)
+  const sourcePath = view.state.field(configField).metadata.path
 
-  const res: FindFileAndReturnMetadataResult|undefined = await ipcRenderer.invoke(
+  const res: FindFileAndReturnMetadataResult = await ipcRenderer.invoke(
     'application',
-    { command: 'file-find-and-return-meta-data', payload: fileToDisplay }
+    { command: 'file-find-and-return-meta-data', payload: { linkContents: fileToDisplay, sourcePath } }
   )
 
   const { zknLinkFormat } = view.state.field(configField)
@@ -59,14 +61,15 @@ async function filePreviewTooltip (view: EditorView, pos: number, side: 1 | -1):
     end: nodeAt.to,
     above: true,
     create (_view) {
-      if (res !== undefined) {
-        return { dom: getPreviewElement(res, fileToDisplay, zknLinkFormat) }
-      } else {
-        const dom = document.createElement('div')
-        const filename = fileToDisplay.includes('#') ? fileToDisplay.slice(0, fileToDisplay.indexOf('#')) : fileToDisplay
-        dom.textContent = trans('File %s does not exist.', filename)
-        return { dom }
+      if (res.status === 'resolved') {
+        return { dom: getPreviewElement(res, fileToDisplay, sourcePath, zknLinkFormat) }
       }
+      const dom = document.createElement('div')
+      const { target } = splitWikilinkTarget(fileToDisplay)
+      dom.textContent = res.status === 'missing'
+        ? trans('File %s does not exist.', target)
+        : trans('%s names more than one document: %s', target, res.candidates.join(', '))
+      return { dom }
     }
   }
 }
@@ -81,7 +84,7 @@ async function filePreviewTooltip (view: EditorView, pos: number, side: 1 | -1):
  *
  * @return  {Element}                                        The wrapper element
  */
-function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkContents: string, zknLinkFormat: 'link|title'|'title|link'): HTMLDivElement {
+function getPreviewElement (metadata: Extract<FindFileAndReturnMetadataResult, { status: 'resolved' }>, linkContents: string, sourcePath: string, zknLinkFormat: 'link|title'|'title|link'): HTMLDivElement {
   const wrapper = document.createElement('div')
   wrapper.classList.add('editor-note-preview')
 
@@ -133,8 +136,9 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
       command: 'force-open',
       payload: {
         linkContents,
+        sourcePath,
         newTab: undefined // let open-file command decide based on preferences
-      } as ForceOpenAPI
+      } satisfies ForceOpenAPI
     })
       .catch(err => reportError(err))
   }
@@ -154,8 +158,9 @@ function getPreviewElement (metadata: FindFileAndReturnMetadataResult, linkConte
         command: 'force-open',
         payload: {
           linkContents,
+          sourcePath,
           newTab: true
-        }
+        } satisfies ForceOpenAPI
       })
         .catch(err => reportError(err))
     }

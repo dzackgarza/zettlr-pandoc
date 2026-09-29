@@ -171,6 +171,7 @@ export class AppServiceContainer {
       config: this._configProvider,
       buffers: this._documentManager,
       references: this._referenceProvider,
+      links: this._linkProvider,
       fsal: this._fsal,
       lrt: this._lrtProvider,
       homeDirectory: app.getPath('home'),

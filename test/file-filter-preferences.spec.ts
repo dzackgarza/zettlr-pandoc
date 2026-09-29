@@ -32,6 +32,7 @@ const markdown = {
   charCount: 1,
   firstHeading: 'Theorem',
   yamlTitle: undefined,
+  aliases: [],
   frontmatter: null,
   linefeed: '\n',
   references: {

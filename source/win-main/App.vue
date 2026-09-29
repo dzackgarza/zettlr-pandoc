@@ -894,6 +894,10 @@ function refreshNavigationState (): void {
 
 watch(lastLeafId, refreshNavigationState)
 ipcRenderer.on('documents-update', () => { refreshNavigationState() })
+// A wikilink to `[[file#heading]]` opens the file at that heading.
+ipcRenderer.on('jump-to-line', (event, target: { filePath: string, line: number }) => {
+  jtl(target.filePath, target.line, false)
+})
 refreshNavigationState()
 
 // Showing a pane ends distraction-free mode; the panes themselves mount

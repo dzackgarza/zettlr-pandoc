@@ -74,6 +74,7 @@ function descriptorFor (filePath: string): MDFileDescriptor {
     linefeed: '\n',
     firstHeading: null,
     yamlTitle: undefined,
+    aliases: [],
     frontmatter: null,
     references: extractReferences(filePath, content)
   }

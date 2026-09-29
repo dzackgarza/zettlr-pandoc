@@ -14,6 +14,7 @@
  */
 
 import extractYamlFrontmatter from '@common/util/extract-yaml-frontmatter'
+import { splitWikilinkTarget, type WikilinkResolution } from '@common/util/wikilink-resolution'
 import ZettlrCommand from './zettlr-command'
 import type { MDFileDescriptor } from '@dts/common/fsal'
 import type { AppServiceContainer } from 'source/app/app-service-container'
@@ -30,40 +31,41 @@ function previewTitleGenerator (userConfig: string, descriptor: MDFileDescriptor
   return descriptor.name
 }
 
-export interface FindFileAndReturnMetadataResult {
-  title: string
-  filePath: string
-  previewMarkdown: string
-  wordCount: number
-  modtime: number
+export interface FindFileAndReturnMetadataRequest {
+  linkContents: string
+  /** The document that contains the link. */
+  sourcePath: string
 }
+
+export type FindFileAndReturnMetadataResult =
+  | {
+    status: 'resolved'
+    title: string
+    filePath: string
+    previewMarkdown: string
+    wordCount: number
+    modtime: number
+  }
+  | Exclude<WikilinkResolution, { status: 'resolved' }>
 
 export default class FilePathFindMetaData extends ZettlrCommand {
   constructor (app: AppServiceContainer) {
-    super(app, [ 'find-exact', 'file-find-and-return-meta-data' ])
+    super(app, ['file-find-and-return-meta-data'])
   }
 
   /**
-   * This command serves two purposes: For the MarkdownEditor component, it
-   * returns an easy to consume metadata object, and for the GraphView it offers
-   * a convenient access to the internal link resolution engine to resolve links
-   *
-   * @param   {string}                         evt  The event
-   * @param   {arg}                            arg  The argument, should be a query string
-   *
-   * @return  {MDFileDescriptor|undefined|string[]} Returns a MetaDescriptor, undefined, or an array
+   * Resolves a wikilink and returns the preview of the document it names.
    */
-  async run (evt: string, arg: string): Promise<MDFileDescriptor|undefined|FindFileAndReturnMetadataResult> {
-    // The filename can contain a `#`, indicating a specified heading in the target file
-    const filename = arg.includes('#') ? arg.slice(0, arg.indexOf('#')) : arg
-    // Quick'n'dirty command to return the Meta descriptor for the given query
-    const descriptor = await this._app.fsal.findExact(filename)
-    if (descriptor === undefined) {
-      return undefined
+  async run (evt: string, arg: FindFileAndReturnMetadataRequest): Promise<FindFileAndReturnMetadataResult> {
+    const { target } = splitWikilinkTarget(arg.linkContents)
+    const resolution = this._app.links.resolve(target, arg.sourcePath)
+    if (resolution.status !== 'resolved') {
+      return resolution
     }
 
-    if (evt === 'find-exact') {
-      return descriptor
+    const descriptor = await this._app.fsal.getDescriptorFor(resolution.path)
+    if (descriptor.type !== 'file') {
+      throw new Error(`The wikilink target ${resolution.path} is not a Markdown file`)
     }
 
     const markdown = await this._app.fsal.loadAnySupportedFile(descriptor.path)
@@ -84,6 +86,7 @@ export default class FilePathFindMetaData extends ZettlrCommand {
     }
 
     return {
+      status: 'resolved',
       title: previewTitleGenerator(this._app.config.get().fileNameDisplay, descriptor),
       filePath: descriptor.path,
       previewMarkdown: preview,

@@ -1,110 +1,41 @@
-/* eslint-disable no-undef */
-/**
- * @ignore
- * BEGIN HEADER
- *
- * Contains:        replaceLinks tester
- * CVM-Role:        TESTING
- * Maintainer:      Hendrik Erz
- * License:         GNU GPL v3
- *
- * Description:     This file tests a component of Zettlr.
- *
- * END HEADER
- */
-
-import replaceLinks from '@common/util/replace-links'
+import { retargetLinks } from '@common/util/replace-links'
+import { WikilinkIndex, type WikilinkDocument } from '@common/util/wikilink-resolution'
 import { strictEqual } from 'assert'
 
-// NOTE: THESE TESTS ASSUME THE DEFAULT SETTING `link|title` FOR LINKS.
+const root = '/ws'
+const sourcePath = `${root}/programs/source.md`
 
-// The initial document contains links to both Zettelkasten as well as
-// Zettelkasten (Luhmann).
-const firstDocument = `---
-title: "A simple test document"
-author: Zettlr
----
+function document (relativePath: string, extra: Partial<WikilinkDocument> = {}): WikilinkDocument {
+  return { path: `${root}/${relativePath}`, root, id: '', title: undefined, aliases: [], ...extra }
+}
 
-# A simple test document
+describe('Link retargeting after a rename', function () {
+  const others = [ document('programs/source.md'), document('elsewhere/zettelkasten-luhmann.md') ]
+  const before = new WikilinkIndex([
+    ...others,
+    document('notes/zettelkasten.md', { id: '20240101120000', aliases: ['ZK'] })
+  ])
+  const after = new WikilinkIndex([
+    ...others,
+    document('notes/luhmann-zettelkasten.md', { id: '20240101120000', aliases: ['ZK'] })
+  ])
+  const move = { from: `${root}/notes/zettelkasten.md`, to: `${root}/notes/luhmann-zettelkasten.md` }
 
-This document is used to test the link replacement of Zettlr. For example, if
-you have an internal wiki/Zettelkasten link to [[Zettelkasten]], if you then
-rename the file \`Zettelkasten.md\` to, say, \`Zettelkasten (Luhmann).md\`,
-Zettlr should be able to replace those links wherever they occur so that the
-file then links to [[Zettelkasten (Luhmann)]] instead (and vice versa). The
-"fancy" links that some users have come up with
-[should not work]([[Zettelkasten]]).
+  it('gives every link that named the old path the new written form, keeping heading and label', function () {
+    const markdown = [
+      'See [[zettelkasten]], [[Zettelkasten.md|the method]] and [[notes/zettelkasten#Origins|origins]].',
+      'A relative link: [[../notes/zettelkasten.md]].',
+      ''
+    ].join('\n')
+    strictEqual(retargetLinks(markdown, sourcePath, move, before, after), [
+      'See [[luhmann-zettelkasten]], [[luhmann-zettelkasten|the method]] and [[luhmann-zettelkasten#Origins|origins]].',
+      'A relative link: [[luhmann-zettelkasten]].',
+      ''
+    ].join('\n'))
+  })
 
-Also, this needs to work if the ending is preserved, as in [[Zettelkasten.md]]
-or [[Zettelkasten (Luhmann).md]].
-
-Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`
-
-// The second document represents the document after a replacement of
-// "Zettelkasten" with "Zettelkasten (Luhmann)"
-const secondDocument = `---
-title: "A simple test document"
-author: Zettlr
----
-
-# A simple test document
-
-This document is used to test the link replacement of Zettlr. For example, if
-you have an internal wiki/Zettelkasten link to [[Zettelkasten (Luhmann)]], if you then
-rename the file \`Zettelkasten.md\` to, say, \`Zettelkasten (Luhmann).md\`,
-Zettlr should be able to replace those links wherever they occur so that the
-file then links to [[Zettelkasten (Luhmann)]] instead (and vice versa). The
-"fancy" links that some users have come up with
-[should not work]([[Zettelkasten]]).
-
-Also, this needs to work if the ending is preserved, as in [[Zettelkasten (Luhmann).md]]
-or [[Zettelkasten (Luhmann).md]].
-
-Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten (Luhmann)|This is an arbitrary title that needs to be preserved.]]`
-
-// Finally, the third document should change all links to just "Zettelkasten" again.
-const thirdDocument = `---
-title: "A simple test document"
-author: Zettlr
----
-
-# A simple test document
-
-This document is used to test the link replacement of Zettlr. For example, if
-you have an internal wiki/Zettelkasten link to [[Zettelkasten]], if you then
-rename the file \`Zettelkasten.md\` to, say, \`Zettelkasten (Luhmann).md\`,
-Zettlr should be able to replace those links wherever they occur so that the
-file then links to [[Zettelkasten]] instead (and vice versa). The
-"fancy" links that some users have come up with
-[should not work]([[Zettelkasten]]).
-
-Also, this needs to work if the ending is preserved, as in [[Zettelkasten.md]]
-or [[Zettelkasten.md]].
-
-Finally, users may use explicit title strings, which should be preserved as
-well: [[Zettelkasten|This is an arbitrary title that needs to be preserved.]]`
-
-const replaceLinksTesters = [
-  {
-    oldName: 'Zettelkasten.md',
-    newName: 'Zettelkasten (Luhmann).md',
-    input: firstDocument,
-    output: secondDocument
-  },
-  {
-    oldName: 'Zettelkasten (Luhmann).md',
-    newName: 'Zettelkasten.md',
-    input: secondDocument,
-    output: thirdDocument
-  }
-]
-
-describe('Utility#replaceLinks()', function () {
-  for (const test of replaceLinksTesters) {
-    it(`should replace "${test.oldName}" with "${test.newName}"`, function () {
-      strictEqual(replaceLinks(test.input, test.oldName, test.newName), test.output)
-    })
-  }
+  it('keeps links by ID or alias, and links to other documents', function () {
+    const markdown = 'By ID [[20240101120000]], by alias [[ZK]], and another [[zettelkasten-luhmann]].\n'
+    strictEqual(retargetLinks(markdown, sourcePath, move, before, after), markdown)
+  })
 })

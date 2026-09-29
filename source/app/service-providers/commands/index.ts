@@ -67,10 +67,10 @@ import type { DirSettingsCommandAPI } from './dir-settings'
 import type { TikzRenderRequest, TikzRenderResult } from 'tikz-workbench/src/tikz-render'
 import type { LanguageToolIgnoredRuleEntry } from '../config/get-config-template'
 import type { ProgrammaticallyOpenableWindows } from './open-aux-window'
-import type { FindFileAndReturnMetadataResult } from './file-find-and-return-meta-data'
+import type { FindFileAndReturnMetadataRequest, FindFileAndReturnMetadataResult } from './file-find-and-return-meta-data'
 import type { DocumentType } from '@dts/common/documents'
 import type { WorkspaceReferenceEdit } from '@dts/common/references'
-import type { MDFileDescriptor, ProjectSettings } from '@dts/common/fsal'
+import type { ProjectSettings } from '@dts/common/fsal'
 import type {
   CommitRenameOutcome,
   ReferenceRenamePreview,
@@ -199,8 +199,8 @@ export type ApplicationIPCContract = {
     response: LinkPreviewResult|undefined
   }
   'file-find-and-return-meta-data': {
-    request: { payload: string }
-    response: FindFileAndReturnMetadataResult|undefined
+    request: { payload: FindFileAndReturnMetadataRequest }
+    response: FindFileAndReturnMetadataResult
   }
   'file-delete': {
     request: { payload: { path: string } }
@@ -217,10 +217,6 @@ export type ApplicationIPCContract = {
   'file-rename': {
     request: { payload: { path: string, name: string } }
     response: unknown
-  }
-  'find-exact': {
-    request: { payload: string }
-    response: MDFileDescriptor|undefined
   }
   'force-open': {
     request: { payload: ForceOpenAPI }

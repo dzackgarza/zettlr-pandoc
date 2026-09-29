@@ -52,7 +52,8 @@ import {
   type DocumentLintDiagnostic
 } from '../../util/document-lint'
 import { documentLintAuthority } from '../../util/document-bibliographies'
-import { otherDefinitionSites } from '../../util/flowmark-lint-context'
+import { otherDefinitionSites, wikilinkResolutions } from '../../util/flowmark-lint-context'
+import type { WikilinkIndex } from '@common/util/wikilink-resolution'
 import { flowmarkInstallIdentity } from '../../util/flowmark-runtime'
 import { resolveTikzRenderConfig } from '../../util/resolve-tikz-render-config'
 import { tikzTemplateDependencyHash } from 'tikz-workbench/src/tikz-render'
@@ -92,6 +93,8 @@ export interface DocumentLintDependencies {
   /** Open buffers win over the disk. */
   buffers: { readMarkdownBufferContent: (filePath: string) => string | undefined }
   references?: { getSnapshot: () => WorkspaceReferenceState }
+  /** The workspace's wikilink index, which resolves the document's wikilinks. */
+  links?: { index: WikilinkIndex }
   fsal?: Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor' | 'getAllLoadedDescriptors' | 'on' | 'off'>
   /** Shows the background queue in the status bar. */
   lrt?: Pick<LongRunningTaskProvider, 'registerTask' | 'settleTask'>
@@ -244,7 +247,7 @@ export default class DocumentLintProvider extends ProviderContract {
       return await this.run(documentPath, text, '')
     }
     const revision = sha256Text(text)
-    const inputs = await this.inputsKey(documentPath, new StampReader())
+    const inputs = await this.inputsKey(documentPath, text, new StampReader())
     const cached = this.entries.get(documentPath)
     if (cached !== undefined && cached.revision === revision && cached.inputs === inputs) {
       return cached
@@ -263,7 +266,7 @@ export default class DocumentLintProvider extends ProviderContract {
       const record = this.entries.get(source.path)
       const current = record !== undefined &&
         record.revision === sha256Text(source.text) &&
-        record.inputs === await this.inputsKey(source.path, stamps)
+        record.inputs === await this.inputsKey(source.path, source.text, stamps)
       if (!current) {
         this.enqueue(source.path)
       }
@@ -294,6 +297,7 @@ export default class DocumentLintProvider extends ProviderContract {
       homeDirectory: this.deps.homeDirectory,
       env: this.deps.env,
       referenceState: this.deps.references?.getSnapshot(),
+      wikilinks: this.deps.links?.index,
       tikzRenderConfig: this.tikzRenderConfig(),
       flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs
     })
@@ -339,7 +343,7 @@ export default class DocumentLintProvider extends ProviderContract {
     return await documentLintAuthority(this.deps.fsal, mainLibrary, documentPath)
   }
 
-  private async inputsKey (documentPath: string, stamps: StampReader): Promise<string> {
+  private async inputsKey (documentPath: string, text: string, stamps: StampReader): Promise<string> {
     const macroRoot = path.join(this.deps.homeDirectory, '.pandoc', 'styles', 'macros')
     const mathJaxMacros = path.join(this.deps.homeDirectory, '.pandoc', 'templates', 'css', 'mathjax-macros.json')
     const authority = await this.authority(documentPath)
@@ -351,6 +355,7 @@ export default class DocumentLintProvider extends ProviderContract {
       tikz: tikzTemplateDependencyHash(this.tikzRenderConfig().templatePath),
       texinputs: this.deps.env.TEXINPUTS ?? null,
       definitions: referenceState === undefined ? null : digest(otherDefinitionSites(referenceState, documentPath)),
+      wikilinks: this.deps.links === undefined ? null : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
       bibliographies: authority.bibliographies === undefined
         ? null
         : await Promise.all(authority.bibliographies.map(async file => await stamps.stamp(file))),

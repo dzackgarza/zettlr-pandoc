@@ -14,34 +14,29 @@
 
 import { ipcMain } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import { extractFromFileDescriptors } from '@common/util/extract-from-file-descriptors'
-import { hasMarkdownExt } from '@common/util/file-extention-checks'
-import { getIDRE } from '@common/regular-expressions'
+import { splitWikilinkTarget, WikilinkIndex, type WikilinkResolution } from '@common/util/wikilink-resolution'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
 import path from 'path'
 import type FSAL from '../fsal'
 import type ConfigProvider from '../config'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
+import type { WikilinkEdge } from './ipc-contract'
 
 /**
- * This class manages the coloured tags of the app. It reads the tags on each
- * start of the app and writes them after they have been changed.
+ * This class resolves the wikilinks of the loaded workspaces. It keeps the
+ * outbound link targets of every file and the workspace's wikilink index, and
+ * rebuilds both whenever a workspace changes.
  */
 export default class LinkProvider extends ProviderContract {
   private _fileLinkDatabase: Map<string, string[]>
-  private _idDatabase: Map<string, string>
+  private _index: WikilinkIndex
 
-  /**
-   * Create the instance on program start and initially load the tags.
-   */
   constructor (private readonly _logger: LogProvider, private readonly _config: ConfigProvider, private readonly _fsal: FSAL) {
     super()
 
     this._fileLinkDatabase = new Map()
-    this._idDatabase = new Map()
-    // TODO: Add a set of duplicate IDs so we can inform the user so they can
-    // fix this
+    this._index = new WikilinkIndex([])
 
     ipcMain.handle('link-provider', async (event, message) => {
       const { command } = message
@@ -51,11 +46,12 @@ export default class LinkProvider extends ProviderContract {
         const filePath: string = message.payload.filePath
         return {
           inbound: this.retrieveInbound(filePath),
-          outbound: await this.retrieveOutbound(filePath)
+          outbound: this.retrieveOutbound(filePath)
         }
       } else if (command === 'get-link-database') {
-        // NOTE: We need to compact the Map into something JSONable
-        return Object.fromEntries(this._fileLinkDatabase)
+        return this.linkDatabase()
+      } else if (command === 'get-link-targets') {
+        return this.linkTargets()
       }
     })
   }
@@ -64,10 +60,9 @@ export default class LinkProvider extends ProviderContract {
     // Listen to state changes within the Workspaces Provider
     this._fsal.on('fsal-event', () => {
       // Some workspace has changed, so simply pull in the new map
-      this.reindex().catch(err => this._logger.error(`[LinkProvider] Could not update link and ID database: ${err.message}`, err))
-      // TODO: That can actually be determined fully with the workspaces events
-      // i.e., we don't have to emit this here!
-      broadcastIpcMessage('links')
+      this.reindex()
+        .then(() => broadcastIpcMessage('links'))
+        .catch(err => this._logger.error(`[LinkProvider] Could not update the link database: ${err.message}`, err))
     })
 
     // Pull in the initial update
@@ -77,12 +72,26 @@ export default class LinkProvider extends ProviderContract {
   /**
    * Reindexes the entire link database.
    */
-  private async reindex () {
-    const allDescriptors = (await this._fsal.getAllLoadedDescriptors())
-      .filter(descriptor => descriptor.type === 'file')
+  public async reindex (): Promise<void> {
+    const descriptors = (await this._fsal.getAllLoadedDescriptors())
+      .filter((descriptor): descriptor is MDFileDescriptor => descriptor.type === 'file')
 
-    this._fileLinkDatabase = new Map(extractFromFileDescriptors(allDescriptors, 'links'))
-    this._idDatabase = new Map(extractFromFileDescriptors(allDescriptors, 'id'))
+    // A file belongs to the innermost open workspace that contains it; a file
+    // opened on its own is its own workspace.
+    const workspaces = [...this._config.get().app.openWorkspaces]
+      .sort((a, b) => b.length - a.length)
+    const rootFor = (filePath: string): string => {
+      return workspaces.find(root => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
+    }
+
+    this._fileLinkDatabase = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor.links ]))
+    this._index = new WikilinkIndex(descriptors.map(descriptor => ({
+      path: descriptor.path,
+      root: rootFor(descriptor.path),
+      id: descriptor.id,
+      title: descriptor.yamlTitle,
+      aliases: descriptor.aliases
+    })))
   }
 
   /**
@@ -94,31 +103,33 @@ export default class LinkProvider extends ProviderContract {
   }
 
   /**
-   * Finds the descriptor for a file query based on a ZKN id, file name, or file
-   * base path. This logic is copied from the FSAL `findExact` method to avoid
-   * the performance impacts of calling `getAllLoadedDescriptors` on every
-   * execution.
+   * Resolves the target of a wikilink, before its `#` fragment and `|` label,
+   * written in the document at `sourcePath`.
    */
-  private async findExact (query: string, descriptors: MDFileDescriptor[]): Promise<MDFileDescriptor|undefined> {
-    const { zkn } = this._config.get()
-    const idRe = getIDRE(zkn.idRE, true)
+  resolve (target: string, sourcePath: string): WikilinkResolution {
+    return this._index.resolve(target, sourcePath)
+  }
 
-    const isQueryID = idRe.test(query)
-    const hasMdExt = hasMarkdownExt(query)
+  /** The index as it stands now; a later reindex does not change it. */
+  get index (): WikilinkIndex {
+    return this._index
+  }
 
-    for (const descriptor of descriptors) {
-      if (isQueryID && descriptor.id === query) {
-        return descriptor
-      }
+  /** The written form of a wikilink to `filePath`. */
+  canonicalTarget (filePath: string): string {
+    return this._index.canonical(filePath)
+  }
 
-      if (hasMdExt && descriptor.name === query) {
-        return descriptor
-      }
-
-      if (descriptor.name === query + descriptor.ext) {
-        return descriptor
+  /** The documents the links in `sourceFilePath` resolve to. */
+  private resolvedTargets (sourceFilePath: string): string[] {
+    const paths: string[] = []
+    for (const link of this._fileLinkDatabase.get(sourceFilePath) ?? []) {
+      const resolution = this.resolve(splitWikilinkTarget(link).target, sourceFilePath)
+      if (resolution.status === 'resolved' && !paths.includes(resolution.path)) {
+        paths.push(resolution.path)
       }
     }
+    return paths
   }
 
   /**
@@ -129,25 +140,8 @@ export default class LinkProvider extends ProviderContract {
    * @return  {string[]}                  A list of all files linking to sourceFile
    */
   retrieveInbound (sourceFilePath: string): string[] {
-    const id = this._idDatabase.get(sourceFilePath)
-
-    if (id === undefined) {
-      return [] // Not part of the ID map
-    }
-
-    const sourceFiles: string[] = []
-
-    const linkWithExt = path.basename(sourceFilePath)
-    const linkWoExt = path.basename(sourceFilePath, path.extname(sourceFilePath))
-
-    // Search all recorded links
-    for (const [ file, outbound ] of this._fileLinkDatabase.entries()) {
-      if (outbound.includes(id) || outbound.includes(linkWithExt) || outbound.includes(linkWoExt)) {
-        sourceFiles.push(file)
-      }
-    }
-
-    return sourceFiles
+    return [...this._fileLinkDatabase.keys()]
+      .filter(file => this.resolvedTargets(file).includes(sourceFilePath))
   }
 
   /**
@@ -157,24 +151,26 @@ export default class LinkProvider extends ProviderContract {
    *
    * @return  {string[]}                  A list of outbound links from source
    */
-  async retrieveOutbound (sourceFilePath: string): Promise<string[]> {
-    const dbLinks = this._fileLinkDatabase.get(sourceFilePath)
-    if (dbLinks === undefined) {
-      return []
+  retrieveOutbound (sourceFilePath: string): string[] {
+    return this.resolvedTargets(sourceFilePath)
+  }
+
+  /** Every file's outbound links, each with the document it resolves to. */
+  private linkDatabase (): Record<string, WikilinkEdge[]> {
+    const database: Record<string, WikilinkEdge[]> = {}
+    for (const [ sourcePath, links ] of this._fileLinkDatabase) {
+      database[sourcePath] = links.map(link => {
+        const { target } = splitWikilinkTarget(link)
+        const resolution = this.resolve(target, sourcePath)
+        return { target, path: resolution.status === 'resolved' ? resolution.path : undefined }
+      })
     }
+    return database
+  }
 
-    const loadedDescriptors = (await this._fsal.getAllLoadedDescriptors())
-      .filter(descriptor => descriptor.type === 'file')
-
-    const outboundLinks: string[] = []
-    for (const link of dbLinks) {
-      const descriptor = await this.findExact(link, loadedDescriptors)
-
-      if (descriptor !== undefined) {
-        outboundLinks.push(descriptor.path)
-      }
-    }
-
-    return outboundLinks
+  /** The written wikilink form of every file. */
+  private linkTargets (): Record<string, string> {
+    return Object.fromEntries([...this._fileLinkDatabase.keys()]
+      .map(filePath => [ filePath, this.canonicalTarget(filePath) ]))
   }
 }

@@ -58,6 +58,7 @@ import tippy from 'tippy.js'
 import { type SimulationNodeDatum } from 'd3'
 import DirectedGraph, { type GraphArc, type GraphVertex, type LinkGraph } from './directed-graph'
 import { type MDFileDescriptor } from '@dts/common/fsal'
+import type { WikilinkEdge } from 'source/app/service-providers/links/ipc-contract'
 import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
 import getDocumentTitle from 'source/win-main/util/get-document-title'
 
@@ -498,15 +499,14 @@ async function buildGraph (): Promise<void> {
 
   isBuildingGraph.value = true
 
-  const dbObject: Record<string, string[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
-  const database = new Map<string, string[]>(Object.entries(dbObject))
+  const dbObject: Record<string, WikilinkEdge[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
+  const database = new Map<string, WikilinkEdge[]>(Object.entries(dbObject))
 
   buildProgress.value.currentFile = 0
   buildProgress.value.totalFiles = Object.entries(dbObject).length
   componentFilter.value = ''
 
   const DG = new DirectedGraph()
-  const resolvedLinks = new Map<string, string>()
 
   const startTime = performance.now()
   DG.startOperation()
@@ -523,26 +523,17 @@ async function buildGraph (): Promise<void> {
 
     DG.addVertex(sourcePath, getDocumentTitle(sourceDescriptor))
 
-    for (const target of targets) {
-      // Before adding a target, we MUST resolve the link to an actual file
-      // path if possible. This is necessary because there are at least two
-      // ways to link to notes: by filename or by ID. By resolving what we
-      // can, we prevent spurious duplicates. The resolve() helper will either
-      // return the full absolute path to the file identified by `target` or
-      // the unaltered `target`.
-      if (!resolvedLinks.has(target)) {
-        const found: MDFileDescriptor|undefined = await ipcRenderer.invoke('application', { command: 'find-exact', payload: target })
-        if (found === undefined) {
-          // This will create a vertex representing a latent (i.e. not yet
-          // existing) file.
-          resolvedLinks.set(target, target)
-          DG.addVertex(target, target)
-        } else {
-          resolvedLinks.set(target, found.path)
-          DG.addVertex(found.path, getDocumentTitle(found))
-        }
+    for (const edge of targets) {
+      // A link that names no single document is a vertex of its own: a
+      // latent (not yet existing) file.
+      if (edge.path === undefined) {
+        DG.addVertex(edge.target, edge.target)
+        DG.addArc(sourcePath, edge.target)
+        continue
       }
-      DG.addArc(sourcePath, resolvedLinks.get(target)!)
+      const found: MDFileDescriptor|undefined = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: edge.path })
+      DG.addVertex(edge.path, found === undefined ? edge.target : getDocumentTitle(found))
+      DG.addArc(sourcePath, edge.path)
     }
   }
   DG.endOperation()

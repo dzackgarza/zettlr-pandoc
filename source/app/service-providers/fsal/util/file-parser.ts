@@ -97,6 +97,7 @@ export default function getMarkdownFileParser (
 
     // Reset frontmatter-related stuff
     file.yamlTitle = undefined
+    file.aliases = []
     file.frontmatter = null
 
     const frontmatterNodes = extractASTNodes(ast, 'YAMLFrontmatter') as YAMLFrontmatter[]
@@ -126,6 +127,15 @@ export default function getMarkdownFileParser (
         if (title !== '') {
           file.yamlTitle = title
         }
+      }
+
+      // Obsidian's `aliases`: one name or a list of names
+      if ('aliases' in frontmatter) {
+        const aliases: unknown[] = Array.isArray(frontmatter.aliases) ? frontmatter.aliases : [frontmatter.aliases]
+        file.aliases = aliases
+          .filter((alias): alias is string|number => typeof alias === 'string' || typeof alias === 'number')
+          .map(alias => String(alias).trim())
+          .filter(alias => alias !== '')
       }
 
       for (const prop of [ 'keywords', 'tags' ]) {

@@ -102,6 +102,7 @@ describe('Quarto editor citation resolution and startup race', function () {
     links: [],
     citekeys: ['Stacks'],
     yamlTitle: undefined,
+    aliases: [],
     firstHeading: null,
     frontmatter: null,
     bom: '',

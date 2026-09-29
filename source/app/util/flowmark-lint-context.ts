@@ -13,6 +13,7 @@ import {
   type Resolution,
 } from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import { wikilinkTargetsIn, type WikilinkIndex } from "@common/util/wikilink-resolution";
 import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
 import { renderTikz, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
 
@@ -21,6 +22,7 @@ export interface FlowmarkLintContextSource {
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
   referenceState?: WorkspaceReferenceState;
+  wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
 }
 
@@ -88,6 +90,33 @@ function exactReferenceContext(
   return { snapshot, resolutions };
 }
 
+/**
+ * How each wikilink target in `text` resolves in the workspace, keyed by the
+ * target before its `#` fragment and `|` label. Flowmark reports the missing,
+ * ambiguous and document-relative ones from this.
+ */
+export type FlowmarkWikilinkResolution =
+  | { status: "resolved"; path: string; canonical: string; relative: boolean }
+  | { status: "ambiguous"; candidates: { path: string; canonical: string }[] }
+  | { status: "missing" };
+
+export function wikilinkResolutions(
+  text: string,
+  documentPath: string,
+  index: WikilinkIndex,
+): Record<string, FlowmarkWikilinkResolution> {
+  return Object.fromEntries(wikilinkTargetsIn(text).map((target): [string, FlowmarkWikilinkResolution] => {
+    const resolution = index.resolve(target, documentPath);
+    if (resolution.status !== "ambiguous") {
+      return [target, resolution];
+    }
+    return [target, {
+      status: "ambiguous",
+      candidates: resolution.candidates.map((path) => ({ path, canonical: index.canonical(path) })),
+    }];
+  }));
+}
+
 export async function buildFlowmarkLintContext(
   text: string,
   documentPath: string,
@@ -129,6 +158,9 @@ export async function buildFlowmarkLintContext(
       ...(options.bibliographies === undefined ? {} : { bibliographies: options.bibliographies }),
       ...(references === undefined ? {} : references),
     },
+    ...(source.wikilinks === undefined
+      ? {}
+      : { wikilinks: { resolutions: wikilinkResolutions(text, documentPath, source.wikilinks) } }),
     compiler: {
       tikz: {
         diagnostics: tikzCompileDiagnostics,

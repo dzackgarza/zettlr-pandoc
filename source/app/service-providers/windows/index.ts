@@ -694,6 +694,18 @@ export default class WindowProvider extends ProviderContract {
   }
 
   /**
+   * Moves the editor of `windowId` that shows `filePath` to `line`, opening
+   * the file there first when it is not open.
+   */
+  jumpToLine (windowId: string, filePath: string, line: number): void {
+    const window = this._mainWindows[windowId]
+    if (window === undefined) {
+      throw new Error(`No main window ${windowId}`)
+    }
+    window.webContents.send('jump-to-line', { filePath, line })
+  }
+
+  /**
    * Returns the first existing main window. This function will return the
    * focused window, if that happens to be a main window, otherwise the first
    * main window that is open.
