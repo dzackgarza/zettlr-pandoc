@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { createDocumentLintContext, lintDocumentText } from "source/app/util/document-lint";
+import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 
 describe("main-process document lint", function () {
   this.timeout(30_000);
@@ -157,5 +158,49 @@ describe("main-process document lint", function () {
       .filter((diagnostic) => diagnostic.rule === "citation/missing-bibliography-entry")
       .map((diagnostic) => markdown.slice(diagnostic.from, diagnostic.to));
     assert.deepEqual(missing, ["@FS87"]);
+  });
+
+  it("reports wikilinks by their workspace resolution, with a fix to the shortest unique name", async function () {
+    const repositoryRoot = path.join(__dirname, "..");
+    const workspace = path.join(root, "workspace");
+    const document = (relative: string) => ({
+      path: path.join(workspace, relative),
+      root: workspace,
+      id: "",
+      title: undefined,
+      aliases: [],
+    });
+    const context = await createDocumentLintContext({
+      homeDirectory: home,
+      env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
+      wikilinks: new WikilinkIndex([
+        document("chapters/doc.md"),
+        document("programs/cusp-chain.md"),
+        document("a/moduli.md"),
+        document("b/moduli.md"),
+      ]),
+      tikzRenderConfig: {
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        cacheDir,
+        env: process.env,
+      },
+    });
+    const markdown = "See [[../programs/cusp-chain.md#Main result|the chain]], [[moduli]], [[nowhere]] and [[cusp-chain]].\n";
+
+    const { diagnostics } = await lintDocumentText(markdown, path.join(workspace, "chapters", "doc.md"), context);
+    const wikilinks = diagnostics
+      .filter((diagnostic) => diagnostic.rule.endsWith("wikilink") || diagnostic.rule.endsWith("wikilink-target"))
+      .map((diagnostic) => ({
+        rule: diagnostic.rule,
+        source: markdown.slice(diagnostic.from, diagnostic.to),
+        fixes: diagnostic.suggestions?.map((suggestion) => suggestion.replacement),
+      }));
+    assert.deepEqual(wikilinks, [
+      { rule: "link/relative-wikilink", source: "../programs/cusp-chain.md", fixes: ["cusp-chain"] },
+      { rule: "link/ambiguous-wikilink", source: "moduli", fixes: ["a/moduli", "b/moduli"] },
+      { rule: "link/missing-wikilink-target", source: "nowhere", fixes: [] },
+    ]);
   });
 });
