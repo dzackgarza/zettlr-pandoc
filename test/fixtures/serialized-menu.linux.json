@@ -708,6 +708,12 @@
       },
       {
         "type": "normal",
+        "id": "menu.tabs_save_all",
+        "label": "Save All",
+        "enabled": true
+      },
+      {
+        "type": "normal",
         "id": "menu.tabs_save_all_close",
         "label": "Save All and Close",
         "enabled": true

@@ -647,6 +647,13 @@ export default function getMenu (
           }
         },
         {
+          id: 'menu.tabs_save_all',
+          label: trans('Save All'),
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'save-all')
+          }
+        },
+        {
           id: 'menu.tabs_save_all_close',
           label: trans('Save All and Close'),
           click: function (_menuitem, focusedWindow) {

@@ -80,6 +80,7 @@ export const WINDOW_SHORTCUT_NAMES = [
   'print',
   'rename-file',
   'save-file',
+  'save-all',
   'save-all-and-close',
   'search',
   'toggle-annotation-panel',

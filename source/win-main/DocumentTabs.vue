@@ -178,7 +178,7 @@ onMounted(() => {
         // TODO: This must be managed centrally
         // ipcRenderer.send('window-controls', { command: 'win-close' })
       }
-    } else if (shortcut === 'close-all-tabs' || shortcut === 'save-all-and-close') {
+    } else if (shortcut === 'close-all-tabs' || shortcut === 'save-all' || shortcut === 'save-all-and-close') {
       ipcRenderer.invoke('documents-provider', {
         command: shortcut,
         payload: { windowId: props.windowId }

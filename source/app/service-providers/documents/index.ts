@@ -361,6 +361,10 @@ export type DocumentManagerIPCContract = {
     request: { payload: { windowId: string } }
     response: boolean
   }
+  'save-all': {
+    request: { payload: { windowId: string } }
+    response: boolean
+  }
   'save-all-and-close': {
     request: { payload: { windowId: string } }
     response: boolean
@@ -921,6 +925,9 @@ export default class DocumentManager
         }
         case 'close-all-tabs': {
           return await this.closeAllTabs(payload.windowId)
+        }
+        case 'save-all': {
+          return await this.saveAll(payload.windowId)
         }
         case 'save-all-and-close': {
           return await this.saveAllAndClose(payload.windowId)
@@ -1996,11 +2003,10 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Save every modified document represented in a window, then close all of
-   * its tabs. Since the buffers are clean before closing, ordinary unsaved-file
-   * prompts are bypassed. A refused save aborts before any tab is closed.
+   * Save every modified document represented in a window. The first refused
+   * save is announced and stops the run; it returns false.
    */
-  public async saveAllAndClose (windowId: string): Promise<boolean> {
+  public async saveAll (windowId: string): Promise<boolean> {
     if (!(windowId in this._windows)) {
       return false
     }
@@ -2013,6 +2019,18 @@ current contents from the editor somewhere else, and restart the application.`,
         this._announceSaveRefusal(document.filePath, saved)
         return false
       }
+    }
+    return true
+  }
+
+  /**
+   * Save every modified document represented in a window, then close all of
+   * its tabs. Since the buffers are clean before closing, ordinary unsaved-file
+   * prompts are bypassed. A refused save aborts before any tab is closed.
+   */
+  public async saveAllAndClose (windowId: string): Promise<boolean> {
+    if (!(await this.saveAll(windowId))) {
+      return false
     }
     return await this.closeAllTabs(windowId)
   }
