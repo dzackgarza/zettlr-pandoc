@@ -74,6 +74,29 @@ describe('flowmark format service (issue #26)', function () {
     }
   })
 
+  it('formats display math whose closing delimiter carries punctuation without changing it', async function () {
+    this.timeout(300000)
+    // The vendored Flowmark itself, not a stand-in runner. Punctuation
+    // written directly before `$$` or `\end{align*}` is the authoring
+    // convention of the documents this editor formats.
+    const text = [
+      'Text.',
+      '$$',
+      'x = y',
+      '.$$',
+      'More text.',
+      '',
+      '\\begin{align*}',
+      'a = b',
+      '.\\end{align*}',
+      '',
+      'Last line.',
+      ''
+    ].join('\n')
+    const result = await formatMarkdownText(text)
+    assert.deepEqual(result, { ok: true, formatted: text })
+  })
+
   it('bounds a hung runner: resolves ok:false timeout and terminates the child', async function () {
     // A runner that records its own PID and then blocks forever stands in for a
     // wedged Flowmark process (dependency setup that stalls, a deadlocked process).
