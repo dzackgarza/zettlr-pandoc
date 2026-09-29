@@ -241,6 +241,10 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.
 - In ChatGPT, the app uses Connection: Tunnel with that tunnel ID. Tool calls fail
   while the editor is closed; the tunnel itself stays up.
+- ChatGPT keeps the tool list it read when the app was created or last
+  refreshed. A contract change (a new operation, a new request body) reaches
+  ChatGPT only after Refresh on the app's settings page and a new
+  conversation. Until then the model calls the old tool shapes.
 
 ### 7. TikZ workbench module
 
