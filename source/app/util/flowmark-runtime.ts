@@ -2,16 +2,17 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        vendored Flowmark process runtime
+ * Contains:        Flowmark process runtime
  * CVM-Role:        Utility function
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The single main-process execution seam for the Flowmark
- *                  submodule.  Both formatting and linting run the exact
- *                  pinned source under vendor/flowmark (or its packaged
- *                  resources copy) through `uv run --project`.  Nothing in Zettlr owns a
- *                  Markdown grammar or fetches an unpinned Flowmark checkout.
+ * Description:     The single main-process execution seam for Flowmark.
+ *                  Formatting and linting run the `flowmark` and
+ *                  `flowmark-lint` commands of the uv tool that the desktop
+ *                  launcher installs from Flowmark's main branch
+ *                  (`just install-flowmark`).  Nothing in Zettlr owns a
+ *                  Markdown grammar.
  *
  * END HEADER
  */
@@ -29,29 +30,7 @@ export type FlowmarkProcessResult =
   | { ok: true, stdout: string, stderr: string }
   | { ok: false, kind: FlowmarkProcessFailureKind, message: string }
 
-const FLOWMARK_RUNNER = 'uv'
 const KILL_GRACE_MS = 2_000
-
-/**
- * Locate the exact Flowmark project Zettlr owns as a git submodule.
- *
- * In a packaged app Electron Packager copies vendor/flowmark to
- * process.resourcesPath/flowmark.  During development/tests the checkout sits
- * at vendor/flowmark below the repository cwd.  The existence probe is what
- * distinguishes those two environments; process.resourcesPath also exists in
- * development Electron and therefore cannot be used as the distinction by
- * itself.
- */
-export function vendoredFlowmarkProjectPath (): string {
-  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
-  if (resourcesPath !== undefined) {
-    const packaged = path.join(resourcesPath, 'flowmark')
-    if (existsSync(path.join(packaged, 'pyproject.toml'))) {
-      return packaged
-    }
-  }
-  return path.resolve('vendor', 'flowmark')
-}
 
 /** Locate a packaged/development external-linter process plugin. */
 export function externalLinterPluginPath (filename: string): string {
@@ -65,31 +44,25 @@ export function externalLinterPluginPath (filename: string): string {
   return path.resolve('linter-plugins', filename)
 }
 
-/** `uv run` argv that runs an entry point from the pinned local submodule. */
-export function vendoredFlowmarkArgs (
-  entrypoint: 'flowmark' | 'flowmark-lint',
-  args: string[],
-  projectPath = vendoredFlowmarkProjectPath()
-): string[] {
-  // Do not use `uvx --from <path>` here. uvx tool environments are cached by
-  // package/version, and Flowmark's source-archive fallback version is stable;
-  // even `--refresh-package flowmark` can therefore execute an older locally
-  // built wheel after the vendored checkout changes. `uv run --project` makes
-  // the project checkout itself the editable import source, synced into the
-  // project's own .venv and reused across calls; uv ignores an active venv
-  // without `--active`. `--frozen` requires the vendored uv.lock instead of
-  // resolving new ones.
-  return [
-    'run',
-    '--project', projectPath,
-    '--frozen',
-    entrypoint,
-    ...args
-  ]
+/**
+ * The Python interpreter of the installed `flowmark` uv tool. A process
+ * plugin that imports Flowmark (LanguageTool's) runs under it, so it sees the
+ * same Flowmark as the `flowmark` and `flowmark-lint` commands.
+ */
+export async function flowmarkToolPython (): Promise<string> {
+  const outcome = await runFlowmarkProcess({
+    command: 'uv',
+    argv: [ 'tool', 'dir' ],
+    timeoutMs: 30_000
+  })
+  if (!outcome.ok) {
+    throw new Error(`Cannot locate the uv tool directory: ${outcome.message}`)
+  }
+  return path.join(outcome.stdout.trim(), 'flowmark', 'bin', 'python')
 }
 
 export interface FlowmarkProcessOptions {
-  command?: string
+  command: string
   argv: string[]
   input?: string
   env?: NodeJS.ProcessEnv
@@ -106,7 +79,7 @@ export interface FlowmarkProcessOptions {
 export async function runFlowmarkProcess (
   options: FlowmarkProcessOptions
 ): Promise<FlowmarkProcessResult> {
-  const command = options.command ?? FLOWMARK_RUNNER
+  const command = options.command
   const env = options.env ?? process.env
 
   return await new Promise<FlowmarkProcessResult>((resolve) => {

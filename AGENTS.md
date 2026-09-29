@@ -278,8 +278,13 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   generated `~/.pandoc/templates/css/mathjax-macros.json`; the desktop launcher
   regenerates that central projection before launch.
 - **Logs:** launcher `~/.cache/zettlr-pandoc-dev.log`; app `~/.config/Zettlr-Pandoc/logs/`.
-- **In-editor Markdown linter** is the standalone Flowmark linter pinned at
-  `vendor/flowmark` (`flowmark-lint`). The editor has no rule/linter layer of
+- **In-editor Markdown linter** is the standalone Flowmark linter
+  (`flowmark-lint`). Flowmark is a system tool like pandoc, not a vendored copy:
+  `just install-flowmark` installs `flowmark` and `flowmark-lint` as a uv tool
+  from the main branch of `dzackgarza/pandoc-flowmark`, the desktop launcher
+  runs it before every start, and preflight fails loudly when either command is
+  missing. The LanguageTool plugin runs under that tool's Python
+  (`flowmarkToolPython`). The editor has no rule/linter layer of
   its own: external providers implement the editor-neutral contract in
   `source/common/diagnostics/external-linter.ts`, and exactly one
   CodeMirror bridge exists at
@@ -297,7 +302,7 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   Markdown structure, the TeX inside math and raw TeX (commands, macros,
   packages, resources), notation, cross-references, citations and TikZ
   compiler findings. Those rules live in the Flowmark package itself
-  (`vendor/flowmark/src/flowmark/lint_authoring.py`), not in this repository.
+  (`src/flowmark/lint_authoring.py` in pandoc-flowmark), not in this repository.
   Every Flowmark rule has a stable rule id and must be runnable from the
   Flowmark CLI. Rule enablement/severity/options belong to Flowmark config.
   Zettlr supplies only context data (`source/app/util/flowmark-lint-context.ts`:

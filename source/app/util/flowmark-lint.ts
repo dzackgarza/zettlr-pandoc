@@ -7,8 +7,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Runs the standalone linter from the pinned Flowmark
- *                  submodule and validates its JSON protocol.  Zettlr merely
+ * Description:     Runs the installed `flowmark-lint` command and validates
+ *                  its JSON protocol.  Zettlr merely
  *                  transports diagnostics; parsing and lint semantics remain
  *                  owned by Flowmark.
  *
@@ -17,7 +17,6 @@
 
 import {
   runFlowmarkProcess,
-  vendoredFlowmarkArgs,
   type FlowmarkProcessFailureKind
 } from './flowmark-runtime'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
@@ -139,11 +138,8 @@ export async function lintMarkdownText (
   let result
   try {
     result = await runFlowmarkProcess({
-      command: options.command,
-      argv: options.args ?? vendoredFlowmarkArgs(
-        'flowmark-lint',
-        lintArgs
-      ),
+      command: options.command ?? 'flowmark-lint',
+      argv: options.args ?? lintArgs,
       input: text,
       env: options.env,
       timeoutMs: options.timeoutMs

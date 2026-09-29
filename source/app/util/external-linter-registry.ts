@@ -14,8 +14,8 @@ import { documentLintAuthority } from './document-bibliographies'
 import { resolveTikzRenderConfig } from './resolve-tikz-render-config'
 import {
   externalLinterPluginPath,
-  runFlowmarkProcess,
-  vendoredFlowmarkProjectPath
+  flowmarkToolPython,
+  runFlowmarkProcess
 } from './flowmark-runtime'
 
 export interface ExternalLinterBackend {
@@ -122,13 +122,8 @@ async function runLanguageToolBackend (
     disabledRules
   }
   const outcome = await runFlowmarkProcess({
-    argv: [
-      'run',
-      '--project', vendoredFlowmarkProjectPath(),
-      '--frozen',
-      'python',
-      externalLinterPluginPath('language_tool.py')
-    ],
+    command: await flowmarkToolPython(),
+    argv: [ externalLinterPluginPath('language_tool.py') ],
     input: JSON.stringify({ text: request.text, context }),
     env: process.env,
     timeoutMs: 60_000

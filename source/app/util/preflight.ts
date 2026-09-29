@@ -38,7 +38,9 @@ export const REQUIRED_COMMANDS: CommandRequirement[] = [
   { command: 'latexmk', purpose: 'PDF export' },
   { command: 'pdflatex', purpose: 'PDF export' },
   { command: 'biber', purpose: 'PDF bibliography generation' },
-  { command: 'pandoc-crossref', purpose: 'cross-references in Project exports' }
+  { command: 'pandoc-crossref', purpose: 'cross-references in Project exports' },
+  { command: 'flowmark', purpose: 'Format Document' },
+  { command: 'flowmark-lint', purpose: 'Markdown linting' }
 ]
 
 /**

@@ -8,13 +8,11 @@
  * License:         GNU GPL v3
  *
  * Description:     Drives the production flowmark service with NO injected
- *                  runner, so it exercises the exact production command string
- *                  against the Flowmark source pinned in vendor/flowmark, rather
- *                  than a network-selected revision. It proves both the formatter
- *                  and the standalone linter through the same production runtime.
+ *                  runner, so it exercises the installed `flowmark` and
+ *                  `flowmark-lint` commands (`just install-flowmark`). It
+ *                  proves both the formatter and the standalone linter through
+ *                  the same production runtime.
  *
- *                  A cold uv cache may install Flowmark's Python dependencies,
- *                  so it is not a `*.spec.ts` file in the fastest default suite.
  *                  Run it explicitly with the dedicated recipe:
  *                  `just test-flowmark-integration`. When flowmark cannot be
  *                  launched at all, formatMarkdownText returns a typed

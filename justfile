@@ -124,9 +124,9 @@ test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
-# Run the pinned Flowmark linter's rule, config and mathematical-authoring tests.
-test-flowmark-lint:
-    uv run --project "{{justfile_directory()}}/vendor/flowmark" --isolated --frozen pytest -q "{{justfile_directory()}}/vendor/flowmark/tests/test_lint.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_lint_rules.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_config.py" "{{justfile_directory()}}/vendor/flowmark/tests/test_lint_authoring.py"
+# Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
+install-flowmark:
+    uv tool install --upgrade 'flowmark @ git+https://github.com/dzackgarza/pandoc-flowmark@main'
 
 # Run the focused workspace-reference test suite.
 test-references: sync-dependencies
@@ -154,13 +154,7 @@ test-annotations-animation: sync-dependencies
 test-pandoc-config-integration:
     bash "{{justfile_directory()}}/scripts/test-pandoc-config-integration.sh"
 
-# Real-toolchain proof for issue #26: drives the production flowmark service
-# (source/app/util/flowmark-format.ts) with NO injected runner, so it runs the
-# exact production `uvx --from vendor/flowmark …` command string end-to-end
-# against the pinned submodule and asserts both formatting and lint behavior.
-# A cold uv cache may still install Python dependencies, so this is deliberately
-# NOT a *.spec.ts file and is excluded from the fastest `just test` commit gate;
-# run it explicitly. Fails loudly if the pinned Flowmark toolchain can't launch.
+# Run the format and lint services against the installed Flowmark commands.
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
@@ -210,9 +204,7 @@ test-ci:
 
 [private]
 setup-ci:
-    # CI checkouts (including ai-review-ci's reusable QC workflow) do not fetch
-    # submodules, and Flowmark runs from vendor/flowmark.
-    git -C "{{justfile_directory()}}" submodule update --init vendor/flowmark
+    just --justfile "{{justfile_directory()}}/justfile" install-flowmark
     bash "{{justfile_directory()}}/scripts/setup-ci-toolchain.sh"
 
 # Capture the real editor renderer in an isolated offscreen Electron process.
