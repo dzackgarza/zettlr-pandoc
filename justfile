@@ -77,6 +77,43 @@ launch-desktop *files: sync-dependencies
 package: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/verify-build.py"
 
+# Bump the app version by level (patch, minor or major) and commit package.json.
+bump level:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    git diff --quiet -- package.json || { echo "package.json has uncommitted changes" >&2; exit 1; }
+    {{bun}} pm version "{{level}}" --no-git-tag-version
+    version="$(jq -r .version package.json)"
+    if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+        echo "Tag v$version already exists (upstream Zettlr owns it); choose another level" >&2
+        exit 1
+    fi
+    git commit -m "chore(release): v$version" -- package.json
+
+# Tag and publish the package.json version with its AppImage and SHA256SUMS.txt.
+release title: release-assets
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    version="$(jq -r .version package.json)"
+    git tag -a "v$version" -m "{{title}}"
+    git push origin HEAD "refs/tags/v$version"
+    gh release create "v$version" --verify-tag --title "{{title}}" --generate-notes release/*
+
+# Build the AppImage and its checksum list into release/ from a clean, verified
+# package of HEAD.
+[private]
+release-assets: package
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    test -z "$(git status --porcelain)" || { echo "Working tree is not clean" >&2; exit 1; }
+    if [ -e release ]; then trash release; fi
+    ./node_modules/.bin/electron-builder --linux AppImage --x64 --publish never --prepackaged out/Zettlr-Pandoc-linux-x64
+    find release -mindepth 1 -maxdepth 1 ! -name '*.AppImage' -exec trash {} +
+    (cd release && sha256sum -- *.AppImage > SHA256SUMS.txt)
+
 # Run the packaged binary (build it first with `just package`).
 run-packaged:
     ./out/Zettlr-Pandoc-linux-x64/zettlr-pandoc

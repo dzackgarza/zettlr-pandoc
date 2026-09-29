@@ -3,7 +3,7 @@
 #
 # Formerly the "build" key in the package.json.
 appId: com.zettlr.app
-productName: Zettlr
+productName: Zettlr-Pandoc
 npmRebuild: false
 copyright: Zettlr is licensed under GNU GPL v3.
 fileAssociations:
@@ -61,14 +61,14 @@ win:
 linux:
   target:
   - AppImage
-  artifactName: "Zettlr-${version}-${arch}.${ext}"
-  executableName: Zettlr
+  artifactName: "Zettlr-Pandoc-${version}-${arch}.${ext}"
+  executableName: zettlr-pandoc
   synopsis: Markdown editor
   category: Office
   icon: "./resources/icons/png"
   desktop:
     entry:
-      StartupWMClass: zettlr
+      StartupWMClass: zettlr-pandoc
 #
 # Configuration for DMG builds
 #
