@@ -302,7 +302,13 @@ class TikzWidget extends WidgetType {
       event.stopPropagation();
       editSource();
     });
-    return elem;
+
+    // CodeMirror measures a block widget by its border box, so the space
+    // around the figure is padding on this root, never a margin on the figure.
+    const block = document.createElement("div");
+    block.classList.add("tikz-figure-block");
+    block.append(elem);
+    return block;
   }
 
   updateDOM(_dom: HTMLElement, _view: EditorView): boolean {
@@ -326,6 +332,10 @@ function createWidget(state: EditorState, node: SyntaxNodeRef): TikzWidget | und
 export const renderTikzFigures = [
   renderBlockWidgets(["RawBlock", "FencedCode"], shouldHandleNode, createWidget),
   EditorView.baseTheme({
+    ".tikz-figure-block": {
+      display: "block",
+      padding: "0.35em 0",
+    },
     ".tikz-figure": {
       display: "block",
       textAlign: "center",
@@ -338,7 +348,6 @@ export const renderTikzFigures = [
       // vocabulary at much lower contrast: just enough to show the complete
       // click-to-edit target without turning every diagram into a card.
       boxSizing: "border-box",
-      margin: "0.35em 0",
       // Keep the original figure measure exactly: the delineation must not
       // steal horizontal space from a wide diagram. An inset stroke is visual
       // only, unlike a border plus horizontal padding.
