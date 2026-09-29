@@ -222,6 +222,45 @@ describe("CollaborationApplicationService", function () {
     );
   });
 
+  it("discards a detached review whose file changed on disk, keeping the file text", async function () {
+    const baseline = "alpha\n";
+    const proposed = "ALPHA\n";
+    const { authority, service, emitted } = harness({ diskText: baseline });
+    const submitted = await service.submitProposal({
+      documentId: DOCUMENT_ID,
+      baselineSha256: sha256Text(baseline),
+      claims: [{ patch: makePatch(baseline, proposed), description: "capitalize" }],
+      clientRequestId: "request-detached-drift",
+      expectedReviewGeneration: 0,
+    });
+    assert.equal(submitted.ok, true);
+    if (!submitted.ok) {
+      return;
+    }
+    await service.detachCollaboration(DOCUMENT_ID);
+    authority.setDiskText(proposed);
+
+    const accepted = await service.acceptAllWorkspaceChunks({
+      documentId: DOCUMENT_ID,
+      documentPath: DOCUMENT_PATH,
+      reviewId: submitted.reviewId,
+      precondition: {
+        expectedReviewGeneration: submitted.reviewGeneration,
+        expectedWorkingSha256: sha256Text(proposed),
+      },
+    });
+
+    assert.equal(accepted.ok, false);
+    if (accepted.ok) {
+      return;
+    }
+    assert.equal(accepted.code, "REVIEW_INVALIDATED");
+    const persisted = await service.readSidecar(DOCUMENT_PATH);
+    assert.ok(persisted === undefined || persisted.review === null, "the dead review must not stay in the sidecar");
+    assert.equal(authority.currentDiskText(), proposed);
+    assert.ok(emitted.some(event => event.event === "review.invalidated"));
+  });
+
   it("rejects only agent text after the owner edits inside a suggestion (#68)", async function () {
     const baseline = "prefix suffix\n";
     const proposed = "prefix AGENT suffix\n";

@@ -922,12 +922,18 @@ export class CollaborationApplicationService {
    * destroyed and announced; the annotations are orphaned, refenced to the
    * bytes that are actually there, and kept.
    */
-  private async driftedCollaboration(
+  /**
+   * Drop a review whose file moved underneath it, open or closed. The
+   * sidecar keeps the working text and the annotations, orphaned against
+   * the drift, and is re-fenced to the file as it is now; the file itself is
+   * never touched.
+   */
+  private async discardDriftedReview(
     documentId: string,
     documentPath: string,
     sidecar: CollaborationSidecarData,
     diskSha256: string,
-  ): Promise<ReattachedCollaboration | undefined> {
+  ): Promise<AnnotationSet> {
     const annotations =
       prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
       sidecar.annotations;
@@ -947,6 +953,16 @@ export class CollaborationApplicationService {
       reviewId: sidecar.review?.reviewId ?? "",
       documentId,
     });
+    return annotations;
+  }
+
+  private async driftedCollaboration(
+    documentId: string,
+    documentPath: string,
+    sidecar: CollaborationSidecarData,
+    diskSha256: string,
+  ): Promise<ReattachedCollaboration | undefined> {
+    const annotations = await this.discardDriftedReview(documentId, documentPath, sidecar, diskSha256);
     if (annotations.items.length === 0) {
       return undefined;
     }
@@ -1558,10 +1574,6 @@ export class CollaborationApplicationService {
         review,
         workingText: sidecar.workingText,
       };
-      if (review.invalidated) {
-        return { ok: false, code: "REVIEW_INVALIDATED", message: "The file changed on disk, so this review is no longer current." };
-      }
-
       let diskText: string;
       try {
         diskText = await this.deps.authority.readDiskText(input.documentPath);
@@ -1572,11 +1584,17 @@ export class CollaborationApplicationService {
           message: "The reviewed document could not be read from disk.",
         };
       }
-      if (sha256Text(normalizeText(diskText)) !== review.diskFenceSha256) {
+      const diskSha256 = sha256Text(normalizeText(diskText));
+      if (review.invalidated || diskSha256 !== review.diskFenceSha256) {
+        try {
+          await this.discardDriftedReview(input.documentId, input.documentPath, sidecar, diskSha256);
+        } catch (error) {
+          return persistenceFailure("the drifted review discard", error);
+        }
         return {
           ok: false,
           code: "REVIEW_INVALIDATED",
-          message: "The document changed on disk after this review opened.",
+          message: "The file changed on disk after this review opened, so the review was discarded. The file keeps its current text.",
         };
       }
 
