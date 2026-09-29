@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build and start Zettlr-Pandoc from the repository behind the installed
-# launcher symlink. The app is ready only when its Hyprland window is mapped.
+# launcher symlink. The app is ready only when it reports a completed boot.
 set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date dirname hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date dirname grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1
@@ -70,16 +70,31 @@ restore_cursor() {
   tput cnorm >/dev/null 2>&1
 }
 
+# This script runs inside the splash terminal, which closes the moment it
+# returns. A failure must stay on screen until the user closes it.
+hold_open() {
+  restore_cursor
+  printf '\n   Press any key to close.'
+  read -r -s -n 1
+}
+
 fail() {
   local message="$1"
 
-  printf '\r\033[K\n   %s\n   See %s for details. Closing...\n\n' "$message" "$log"
+  printf '\r\033[K\n   %s\n   See %s for details.\n\n' "$message" "$log"
   tail -n 20 "$log" | sed $'s/\x1b\\[[0-9;?]*[a-zA-Z]//g'
-  sleep 8
+  hold_open
   exit 1
 }
 
-spin_until_app_up() {
+# True once the app reports a completed boot on stdout (source/main.ts) and
+# Hyprland has mapped its window. The window alone is not enough: Electron's
+# fatal error dialog carries the same class.
+app_booted() {
+  grep -qxF '[Application] Boot complete.' "$log" && app_up
+}
+
+spin_until_booted() {
   local launch_pid="$1"
   local spinner_label="$2"
   local start=$SECONDS
@@ -90,11 +105,11 @@ spin_until_app_up() {
   local status
   local termination_error
 
-  while ! app_up; do
+  while ! app_booted; do
     if ! process_alive "$launch_pid"; then
       status=0
       wait "$launch_pid" || status=$?
-      fail "Launch exited with status $status before the app window appeared."
+      fail "Launch exited with status $status before the app finished booting."
     fi
 
     if (( SECONDS - start > launch_timeout )); then
@@ -108,7 +123,7 @@ spin_until_app_up() {
       elif [[ "$termination_error" != *"No such process"* ]]; then
         fail "Could not terminate launch process group $launch_pid: $termination_error"
       fi
-      fail "Timed out after ${launch_timeout}s; the app window never appeared."
+      fail "Timed out after ${launch_timeout}s; the app never finished booting."
     fi
 
     frame=${frames:frame_index++%${#frames}:1}
@@ -132,12 +147,10 @@ trap restore_cursor EXIT
 if app_up; then
   if (( $# > 0 )); then
     if ! "$repo/scripts/desktop/zettlr-pandoc-open-in-running" "$@"; then
-      # Dwell before exiting, as fail() does. This script runs inside the splash
-      # terminal, which closes the moment it returns: a failure that exits
-      # immediately is one nobody can read, leaving the launch indistinguishable
-      # from the silent drop described in #52.
-      printf '\n   Could not open %s in the running Zettlr-Pandoc.\n\n' "$*" >&2
-      sleep 8
+      # A failure that closes the splash at once is indistinguishable from the
+      # silent drop described in #52.
+      printf '\n   Could not open %s in the running Zettlr-Pandoc.\n' "$*" >&2
+      hold_open
       exit 1
     fi
   fi
@@ -202,5 +215,5 @@ else
   launch_timeout=$rebuild_launch_timeout
 fi
 
-spin_until_app_up "$launch_pid" "$spinner_label"
+spin_until_booted "$launch_pid" "$spinner_label"
 printf '\r\033[K'

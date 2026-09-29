@@ -257,10 +257,11 @@ describe('file delivery through the installed desktop launcher (#52)', function 
     )
     // gio hands the launched chain this process's stdio, and execFile waits for
     // EOF on it, so this resolves only once the whole chain has exited — which
-    // zettlr-pandoc-boot does only after Hyprland reports the app window. The
-    // launch is therefore already decided here: either the window is mapped, or
-    // the chain gave up (most often on the packaging build it runs when the
-    // source fingerprint is stale) and its reason is in the launcher log.
+    // zettlr-pandoc-boot does only after the app reports a completed boot and
+    // Hyprland maps its window. A boot failure keeps the splash open until a
+    // key press, so it ends this test by timeout with its reason in the
+    // launcher log. A chain that exits here without a window is a splash that
+    // never mapped.
     const launch = await execFile(
       'gio', ['launch', desktopFile, coldDocument], { env: environment() }
     )

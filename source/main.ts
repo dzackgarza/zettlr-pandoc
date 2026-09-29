@@ -14,7 +14,7 @@
  */
 
 import { reportError } from '@common/util/error-reporting'
-import { app } from "electron";
+import { app, dialog } from "electron";
 import path from "path";
 import { bootApplication, shutdownApplication } from "./app/lifecycle";
 
@@ -159,6 +159,10 @@ app
     // up the providers.
     bootApplication()
       .then(() => {
+        // The desktop launcher (scripts/desktop/zettlr-pandoc-boot) waits for
+        // this exact line on stdout. A window of the app's class is not proof
+        // of a start: a fatal error dialog carries the same class.
+        console.log("[Application] Boot complete.");
         getAppServiceContainer()
           .commands.run(
             "roots-add",
@@ -167,7 +171,12 @@ app
           .catch((err) => reportError(err));
       })
       .catch((err) => {
-        reportError(err);
+        // A packaged build writes errors only to its log file. Also write
+        // to stderr for the launcher log, and show a dialog to the user.
+        const details = errorToString(err);
+        reportError(`[Application] Boot failed\n${details}`);
+        console.error(`[Application] Boot failed\n${details}`);
+        dialog.showErrorBox("Zettlr-Pandoc could not start", details);
         app.exit(1);
       });
   })
