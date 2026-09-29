@@ -38,6 +38,7 @@ import { initializeMathJax } from '@common/util/mathtex-to-html'
 import { loadCanonicalMathJaxMacros } from '../../util/load-mathjax-macros'
 import { showNativeNotification } from '@common/util/show-notification'
 import type WindowProvider from '../windows'
+import { newestRelease } from './newest-release'
 
 /**
  * Struct which represents a single asset provided for by the updater
@@ -178,8 +179,9 @@ class UpdateError extends Error {
 }
 
 const CUR_VER = app.getVersion()
-const REPO_URL = 'https://zettlr.com/api/releases/latest'
-const RELEASE_PAGE = 'https://github.com/Zettlr/Zettlr/releases'
+// Zettlr-Pandoc updates from its own releases, not from upstream Zettlr's.
+const REPO_URL = 'https://api.github.com/repos/dzackgarza/zettlr-pandoc/releases'
+const RELEASE_PAGE = 'https://github.com/dzackgarza/zettlr-pandoc/releases'
 const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60 // 1 hour
 
 /**
@@ -324,10 +326,11 @@ export default class UpdateProvider extends ProviderContract {
         timeout: { request: 5000 },
         method: 'GET',
         headers: {
-          'User-Agent': `Zettlr/${CUR_VER} (${platformString})`
+          'User-Agent': `Zettlr/${CUR_VER} (${platformString})`,
+          Accept: 'application/vnd.github+json'
         },
         searchParams: new URLSearchParams([
-          [ 'accept-beta', this._config.get('checkForBeta') ]
+          [ 'per_page', '100' ]
         ])
       })
 
@@ -429,8 +432,14 @@ export default class UpdateProvider extends ProviderContract {
     }
 
     // First we need to parse the JSON data.
-    const parsedResponse = JSON.parse(response.body) as ServerAPIResponse
+    const releases = JSON.parse(response.body) as ServerAPIResponse[]
     const state = getUpdateState()
+    state.lastCheck = Date.now()
+    const parsedResponse = newestRelease(releases, this._config.get('checkForBeta'))
+    if (parsedResponse === undefined) {
+      this._logger.info(`[Update Provider] ${RELEASE_PAGE} has no published release.`)
+      return state
+    }
 
     const localVersion = semver.parse(CUR_VER) // localVersion
     const remoteVersion = semver.parse(parsedResponse.tag_name) // remoteVersion
@@ -486,8 +495,6 @@ export default class UpdateProvider extends ProviderContract {
 
       return false
     })
-
-    state.lastCheck = Date.now()
 
     state.checksumFile = parsedResponse.assets.find((asset) => {
       return asset.name === 'SHA256SUMS.txt'

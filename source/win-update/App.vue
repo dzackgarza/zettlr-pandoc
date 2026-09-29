@@ -138,7 +138,7 @@ const updateState = ref<UpdateState>({
   prerelease: false,
   changelog: '',
   tagName: '',
-  releasePage: 'https://github.com/Zettlr/Zettlr/releases',
+  releasePage: 'https://github.com/dzackgarza/zettlr-pandoc/releases',
   compatibleAssets: [],
   name: '',
   full_path: '',
