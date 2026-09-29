@@ -27,6 +27,33 @@ left as literal text or treated as a missing citation.
 
 Keys are lowercase words joined by hyphens: `tbl:coble-lattices`.
 
+## Referring to a numbered block
+
+Refer to every table, figure, equation, section, listing and theorem-like
+block with a cross-reference, `@` and then its ID. Never refer to one with a
+Markdown link to its ID.
+
+| | Syntax |
+|---|---|
+| correct | `The comparison follows from @thm:tower-semitoroidal.` |
+| wrong | `The comparison follows from [the tower theorem](#thm:tower-semitoroidal).` |
+
+The two forms are resolved by different systems:
+
+- A cross-reference (`@thm:key`) is resolved against every block the renderer
+  sees. In a Quarto book, that is every chapter of the book. The output shows
+  the number and links to the block: "Theorem 4.5".
+- A link to a fragment (`[text](#thm:key)`) is a URL. The renderer keeps it
+  unchanged, and the browser looks for the ID on the current page only. A
+  Quarto book renders each chapter as its own page, so a link to a block in
+  another chapter goes nowhere. The linter reports it as
+  `link/invalid-fragment`.
+
+To keep descriptive words, write them in the sentence and put the
+cross-reference after them: `the tower criterion of @thm:tower-semitoroidal`.
+A target that has no number, such as a table in the Quarto book, takes a link
+that names its page: `[the lattice table](page.md#id)`.
+
 ## Attribute blocks
 
 Every `{…}` after a heading, image, code fence, caption or `:::` fence is a
