@@ -41,6 +41,7 @@
     <ProposalActionCard
       v-if="card.annotation.proposalActions.length > 0"
       v-bind:actions="card.annotation.proposalActions"
+      v-bind:review-frozen="reviewFrozen"
       v-on:show-proposal="emit('show-proposal')"
     ></ProposalActionCard>
 
@@ -162,6 +163,8 @@ import { deriveActionRow, type AnnotationCardView } from '../sidebar/annotations
 const props = defineProps<{
   card: AnnotationCardView
   now: DateTime
+  /** The document's review is frozen, so its chunks are not in the editor. */
+  reviewFrozen: boolean
 }>()
 
 const emit = defineEmits<{

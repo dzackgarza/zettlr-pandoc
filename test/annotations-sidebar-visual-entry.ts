@@ -74,6 +74,8 @@ declare global {
     /** Swap the cached session for the one carrying a fourth, orphaned
      *  annotation (S8/I6) — the only state whose thread offers Reattach. */
     annotationsSceneSetOrphanScenario: (active: boolean) => Promise<void>
+    /** Swap the cached session for one whose review is frozen by disk drift. */
+    annotationsSceneSetFrozenReview: (active: boolean) => Promise<void>
     /** Swap the cached session for the one scenes 04 and 06 need: the base
      *  three annotations plus a multi-turn thread and a partially decided
      *  proposal, review active. */
@@ -168,6 +170,7 @@ declare global {
 
 const sceneSession = buildSceneSession()
 const reviewedSession = buildSceneSessionWithReview()
+const frozenSession = { ...reviewedSession, review: { ...reviewedSession.review!, frozenText: reviewedSession.workingText } }
 const orphanSession = buildSceneSessionWithOrphan()
 const m10CapturesSession = buildSceneSessionForM10Captures()
 setAnnotationsSceneSession(sceneSession)
@@ -367,7 +370,7 @@ async function mount (): Promise<void> {
     pane.dispatch({
       effects: [
         setAnnotationSessionEffect.of(session?.annotations ?? { generation: 0, items: [] }),
-        reviewCompartment.reconfigure(session?.review === undefined
+        reviewCompartment.reconfigure(session?.review === undefined || session.review.frozenText !== undefined
           ? []
           : reviewChunksExtension({ suggestions: session.review.suggestions }))
       ]
@@ -481,6 +484,7 @@ async function mount (): Promise<void> {
   }
   window.annotationsSceneSetReview = async (active) => { await setSession(active ? reviewedSession : sceneSession) }
   window.annotationsSceneSetOrphanScenario = async (active) => { await setSession(active ? orphanSession : sceneSession) }
+  window.annotationsSceneSetFrozenReview = async (active) => { await setSession(active ? frozenSession : sceneSession) }
   window.annotationsSceneSetM10CapturesScenario = async (active) => { await setSession(active ? m10CapturesSession : sceneSession) }
 
   window.annotationsSceneClickChip = async (line) => {
@@ -616,6 +620,7 @@ async function mount (): Promise<void> {
       annotationRowCount: panelHost.querySelectorAll('.annotation-workspace-annotation').length,
       suggestionRowCount: panelHost.querySelectorAll('.annotation-workspace-suggestion').length,
       documentAcceptAllCount: panelHost.querySelectorAll('.annotation-document-accept-all').length,
+      frozenActionLabels: [...panelHost.querySelectorAll('.annotation-frozen-actions button')].map(element => element.textContent?.trim() ?? ''),
       globalAcceptAllPresent: panelHost.querySelector('.annotation-global-accept-all') !== null,
       headingCount: panelHost.querySelectorAll('h1, h2, h3').length,
       shortcutChip: panelHost.querySelector('.annotation-header-shortcut')?.textContent?.trim() ?? '',

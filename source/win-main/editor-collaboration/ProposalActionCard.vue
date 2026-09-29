@@ -10,7 +10,10 @@
         v-bind:class="{ pending: view.pendingCount > 0 }"
       >{{ countLabel }}</span>
     </div>
-    <div class="proposal-actions">
+    <div
+      v-if="!reviewFrozen"
+      class="proposal-actions"
+    >
       <button
         type="button"
         class="annotation-button annotation-action-show-proposal"
@@ -53,6 +56,8 @@ import { proposalCardView } from '../sidebar/annotations/annotation-presentation
 
 const props = defineProps<{
   actions: readonly AnnotationProposalAction[]
+  /** The review is frozen: its chunks are not in the editor to show or decide. */
+  reviewFrozen: boolean
 }>()
 
 const emit = defineEmits<(e: 'show-proposal') => void>()
@@ -67,9 +72,15 @@ const countLabel = computed(() => {
   return pending === 1 ? trans('1 suggestion') : trans('%s suggestions', String(pending))
 })
 
-const noteLabel = computed(() => view.value.pendingCount > 0
-  ? trans('%s of %s pending. Accept or reject each change where it appears in the document.', String(view.value.pendingCount), String(view.value.totalCount))
-  : trans('All changes have been accepted or rejected.'))
+const noteLabel = computed(() => {
+  if (view.value.pendingCount === 0) {
+    return trans('All changes have been accepted or rejected.')
+  }
+  if (props.reviewFrozen) {
+    return trans('The file changed on disk, so these changes are frozen. Reapply, return or discard the review in the annotations panel.')
+  }
+  return trans('%s of %s pending. Accept or reject each change where it appears in the document.', String(view.value.pendingCount), String(view.value.totalCount))
+})
 </script>
 
 <style lang="less">

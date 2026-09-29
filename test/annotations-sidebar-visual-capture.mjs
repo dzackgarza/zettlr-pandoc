@@ -357,6 +357,16 @@ assert.deepStrictEqual(
   'show-proposal: the pane must be asked to reveal the linked chunk'
 )
 
+// A review frozen by disk drift: the panel names the reason and offers the
+// three recovery actions; the pane draws no chunk and no Accept all.
+await page.evaluate(() => window.annotationsSceneSetFrozenReview(true))
+diag = await diagnostics()
+assert.deepStrictEqual(diag.frozenActionLabels, ['Reapply', 'Return to agent', 'Discard'], 'frozen: the three recovery actions')
+assert.equal(diag.documentAcceptAllCount, 0, 'frozen: no Accept all on a frozen review')
+assert.equal(diag.chunkControlCount, 0, 'frozen: the pane draws no chunk controls')
+await scene.capture('frozen-review-recovery')
+await page.evaluate(() => window.annotationsSceneSetFrozenReview(false))
+
 // S8/I6: Reattach only ever emits an intent (an annotation id) — the pane,
 // which owns the selection, supplies the range.
 await setReview(false)

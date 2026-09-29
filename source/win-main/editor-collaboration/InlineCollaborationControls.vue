@@ -24,6 +24,7 @@
       v-else-if="block.control.kind === 'annotation-thread' && annotationCards.has(block.control.annotationId)"
       v-bind:card="annotationCards.get(block.control.annotationId)!"
       v-bind:now="now"
+      v-bind:review-frozen="review?.frozenText !== undefined"
       v-on:close="collaborationStore.selectAnnotation(null)"
       v-on:reply="reply(block.control.annotationId, $event)"
       v-on:show-proposal="showProposal(annotationCards.get(block.control.annotationId)!)"
