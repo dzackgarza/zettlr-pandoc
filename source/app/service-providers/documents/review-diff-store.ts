@@ -227,7 +227,7 @@ function dressSuggestions(
 export function sidecarOutstandingChunks(sidecar: ReviewBearingSidecar): OutstandingChunk[] {
   return dressSuggestions(
     sidecar.review.suggestions,
-    sidecar.workingText,
+    suggestionText(sidecar.review, sidecar.workingText),
     sidecar.review.packets,
     sidecar.review.chunkComments,
   );
@@ -247,7 +247,7 @@ function persistedReview(review: ActiveReviewState): PersistedReviewState {
   return {
     reviewId: review.reviewId,
     generation: review.generation,
-    invalidated: review.invalidated,
+    ...frozenState(review),
     packets: review.packets.map((packet) => ({ ...packet })),
     suggestions: review.suggestions.map((suggestion) => ({
       ...suggestion,
@@ -404,8 +404,22 @@ export function reviewFromSidecar(
     chunkComments: review.chunkComments.map((note) => ({ ...note })),
     comments: review.comments.map((comment) => ({ ...comment })),
     diskFenceSha256: sidecar.diskFenceSha256,
-    invalidated: review.invalidated,
+    ...frozenState(review),
   };
+}
+
+/** The invalidation half of a review, carried between memory and sidecar. */
+function frozenState(
+  review: ActiveReviewState | PersistedReviewState,
+): { invalidated: false } | { invalidated: true; frozenText: string } {
+  return review.invalidated
+    ? { invalidated: true, frozenText: review.frozenText }
+    : { invalidated: false };
+}
+
+/** The text a review's suggestion anchors index. */
+export function suggestionText(review: ActiveReviewState | PersistedReviewState, workingText: string): string {
+  return review.invalidated ? review.frozenText : workingText;
 }
 
 // ============================================================================
@@ -474,7 +488,7 @@ export class ReviewDiffStore {
     }
     return dressSuggestions(
       review.suggestions,
-      normalizeText(workingText),
+      suggestionText(review, normalizeText(workingText)),
       review.packets,
       review.chunkComments,
     );
@@ -486,6 +500,6 @@ export class ReviewDiffStore {
     if (review === undefined) {
       return undefined;
     }
-    return reviewPatch(review.suggestions, normalizeText(workingText));
+    return reviewPatch(review.suggestions, suggestionText(review, normalizeText(workingText)));
   }
 }

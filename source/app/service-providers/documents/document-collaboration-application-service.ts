@@ -90,11 +90,13 @@ import {
 } from "./annotation-transitions";
 import {
   isTransitionError,
+  freezeReview,
   prepareAcceptAll,
   prepareChunkComment,
   prepareChunkDecision,
   prepareClear,
   prepareProposalSubmission,
+  prepareReapply,
   prepareRetraction,
   prepareReviewComment,
   prepareWorkingTextEdit,
@@ -105,6 +107,8 @@ import {
   type ChunkDecisionResponse,
   type ClaimInput,
   type ClearReviewResponse,
+  type ReapplyReviewResponse,
+  type DiscardReviewResponse,
   type ReviewMutationPlan,
   type RetractProposalResponse,
 } from "./review-transitions";
@@ -270,6 +274,19 @@ export interface ReviewSavePreparation {
  * on the buffer, and an annotation-bearing document without one opens on
  * its file.
  */
+/** A recovery action on a review, named by its document and generation. */
+export interface ReviewRecoveryInput {
+  documentId: string;
+  documentPath: string;
+  reviewId: string;
+  expectedReviewGeneration: number;
+}
+
+/** A review found for a recovery action, with the text around it. */
+type RecoverableReview =
+  | { attached: true; review: ActiveReviewState; diskText: string; workingText: string }
+  | { attached: false; review: ActiveReviewState; diskText: string; sidecar: CollaborationSidecarData };
+
 export interface ReattachedCollaboration {
   review: ActiveReviewState | undefined;
   annotations: AnnotationSet;
@@ -306,6 +323,11 @@ interface AnnotationDocumentState {
 
 /** The refusal an annotation mutation answers with when it never ran. */
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
+
+/** Every refusal of a decision on a frozen review names its recovery. */
+const INVALIDATED_REVIEW_MESSAGE =
+  "The file changed on disk after this review opened, so its suggestions are frozen. " +
+  "Reapply the review to the current text, or discard it.";
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
   if (error instanceof AnnotationDomainValidationError) {
@@ -684,9 +706,8 @@ export class CollaborationApplicationService {
 
   /**
    * Persist and drop a document's collaboration state when it detaches. An
-   * invalidated review is not written back — its in-process resolution was
-   * always destruction — but the annotations of the same document are, so
-   * closing a file with a dead review still keeps the owner's comments.
+   * invalidated review is written back frozen, like any other: only the
+   * owner's explicit Discard removes it.
    */
   public async detachCollaboration(documentId: string): Promise<void> {
     const review = this.reviews.getReview(documentId);
@@ -703,7 +724,7 @@ export class CollaborationApplicationService {
       this.sidecarFor(documentId, {
         documentPath,
         workingText,
-        review: review?.invalidated === true ? undefined : review,
+        review,
       }),
     );
     this.reviews.removeReview(documentId);
@@ -786,8 +807,11 @@ export class CollaborationApplicationService {
       }
       return;
     }
-    await this.orphanAnnotationsThroughDiscard(documentId, documentPath, normalizedDisk);
-    if (review === undefined) {
+    // A frozen review's anchors index its frozen text, so the buffer
+    // reverting underneath it changes nothing it points at.
+    const frozen = review?.invalidated === true ? review : undefined;
+    await this.orphanAnnotationsThroughDiscard(documentId, documentPath, normalizedDisk, frozen);
+    if (review === undefined || frozen !== undefined) {
       return;
     }
     this.reviews.removeReview(documentId);
@@ -796,16 +820,18 @@ export class CollaborationApplicationService {
   }
 
   /**
-   * Write the document's annotations back with every anchor orphaned and no
-   * review, then commit that. The store deletes the file when a document has
-   * neither, so a document with no annotations still ends up with its
-   * sidecar gone — which is what this path used to do unconditionally, and
-   * why annotations used to disappear with it.
+   * Write the document's annotations back with every anchor orphaned, and
+   * the frozen review if the document has one, then commit that. The store
+   * deletes the file when a document has neither, so a document with no
+   * annotations still ends up with its sidecar gone — which is what this
+   * path used to do unconditionally, and why annotations used to disappear
+   * with it.
    */
   private async orphanAnnotationsThroughDiscard(
     documentId: string,
     documentPath: string,
     diskText: string,
+    frozenReview: ActiveReviewState | undefined,
   ): Promise<void> {
     const annotations = this.getAnnotations(documentId);
     const plan = prepareAnnotationOrphaning(annotations, "unmapped-document-change");
@@ -816,7 +842,7 @@ export class CollaborationApplicationService {
         documentPath,
         workingText: diskText,
         diskFenceSha256,
-        review: undefined,
+        review: frozenReview,
         annotations: next,
       }),
     );
@@ -833,11 +859,9 @@ export class CollaborationApplicationService {
   /**
    * Read, verify, and attach a detached document's collaboration state.
    *
-   * The two halves survive the fence differently. A review that cannot be
-   * fenced can never be decided again and is destroyed; annotations that
-   * cannot be fenced are still the owner's comments and become `orphaned`
-   * instead (I6). That difference is the whole of what this used to get
-   * wrong: it deleted the file, and the comments with it.
+   * Neither half is lost to a fence mismatch. A review that cannot be fenced
+   * is frozen until it is reapplied or discarded; annotations that cannot be
+   * fenced are still the owner's comments and become `orphaned` (I6).
    */
   public async reattachCollaboration(
     documentId: string,
@@ -859,13 +883,13 @@ export class CollaborationApplicationService {
             ? pendingSave.beforeDiskSha256
             : undefined;
       if (fence === undefined) {
-        return await this.driftedCollaboration(documentId, documentPath, sidecar, diskSha256);
+        return await this.driftedCollaboration(documentId, documentPath, sidecar, normalizedDisk);
       }
       sidecar = { ...sidecar, diskFenceSha256: fence };
       delete sidecar.pendingSave;
       await this.sidecars.write(sidecar);
     } else if (diskSha256 !== sidecar.diskFenceSha256) {
-      return await this.driftedCollaboration(documentId, documentPath, sidecar, diskSha256);
+      return await this.driftedCollaboration(documentId, documentPath, sidecar, normalizedDisk);
     }
 
     const hasOutstandingReview =
@@ -918,61 +942,54 @@ export class CollaborationApplicationService {
   }
 
   /**
-   * The file moved under a sidecar that was not open to see it. The review is
-   * destroyed and announced; the annotations are orphaned, refenced to the
-   * bytes that are actually there, and kept.
+   * The file moved under a sidecar that was not open to see it. The review
+   * is frozen against the working text its anchors index and announced
+   * invalidated; it waits for the owner or the agent to reapply or discard
+   * it. The annotations are orphaned, the sidecar is re-fenced to the bytes
+   * that are actually there, and the document opens on those bytes.
    */
-  /**
-   * Drop a review whose file moved underneath it, open or closed. The
-   * sidecar keeps the working text and the annotations, orphaned against
-   * the drift, and is re-fenced to the file as it is now; the file itself is
-   * never touched.
-   */
-  private async discardDriftedReview(
-    documentId: string,
-    documentPath: string,
-    sidecar: CollaborationSidecarData,
-    diskSha256: string,
-  ): Promise<AnnotationSet> {
-    const annotations =
-      prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
-      sidecar.annotations;
-    await this.sidecars.write(
-      collaborationSidecar({
-        documentPath,
-        workingText: sidecar.workingText,
-        diskFenceSha256: diskSha256,
-        review: undefined,
-        annotations,
-      }),
-    );
-    this.deps.warn(
-      `Review ${sidecar.review?.reviewId ?? "(unknown)"} for ${documentPath} was discarded after disk drift.`,
-    );
-    this.deps.emit("review.invalidated", {
-      reviewId: sidecar.review?.reviewId ?? "",
-      documentId,
-    });
-    return annotations;
-  }
-
   private async driftedCollaboration(
     documentId: string,
     documentPath: string,
     sidecar: CollaborationSidecarData,
-    diskSha256: string,
+    diskText: string,
   ): Promise<ReattachedCollaboration | undefined> {
-    const annotations = await this.discardDriftedReview(documentId, documentPath, sidecar, diskSha256);
-    if (annotations.items.length === 0) {
+    const diskSha256 = sha256Text(diskText);
+    const annotations =
+      prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
+      sidecar.annotations;
+    // A review with nothing proposed has nothing to recover, and ends here
+    // exactly as it does on a reopen without drift.
+    const review = sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
+      ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
+      : undefined;
+    await this.sidecars.write(
+      collaborationSidecar({
+        documentPath,
+        workingText: diskText,
+        diskFenceSha256: diskSha256,
+        review,
+        annotations,
+      }),
+    );
+    if (review !== undefined) {
+      this.reviews.replaceReview(documentId, review);
+      if (sidecar.review?.invalidated === false) {
+        this.deps.emit("review.invalidated", { reviewId: review.reviewId, documentId });
+      }
+    }
+    if (annotations.items.length > 0) {
+      this.commitAnnotations(documentId, {
+        documentPath,
+        diskFenceSha256: diskSha256,
+        annotations,
+      });
+    }
+    if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    this.commitAnnotations(documentId, {
-      documentPath,
-      diskFenceSha256: diskSha256,
-      annotations,
-    });
     this.deps.authority.broadcastCollaborationState(documentId);
-    return { review: undefined, annotations, workingText: undefined };
+    return { review, annotations, workingText: undefined };
   }
 
   public readSidecar(documentPath: string): Promise<CollaborationSidecarData | undefined> {
@@ -1167,11 +1184,7 @@ export class CollaborationApplicationService {
     context: MutationContext,
   ): Promise<{ ok: true } | ReviewFailure> {
     if (context.review.invalidated) {
-      return {
-        ok: false,
-        code: "REVIEW_INVALIDATED",
-        message: "The file changed on disk, so this review is no longer current.",
-      };
+      return { ok: false, code: "REVIEW_INVALIDATED", message: INVALIDATED_REVIEW_MESSAGE };
     }
     let diskText: string;
     try {
@@ -1187,7 +1200,7 @@ export class CollaborationApplicationService {
     }
     return await this.commitInvalidation(
       context,
-      "The file changed on disk after this review opened, so this review is no longer current.",
+      INVALIDATED_REVIEW_MESSAGE,
     );
   }
 
@@ -1199,7 +1212,7 @@ export class CollaborationApplicationService {
     context: MutationContext,
     message: string,
   ): Promise<ReviewFailure> {
-    const invalidated: ActiveReviewState = { ...context.review, invalidated: true };
+    const invalidated = freezeReview(context.review, context.workingText);
     // The annotations are NOT orphaned here. The buffer is untouched and the
     // document stays open, so every anchor still points at the text it
     // always did; what moved is the file the review was fenced against.
@@ -1584,18 +1597,24 @@ export class CollaborationApplicationService {
           message: "The reviewed document could not be read from disk.",
         };
       }
-      const diskSha256 = sha256Text(normalizeText(diskText));
-      if (review.invalidated || diskSha256 !== review.diskFenceSha256) {
+      if (review.invalidated) {
+        return { ok: false, code: "REVIEW_INVALIDATED", message: INVALIDATED_REVIEW_MESSAGE };
+      }
+      if (sha256Text(normalizeText(diskText)) !== review.diskFenceSha256) {
         try {
-          await this.discardDriftedReview(input.documentId, input.documentPath, sidecar, diskSha256);
+          await this.sidecars.write(collaborationSidecar({
+            documentPath: sidecar.documentPath,
+            workingText: sidecar.workingText,
+            diskFenceSha256: sidecar.diskFenceSha256,
+            review: freezeReview(review, sidecar.workingText),
+            annotations: sidecar.annotations,
+            pendingSave: sidecar.pendingSave,
+          }));
         } catch (error) {
-          return persistenceFailure("the drifted review discard", error);
+          return persistenceFailure("the drift invalidation", error);
         }
-        return {
-          ok: false,
-          code: "REVIEW_INVALIDATED",
-          message: "The file changed on disk after this review opened, so the review was discarded. The file keeps its current text.",
-        };
+        this.deps.emit("review.invalidated", { reviewId: review.reviewId, documentId: input.documentId });
+        return { ok: false, code: "REVIEW_INVALIDATED", message: INVALIDATED_REVIEW_MESSAGE };
       }
 
       const stale = this.checkPrecondition(context, input.precondition);
@@ -1624,6 +1643,169 @@ export class CollaborationApplicationService {
       }
       return plan.response;
     });
+  }
+
+  /**
+   * Reapply a frozen review to the current text: the live buffer when the
+   * document is open, the file on disk when it is closed. Suggestions whose
+   * text survives are live again; the rest are withdrawn (prepareReapply).
+   */
+  public async reapplyReview(
+    input: ReviewRecoveryInput,
+  ): Promise<ReapplyReviewResponse | ReviewFailure> {
+    return await this.withDocumentLock(input.documentId, async () => {
+      const located = await this.locateRecoverableReview(input);
+      if ("ok" in located) {
+        return located;
+      }
+      const { review, diskText, attached } = located;
+      const diskSha256 = sha256Text(diskText);
+      const currentText = attached ? located.workingText : diskText;
+      const plan = prepareReapply({ review, currentText, diskSha256 });
+      if (isTransitionError(plan)) {
+        return plan;
+      }
+      const nextReview = plan.nextReview!;
+
+      if (attached) {
+        const annotationState = this.annotationStates.get(input.documentId);
+        try {
+          await this.sidecars.write(this.sidecarFor(input.documentId, {
+            documentPath: input.documentPath,
+            workingText: currentText,
+            review: nextReview,
+            diskFenceSha256: diskSha256,
+          }));
+        } catch (error) {
+          return persistenceFailure("the review reapply", error);
+        }
+        this.reviews.replaceReview(input.documentId, nextReview);
+        if (annotationState !== undefined) {
+          this.commitAnnotations(input.documentId, { ...annotationState, diskFenceSha256: diskSha256 });
+        }
+        for (const draft of plan.events) {
+          this.deps.emit(draft.event, draft.payload);
+        }
+        this.deps.authority.broadcastCollaborationState(input.documentId);
+        return plan.response;
+      }
+
+      // The annotations of a closed file index its stored working text. When
+      // the file on disk says something else, no change set carries them
+      // across, and they are orphaned exactly as on a drifted reopen.
+      const { sidecar } = located;
+      const annotationPlan = sidecar.workingText === diskText
+        ? undefined
+        : prepareAnnotationOrphaning(sidecar.annotations, "external-drift");
+      try {
+        await this.sidecars.write(collaborationSidecar({
+          documentPath: input.documentPath,
+          workingText: diskText,
+          diskFenceSha256: diskSha256,
+          review: nextReview,
+          annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
+        }));
+      } catch (error) {
+        return persistenceFailure("the review reapply", error);
+      }
+      for (const draft of [...plan.events, ...(annotationPlan?.events ?? [])]) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+      return plan.response;
+    });
+  }
+
+  /**
+   * Remove a frozen review and keep the file as it is. The owner's explicit
+   * decision; a current review is cleared or decided instead.
+   */
+  public async discardInvalidatedReview(
+    input: ReviewRecoveryInput,
+  ): Promise<DiscardReviewResponse | ReviewFailure> {
+    return await this.withDocumentLock(input.documentId, async () => {
+      const located = await this.locateRecoverableReview(input);
+      if ("ok" in located) {
+        return located;
+      }
+      const { review } = located;
+      if (!review.invalidated) {
+        return {
+          ok: false,
+          code: "REVIEW_NOT_INVALIDATED",
+          message: "This review is still current. Clear it to reject its suggestions.",
+        };
+      }
+      try {
+        await this.sidecars.write(located.attached
+          ? this.sidecarFor(input.documentId, {
+              documentPath: input.documentPath,
+              workingText: located.workingText,
+              review: undefined,
+              diskFenceSha256: sha256Text(located.diskText),
+            })
+          : collaborationSidecar({
+              documentPath: input.documentPath,
+              workingText: located.sidecar.workingText,
+              diskFenceSha256: located.sidecar.diskFenceSha256,
+              review: undefined,
+              annotations: located.sidecar.annotations,
+              pendingSave: located.sidecar.pendingSave,
+            }));
+      } catch (error) {
+        return persistenceFailure("the review discard", error);
+      }
+      this.deps.emit("review.discarded", { reviewId: review.reviewId, documentId: input.documentId });
+      if (located.attached) {
+        this.reviews.removeReview(input.documentId);
+        this.deps.authority.broadcastReviewCleared(input.documentId, review.reviewId);
+      }
+      return { ok: true, reviewId: review.reviewId, documentId: input.documentId };
+    });
+  }
+
+  /**
+   * The review a recovery action names, attached to its open document or
+   * stored in the closed file's sidecar, with the file as it is on disk and
+   * the caller's generation checked. Called with the document lock held.
+   */
+  private async locateRecoverableReview(
+    input: ReviewRecoveryInput,
+  ): Promise<RecoverableReview | ReviewFailure> {
+    const notFound: ReviewFailure = { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    const active = this.reviews.findReviewByReviewId(input.reviewId);
+    const sidecar = active === undefined ? await this.sidecars.read(input.documentPath) : undefined;
+    const review = active ?? (
+      sidecar?.review?.reviewId === input.reviewId ? reviewFromSidecar(input.documentId, sidecar) : undefined
+    );
+    if (review === undefined || review.documentId !== input.documentId || review.documentPath !== input.documentPath) {
+      return notFound;
+    }
+    if (review.generation !== input.expectedReviewGeneration) {
+      return {
+        ok: false,
+        code: "REVIEW_GENERATION_MISMATCH",
+        message: "This review changed after it was opened. Reload it and try again.",
+        reviewGeneration: review.generation,
+      };
+    }
+    let diskText: string;
+    try {
+      diskText = normalizeText(await this.deps.authority.readDiskText(input.documentPath));
+    } catch (error) {
+      return {
+        ok: false,
+        code: "DOCUMENT_NOT_FOUND",
+        message: `The reviewed file could not be read from disk: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    if (active === undefined) {
+      return { attached: false, review, diskText, sidecar: sidecar! };
+    }
+    const workingText = this.deps.authority.readWorkingText(input.documentId);
+    if (workingText === undefined) {
+      throw new Error(`Review ${input.reviewId} is attached to a document that is not open`);
+    }
+    return { attached: true, review, diskText, workingText };
   }
 
   /** Clear every unresolved suggestion: mass reject, ending review mode. */

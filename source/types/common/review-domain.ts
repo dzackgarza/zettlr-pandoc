@@ -77,7 +77,7 @@ export interface ChunkComment {
   commentedAt: string; // ISO 8601 timestamp
 }
 
-export interface ActiveReviewState {
+interface ReviewStateFields {
   reviewId: string;
   documentId: string;
   /** Stored for patch header validation on every submission. */
@@ -95,6 +95,22 @@ export interface ActiveReviewState {
   /** Review-level comments, in creation order. */
   comments: ReviewComment[];
   diskFenceSha256: string;
-  /** True after external disk drift invalidated the review. */
-  invalidated: boolean;
 }
+
+/** A review whose suggestion anchors index the document's working text. */
+export interface LiveReviewState extends ReviewStateFields {
+  invalidated: false;
+}
+
+/**
+ * A review whose file changed on disk under it. Its suggestions are frozen:
+ * their anchors index `frozenText`, the working text at the moment of
+ * invalidation, until Reapply maps them onto the current text or the owner
+ * discards the review.
+ */
+export interface InvalidatedReviewState extends ReviewStateFields {
+  invalidated: true;
+  frozenText: string;
+}
+
+export type ActiveReviewState = LiveReviewState | InvalidatedReviewState;

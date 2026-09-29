@@ -94,6 +94,7 @@ export interface ReviewTransitionError {
     | "CLAIM_NOT_ATOMIC"
     | "REVIEW_NOT_FOUND"
     | "REVIEW_INVALIDATED"
+    | "REVIEW_NOT_INVALIDATED"
     | "REVISION_MISMATCH"
     | "CHUNK_NOT_FOUND";
   message: string;
@@ -169,6 +170,25 @@ export interface AcceptAllChunksResponse {
   documentRevision: DocumentRevision;
 }
 
+/** A frozen review mapped onto the current text and live again. */
+export interface ReapplyReviewResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+  reviewGeneration: number;
+  unresolvedChunks: number;
+  /** The suggestions whose text the current file no longer holds. */
+  withdrawnChunkIds: string[];
+  state: ReviewState;
+}
+
+/** A frozen review removed; the file keeps its text. */
+export interface DiscardReviewResponse {
+  ok: true;
+  reviewId: string;
+  documentId: string;
+}
+
 export interface ClearReviewResponse {
   ok: true;
   reviewId: string;
@@ -216,7 +236,7 @@ export interface RetractProposalResponse {
  * is fresh, so mutating the clone cannot reach the committed review. The
  * leaves are strings and numbers, which are copied by assignment anyway.
  */
-function cloneReview(review: ActiveReviewState): ActiveReviewState {
+function cloneReview<Review extends ActiveReviewState>(review: Review): Review {
   return {
     ...review,
     packets: review.packets.map((packet) => ({ ...packet })),
@@ -1076,6 +1096,90 @@ export function prepareClear(input: {
 }
 
 /**
+ * Freeze a review whose file changed on disk under it. Its anchors index
+ * `workingText`, which it keeps as its frozen text. A review already frozen
+ * keeps the text it was frozen against.
+ */
+export function freezeReview(review: ActiveReviewState, workingText: string): ActiveReviewState {
+  return review.invalidated ? review : { ...review, invalidated: true, frozenText: workingText };
+}
+
+function anchoredText(suggestion: ReviewSuggestion, text: string): string {
+  return suggestion.anchors.map((anchor) => text.slice(anchor.from, anchor.to)).join("");
+}
+
+/**
+ * Map a frozen review onto the current text and make it live again. The
+ * change set is the text diff from the frozen text to the current text, so a
+ * suggestion whose text survives keeps its anchors, and a suggestion whose
+ * text the diff removes is withdrawn. The review is fenced to the file as it
+ * is now. The current text itself does not change.
+ */
+export function prepareReapply(input: {
+  review: ActiveReviewState;
+  currentText: string;
+  diskSha256: string;
+}): ReviewMutationPlan<ReapplyReviewResponse> | ReviewTransitionError {
+  if (!input.review.invalidated) {
+    return {
+      ok: false,
+      code: "REVIEW_NOT_INVALIDATED",
+      message: "This review is still current, so there is nothing to reapply.",
+    };
+  }
+  const currentText = normalizeText(input.currentText);
+  const frozenText = input.review.frozenText;
+  const frozen = cloneReview(input.review);
+  const agentTextBefore = new Map(frozen.suggestions
+    .filter((suggestion) => suggestion.state === "proposed")
+    .map((suggestion) => [suggestion.suggestionId, anchoredText(suggestion, frozenText)]));
+  mapSuggestionAnchors(
+    frozen.suggestions,
+    changeSetForTextTransition(frozenText, currentText),
+  );
+  // Owner edits keep a suggestion whose agent text was partly written over.
+  // Reapply revives only a suggestion whose agent text is all still there.
+  for (const suggestion of frozen.suggestions) {
+    if (suggestion.state === "proposed" && anchoredText(suggestion, currentText) !== agentTextBefore.get(suggestion.suggestionId)) {
+      suggestion.state = "withdrawn";
+    }
+  }
+  const proposedBefore = [...agentTextBefore.keys()];
+  const { frozenText: _frozenText, ...fields } = frozen;
+  const next: ActiveReviewState = {
+    ...fields,
+    invalidated: false,
+    diskFenceSha256: input.diskSha256,
+    generation: frozen.generation + 1,
+  };
+  const withdrawnChunkIds = proposedBefore.filter((suggestionId) =>
+    next.suggestions.find((suggestion) => suggestion.suggestionId === suggestionId)?.state === "withdrawn");
+  const unresolvedChunks = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+  return {
+    nextReview: next,
+    nextWorkingText: currentText,
+    response: {
+      ok: true,
+      reviewId: next.reviewId,
+      documentId: next.documentId,
+      reviewGeneration: next.generation,
+      unresolvedChunks,
+      withdrawnChunkIds,
+      state: classifyReviewState(false, unresolvedChunks),
+    },
+    events: [{
+      event: "review.changed",
+      payload: {
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        generation: next.generation,
+        unresolvedChunks,
+      },
+    }],
+  };
+}
+
+/**
  * Attach a review-level comment. Advances the generation — a comment is a
  * deliberate turn in the conversation, and the generation cursor IS the
  * "what changed since my last turn" query.
@@ -1227,6 +1331,10 @@ export function prepareWorkingTextEdit(input: {
   workingText: string;
   changes: ChangeDesc;
 }): ReviewMutationPlan<void> | undefined {
+  // A frozen review's anchors index its frozen text, not the buffer.
+  if (input.review.invalidated) {
+    return undefined;
+  }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
   const anchorsChanged = mapSuggestionAnchors(next.suggestions, input.changes);

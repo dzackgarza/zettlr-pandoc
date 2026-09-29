@@ -149,19 +149,31 @@ const ReviewCommentSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const PersistedReviewStateSchema = Type.Object(
-  {
-    reviewId: Type.String({ minLength: 1 }),
-    generation: Type.Integer({ minimum: 0 }),
-    invalidated: Type.Boolean(),
-    packets: Type.Array(ReviewPacketSchema),
-    suggestions: Type.Array(ReviewSuggestionSchema),
-    submissions: Type.Array(ProposalSubmissionRecordSchema),
-    chunkComments: Type.Array(ChunkCommentSchema),
-    comments: Type.Array(ReviewCommentSchema),
-  },
-  { additionalProperties: false },
-);
+const persistedReviewFields = {
+  reviewId: Type.String({ minLength: 1 }),
+  generation: Type.Integer({ minimum: 0 }),
+  packets: Type.Array(ReviewPacketSchema),
+  suggestions: Type.Array(ReviewSuggestionSchema),
+  submissions: Type.Array(ProposalSubmissionRecordSchema),
+  chunkComments: Type.Array(ChunkCommentSchema),
+  comments: Type.Array(ReviewCommentSchema),
+};
+
+/**
+ * A live review's anchors index the sidecar's working text. An invalidated
+ * review's anchors index its own `frozenText`, the working text at the
+ * moment the file changed under it.
+ */
+const PersistedReviewStateSchema = Type.Union([
+  Type.Object(
+    { ...persistedReviewFields, invalidated: Type.Literal(false) },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...persistedReviewFields, invalidated: Type.Literal(true), frozenText: Type.String() },
+    { additionalProperties: false },
+  ),
+]);
 
 export type PersistedReviewState = Static<typeof PersistedReviewStateSchema>;
 
@@ -231,7 +243,11 @@ export function migrateV4ToV5Sidecar(v4: ReviewSidecarV4Data): CollaborationSide
     review: {
       reviewId: v4.reviewId,
       generation: v4.generation,
-      invalidated: v4.invalidated,
+      // A version-4 review's anchors were mapped through every owner edit,
+      // so they index the working text it was stored with.
+      ...(v4.invalidated
+        ? { invalidated: true as const, frozenText: v4.workingText }
+        : { invalidated: false as const }),
       packets: v4.packets,
       suggestions: v4.suggestions,
       submissions: v4.submissions,
