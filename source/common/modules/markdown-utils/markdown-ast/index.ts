@@ -35,6 +35,7 @@
 import { mathDisplayForOpen } from '@common/util/math-delimiters'
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from '@common/util/raw-latex-block'
 import { type SyntaxNode } from '@lezer/common'
+import { scanPandocAttributeList } from '@lezer/markdown'
 import {
   parsePandocAttributes,
   type ParsedPandocAttributes,
@@ -76,7 +77,9 @@ export interface MDNode {
   /**
    * Exact authored source range of the node's braced Pandoc attribute list:
    * the last one when a node carries several, and the info string of a
-   * fenced code block written as `{…}`. Undefined when the node has none.
+   * fenced code block when the whole info string is one attribute list. A
+   * raw attribute such as `{=html}` is not an attribute list. Undefined when
+   * the node has none.
    *
    * Consumers that need token coordinates must use this parsed range rather
    * than search the source again — Pandoc attribute lists may span several
@@ -610,6 +613,23 @@ function pandocNodeAttributes (
 }
 
 /**
+ * The range of a fenced code block's info string when Pandoc reads the whole
+ * info string as one attribute list.
+ *
+ * @param   {string}      markdown  The Markdown source
+ * @param   {SyntaxNode}  info      The CodeInfo node
+ *
+ * @return  {{ from: number, to: number }|undefined}  The range, if any
+ */
+function infoAttributeRange (markdown: string, info: SyntaxNode): { from: number; to: number } | undefined {
+  const scanned = scanPandocAttributeList(markdown, info.from)
+  if (scanned.status !== 'match' || scanned.value.to !== info.to) {
+    return undefined
+  }
+  return { from: info.from, to: info.to }
+}
+
+/**
  * Parses a single Lezer style SyntaxNode to an ASTNode.
  *
  * @param   {SyntaxNode}  node      The node to convert
@@ -966,7 +986,7 @@ export function parseNode (node: SyntaxNode, markdown: string): ASTNode {
         attributes: {},
         from: node.from,
         to: node.to,
-        attributeRange: info !== null && markdown[info.from] === '{' ? { from: info.from, to: info.to } : undefined,
+        attributeRange: info !== null ? infoAttributeRange(markdown, info) : undefined,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
         info: info !== null ? markdown.substring(info.from, info.to) : '',
         source: source !== null ? markdown.substring(source.from, source.to) : '',
