@@ -47,9 +47,12 @@ import writeFileAtomic from "write-file-atomic";
 import { sha256Text } from "@common/util/sha256";
 import {
   CollaborationSidecarSchema,
+  EarlyCollaborationSidecarV5Schema,
   ReviewSidecarV4Schema,
+  liftEarlyV5Sidecar,
   migrateV4ToV5Sidecar,
   type CollaborationSidecarData,
+  type EarlyCollaborationSidecarV5Data,
   type PersistedReviewState,
   type ReviewSidecarV4Data,
 } from "./collaboration-sidecar-schema";
@@ -73,9 +76,13 @@ function isMissingFile(error: unknown): boolean {
 const validateCollaborationSidecar = new Ajv({ allErrors: true }).compile<CollaborationSidecarData>(
   CollaborationSidecarSchema,
 );
+const validateEarlyCollaborationSidecarV5 = new Ajv({ allErrors: true }).compile<EarlyCollaborationSidecarV5Data>(
+  EarlyCollaborationSidecarV5Schema,
+);
 const validateLegacyReviewSidecar = new Ajv({ allErrors: true }).compile<ReviewSidecarV4Data>(
   ReviewSidecarV4Schema,
 );
+
 
 /**
  * The rules a persisted review must satisfy, one function per rule. Each
@@ -359,6 +366,13 @@ export class CollaborationSidecarStore {
       assertMatchesFilename(migrated, target);
       await this.write(migrated);
       return migrated;
+    }
+    if (validateEarlyCollaborationSidecarV5(parsed)) {
+      const lifted = liftEarlyV5Sidecar(parsed);
+      assertCollaborationSidecarSemantics(lifted, target);
+      assertMatchesFilename(lifted, target);
+      await this.write(lifted);
+      return lifted;
     }
     if (!validateCollaborationSidecar(parsed)) {
       throw new Error(

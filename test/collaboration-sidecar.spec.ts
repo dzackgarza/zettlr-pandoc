@@ -242,6 +242,44 @@ describe("CollaborationSidecarStore", function () {
     assert.deepEqual(await store.read(documentPath), expected);
   });
 
+  it("lifts an early version-5 invalidated review missing frozenText, writes it back, and survives restart", async function () {
+    const earlyV5Review = {
+      ...persistedReview(),
+      invalidated: true,
+    };
+    persistRaw({
+      version: 5,
+      documentPath,
+      workingText: "ALPHA\n",
+      diskFenceSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      review: earlyV5Review,
+      annotations: { generation: 0, items: [] },
+    });
+
+    const expected: CollaborationSidecarData = {
+      version: 5,
+      documentPath,
+      workingText: "ALPHA\n",
+      diskFenceSha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      review: {
+        ...earlyV5Review,
+        invalidated: true,
+        frozenText: "ALPHA\n",
+      },
+      annotations: { generation: 0, items: [] },
+    };
+
+    const lifted = await store.read(documentPath);
+    assert.deepEqual(lifted, expected);
+
+    const onDisk: unknown = JSON.parse(
+      readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
+    );
+    assert.deepEqual(onDisk, expected);
+
+    assert.deepEqual(await store.read(documentPath), expected);
+  });
+
   it("rejects a version-3 sidecar rather than migrating it", async function () {
     persistRaw({ ...legacySidecarBytes(documentPath), version: 3 });
     await assert.rejects(store.read(documentPath), /not a valid collaboration sidecar/);

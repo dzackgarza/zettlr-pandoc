@@ -258,3 +258,54 @@ export function migrateV4ToV5Sidecar(v4: ReviewSidecarV4Data): CollaborationSide
     ...(v4.pendingSave === undefined ? {} : { pendingSave: v4.pendingSave }),
   };
 }
+
+// ============================================================================
+// Version 5 (early, invalidated review without frozenText) — read-only lift
+// ============================================================================
+
+const EarlyPersistedReviewStateV5Schema = Type.Object(
+  {
+    ...persistedReviewFields,
+    invalidated: Type.Literal(true),
+  },
+  { additionalProperties: false },
+);
+
+const EarlyCollaborationSidecarV5Schema = Type.Object(
+  {
+    version: Type.Literal(5),
+    documentPath: Type.String({ minLength: 1 }),
+    workingText: Type.String(),
+    diskFenceSha256: Sha256,
+    review: EarlyPersistedReviewStateV5Schema,
+    annotations: AnnotationSetSchema,
+    pendingSave: Type.Optional(PendingSaveSchema),
+  },
+  { additionalProperties: false },
+);
+
+export type EarlyCollaborationSidecarV5Data = Static<typeof EarlyCollaborationSidecarV5Schema>;
+
+export { EarlyCollaborationSidecarV5Schema };
+
+/**
+ * Deterministically lift an early version-5 sidecar whose invalidated review
+ * predates the separate `frozenText` field. Prior to `frozenText`, an
+ * invalidated review's anchors indexed the working text it was stored with.
+ */
+export function liftEarlyV5Sidecar(v5: EarlyCollaborationSidecarV5Data): CollaborationSidecarData {
+  return {
+    version: 5,
+    documentPath: v5.documentPath,
+    workingText: v5.workingText,
+    diskFenceSha256: v5.diskFenceSha256,
+    review: {
+      ...v5.review,
+      invalidated: true,
+      frozenText: v5.workingText,
+    },
+    annotations: v5.annotations,
+    ...(v5.pendingSave === undefined ? {} : { pendingSave: v5.pendingSave }),
+  };
+}
+
