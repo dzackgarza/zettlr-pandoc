@@ -61,6 +61,31 @@ export async function flowmarkToolPython (): Promise<string> {
   return path.join(outcome.stdout.trim(), 'flowmark', 'bin', 'python')
 }
 
+// PEP 610 records the source of a direct install, for a Git install the
+// resolved commit, in the distribution's direct_url.json.
+const INSTALL_IDENTITY_SCRIPT = [
+  'import importlib.metadata as m',
+  'd = m.distribution("flowmark")',
+  'print(d.version, d.read_text("direct_url.json") or "")'
+].join('\n')
+
+/**
+ * The exact installed Flowmark: its version and, for the Git install the app
+ * maintains, the commit uv resolved. Lint results computed by one install do
+ * not carry over to another.
+ */
+export async function flowmarkInstallIdentity (): Promise<string> {
+  const outcome = await runFlowmarkProcess({
+    command: await flowmarkToolPython(),
+    argv: [ '-c', INSTALL_IDENTITY_SCRIPT ],
+    timeoutMs: 30_000
+  })
+  if (!outcome.ok) {
+    throw new Error(`Cannot identify the installed Flowmark: ${outcome.message}`)
+  }
+  return outcome.stdout.trim()
+}
+
 export interface FlowmarkProcessOptions {
   command: string
   argv: string[]

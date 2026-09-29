@@ -7,7 +7,11 @@ import {
   THEOREM_CLASS_TO_PREFIX,
   THEOREM_FAMILY_METADATA,
 } from "@common/util/pandoc-quick-reference";
-import { REFERENCE_FAMILIES } from "@dts/common/references";
+import {
+  REFERENCE_FAMILIES,
+  type DocumentReferenceSnapshot,
+  type Resolution,
+} from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
 import { renderTikz, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
@@ -25,22 +29,63 @@ export interface FlowmarkLintDocumentOptions {
   projectRoots?: string[];
 }
 
+/**
+ * A resolution as Flowmark's reference rules read it: the status, and for a
+ * duplicate the documents that define the key.
+ */
+type FlowmarkResolution =
+  | { status: "resolved" | "missing" }
+  | { status: "duplicate"; definitions: { documentPath: string }[] };
+
+function flowmarkResolution(resolution: Resolution): FlowmarkResolution {
+  if (resolution.status !== "duplicate") {
+    return { status: resolution.status };
+  }
+  return {
+    status: "duplicate",
+    definitions: resolution.definitions.map((definition) => ({
+      documentPath: definition.documentPath,
+    })),
+  };
+}
+
+/**
+ * Every `key\0documentPath` definition site in the documents other than
+ * `documentPath`, sorted. With the document's own text this fixes the
+ * reference context Flowmark receives for it.
+ */
+export function otherDefinitionSites(
+  referenceState: WorkspaceReferenceState,
+  documentPath: string,
+): string[] {
+  return referenceState.snapshots
+    .filter((snapshot) => snapshot.documentPath !== documentPath)
+    .flatMap((snapshot) =>
+      snapshot.definitions.map((definition) => `${definition.key}\0${snapshot.documentPath}`),
+    )
+    .sort();
+}
+
 function exactReferenceContext(
   documentPath: string,
   text: string,
   referenceState: WorkspaceReferenceState | undefined,
-): { snapshot: ReturnType<typeof extractReferences>; resolutions: Record<string, unknown> } | undefined {
+): { snapshot: ReturnType<typeof extractReferences>; resolutions: Record<string, FlowmarkResolution> } | undefined {
   if (referenceState === undefined) {
     return undefined;
   }
   const snapshot = extractReferences(documentPath, text);
+  // Another document contributes only its definitions: its references add
+  // only missing keys, which Flowmark's rules skip for any other document.
   const snapshots = referenceState.snapshots
     .filter((candidate) => candidate.documentPath !== documentPath)
+    .map((candidate): DocumentReferenceSnapshot => ({ ...candidate, occurrences: [] }))
     .concat(snapshot);
-  return {
-    snapshot,
-    resolutions: Object.fromEntries(resolveWorkspace(snapshots)),
-  };
+  const resolutions: Record<string, FlowmarkResolution> = {};
+  for (const [key, resolution] of resolveWorkspace(snapshots)) {
+    resolutions[key] = flowmarkResolution(resolution);
+  }
+  return { snapshot, resolutions };
 }
 
 export async function buildFlowmarkLintContext(

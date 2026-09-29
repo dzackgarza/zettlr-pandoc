@@ -91,17 +91,10 @@ import {
   searchCentralFigures,
   writeCentralFigure,
 } from "../../util/central-figures-store";
-import {
-  createDocumentLintContext,
-  lintDocumentText,
-  type DocumentLintDocumentOptions,
-} from "../../util/document-lint";
-import {
-  documentCrossReferenceSystem,
-  documentLintAuthority,
-} from "../../util/document-bibliographies";
+import type { DocumentLintRecord } from "@providers/document-lint";
+import type DocumentLintProvider from "@providers/document-lint";
+import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
-import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import AgentDocumentQueries, {
   SEARCH_DEADLINE_MS,
   SearchPatternError,
@@ -317,6 +310,7 @@ export interface AgentApiHost {
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
+  documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
 }
@@ -2220,40 +2214,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private async lintDocumentAuthorityContext(
-    documentPath: string,
-  ): Promise<DocumentLintDocumentOptions> {
-    if (this._app.fsal === undefined) {
-      // Without the file system layer there is no workspace to resolve a
-      // bibliography from; Flowmark then reads the document's own metadata.
-      return {};
-    }
-    return await documentLintAuthority(
-      this._app.fsal,
-      this._app.config.get().export.cslLibrary,
-      documentPath,
-    );
-  }
-
   private static lintCounts(diagnostics: readonly LintDiagnostic[]): LintSeverityCounts {
     const counts: LintSeverityCounts = { error: 0, warning: 0, info: 0 };
     for (const diagnostic of diagnostics) {
       counts[diagnostic.severity] += 1;
     }
     return counts;
-  }
-
-  private static lintPosition(text: string, offset: number): { line: number; column: number } {
-    const bounded = Math.max(0, Math.min(offset, text.length));
-    let line = 1;
-    let lineStart = 0;
-    for (let index = 0; index < bounded; index += 1) {
-      if (text[index] === "\n") {
-        line += 1;
-        lineStart = index + 1;
-      }
-    }
-    return { line, column: bounded - lineStart + 1 };
   }
 
   private async handleLintDocuments(
@@ -2369,69 +2335,59 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
       }
 
-      const runtimeEnv = this._runtimeEnvironment?.env ?? process.env;
-      const config = this._app.config.get();
-      const lintContext = await createDocumentLintContext({
-        homeDirectory: this.authoringHomeDirectory(),
-        env: runtimeEnv,
-        referenceState: this._app.references?.getSnapshot(),
-        tikzRenderConfig: resolveTikzRenderConfig(
-          config.tikz.dataDir,
-          config.tikz.figuresDir,
-          this.authoringHomeDirectory(),
-          app.getPath("userData"),
-          runtimeEnv,
-        ),
-        flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
-      });
       const severityWeight = { info: 0, warning: 1, error: 2 } as const;
       const minimum = query.minimumSeverity;
-      const documents: LintResponse["documents"] = [];
-
-      for (const target of targets) {
-        const read = await this._queries.readDocumentContent(
-          target.documentId,
-          "working",
-          1,
-          Number.MAX_SAFE_INTEGER,
+      const sources = await Promise.all(
+        targets.map(async (target) => {
+          const read = await this._queries.readDocumentContent(
+            target.documentId,
+            "working",
+            1,
+            Number.MAX_SAFE_INTEGER,
+          );
+          if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+            throw new Error(`Could not read selected lint document ${target.path}`);
+          }
+          return { path: target.path, text: read.content };
+        }),
+      );
+      const result = (
+        target: Target,
+        record: DocumentLintRecord,
+        current: boolean,
+      ): LintResponse["documents"][number] => {
+        const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
+          (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
         );
-        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-          throw new Error(`Could not read selected lint document ${target.path}`);
-        }
-        const authorityContext = await this.lintDocumentAuthorityContext(target.path);
-        const sourceDiagnostics = await lintDocumentText(
-          read.content,
-          target.path,
-          lintContext,
-          authorityContext,
-        );
-        const diagnostics: LintDiagnostic[] = sourceDiagnostics
-          .filter((diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum])
-          .map((diagnostic) => {
-            const start = AgentHTTPProvider.lintPosition(read.content, diagnostic.from);
-            const end = AgentHTTPProvider.lintPosition(read.content, diagnostic.to);
-            return {
-              from: diagnostic.from,
-              to: diagnostic.to,
-              line: start.line,
-              column: start.column,
-              endLine: end.line,
-              endColumn: end.column,
-              severity: diagnostic.severity,
-              message: diagnostic.message,
-              source: diagnostic.source,
-              ...(diagnostic.rule === undefined ? {} : { rule: diagnostic.rule }),
-              ...(diagnostic.suggestions === undefined
-                ? {}
-                : { suggestions: diagnostic.suggestions }),
-              ...(diagnostic.data === undefined ? {} : { data: diagnostic.data }),
-            };
-          });
-        documents.push({
+        return {
           ...target,
-          revision: read.revision,
+          revision: { sha256: record.revision },
+          current,
+          lintedAt: record.lintedAt,
           diagnostics,
           counts: AgentHTTPProvider.lintCounts(diagnostics),
+        };
+      };
+      const documents: LintResponse["documents"] = [];
+      const pending: LintResponse["pending"] = [];
+      if (scope === "workspace" || scope === "all") {
+        // A workspace answers from the lint cache; the background linter
+        // brings every outdated or pending document current.
+        const lookups = await this._app.documentLint.lookup(sources);
+        lookups.forEach((lookup, index) => {
+          const target = targets[index];
+          if (lookup.record === undefined) {
+            pending.push({ documentId: target.documentId, path: target.path, name: target.name });
+          } else {
+            documents.push(result(target, lookup.record, lookup.current));
+          }
+        });
+      } else {
+        const records = await Promise.all(
+          sources.map(async (source) => await this._app.documentLint.lint(source.path, source.text)),
+        );
+        records.forEach((record, index) => {
+          documents.push(result(targets[index], record, true));
         });
       }
 
@@ -2440,6 +2396,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         scope,
         documents,
         documentCount: documents.length,
+        pending,
         diagnosticCount: allDiagnostics.length,
         counts: AgentHTTPProvider.lintCounts(allDiagnostics),
       });

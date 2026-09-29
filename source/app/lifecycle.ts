@@ -71,6 +71,7 @@ export async function bootApplication (): Promise<AppServiceContainer> {
   void updateFlowmark().then(outcome => {
     if (outcome.ok) {
       log.info('[Flowmark] Up to date with pandoc-flowmark main.')
+      void appServiceContainer.documentLint.flowmarkUpdated()
       return
     }
     log.warning(`[Flowmark] Could not update from pandoc-flowmark main: ${outcome.message}`)

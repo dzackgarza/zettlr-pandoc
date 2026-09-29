@@ -59,6 +59,7 @@ import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import DocumentLintProvider from "source/app/service-providers/document-lint";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import DocumentManager from "source/app/service-providers/documents";
 import { SearchProvider } from "source/app/service-providers/search";
@@ -224,6 +225,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let scratch: string;
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
+  let documentLint: DocumentLintProvider;
   let httpPort: number;
   let authoringHome: string;
   let figuresRoot: string;
@@ -510,31 +512,45 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(path.join(figuresRoot, "images", "pixel.bin"), Buffer.from([0, 255, 1, 254]));
 
     provider = await createProvider();
+    const config = {
+      get: () => ({
+        export: { cslLibrary: "" },
+        app: {
+          openWorkspaces,
+        },
+        agentApi: {
+          enabled: true,
+          // Kernel-assigned: the provider owns the bind and publishes the
+          // actual port, so no reservation can race the listener.
+          port: 0,
+          claimDescriptionSimilarityThreshold: 0.94,
+        },
+        tikz: {
+          dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
+          figuresDir: figuresRoot,
+        },
+        editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+      }),
+    };
+    const lintUserData = path.join(authoringHome, "lint-user-data");
+    mkdirSync(lintUserData);
+    documentLint = new DocumentLintProvider({
+      log: new LogProvider(),
+      config,
+      buffers: provider,
+      homeDirectory: authoringHome,
+      env: {},
+      userDataDirectory: lintUserData,
+      buildIdentity: "test",
+    });
+    await documentLint.boot();
     httpProvider = new AgentHTTPProvider(
       new LogProvider(),
       provider,
       {
-        config: {
-          get: () => ({
-            export: { cslLibrary: "" },
-            app: {
-              openWorkspaces,
-            },
-            agentApi: {
-              enabled: true,
-              // Kernel-assigned: the provider owns the bind and publishes the
-              // actual port, so no reservation can race the listener.
-              port: 0,
-              claimDescriptionSimilarityThreshold: 0.94,
-            },
-            tikz: {
-              dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
-              figuresDir: figuresRoot,
-            },
-            editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
-          }),
-        },
+        config,
         search: createSearch(),
+        documentLint,
       },
       undefined,
       undefined,
@@ -567,6 +583,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     peerServers = [];
     saveDialogResponse = 2;
     await httpProvider.shutdown();
+    await documentLint.shutdown();
     await provider.shutdown();
     rmSync(scratch, { recursive: true, force: true });
     rmSync(authoringHome, { recursive: true, force: true });
@@ -798,6 +815,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         }),
       },
       search: createSearch(),
+      documentLint,
     });
 
     try {
@@ -1851,14 +1869,19 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(workspace.status, 200, workspace.body);
     const workspacePayload = JSON.parse(workspace.body) as LintResponse;
-    assert.ok(workspacePayload.documents.some((item) => item.path === closedPath));
-    assert.ok(workspacePayload.documents.some((item) => item.path === focusedPath));
+    // Every document was linted above, so the workspace reads them all from the cache.
+    assert.deepEqual(workspacePayload.pending, []);
+    assert.deepEqual(
+      new Set(workspacePayload.documents.map((item) => item.path)),
+      new Set([focusedPath, otherOpenPath, closedPath]),
+    );
+    assert.ok(workspacePayload.documents.every((item) => item.current));
 
     const all = await httpRequest("GET", "/v1/lint?scope=all");
     assert.equal(all.status, 200, all.body);
     const allPayload = JSON.parse(all.body) as LintResponse;
     assert.deepEqual(
-      new Set(allPayload.documents.map((item) => item.path)),
+      new Set([...allPayload.documents, ...allPayload.pending].map((item) => item.path)),
       new Set(workspacePayload.documents.map((item) => item.path)),
     );
 
@@ -1925,6 +1948,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             }),
           },
           search: createSearch(),
+          documentLint,
         },
         undefined,
         DEADLINE_MS,

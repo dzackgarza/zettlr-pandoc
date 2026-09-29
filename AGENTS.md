@@ -313,8 +313,24 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   uses), compiler findings) and must not own any rule decision or run
   a CodeMirror linter of its own. Macro-sensitive rules load the declared macro
   sources themselves, so the same checks run from `flowmark-lint`; do not
-  precompute a GUI-owned macro inventory for linting. The
-  project's own source code is checked by the global ai-review-ci bun
+  precompute a GUI-owned macro inventory for linting.
+- **Document lint cache:** every Flowmark lint, from the editor or the agent
+  API, goes through `DocumentLintProvider`
+  (`source/app/service-providers/document-lint/`). It keys a result by the
+  document text hash and a digest of every other input Flowmark reads: the
+  build, the Flowmark install (PEP 610 `commit_id`, `flowmarkInstallIdentity`),
+  stamps of the macro tree, `mathjax-macros.json`, the TikZ template graph,
+  `TEXINPUTS`, the bibliographies, the Flowmark config files, and the
+  definition sites of the other workspace documents. The cache persists to
+  `userData/document-lint-cache.json`. FSAL events and a Flowmark update queue
+  every workspace document without a current result for a background worker
+  pool. `/v1/lint` with `scope=workspace` or `all` reads only the cache: each
+  result carries `current` and `lintedAt`, and a document never linted is
+  listed under `pending`. A new input that Flowmark reads must go into
+  `inputsKey`, or results go stale silently. Adding or removing a resource
+  file (an image, an `\input` target) does not yet invalidate closed
+  documents.
+- The project's own source code is checked by the global ai-review-ci bun
   profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 
 ## Traps (details in agent-memory: `agent-memory search --scope both`)

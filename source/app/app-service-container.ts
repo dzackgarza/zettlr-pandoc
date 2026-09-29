@@ -29,6 +29,7 @@ import MenuProvider from '@providers/menu'
 import type ProviderContract from '@providers/provider-contract'
 import RecentDocumentsProvider from '@providers/recent-docs'
 import ReferenceProvider from '@providers/references'
+import DocumentLintProvider from '@providers/document-lint'
 import AgentHTTPProvider from '@providers/agent-api/http-server'
 import StatsProvider from '@providers/stats'
 import TagProvider from '@providers/tags'
@@ -92,6 +93,7 @@ export class AppServiceContainer {
   private readonly _menuProvider: MenuProvider
   private readonly _recentDocsProvider: RecentDocumentsProvider
   private readonly _referenceProvider: ReferenceProvider
+  private readonly _documentLintProvider: DocumentLintProvider
   private readonly _statsProvider: StatsProvider
   private readonly _tagProvider: TagProvider
   private readonly _targetProvider: TargetProvider
@@ -164,6 +166,17 @@ export class AppServiceContainer {
       this._configProvider.get().references.authorityReportDebounceMs,
       app.getPath('userData'),
     )
+    this._documentLintProvider = new DocumentLintProvider({
+      log: this._logProvider,
+      config: this._configProvider,
+      buffers: this._documentManager,
+      references: this._referenceProvider,
+      fsal: this._fsal,
+      homeDirectory: app.getPath('home'),
+      env: process.env,
+      userDataDirectory: app.getPath('userData'),
+      buildIdentity: `${app.getVersion()} ${__GIT_COMMIT_HASH__}`
+    })
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
       this._documentManager,
@@ -275,6 +288,7 @@ export class AppServiceContainer {
     await this._informativeBoot(this._citeprocProvider, 'CiteprocProvider')
 
     await this._informativeBoot(this._documentManager, 'DocumentManager')
+    await this._informativeBoot(this._documentLintProvider, 'DocumentLintProvider')
     await this._informativeBoot(this._agentHTTPProvider, 'AgentHTTPProvider')
     await this._informativeBoot(this._menuProvider, 'MenuProvider')
     await this._informativeBoot(this._updateProvider, 'UpdateProvider')
@@ -347,6 +361,9 @@ export class AppServiceContainer {
   public get references (): ReferenceProvider {
     return this._referenceProvider
   }
+  public get documentLint (): DocumentLintProvider {
+    return this._documentLintProvider
+  }
   public get search (): SearchProvider {
     return this._searchProvider
   }
@@ -391,6 +408,7 @@ export class AppServiceContainer {
     await this._safeShutdown(this._lrtProvider, 'Long-running Task Provider')
     await this._safeShutdown(this._commandProvider, 'CommandProvider')
     await this._safeShutdown(this._agentHTTPProvider, 'AgentHTTPProvider')
+    await this._safeShutdown(this._documentLintProvider, 'DocumentLintProvider')
     await this._safeShutdown(this._documentManager, 'DocumentManager')
     await this._safeShutdown(this._fsal, 'FSAL')
 

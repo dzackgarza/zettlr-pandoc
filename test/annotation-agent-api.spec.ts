@@ -43,6 +43,7 @@ import http from "http";
 import os from "os";
 import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
@@ -263,17 +264,27 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     openWorkspaces = [scratch];
 
     provider = await createProvider();
+    const config = {
+      get: () => ({
+        app: { openWorkspaces },
+        export: { cslLibrary: "" },
+        tikz: { dataDir: "", figuresDir: "" },
+        editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+        agentApi: { enabled: true, port: 0, claimDescriptionSimilarityThreshold: 0.94 },
+      }),
+    };
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
-      config: {
-        get: () => ({
-          app: { openWorkspaces },
-          export: { cslLibrary: "" },
-          tikz: { dataDir: "", figuresDir: "" },
-          editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
-          agentApi: { enabled: true, port: 0, claimDescriptionSimilarityThreshold: 0.94 },
-        }),
-      },
+      config,
       search: createSearch(),
+      documentLint: new DocumentLintProvider({
+        log: new LogProvider(),
+        config,
+        buffers: provider,
+        homeDirectory: scratch,
+        env: {},
+        userDataDirectory: scratch,
+        buildIdentity: "test",
+      }),
     });
     await httpProvider.boot();
     httpPort = Number.parseInt(

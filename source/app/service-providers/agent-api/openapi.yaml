@@ -1990,6 +1990,8 @@ components:
         - open
         - focused
         - revision
+        - current
+        - lintedAt
         - diagnostics
         - counts
       properties:
@@ -2005,6 +2007,18 @@ components:
           type: boolean
         revision:
           $ref: '#/components/schemas/DocumentRevision'
+        current:
+          type: boolean
+          description: >-
+            True when the diagnostics are for the document's current text and
+            current lint inputs. False when the text or an input (a
+            bibliography, the macro sources, another document's definitions,
+            Flowmark itself) changed after the lint; the background linter is
+            linting it again. revision names the text the diagnostics are for.
+        lintedAt:
+          type: string
+          format: date-time
+          description: When Flowmark produced these diagnostics.
         diagnostics:
           type: array
           items:
@@ -2018,6 +2032,7 @@ components:
         - scope
         - documents
         - documentCount
+        - pending
         - diagnosticCount
         - counts
       properties:
@@ -2036,6 +2051,26 @@ components:
         documentCount:
           type: integer
           minimum: 0
+        pending:
+          type: array
+          description: >-
+            Documents of a workspace or all scope with no lint result yet. The
+            background linter is linting them; request the scope again to read
+            their diagnostics. Always empty for the other scopes.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - documentId
+              - path
+              - name
+            properties:
+              documentId:
+                type: string
+              path:
+                type: string
+              name:
+                type: string
         diagnosticCount:
           type: integer
           minimum: 0
@@ -3087,6 +3122,11 @@ paths:
       operationId: lintDocuments
       x-openai-isConsequential: false
       summary: Lint documents by editor/workspace scope
+      description: >-
+        focused, open and document lint the current text through the lint
+        cache. workspace and all read only the cache and return at once;
+        documents never linted are listed under pending while the background
+        linter works through them.
       parameters:
         - name: scope
           in: query

@@ -512,7 +512,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Lint documents by editor/workspace scope */
+        /**
+         * Lint documents by editor/workspace scope
+         * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once; documents never linted are listed under pending while the background linter works through them.
+         */
         get: operations["lintDocuments"];
         put?: never;
         post?: never;
@@ -1245,6 +1248,13 @@ export interface components {
             open: boolean;
             focused: boolean;
             revision: components["schemas"]["DocumentRevision"];
+            /** @description True when the diagnostics are for the document's current text and current lint inputs. False when the text or an input (a bibliography, the macro sources, another document's definitions, Flowmark itself) changed after the lint; the background linter is linting it again. revision names the text the diagnostics are for. */
+            current: boolean;
+            /**
+             * Format: date-time
+             * @description When Flowmark produced these diagnostics.
+             */
+            lintedAt: string;
             diagnostics: components["schemas"]["LintDiagnostic"][];
             counts: components["schemas"]["LintSeverityCounts"];
         };
@@ -1253,6 +1263,12 @@ export interface components {
             scope: "focused" | "open" | "document" | "workspace" | "all";
             documents: components["schemas"]["DocumentLintResult"][];
             documentCount: number;
+            /** @description Documents of a workspace or all scope with no lint result yet. The background linter is linting them; request the scope again to read their diagnostics. Always empty for the other scopes. */
+            pending: {
+                documentId: string;
+                path: string;
+                name: string;
+            }[];
             diagnosticCount: number;
             counts: components["schemas"]["LintSeverityCounts"];
         };

@@ -1,4 +1,3 @@
-import { app as electronApp } from 'electron'
 import type {
   ExternalDiagnostic,
   ExternalDiagnosticAction,
@@ -6,12 +5,6 @@ import type {
   ExternalLinterRunResponse
 } from '@common/diagnostics/external-linter'
 import type { AppServiceContainer } from 'source/app/app-service-container'
-import {
-  createDocumentLintContext,
-  lintDocumentText
-} from './document-lint'
-import { documentLintAuthority } from './document-bibliographies'
-import { resolveTikzRenderConfig } from './resolve-tikz-render-config'
 import {
   externalLinterPluginPath,
   flowmarkToolPython,
@@ -39,40 +32,14 @@ async function runFlowmarkBackend (
   const sourcePath = typeof request.context?.sourcePath === 'string'
     ? request.context.sourcePath
     : ''
-  const mainLibrary = app.config.get().export.cslLibrary
-  const bibliographies = sourcePath === ''
-    ? (mainLibrary === '' ? [] : [mainLibrary])
-    : (await documentLintAuthority(app.fsal, mainLibrary, sourcePath)).bibliographies
-  const projectRoots = strings(request.context?.projectRoots)
-  const config = app.config.get()
-  const shared = await createDocumentLintContext({
-    homeDirectory: electronApp.getPath('home'),
-    env: process.env,
-    referenceState: app.references.getSnapshot(),
-    tikzRenderConfig: resolveTikzRenderConfig(
-      config.tikz.dataDir,
-      config.tikz.figuresDir,
-      electronApp.getPath('home'),
-      electronApp.getPath('userData'),
-      process.env
-    ),
-    flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs
-  })
-  const diagnostics = await lintDocumentText(
-    request.text,
-    sourcePath,
-    shared,
-    { bibliographies, projectRoots }
-  )
+  const { diagnostics } = await app.documentLint.lint(sourcePath, request.text)
   return {
     diagnostics: diagnostics.map((diagnostic): ExternalDiagnostic => ({
       from: diagnostic.from,
       to: diagnostic.to,
       severity: diagnostic.severity,
       message: diagnostic.message,
-      source: diagnostic.rule === undefined
-        ? diagnostic.source
-        : diagnostic.source + ' (' + diagnostic.rule + ')',
+      source: diagnostic.source + ' (' + diagnostic.rule + ')',
       data: diagnostic.data,
       actions: diagnostic.suggestions?.map((suggestion): ExternalDiagnosticAction => ({
         kind: 'replace',

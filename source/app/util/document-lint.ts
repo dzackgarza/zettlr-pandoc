@@ -25,8 +25,24 @@ export interface CreateDocumentLintContextOptions {
   flowmarkLintTimeoutMs: number;
 }
 
-/** Every diagnostic this adapter emits names the Flowmark rule or failure kind behind it. */
-type RuledSourceLintDiagnostic = SourceLintDiagnostic & { rule: string };
+/**
+ * One diagnostic as every consumer reads it: the source range as offsets and
+ * as 1-based line/column positions, and the Flowmark rule or failure kind
+ * behind it.
+ */
+export type DocumentLintDiagnostic = SourceLintDiagnostic & {
+  rule: string;
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+};
+
+export interface DocumentLintOutcome {
+  diagnostics: DocumentLintDiagnostic[];
+  /** False when Flowmark itself failed; the diagnostics then report that failure. */
+  complete: boolean;
+}
 
 /** Omitting `bibliographies` lets Flowmark use the document's own `bibliography` metadata. */
 export interface DocumentLintDocumentOptions {
@@ -42,6 +58,34 @@ function offsetForLineColumn(text: string, line: number, column: number): number
     offset += lines[index].length + 1;
   }
   return Math.min(offset + lines[lineIndex].length, offset + Math.max(0, Math.trunc(column) - 1));
+}
+
+function positionForOffset(text: string, offset: number): { line: number; column: number } {
+  const bounded = Math.max(0, Math.min(offset, text.length));
+  let line = 1;
+  let lineStart = 0;
+  for (let index = 0; index < bounded; index += 1) {
+    if (text[index] === "\n") {
+      line += 1;
+      lineStart = index + 1;
+    }
+  }
+  return { line, column: bounded - lineStart + 1 };
+}
+
+function positioned(
+  text: string,
+  diagnostic: SourceLintDiagnostic & { rule: string },
+): DocumentLintDiagnostic {
+  const start = positionForOffset(text, diagnostic.from);
+  const end = positionForOffset(text, diagnostic.to);
+  return {
+    ...diagnostic,
+    line: start.line,
+    column: start.column,
+    endLine: end.line,
+    endColumn: end.column,
+  };
 }
 
 export async function createDocumentLintContext(
@@ -61,8 +105,8 @@ export async function lintDocumentText(
   documentPath: string,
   context: DocumentLintSharedContext,
   options: DocumentLintDocumentOptions = {},
-): Promise<SourceLintDiagnostic[]> {
-  const diagnostics: RuledSourceLintDiagnostic[] = [];
+): Promise<DocumentLintOutcome> {
+  const diagnostics: DocumentLintDiagnostic[] = [];
   const flowmarkContext = await buildFlowmarkLintContext(
     text,
     documentPath,
@@ -77,7 +121,7 @@ export async function lintDocumentText(
   });
   if (flowmark.ok) {
     for (const diagnostic of flowmark.diagnostics) {
-      diagnostics.push({
+      diagnostics.push(positioned(text, {
         from: offsetForLineColumn(text, diagnostic.line, diagnostic.column),
         to: offsetForLineColumn(text, diagnostic.end_line, diagnostic.end_column),
         severity: diagnostic.severity,
@@ -86,24 +130,27 @@ export async function lintDocumentText(
         rule: diagnostic.rule,
         suggestions: diagnostic.suggestions,
         data: diagnostic.data,
-      });
+      }));
     }
   } else {
-    diagnostics.push({
+    diagnostics.push(positioned(text, {
       from: 0,
       to: Math.min(1, text.length),
       severity: "error",
       message: `Flowmark could not lint this document: ${flowmark.message}`,
       source: "Flowmark",
       rule: flowmark.kind,
-    });
+    }));
   }
 
-  return diagnostics.sort(
-    (a, b) =>
-      a.from - b.from ||
-      a.to - b.to ||
-      a.severity.localeCompare(b.severity) ||
-      a.rule.localeCompare(b.rule),
-  );
+  return {
+    complete: flowmark.ok,
+    diagnostics: diagnostics.sort(
+      (a, b) =>
+        a.from - b.from ||
+        a.to - b.to ||
+        a.severity.localeCompare(b.severity) ||
+        a.rule.localeCompare(b.rule),
+    ),
+  };
 }

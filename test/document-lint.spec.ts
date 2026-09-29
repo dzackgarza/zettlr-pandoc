@@ -60,7 +60,7 @@ describe("main-process document lint", function () {
       "",
     ].join("\n");
 
-    const diagnostics = await lintDocumentText(markdown, path.join(root, "broken.md"), context);
+    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "broken.md"), context);
     const compile = diagnostics.find((diagnostic) => diagnostic.rule === "tikz/compile-error");
     assert.ok(compile !== undefined);
     assert.equal(compile.severity, "error");
@@ -94,7 +94,7 @@ describe("main-process document lint", function () {
       "U\\oplus\\latI_{0,7}$ and $e^{\\perp}/e\\cong U\\oplus\\latI_{0,7}\\cong\\latI_{1,8}$,",
     ].join("\n");
 
-    const diagnostics = await lintDocumentText(markdown, path.join(root, "math.md"), context);
+    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "math.md"), context);
     const structuralFailures = diagnostics
       .map((diagnostic) => diagnostic.rule)
       .filter((rule) =>
@@ -122,7 +122,7 @@ describe("main-process document lint", function () {
     });
     const markdown = "Let $sin x = 0$.\n";
 
-    const diagnostics = await lintDocumentText(markdown, path.join(root, "operator.md"), context);
+    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "operator.md"), context);
     const operator = diagnostics.find((diagnostic) => diagnostic.rule === "math/bare-operator");
     assert.ok(operator !== undefined);
     assert.equal(markdown.slice(operator.from, operator.to), "sin");
@@ -150,7 +150,7 @@ describe("main-process document lint", function () {
     );
     const markdown = "Following @FS86 and @FS87.\n";
 
-    const diagnostics = await lintDocumentText(markdown, path.join(root, "chapter.md"), context, {
+    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "chapter.md"), context, {
       bibliographies: [bibliography],
     });
     const missing = diagnostics
