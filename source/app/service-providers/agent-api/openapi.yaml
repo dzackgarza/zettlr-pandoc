@@ -676,6 +676,11 @@ components:
         open:
           type: boolean
           description: Whether the file is currently loaded in the editor.
+        linkTarget:
+          type: string
+          description: >-
+            How other documents link to this Markdown file: [[linkTarget]]. The
+            shortest path suffix that names it alone. Absent for other files.
     WorkspaceFilesResponse:
       type: object
       required:

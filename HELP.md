@@ -217,7 +217,8 @@ decides:
 3. an entry of the document's YAML `aliases`;
 4. the document's YAML `title`.
 
-Write the shortest name that matches one document only. A name survives a move
+Write the shortest name that matches one document only; `GET /v1/workspace/files`
+gives it for each file as `linkTarget`. A name survives a move
 of either file; a relative path such as `[[../programs/cusp-correspondence.md]]`
 does not. `#` and a heading after the name go to that heading:
 `[[cusp-correspondence#Main result]]`.

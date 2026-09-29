@@ -747,6 +747,8 @@ export interface components {
             workspaceId: string;
             /** @description Whether the file is currently loaded in the editor. */
             open: boolean;
+            /** @description How other documents link to this Markdown file: [[linkTarget]]. The shortest path suffix that names it alone. Absent for other files. */
+            linkTarget?: string;
         };
         WorkspaceFilesResponse: {
             files: components["schemas"]["WorkspaceFileEntry"][];

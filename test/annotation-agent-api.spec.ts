@@ -47,6 +47,7 @@ import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
+import { WikilinkIndex } from "@common/util/wikilink-resolution";
 import { sha256Text } from "@common/util/sha256";
 
 // ============================================================================
@@ -275,6 +276,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     };
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
       config,
+      links: { index: new WikilinkIndex([]) },
       search: createSearch(),
       documentLint: new DocumentLintProvider({
         log: new LogProvider(),

@@ -37,6 +37,7 @@ import fs from "fs";
 import path from "path";
 import vm from "vm";
 import { sha256Text } from "@common/util/sha256";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import makeSearchRegex from "source/common/util/make-search-regex";
 import {
   normalizeText,
@@ -102,6 +103,7 @@ export interface AgentDocumentQueryHost {
   config: {
     get: () => { app: { openWorkspaces: string[] } };
   };
+  links: { readonly index: WikilinkIndex };
 }
 
 /**
@@ -403,6 +405,7 @@ export default class AgentDocumentQueries {
 
   public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
     const files: WorkspaceFileEntry[] = [];
+    const wikilinks = this.app.links.index;
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
       for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
         files.push({
@@ -411,6 +414,7 @@ export default class AgentDocumentQueries {
           name: path.basename(filePath),
           workspaceId: workspacePath,
           open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
+          ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
         });
       }
     }

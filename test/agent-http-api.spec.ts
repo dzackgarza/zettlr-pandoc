@@ -67,6 +67,7 @@ import LogProvider from "source/app/service-providers/log";
 import { sha256Text } from "source/common/util/sha256";
 import { parse as parseYaml } from "yaml";
 import { userData } from "./headless-electron-harness.cjs";
+import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 
 // ============================================================================
 // Contract conformance
@@ -234,6 +235,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // The configured workspace set, read live by the config seam so a test can
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
+  const links = { index: new WikilinkIndex([]) };
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -551,6 +553,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         config,
         search: createSearch(),
         documentLint,
+        links,
       },
       undefined,
       undefined,
@@ -816,6 +819,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       search: createSearch(),
       documentLint,
+      links,
     });
 
     try {
@@ -1640,6 +1644,37 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(file.open, false);
   });
 
+  it("GET /v1/workspace/files names each Markdown file by its shortest unique wikilink", async function () {
+    const relativePaths = ["programs/cusp-chain.md", "a/moduli.md", "b/moduli.md"];
+    for (const relative of relativePaths) {
+      mkdirSync(path.dirname(path.join(scratch, relative)), { recursive: true });
+      writeFileSync(path.join(scratch, relative), "# Note\n", "utf8");
+    }
+    links.index = new WikilinkIndex(relativePaths.map((relative) => ({
+      path: path.join(scratch, relative),
+      root: scratch,
+      id: "",
+      title: undefined,
+      aliases: [],
+    })));
+    try {
+      const response = await httpRequest("GET", "/v1/workspace/files");
+      assert.equal(response.status, 200);
+      const body = JSON.parse(response.body) as { files: Array<{ path: string; linkTarget?: string }> };
+      assertMatchesSchema(body, "WorkspaceFilesResponse");
+      const linkTargets = Object.fromEntries(body.files
+        .filter((entry) => entry.linkTarget !== undefined)
+        .map((entry) => [path.relative(scratch, entry.path), entry.linkTarget]));
+      assert.deepEqual(linkTargets, {
+        "programs/cusp-chain.md": "cusp-chain",
+        "a/moduli.md": "a/moduli",
+        "b/moduli.md": "b/moduli",
+      });
+    } finally {
+      links.index = new WikilinkIndex([]);
+    }
+  });
+
   it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
     const response = await httpRequest("GET", "/v1/macros");
     assert.equal(response.status, 200, response.body);
@@ -1949,6 +1984,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
           search: createSearch(),
           documentLint,
+          links,
         },
         undefined,
         DEADLINE_MS,

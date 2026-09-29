@@ -100,6 +100,7 @@ import AgentDocumentQueries, {
   SearchPatternError,
   SearchTimeoutError,
 } from "./document-queries";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
 
@@ -313,6 +314,7 @@ export interface AgentApiHost {
   documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+  links: { readonly index: WikilinkIndex };
 }
 
 export interface AgentApiRuntimeEnvironment {
