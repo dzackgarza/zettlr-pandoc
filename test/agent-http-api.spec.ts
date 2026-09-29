@@ -22,12 +22,17 @@ import "./headless-electron-harness.cjs";
 
 import type {
   AgentErrorResponse,
+  DiscardReviewResponse,
   FigureFileResponse,
   FigureListResponse,
   FigureSearchResponse,
   LintResponse,
   MacroInventoryResponse,
   ReadDocumentResponse,
+  ReapplyReviewRequest,
+  RetractProposalResponse,
+  ReviewDetailResponse,
+  ReviewMutationPrecondition,
   WorkspaceSearchResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
@@ -369,6 +374,36 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = provider.getDocumentId(filePath);
     assert.ok(docId !== undefined, "documentId must be assigned");
     return docId;
+  }
+
+  /** Open a file in the first pane, and return its documentId. */
+  async function openInPane(filePath: string, content: string): Promise<string> {
+    writeFileSync(filePath, content, "utf8");
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, leafId, filePath), true);
+    const documentId = provider.getDocumentId(filePath);
+    assert.ok(documentId !== undefined);
+    return documentId;
+  }
+
+  /**
+   * Close the file with its review saved, change it on disk, and open it
+   * again: the review that comes back no longer matches the file.
+   */
+  async function reopenAfterDiskEdit(filePath: string, diskText: string): Promise<void> {
+    const windowId = provider.windowKeys()[0];
+    const leafId = provider.leafIds(windowId)[0];
+    assert.ok(leafId !== undefined);
+    saveDialogResponse = 0;
+    assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
+    writeFileSync(filePath, diskText, "utf8");
+    const reopenedLeafId = provider.leafIds(windowId)[0];
+    assert.ok(reopenedLeafId !== undefined);
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
   }
 
   async function httpRequest(
@@ -927,8 +962,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(
       operations.length,
-      29,
-      "the consolidated OpenAPI spec must define exactly 29 operations",
+      30,
+      "the consolidated OpenAPI spec must define exactly 30 operations",
     );
     for (const { route, method, operation } of operations) {
       assert.equal(
@@ -1425,14 +1460,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
   it("reads a review frozen by disk drift, and reapplies it onto the current file", async function () {
     const filePath = path.join(scratch, "frozen-review.md");
-    writeFileSync(filePath, "alpha\nbeta\n", "utf8");
-    const windowId = provider.windowKeys()[0];
-    const leafId = provider.leafIds(windowId)[0];
-    assert.ok(leafId !== undefined);
-    await provider.getDocument(filePath);
-    assert.equal(await provider.openFile(windowId, leafId, filePath), true);
-    const documentId = provider.getDocumentId(filePath);
-    assert.ok(documentId !== undefined);
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
     const submitted = await provider.submitProposal(
       documentId,
       sha256Text("alpha\nbeta\n"),
@@ -1452,13 +1480,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(live.status, 409);
     assert.equal(JSON.parse(live.body).error.code, "REVIEW_NOT_INVALIDATED");
 
-    saveDialogResponse = 0;
-    assert.equal(await provider.closeFile(windowId, leafId, filePath), true);
-    writeFileSync(filePath, "alpha\nBETA\ngamma\n", "utf8");
-    const reopenedLeafId = provider.leafIds(windowId)[0];
-    assert.ok(reopenedLeafId !== undefined);
-    await provider.getDocument(filePath);
-    assert.equal(await provider.openFile(windowId, reopenedLeafId, filePath), true);
+    await reopenAfterDiskEdit(filePath, "alpha\nBETA\ngamma\n");
 
     const frozen = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}`);
     assert.equal(frozen.status, 200, frozen.body);
@@ -1477,6 +1499,78 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.unresolvedChunks, 1);
     assert.deepEqual(body.withdrawnChunkIds, []);
     assert.equal(body.state, "active");
+  });
+
+  it("retracts a proposal and discards a frozen review through MCP", async function () {
+    const filePath = path.join(scratch, "mcp-recovery.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const capitalize = {
+      description: "capitalize beta",
+      patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
+    };
+    const first = await provider.submitProposal(documentId, sha256Text("alpha\nbeta\n"), [capitalize], "mcp-first", 0);
+    if (!first.ok) {
+      assert.fail(`The first proposal was refused: ${first.code}`);
+    }
+    const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+    );
+    const call = async <Body>(
+      name: string,
+      args: Record<string, string | ReviewMutationPrecondition | ReapplyReviewRequest>,
+    ): Promise<{ isError: boolean; body: Body }> => {
+      const result = await client.callTool({ name, arguments: args });
+      const [content] = result.content as Array<{ type: "text"; text: string }>;
+      return { isError: result.isError === true, body: JSON.parse(content.text) as Body };
+    };
+    try {
+      const retracted = await call<RetractProposalResponse>("retractProposal", {
+        packetId: first.packetIds[0],
+        body: {
+          expectedReviewGeneration: first.reviewGeneration,
+          expectedWorkingSha256: sha256Text("alpha\nBETA\n"),
+        },
+      });
+      assert.equal(retracted.isError, false, JSON.stringify(retracted.body));
+      assertMatchesSchema(retracted.body, "RetractProposalResponse");
+
+      const second = await provider.submitProposal(
+        documentId,
+        sha256Text("alpha\nbeta\n"),
+        [capitalize],
+        "mcp-second",
+        retracted.body.reviewGeneration,
+      );
+      if (!second.ok) {
+        assert.fail(`The second proposal was refused: ${second.code}`);
+      }
+      await reopenAfterDiskEdit(filePath, "alpha\nBETA\ngamma\n");
+      const frozen = await call<ReviewDetailResponse>("getReview", { reviewId: second.reviewId });
+      assert.equal(frozen.body.state, "invalidated");
+
+      const refused = await call<AgentErrorResponse>("retractProposal", {
+        packetId: second.packetIds[0],
+        body: {
+          expectedReviewGeneration: frozen.body.generation,
+          expectedWorkingSha256: sha256Text("alpha\nBETA\ngamma\n"),
+        },
+      });
+      assert.equal(refused.isError, true);
+      assert.equal(refused.body.error.code, "REVIEW_INVALIDATED");
+
+      const discarded = await call<DiscardReviewResponse>("discardReview", {
+        reviewId: second.reviewId,
+        body: { expectedReviewGeneration: frozen.body.generation },
+      });
+      assert.equal(discarded.isError, false, JSON.stringify(discarded.body));
+      assertMatchesSchema(discarded.body, "DiscardReviewResponse");
+      const gone = await call<AgentErrorResponse>("getReview", { reviewId: second.reviewId });
+      assert.equal(gone.body.error.code, "REVIEW_NOT_FOUND");
+      assert.equal(readFileSync(filePath, "utf8"), "alpha\nBETA\ngamma\n");
+    } finally {
+      await client.close();
+    }
   });
 
   it("returns a patch refusal without opening an unopened document", async function () {

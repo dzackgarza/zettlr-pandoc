@@ -25,7 +25,6 @@ import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import { sha256Text } from "@common/util/sha256";
 import type {
   AddAnnotationMessageRequest,
-  AddReviewCommentRequest,
   AgentApiOperations,
   AgentApiResponseBody,
   AgentError,
@@ -34,17 +33,14 @@ import type {
   AgentErrorResponse,
   AgentEvent,
   FigureCreateRequest,
-  FigureSaveRequest,
   FigureWriteRequest,
   LintDiagnostic,
   LintResponse,
   LintSeverityCounts,
   PingResponse,
-  ReapplyReviewRequest,
   ReadSide,
   RenderBibliographyRequest,
   RenderCitationRequest,
-  RenderCitationsRequest,
   ReviewEventsResponse,
   ReviewListEntry,
   ReviewMutationPrecondition,
@@ -255,13 +251,21 @@ class RequestAbandonedError extends Error {
  * What openapi-backend hands a handler once it has matched the request against
  * the document and validated it. Its own Context types params, query and body
  * as `any`; naming the operation here recovers the shapes the document already
- * declares, so a handler reads validated values rather than `any`.
+ * declares, so a handler reads validated values rather than `any`. An
+ * operation without a request body reads `undefined`, so a handler that needs
+ * a body the document does not declare fails to compile.
  */
-type OperationContext<Id extends keyof AgentApiOperations, Body = unknown> = Context<
-  Body,
+type OperationContext<Id extends keyof AgentApiOperations> = Context<
+  OperationBody<Id>,
   OrEmpty<AgentApiOperations[Id]["parameters"]["path"]>,
   OrEmpty<AgentApiOperations[Id]["parameters"]["query"]>
 >;
+
+type OperationBody<Id extends keyof AgentApiOperations> = AgentApiOperations[Id] extends {
+  requestBody: { content: { "application/json": infer Body } };
+}
+  ? Body
+  : undefined;
 
 /** The generated operations write `never` for a parameter section an operation has none of. */
 type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
@@ -806,17 +810,17 @@ export default class AgentHTTPProvider extends ProviderContract {
       focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
         this.handleFocusDocument(res, c.request.params.documentId),
       searchDocument: (
-        c: OperationContext<"searchDocument", SearchDocumentRequest>,
+        c: OperationContext<"searchDocument">,
         _req,
         res: http.ServerResponse,
       ) => this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
       submitProposal: (
-        c: OperationContext<"submitProposal", SubmitProposalRequest>,
+        c: OperationContext<"submitProposal">,
         _req,
         res: http.ServerResponse,
       ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
       submitReview: (
-        c: OperationContext<"submitReview", ReviewSubmissionRequest>,
+        c: OperationContext<"submitReview">,
         _req,
         res: http.ServerResponse,
       ) => this.handleReviewSubmission(res, c.request.requestBody),
@@ -834,7 +838,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
         this.handleGetAnnotation(res, c.request.params.annotationId),
       addAnnotationMessage: (
-        c: OperationContext<"addAnnotationMessage", AddAnnotationMessageRequest>,
+        c: OperationContext<"addAnnotationMessage">,
         _req,
         res: http.ServerResponse,
       ) =>
@@ -863,7 +867,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
       },
       addReviewComment: (
-        c: OperationContext<"addReviewComment", AddReviewCommentRequest>,
+        c: OperationContext<"addReviewComment">,
         _req,
         res: http.ServerResponse,
       ) =>
@@ -874,7 +878,7 @@ export default class AgentHTTPProvider extends ProviderContract {
           c.request.requestBody.expectedReviewGeneration,
         ),
       reapplyReview: (
-        c: OperationContext<"reapplyReview", ReapplyReviewRequest>,
+        c: OperationContext<"reapplyReview">,
         _req,
         res: http.ServerResponse,
       ) =>
@@ -883,8 +887,18 @@ export default class AgentHTTPProvider extends ProviderContract {
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
+      discardReview: (
+        c: OperationContext<"discardReview">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleDiscardReview(
+          res,
+          c.request.params.reviewId,
+          c.request.requestBody.expectedReviewGeneration,
+        ),
       retractProposal: (
-        c: OperationContext<"retractProposal", ReviewMutationPrecondition>,
+        c: OperationContext<"retractProposal">,
         _req,
         res: http.ServerResponse,
       ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
@@ -908,7 +922,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return this.handleListCitationItems(res, c.request.query.database);
       },
       renderCitations: (
-        c: OperationContext<"renderCitations", RenderCitationsRequest>,
+        c: OperationContext<"renderCitations">,
         _req,
         res: http.ServerResponse,
       ) => {
@@ -978,7 +992,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         return this.handleListFigures(res);
       },
       saveFigure: (
-        c: OperationContext<"saveFigure", FigureSaveRequest>,
+        c: OperationContext<"saveFigure">,
         _req,
         res: http.ServerResponse,
       ) => {
@@ -1761,6 +1775,25 @@ export default class AgentHTTPProvider extends ProviderContract {
       withdrawnChunkIds: result.withdrawnChunkIds,
       state: result.state,
     });
+  }
+
+  private async handleDiscardReview(
+    res: http.ServerResponse,
+    reviewId: string,
+    expectedReviewGeneration: number,
+  ): Promise<void> {
+    const result = await this._documents.discardInvalidatedReview(reviewId, expectedReviewGeneration);
+    if (!result.ok) {
+      this.sendError(
+        res,
+        STATUS_BY_CODE[result.code],
+        result.code,
+        result.message,
+        AgentHTTPProvider.conflictDetail(result),
+      );
+      return;
+    }
+    this.sendJson(res, 200, { reviewId: result.reviewId, documentId: result.documentId });
   }
 
   /**

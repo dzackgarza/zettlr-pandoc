@@ -379,6 +379,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/reviews/{reviewId}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard an invalidated review
+         * @description Removes an invalidated review and its frozen suggestions. The file keeps its current text. Discard a review whose changes are already in the file, or no longer apply.
+         */
+        post: operations["discardReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/proposals/{packetId}/retract": {
         parameters: {
             query?: never;
@@ -507,7 +527,7 @@ export interface components {
             sha256: string;
         };
         /**
-         * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, and call reapplyReview to map them onto the current text. The owner can also discard the review.
+         * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
          * @enum {string}
          */
         ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
@@ -806,7 +826,7 @@ export interface components {
             packets: components["schemas"]["ProposalPacket"][];
         };
         ReapplyReviewRequest: {
-            /** @description See ReviewMutationPrecondition. Reapply maps the review onto the current text, whatever it is, so it carries no working hash. */
+            /** @description See ReviewMutationPrecondition. Reapply and discard do not depend on the current text, so they carry no working hash. */
             expectedReviewGeneration: number;
         };
         ReapplyReviewResponse: {
@@ -817,6 +837,10 @@ export interface components {
             /** @description The suggestions whose text the current file no longer holds. They are withdrawn; submit them again as new proposals if they still apply. */
             withdrawnChunkIds: string[];
             state: components["schemas"]["ReviewState"];
+        };
+        DiscardReviewResponse: {
+            reviewId: string;
+            documentId: string;
         };
         RetractProposalResponse: {
             /** @constant */
@@ -2003,6 +2027,50 @@ export interface operations {
             };
         };
     };
+    discardReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReapplyReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description The review is discarded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscardReviewResponse"];
+                };
+            };
+            /** @description Review not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description The review is still current, or its generation moved. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
     retractProposal: {
         parameters: {
             query?: never;
@@ -2012,7 +2080,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewMutationPrecondition"];
+            };
+        };
         responses: {
             /** @description Proposal retracted */
             200: {

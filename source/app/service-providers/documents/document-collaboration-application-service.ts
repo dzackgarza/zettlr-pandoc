@@ -1936,6 +1936,10 @@ export class CollaborationApplicationService {
       if ("ok" in context) {
         return { ...context, reviewId: owner.reviewId, canClearUnresolved: false };
       }
+      const fence = await this.checkDiskFence(context);
+      if (!fence.ok) {
+        return { ...fence, reviewId: owner.reviewId, canClearUnresolved: false };
+      }
       const stale = this.checkPrecondition(context, precondition);
       if (stale !== undefined) {
         return { ...stale, reviewId: owner.reviewId, canClearUnresolved: true };

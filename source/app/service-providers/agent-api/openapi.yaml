@@ -32,8 +32,8 @@ components:
       description: >-
         invalidated means the file changed on disk under the review. Its
         suggestions are frozen against the text they were made in: read them
-        with view=chunks or view=diff, and call reapplyReview to map them onto
-        the current text. The owner can also discard the review.
+        with view=chunks or view=diff, then call reapplyReview to map them onto
+        the current text, or discardReview to remove them.
       enum:
         - active
         - resolved-awaiting-save
@@ -907,8 +907,8 @@ components:
           type: integer
           minimum: 0
           description: >-
-            See ReviewMutationPrecondition. Reapply maps the review onto the
-            current text, whatever it is, so it carries no working hash.
+            See ReviewMutationPrecondition. Reapply and discard do not depend
+            on the current text, so they carry no working hash.
     ReapplyReviewResponse:
       type: object
       additionalProperties: false
@@ -938,6 +938,17 @@ components:
             type: string
         state:
           $ref: '#/components/schemas/ReviewState'
+    DiscardReviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - reviewId
+        - documentId
+      properties:
+        reviewId:
+          type: string
+        documentId:
+          type: string
     RetractProposalResponse:
       type: object
       required:
@@ -2742,6 +2753,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentErrorResponse'
+  /v1/reviews/{reviewId}/discard:
+    post:
+      operationId: discardReview
+      x-openai-isConsequential: false
+      summary: Discard an invalidated review
+      description: >-
+        Removes an invalidated review and its frozen suggestions. The file
+        keeps its current text. Discard a review whose changes are already in
+        the file, or no longer apply.
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReapplyReviewRequest'
+      responses:
+        '200':
+          description: The review is discarded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscardReviewResponse'
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: The review is still current, or its generation moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
@@ -2753,6 +2804,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMutationPrecondition'
       responses:
         '200':
           description: Proposal retracted

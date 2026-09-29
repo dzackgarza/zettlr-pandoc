@@ -69,6 +69,7 @@ export type AddReviewCommentRequest = Schemas["AddReviewCommentRequest"];
 export type ReviewCommentResponse = Schemas["ReviewCommentResponse"];
 export type RetractProposalResponse = Schemas["RetractProposalResponse"];
 export type ReapplyReviewRequest = Schemas["ReapplyReviewRequest"];
+export type DiscardReviewResponse = Schemas["DiscardReviewResponse"];
 export type FocusDocumentResponse = Schemas["FocusDocumentResponse"];
 export type DocumentListResponse = Schemas["DocumentListResponse"];
 export type ViewSummary = Schemas["ViewSummary"];
