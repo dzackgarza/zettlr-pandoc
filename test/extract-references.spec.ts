@@ -348,6 +348,29 @@ The theorem body.
     )
   })
 
+  it('reads a raw-attribute code block as raw content, not as an attribute list', function () {
+    const content = [
+      '```{=html}',
+      '<iframe src="graph.html" title="Interactive graph"></iframe>',
+      '```',
+      '',
+      '```{=latex}',
+      '\\begin{center}x\\end{center}',
+      '```',
+      '',
+      '```{.python #lst:after-raw}',
+      'print(1)',
+      '```',
+      ''
+    ].join('\n')
+    const snapshot = extractReferences('raw-blocks.md', content)
+
+    assert.deepStrictEqual(
+      snapshot.definitions.map(definition => content.slice(definition.range.from, definition.range.to)),
+      ['#lst:after-raw']
+    )
+  })
+
   it('never fabricates definitions from unclosed attribute-block near-misses (review C8)', function () {
     // A heading whose attribute block never closes is structurally not a
     // labeled definition; the citing occurrence still extracts and simply
