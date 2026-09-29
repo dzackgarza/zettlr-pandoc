@@ -77,6 +77,7 @@ describe('MarkdownEditor review activation at readiness', function () {
       reviewGeneration: 1,
       documentPath: path,
       workingText,
+      frozenText: undefined,
       suggestions: [{
         suggestionId: 'suggestion-ready',
         removedText: 'baseline',
@@ -97,6 +98,10 @@ describe('MarkdownEditor review activation at readiness', function () {
     assert.equal(editor.instance.dom.classList.contains('review-diff-active'), true)
     assert.equal(editor.instance.dom.querySelectorAll('.cm-changedText').length, 1)
     assert.equal(editor.instance.dom.querySelectorAll('.cm-deletedText').length, 1)
+
+    editor.startReviewDiffSession({ ...review, reviewGeneration: 2, frozenText: 'the text the review was made in\n' })
+    assert.equal(editor.instance.dom.classList.contains('review-diff-active'), false)
+    assert.equal(editor.instance.dom.querySelectorAll('.cm-changedText').length, 0)
     editor.unmount()
   })
 })

@@ -37,13 +37,45 @@
           {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
         </span>
         <button
-          v-if="group.suggestions.length > 0"
+          v-if="group.suggestions.length > 0 && !group.frozen"
           type="button"
           class="annotation-button annotation-document-accept-all"
           v-bind:disabled="globalAcceptBusy || acceptingDocuments.has(group.documentPath)"
           v-on:click="acceptAllDocument(group.documentPath)"
         >{{ trans('Accept all') }}</button>
       </header>
+
+      <div
+        v-if="group.frozen"
+        class="annotation-frozen-review"
+      >
+        <p class="annotation-frozen-reason">
+          {{ trans('The file changed on disk after this review opened, so its suggestions are frozen.') }}
+        </p>
+        <div class="annotation-frozen-actions">
+          <button
+            type="button"
+            class="annotation-button annotation-frozen-reapply"
+            v-bind:title="trans('Map the suggestions onto the current text. Suggestions whose text is gone are withdrawn.')"
+            v-bind:disabled="recoveringDocuments.has(group.documentPath)"
+            v-on:click="recover(group.documentPath, 'reapply')"
+          >{{ trans('Reapply') }}</button>
+          <button
+            type="button"
+            class="annotation-button annotation-frozen-return"
+            v-bind:title="trans('Ask the agent to reapply the review or submit its changes again.')"
+            v-bind:disabled="recoveringDocuments.has(group.documentPath)"
+            v-on:click="recover(group.documentPath, 'return')"
+          >{{ trans('Return to agent') }}</button>
+          <button
+            type="button"
+            class="annotation-button annotation-frozen-discard"
+            v-bind:title="trans('Remove the review. The file keeps its text.')"
+            v-bind:disabled="recoveringDocuments.has(group.documentPath)"
+            v-on:click="recover(group.documentPath, 'discard')"
+          >{{ trans('Discard') }}</button>
+        </div>
+      </div>
 
       <div class="annotation-document-items">
         <button
@@ -131,6 +163,8 @@ interface WorkspaceAnnotationGroup {
   documentName: string
   annotations: AnnotationCardView[]
   suggestions: SuggestionNavigatorView[]
+  /** The review is frozen: see ReviewDiffSession.frozenText. */
+  frozen: boolean
 }
 
 const props = defineProps<{
@@ -146,6 +180,7 @@ const collaborationStore = useDocumentCollaborationStore()
 const filterQuery = ref('')
 const globalAcceptBusy = ref(false)
 const acceptingDocuments = reactive(new Set<string>())
+const recoveringDocuments = reactive(new Set<string>())
 
 watch(() => props.workspacePaths, paths => {
   collaborationStore.refreshWorkspaceSessions(paths)
@@ -168,7 +203,8 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() => collaborationStore.wor
       documentPath: session.documentPath,
       documentName: pathBasename(session.documentPath),
       annotations,
-      suggestions
+      suggestions,
+      frozen: session.review?.frozenText !== undefined
     }
   })
   .filter(group => group.annotations.length > 0 || group.suggestions.length > 0)
@@ -176,7 +212,8 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() => collaborationStore.wor
     left.documentPath.localeCompare(right.documentPath)))
 
 const outstandingSuggestionCount = computed(() => collaborationStore.workspaceSessions
-  .reduce((count, session) => count + (session.review?.suggestions.length ?? 0), 0))
+  .reduce((count, session) => count +
+    (session.review === undefined || session.review.frozenText !== undefined ? 0 : session.review.suggestions.length), 0))
 
 function annotationRange (card: AnnotationCardView): SourceRange | undefined {
   const anchor = card.annotation.anchor
@@ -219,6 +256,35 @@ async function acceptAllDocument (documentPath: string): Promise<void> {
     reportError('[AnnotationsTab] Could not accept document review', err)
   } finally {
     acceptingDocuments.delete(documentPath)
+  }
+}
+
+/** Reapply, return or discard the frozen review of one document. */
+async function recover (documentPath: string, action: 'reapply' | 'return' | 'discard'): Promise<void> {
+  if (recoveringDocuments.has(documentPath)) {
+    return
+  }
+  recoveringDocuments.add(documentPath)
+  try {
+    if (action === 'reapply') {
+      const result = await collaborationStore.reapplyReview(documentPath)
+      if (!result.ok) {
+        showToast(`${pathBasename(documentPath)}: ${result.message}`, 'error')
+      } else if (result.withdrawnChunkIds.length > 0) {
+        showToast(trans('%s suggestions no longer match the text and were withdrawn.', String(result.withdrawnChunkIds.length)), 'info')
+      }
+      return
+    }
+    const result = action === 'return'
+      ? await collaborationStore.returnReview(documentPath)
+      : await collaborationStore.discardReview(documentPath)
+    if (!result.ok) {
+      showToast(`${pathBasename(documentPath)}: ${result.message}`, 'error')
+    }
+  } catch (err) {
+    reportError('[AnnotationsTab] Could not recover the review', err)
+  } finally {
+    recoveringDocuments.delete(documentPath)
   }
 }
 
@@ -301,6 +367,27 @@ body {
 
   .annotation-document-accept-all {
     flex: 0 0 auto;
+  }
+
+  .annotation-frozen-review {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
+    border-left: 3px solid var(--annotation-warning);
+    border-radius: 4px;
+    background: var(--annotation-surface-muted);
+  }
+
+  .annotation-frozen-reason {
+    margin: 0;
+    font-size: var(--annotation-small-font-size);
+  }
+
+  .annotation-frozen-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .annotation-document-items {

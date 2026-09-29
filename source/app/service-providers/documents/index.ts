@@ -561,6 +561,9 @@ export type DocumentIpcHandlers = {
   'documents:discard-invalidated-review': (
     input: ReviewRecoveryIpcInput,
   ) => DiscardReviewResponse | ReviewFailure
+  'documents:return-invalidated-review': (
+    input: ReviewRecoveryIpcInput,
+  ) => AddReviewCommentResponse | ReviewFailure
   'documents:create-annotation': (
     input: CreateAnnotationIpcInput,
   ) => TextAnnotation | AnnotationFailure
@@ -833,6 +836,10 @@ export default class DocumentManager
     })
     operations.handle('documents:discard-invalidated-review', async (_event, input) => {
       return await this.discardInvalidatedReview(input.reviewId, input.expectedReviewGeneration)
+    })
+    operations.handle('documents:return-invalidated-review', async (_event, input) => {
+      const recovery = await this._reviewRecoveryInput(input.reviewId, input.expectedReviewGeneration)
+      return 'ok' in recovery ? recovery : await this._reviewApplication.returnInvalidatedReview(recovery)
     })
     // The owner-facing annotation channels. Each resolves `path` to a
     // documentId before touching the application service, and each

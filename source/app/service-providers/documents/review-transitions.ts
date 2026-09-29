@@ -187,6 +187,12 @@ export const INVALIDATED_REVIEW_MESSAGE =
   "The file changed on disk after this review opened, so its suggestions are frozen. " +
   "Reapply the review to the current text, or discard it.";
 
+/** The owner's comment when a frozen review goes back to its agent. */
+export const RETURNED_REVIEW_COMMENT =
+  "The owner returned this review. The file changed on disk after it opened, so its " +
+  "suggestions are frozen. Reapply it to the current text (POST /v1/reviews/{reviewId}/reapply), " +
+  "or submit its changes again against the current text.";
+
 /** A frozen review removed; the file keeps its text. */
 export interface DiscardReviewResponse {
   ok: true;

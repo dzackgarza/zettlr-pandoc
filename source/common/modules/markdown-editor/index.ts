@@ -1113,6 +1113,13 @@ export default class MarkdownEditor extends EventEmitter {
       return
     }
 
+    // A frozen review's anchors index the text it was made in, not this
+    // buffer. Its recovery actions live in the annotations panel.
+    if (session.frozenText !== undefined) {
+      this.clearReviewDiffSession()
+      return
+    }
+
     // Never offer a decision over a renderer buffer that is not the
     // provider's authoritative working text. The next collab update retries
     // activation. Meanwhile the same review keeps its locally mapped chunks

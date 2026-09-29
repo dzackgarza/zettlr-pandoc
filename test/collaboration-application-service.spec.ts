@@ -367,6 +367,19 @@ describe("CollaborationApplicationService", function () {
       assert.ok(emitted.some(event => event.event === "review.discarded"));
     });
 
+    it("goes back to its agent as a review comment, and stays frozen", async function () {
+      const { service, emitted, reviewId, generation } = await invalidatedByAcceptAll(proposed);
+
+      const returned = await service.returnInvalidatedReview({ ...target(reviewId), expectedReviewGeneration: generation });
+
+      assert.ok(returned.ok);
+      const persisted = await service.readSidecar(DOCUMENT_PATH);
+      assert.equal(persisted?.review?.invalidated, true);
+      assert.equal(persisted?.review?.comments.length, 1);
+      assert.equal(persisted?.review?.generation, returned.reviewGeneration);
+      assert.ok(emitted.some(event => event.event === "review.commented"));
+    });
+
     it("refuses reapply and discard on a review that is still current", async function () {
       const { authority, service } = harness({ diskText: baseline });
       const submitted = await service.submitProposal({

@@ -108,6 +108,7 @@ import {
   type ClaimInput,
   type ClearReviewResponse,
   INVALIDATED_REVIEW_MESSAGE,
+  RETURNED_REVIEW_COMMENT,
   type ReapplyReviewResponse,
   type DiscardReviewResponse,
   type ReviewMutationPlan,
@@ -1758,6 +1759,59 @@ export class CollaborationApplicationService {
         this.deps.authority.broadcastReviewCleared(input.documentId, review.reviewId);
       }
       return { ok: true, reviewId: review.reviewId, documentId: input.documentId };
+    });
+  }
+
+  /**
+   * Hand a frozen review back to its agent: a review comment asking it to
+   * reapply or resubmit. The review stays frozen, and the comment reaches the
+   * agent's event long-poll as review.commented.
+   */
+  public async returnInvalidatedReview(
+    input: ReviewRecoveryInput,
+  ): Promise<AddReviewCommentResponse | ReviewFailure> {
+    return await this.withDocumentLock(input.documentId, async () => {
+      const located = await this.locateRecoverableReview(input);
+      if ("ok" in located) {
+        return located;
+      }
+      if (!located.review.invalidated) {
+        return {
+          ok: false,
+          code: "REVIEW_NOT_INVALIDATED",
+          message: "This review is still current, so there is nothing to return.",
+        };
+      }
+      const workingText = located.attached ? located.workingText : located.sidecar.workingText;
+      const plan = prepareReviewComment({ review: located.review, workingText, text: RETURNED_REVIEW_COMMENT });
+      const nextReview = plan.nextReview!;
+      try {
+        await this.sidecars.write(located.attached
+          ? this.sidecarFor(input.documentId, {
+              documentPath: input.documentPath,
+              workingText,
+              review: nextReview,
+              diskFenceSha256: nextReview.diskFenceSha256,
+            })
+          : collaborationSidecar({
+              documentPath: input.documentPath,
+              workingText,
+              diskFenceSha256: located.sidecar.diskFenceSha256,
+              review: nextReview,
+              annotations: located.sidecar.annotations,
+              pendingSave: located.sidecar.pendingSave,
+            }));
+      } catch (error) {
+        return persistenceFailure("the review return", error);
+      }
+      if (located.attached) {
+        this.reviews.replaceReview(input.documentId, nextReview);
+        this.deps.authority.broadcastCollaborationState(input.documentId);
+      }
+      for (const draft of plan.events) {
+        this.deps.emit(draft.event, draft.payload);
+      }
+      return plan.response;
     });
   }
 

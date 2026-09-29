@@ -317,6 +317,7 @@ export function reviewSessionFor(
     reviewGeneration: review.generation,
     documentPath: filePath,
     workingText,
+    frozenText: review.invalidated ? review.frozenText : undefined,
     suggestions: review.suggestions
       .filter((suggestion) => suggestion.state === "proposed")
       .map((suggestion) => {

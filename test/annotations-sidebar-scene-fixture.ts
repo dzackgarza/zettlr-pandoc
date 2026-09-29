@@ -159,6 +159,7 @@ export function buildSceneReview (): ReviewDiffSession {
     reviewGeneration: SCENE_REVIEW_GENERATION,
     documentPath: SCENE_DOCUMENT_PATH,
     workingText: SCENE_WORKING_TEXT,
+    frozenText: undefined,
     suggestions: [
       {
         suggestionId: SCENE_CHUNK_TASKS_ID,

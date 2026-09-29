@@ -236,7 +236,8 @@ export interface SuggestionNavigatorView {
   suggestionId: string
   description: string
   contextText: string
-  range: SourceRange
+  /** Absent for a frozen review, whose anchors index text the file no longer holds. */
+  range: SourceRange | undefined
 }
 
 /**
@@ -246,7 +247,7 @@ export interface SuggestionNavigatorView {
  * context, then navigate to that exact range.
  */
 export function buildSuggestionNavigatorRows (review: ReviewDiffSession): SuggestionNavigatorView[] {
-  const doc = Text.of(review.workingText.split('\n'))
+  const doc = Text.of((review.frozenText ?? review.workingText).split('\n'))
   return review.suggestions.map(suggestion => {
     // A pure insertion anchors no existing text; it lands at its seam.
     const firstAnchor = suggestion.anchors.length > 0
@@ -257,7 +258,7 @@ export function buildSuggestionNavigatorRows (review: ReviewDiffSession): Sugges
       suggestionId: suggestion.suggestionId,
       description: suggestion.description,
       contextText: doc.sliceString(line.from, line.to),
-      range: { from: firstAnchor.from, to: firstAnchor.to }
+      range: review.frozenText === undefined ? { from: firstAnchor.from, to: firstAnchor.to } : undefined
     }
   })
 }

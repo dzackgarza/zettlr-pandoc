@@ -391,6 +391,16 @@ describe("workspace suggestion navigator model", function () {
   });
 });
 
+describe("frozen review navigator rows", function () {
+  it("take their context from the frozen text and point at no range in the current buffer", function () {
+    const review = buildSceneReview();
+    const frozen = { ...review, workingText: "unrelated current text\n", frozenText: review.workingText };
+    const rows = buildSuggestionNavigatorRows(frozen);
+    assert.deepEqual(rows.map(row => row.contextText), buildSuggestionNavigatorRows(review).map(row => row.contextText));
+    assert.ok(rows.every(row => row.range === undefined));
+  });
+});
+
 describe("inline chunk controls model", function () {
   const review = buildSceneReview();
   const cards = buildSuggestionCards(review);

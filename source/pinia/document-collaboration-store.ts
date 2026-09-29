@@ -55,7 +55,9 @@ import type {
   AddReviewCommentResponse,
   ChunkCommentResponse,
   ChunkDecisionResponse,
-  ClearReviewResponse
+  ClearReviewResponse,
+  DiscardReviewResponse,
+  ReapplyReviewResponse
 } from 'source/app/service-providers/documents/review-transitions'
 
 const ipcRenderer = window.ipc
@@ -346,7 +348,8 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
 
   async function acceptAllWorkspaceReviews (): Promise<Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }>> {
     const targets = workspaceSessions.value
-      .filter(session => session.review !== undefined && session.review.suggestions.length > 0)
+      .filter(session => session.review !== undefined && session.review.frozenText === undefined &&
+        session.review.suggestions.length > 0)
       .map(session => session.documentPath)
     const results: Array<{ path: string, result: AcceptAllChunksResponse | ReviewFailure }> = []
     for (const path of targets) {
@@ -379,6 +382,33 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     })
   }
 
+  /**
+   * The recovery actions on a frozen review: reapply it to the current text,
+   * return it to its agent with a comment, or discard it. Each works on an
+   * open or a closed document, so each refreshes the workspace projection.
+   */
+  async function recoverReview<Response extends { ok: true }> (
+    channel: 'documents:reapply-review' | 'documents:return-invalidated-review' | 'documents:discard-invalidated-review',
+    documentPath: string
+  ): Promise<Response | ReviewFailure> {
+    const { reviewId, expectedReviewGeneration } = reviewFence(documentPath)
+    const result = await ipcRenderer.invoke(channel, { reviewId, expectedReviewGeneration }) as Response | ReviewFailure
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value)
+    return result
+  }
+
+  async function reapplyReview (documentPath: string): Promise<ReapplyReviewResponse | ReviewFailure> {
+    return await recoverReview<ReapplyReviewResponse>('documents:reapply-review', documentPath)
+  }
+
+  async function returnReview (documentPath: string): Promise<AddReviewCommentResponse | ReviewFailure> {
+    return await recoverReview<AddReviewCommentResponse>('documents:return-invalidated-review', documentPath)
+  }
+
+  async function discardReview (documentPath: string): Promise<DiscardReviewResponse | ReviewFailure> {
+    return await recoverReview<DiscardReviewResponse>('documents:discard-invalidated-review', documentPath)
+  }
+
   return {
     sessionsByDocumentPath,
     cardsByDocumentPath,
@@ -404,6 +434,9 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
     acceptAllWorkspaceReviewChunks,
     acceptAllWorkspaceReviews,
     clearReview,
-    addReviewComment
+    addReviewComment,
+    reapplyReview,
+    returnReview,
+    discardReview
   }
 })

@@ -15,6 +15,13 @@ export interface ReviewDiffSession {
   workingText: string;
   suggestions: ReviewSuggestionView[];
   /**
+   * Present when the file changed on disk under the review: the text the
+   * suggestion anchors index, which is not the working text. A frozen review
+   * is not drawn in the editor; the panel offers Reapply, Return to agent
+   * and Discard.
+   */
+  frozenText: string | undefined;
+  /**
    * The chunk-anchored comments, by stable suggestion id. The pane renders
    * each at its suggestion's controls strip. The pane never reports state
    * back.
