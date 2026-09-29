@@ -1234,7 +1234,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(closedSearch.status, 200, closedSearch.body);
     const closedHits = JSON.parse(closedSearch.body) as SearchDocumentResponse;
     assertMatchesSchema(closedHits, "SearchDocumentResponse");
-    assert.deepEqual(closedHits.hits.map((hit) => [hit.line, hit.column]), [[2, 24]]);
+    assert.deepEqual(closedHits.hits.map((hit) => [hit.line, hit.column]), [[2, 9], [2, 23]]);
 
     const cased = JSON.parse(
       (await httpRequest("GET", "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md"))

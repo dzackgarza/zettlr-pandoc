@@ -1333,14 +1333,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     }, waitSeconds * 1000);
   }
 
-  private handleSearch(
+  private async handleSearch(
     res: http.ServerResponse,
     documentId: string,
     searchRequest: SearchDocumentRequest,
-  ): void {
+  ): Promise<void> {
     let result;
     try {
-      result = this._queries.searchDocument(documentId, searchRequest);
+      result = await this._queries.searchDocument(documentId, searchRequest);
     } catch (error) {
       if (error instanceof SearchPatternError) {
         this.sendError(res, 400, "INVALID_PARAMS", error.message);
@@ -1356,6 +1356,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       throw error;
+    }
+    if (result === "OUTSIDE_WORKSPACE") {
+      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is outside configured workspace scope");
+      return;
     }
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");

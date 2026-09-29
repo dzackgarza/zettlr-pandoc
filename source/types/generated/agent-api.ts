@@ -212,7 +212,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Literal or regex search against the live buffer */
+        /**
+         * Literal or regex search in one document, open or closed
+         * @description Searches the text that getDocument reads: the live buffer of an open document, or the file of a closed one. To search every file, use searchWorkspace.
+         */
         post: operations["searchDocument"];
         delete?: never;
         options?: never;

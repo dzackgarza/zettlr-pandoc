@@ -111,6 +111,14 @@ export interface AgentDocumentQueryHost {
  */
 export type AnnotationQueryPort = Pick<CollaborationApplicationService, "getAnnotations">;
 
+/** A document's working text, and the text its review started from. */
+interface DocumentText {
+  attached: boolean;
+  working: string;
+  reference: string;
+  reviewGeneration: number;
+}
+
 /**
  * Converts a UTF-16 code-unit offset into a 1-based line and column, the
  * shape the agent API reports every annotation target in. `Text.lineAt`
@@ -440,12 +448,13 @@ export default class AgentDocumentQueries {
     return { workspaceId: workspacePath, documents };
   }
 
-  public async readDocumentContent(
+  /**
+   * The text of a workspace document, open or closed: the live buffer, the
+   * working text a saved review holds for a closed file, or the file on disk.
+   */
+  private async documentText(
     documentId: string,
-    side: ReadSide,
-    startLine: number,
-    endLine: number,
-  ): Promise<ReadDocumentResponse | "OUTSIDE_WORKSPACE" | undefined> {
+  ): Promise<DocumentText | "OUTSIDE_WORKSPACE" | undefined> {
     const filePath = this.documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       return undefined;
@@ -453,36 +462,46 @@ export default class AgentDocumentQueries {
     if (!(await this.isOpenable(filePath))) {
       return "OUTSIDE_WORKSPACE";
     }
-
     const document = this.documents.loadedDocuments.find(
       (candidate) => candidate.filePath === filePath,
     );
-    let attached = false;
-    let working: string;
-    let reference: string;
-    let reviewGeneration = 0;
     if (document !== undefined) {
-      attached = true;
-      working = document.document.toString();
+      const working = document.document.toString();
       const review = this.reviews.getReview(documentId);
-      reference = review === undefined
-        ? working
-        : reviewReferenceText(review.suggestions, working);
-      reviewGeneration = review?.generation ?? 0;
-    } else {
-      const sidecar = await this.reviews.readSidecar(filePath);
-      if (sidecar !== undefined) {
-        working = sidecar.workingText;
-        reference = sidecar.review === null
-          ? working
-          : reviewReferenceText(sidecar.review.suggestions, working);
-        reviewGeneration = sidecar.review?.generation ?? 0;
-      } else {
-        working = normalizeText(await this.documents.readSupportedFile(filePath));
-        reference = working;
-      }
+      return {
+        attached: true,
+        working,
+        reference: review === undefined ? working : reviewReferenceText(review.suggestions, working),
+        reviewGeneration: review?.generation ?? 0,
+      };
     }
+    const sidecar = await this.reviews.readSidecar(filePath);
+    if (sidecar !== undefined) {
+      const working = sidecar.workingText;
+      return {
+        attached: false,
+        working,
+        reference: sidecar.review === null
+          ? working
+          : reviewReferenceText(sidecar.review.suggestions, working),
+        reviewGeneration: sidecar.review?.generation ?? 0,
+      };
+    }
+    const working = normalizeText(await this.documents.readSupportedFile(filePath));
+    return { attached: false, working, reference: working, reviewGeneration: 0 };
+  }
 
+  public async readDocumentContent(
+    documentId: string,
+    side: ReadSide,
+    startLine: number,
+    endLine: number,
+  ): Promise<ReadDocumentResponse | "OUTSIDE_WORKSPACE" | undefined> {
+    const resolved = await this.documentText(documentId);
+    if (resolved === undefined || resolved === "OUTSIDE_WORKSPACE") {
+      return resolved;
+    }
+    const { attached, working, reference, reviewGeneration } = resolved;
     const text = side === "working" ? working : reference;
     const lines = text.split("\n");
     const totalLines = lines.length;
@@ -504,15 +523,13 @@ export default class AgentDocumentQueries {
     };
   }
 
-  public searchDocument(
+  public async searchDocument(
     documentId: string,
     request: SearchDocumentRequest,
-  ): SearchDocumentResponse | undefined {
-    const document = this.documents.loadedDocuments.find(
-      (candidate) => candidate.documentId === documentId,
-    );
-    if (document === undefined) {
-      return undefined;
+  ): Promise<SearchDocumentResponse | "OUTSIDE_WORKSPACE" | undefined> {
+    const resolved = await this.documentText(documentId);
+    if (resolved === undefined || resolved === "OUTSIDE_WORKSPACE") {
+      return resolved;
     }
     let searchRegex: RegExp | undefined;
     let patternFailure: unknown;
@@ -524,7 +541,7 @@ export default class AgentDocumentQueries {
     if (searchRegex === undefined) {
       throw new SearchPatternError(patternFailure);
     }
-    const content = document.document.toString();
+    const content = resolved.working;
     const lines = content.split("\n");
     const contextSize = request.context ?? SEARCH_CONTEXT_DEFAULT;
     let collected: ReturnType<typeof collectSearchHits>;

@@ -2356,7 +2356,11 @@ paths:
     post:
       operationId: searchDocument
       x-openai-isConsequential: false
-      summary: Literal or regex search against the live buffer
+      summary: Literal or regex search in one document, open or closed
+      description: >-
+        Searches the text that getDocument reads: the live buffer of an open
+        document, or the file of a closed one. To search every file, use
+        searchWorkspace.
       parameters:
         - name: documentId
           in: path
