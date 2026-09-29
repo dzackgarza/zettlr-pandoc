@@ -325,6 +325,29 @@ The theorem body.
     )
   })
 
+  it('locates each identifier at the attribute that Pandoc reads it from', function () {
+    const documentPath = path.join('test', 'fixtures', 'key-value-identifiers', 'Key_Value_Identifiers.md')
+    const content = readFileSync(documentPath, 'utf-8')
+    const snapshot = extractReferences(documentPath, content)
+
+    const located = snapshot.definitions.map(definition => ({
+      key: definition.key,
+      sourceKind: definition.sourceKind,
+      authored: content.slice(definition.range.from, definition.range.to)
+    }))
+    assert.deepStrictEqual(located, [
+      { key: 'sec:kv-section', sourceKind: 'crossref-attr', authored: 'id="sec:kv-section"' },
+      { key: 'thm:kv-theorem', sourceKind: 'theorem-div', authored: 'id="thm:kv-theorem"' },
+      { key: 'rmk:kv-remark', sourceKind: 'theorem-div', authored: '#rmk:kv-remark' },
+      { key: 'lst:kv-listing', sourceKind: 'crossref-attr', authored: 'id="lst:kv-listing"' }
+    ])
+    assert.strictEqual(
+      snapshot.definitions[2].range.from,
+      content.indexOf('#rmk:kv-remark}'),
+      'the range must cover the identifier attribute, not the same text inside the title value'
+    )
+  })
+
   it('never fabricates definitions from unclosed attribute-block near-misses (review C8)', function () {
     // A heading whose attribute block never closes is structurally not a
     // labeled definition; the citing occurrence still extracts and simply

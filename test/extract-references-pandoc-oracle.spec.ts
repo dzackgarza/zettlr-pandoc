@@ -170,7 +170,10 @@ describe('extractReferences() against the real Pandoc AST oracle', function () {
     // beside the nested Figure ids and the explicit section id. The gallery
     // lives beside the workspace (the atomicity spec pins the workspace
     // directory's exact listing).
-    { relativePath: path.join('..', 'subfigure-gallery', 'Subfigure_Gallery.md'), supportedIdentifierCount: 5 }
+    { relativePath: path.join('..', 'subfigure-gallery', 'Subfigure_Gallery.md'), supportedIdentifierCount: 5 },
+    // Pandoc reads an `id="…"` key-value attribute as the element identifier,
+    // exactly like `#…`.
+    { relativePath: path.join('..', 'key-value-identifiers', 'Key_Value_Identifiers.md'), supportedIdentifierCount: 4 }
   ]
 
   for (const { relativePath, supportedIdentifierCount } of ORACLE_FILES) {
