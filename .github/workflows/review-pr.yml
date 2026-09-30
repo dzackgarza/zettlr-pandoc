@@ -1,4 +1,4 @@
-name: PR QC
+name: PR QC and Slop Review
 on:
   pull_request: {}
 jobs:
@@ -53,14 +53,4 @@ jobs:
       issues: read
     with:
       gate: pr-description-checklist
-      profile: 'bun'
-  thread-resolution:
-    uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main
-    permissions:
-      contents: read
-      pull-requests: read
-      actions: read
-      issues: read
-    with:
-      gate: thread-resolution
       profile: 'bun'
