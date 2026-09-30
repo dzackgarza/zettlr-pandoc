@@ -130,6 +130,31 @@ describe("main-process document lint", function () {
     assert.deepEqual(operator.suggestions, [{ title: "Use `\\sin`", replacement: "\\sin" }]);
   });
 
+  it("positions a diagnostic on a later line by offset and by line and column", async function () {
+    const repositoryRoot = path.join(__dirname, "..");
+    const context = await createDocumentLintContext({
+      homeDirectory: home,
+      env: process.env,
+      flowmarkLintTimeoutMs: 60_000,
+      tikzRenderConfig: {
+        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        cacheDir,
+        env: process.env,
+      },
+    });
+    const markdown = "# Title\n\nA first paragraph.\n\nThen let $x cos y = 0$ hold.\n";
+
+    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "lines.md"), context);
+    const operator = diagnostics.find((diagnostic) => diagnostic.rule === "math/bare-operator");
+    assert.ok(operator !== undefined);
+    assert.equal(markdown.slice(operator.from, operator.to), "cos");
+    assert.deepEqual(
+      { line: operator.line, column: operator.column, endLine: operator.endLine, endColumn: operator.endColumn },
+      { line: 5, column: 13, endLine: 5, endColumn: 16 },
+    );
+  });
+
   it("checks citations against the bibliography files it is given", async function () {
     const repositoryRoot = path.join(__dirname, "..");
     const context = await createDocumentLintContext({

@@ -2,6 +2,7 @@
 
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import { Text } from "@codemirror/state";
 import path from "node:path";
 import { lintMarkdownText } from "./flowmark-lint";
 import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
@@ -51,35 +52,26 @@ export interface DocumentLintDocumentOptions {
   references?: FlowmarkReferenceContext;
 }
 
-function offsetForLineColumn(text: string, line: number, column: number): number {
-  const lines = text.split("\n");
-  const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.trunc(line) - 1));
-  let offset = 0;
-  for (let index = 0; index < lineIndex; index += 1) {
-    offset += lines[index].length + 1;
-  }
-  return Math.min(offset + lines[lineIndex].length, offset + Math.max(0, Math.trunc(column) - 1));
+// The document as a CodeMirror `Text`: a line lookup by number or by offset is
+// a tree walk, so the cost of positioning the diagnostics of a document does
+// not grow with the length of the document times their count.
+function offsetForLineColumn(doc: Text, line: number, column: number): number {
+  const target = doc.line(Math.max(1, Math.min(doc.lines, Math.trunc(line))));
+  return Math.min(target.to, target.from + Math.max(0, Math.trunc(column) - 1));
 }
 
-function positionForOffset(text: string, offset: number): { line: number; column: number } {
-  const bounded = Math.max(0, Math.min(offset, text.length));
-  let line = 1;
-  let lineStart = 0;
-  for (let index = 0; index < bounded; index += 1) {
-    if (text[index] === "\n") {
-      line += 1;
-      lineStart = index + 1;
-    }
-  }
-  return { line, column: bounded - lineStart + 1 };
+function positionForOffset(doc: Text, offset: number): { line: number; column: number } {
+  const bounded = Math.max(0, Math.min(offset, doc.length));
+  const line = doc.lineAt(bounded);
+  return { line: line.number, column: bounded - line.from + 1 };
 }
 
 function positioned(
-  text: string,
+  doc: Text,
   diagnostic: SourceLintDiagnostic & { rule: string },
 ): DocumentLintDiagnostic {
-  const start = positionForOffset(text, diagnostic.from);
-  const end = positionForOffset(text, diagnostic.to);
+  const start = positionForOffset(doc, diagnostic.from);
+  const end = positionForOffset(doc, diagnostic.to);
   return {
     ...diagnostic,
     line: start.line,
@@ -120,11 +112,12 @@ export async function lintDocumentText(
     context: flowmarkContext,
     timeoutMs: context.flowmarkLintTimeoutMs,
   });
+  const doc = Text.of(text.split("\n"));
   if (flowmark.ok) {
     for (const diagnostic of flowmark.diagnostics) {
-      diagnostics.push(positioned(text, {
-        from: offsetForLineColumn(text, diagnostic.line, diagnostic.column),
-        to: offsetForLineColumn(text, diagnostic.end_line, diagnostic.end_column),
+      diagnostics.push(positioned(doc, {
+        from: offsetForLineColumn(doc, diagnostic.line, diagnostic.column),
+        to: offsetForLineColumn(doc, diagnostic.end_line, diagnostic.end_column),
         severity: diagnostic.severity,
         message: diagnostic.message,
         source: "Flowmark",
@@ -135,7 +128,7 @@ export async function lintDocumentText(
       }));
     }
   } else {
-    diagnostics.push(positioned(text, {
+    diagnostics.push(positioned(doc, {
       from: 0,
       to: Math.min(1, text.length),
       severity: "error",
