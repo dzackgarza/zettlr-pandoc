@@ -8,7 +8,8 @@
  *
  * Description:     Startup preflight. Verifies that every external tool and file
  *                  the app hard-requires actually resolves in the app's runtime
- *                  environment (after fix-path), and fails loud and fast if any
+ *                  environment (with the PATH of the user's shell), and fails
+ *                  loud and fast if any
  *                  is missing -- instead of surfacing a cryptic failure deep
  *                  inside an export. No fallbacks: a missing requirement stops
  *                  the app at boot.
@@ -81,18 +82,18 @@ export async function commandResolves (command: string): Promise<boolean> {
 
 /**
  * Returns a human-readable list of every missing requirement (empty = all
- * present). Electron-free so it can be exercised directly in tests.
+ * present). Electron-free so it can be exercised directly in tests. The
+ * command checks run at the same time: the slowest of them, not their sum, is
+ * the time of the check.
  */
 export async function findMissingRequirements (
   commands: CommandRequirement[],
   paths: PathRequirement[]
 ): Promise<string[]> {
-  const missing: string[] = []
-  for (const { command, purpose } of commands) {
-    if (!(await commandResolves(command))) {
-      missing.push(`${command} — not found on PATH (needed for ${purpose})`)
-    }
-  }
+  const resolved = await Promise.all(commands.map(async ({ command }) => await commandResolves(command)))
+  const missing = commands
+    .filter((_, index) => !resolved[index])
+    .map(({ command, purpose }) => `${command} — not found on PATH (needed for ${purpose})`)
   for (const { target, purpose } of paths) {
     if (!resolvesToFile(target)) {
       missing.push(`${target} — missing (${purpose})`)
@@ -197,8 +198,10 @@ const runVersionCommand: VersionOutputRunner = async (command, args) => {
 export async function checkCrossrefCompatibility (
   run: VersionOutputRunner = runVersionCommand
 ): Promise<CrossrefCompatibility> {
-  const crossref = await run('pandoc-crossref', ['--version'])
-  const pandoc = await run('pandoc', ['--version'])
+  const [ crossref, pandoc ] = await Promise.all([
+    run('pandoc-crossref', ['--version']),
+    run('pandoc', ['--version'])
+  ])
   return assessCrossrefCompatibility(crossref.stdout, pandoc.stdout)
 }
 
@@ -258,7 +261,8 @@ export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
  * side effects are injected so the whole path is testable without Electron.
  * The pandoc-crossref <-> pandoc compatibility gate (issue #1 Phase 7) is
  * part of the preflight: a non-null crossrefCompatibilityFailure() is
- * reported exactly like a missing requirement.
+ * reported exactly like a missing requirement. The three gates run at the
+ * same time.
  *
  * @param   showError       Presents a fatal message to the user (e.g. dialog box).
  * @param   exit            Terminates the process with the given code.
@@ -275,12 +279,14 @@ export async function preflight (
   crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure,
   tikzFailure: () => Promise<string|null> = tikzFilterCompatibilityFailure
 ): Promise<boolean> {
-  const missing = await findMissingRequirements(commands, paths)
-  const incompatibility = await crossrefFailure()
+  const [ missing, incompatibility, tikzIncompatibility ] = await Promise.all([
+    findMissingRequirements(commands, paths),
+    crossrefFailure(),
+    tikzFailure()
+  ])
   if (incompatibility !== null) {
     missing.push(incompatibility)
   }
-  const tikzIncompatibility = await tikzFailure()
   if (tikzIncompatibility !== null) {
     missing.push(tikzIncompatibility)
   }

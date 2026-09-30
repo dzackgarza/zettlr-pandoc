@@ -221,9 +221,16 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 ### 5. Startup preflight
 
 - `source/app/util/preflight.ts`, called from `source/app/util/environment-check.ts`
-  after `fixPath()`. Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`,
+  after it sets `PATH`. Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`,
   `latexmk`, `pdflatex`, `biber`, or `~/.pandoc/justfile` are missing in the app's
   runtime environment.
+- **`PATH` comes from the user's login shell** (`shell-path`). `source/main.ts`
+  starts that shell before the `ready` event and gives the promise to
+  `bootApplication`; `environmentCheck` awaits it. The shell takes seconds, so it
+  must not run synchronously: a synchronous call stops the main thread, which is
+  also the browser process of every window.
+- The command checks and the three gates of the preflight run at the same time.
+  The preflight costs the time of the slowest tool, not the sum.
 
 ### 6. Agent API MCP tunnel
 

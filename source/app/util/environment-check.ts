@@ -20,11 +20,10 @@ import { promises as fs } from 'fs'
 import isFile from '../../common/util/is-file'
 import isTraySupported from './is-tray-supported'
 import { getProgramVersion } from './get-program-version'
-import fixPath from 'fix-path'
 import { runCommand } from './run-command'
 import { preflight } from './preflight'
 
-export default async function environmentCheck (): Promise<void> {
+export default async function environmentCheck (shellPathRead: Promise<string>): Promise<void> {
   console.log('[Application] Performing environment check ...')
 
   // Ensure that the Node process trusts both its own bundled certificates
@@ -38,7 +37,7 @@ export default async function environmentCheck (): Promise<void> {
   // This is necessary on macOS and Linux, because GUI applications may not
   // inherit the same PATH environment variable as terminal programs. This is
   // necessary, however, to detect additional helper programs, such as quarto.
-  fixPath()
+  process.env.PATH = await shellPathRead
 
   // Hard preflight: with PATH now repaired, verify every external tool and file
   // the app cannot function without actually resolves in this runtime

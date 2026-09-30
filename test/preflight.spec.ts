@@ -1,4 +1,6 @@
 import assert from 'assert'
+import { ChildProcess } from 'child_process'
+import { subscribe, unsubscribe } from 'diagnostics_channel'
 import {
   commandResolves,
   findMissingRequirements,
@@ -6,6 +8,9 @@ import {
   REQUIRED_COMMANDS,
   requiredPaths
 } from '../source/app/util/preflight'
+
+/** The message type that Node gives the listener of a diagnostics channel. */
+type ChannelMessage = Parameters<Parameters<typeof subscribe>[1]>[0]
 
 describe('Startup preflight', function () {
   it('resolves a present command and rejects a missing one', async function () {
@@ -73,5 +78,36 @@ describe('Startup preflight', function () {
     const ok = await preflight(() => { failed = true }, () => { failed = true })
     assert.strictEqual(ok, true)
     assert.strictEqual(failed, false)
+  })
+
+  it('the production preflight starts every tool check before one of them ends', async function () {
+    this.timeout(10_000)
+    // Node publishes each started process on its `child_process` diagnostics
+    // channel (https://nodejs.org/api/diagnostics_channel.html#child-process).
+    // The channel message comes before the process has its command name.
+    const events: Array<{ kind: 'start'|'end', tool: ChildProcess }> = []
+    const record = (message: ChannelMessage): void => {
+      assert.ok(typeof message === 'object' && message !== null && 'process' in message)
+      assert.ok(message.process instanceof ChildProcess)
+      const tool = message.process
+      events.push({ kind: 'start', tool })
+      tool.once('close', () => events.push({ kind: 'end', tool }))
+    }
+    subscribe('child_process', record)
+    try {
+      assert.strictEqual(await preflight(() => {}, () => {}), true)
+    } finally {
+      unsubscribe('child_process', record)
+    }
+    const order = events.map(({ kind, tool }) => `${kind} ${tool.spawnfile}`)
+
+    // The presence check of each required command, then the two version
+    // reads of the pandoc-crossref compatibility gate.
+    const checks = [ ...REQUIRED_COMMANDS.map(({ command }) => command), 'pandoc-crossref', 'pandoc' ]
+    assert.deepStrictEqual(order.slice(0, checks.length), checks.map(command => `start ${command}`))
+    assert.deepStrictEqual(
+      order.slice(checks.length).sort(),
+      checks.map(command => `end ${command}`).sort()
+    )
   })
 })
