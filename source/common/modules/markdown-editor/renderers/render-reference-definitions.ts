@@ -190,8 +190,9 @@ class ReferenceDefinitionBadges {
    */
   private measurePositions (): Array<{ left: number, top: number }|null> {
     const base = this.container.getBoundingClientRect()
+    const { from, to } = this.view.viewport
     return this.groups.map(group => {
-      if (group.range.to > this.view.state.doc.length) {
+      if (group.range.to < from || group.range.to > to) {
         return null
       }
 

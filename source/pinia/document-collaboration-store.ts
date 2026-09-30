@@ -44,6 +44,7 @@
 import { reportError } from '@common/util/error-reporting'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
+import _ from 'underscore'
 import { DP_EVENTS } from '@dts/common/documents'
 import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
 import type { AnnotationMessage, TextAnnotation } from '@dts/common/annotation-domain'
@@ -192,6 +193,11 @@ export const useDocumentCollaborationStore = defineStore('document-collaboration
       }
     }
     for (const session of sessions) {
+      // An equal session stays the same object: each editor of the document
+      // watches it, and a new object is a change to each of them.
+      if (_.isEqual(sessionsByDocumentPath[session.documentPath], session)) {
+        continue
+      }
       sessionsByDocumentPath[session.documentPath] = session
       updateCardsForSession(session.documentPath, session)
     }

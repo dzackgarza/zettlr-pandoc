@@ -12,7 +12,9 @@
     }"
   >
     <SplitterGroup direction="horizontal" class="main-editor-workspace">
-      <SplitterPanel :default-size="58" :min-size="20">
+      <!-- No default size: the editor takes what the preview panel leaves,
+           which is all of the group while no preview is open. -->
+      <SplitterPanel :min-size="20">
         <div ref="editorHost" class="main-editor-host" />
       </SplitterPanel>
       <SplitterResizeHandle
@@ -452,6 +454,7 @@ const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event,
           library,
         },
       })
+      currentEditor?.syncCitationData()
     })
     .catch(e => {
       reportError('Could not update citation keys', e)
@@ -1327,6 +1330,7 @@ function refreshWorkspaceState (): void {
 function refreshActiveEditorAuxiliaryState (): void {
   maybeHighlightSearchResults()
   refreshWorkspaceState()
+  currentEditor?.syncCitationData()
   updateReferenceEntries().catch(err => reportError('Could not update workspace reference entries', err))
 
   const descriptor = activeFileDescriptor.value

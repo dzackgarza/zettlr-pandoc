@@ -1,3 +1,4 @@
+import { ensureSyntaxTree } from '@codemirror/language'
 import type { Extension } from '@codemirror/state'
 import { citekeyUpdate } from '../autocomplete/citations'
 import { configField } from '../util/configuration'
@@ -53,7 +54,9 @@ registerMarkdownDiagnosticPlugin({
     context: view => ({
       autocorrectValues: view.state
         .field(configField)
-        .autocorrect.replacements.map(item => item.value)
+        .autocorrect.replacements.map(item => item.value),
+      // The editor has parsed the document already.
+      tree: ensureSyntaxTree(view.state, view.state.doc.length)
     })
   })
 

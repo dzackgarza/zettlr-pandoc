@@ -113,8 +113,14 @@ const modeSwitcher = EditorState.transactionExtender.from(configField, config =>
         renderHorizontalRules: effect.value.renderHorizontalRules?? config.renderHorizontalRules
       }
 
-      const ext = renderCompartment.get(transaction.state) as Extension[]|undefined
-      return { effects: renderCompartment.reconfigure(configureRenderers(overrides, ext)) }
+      // A reconfiguration makes the view draw its content again, so only a
+      // changed set of renderers causes one.
+      const current = renderCompartment.get(transaction.startState) as Extension[]|undefined
+      const next = configureRenderers(overrides, current === undefined ? undefined : [...current])
+      if (current !== undefined && next.length === current.length && next.every((renderer, i) => renderer === current[i])) {
+        return null
+      }
+      return { effects: renderCompartment.reconfigure(next) }
 
     }
   }

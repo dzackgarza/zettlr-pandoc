@@ -13,8 +13,36 @@
  */
 
 import { foldService, syntaxTree } from '@codemirror/language'
-import { type SyntaxNode } from '@lezer/common'
+import { type Tree } from '@lezer/common'
 import { markdownHeadingLevel } from '../util/heading-level'
+
+interface TopLevelHeading {
+  from: number
+  level: number
+}
+
+// The fold gutter asks for the fold range of each heading line in the viewport
+// after each document change. One tree has one list of headings, so the list
+// is made once and lives as long as its tree.
+const headingsOfTree = new WeakMap<Tree, TopLevelHeading[]>()
+
+function topLevelHeadings (tree: Tree): TopLevelHeading[] {
+  const known = headingsOfTree.get(tree)
+  if (known !== undefined) {
+    return known
+  }
+  const headings: TopLevelHeading[] = []
+  let sibling = tree.topNode.firstChild
+  while (sibling !== null) {
+    const level = markdownHeadingLevel(sibling)
+    if (level !== null) {
+      headings.push({ from: sibling.from, level })
+    }
+    sibling = sibling.nextSibling
+  }
+  headingsOfTree.set(tree, headings)
+  return headings
+}
 
 // Code folding for Markdown documents, as the regular code folding service
 // doesn't completely do what we need it to. NOTE: Most folding is already
@@ -39,35 +67,13 @@ export const markdownFolding = foldService.of((state, lineStart, _lineEnd) => {
     if (level === null) {
       return null
     }
-    const allHeadings: SyntaxNode[] = []
-    let sibling = syntaxTree(state).topNode.firstChild
-    while (sibling !== null) {
-      const siblingLevel = markdownHeadingLevel(sibling)
-      if (siblingLevel !== null && siblingLevel <= level) {
-        allHeadings.push(sibling)
-      }
-      sibling = sibling.nextSibling
-    }
+    const end = node.to
+    const next = topLevelHeadings(syntaxTree(state)).find(h => h.from > end && h.level <= level)
 
-    // Sort (So that ATXHeadings and SetextHeadings are interleaved)
-    allHeadings.sort((h1, h2) => {
-      if (h1.from > h2.to) {
-        return 1
-      } else if (h2.from > h1.to) {
-        return -1
-      } else {
-        return 0
-      }
-    })
-
-    // Reduce to only headings after the one we're currently looking at
-    const headingsAfter = allHeadings.filter(h => h.from > node.to)
-
-    // Now the first heading in this list is the correct one
-    if (headingsAfter.length === 0) {
+    if (next === undefined) {
       return { from: node.to, to: state.doc.length }
     } else {
-      return { from: node.to, to: headingsAfter[0].from - 1 }
+      return { from: node.to, to: next.from - 1 }
     }
   } else {
     // Nothing to fold

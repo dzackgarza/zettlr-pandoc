@@ -21,12 +21,16 @@ import {
   nodeToCiteItem,
 } from "source/common/modules/markdown-editor/parser/citation-parser";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { __resetCitationRenderMemoForTests, renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
+import {
+  __resetCitationRenderMemoForTests,
+  citationDatabaseChanged,
+  renderCitations,
+  syncCitationData,
+} from "source/common/modules/markdown-editor/renderers/render-citations";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
 import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 import {
   configField,
-  configUpdateEffect,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
 import { installCitationIpcFromCallback, settleCitationWidgets } from "./citation-widget-test-helper";
@@ -168,8 +172,8 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
     assert.equal(view.dom.querySelector(".citeproc-citation")?.classList.contains("error"), true);
 
     window.getCitationCallback = () => () => "(Olsson 2004)";
-    __resetCitationRenderMemoForTests();
-    view.dispatch({ effects: configUpdateEffect.of({ metadata: { ...config.metadata } }) });
+    citationDatabaseChanged();
+    syncCitationData(view);
     await settleCitationWidgets(view.dom);
 
     assert.equal(view.dom.querySelector(".citeproc-citation")?.textContent, "(Olsson 2004)");

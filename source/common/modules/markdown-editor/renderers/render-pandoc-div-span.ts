@@ -209,6 +209,29 @@ class PandocDivHeaderWidget extends WidgetType {
   }
 }
 
+// The opening lines of the divs that an editor reported as not modeled. Such
+// a div stays in that condition while the author writes it, and each
+// transaction collects the visible divs again: one report names the div.
+const reportedDivs = new WeakMap<EditorView, Set<string>>()
+
+function reportUnmodeledDiv (view: EditorView, from: number, to: number): void {
+  const opening = view.state.doc.lineAt(from).text
+  let reported = reportedDivs.get(view)
+  if (reported === undefined) {
+    reported = new Set()
+    reportedDivs.set(view, reported)
+  }
+  if (reported.has(opening)) {
+    return
+  }
+  reported.add(opening)
+  reportError(
+    'Pandoc fenced div at ' + String(from) + ':' + String(to) +
+    ' was recognized by the live parser but could not be modeled by the renderer; ' +
+    'raw source remains visible.',
+  )
+}
+
 function collectVisibleDivs (view: EditorView): PandocDivModel[] {
   const divs = new Map<string, PandocDivModel>()
 
@@ -223,11 +246,7 @@ function collectVisibleDivs (view: EditorView): PandocDivModel[] {
       if (model !== undefined) {
         divs.set(key, model)
       } else if (syntaxTreeAvailable(view.state, view.state.doc.length)) {
-        reportError(
-          'Pandoc fenced div at ' + String(node.from) + ':' + String(node.to) +
-          ' was recognized by the live parser but could not be modeled by the renderer; ' +
-          'raw source remains visible.',
-        )
+        reportUnmodeledDiv(view, node.from, node.to)
       }
     }
   })

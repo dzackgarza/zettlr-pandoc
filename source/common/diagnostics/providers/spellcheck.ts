@@ -5,9 +5,12 @@ import type {
 import { trans } from '@common/i18n-renderer'
 import { extractTextnodes, markdownToAST } from '@common/modules/markdown-utils'
 import type { DictionaryProviderBroadcast } from '@providers/dictionary/ipc-contract'
+import type { Tree } from '@lezer/common'
 
 export interface SpellcheckDiagnosticContext {
   autocorrectValues: string[]
+  /** The syntax tree of exactly the text, when the caller has one. */
+  tree: Tree | null
 }
 
 const anyLetterRE = /[\p{L}'’‘]+/gu
@@ -78,7 +81,7 @@ export const spellcheckDiagnosticProvider: ExternalLinter<SpellcheckDiagnosticCo
   id: 'spellcheck',
   async run ({ text, context }) {
     ensureDictionaryListener()
-    const ast = markdownToAST(text)
+    const ast = markdownToAST(text, context.tree)
     const textNodes = extractTextnodes(ast)
     const wordsToCheck: Array<{ word: string, index: number, nodeStart: number }> =
       textNodes.flatMap(node => {

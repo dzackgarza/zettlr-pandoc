@@ -112,6 +112,7 @@ import {
   openCreateReferenceLabelEffect,
 } from './plugins/create-reference-label'
 import { editorMetadataFacet } from './plugins/editor-metadata'
+import { syncCitationData } from './renderers/render-citations'
 import { formatDocumentEffect } from './plugins/format-document-effect'
 import { highlightRangesEffect } from './plugins/highlight-ranges'
 import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
@@ -1119,6 +1120,14 @@ export default class MarkdownEditor extends EventEmitter {
       effects.push(referencesUpdate.of(completions))
     }
     this._instance.dispatch({ effects })
+  }
+
+  /**
+   * Draws the citations again when the citation database changed after the
+   * editor drew them.
+   */
+  syncCitationData (): void {
+    syncCitationData(this._instance)
   }
 
   /**

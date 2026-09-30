@@ -16,7 +16,7 @@ import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNodeRef } from '@lezer/common'
 import { syntaxTree } from '@codemirror/language'
 import { WidgetType, type EditorView } from '@codemirror/view'
-import { type EditorState } from '@codemirror/state'
+import { type EditorState, type Extension, StateEffect, StateField } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { citationMenu } from '../context-menu/citation-menu'
@@ -31,6 +31,9 @@ import type { CitationDatabase } from '@dts/common/citeproc'
 const CITATION_RENDER_CACHE_LIMIT = 256
 const citationRenderCache = new Map<string, Promise<string|undefined>>()
 let stopCitationCacheListener: (() => void)|undefined
+// Counts the changes of the citation database. A citation that an editor drew
+// at an earlier count shows data that the database no longer has.
+let citationDataRevision = 0
 
 /** The cite items and the form of one citation, as the citation provider reads them. */
 export interface CitationRequest {
@@ -46,7 +49,39 @@ function ensureCitationCacheInvalidation (): void {
   if (stopCitationCacheListener !== undefined || window.ipc === undefined) {
     return
   }
-  stopCitationCacheListener = window.ipc.on('citeproc-database-updated', () => { citationRenderCache.clear() })
+  stopCitationCacheListener = window.ipc.on('citeproc-database-updated', () => { citationDatabaseChanged() })
+}
+
+/** The citation database has other data: no earlier answer of the provider stands. */
+export function citationDatabaseChanged (): void {
+  citationRenderCache.clear()
+  citationDataRevision++
+}
+
+const citationDataRevisionEffect = StateEffect.define<number>()
+
+/** The count of citation database changes at which the editor drew its citations. */
+const citationDataRevisionField = StateField.define<number>({
+  create: () => citationDataRevision,
+  update (value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(citationDataRevisionEffect)) {
+        return effect.value
+      }
+    }
+    return value
+  }
+})
+
+/**
+ * Draws the citations of an editor again when the citation database changed
+ * after the editor drew them.
+ */
+export function syncCitationData (view: EditorView): void {
+  const shown = view.state.field(citationDataRevisionField, false)
+  if (shown !== undefined && shown !== citationDataRevision) {
+    view.dispatch({ effects: citationDataRevisionEffect.of(citationDataRevision) })
+  }
 }
 
 /**
@@ -113,13 +148,15 @@ class CitationWidget extends WidgetType {
     readonly citation: CitationReading,
     readonly rawCitation: string,
     readonly library: CitationDatabase,
+    readonly dataRevision: number,
     readonly error?: string
   ) {
     super()
   }
 
   eq (other: CitationWidget): boolean {
-    return sameLibrary(other.library, this.library) && other.rawCitation === this.rawCitation &&
+    return sameLibrary(other.library, this.library) && other.dataRevision === this.dataRevision &&
+      other.rawCitation === this.rawCitation &&
       other.error === this.error && other.citation.composite === this.citation.composite &&
       JSON.stringify(other.citation.items) === JSON.stringify(this.citation.items)
   }
@@ -224,29 +261,34 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|undefined {
   const rawCitation = state.sliceDoc(node.from, node.to)
   const library = state.field(configField).metadata.library
+  const dataRevision = state.field(citationDataRevisionField)
   const authored = nodeToCiteItem(node.node, rawCitation, node.from)
   // A state without the workspace reference fields has no Pandoc reading; the
   // editor's own reading of the node stands in.
   const presentation = state.field(referencePresentationField, false)
   if (presentation === undefined) {
-    return new CitationWidget(authored, rawCitation, library)
+    return new CitationWidget(authored, rawCitation, library, dataRevision)
   }
 
   // Workspace references belong to reference chips; mixed clusters remain authored text.
   if (authored.items.some(item => referenceFamilyOf(item.id) !== undefined)) return undefined
   if (presentation.citationError !== undefined) {
-    return new CitationWidget(authored, rawCitation, library, presentation.citationError)
+    return new CitationWidget(authored, rawCitation, library, dataRevision, presentation.citationError)
   }
   const reading = presentation.citations?.get(rawCitation)
-  return reading === undefined ? undefined : new CitationWidget(reading, rawCitation, library)
+  return reading === undefined ? undefined : new CitationWidget(reading, rawCitation, library, dataRevision)
 }
 
 function inputsChanged (before: EditorState, after: EditorState): boolean {
   const presentation = after.field(referencePresentationField, false)
   const previous = before.field(referencePresentationField, false)
   return !sameLibrary(before.field(configField).metadata.library, after.field(configField).metadata.library) ||
+    before.field(citationDataRevisionField) !== after.field(citationDataRevisionField) ||
     previous?.citations !== presentation?.citations ||
     previous?.citationError !== presentation?.citationError
 }
 
-export const renderCitations = renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget, inputsChanged)
+export const renderCitations: Extension = [
+  citationDataRevisionField,
+  renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget, inputsChanged)
+]
