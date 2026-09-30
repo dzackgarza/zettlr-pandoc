@@ -14,19 +14,20 @@
  * END HEADER
  */
 
-import { ensureSyntaxTree } from '@codemirror/language'
+import { syntaxTree } from '@codemirror/language'
 import { StateEffect, StateField, type EditorState } from '@codemirror/state'
 import { ViewPlugin, type EditorView, type ViewUpdate } from '@codemirror/view'
-import { markdownToAST } from '@common/modules/markdown-utils'
-import { countAll } from '@common/util/counter'
+import { configField } from '../util/configuration'
+import { countDocument } from '../util/word-count'
 
 // The amount of time in milliseconds to wait before triggering word counting
 const WORD_COUNT_DELAY = 750
+// The same for a syntax tree that the parser extended below an unchanged
+// document: the count follows the part of the document that is parsed
+const PARSE_PROGRESS_DELAY = 100
 
 function count (state: EditorState): { chars: number, words: number } {
-  const ast = markdownToAST(state.sliceDoc(), ensureSyntaxTree(state, state.doc.length))
-  const locale: string = window.config.get('appLang')
-  return countAll(ast, locale)
+  return countDocument(state, state.field(configField).appLang)
 }
 
 export const updateWordCountEffect = StateEffect.define<{ chars: number, words: number }>()
@@ -53,15 +54,16 @@ export const countField = StateField.define<{ chars: number, words: number }>({
 
 export const countPlugin = ViewPlugin.fromClass(class {
   private timeout: number | null = null
-  private delay = WORD_COUNT_DELAY
 
   update (update: ViewUpdate) {
     if (update.docChanged) {
-      this.updateCounts(update.view)
+      this.updateCounts(update.view, WORD_COUNT_DELAY)
+    } else if (this.timeout === null && syntaxTree(update.state) !== syntaxTree(update.startState)) {
+      this.updateCounts(update.view, PARSE_PROGRESS_DELAY)
     }
   }
 
-  updateCounts (view: EditorView) {
+  updateCounts (view: EditorView, delay: number) {
     if (this.timeout != null) {
       window.clearTimeout(this.timeout)
     }
@@ -70,9 +72,11 @@ export const countPlugin = ViewPlugin.fromClass(class {
       this.timeout = null
 
       const counts = count(view.state)
-
-      view.dispatch({ effects: updateWordCountEffect.of(counts) })
-    }, this.delay)
+      const shown = view.state.field(countField)
+      if (counts.words !== shown.words || counts.chars !== shown.chars) {
+        view.dispatch({ effects: updateWordCountEffect.of(counts) })
+      }
+    }, delay)
   }
 
   destroy () {

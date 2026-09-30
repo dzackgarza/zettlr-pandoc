@@ -23,7 +23,7 @@ export type WikilinkResolutions = Map<string, WikilinkResolution>
 
 export const wikilinkResolutionsUpdate = StateEffect.define<WikilinkResolutions>()
 
-function sameResolutions (a: WikilinkResolutions, b: WikilinkResolutions): boolean {
+export function sameResolutions (a: WikilinkResolutions, b: WikilinkResolutions): boolean {
   if (a.size !== b.size) {
     return false
   }

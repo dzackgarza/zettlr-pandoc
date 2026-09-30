@@ -31,6 +31,7 @@ export interface AutocorrectOptions {
 }
 
 export interface EditorConfiguration {
+  appLang: string
   autocompleteSuggestEmojis: boolean
   autocompleteWithEnter: boolean
   autocompleteWithTab: boolean
@@ -88,6 +89,7 @@ export interface EditorConfiguration {
 
 export function getDefaultConfig (): EditorConfiguration {
   return {
+    appLang: 'en-US',
     autocorrect: {
       active: true,
       matchWholeWords: false,

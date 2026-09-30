@@ -102,6 +102,7 @@ import { resolveReattachSelection } from './util/annotation-reattach-selection'
 import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
 import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
 import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { storeToRefs } from 'pinia'
 import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
 import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
 import type {
@@ -315,11 +316,20 @@ async function updateTexMacroSources (
   if (kind === undefined) return
 
   const patterns = declaredTexMacroSources(editor.value, kind)
-  const workspacePaths = [...workspaceStore.descriptorMap.values()]
-    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
-    .map(descriptor => descriptor.path)
+  const descriptors = workspaceStore.descriptorMap
+  const workspacePaths = patterns.length === 0
+    ? []
+    : [...descriptors.values()]
+        .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
+        .map(descriptor => descriptor.path)
   const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths)
-  const cacheKey = JSON.stringify([editor.documentPath, patterns, paths])
+  // The modification time of a source is part of the key: a source that
+  // changed on disk is read again.
+  const cacheKey = JSON.stringify([
+    editor.documentPath,
+    patterns,
+    paths.map(filePath => [ filePath, descriptors.get(filePath)?.modtime ])
+  ])
   if (!force && cacheKey === texMacroSourceCacheKey) return
 
   texMacroSourceCacheKey = cacheKey
@@ -646,6 +656,7 @@ onBeforeUnmount(() => {
     stop()
   }
   latestReferenceRequestId++
+  refreshDocumentRequests.cancel()
   activeTikzSource.value = null
   activeEditorView.value = null
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
@@ -707,8 +718,9 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
   // right after setting the new configurations. Plus, the user won't update
   // everything all the time, but rather do one initial configuration, so
   // even if we incur a performance penalty, it won't be noticed that much.
-  const { editor, display, zkn, darkMode, shortcuts, darkModeEditor } = configStore.config
+  const { appLang, editor, display, zkn, darkMode, shortcuts, darkModeEditor } = configStore.config
   return {
+    appLang,
     indentUnit: editor.indentUnit,
     indentWithTabs: editor.indentWithTabs,
     alwaysIndentLineOnTab: editor.alwaysIndentLineOnTab,
@@ -842,12 +854,6 @@ function updateProjectInfo (): ProjectInfo|null {
   }
 }
 
-// Update the project info as soon as anything in the workspaces has changed.
-workspaceStore.$subscribe(() => {
-  if (currentEditor !== null) {
-    currentEditor.projectInfo = updateProjectInfo()
-  }
-})
 // END: PROJECT INFO
 
 // External commands/"event" system
@@ -979,16 +985,6 @@ watch(toRef(props.editorCommands, 'insertPandoc'), () => {
   }
 })
 
-const fsalFiles = computed<MDFileDescriptor[]>(() => {
-  return [...workspaceStore.descriptorMap.values()].filter(d => d.type === 'file')
-})
-const texMacroSourceWorkspacePaths = computed<string[]>(() => {
-  return [...workspaceStore.descriptorMap.values()]
-    .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
-    .map(descriptor => descriptor.path)
-    .sort()
-})
-
 // WATCHERS
 watch(useH1, () => {
   if (isActiveTab.value) {
@@ -1000,14 +996,13 @@ watch(useTitle, () => {
     updateFileDatabase().catch(err => reportError('Could not update file database', err))
   }
 })
-watch(fsalFiles, () => {
+// The workspace changed: the active editor reads again what it shows of the
+// workspace. An editor in a background tab does that when its tab becomes
+// active.
+watch(storeToRefs(workspaceStore).descriptorMap, () => {
   if (isActiveTab.value) {
-    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+    refreshWorkspaceState()
   }
-})
-watch(texMacroSourceWorkspacePaths, () => {
-  updateTexMacroSources(currentEditor, true)
-    .catch(error => reportError('Could not refresh TeX macro sources', error))
 })
 
 watch(editorConfiguration, (newValue, oldValue) => {
@@ -1106,13 +1101,10 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   })
 
   editor.on('change', () => {
-    updateWikilinkResolutions(false)
-      .catch(error => reportError('Could not resolve the wikilinks', error))
+    refreshDocumentRequests()
     if (ownsWindowActiveState(editor)) {
       windowStateStore.tableOfContents = editor.tableOfContents
       updateActiveTikzSource(editor)
-      updateTexMacroSources(editor)
-        .catch(error => reportError('Could not refresh TeX macro sources', error))
     }
   })
 
@@ -1323,9 +1315,18 @@ async function ensureEditorLoaded (): Promise<boolean> {
   return true
 }
 
+/** Reads again the values that the editor derives from the workspace descriptors. */
+function refreshWorkspaceState (): void {
+  if (currentEditor !== null) {
+    currentEditor.projectInfo = updateProjectInfo()
+  }
+  updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  updateTexMacroSources().catch(error => reportError('Could not refresh TeX macro sources', error))
+}
+
 function refreshActiveEditorAuxiliaryState (): void {
   maybeHighlightSearchResults()
-  updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  refreshWorkspaceState()
   updateReferenceEntries().catch(err => reportError('Could not update workspace reference entries', err))
 
   const descriptor = activeFileDescriptor.value
@@ -1494,8 +1495,6 @@ async function updateReferenceEntries (): Promise<void> {
     }))
   const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots)
 
-  currentEditor?.setCompletionDatabase('references', entries)
-
   if (currentEditor === null) {
     return
   }
@@ -1505,6 +1504,7 @@ async function updateReferenceEntries (): Promise<void> {
   // pane diverge from the authority used by citing and rename operations.
   const liveSnapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
   if (liveSnapshot === undefined) {
+    currentEditor.setCompletionDatabase('references', entries)
     return
   }
   const workspace = state.snapshots
@@ -1513,7 +1513,7 @@ async function updateReferenceEntries (): Promise<void> {
     workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
     resolutions: state.resolutions,
     projectRoots
-  })
+  }, entries)
 }
 
 /**
@@ -1744,7 +1744,10 @@ async function updateFileDatabase (): Promise<void> {
   const linkTargets: Record<string, string> = await ipcRenderer.invoke('link-provider', { command: 'get-link-targets' })
   const linkDatabase: Record<string, WikilinkEdge[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
 
-  for (const file of fsalFiles.value) {
+  for (const file of workspaceStore.descriptorMap.values()) {
+    if (file.type !== 'file') {
+      continue
+    }
     const target = linkTargets[file.path]
     if (target === undefined) {
       continue // Not part of an indexed workspace yet
@@ -1762,6 +1765,17 @@ async function updateFileDatabase (): Promise<void> {
   currentEditor?.setCompletionDatabase('files', fileDatabase)
   await updateWikilinkResolutions(true)
 }
+
+// The requests that follow from the text of the document. Each reads the
+// whole document, so they wait until the author stops typing.
+const refreshDocumentRequests = _.debounce(() => {
+  updateWikilinkResolutions(false)
+    .catch(error => reportError('Could not resolve the wikilinks', error))
+  if (ownsWindowActiveState()) {
+    updateTexMacroSources()
+      .catch(error => reportError('Could not refresh TeX macro sources', error))
+  }
+}, 200)
 
 // The targets whose resolutions the editor last asked for
 let requestedWikilinkTargets = ''

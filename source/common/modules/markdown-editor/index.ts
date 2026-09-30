@@ -21,7 +21,7 @@
 // component for the editor itself.
 import './editor.css'
 
-import { foldEffect, foldState, syntaxTree } from '@codemirror/language'
+import { foldEffect, foldState } from '@codemirror/language'
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from '@codemirror/search'
 import {
   Compartment,
@@ -34,7 +34,6 @@ import {
 } from '@codemirror/state'
 // CodeMirror imports
 import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
-import { countAll } from '@common/util/counter'
 import safeAssign from '@common/util/safe-assign'
 import { DocumentType } from '@dts/common/documents'
 import {
@@ -56,9 +55,8 @@ import { emacs } from '@replit/codemirror-emacs'
  * APIs
  */
 import EventEmitter from 'events'
+import _ from 'underscore'
 import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
-import { markdownToAST } from '../markdown-utils'
-import type { ASTNode, Document as MarkdownDocument } from '../markdown-utils/markdown-ast'
 import {
   citekeyUpdate,
   filesUpdate,
@@ -140,6 +138,7 @@ import {
   showResolvedAnnotationsEffect
 } from './plugins/text-annotations'
 import { countField, updateWordCountEffect } from './plugins/statistics-fields'
+import { countRange } from './util/word-count'
 import { type ToCEntry, tocField } from './plugins/toc-field'
 import { vimPlugin } from './plugins/vim-mode'
 import {
@@ -147,7 +146,9 @@ import {
   workspaceReferencesUpdate,
 } from './plugins/workspace-references-field'
 import {
+  sameResolutions,
   type WikilinkResolutions,
+  wikilinkResolutionsField,
   wikilinkResolutionsUpdate,
 } from './plugins/wikilink-resolutions-field'
 import { darkModeEffect, useDarkModeEditor } from './theme/dark-mode'
@@ -673,35 +674,20 @@ export default class MarkdownEditor extends EventEmitter {
 
     // Provide the cached databases to the state (can be overridden by the
     // caller afterwards by calling setCompletionDatabase)
-    this._instance.dispatch({
-      effects: tagsUpdate.of(this.databaseCache.tags),
-    })
-    this._instance.dispatch({
-      effects: citekeyUpdate.of(this.databaseCache.citations),
-    })
-    this._instance.dispatch({
-      effects: snippetsUpdate.of(this.databaseCache.snippets),
-    })
-    this._instance.dispatch({
-      effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
-    })
-    this._instance.dispatch({
-      effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
-    })
-    this._instance.dispatch({
-      effects: quickTexUpdate.of(this.databaseCache.quickTex),
-    })
-    this._instance.dispatch({
-      effects: filesUpdate.of(this.databaseCache.files),
-    })
-    this._instance.dispatch({
-      effects: referencesUpdate.of(this.databaseCache.references),
-    })
+    const cachedDatabases: Array<StateEffect<unknown>> = [
+      tagsUpdate.of(this.databaseCache.tags),
+      citekeyUpdate.of(this.databaseCache.citations),
+      snippetsUpdate.of(this.databaseCache.snippets),
+      phraseCompletionsUpdate.of(this.databaseCache.phrases),
+      texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
+      quickTexUpdate.of(this.databaseCache.quickTex),
+      filesUpdate.of(this.databaseCache.files),
+      referencesUpdate.of(this.databaseCache.references),
+    ]
     if (this.workspaceReferencesCache !== null) {
-      this._instance.dispatch({
-        effects: workspaceReferencesUpdate.of(this.workspaceReferencesCache),
-      })
+      cachedDatabases.push(workspaceReferencesUpdate.of(this.workspaceReferencesCache))
     }
+    this._instance.dispatch({ effects: cachedDatabases })
 
     // Determine if this is a code doc and add the corresponding class to the
     // outer content DOM so that we can style it.
@@ -1018,11 +1004,18 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {ProjectInfo|null}  info  The data
    */
   set projectInfo (info: ProjectInfo|null) {
-    this._instance.dispatch({ effects: projectInfoUpdateEffect.of(info) })
+    if (!_.isEqual(info, this.projectInfo)) {
+      this._instance.dispatch({ effects: projectInfoUpdateEffect.of(info) })
+    }
+  }
+
+  get projectInfo (): ProjectInfo|null {
+    return this._instance.state.field(projectInfoField, false) ?? null
   }
 
   /**
-   * Sets an autocomplete database of given type to a new value
+   * Sets an autocomplete database of given type to a new value. A database
+   * that equals the one the editor has causes no transaction.
    *
    * @param   {String}  type      The type of the database
    * @param   {Object}  database  The show-hint-addon compatible database
@@ -1047,30 +1040,35 @@ export default class MarkdownEditor extends EventEmitter {
 
     switch (type) {
       case 'tags':
+        if (_.isEqual(database, this.databaseCache.tags)) return
         this.databaseCache.tags = database as TagRecord[]
         this._instance.dispatch({
           effects: tagsUpdate.of(this.databaseCache.tags),
         })
         break
       case 'citations':
+        if (_.isEqual(database, this.databaseCache.citations)) return
         this.databaseCache.citations = database as Array<{ citekey: string; displayText: string }>
         this._instance.dispatch({
           effects: citekeyUpdate.of(this.databaseCache.citations),
         })
         break
       case 'snippets':
+        if (_.isEqual(database, this.databaseCache.snippets)) return
         this.databaseCache.snippets = database as UserSnippet[]
         this._instance.dispatch({
           effects: snippetsUpdate.of(this.databaseCache.snippets),
         })
         break
       case 'phrases':
+        if (_.isEqual(database, this.databaseCache.phrases)) return
         this.databaseCache.phrases = database as PhraseDictionaryEntry[]
         this._instance.dispatch({
           effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
         })
         break
       case 'tex-macro-sources':
+        if (_.isEqual(database, this.databaseCache.texMacroSources)) return
         this.databaseCache.texMacroSources = database as TexMacroSource[]
         this._instance.dispatch({
           effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
@@ -1078,6 +1076,7 @@ export default class MarkdownEditor extends EventEmitter {
         forceLinting(this._instance)
         break
       case 'files':
+        if (_.isEqual(database, this.databaseCache.files)) return
         this.databaseCache.files = database as Array<{
           filename: string
           displayName: string
@@ -1088,6 +1087,7 @@ export default class MarkdownEditor extends EventEmitter {
         })
         break
       case 'references':
+        if (_.isEqual(database, this.databaseCache.references)) return
         this.databaseCache.references = database as ReferenceCompletionEntry[]
         this._instance.dispatch({
           effects: referencesUpdate.of(this.databaseCache.references),
@@ -1104,15 +1104,21 @@ export default class MarkdownEditor extends EventEmitter {
   /**
    * Provides the editor state with a new resolved workspace reference view
    * (issue #1 Phase 4): the single typed source behind reference chips,
-   * definition badges, reference hovers, and reference diagnostics.
+   * definition badges, reference hovers, and reference diagnostics. The
+   * completion database of the same workspace state goes into the same
+   * transaction.
    *
-   * @param  {EditorWorkspaceReferences}  references  The resolved view
+   * @param  {EditorWorkspaceReferences}   references   The resolved view
+   * @param  {ReferenceCompletionEntry[]}  completions  The completion database
    */
-  setWorkspaceReferences(references: EditorWorkspaceReferences): void {
+  setWorkspaceReferences(references: EditorWorkspaceReferences, completions: ReferenceCompletionEntry[]): void {
     this.workspaceReferencesCache = references
-    this._instance.dispatch({
-      effects: workspaceReferencesUpdate.of(references),
-    })
+    const effects: Array<StateEffect<unknown>> = [workspaceReferencesUpdate.of(references)]
+    if (!_.isEqual(completions, this.databaseCache.references)) {
+      this.databaseCache.references = completions
+      effects.push(referencesUpdate.of(completions))
+    }
+    this._instance.dispatch({ effects })
   }
 
   /**
@@ -1120,9 +1126,12 @@ export default class MarkdownEditor extends EventEmitter {
    * wikilink target of the document, which the wikilink chips render.
    */
   setWikilinkResolutions(resolutions: WikilinkResolutions): void {
-    this._instance.dispatch({
-      effects: wikilinkResolutionsUpdate.of(resolutions),
-    })
+    const shown = this._instance.state.field(wikilinkResolutionsField, false)
+    if (shown === undefined || shown === null || !sameResolutions(shown, resolutions)) {
+      this._instance.dispatch({
+        effects: wikilinkResolutionsUpdate.of(resolutions),
+      })
+    }
   }
 
   startReviewDiffSession(session: ReviewDiffSession): void {
@@ -1259,16 +1268,7 @@ export default class MarkdownEditor extends EventEmitter {
     // a cursor position.
     const mainOffset = this._instance.state.selection.main.head
     const line = this._instance.state.doc.lineAt(mainOffset)
-    const markdownAstFactory: unknown = markdownToAST
-    if (typeof markdownAstFactory !== 'function') {
-      throw new TypeError('The Markdown AST factory is unavailable.')
-    }
-    const ast = markdownAstFactory as (
-      markdown: string,
-      tree: ReturnType<typeof syntaxTree>,
-    ) => MarkdownDocument | ASTNode
-    const documentAst = ast(this._instance.state.sliceDoc(), syntaxTree(this._instance.state))
-    const locale: string = window.config.get('appLang')
+    const locale = this._instance.state.field(configField).appLang
     const project = this._instance.state.field(projectInfoField, false)
     return {
       words: this.wordCount ?? 0,
@@ -1288,7 +1288,7 @@ export default class MarkdownEditor extends EventEmitter {
           // each selection present.
           const anchorLine = this._instance.state.doc.lineAt(sel.anchor)
           const headLine = this._instance.state.doc.lineAt(sel.head)
-          const { words, chars } = countAll(documentAst, locale, sel.from, sel.to)
+          const { words, chars } = countRange(this._instance.state, locale, sel.from, sel.to)
           return {
             anchor: {
               line: anchorLine.number,
