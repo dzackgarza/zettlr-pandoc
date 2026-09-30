@@ -558,6 +558,34 @@ async function probeTool(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProb
 }
 
 /**
+ * The probes that found their tool, by PATH and tool name. A tool that was
+ * found stays installed while the host runs, so one render in a session pays
+ * for the probe. A tool that was not found is probed again at the next render:
+ * the author may install it while the workbench stays open.
+ */
+const availableTools = new Map<string, Promise<ToolProbe>>();
+
+async function probeToolOnce(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
+  const key = `${env.PATH ?? ""}\0${tool}`;
+  const known = availableTools.get(key);
+  if (known !== undefined) {
+    return await known;
+  }
+  const probe = probeTool(tool, env);
+  availableTools.set(key, probe);
+  try {
+    const result = await probe;
+    if (result.status !== "available") {
+      availableTools.delete(key);
+    }
+    return result;
+  } catch (error) {
+    availableTools.delete(key);
+    throw error;
+  }
+}
+
+/**
  * States Node's documented child-process contract: on 'close' exactly one of
  * (code, signal) is non-null. The signal case is dispatched before this call,
  * so reaching it with a null code means the runtime broke that contract and
@@ -594,7 +622,7 @@ export async function renderTikz(
 
   const missing: string[] = [];
   for (const tool of REQUIRED_TOOLS) {
-    const probe = await probeTool(tool, env);
+    const probe = await probeToolOnce(tool, env);
     if (probe.status === "probe-failed") {
       // The remaining tools are deliberately not probed: with one probe broken
       // the toolchain status is unknown, and a partial "missing" list would

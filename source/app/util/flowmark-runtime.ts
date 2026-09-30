@@ -50,6 +50,21 @@ export function externalLinterPluginPath (filename: string): string {
  * same Flowmark as the `flowmark` and `flowmark-lint` commands.
  */
 export async function flowmarkToolPython (): Promise<string> {
+  toolPython ??= locateToolPython()
+  try {
+    return await toolPython
+  } catch (error) {
+    toolPython = undefined
+    throw error
+  }
+}
+
+// uv derives its tool directory from the environment of this process, which
+// does not change while the app runs. One `uv tool dir` process answers for
+// the session; a failed one is asked again.
+let toolPython: Promise<string>|undefined
+
+async function locateToolPython (): Promise<string> {
   const outcome = await runFlowmarkProcess({
     command: 'uv',
     argv: [ 'tool', 'dir' ],
