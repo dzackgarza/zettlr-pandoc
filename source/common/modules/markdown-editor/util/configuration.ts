@@ -22,6 +22,7 @@ import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import type { CitationDatabase } from '@dts/common/citeproc'
 import { type MarkdownTheme } from '@providers/config/get-config-template'
 import { type CustomEditorShortcut } from '../keymaps/shortcuts'
+import _ from 'underscore'
 
 export interface AutocorrectOptions {
   active: boolean
@@ -190,7 +191,9 @@ export const configField = StateField.define<EditorConfiguration>({
         // Perform some housekeeping
         // Make sure the replacements are sorted longest-key-first
         newConfig.autocorrect.replacements.sort((a, b) => b.key.length - a.key.length)
-        return newConfig
+        // A configuration with the same values keeps its object, so an
+        // extension that compares the field renders again only for a change.
+        return _.isEqual(newConfig, val) ? val : newConfig
       }
     }
     return val

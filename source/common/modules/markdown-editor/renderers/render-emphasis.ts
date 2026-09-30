@@ -36,7 +36,7 @@ class BulletWidget extends WidgetType {
   }
 
   eq (other: BulletWidget): boolean {
-    return other.node.from === this.node.from && other.node.to === this.node.from
+    return other.node.from === this.node.from && other.node.to === this.node.to
   }
 
   toDOM (_view: EditorView): HTMLElement {
@@ -60,7 +60,7 @@ export class SpaceWidget extends WidgetType {
       return false
     }
 
-    return other.node.from === this.node.from && other.node.to === this.node.from
+    return other.node.from === this.node.from && other.node.to === this.node.to
   }
 
   toDOM (_view: EditorView): HTMLElement {

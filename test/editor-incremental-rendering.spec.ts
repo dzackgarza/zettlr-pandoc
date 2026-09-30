@@ -16,13 +16,25 @@
  * END HEADER
  */
 
-import { ensureSyntaxTree } from '@codemirror/language'
-import { EditorState, type TransactionSpec } from '@codemirror/state'
-import { type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
+// The renderer aggregate reads the preload bridge when it is imported.
+import './provision-renderer-window-seams'
+import { ensureSyntaxTree, forceParsing } from '@codemirror/language'
+import { EditorSelection, EditorState, type TransactionSpec } from '@codemirror/state'
+import { type Decoration, type DecorationSet, EditorView, WidgetType } from '@codemirror/view'
 import { strict as assert } from 'assert'
+import { loadMathJaxMacros } from 'source/app/util/load-mathjax-macros'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
+import {
+  type EditorWorkspaceReferences,
+  workspaceReferencesField,
+  workspaceReferencesUpdate
+} from 'source/common/modules/markdown-editor/plugins/workspace-references-field'
+import { renderers } from 'source/common/modules/markdown-editor/renderers'
 import { renderBlockWidgets } from 'source/common/modules/markdown-editor/renderers/base-renderer'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
+import { configField, configUpdateEffect, getDefaultConfig } from 'source/common/modules/markdown-editor/util/configuration'
+import { extractReferences } from 'source/common/pandoc-util/extract-references'
+import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
+import { initializeMathJax } from 'source/common/util/mathtex-to-html'
 
 class MathMarker extends WidgetType {
   constructor (readonly source: string) {
@@ -148,7 +160,7 @@ describe('Block widgets follow the size of a change', function () {
       state => ({ changes: { from: at('```\ncode', state), to: at('```\ncode', state) + 1, insert: '' } }),
       state => ({ selection: { anchor: at('$x_{20}$', state) + 3 } }),
       state => ({ changes: { from: at('x_{20}', state), insert: 'q' } }),
-      state => ({ selection: { anchor: 0 } }),
+      () => ({ selection: { anchor: 0 } }),
       state => ({ changes: { from: state.doc.length, insert: 'Last $w$ line.\n' } }),
       state => ({ changes: { from: 0, to: at('Paragraph 2 ', state), insert: '' } }),
       state => ({ changes: [
@@ -163,5 +175,271 @@ describe('Block widgets follow the size of a change', function () {
       const fresh = countedEditor(state.sliceDoc(), state.selection.main.anchor).state
       assert.deepEqual(widgets(state), widgets(fresh), `edit ${index}`)
     }
+  })
+})
+
+/** A frame handle: the number of a browser, or the timer that stands in for it under Node. */
+type FrameHandle = number | ReturnType<typeof setTimeout>
+
+/** The browser surface that CodeMirror measures through and jsdom does not have. */
+interface MeasurableGlobals {
+  requestAnimationFrame?: (callback: (time: number) => void) => FrameHandle
+  cancelAnimationFrame?: (handle: FrameHandle) => void
+  ResizeObserver?: typeof ResizeObserver
+  window?: MeasurableGlobals
+  Range?: { prototype: Partial<Range> }
+}
+
+function polyfillJsdomForCodeMirror (): void {
+  const w = globalThis as MeasurableGlobals
+  if (typeof w.requestAnimationFrame !== 'function') {
+    w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
+    w.cancelAnimationFrame = (handle: FrameHandle) => clearTimeout(handle)
+  }
+  if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
+    w.window.requestAnimationFrame = w.requestAnimationFrame
+    w.window.cancelAnimationFrame = w.cancelAnimationFrame
+  }
+  if (typeof w.ResizeObserver !== 'function') {
+    w.ResizeObserver = class {
+      observe (): void {}
+      unobserve (): void {}
+      disconnect (): void {}
+    }
+    if (typeof w.window === 'object') {
+      w.window.ResizeObserver = w.ResizeObserver
+    }
+  }
+  if (typeof w.Range?.prototype.getClientRects !== 'function' && w.Range !== undefined) {
+    const noRects: DOMRectList = Object.assign([] as DOMRect[], { item: (): DOMRect|null => null })
+    w.Range.prototype.getClientRects = () => noRects
+    w.Range.prototype.getBoundingClientRect = () => ({
+      bottom: 0,
+      height: 0,
+      left: 0,
+      right: 0,
+      top: 0,
+      width: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({})
+    })
+  }
+}
+
+const AGGREGATE_DOC = `---
+title: Lattices
+tags: [forms, surfaces]
+---
+
+# Lattices {#sec:lattices}
+
+A paragraph with $x^2$ and *emphasis* and a [link](https://example.org).
+
+::: {.theorem #thm:main title="Main theorem"}
+Every even unimodular lattice $L$ of signature $(1, 9)$ is isometric to $E_{10}$.
+
+$$
+q(x) = x^2
+$$
+:::
+
+| Lattice | Rank |
+|---------|------|
+| $U$     | 2    |
+| $E_8$   | 8    |
+
+- [ ] an open task
+- [x] a done task
+
+> A quotation with **strong** text.
+
+---
+
+See [@Ols04] and @thm:main for the proof.
+
+\`\`\`python
+print(1)
+\`\`\`
+
+Closing paragraph.
+`
+
+interface Drawn {
+  from: number
+  to: number
+  decoration: Decoration
+}
+
+describe('The production renderers', function () {
+  this.timeout(120_000)
+  const views: EditorView[] = []
+
+  before(async function () {
+    polyfillJsdomForCodeMirror()
+    await initializeMathJax(await loadMathJaxMacros('test/fixtures/mathjax-macros.json'))
+  })
+
+  afterEach(function () {
+    for (const view of views.splice(0)) {
+      view.destroy()
+    }
+    document.body.replaceChildren()
+  })
+
+  /** The reference view that the main process sends for a document. */
+  function referenceView (doc: string): EditorWorkspaceReferences {
+    const snapshot = extractReferences('edited-document.md', doc)
+    return {
+      snapshot,
+      workspaceOccurrences: snapshot.occurrences,
+      resolutions: resolveWorkspace([snapshot])
+    }
+  }
+
+  function parsedView (view: EditorView): EditorView {
+    assert.ok(forceParsing(view, view.state.doc.length, 60_000), 'the document must parse')
+    view.dispatch({ effects: workspaceReferencesUpdate.of(referenceView(view.state.sliceDoc())) })
+    return view
+  }
+
+  function createEditor (doc: string, selection: EditorSelection): EditorView {
+    const config = getDefaultConfig()
+    const view = new EditorView({
+      state: EditorState.create({
+        doc,
+        selection,
+        extensions: [
+          EditorState.allowMultipleSelections.of(true),
+          markdownParser(),
+          configField.init(() => config),
+          workspaceReferencesField,
+          renderers(config)
+        ]
+      }),
+      parent: document.body
+    })
+    views.push(view)
+    return parsedView(view)
+  }
+
+  function drawn (view: EditorView): Drawn[] {
+    const found: Drawn[] = []
+    for (const source of view.state.facet(EditorView.decorations)) {
+      const set = typeof source === 'function' ? source(view) : source
+      const cursor = set.iter()
+      while (cursor.value !== null) {
+        found.push({ from: cursor.from, to: cursor.to, decoration: cursor.value })
+        cursor.next()
+      }
+    }
+    return found
+  }
+
+  function describeDrawn (view: EditorView, item: Drawn|undefined): string {
+    if (item === undefined) {
+      return 'nothing'
+    }
+    const widget: WidgetType|undefined = item.decoration.spec.widget
+    const kind = widget?.constructor.name ?? JSON.stringify(item.decoration.spec)
+    return `${kind} at ${item.from}-${item.to} (${JSON.stringify(view.state.sliceDoc(item.from, item.to).slice(0, 40))})`
+  }
+
+  function sameDecoration (a: Decoration, b: Decoration): boolean {
+    const widget: WidgetType|undefined = a.spec.widget
+    const other: WidgetType|undefined = b.spec.widget
+    // A widget class without an `eq` of its own is equal only to itself. Two
+    // such widgets of one class over the same source show the same content.
+    if (widget !== undefined && other !== undefined && widget.eq === WidgetType.prototype.eq) {
+      return widget.constructor === other.constructor
+    }
+    return a.eq(b)
+  }
+
+  function assertSameDrawing (edited: EditorView, fresh: EditorView, step: string): void {
+    const a = drawn(edited)
+    const b = drawn(fresh)
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const same = a[i] !== undefined && b[i] !== undefined &&
+        a[i].from === b[i].from && a[i].to === b[i].to && sameDecoration(a[i].decoration, b[i].decoration)
+      assert.ok(same, `${step}: the edited editor draws ${describeDrawn(edited, a[i])}, a new editor draws ${describeDrawn(fresh, b[i])}`)
+    }
+  }
+
+  it('draw an edited document as a new editor draws it, after each of a sequence of edits and caret moves', function () {
+    const at = (needle: string, state: EditorState): number => {
+      const position = state.sliceDoc().indexOf(needle)
+      assert.notEqual(position, -1, `the document must contain ${needle}`)
+      return position
+    }
+    const steps: Array<[string, (state: EditorState) => TransactionSpec]> = [
+      [ 'text typed in a paragraph', state => ({ changes: { from: at('with $x^2$', state), insert: 'now ' } }) ],
+      [ 'a front matter value changed', state => ({ changes: { from: at('Lattices\ntags', state), insert: 'Even ' } }) ],
+      [ 'the caret in the front matter', state => ({ selection: { anchor: at('tags:', state) + 2 } }) ],
+      [ 'the caret in the last paragraph', state => ({ selection: { anchor: at('Closing', state) + 3 } }) ],
+      [ 'the title of a div changed', state => ({ changes: { from: at('Main theorem', state) + 4, insert: ' structure' } }) ],
+      [ 'text typed in a div', state => ({ changes: { from: at('Every even', state), insert: 'Up to isometry. ' } }) ],
+      [ 'the caret in a div header', state => ({ selection: { anchor: at('.theorem', state) + 2 } }) ],
+      [ 'the closing fence of a div deleted', state => ({ changes: { from: at('$$\n:::', state) + 3, to: at('$$\n:::', state) + 6, insert: '' } }) ],
+      [ 'the closing fence written again', state => ({ changes: { from: at('$$\n\n\n| Lattice', state) + 3, insert: ':::' } }) ],
+      [ 'the caret in a table cell', state => ({ selection: { anchor: at('| 8 ', state) + 2 } }) ],
+      [ 'a table cell changed', state => ({ changes: { from: at('| 8 ', state) + 2, to: at('| 8 ', state) + 3, insert: '9' } }) ],
+      [ 'a table row added', state => ({ changes: { from: at('- [ ] an open', state) - 1, insert: '| $D_4$   | 4    |\n' } }) ],
+      [ 'the caret in inline math', state => ({ selection: { anchor: at('$x^2$', state) + 2 } }) ],
+      [ 'inline math changed', state => ({ changes: { from: at('x^2$ and', state) + 3, insert: '0' } }) ],
+      [ 'a task checked', state => ({ changes: { from: at('[ ] an open', state) + 1, to: at('[ ] an open', state) + 2, insert: 'x' } }) ],
+      [ 'a paragraph added before the first heading', state => ({ changes: { from: at('# Lattices', state), insert: 'An opening $a$ paragraph.\n\n' } }) ],
+      [ 'a heading deleted', state => ({ changes: { from: at('# Lattices', state), to: at('A paragraph', state), insert: '' } }) ],
+      [ 'a label changed', state => ({ changes: { from: at('#thm:main', state) + 9, insert: '-result' } }) ],
+      [ 'a reference changed to the new label', state => ({ changes: { from: at('@thm:main for', state) + 9, insert: '-result' } }) ],
+      [ 'a div added at the end', state => ({ changes: { from: state.doc.length, insert: '\n::: {.remark}\nA remark with $r$.\n:::\n' } }) ],
+      [ 'two carets', state => ({ selection: EditorSelection.create([
+        EditorSelection.cursor(at('Up to isometry', state) + 2),
+        EditorSelection.cursor(at('A remark', state) + 2)
+      ]) }) ],
+      [ 'two changes in one transaction', state => ({ changes: [
+        { from: at('An opening', state), insert: 'X' },
+        { from: at('A remark', state), insert: 'Y' }
+      ] }) ],
+      [ 'the front matter deleted', state => ({ changes: { from: 0, to: at('An opening', state), insert: '' }, selection: { anchor: 0 } }) ],
+      [ 'the caret at the end', state => ({ selection: { anchor: state.doc.length } }) ]
+    ]
+
+    const edited = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length))
+    assert.ok(drawn(edited).length > 20, 'the renderers must draw the document')
+    for (const [ step, spec ] of steps) {
+      edited.dispatch(spec(edited.state))
+      parsedView(edited)
+      const fresh = createEditor(edited.state.sliceDoc(), edited.state.selection)
+      assertSameDrawing(edited, fresh, step)
+      fresh.destroy()
+      views.pop()
+    }
+  })
+
+  it('stay in place for a configuration update that changes no renderer setting', function () {
+    const view = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length))
+    const before = drawn(view)
+    const update = view.state.update({
+      effects: configUpdateEffect.of({ renderMath: true, metadata: { ...getDefaultConfig().metadata } })
+    })
+    assert.equal(update.reconfigured, false)
+    view.dispatch(update)
+    assert.ok(view.state.field(configField) === update.startState.field(configField), 'the same values keep the configuration object')
+    const after = drawn(view)
+    assert.equal(after.length, before.length)
+    for (const [ index, item ] of after.entries()) {
+      assert.ok(item.decoration === before[index].decoration, `${describeDrawn(view, item)} must be the object that the editor drew before`)
+    }
+  })
+
+  it('follow a configuration update that changes a renderer setting', function () {
+    const view = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length))
+    assert.notEqual(view.dom.querySelector('.preview-math'), null)
+    const update = view.state.update({ effects: configUpdateEffect.of({ renderMath: false }) })
+    assert.equal(update.reconfigured, true)
+    view.dispatch(update)
+    assert.equal(view.dom.querySelector('.preview-math'), null)
+    assert.ok(view.contentDOM.textContent.includes('A paragraph with x^2 and'), 'the math shows as text')
   })
 })

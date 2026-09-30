@@ -330,7 +330,9 @@ of an isolated instance are in the first comment of #132.
   `setWikilinkResolutions`, `setCompletionDatabase`, the collaboration session
   store and `modeSwitcher` (`renderers/index.ts`) dispatch or reconfigure only
   for a changed value. A `Compartment.reconfigure` makes the view draw its
-  content again.
+  content again. `configField` keeps its object for a configuration update
+  with equal values, so a renderer can compare the field by identity in
+  `inputsChanged`.
 - **An editor in a background tab receives no workspace transaction.** It
   reads the workspace state, the citation data and the completion databases
   when its tab becomes active (`refreshActiveEditorAuxiliaryState` in
