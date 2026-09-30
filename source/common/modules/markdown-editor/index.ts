@@ -1013,7 +1013,10 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   get projectInfo (): ProjectInfo|null {
-    return this._instance.state.field(projectInfoField, false) ?? null
+    // Only the Markdown extension set carries the field; another editor has
+    // no project.
+    const info = this._instance.state.field(projectInfoField, false)
+    return info === undefined ? null : info
   }
 
   /**

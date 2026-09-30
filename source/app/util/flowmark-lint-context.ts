@@ -94,15 +94,23 @@ export function flowmarkReferenceContext(
     : extractReferences(documentPath, text);
   const ownSites = new Map<string, string[]>();
   for (const definition of definitions) {
-    ownSites.set(definition.key, [...(ownSites.get(definition.key) ?? []), documentPath]);
+    const sites = ownSites.get(definition.key);
+    if (sites === undefined) {
+      ownSites.set(definition.key, [documentPath]);
+    } else {
+      sites.push(documentPath);
+    }
   }
   // The text decides what this document defines; the workspace decides what
-  // every other document defines.
+  // every other document defines. A key that neither map holds has no
+  // definition site.
   const resolve = (key: string): FlowmarkResolution => {
-    const sites = (workspace.sites.get(key) ?? [])
-      .filter((site) => site !== documentPath)
-      .concat(ownSites.get(key) ?? [])
-      .sort();
+    const workspaceSites = workspace.sites.get(key);
+    const own = ownSites.get(key);
+    const sites = [
+      ...(workspaceSites === undefined ? [] : workspaceSites.filter((site) => site !== documentPath)),
+      ...(own === undefined ? [] : own),
+    ].sort();
     if (sites.length === 0) {
       return { status: "missing" };
     }

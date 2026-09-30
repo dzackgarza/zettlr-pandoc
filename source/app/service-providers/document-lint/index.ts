@@ -477,7 +477,7 @@ export default class DocumentLintProvider extends ProviderContract {
       bibliographies: document.bibliographies === undefined
         ? null
         : await Promise.all(document.bibliographies.map(async file => await pass.stamp(file))),
-      projectRoots: document.projectRoots ?? null,
+      projectRoots: document.projectRoots === undefined ? null : document.projectRoots,
       flowmarkConfig: await pass.flowmarkConfig(documentPath)
     })
   }

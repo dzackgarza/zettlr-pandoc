@@ -71,8 +71,11 @@ function frontmatterRangeAt (state: EditorState, blockFrom: number): Frontmatter
   while (node !== null && (node.name !== 'YAMLFrontmatter' || node.from !== blockFrom)) {
     node = node.parent
   }
-  const content = node?.getChild('CodeText') ?? null
-  if (node === null || content === null) {
+  if (node === null) {
+    return null
+  }
+  const content = node.getChild('CodeText')
+  if (content === null) {
     return null
   }
   return {

@@ -566,7 +566,10 @@ async function probeTool(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProb
 const availableTools = new Map<string, Promise<ToolProbe>>();
 
 async function probeToolOnce(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
-  const key = `${env.PATH ?? ""}\0${tool}`;
+  if (env.PATH === undefined) {
+    throw new Error(`tikz-render: the render environment has no PATH, so ${tool} cannot be found in it.`);
+  }
+  const key = `${env.PATH}\0${tool}`;
   const known = availableTools.get(key);
   if (known !== undefined) {
     return await known;

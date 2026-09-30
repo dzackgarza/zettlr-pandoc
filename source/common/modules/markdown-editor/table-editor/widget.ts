@@ -327,7 +327,11 @@ function tableDecorationsBetween (state: EditorState, from: number, to: number):
  */
 function tableReach (state: EditorState): SourceRange[] {
   const ranges: SourceRange[] = [...state.selection.ranges]
-  for (const suggestion of getReviewChunks(state) ?? []) {
+  const suggestions = getReviewChunks(state)
+  if (suggestions === null) {
+    return ranges
+  }
+  for (const suggestion of suggestions) {
     ranges.push({ from: suggestion.seam, to: suggestion.seam }, ...suggestion.anchors)
   }
   return ranges
@@ -653,8 +657,11 @@ function setSelectionToCell (td: HTMLTableCellElement, cell: TableCell, view: Ed
   // The cell holds offsets from the table start; the view knows where the
   // table is now.
   const tableFrom = view.posAtDOM(wrapper)
-  const from = tableFrom + parseInt(td.dataset.cellFrom ?? '0', 10)
-  const cellTo = tableFrom + parseInt(td.dataset.cellTo ?? '0', 10)
+  if (td.dataset.cellFrom === undefined || td.dataset.cellTo === undefined) {
+    throw new Error('Cannot select a table cell that carries no source offsets')
+  }
+  const from = tableFrom + parseInt(td.dataset.cellFrom, 10)
+  const cellTo = tableFrom + parseInt(td.dataset.cellTo, 10)
   const selection = getSelection()
   const textOffset = selection?.focusOffset ?? 0
   const nodeOffset = estimateNodeOffset(selection?.anchorNode ?? td, td, cell.textContent)

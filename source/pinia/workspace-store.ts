@@ -188,8 +188,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
     }
 
-    for (const root of changedRoots) {
-      workspaceMap.value.set(root, [...pathSets.get(root) ?? []])
+    for (const [root, paths] of pathSets) {
+      if (changedRoots.has(root)) {
+        workspaceMap.value.set(root, [...paths])
+      }
     }
 
     const removed = [...lastState].filter(([ , descriptor ]) => descriptor === undefined).map(([path]) => path)

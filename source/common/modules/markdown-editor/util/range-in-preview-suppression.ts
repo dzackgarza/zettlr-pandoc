@@ -50,7 +50,11 @@ export function reviewSuppressionChanged (update: ViewUpdate): boolean {
  */
 export function previewSuppressionRanges (state: EditorState): Array<{ from: number, to: number }> {
   const ranges: Array<{ from: number, to: number }> = [...state.selection.ranges]
-  for (const suggestion of getReviewChunks(state) ?? []) {
+  const suggestions = getReviewChunks(state)
+  if (suggestions === null) {
+    return ranges
+  }
+  for (const suggestion of suggestions) {
     const ownedSpans = suggestion.anchors.filter(anchor => anchor.to > anchor.from)
     if (ownedSpans.length === 0) {
       const seam = suggestion.anchors[0]?.from ?? suggestion.seam
