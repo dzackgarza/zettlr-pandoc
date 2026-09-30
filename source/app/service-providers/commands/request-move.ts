@@ -78,6 +78,7 @@ export default class RequestMove extends ZettlrCommand {
     }
 
     // Now we can move the source to the target.
+    const linksBefore = this._app.links.snapshot()
     await this._app.fsal.rename(from.path, newPath)
     // Notify the documents provider so it can exchange any files if necessary
     if (await this._app.fsal.isFile(newPath)) {
@@ -85,6 +86,11 @@ export default class RequestMove extends ZettlrCommand {
     } else {
       await this._app.documents.hasMovedDir(from.path, newPath)
     }
+
+    // Keep every wikilink pointing at the document it named before the move
+    const move = { from: from.path, to: newPath }
+    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move)
+    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
 
     return true
   }

@@ -22,6 +22,13 @@ import type FSAL from '../fsal'
 import type ConfigProvider from '../config'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
 import type { WikilinkEdge } from './ipc-contract'
+import { movedPath, retargetedLink, retargetLinks, type PathMove } from '@common/util/replace-links'
+
+/** The wikilinks of every file and the index they resolve against. */
+export interface WikilinkSnapshot {
+  index: WikilinkIndex
+  links: Map<string, string[]>
+}
 
 /**
  * This class resolves the wikilinks of the loaded workspaces. It keeps the
@@ -113,6 +120,39 @@ export default class LinkProvider extends ProviderContract {
   /** The index as it stands now; a later reindex does not change it. */
   get index (): WikilinkIndex {
     return this._index
+  }
+
+  /** The links and the index as they stand now, to retarget after a move. */
+  snapshot (): WikilinkSnapshot {
+    return { index: this._index, links: this._fileLinkDatabase }
+  }
+
+  /**
+   * Reindexes after `move`, and returns the files, at their paths before the
+   * move, that hold a wikilink whose document the move changed.
+   */
+  async filesChangedByMove (before: WikilinkSnapshot, move: PathMove): Promise<string[]> {
+    await this.reindex()
+    return [...before.links].filter(([ sourcePath, links ]) => links.some(link => {
+      const { target } = splitWikilinkTarget(link)
+      return retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined
+    })).map(([sourcePath]) => sourcePath)
+  }
+
+  /**
+   * Rewrites the wikilinks of `files` (see `filesChangedByMove`) so that each
+   * names the document it named before `move`.
+   */
+  async retargetAfterMove (before: WikilinkSnapshot, move: PathMove, files: string[]): Promise<void> {
+    for (const sourcePath of files) {
+      const filePath = movedPath(sourcePath, move)
+      const content = await this._fsal.readTextFile(filePath)
+      const newContent = retargetLinks(content, sourcePath, move, before.index, this._index)
+      if (newContent !== content) {
+        await this._fsal.writeTextFile(filePath, newContent)
+        this._logger.info(`[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`)
+      }
+    }
   }
 
   /** The written form of a wikilink to `filePath`. */

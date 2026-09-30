@@ -39,3 +39,27 @@ describe('Link retargeting after a rename', function () {
     strictEqual(retargetLinks(markdown, sourcePath, move, before, after), markdown)
   })
 })
+
+describe('Link retargeting after a directory rename', function () {
+  const unmoved = [ document('index.md'), document('deep/x/lemma.md'), document('notes/basis.md') ]
+  const before = new WikilinkIndex([ ...unmoved, document('other/lemma.md'), document('other/chain.md') ])
+  const after = new WikilinkIndex([ ...unmoved, document('x/lemma.md'), document('x/chain.md') ])
+  const move = { from: `${root}/other`, to: `${root}/x` }
+
+  it('retargets a name the rename gave to another document, and a relative link into the directory', function () {
+    const markdown = 'Lemma [[x/lemma]], chain [[./other/chain.md#Step]], basis [[basis]].\n'
+    strictEqual(
+      retargetLinks(markdown, `${root}/index.md`, move, before, after),
+      'Lemma [[deep/x/lemma]], chain [[chain#Step]], basis [[basis]].\n'
+    )
+  })
+
+  it('retargets a relative link out of the renamed directory, read from its old location', function () {
+    const markdown = 'Basis [[../notes/basis.md]], sibling [[./lemma.md]].\n'
+    strictEqual(
+      retargetLinks(markdown, `${root}/other/chain.md`, { from: `${root}/other`, to: `${root}/x/sub` }, before,
+        new WikilinkIndex([ ...unmoved, document('x/sub/lemma.md'), document('x/sub/chain.md') ])),
+      'Basis [[basis]], sibling [[./lemma.md]].\n'
+    )
+  })
+})

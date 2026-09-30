@@ -8,11 +8,12 @@
  * License:         GNU GPL v3
  *
  * Description:     Rewrites the wikilinks of a file, and retargets the links
- *                  to a file that moved
+ *                  after a file or a directory moved
  *
  * END HEADER
  */
 
+import path from 'path'
 import { extractASTNodes, markdownToAST } from '../modules/markdown-utils'
 import { type ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
 import { splitWikilinkTarget, type WikilinkIndex } from './wikilink-resolution'
@@ -53,27 +54,58 @@ export default function replaceLinks (markdown: string, rewrite: (target: string
   return markdown
 }
 
+/** A file or a directory that moved from `from` to `to`. */
+export interface PathMove {
+  from: string
+  to: string
+}
+
+/** Where `filePath` is after `move`: moved with it, or where it was. */
+export function movedPath (filePath: string, move: PathMove): string {
+  if (filePath === move.from) {
+    return move.to
+  }
+  if (filePath.startsWith(move.from + path.sep)) {
+    return move.to + filePath.slice(move.from.length)
+  }
+  return filePath
+}
+
 /**
- * Retargets the links in `markdown`, the text of `sourcePath`, after the file
- * at `from` moved to `to`. `before` and `after` index the workspace on either
- * side of the move. A link that still names the file (by its ID, an alias,
- * the title, or a path suffix the move kept) stays as written; every other
- * link that named it takes the file's new written form.
+ * The new target of the wikilink `target` in the document that was at
+ * `sourcePath` before `move`, or undefined when the link names the same
+ * document on both sides of the move. `before` and `after` index the
+ * workspace on either side. A link whose document the move changed (a
+ * relative path into or out of a moved directory, a name the move made
+ * ambiguous or gave to another document) takes the written form of the
+ * document it named before.
+ */
+export function retargetedLink (
+  target: string,
+  sourcePath: string,
+  move: PathMove,
+  before: WikilinkIndex,
+  after: WikilinkIndex
+): string|undefined {
+  const previous = before.resolve(target, sourcePath)
+  if (previous.status !== 'resolved') {
+    return undefined
+  }
+  const destination = movedPath(previous.path, move)
+  const current = after.resolve(target, movedPath(sourcePath, move))
+  return current.status === 'resolved' && current.path === destination ? undefined : after.canonical(destination)
+}
+
+/**
+ * Retargets the links in `markdown`, the text of the document that was at
+ * `sourcePath` before `move` (see `retargetedLink`).
  */
 export function retargetLinks (
   markdown: string,
   sourcePath: string,
-  move: { from: string, to: string },
+  move: PathMove,
   before: WikilinkIndex,
   after: WikilinkIndex
 ): string {
-  const newTarget = after.canonical(move.to)
-  return replaceLinks(markdown, target => {
-    const previous = before.resolve(target, sourcePath)
-    if (previous.status !== 'resolved' || previous.path !== move.from) {
-      return undefined
-    }
-    const current = after.resolve(target, sourcePath)
-    return current.status === 'resolved' && current.path === move.to ? undefined : newTarget
-  })
+  return replaceLinks(markdown, target => retargetedLink(target, sourcePath, move, before, after))
 }

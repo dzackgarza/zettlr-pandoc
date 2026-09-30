@@ -47,6 +47,8 @@ export default class DirRename extends ZettlrCommand {
       const { openWorkspaces } = this._app.config.getConfig().app
       const isRoot = openWorkspaces.includes(sourceDir.path)
 
+      const linksBefore = this._app.links.snapshot()
+
       if (isRoot) {
         this._app.config.removePath(sourceDir.path)
       }
@@ -58,6 +60,11 @@ export default class DirRename extends ZettlrCommand {
       if (isRoot) {
         this._app.config.addPath(newPath)
       }
+
+      // Keep every wikilink pointing at the document it named before the rename
+      const move = { from: arg.path, to: newPath }
+      const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move)
+      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
     } catch (err: unknown) {
       if (err instanceof Error) {
         this._app.log.error(`Error during renaming file: ${err.message}`, err)

@@ -17,7 +17,6 @@ import ZettlrCommand from './zettlr-command'
 import sanitize from 'sanitize-filename'
 import { dialog } from 'electron'
 import { trans } from '@common/i18n-main'
-import { retargetLinks } from '@common/util/replace-links'
 import { hasAnyRecognizedFileExtension } from '@common/util/file-extention-checks'
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import pathExists from 'source/common/util/path-exists'
@@ -130,10 +129,8 @@ export default class FileRename extends ZettlrCommand {
     }
 
     try {
-      // We need to retrieve the inboundLinks before we rename the file, since
-      // afterwards the links won't be valid anymore.
-      const inboundLinks = this._app.links.retrieveInbound(file.path)
-      const indexBefore = this._app.links.index
+      // The links resolve against the workspace as it is before the rename.
+      const linksBefore = this._app.links.snapshot()
 
       // Before renaming the file, let's see if it is a root file. Because if it
       // is, we have to close it first.
@@ -154,10 +151,12 @@ export default class FileRename extends ZettlrCommand {
       }
 
       // Finally, let's check if we can update some internal links to that file.
-      if (inboundLinks.length > 0) {
+      const move = { from: file.path, to: newPath }
+      const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move)
+      if (changedFiles.length > 0) {
         const response = await dialog.showMessageBox({
           title: trans('Confirm'),
-          message: trans('Update %s internal links to file %s?', inboundLinks.length, newName),
+          message: trans('Update %s internal links to file %s?', changedFiles.length, newName),
           buttons: [
             trans('Yes'),
             trans('No')
@@ -169,16 +168,7 @@ export default class FileRename extends ZettlrCommand {
           return // Do not update the links.
         }
 
-        await this._app.links.reindex()
-        const indexAfter = this._app.links.index
-        for (const source of inboundLinks) {
-          const content = await this._app.fsal.readTextFile(source)
-          const newContent = retargetLinks(content, source, { from: file.path, to: newPath }, indexBefore, indexAfter)
-          if (newContent !== content) {
-            await this._app.fsal.writeTextFile(source, newContent)
-            this._app.log.info(`[Application] Updated the links to ${newPath} in file ${source}`)
-          }
-        }
+        await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
       }
     } catch (err: unknown) {
       this._app.log.error(`Error during renaming file: ${err instanceof Error ? err.message : 'Unknown error'}`, err)
