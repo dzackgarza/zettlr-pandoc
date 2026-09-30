@@ -12,7 +12,7 @@ Module._load = function (request, ...rest) {
     const userData = path.join(os.homedir(), '.config', 'Zettlr-Pandoc')
     return {
       app: {
-        getPath: (key) => key === 'userData' ? userData : '/tmp',
+        getPath: (key) => ({ userData, home: os.homedir() })[key] ?? '/tmp',
         isPackaged: false,
         getName: () => 'Zettlr-Pandoc'
       },

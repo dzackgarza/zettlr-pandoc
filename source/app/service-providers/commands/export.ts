@@ -199,7 +199,7 @@ export default class Export extends ZettlrCommand {
     // Call the exporter. Don't throw the "big" error as this is single-file export
     try {
       this._app.log.verbose(`[Exporter] Exporting ${exporterOptions.sourceFiles.length} files to ${exporterOptions.targetDirectory}`)
-      const output = await makeExport(exporterOptions, this._app.log, this._app.config, this._app.assets)
+      const output = await makeExport(exporterOptions, this._app.log, this._app.config, this._app.assets, this._app.links.index)
       if (output.code === 0) {
         this._app.log.info(`Successfully exported file to ${output.targetFile}`)
         const readableFormat = (profile.writer in PANDOC_WRITERS) ? PANDOC_WRITERS[profile.writer] : profile.writer

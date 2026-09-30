@@ -15,7 +15,7 @@
 
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import ZettlrCommand from './zettlr-command'
-import { splitWikilinkTarget } from '@common/util/wikilink-resolution'
+import { fragmentHeadingIndex, splitWikilinkTarget } from '@common/util/wikilink-resolution'
 import { extractASTNodes, markdownToAST } from '@common/modules/markdown-utils'
 import type { Heading } from '@common/modules/markdown-utils/markdown-ast'
 import { trans } from '@common/i18n-main'
@@ -32,11 +32,11 @@ export interface ForceOpenAPI {
 /** The 1-based line of the heading whose text is `fragment`, ignoring case. */
 function headingLine (markdown: string, fragment: string): number|undefined {
   const headings = extractASTNodes(markdownToAST(markdown), 'Heading') as Heading[]
-  const heading = headings.find(node => node.content.trim().toLowerCase() === fragment.toLowerCase())
-  if (heading === undefined) {
+  const index = fragmentHeadingIndex(headings, fragment)
+  if (index < 0) {
     return undefined
   }
-  return markdown.slice(0, heading.from).split('\n').length
+  return markdown.slice(0, headings[index].from).split('\n').length
 }
 
 export default class ForceOpen extends ZettlrCommand {

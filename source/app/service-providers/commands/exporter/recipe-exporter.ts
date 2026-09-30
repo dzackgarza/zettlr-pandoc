@@ -24,6 +24,8 @@ import sanitize from 'sanitize-filename'
 import type { ExporterOptions, ExporterOutput } from './types'
 import { runProcess } from './run-shell-command'
 import { splitLines } from './split-lines'
+import { wikilinkExportMap } from '@common/util/wikilink-export'
+import type { WikilinkIndex } from '@common/util/wikilink-resolution'
 
 // The canonical recipe file. compile-pandoc has no internal `pandoc::` module
 // reference, so it is invocable directly via --justfile without a project
@@ -38,10 +40,12 @@ const JUSTFILE = path.join(os.homedir(), '.pandoc', 'justfile')
  * @param   options        The exporter options (source files, target dir).
  * @param   latexTemplate  The configured LaTeX template (export.latexTemplate);
  *                         empty string lets the recipe use its own default.
+ * @param   wikilinks      The workspace index that resolves the wikilinks.
  */
 export async function runRecipeExport (
   options: ExporterOptions,
-  latexTemplate: string
+  latexTemplate: string,
+  wikilinks: WikilinkIndex
 ): Promise<ExporterOutput> {
   const source = options.sourceFiles[0]
   const isProjectExport = options.sourceFiles.length > 1
@@ -95,7 +99,21 @@ export async function runRecipeExport (
     }
   }
 
-  const result = await runProcess('just', argv, runDir)
+  // Zettlr resolves the wikilinks; the recipe's filters/wikilinks.lua reads
+  // the resolutions from the file that PANDOC_WIKILINKS names.
+  const inputs = await Promise.all(options.sourceFiles.map(async file => ({
+    path: file.path,
+    markdown: await fs.readFile(file.path, 'utf8')
+  })))
+  const mapDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'zettlr-wikilinks-'))
+  const mapFile = path.join(mapDirectory, 'wikilinks.json')
+  await fs.writeFile(mapFile, JSON.stringify(wikilinkExportMap(inputs, wikilinks)), 'utf8')
+  let result: { stdout: string, stderr: string, code: number }
+  try {
+    result = await runProcess('just', argv, runDir, { ...process.env, PANDOC_WIKILINKS: mapFile })
+  } finally {
+    await fs.rm(mapDirectory, { recursive: true, force: true })
+  }
 
   // The recipe writes `<title>-<DD-MM-YY>.pdf` into its ROOT (runDir).
   // Find the newest such file rather than reconstructing the date string.

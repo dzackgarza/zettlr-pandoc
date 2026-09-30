@@ -58,9 +58,10 @@ export async function runShellCommand (command: string, argv: string[], cwd: str
  * @param   {string}    command  The command to run (PATH-resolved).
  * @param   {string[]}  argv     The literal argument vector
  * @param   {string}    cwd      The working directory for the command
+ * @param   {object}    env      The environment of the command
  *
  * @return  {object}             Returns an object with keys stdout, stderr, and code
  */
-export async function runProcess (command: string, argv: string[], cwd: string): Promise<{ stdout: string, stderr: string, code: number }> {
-  return await collectProcess(spawn(command, argv, { shell: false, cwd }))
+export async function runProcess (command: string, argv: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ stdout: string, stderr: string, code: number }> {
+  return await collectProcess(spawn(command, argv, { shell: false, cwd, env }))
 }

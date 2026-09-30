@@ -38,6 +38,7 @@ import { EXT2READER, isHtmlWriter, isTexWriter } from '@common/pandoc-util/pando
 import { injectPandocMathHeaders } from './pandoc-math-headers'
 import { type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
 import { loadCanonicalMathJaxMacros } from '../../../util/load-mathjax-macros'
+import type { WikilinkIndex } from '@common/util/wikilink-resolution'
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -134,7 +135,8 @@ export async function makeExport (
   options: ExporterOptions,
   logger: LogProvider,
   config: ConfigProvider,
-  assets: AssetsProvider
+  assets: AssetsProvider,
+  wikilinks: WikilinkIndex
 ): Promise<ExporterOutput> {
   // We already know where the exported file will end up, so set the property
   const inputFiles = options.sourceFiles.map(file => file.path)
@@ -171,7 +173,7 @@ export async function makeExport (
     return await PLUGINS.textbundle(options, inputFiles, ctx)
   } else if (options.profile.writer === 'compile-pandoc') {
     // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
-    return await runRecipeExport(options, config.get().export.latexTemplate)
+    return await runRecipeExport(options, config.get().export.latexTemplate, wikilinks)
   } else if (options.profile.writer === 'script') {
     const script = config.get().export.scripts.find(s => s.name === options.profile.name)
     if (script === undefined) {

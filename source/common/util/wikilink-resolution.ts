@@ -56,6 +56,14 @@ export function splitWikilinkTarget (raw: string): { target: string, fragment: s
   return { target: raw.slice(0, hash).trim(), fragment: raw.slice(hash + 1).trim() }
 }
 
+/**
+ * The index of the heading that a `#fragment` names: the first heading whose
+ * text is the fragment, ignoring case. -1 when no heading has that text.
+ */
+export function fragmentHeadingIndex (headings: Array<{ content: string }>, fragment: string): number {
+  return headings.findIndex(heading => heading.content.trim().toLowerCase() === fragment.toLowerCase())
+}
+
 /** Every `[[…]]` target in `text`, before its `#` fragment and `|` label. */
 export function wikilinkTargetsIn (text: string): string[] {
   const targets = new Set<string>()

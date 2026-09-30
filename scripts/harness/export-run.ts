@@ -18,9 +18,27 @@ import { promises as fs, readFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import YAML from 'yaml'
+import { WikilinkIndex } from '../../source/common/util/wikilink-resolution'
+import { hasMarkdownExt } from '../../source/common/util/file-extention-checks'
 
 function stderr (message: string): void {
   process.stderr.write(`${message}\n`)
+}
+
+/**
+ * The wikilink index of the open workspace that contains `sourceFile`. The
+ * app builds its index from the FSAL's parsed descriptors, which need the
+ * whole app; the harness knows the paths only, so links by ID, alias or title
+ * stay unresolved here.
+ */
+async function workspaceIndex (sourceFile: string, appConfig: any): Promise<WikilinkIndex> {
+  const root: string = [...appConfig.app.openWorkspaces as string[]]
+    .sort((a, b) => b.length - a.length)
+    .find(workspace => sourceFile.startsWith(workspace + path.sep)) ?? path.dirname(sourceFile)
+  const entries = await fs.readdir(root, { recursive: true })
+  return new WikilinkIndex(entries
+    .filter(entry => hasMarkdownExt(entry) && !entry.split(path.sep).some(segment => segment.startsWith('.')))
+    .map(entry => ({ path: path.join(root, entry), root, id: '', title: undefined, aliases: [] })))
 }
 
 async function main (): Promise<void> {
@@ -71,7 +89,7 @@ async function main (): Promise<void> {
     cwd: path.dirname(sourceFile)
   }
 
-  const out = await makeExport(options, log, config, assets)
+  const out = await makeExport(options, log, config, assets, await workspaceIndex(sourceFile, appConfig))
   console.log('EXIT', out.code, 'TARGET', out.targetFile)
   console.log('STDERR TAIL:', out.stderr.slice(-2).join(' | '))
 }
