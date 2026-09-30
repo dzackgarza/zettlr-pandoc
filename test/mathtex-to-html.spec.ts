@@ -113,4 +113,20 @@ describe('Utility#mathJaxToHTML()', function () {
     mathJaxToElem('x^2', second, 'display')
     assert.equal(__mathJaxRenderCacheSizeForTests(), 2)
   })
+
+  it('keeps each equation of a long document for the next pass over it', function () {
+    this.timeout(30000)
+    __resetMathJaxRenderCacheForTests()
+    const equations = Array.from({ length: 500 }, (_, i) => `L_{${i}} \\oplus U`)
+    const pass = (): string[] => equations.map(equation => {
+      const element = document.createElement('div')
+      mathJaxToElem(equation, element, 'inline')
+      return element.innerHTML
+    })
+
+    const first = pass()
+    assert.equal(__mathJaxRenderCacheSizeForTests(), equations.length)
+    assert.deepEqual(pass(), first)
+    assert.equal(__mathJaxRenderCacheSizeForTests(), equations.length)
+  })
 })

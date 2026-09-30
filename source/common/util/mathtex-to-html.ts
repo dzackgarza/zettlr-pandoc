@@ -61,7 +61,12 @@ let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
 
 type MathJaxDisplay = 'inline'|'display'
 
-const BROWSER_RENDER_CACHE_LIMIT = 256
+// The cache must hold the equations of the documents in use. With fewer
+// entries than one document has equations, a scroll through the document
+// evicts each equation before the scroll comes back to it, and each pass
+// converts all of them again (#136: 444 distinct equations in one document,
+// 610 to 730 ms of conversion in each pass at a limit of 256).
+const BROWSER_RENDER_CACHE_LIMIT = 2048
 const browserRenderCache = new Map<string, HTMLElement>()
 
 function browserRenderCacheKey (equation: string, display: MathJaxDisplay): string {
