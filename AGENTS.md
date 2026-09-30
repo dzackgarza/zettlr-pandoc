@@ -273,8 +273,10 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   workspace root, a suffix of that path, a YAML `aliases` entry, the YAML `title`. The first tier
   with a match decides; two matches in it are ambiguous, never a first match.
   The written form (`canonical`) is the shortest suffix that names the file alone.
-- **Owner:** `LinkProvider` (`service-providers/links`) rebuilds the index on every
-  FSAL event. The root of a file is the innermost open workspace that contains it.
+- **Owner:** `LinkProvider` (`service-providers/links`) rebuilds the index once
+  for each batch of FSAL events that holds a Markdown file or a removal, and
+  broadcasts `links` only when the links or the index entries changed. The root
+  of a file is the innermost open workspace that contains it.
   Every consumer resolves through it: force-open (with `#heading` → `jump-to-line`),
   hover preview, backlinks, graph, autocomplete (`get-link-targets`), and
   file rename, move and directory rename (`LinkProvider.filesChangedByMove` and
@@ -305,6 +307,62 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   the renderer bundle maps to an empty module. Editor and window code import
   `splitWikilinkTarget` from `common/util/wikilink-target.ts`, which imports
   nothing, and ask the main process for resolutions.
+
+### 9. Responsiveness contracts
+
+The cost of a typed character, a caret move and a filesystem event must not
+follow the length of the document or the size of the workspace (#132). These
+rules keep that property. The measurement harness and the safe launch command
+of an isolated instance are in the first comment of #132.
+
+- **Decorations from syntax nodes** go through `incrementalNodeDecorations`
+  (`markdown-editor/util/incremental-node-decorations.ts`). A transaction
+  computes again only the top-level blocks that the parser made again and the
+  ranges that the selection left or entered. `renderBlockWidgets`
+  (`renderers/base-renderer.ts`) is built on it. A renderer that reads a state
+  value other than the document, the syntax tree and the selection reports a
+  change of that value through `inputsChanged`; a value that it does not
+  report leaves stale widgets.
+- **A widget holds no document position.** The field keeps a widget outside a
+  changed block, so a stored position goes stale. A handler reads the position
+  from `view.posAtDOM`. The `eq` of a widget compares what the widget shows.
+- **An equal value causes no transaction.** `setWorkspaceReferences`,
+  `setWikilinkResolutions`, `setCompletionDatabase`, the collaboration session
+  store and `modeSwitcher` (`renderers/index.ts`) dispatch or reconfigure only
+  for a changed value. A `Compartment.reconfigure` makes the view draw its
+  content again.
+- **An editor in a background tab receives no workspace transaction.** It
+  reads the workspace state, the citation data and the completion databases
+  when its tab becomes active (`refreshActiveEditorAuxiliaryState` in
+  `MainEditor.vue`).
+- **Citations are drawn again when the citation database changed.**
+  `render-citations.ts` counts those changes (`citationDatabaseChanged`); a
+  citation widget carries the count it was drawn at, and `syncCitationData`
+  draws the citations of an editor again when the count moved. The identity of
+  the `metadata` configuration object is not a signal: it changes with each
+  configuration update.
+- **No `ipcRenderer.sendSync` in the path of a transaction.**
+- **FSAL events are batches.** FSAL publishes `fsal-events`: the events of
+  50 ms in one array, to the main-process listeners and to the windows. A
+  consumer does its work once for each batch and broadcasts only a changed
+  value.
+- **One parse of one document version in the main process.** `markdownToAST`
+  (`markdown-utils/index.ts`) keeps the ASTs of the texts it parsed last. The
+  AST is shared: a reader must not change it. Editor code passes the tree that
+  the editor has (`markdownToAST(text, tree)`), as the spellcheck context does.
+- **Pandoc reads one citation candidate once.**
+  `references/pandoc-citations.ts` keeps the reading of each candidate source;
+  an edit that changes no citation starts no Pandoc process.
+- **One probe of an external tool in a session** (`tikz-render.ts`,
+  `flowmarkToolPython`).
+- **One load of a citation database.** `CiteprocProvider` shares the load that
+  runs for a database path between concurrent requests.
+- **`@codemirror/collab` is patched**
+  (`patches/@codemirror%2Fcollab@6.1.1.patch`): a local update holds no
+  transaction. Without the patch the `origin` of each unconfirmed update keeps
+  one transaction and two editor states alive for each typed character. A
+  version update of the package must keep the patch until the package has the
+  change.
 
 ## Debugging entry points
 
@@ -363,7 +421,14 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   build, the Flowmark install (PEP 610 `commit_id`, `flowmarkInstallIdentity`),
   stamps of the macro tree, `mathjax-macros.json`, the TikZ template graph,
   `TEXINPUTS`, the bibliographies, the Flowmark config files, and the
-  definition sites of the other workspace documents. The cache persists to
+  reference resolutions that Flowmark receives for the document
+  (`flowmarkReferenceContext`: the resolution of each key that the document
+  defines or uses, and all defined workspace keys when one of its references
+  is missing). A new label in one document therefore makes stale only the
+  documents whose resolutions changed. One `LintPass` reads each shared input
+  (a stamp, a directory descriptor, the workspace definitions) once for all
+  documents of a reconcile, a lookup or a fix plan, and a queued document
+  carries the pass that queued it. The cache persists to
   `userData/document-lint-cache.json`. FSAL events and a Flowmark update queue
   every workspace document without a current result for a background worker
   pool. `/v1/lint` with `scope=workspace` or `all` reads only the cache: each
