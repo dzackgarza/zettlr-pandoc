@@ -14,7 +14,8 @@
 
 import { ipcMain } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import { splitWikilinkTarget, WikilinkIndex, type WikilinkResolution } from '@common/util/wikilink-resolution'
+import { WikilinkIndex, type WikilinkResolution } from '@common/util/wikilink-resolution'
+import { splitWikilinkTarget } from '@common/util/wikilink-target'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
 import path from 'path'

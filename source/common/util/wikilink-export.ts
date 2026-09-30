@@ -16,7 +16,8 @@
 
 import { extractASTNodes, markdownToAST } from '../modules/markdown-utils'
 import type { Heading, ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
-import { fragmentHeadingIndex, splitWikilinkTarget, type WikilinkIndex } from './wikilink-resolution'
+import { fragmentHeadingIndex, type WikilinkIndex } from './wikilink-resolution'
+import { splitWikilinkTarget } from './wikilink-target'
 
 /** One file of the export, in the order pandoc reads it. */
 export interface ExportInput {

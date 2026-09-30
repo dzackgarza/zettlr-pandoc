@@ -22,7 +22,7 @@ import { renderBlockWidgets } from './base-renderer'
 import { type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
-import { splitWikilinkTarget } from '@common/util/wikilink-resolution'
+import { splitWikilinkTarget } from '@common/util/wikilink-target'
 import { wikilinkOpener, wikilinkResolutionsField } from '../plugins/wikilink-resolutions-field'
 import clickAndSelect from './click-and-select'
 

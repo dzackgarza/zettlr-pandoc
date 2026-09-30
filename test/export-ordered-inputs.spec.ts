@@ -40,6 +40,7 @@ import os from 'os'
 import path from 'path'
 import { runRecipeExport } from 'source/app/service-providers/commands/exporter/recipe-exporter'
 import type { ExporterOptions } from 'source/app/service-providers/commands/exporter/types'
+import { WikilinkIndex } from 'source/common/util/wikilink-resolution'
 
 const JUSTFILE = path.join(os.homedir(), '.pandoc', 'justfile')
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
@@ -109,7 +110,7 @@ describe('Ordered Project export inputs (issue #1 Phase 7)', function () {
       profile: PDF_PROFILE,
       sourceFiles: [ { path: inputFile, name: 'input.md', ext: '.md' } ],
       targetDirectory: dir
-    } as ExporterOptions, '')
+    } as ExporterOptions, '', new WikilinkIndex([]))
 
     const { cwd, argv } = await recorded()
     assert.strictEqual(cwd, dir)
@@ -137,7 +138,7 @@ describe('Ordered Project export inputs (issue #1 Phase 7)', function () {
       targetDirectory: projectDir,
       cwd: projectDir,
       defaultsOverride: { title: 'Lattice Notes' }
-    } as ExporterOptions, 'lattice-notes.latex')
+    } as ExporterOptions, 'lattice-notes.latex', new WikilinkIndex([]))
 
     const { cwd, argv } = await recorded()
     assert.strictEqual(cwd, projectDir, 'a Project export runs in the Project root')
@@ -169,7 +170,7 @@ describe('Ordered Project export inputs (issue #1 Phase 7)', function () {
       targetDirectory: projectDir,
       cwd: projectDir,
       defaultsOverride: { title: 'Spaced Title' }
-    } as ExporterOptions, 'notes.latex')
+    } as ExporterOptions, 'notes.latex', new WikilinkIndex([]))
 
     const { argv } = await recorded()
     assert.deepStrictEqual(argv, [

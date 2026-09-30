@@ -14,7 +14,8 @@
  */
 
 import extractYamlFrontmatter from '@common/util/extract-yaml-frontmatter'
-import { splitWikilinkTarget, type WikilinkResolution } from '@common/util/wikilink-resolution'
+import { type WikilinkResolution } from '@common/util/wikilink-resolution'
+import { splitWikilinkTarget } from '@common/util/wikilink-target'
 import ZettlrCommand from './zettlr-command'
 import type { MDFileDescriptor } from '@dts/common/fsal'
 import type { AppServiceContainer } from 'source/app/app-service-container'

@@ -17,6 +17,7 @@
 
 import path from 'path'
 import { hasMarkdownExt } from './file-extention-checks'
+import { splitWikilinkTarget } from './wikilink-target'
 
 /** What a document is known by. */
 export interface WikilinkDocument {
@@ -43,18 +44,6 @@ export type WikilinkResolution =
   }
   | { status: 'ambiguous', candidates: string[] }
   | { status: 'missing' }
-
-/**
- * Splits the text before a wikilink's `|` label into the document target and
- * the `#heading` fragment.
- */
-export function splitWikilinkTarget (raw: string): { target: string, fragment: string|undefined } {
-  const hash = raw.indexOf('#')
-  if (hash < 0) {
-    return { target: raw.trim(), fragment: undefined }
-  }
-  return { target: raw.slice(0, hash).trim(), fragment: raw.slice(hash + 1).trim() }
-}
 
 /**
  * The index of the heading that a `#fragment` names: the first heading whose

@@ -34,6 +34,7 @@ import os from 'os'
 import path from 'path'
 import { runRecipeExport } from 'source/app/service-providers/commands/exporter/recipe-exporter'
 import type { ExporterOptions } from 'source/app/service-providers/commands/exporter/types'
+import { WikilinkIndex } from 'source/common/util/wikilink-resolution'
 
 const JUSTFILE = path.join(os.homedir(), '.pandoc', 'justfile')
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
@@ -114,7 +115,7 @@ describe('Quote-bearing export inputs (review B2/B11)', function () {
       // sanitize-filename keeps apostrophes and replaces double quotes, so
       // the effective title still carries a quote character.
       defaultsOverride: { title: "Coble's Survey" }
-    } as ExporterOptions, 'notes.latex')
+    } as ExporterOptions, 'notes.latex', new WikilinkIndex([]))
 
     const { cwd, argv } = await recorded()
     assert.strictEqual(cwd, projectDir)
@@ -138,7 +139,7 @@ describe('Quote-bearing export inputs (review B2/B11)', function () {
       profile: PDF_PROFILE,
       sourceFiles: [ { path: inputFile, name: "Enriques' Notes.md", ext: '.md' } ],
       targetDirectory: dir
-    } as ExporterOptions, '')
+    } as ExporterOptions, '', new WikilinkIndex([]))
 
     const { cwd, argv } = await recorded()
     assert.strictEqual(cwd, dir)
@@ -168,7 +169,7 @@ describe('Quote-bearing export inputs (review B2/B11)', function () {
       targetDirectory: projectDir,
       cwd: projectDir,
       defaultsOverride: { title: 'Sentinel Notes' }
-    } as ExporterOptions, '')
+    } as ExporterOptions, '', new WikilinkIndex([]))
 
     const { argv } = await recorded()
     assert.deepStrictEqual(argv, [

@@ -15,7 +15,8 @@
 
 import type { AppServiceContainer } from 'source/app/app-service-container'
 import ZettlrCommand from './zettlr-command'
-import { fragmentHeadingIndex, splitWikilinkTarget } from '@common/util/wikilink-resolution'
+import { fragmentHeadingIndex } from '@common/util/wikilink-resolution'
+import { splitWikilinkTarget } from '@common/util/wikilink-target'
 import { extractASTNodes, markdownToAST } from '@common/modules/markdown-utils'
 import type { Heading } from '@common/modules/markdown-utils/markdown-ast'
 import { trans } from '@common/i18n-main'

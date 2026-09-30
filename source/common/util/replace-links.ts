@@ -16,7 +16,8 @@
 import path from 'path'
 import { extractASTNodes, markdownToAST } from '../modules/markdown-utils'
 import { type ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
-import { splitWikilinkTarget, type WikilinkIndex } from './wikilink-resolution'
+import { type WikilinkIndex } from './wikilink-resolution'
+import { splitWikilinkTarget } from './wikilink-target'
 
 /**
  * Rewrites the targets of the wikilinks in a Markdown document. `rewrite`
