@@ -1,6 +1,5 @@
-import { extractReferences } from "@common/pandoc-util/extract-references";
+import { extractReferences, hashDocumentSource } from "@common/pandoc-util/extract-references";
 import { SEMANTIC_DIV_CLASSES } from "@common/pandoc-util/pandoc-div-model";
-import { resolveWorkspace } from "@common/pandoc-util/resolve-references";
 import {
   QUARTO_FAMILY_ALIASES,
   REFERENCEABLE_DIV_CLASSES,
@@ -10,7 +9,8 @@ import {
 import {
   REFERENCE_FAMILIES,
   type DocumentReferenceSnapshot,
-  type Resolution,
+  type ReferenceDefinition,
+  type ReferenceOccurrence,
 } from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { wikilinkTargetsIn, type WikilinkIndex } from "@common/util/wikilink-resolution";
@@ -21,7 +21,6 @@ export interface FlowmarkLintContextSource {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
-  referenceState?: WorkspaceReferenceState;
   wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
 }
@@ -29,6 +28,8 @@ export interface FlowmarkLintContextSource {
 export interface FlowmarkLintDocumentOptions {
   bibliographies?: string[];
   projectRoots?: string[];
+  /** Absent when no workspace reference state exists. */
+  references?: FlowmarkReferenceContext;
 }
 
 /**
@@ -39,55 +40,90 @@ type FlowmarkResolution =
   | { status: "resolved" | "missing" }
   | { status: "duplicate"; definitions: { documentPath: string }[] };
 
-function flowmarkResolution(resolution: Resolution): FlowmarkResolution {
-  if (resolution.status !== "duplicate") {
-    return { status: resolution.status };
-  }
-  return {
-    status: "duplicate",
-    definitions: resolution.definitions.map((definition) => ({
-      documentPath: definition.documentPath,
-    })),
-  };
-}
-
 /**
- * Every `key\0documentPath` definition site in the documents other than
- * `documentPath`, sorted. With the document's own text this fixes the
- * reference context Flowmark receives for it.
+ * The reference data Flowmark receives for one document: the definitions and
+ * references of its text, and the workspace resolution of each key that the
+ * document defines or references. When one of its references has no
+ * definition, the resolutions also hold every other key that the workspace
+ * defines, from which Flowmark suggests a replacement.
  */
-export function otherDefinitionSites(
-  referenceState: WorkspaceReferenceState,
-  documentPath: string,
-): string[] {
-  return referenceState.snapshots
-    .filter((snapshot) => snapshot.documentPath !== documentPath)
-    .flatMap((snapshot) =>
-      snapshot.definitions.map((definition) => `${definition.key}\0${snapshot.documentPath}`),
-    )
-    .sort();
+export interface FlowmarkReferenceContext {
+  snapshot: {
+    documentPath: string;
+    sourceHash: string;
+    definitions: ReferenceDefinition[];
+    occurrences: ReferenceOccurrence[];
+  };
+  resolutions: Record<string, FlowmarkResolution>;
 }
 
-function exactReferenceContext(
+/** The definitions of a workspace, indexed for the documents of one lint pass. */
+export interface WorkspaceDefinitions {
+  /** The documents that define each key, one entry for each definition. */
+  sites: ReadonlyMap<string, readonly string[]>;
+  snapshots: ReadonlyMap<string, DocumentReferenceSnapshot>;
+}
+
+export function workspaceDefinitions(referenceState: WorkspaceReferenceState): WorkspaceDefinitions {
+  const sites = new Map<string, string[]>();
+  const snapshots = new Map<string, DocumentReferenceSnapshot>();
+  for (const snapshot of referenceState.snapshots) {
+    snapshots.set(snapshot.documentPath, snapshot);
+    for (const definition of snapshot.definitions) {
+      const known = sites.get(definition.key);
+      if (known === undefined) {
+        sites.set(definition.key, [snapshot.documentPath]);
+      } else {
+        known.push(snapshot.documentPath);
+      }
+    }
+  }
+  return { sites, snapshots };
+}
+
+export function flowmarkReferenceContext(
   documentPath: string,
   text: string,
-  referenceState: WorkspaceReferenceState | undefined,
-): { snapshot: ReturnType<typeof extractReferences>; resolutions: Record<string, FlowmarkResolution> } | undefined {
-  if (referenceState === undefined) {
-    return undefined;
+  workspace: WorkspaceDefinitions,
+): FlowmarkReferenceContext {
+  // The workspace snapshot of the document is the extraction of its text
+  // when the two hashes agree; any other text is extracted here.
+  const known = workspace.snapshots.get(documentPath);
+  const { sourceHash, definitions, occurrences } = known?.sourceHash === hashDocumentSource(text)
+    ? known
+    : extractReferences(documentPath, text);
+  const ownSites = new Map<string, string[]>();
+  for (const definition of definitions) {
+    ownSites.set(definition.key, [...(ownSites.get(definition.key) ?? []), documentPath]);
   }
-  const snapshot = extractReferences(documentPath, text);
-  // Another document contributes only its definitions: its references add
-  // only missing keys, which Flowmark's rules skip for any other document.
-  const snapshots = referenceState.snapshots
-    .filter((candidate) => candidate.documentPath !== documentPath)
-    .map((candidate): DocumentReferenceSnapshot => ({ ...candidate, occurrences: [] }))
-    .concat(snapshot);
-  const resolutions: Record<string, FlowmarkResolution> = {};
-  for (const [key, resolution] of resolveWorkspace(snapshots)) {
-    resolutions[key] = flowmarkResolution(resolution);
+  // The text decides what this document defines; the workspace decides what
+  // every other document defines.
+  const resolve = (key: string): FlowmarkResolution => {
+    const sites = (workspace.sites.get(key) ?? [])
+      .filter((site) => site !== documentPath)
+      .concat(ownSites.get(key) ?? [])
+      .sort();
+    if (sites.length === 0) {
+      return { status: "missing" };
+    }
+    if (sites.length === 1) {
+      return { status: "resolved" };
+    }
+    return { status: "duplicate", definitions: sites.map((site) => ({ documentPath: site })) };
+  };
+  const keys = new Set([...ownSites.keys(), ...occurrences.map((occurrence) => occurrence.key)]);
+  const resolved = new Map([...keys].map((key): [string, FlowmarkResolution] => [key, resolve(key)]));
+  if ([...resolved.values()].some((resolution) => resolution.status === "missing")) {
+    for (const key of workspace.sites.keys()) {
+      const resolution = resolved.get(key) ?? resolve(key);
+      if (resolution.status !== "missing") {
+        resolved.set(key, resolution);
+      }
+    }
   }
-  return { snapshot, resolutions };
+  // Sorted keys: the same data has one serialization, and one digest.
+  const resolutions = Object.fromEntries([...resolved].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return { snapshot: { documentPath, sourceHash, definitions, occurrences }, resolutions };
 }
 
 /**
@@ -123,7 +159,6 @@ export async function buildFlowmarkLintContext(
   source: FlowmarkLintContextSource,
   options: FlowmarkLintDocumentOptions = {},
 ): Promise<Record<string, unknown>> {
-  const references = exactReferenceContext(documentPath, text, source.referenceState);
   const proofDivClasses = Object.entries(SEMANTIC_DIV_CLASSES)
     .filter(([, family]) => family === "proof")
     .map(([name]) => name);
@@ -156,7 +191,7 @@ export async function buildFlowmarkLintContext(
       proof_div_classes: proofDivClasses,
       theorem_class_to_prefix: { ...THEOREM_CLASS_TO_PREFIX },
       ...(options.bibliographies === undefined ? {} : { bibliographies: options.bibliographies }),
-      ...(references === undefined ? {} : references),
+      ...(options.references === undefined ? {} : options.references),
     },
     ...(source.wikilinks === undefined
       ? {}

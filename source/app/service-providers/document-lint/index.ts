@@ -14,11 +14,16 @@
  *                  A cached result is current while its key still matches:
  *                  the revision of the text it linted, plus every input to
  *                  the Flowmark run (the installed Flowmark, this build, the
- *                  definition sites of the other documents, the macro
- *                  sources, the TikZ template graph, the document's
- *                  bibliographies and project roots, and the Flowmark config
- *                  files above it). A lint whose key matches is answered from
- *                  the cache without running Flowmark.
+ *                  reference resolutions that Flowmark receives for the
+ *                  document, the macro sources, the TikZ template graph, the
+ *                  document's bibliographies and project roots, and the
+ *                  Flowmark config files above it). A lint whose key matches
+ *                  is answered from the cache without running Flowmark.
+ *
+ *                  The documents of one pass (a reconcile, a fix plan) share
+ *                  one LintPass, which reads each shared input once. The
+ *                  work of a pass for one document therefore does not grow
+ *                  with the number of documents.
  *
  *                  A background queue keeps the workspace current: at boot,
  *                  after a file system change, after a Flowmark update and
@@ -44,6 +49,7 @@ import type { FSALEventPayload } from '@providers/fsal'
 import type FSAL from '@providers/fsal'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import type { WorkspaceReferenceState } from '@providers/references/reference-index'
+import type { DirDescriptor } from '@dts/common/fsal'
 import { sha256Text } from '@common/util/sha256'
 import { hashDocumentSource } from '@common/pandoc-util/extract-references'
 import type { FixAllEdit, FixAllPlan } from '@dts/common/fix-all'
@@ -54,7 +60,13 @@ import {
   type DocumentLintDiagnostic
 } from '../../util/document-lint'
 import { documentLintAuthority } from '../../util/document-bibliographies'
-import { otherDefinitionSites, wikilinkResolutions } from '../../util/flowmark-lint-context'
+import {
+  flowmarkReferenceContext,
+  wikilinkResolutions,
+  workspaceDefinitions,
+  type FlowmarkReferenceContext,
+  type WorkspaceDefinitions
+} from '../../util/flowmark-lint-context'
 import type { WikilinkIndex } from '@common/util/wikilink-resolution'
 import { flowmarkInstallIdentity } from '../../util/flowmark-runtime'
 import { resolveTikzRenderConfig } from '../../util/resolve-tikz-render-config'
@@ -159,9 +171,50 @@ function isRecord (value: unknown): value is DocumentLintRecord {
     candidate.complete === true
 }
 
-/** Memoizes file stamps across the documents of one key computation. */
-class StampReader {
+type DirectoryReader = Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor'>
+
+/** The inputs of a Flowmark run that belong to one document. */
+interface DocumentInputs {
+  bibliographies?: string[]
+  projectRoots?: string[]
+  references?: FlowmarkReferenceContext
+}
+
+/**
+ * The inputs that the documents of one pass share. Each is read once, when
+ * the first document needs it.
+ */
+class LintPass {
   private readonly stamps = new Map<string, Promise<string>>()
+  private readonly trees = new Map<string, Promise<string[]>>()
+  private readonly directories = new Map<string, Promise<DirDescriptor>>()
+  private tikzHash: string | undefined
+  private definitions: WorkspaceDefinitions | undefined
+
+  /** The file system layer, with one read of each directory descriptor. */
+  directoryReader (fsal: DirectoryReader): DirectoryReader {
+    return {
+      getDescriptorFor: async (absPath, avoidDiskAccess) => await fsal.getDescriptorFor(absPath, avoidDiskAccess),
+      getAnyDirectoryDescriptor: async absPath => {
+        let pending = this.directories.get(absPath)
+        if (pending === undefined) {
+          pending = fsal.getAnyDirectoryDescriptor(absPath)
+          this.directories.set(absPath, pending)
+        }
+        return await pending
+      }
+    }
+  }
+
+  tikzTemplate (templatePath: string): string {
+    this.tikzHash ??= tikzTemplateDependencyHash(templatePath)
+    return this.tikzHash
+  }
+
+  workspaceDefinitions (references: { getSnapshot: () => WorkspaceReferenceState }): WorkspaceDefinitions {
+    this.definitions ??= workspaceDefinitions(references.getSnapshot())
+    return this.definitions
+  }
 
   async stamp (filePath: string): Promise<string> {
     let pending = this.stamps.get(filePath)
@@ -176,6 +229,15 @@ class StampReader {
   }
 
   async tree (root: string): Promise<string[]> {
+    let pending = this.trees.get(root)
+    if (pending === undefined) {
+      pending = this.readTree(root)
+      this.trees.set(root, pending)
+    }
+    return await pending
+  }
+
+  private async readTree (root: string): Promise<string[]> {
     let entries
     try {
       entries = await readdir(root, { recursive: true, withFileTypes: true })
@@ -207,7 +269,8 @@ class StampReader {
 
 export default class DocumentLintProvider extends ProviderContract {
   private readonly entries = new Map<string, DocumentLintRecord>()
-  private readonly queue = new Set<string>()
+  /** Each queued document, with the pass that found it without a current result. */
+  private readonly queue = new Map<string, LintPass>()
   private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>()
   private activeWorkers = 0
   /** The status bar task of the running queue, from its first document until it drains. */
@@ -269,16 +332,21 @@ export default class DocumentLintProvider extends ProviderContract {
    * document without a path (an unsaved buffer) is linted and not cached.
    */
   async lint (documentPath: string, text: string): Promise<DocumentLintRecord> {
+    return await this.lintIn(new LintPass(), documentPath, text)
+  }
+
+  private async lintIn (pass: LintPass, documentPath: string, text: string): Promise<DocumentLintRecord> {
+    const document = await this.documentInputs(documentPath, text, pass)
     if (documentPath === '') {
-      return await this.run(documentPath, text, '')
+      return await this.run(documentPath, text, document, '')
     }
     const revision = sha256Text(text)
-    const inputs = await this.inputsKey(documentPath, text, new StampReader())
+    const inputs = await this.inputsKey(documentPath, text, document, pass)
     const cached = this.entries.get(documentPath)
     if (cached !== undefined && cached.revision === revision && cached.inputs === inputs) {
       return cached
     }
-    return await this.runOnce(documentPath, text, revision, inputs)
+    return await this.runOnce(documentPath, text, document, revision, inputs)
   }
 
   /**
@@ -287,14 +355,19 @@ export default class DocumentLintProvider extends ProviderContract {
    * nothing here waits for Flowmark.
    */
   async lookup (sources: DocumentLintSource[]): Promise<DocumentLintLookup[]> {
-    const stamps = new StampReader()
+    const pass = new LintPass()
     return await Promise.all(sources.map(async source => {
       const record = this.entries.get(source.path)
       const current = record !== undefined &&
         record.revision === sha256Text(source.text) &&
-        record.inputs === await this.inputsKey(source.path, source.text, stamps)
+        record.inputs === await this.inputsKey(
+          source.path,
+          source.text,
+          await this.documentInputs(source.path, source.text, pass),
+          pass
+        )
       if (!current) {
-        this.enqueue(source.path)
+        this.enqueue(source.path, pass)
       }
       return { record, current }
     }))
@@ -303,13 +376,14 @@ export default class DocumentLintProvider extends ProviderContract {
   private async runOnce (
     documentPath: string,
     text: string,
+    document: DocumentInputs,
     revision: string,
     inputs: string
   ): Promise<DocumentLintRecord> {
     const flightKey = `${documentPath}\0${revision}\0${inputs}`
     let pending = this.inFlight.get(flightKey)
     if (pending === undefined) {
-      pending = this.run(documentPath, text, inputs).finally(() => {
+      pending = this.run(documentPath, text, document, inputs).finally(() => {
         this.inFlight.delete(flightKey)
       })
       this.inFlight.set(flightKey, pending)
@@ -317,18 +391,21 @@ export default class DocumentLintProvider extends ProviderContract {
     return await pending
   }
 
-  private async run (documentPath: string, text: string, inputs: string): Promise<DocumentLintRecord> {
+  private async run (
+    documentPath: string,
+    text: string,
+    document: DocumentInputs,
+    inputs: string
+  ): Promise<DocumentLintRecord> {
     const config = this.deps.config.get()
     const context = await createDocumentLintContext({
       homeDirectory: this.deps.homeDirectory,
       env: this.deps.env,
-      referenceState: this.deps.references?.getSnapshot(),
       wikilinks: this.deps.links?.index,
       tikzRenderConfig: this.tikzRenderConfig(),
       flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs
     })
-    const authority = await this.authority(documentPath)
-    const outcome = await lintDocumentText(text, documentPath, context, authority)
+    const outcome = await lintDocumentText(text, documentPath, context, document)
     const record: DocumentLintRecord = {
       revision: sha256Text(text),
       inputs,
@@ -356,7 +433,17 @@ export default class DocumentLintProvider extends ProviderContract {
     )
   }
 
-  private async authority (documentPath: string): Promise<{ bibliographies?: string[], projectRoots?: string[] }> {
+  private async documentInputs (documentPath: string, text: string, pass: LintPass): Promise<DocumentInputs> {
+    const references = this.deps.references === undefined
+      ? undefined
+      : flowmarkReferenceContext(documentPath, text, pass.workspaceDefinitions(this.deps.references))
+    return { ...await this.authority(documentPath, pass), references }
+  }
+
+  private async authority (
+    documentPath: string,
+    pass: LintPass
+  ): Promise<{ bibliographies?: string[], projectRoots?: string[] }> {
     const mainLibrary = this.deps.config.get().export.cslLibrary
     if (documentPath === '') {
       // An unsaved buffer cites from the main library, as citeproc renders it.
@@ -367,27 +454,31 @@ export default class DocumentLintProvider extends ProviderContract {
       // bibliography from; Flowmark then reads the document's own metadata.
       return {}
     }
-    return await documentLintAuthority(this.deps.fsal, mainLibrary, documentPath)
+    return await documentLintAuthority(pass.directoryReader(this.deps.fsal), mainLibrary, documentPath)
   }
 
-  private async inputsKey (documentPath: string, text: string, stamps: StampReader): Promise<string> {
+  private async inputsKey (
+    documentPath: string,
+    text: string,
+    document: DocumentInputs,
+    pass: LintPass
+  ): Promise<string> {
     const macroRoot = path.join(this.deps.homeDirectory, '.pandoc', 'styles', 'macros')
     const mathJaxMacros = path.join(this.deps.homeDirectory, '.pandoc', 'templates', 'css', 'mathjax-macros.json')
-    const authority = await this.authority(documentPath)
-    const referenceState = this.deps.references?.getSnapshot()
     return digest({
       build: this.deps.buildIdentity,
       flowmark: this.flowmarkIdentity,
-      macros: [ ...await stamps.tree(macroRoot), await stamps.stamp(mathJaxMacros) ],
-      tikz: tikzTemplateDependencyHash(this.tikzRenderConfig().templatePath),
+      macros: [ ...await pass.tree(macroRoot), await pass.stamp(mathJaxMacros) ],
+      tikz: pass.tikzTemplate(this.tikzRenderConfig().templatePath),
       texinputs: this.deps.env.TEXINPUTS ?? null,
-      definitions: referenceState === undefined ? null : digest(otherDefinitionSites(referenceState, documentPath)),
+      // The revision covers the document's own definitions and references.
+      references: document.references === undefined ? null : document.references.resolutions,
       wikilinks: this.deps.links === undefined ? null : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
-      bibliographies: authority.bibliographies === undefined
+      bibliographies: document.bibliographies === undefined
         ? null
-        : await Promise.all(authority.bibliographies.map(async file => await stamps.stamp(file))),
-      projectRoots: authority.projectRoots ?? null,
-      flowmarkConfig: await stamps.flowmarkConfig(documentPath)
+        : await Promise.all(document.bibliographies.map(async file => await pass.stamp(file))),
+      projectRoots: document.projectRoots ?? null,
+      flowmarkConfig: await pass.flowmarkConfig(documentPath)
     })
   }
 
@@ -452,6 +543,7 @@ export default class DocumentLintProvider extends ProviderContract {
   async planFixes (documentPaths: string[]): Promise<FixAllPlan> {
     const task = this.deps.lrt?.registerTask(trans('Finding fixes'), 'Flowmark', undefined, false)
     const plan: FixAllPlan = { documents: [], documentsChecked: documentPaths.length, unlinted: [] }
+    const pass = new LintPass()
     let next = 0
     let done = 0
     const worker = async (): Promise<void> => {
@@ -459,7 +551,7 @@ export default class DocumentLintProvider extends ProviderContract {
         const documentPath = documentPaths[next]
         next += 1
         const text = await this.currentText(documentPath)
-        const record = await this.lint(documentPath, text)
+        const record = await this.lintIn(pass, documentPath, text)
         if (!record.complete) {
           plan.unlinted.push(documentPath)
         } else {
@@ -496,14 +588,15 @@ export default class DocumentLintProvider extends ProviderContract {
       await readFile(documentPath, 'utf8')
   }
 
-  private enqueue (documentPath: string): void {
+  private enqueue (documentPath: string, pass: LintPass): void {
     if (this.stopped || this.flowmarkIdentity === undefined) {
       return
     }
     if (!this.queue.has(documentPath)) {
-      this.queue.add(documentPath)
       this.countQueued()
     }
+    // The newest pass has the newest inputs.
+    this.queue.set(documentPath, pass)
     while (this.activeWorkers < WORKER_COUNT && this.queue.size > 0) {
       this.activeWorkers += 1
       void this.work()
@@ -511,13 +604,13 @@ export default class DocumentLintProvider extends ProviderContract {
   }
 
   private async work (): Promise<void> {
-    for (const documentPath of this.queue) {
+    for (const [ documentPath, pass ] of this.queue) {
       if (this.stopped) {
         break
       }
       this.queue.delete(documentPath)
       try {
-        await this.lint(documentPath, await this.currentText(documentPath))
+        await this.lintIn(pass, documentPath, await this.currentText(documentPath))
       } catch (error) {
         this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error)
         if (this.batch !== undefined) {

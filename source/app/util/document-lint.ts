@@ -1,18 +1,16 @@
 /** Main-process context producer + Flowmark lint adapter for API/workspace consumers. */
 
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
-import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import path from "node:path";
 import { lintMarkdownText } from "./flowmark-lint";
 import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
-import { buildFlowmarkLintContext } from "./flowmark-lint-context";
+import { buildFlowmarkLintContext, type FlowmarkReferenceContext } from "./flowmark-lint-context";
 
 export interface DocumentLintSharedContext {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   macroSources: readonly string[];
-  referenceState?: WorkspaceReferenceState;
   wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
   /** `editor.lint.flowmark.timeoutMs` from the app config. */
@@ -22,7 +20,6 @@ export interface DocumentLintSharedContext {
 export interface CreateDocumentLintContextOptions {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
-  referenceState?: WorkspaceReferenceState;
   wikilinks?: WikilinkIndex;
   tikzRenderConfig: TikzRenderConfig;
   flowmarkLintTimeoutMs: number;
@@ -51,6 +48,7 @@ export interface DocumentLintOutcome {
 export interface DocumentLintDocumentOptions {
   bibliographies?: string[];
   projectRoots?: string[];
+  references?: FlowmarkReferenceContext;
 }
 
 function offsetForLineColumn(text: string, line: number, column: number): number {
