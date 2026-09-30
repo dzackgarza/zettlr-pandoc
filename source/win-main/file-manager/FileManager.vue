@@ -108,7 +108,7 @@ import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
 import { trans } from '@common/i18n-renderer'
 import { explodeShortcut } from '@common/util/shortcuts'
 import { getCustomShortcut } from '@providers/menu/shortcuts'
-import { nextTick, ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
+import { nextTick, ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useConfigStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 import { buildFilePickerCache, type FilePickerCache } from './util/match-query'
@@ -138,29 +138,14 @@ const configStore = useConfigStore()
 const windowStateStore = useWindowStateStore()
 
 const selectedDirectory = computed(() => configStore.config.openDirectory)
-const filePickerCache = shallowRef<FilePickerCache>({ paths: [], pathSet: new Set() })
-
-function rebuildFilePickerCache (): void {
-  filePickerCache.value = buildFilePickerCache(
-    workspaceStore.descriptorMap.values(),
-    filterDescriptorChildren()
-  )
-}
-
 // The picker cache is exactly the file-manager-visible file set. Invoking
-// Ctrl+Shift+P only activates this already-computed candidate set.
-watch(
-  [
-    () => workspaceStore.descriptorMap,
-    () => configStore.config.fileManager.filters,
-    () => configStore.config.fileManager.hiddenDirectories,
-    () => configStore.config.fileManager.showHiddenDirectories,
-    () => configStore.config.files,
-    () => configStore.config.attachmentExtensions
-  ],
-  rebuildFilePickerCache,
-  { deep: true, immediate: true }
-)
+// Ctrl+Shift+P only activates this already-computed candidate set. The cache
+// follows each publication of the descriptors and each configuration value
+// that the visibility filter reads.
+const filePickerCache = computed<FilePickerCache>(() => buildFilePickerCache(
+  workspaceStore.descriptorMap.values(),
+  filterDescriptorChildren()
+))
 
 /** Remembers the directory context when the Explorer itself takes focus. */
 function rememberFileManagerFocus (): void {
