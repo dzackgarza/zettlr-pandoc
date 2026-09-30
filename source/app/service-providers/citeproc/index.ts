@@ -133,6 +133,8 @@ export default class CiteprocProvider extends ProviderContract {
    * @var {DatabaseRecord[]}
    */
   private readonly databases: Map<string, DatabaseRecord>
+  /** The load that runs for a database. A request for that database waits for it. */
+  private readonly loading = new Map<string, Promise<void>>()
 
   /**
    * This hashmap contains a mapping of citekeys --> CSLItems for quick access
@@ -421,17 +423,49 @@ export default class CiteprocProvider extends ProviderContract {
       return // No need to load the database again
     }
 
+    const running = this.loading.get(databasePath)
+    if (running !== undefined) {
+      await running
+      return
+    }
+
+    const load = this.readDatabase(databasePath, watch)
+      .finally(() => {
+        if (this.loading.get(databasePath) === load) {
+          this.loading.delete(databasePath)
+        }
+      })
+    this.loading.set(databasePath, load)
+    await load
+  }
+
+  /**
+   * Reads a database from its file and makes it available.
+   *
+   * @param   {string}   databasePath  The path to load the database from
+   * @param   {boolean}  watch         Whether to watch the file for changes
+   */
+  private async readDatabase (databasePath: string, watch: boolean): Promise<void> {
     try {
       await fs.access(databasePath, FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK)
     } catch {
       throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`)
     }
 
+    // The file access above took a turn of the event loop, so the load that
+    // called this function is registered.
+    const load = this.loading.get(databasePath)
     const record = await loadDatabase(
       databasePath,
       this._logger,
       path.join(app.getPath('userData'), 'citeproc-cache')
     )
+    const current = this.loading.get(databasePath)
+    if (current !== load) {
+      // The file changed during the read: the later load has its data.
+      await current
+      return
+    }
 
     // Label styles print `citation-label`, and citeproc invents one from the
     // author names when the item carries none -- BibTeX and BibLaTeX have no
@@ -462,6 +496,8 @@ export default class CiteprocProvider extends ProviderContract {
    * @param   {string}  dbPath  The database file path
    */
   private unloadDatabase (dbPath: string, unwatch = true): void {
+    // A load that runs reads the file as it was: its result is not the database.
+    this.loading.delete(dbPath)
     if (this.databases.has(dbPath)) {
       this._logger.info(`[Citeproc Provider] Unloading database ${dbPath}`)
 
