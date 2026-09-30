@@ -149,6 +149,7 @@ import { activeTikzBlock as findActiveTikzBlock } from '@common/modules/markdown
 import type { TikzSourceBlock } from 'tikz-workbench/src/source-block'
 import type { TikzLivePreviewTarget } from 'tikz-workbench/src/live-preview'
 import type { WikilinkEdge } from 'source/app/service-providers/links/ipc-contract'
+import { wikilinkTargetsIn } from '@common/util/wikilink-resolution'
 import {
   declaredTexMacroSources,
   type TexDocumentKind,
@@ -1105,6 +1106,8 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   })
 
   editor.on('change', () => {
+    updateWikilinkResolutions(false)
+      .catch(error => reportError('Could not resolve the wikilinks', error))
     if (ownsWindowActiveState(editor)) {
       windowStateStore.tableOfContents = editor.tableOfContents
       updateActiveTikzSource(editor)
@@ -1757,6 +1760,35 @@ async function updateFileDatabase (): Promise<void> {
   }
 
   currentEditor?.setCompletionDatabase('files', fileDatabase)
+  await updateWikilinkResolutions(true)
+}
+
+// The targets whose resolutions the editor last asked for
+let requestedWikilinkTargets = ''
+
+/**
+ * Asks the link provider how the wikilink targets of the document resolve,
+ * for the wikilink chips. Without `force`, it asks only when the set of
+ * targets changed; with it (the workspace changed), always.
+ */
+async function updateWikilinkResolutions (force: boolean): Promise<void> {
+  const editor = currentEditor
+  if (editor === null) {
+    return
+  }
+  const targets = wikilinkTargetsIn(editor.value)
+  const key = targets.join('\n')
+  if (!force && key === requestedWikilinkTargets) {
+    return
+  }
+  requestedWikilinkTargets = key
+  const resolutions = await ipcRenderer.invoke('link-provider', {
+    command: 'resolve-wikilinks',
+    payload: { sourcePath: props.file.path, targets }
+  })
+  if (editor === currentEditor) {
+    editor.setWikilinkResolutions(new Map(Object.entries(resolutions)))
+  }
 }
 
 function maybeHighlightSearchResults (): void {

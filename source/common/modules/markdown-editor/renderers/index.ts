@@ -17,6 +17,7 @@ import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { renderHeadings } from './render-headings'
 import { renderImages } from './render-images'
 import { renderLinks } from './render-links'
+import { renderWikilinks } from './render-wikilinks'
 import { renderMath } from './render-math'
 import { renderTasks } from './render-tasks'
 import { renderCitations } from './render-citations'
@@ -66,6 +67,7 @@ function configureRenderers (config: Partial<EditorConfiguration>, ext?: Extensi
     updateExtension(renderCode, true, ext)
     updateExtension(renderImages, config.renderImages, ext)
     updateExtension(renderLinks, config.renderLinks, ext)
+    updateExtension(renderWikilinks, config.renderLinks, ext)
     updateExtension(renderMath, config.renderMath, ext)
     updateExtension(renderTasks, config.renderTasks, ext)
     updateExtension(renderHeadings, config.renderHeadings, ext)

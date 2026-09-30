@@ -59,6 +59,9 @@ export default class LinkProvider extends ProviderContract {
         return this.linkDatabase()
       } else if (command === 'get-link-targets') {
         return this.linkTargets()
+      } else if (command === 'resolve-wikilinks') {
+        const { sourcePath, targets } = message.payload as { sourcePath: string, targets: string[] }
+        return Object.fromEntries(targets.map(target => [ target, this.resolve(target, sourcePath) ]))
       }
     })
   }
@@ -160,12 +163,12 @@ export default class LinkProvider extends ProviderContract {
     return this._index.canonical(filePath)
   }
 
-  /** The documents the links in `sourceFilePath` resolve to. */
+  /** The other documents the links in `sourceFilePath` resolve to. */
   private resolvedTargets (sourceFilePath: string): string[] {
     const paths: string[] = []
     for (const link of this._fileLinkDatabase.get(sourceFilePath) ?? []) {
       const resolution = this.resolve(splitWikilinkTarget(link).target, sourceFilePath)
-      if (resolution.status === 'resolved' && !paths.includes(resolution.path)) {
+      if (resolution.status === 'resolved' && resolution.path !== sourceFilePath && !paths.includes(resolution.path)) {
         paths.push(resolution.path)
       }
     }
@@ -195,7 +198,10 @@ export default class LinkProvider extends ProviderContract {
     return this.resolvedTargets(sourceFilePath)
   }
 
-  /** Every file's outbound links, each with the document it resolves to. */
+  /**
+   * Every file's links to other documents, each with the document it
+   * resolves to.
+   */
   private linkDatabase (): Record<string, WikilinkEdge[]> {
     const database: Record<string, WikilinkEdge[]> = {}
     for (const [ sourcePath, links ] of this._fileLinkDatabase) {
@@ -203,7 +209,7 @@ export default class LinkProvider extends ProviderContract {
         const { target } = splitWikilinkTarget(link)
         const resolution = this.resolve(target, sourcePath)
         return { target, path: resolution.status === 'resolved' ? resolution.path : undefined }
-      })
+      }).filter(edge => edge.path !== sourcePath)
     }
     return database
   }

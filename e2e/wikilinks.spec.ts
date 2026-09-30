@@ -4,6 +4,7 @@
  * Moving a file and renaming a directory through the file manager's commands
  * rewrite every link whose document the change altered: a relative link that
  * no longer reaches its file, and a name the change gave to another document.
+ * A link that names one document renders as a chip; a missing link stays raw.
  * A Ctrl-click on `[[name#heading]]` opens the named document with the cursor
  * on that heading.
  */
@@ -32,6 +33,8 @@ Chain: [[./programs/chain.md]]
 Lemma: [[x/lemma]]
 
 Step: [[chain#Second step|the step]]
+
+Missing: [[nowhere]]
 `
 
 const CHAIN = `# First step
@@ -146,27 +149,28 @@ describe('assembled app: wikilinks follow their documents', function () {
     assert.equal(await readFile(path.join(workspace, 'x', 'lemma.md'), 'utf8'), '# Lemma B\n')
   })
 
-  it('opens [[name#heading]] with the cursor on that heading', async function () {
+  it('renders each link that names one document as a chip, and a missing link raw', async function () {
     assert.ok(page !== undefined, 'The editor window must be open')
     const indexText = await readFile(path.join(workspace, 'index.md'), 'utf8')
     await page.waitForFunction(expected => [...document.querySelectorAll('.cm-content')].some(content =>
       (content as EditorContentElement).cmTile?.root.view.state.doc.toString() === expected
     ), indexText, { timeout: this.timeout() })
 
-    // With the cursor away from the link, the editor hides its target and
-    // shows the label alone; the click goes to the label's first character.
-    const editor = page.locator('.cm-content')
-    await page.locator('.cm-line', { hasText: 'Chain:' }).click()
-    const position = await editor.evaluate((content, offset) => {
-      const view = (content as EditorContentElement).cmTile?.root.view
-      const coordinates = view?.coordsAtPos(offset, 1)
-      if (coordinates === undefined || coordinates === null) {
-        throw new Error('The link label is not on screen')
-      }
-      const box = content.getBoundingClientRect()
-      return { x: coordinates.left + 1 - box.left, y: (coordinates.top + coordinates.bottom) / 2 - box.top }
-    }, indexText.indexOf('the step'))
-    await editor.click({ position, modifiers: ['Control'] })
+    // The cursor on the heading leaves every link line rendered
+    await page.locator('.cm-line', { hasText: 'Index' }).first().click()
+    const chips = page.locator('.wikilink-chip')
+    await chips.filter({ hasText: 'the step' }).waitFor({ state: 'visible', timeout: this.timeout() })
+    assert.deepEqual(await chips.allTextContents(), [ 'chain', 'deep/x/lemma', 'the step' ])
+    assert.equal(
+      await chips.filter({ hasText: 'the step' }).getAttribute('title'),
+      path.join(workspace, 'archive', '2026', 'chain.md')
+    )
+    assert.equal(await page.locator('.cm-line', { hasText: 'Missing:' }).textContent(), 'Missing: [[nowhere]]')
+  })
+
+  it('opens [[name#heading]] with the cursor on that heading', async function () {
+    assert.ok(page !== undefined, 'The editor window must be open')
+    await page.locator('.wikilink-chip', { hasText: 'the step' }).click({ modifiers: ['Control'] })
 
     const chainText = await readFile(path.join(workspace, 'archive', '2026', 'chain.md'), 'utf8')
     const headingLine = chainText.split('\n').indexOf('# Second step') + 1

@@ -83,6 +83,7 @@ import { typewriter } from "./plugins/typewriter";
 import { vimPlugin } from "./plugins/vim-mode";
 import { softwrapVisualIndent } from "./plugins/visual-indent";
 import { workspaceReferencesField } from "./plugins/workspace-references-field";
+import { wikilinkOpener, wikilinkResolutionsField } from "./plugins/wikilink-resolutions-field";
 import { quickTexField } from "./quicktex";
 import { renderers } from "./renderers";
 import { headingGutter } from "./renderers/render-headings";
@@ -128,6 +129,8 @@ export interface CoreExtensionOptions {
    * workspace rename protocol, or declines and keeps the local edit.
    */
   referenceKeyEditListener: (intent: ReferenceKeyEditPromptIntent) => void;
+  /** Opens the wikilink whose text before `|` is the argument. */
+  onWikiLink: (linkContents: string) => void;
 }
 
 /**
@@ -357,6 +360,10 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // typed state source for reference chips, definition badges, reference
     // hovers, and reference diagnostics. Fed by MainEditor.vue.
     workspaceReferencesField,
+    // The link provider's resolution of each wikilink target, and how to open
+    // a wikilink: the state of the wikilink chips. Fed by MainEditor.vue.
+    wikilinkResolutionsField,
+    wikilinkOpener.of(options.onWikiLink),
     // Prompts for the workspace rename after the selection leaves a
     // directly edited definition-id token (issue #1 Phase 6).
     referenceKeyEditPrompt({

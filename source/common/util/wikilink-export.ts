@@ -56,14 +56,11 @@ export function wikilinkExportMap (inputs: ExportInput[], index: WikilinkIndex):
   for (const input of inputs) {
     for (const link of extractASTNodes(markdownToAST(input.markdown), 'ZettelkastenLink') as ZettelkastenLink[]) {
       const { target, fragment } = splitWikilinkTarget(link.target)
-      let documentPath = input.path
-      if (target !== '') {
-        const resolution = index.resolve(target, input.path)
-        if (resolution.status !== 'resolved') {
-          continue
-        }
-        documentPath = resolution.path
+      const resolution = index.resolve(target, input.path)
+      if (resolution.status !== 'resolved') {
+        continue
       }
+      const documentPath = resolution.path
       const destinationInput = inputs.findIndex(candidate => candidate.path === documentPath)
       if (destinationInput < 0) {
         continue

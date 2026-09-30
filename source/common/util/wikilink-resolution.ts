@@ -147,6 +147,12 @@ export class WikilinkIndex {
    * the document at `sourcePath`.
    */
   resolve (target: string, sourcePath: string): WikilinkResolution {
+    // `[[#heading]]` names a heading of the linking document
+    if (target === '') {
+      return this.has(sourcePath)
+        ? { status: 'resolved', path: sourcePath, canonical: this.canonical(sourcePath), relative: false }
+        : { status: 'missing' }
+    }
     if (isRelativeTarget(target)) {
       const absolute = path.resolve(path.dirname(sourcePath), target)
       const documentPath = this.byPath.get(withoutMarkdownExt(absolute))

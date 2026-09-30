@@ -72,6 +72,12 @@ describe('Workspace wikilink resolution', function () {
     deepStrictEqual(index.resolve('../missing.md', source), { status: 'missing' })
   })
 
+  it('resolves the empty target of [[#heading]] to the linking document', function () {
+    const resolution = index.resolve('', source)
+    strictEqual(resolution.status === 'resolved' && resolution.path, source)
+    deepStrictEqual(index.resolve('', `${root}/unindexed.md`), { status: 'missing' })
+  })
+
   it('reports a target that names no document as missing', function () {
     deepStrictEqual(index.resolve('no-such-note', source), { status: 'missing' })
   })

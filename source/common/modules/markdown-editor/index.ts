@@ -146,6 +146,10 @@ import {
   type EditorWorkspaceReferences,
   workspaceReferencesUpdate,
 } from './plugins/workspace-references-field'
+import {
+  type WikilinkResolutions,
+  wikilinkResolutionsUpdate,
+} from './plugins/wikilink-resolutions-field'
 import { darkModeEffect, useDarkModeEditor } from './theme/dark-mode'
 import {
   configField,
@@ -532,6 +536,9 @@ export default class MarkdownEditor extends EventEmitter {
           }
         }
 
+      },
+      onWikiLink (url) {
+        editorInstance.emit('zettelkasten-link', url)
       },
       domEventsListeners: clickListeners({
         onWikiLink (url) {
@@ -1105,6 +1112,16 @@ export default class MarkdownEditor extends EventEmitter {
     this.workspaceReferencesCache = references
     this._instance.dispatch({
       effects: workspaceReferencesUpdate.of(references),
+    })
+  }
+
+  /**
+   * Provides the editor state with the link provider's resolution of each
+   * wikilink target of the document, which the wikilink chips render.
+   */
+  setWikilinkResolutions(resolutions: WikilinkResolutions): void {
+    this._instance.dispatch({
+      effects: wikilinkResolutionsUpdate.of(resolutions),
     })
   }
 

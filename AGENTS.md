@@ -279,6 +279,14 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   hover preview, backlinks, graph, autocomplete (`get-link-targets`), and
   file rename, move and directory rename (`LinkProvider.filesChangedByMove` and
   `retargetAfterMove` rewrite only the links whose document the move changed).
+  `[[#heading]]` (empty target) resolves to the linking document; backlinks and
+  the graph leave that self link out.
+- **Editor chips:** the renderer bundle has no `path`, so the editor cannot run
+  `WikilinkIndex`. `MainEditor.vue` sends the document's targets to the IPC
+  command `resolve-wikilinks` and stores the answer in
+  `wikilinkResolutionsField` (`markdown-editor/plugins/`). `render-wikilinks.ts`
+  draws a link that resolves to one document as a chip; an ambiguous or missing
+  link stays raw text, and Flowmark reports it. Mod-click on a chip opens it.
 - **Lint:** Zettlr sends `wikilinks.resolutions` in the Flowmark context
   (`flowmark-lint-context.ts`); the rules `link/missing-wikilink-target`,
   `link/ambiguous-wikilink` and `link/relative-wikilink` live in pandoc-flowmark.

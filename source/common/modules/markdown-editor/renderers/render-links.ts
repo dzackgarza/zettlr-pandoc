@@ -33,7 +33,8 @@ function hideLinkMarkers (view: EditorView): RangeSet<Decoration> {
   const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   visitVisibleSyntaxNodes(view, (node) => {
-    if (node.name !== 'Link' && node.name !== 'ZknLink') {
+    // Wikilinks render as chips (render-wikilinks.ts)
+    if (node.name !== 'Link') {
       return
     }
 
@@ -42,38 +43,25 @@ function hideLinkMarkers (view: EditorView): RangeSet<Decoration> {
       return false
     }
 
-    if (node.name === 'ZknLink') {
-      const contentNode = node.node.getChild('ZknLinkContent')
-      const titleNode = node.node.getChild('ZknLinkTitle')
-      const pipeNode = node.node.getChild('ZknLinkPipe')
-      if (contentNode !== null && titleNode !== null && pipeNode !== null) {
-        ranges.push(
-          hiddenDeco.range(contentNode.from, contentNode.to),
-          hiddenDeco.range(pipeNode.from, pipeNode.to),
-        )
-      }
-    } else {
-      // It's a regular Markdown Link
-      const marks = node.node.getChildren('LinkMark')
-      const label = node.node.getChild('LinkLabel')
+    const marks = node.node.getChildren('LinkMark')
+    const label = node.node.getChild('LinkLabel')
 
-      // We need at least three LinkMarks for regular links: [, ], and (
-      // since the parser will also parse ellipses as Links (a.k.a.
-      // reference style links). Alternatively, it needs to have a LinkLabel
-      // child node
-      if (marks.length < 3 && !label) {
-        return false
-      }
-
-      if (marks[0].to === marks[1].from) {
-        return false // Empty link title -> would hide the entire link
-      }
-
-      ranges.push(
-        hiddenDeco.range(marks[0].from, marks[0].to),
-        hiddenDeco.range(marks[1].from, label ? label.to : marks[marks.length - 1].to),
-      )
+    // We need at least three LinkMarks for regular links: [, ], and (
+    // since the parser will also parse ellipses as Links (a.k.a.
+    // reference style links). Alternatively, it needs to have a LinkLabel
+    // child node
+    if (marks.length < 3 && !label) {
+      return false
     }
+
+    if (marks[0].to === marks[1].from) {
+      return false // Empty link title -> would hide the entire link
+    }
+
+    ranges.push(
+      hiddenDeco.range(marks[0].from, marks[0].to),
+      hiddenDeco.range(marks[1].from, label ? label.to : marks[marks.length - 1].to),
+    )
   })
 
   return Decoration.set(ranges, true)
