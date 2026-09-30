@@ -7,6 +7,8 @@ import os from "os";
 import path from "path";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import LogProvider from "source/app/service-providers/log";
+import { ReferenceIndex } from "source/app/service-providers/references/reference-index";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
 
 describe("document lint cache", function () {
   this.timeout(120_000);
@@ -18,7 +20,7 @@ describe("document lint cache", function () {
   const providers: DocumentLintProvider[] = [];
   const text = "Residue ???\n";
 
-  function createProvider(): DocumentLintProvider {
+  function createProvider(references?: ReferenceIndex): DocumentLintProvider {
     const provider = new DocumentLintProvider({
       log: new LogProvider(),
       config: {
@@ -32,6 +34,7 @@ describe("document lint cache", function () {
         }),
       },
       buffers: { readMarkdownBufferContent: () => undefined },
+      references,
       homeDirectory: home,
       env: {},
       userDataDirectory,
@@ -142,5 +145,62 @@ describe("document lint cache", function () {
     await writeFile(path.join(path.dirname(documentPath), ".flowmark.toml"), "");
     const [afterConfig] = await provider.lookup([{ path: documentPath, text }]);
     assert.equal(afterConfig.current, false);
+  });
+
+  function referenceRules(record: { diagnostics: { rule: string }[] }): string[] {
+    return record.diagnostics
+      .map((diagnostic) => diagnostic.rule)
+      .filter((rule) => rule.startsWith("reference/"));
+  }
+
+  it("keeps the result of a document that a new workspace label does not concern and lints again a document that refers to the label", async function () {
+    const citingPath = path.join(path.dirname(documentPath), "citing.md");
+    const citingText = "The argument uses @thm:main.\n";
+    const definingPath = path.join(path.dirname(documentPath), "defining.md");
+    const definingText = "::: {.theorem #thm:main}\nEvery such lattice is unimodular.\n:::\n";
+    await writeFile(citingPath, citingText);
+    const references = new ReferenceIndex();
+    references.applySavedSnapshot(extractReferences(documentPath, text));
+    references.applySavedSnapshot(extractReferences(citingPath, citingText));
+    const provider = createProvider(references);
+    await provider.boot();
+    const unconcerned = await provider.lint(documentPath, text);
+    const undefinedLabel = await provider.lint(citingPath, citingText);
+    assert.deepEqual(referenceRules(undefinedLabel), ["reference/missing-workspace-definition"]);
+
+    await writeFile(definingPath, definingText);
+    references.applySavedSnapshot(extractReferences(definingPath, definingText));
+    const [kept, outdated] = await provider.lookup([
+      { path: documentPath, text },
+      { path: citingPath, text: citingText },
+    ]);
+    assert.equal(kept.current, true);
+    assert.equal(kept.record?.lintedAt, unconcerned.lintedAt);
+    assert.equal(outdated.current, false);
+
+    const definedLabel = await provider.lint(citingPath, citingText);
+    assert.notEqual(definedLabel.lintedAt, undefinedLabel.lintedAt);
+    assert.deepEqual(referenceRules(definedLabel), []);
+  });
+
+  it("reports a label that two workspace documents define in each of them", async function () {
+    const secondPath = path.join(path.dirname(documentPath), "second.md");
+    const definition = "::: {.theorem #thm:main}\nEvery such lattice is unimodular.\n:::\n";
+    await writeFile(documentPath, definition);
+    await writeFile(secondPath, definition);
+    const references = new ReferenceIndex();
+    references.applySavedSnapshot(extractReferences(documentPath, definition));
+    const provider = createProvider(references);
+    await provider.boot();
+    assert.deepEqual(referenceRules(await provider.lint(documentPath, definition)), []);
+
+    references.applySavedSnapshot(extractReferences(secondPath, definition));
+    for (const definingPath of [documentPath, secondPath]) {
+      assert.deepEqual(
+        referenceRules(await provider.lint(definingPath, definition)),
+        ["reference/duplicate-workspace-definition"],
+        definingPath,
+      );
+    }
   });
 });

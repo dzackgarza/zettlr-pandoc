@@ -227,4 +227,46 @@ describe("useDocumentCollaborationStore", function () {
     assert.deepEqual(store.getSession(DOCUMENT_PATH), session);
     assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 2);
   });
+
+  it("keeps the session object of a document that a workspace refresh returns unchanged, and replaces a changed one", async function () {
+    const { authority, service } = harness();
+    const created = await annotate(service);
+    let provided = sessionFor(authority, service);
+
+    // The main process sends a copy of the session for each request.
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      return message.command === "get-workspace-collaboration-sessions"
+        ? [structuredClone(provided)]
+        : structuredClone(provided);
+    });
+
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(DOCUMENT_PATH);
+    const shown = store.sessionsByDocumentPath[DOCUMENT_PATH];
+    const cards = store.getCards(DOCUMENT_PATH);
+    assert.deepEqual(cards.map((card) => card.annotation.annotationId), [created.annotationId]);
+
+    await store.refreshWorkspaceSessions([DOCUMENT_PATH]);
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"), 1);
+    assert.equal(store.sessionsByDocumentPath[DOCUMENT_PATH], shown);
+    assert.equal(store.getCards(DOCUMENT_PATH), cards);
+
+    await service.addAnnotationMessage({
+      documentId: DOCUMENT_ID,
+      annotationId: created.annotationId,
+      actor: "agent",
+      text: "A shorter opening line follows.",
+      clientRequestId: "agent-reply-1",
+      expectedAnnotationGeneration: 1,
+    });
+    provided = sessionFor(authority, service);
+
+    await store.refreshWorkspaceSessions([DOCUMENT_PATH]);
+    assert.notEqual(store.sessionsByDocumentPath[DOCUMENT_PATH], shown);
+    assert.deepEqual(store.getSession(DOCUMENT_PATH), provided);
+    assert.deepEqual(
+      store.getCards(DOCUMENT_PATH).map((card) => card.annotation.messages.length),
+      [2],
+    );
+  });
 });

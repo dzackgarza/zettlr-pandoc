@@ -31,11 +31,12 @@ import path from 'path'
 import CSL from 'citeproc'
 import { forceParsing } from '@codemirror/language'
 import { EditorState, type Extension } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { type Decoration, EditorView } from '@codemirror/view'
 import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
 import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
 import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
 import {
+  referencePresentationField,
   workspaceReferencesField,
   workspaceReferencesUpdate,
   type EditorWorkspaceReferences
@@ -282,6 +283,64 @@ describe('Reference chips (issue #1 Phase 4)', function () {
       assert.strictEqual(chips(view).length, 0, 'a duplicate reference must not render a chip')
       assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'an unresolved supported-family key must not render through the citation widget')
       assert.ok(view.contentDOM.textContent.includes('@thm:torelli'), 'the authored source must stay raw (diagnostics own duplicates)')
+    })
+  })
+
+  describe('a transaction draws again only the chips that it changes', function () {
+    const doc = 'By @thm:torelli and @eq:intersection-form the squares agree.\n\nA paragraph without a reference follows here.\n'
+
+    /** The decoration objects of the editor, in the order of their sources and positions. */
+    function decorations (view: EditorView): Decoration[] {
+      const found: Decoration[] = []
+      for (const source of view.state.facet(EditorView.decorations)) {
+        const set = typeof source === 'function' ? source(view) : source
+        const cursor = set.iter()
+        while (cursor.value !== null) {
+          found.push(cursor.value)
+          cursor.next()
+        }
+      }
+      return found
+    }
+
+    function assertSameObjects (after: Decoration[], before: Decoration[]): void {
+      assert.strictEqual(after.length, before.length)
+      for (const [ index, decoration ] of after.entries()) {
+        assert.ok(decoration === before[index], `decoration ${index} must be the object that the editor drew before`)
+      }
+    }
+
+    it('keeps each chip when the caret moves through text', function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+      const before = decorations(view)
+      assert.strictEqual(chips(view).length, 2)
+      assert.ok(before.length >= 2, 'each chip is a decoration')
+
+      const start = doc.indexOf('A paragraph')
+      for (let step = 0; step < 8; step++) {
+        view.dispatch({ selection: { anchor: start + step } })
+      }
+      assertSameObjects(decorations(view), before)
+    })
+
+    it('keeps each chip and the presentation for a reference view with the same content', function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+      const before = decorations(view)
+      const presentation = view.state.field(referencePresentationField)
+      assert.strictEqual(presentation.displayNumbers.get('thm:torelli'), '1.1.1')
+
+      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, RESOLVED_FILES)) })
+      assert.ok(view.state.field(referencePresentationField) === presentation, 'the same content keeps the presentation object')
+      assertSameObjects(decorations(view), before)
+    })
+
+    it('shows the source of a reference that a new view makes a duplicate, and keeps the other chip', function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+      assert.deepStrictEqual(chips(view).map(chip => chip.dataset.referenceKey), [ 'thm:torelli', 'eq:intersection-form' ])
+
+      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, FULL_FILES)) })
+      assert.deepStrictEqual(chips(view).map(chip => chip.dataset.referenceKey), ['eq:intersection-form'])
+      assert.ok(view.contentDOM.textContent.includes('@thm:torelli'), 'the duplicate reference shows its source')
     })
   })
 
