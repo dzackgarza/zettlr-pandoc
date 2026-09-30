@@ -1,0 +1,138 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 5b5c23d899f53a3223e525db5c9895f9a2df808d..598828e984bbd23cafd16c5bdd55002bcaa2d04c 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -3,8 +3,7 @@
+ var state = require('@codemirror/state');
+ 
+ class LocalUpdate {
+-    constructor(origin, changes, effects, clientID) {
+-        this.origin = origin;
++    constructor(changes, effects, clientID) {
+         this.changes = changes;
+         this.effects = effects;
+         this.clientID = clientID;
+@@ -43,7 +42,7 @@ const collabField = state.StateField.define({
+         let { sharedEffects, clientID } = tr.startState.facet(collabConfig);
+         let effects = sharedEffects(tr);
+         if (effects.length || !tr.changes.empty)
+-            return new CollabState(collab.version, collab.unconfirmed.concat(new LocalUpdate(tr, tr.changes, effects, clientID)));
++            return new CollabState(collab.version, collab.unconfirmed.concat(new LocalUpdate(tr.changes, effects, clientID)));
+         return collab;
+     }
+ });
+@@ -86,7 +85,7 @@ function receiveUpdates(state$1, updates) {
+             unconfirmed = unconfirmed.map(update => {
+                 let updateChanges = update.changes.map(changes);
+                 changes = changes.map(update.changes, true);
+-                return new LocalUpdate(update.origin, updateChanges, state.StateEffect.mapEffects(update.effects, changes), clientID);
++                return new LocalUpdate(updateChanges, state.StateEffect.mapEffects(update.effects, changes), clientID);
+             });
+         if (effects.length) {
+             let composed = unconfirmed.reduce((ch, u) => ch.compose(u.changes), state.ChangeSet.empty(unconfirmed[0].changes.length));
+@@ -108,12 +107,7 @@ function receiveUpdates(state$1, updates) {
+ }
+ /**
+ Returns the set of locally made updates that still have to be sent
+-to the authority. The returned objects will also have an `origin`
+-property that points at the transaction that created them. This
+-may be useful if you want to send along metadata like timestamps.
+-(But note that the updates may have been mapped in the meantime,
+-whereas the transaction is just the original transaction that
+-created them.)
++to the authority.
+ */
+ function sendableUpdates(state) {
+     return state.field(collabField).unconfirmed;
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 2c507d60b5b9ccd0f28b73e4ace60d437a296ddb..d132eca135987a319a63de8057a2d6603e38ef64 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -52,16 +52,9 @@ forward to adjust to the authority's view of the document.
+ declare function receiveUpdates(state: EditorState, updates: readonly Update[]): Transaction;
+ /**
+ Returns the set of locally made updates that still have to be sent
+-to the authority. The returned objects will also have an `origin`
+-property that points at the transaction that created them. This
+-may be useful if you want to send along metadata like timestamps.
+-(But note that the updates may have been mapped in the meantime,
+-whereas the transaction is just the original transaction that
+-created them.)
++to the authority.
+ */
+-declare function sendableUpdates(state: EditorState): readonly (Update & {
+-    origin: Transaction;
+-})[];
++declare function sendableUpdates(state: EditorState): readonly Update[];
+ /**
+ Get the version up to which the collab plugin has synced with the
+ central authority.
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 2c507d60b5b9ccd0f28b73e4ace60d437a296ddb..d132eca135987a319a63de8057a2d6603e38ef64 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -52,16 +52,9 @@ forward to adjust to the authority's view of the document.
+ declare function receiveUpdates(state: EditorState, updates: readonly Update[]): Transaction;
+ /**
+ Returns the set of locally made updates that still have to be sent
+-to the authority. The returned objects will also have an `origin`
+-property that points at the transaction that created them. This
+-may be useful if you want to send along metadata like timestamps.
+-(But note that the updates may have been mapped in the meantime,
+-whereas the transaction is just the original transaction that
+-created them.)
++to the authority.
+ */
+-declare function sendableUpdates(state: EditorState): readonly (Update & {
+-    origin: Transaction;
+-})[];
++declare function sendableUpdates(state: EditorState): readonly Update[];
+ /**
+ Get the version up to which the collab plugin has synced with the
+ central authority.
+diff --git a/dist/index.js b/dist/index.js
+index 8c8b8ac5f76c1467fc41ff6bd6c198f809505e1a..446dbf46d9b6e0b563a3bdaa51701c27c31352a4 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,8 +1,7 @@
+ import { Facet, combineConfig, Annotation, StateField, StateEffect, ChangeSet, Transaction } from '@codemirror/state';
+ 
+ class LocalUpdate {
+-    constructor(origin, changes, effects, clientID) {
+-        this.origin = origin;
++    constructor(changes, effects, clientID) {
+         this.changes = changes;
+         this.effects = effects;
+         this.clientID = clientID;
+@@ -41,7 +40,7 @@ const collabField = /*@__PURE__*/StateField.define({
+         let { sharedEffects, clientID } = tr.startState.facet(collabConfig);
+         let effects = sharedEffects(tr);
+         if (effects.length || !tr.changes.empty)
+-            return new CollabState(collab.version, collab.unconfirmed.concat(new LocalUpdate(tr, tr.changes, effects, clientID)));
++            return new CollabState(collab.version, collab.unconfirmed.concat(new LocalUpdate(tr.changes, effects, clientID)));
+         return collab;
+     }
+ });
+@@ -84,7 +83,7 @@ function receiveUpdates(state, updates) {
+             unconfirmed = unconfirmed.map(update => {
+                 let updateChanges = update.changes.map(changes);
+                 changes = changes.map(update.changes, true);
+-                return new LocalUpdate(update.origin, updateChanges, StateEffect.mapEffects(update.effects, changes), clientID);
++                return new LocalUpdate(updateChanges, StateEffect.mapEffects(update.effects, changes), clientID);
+             });
+         if (effects.length) {
+             let composed = unconfirmed.reduce((ch, u) => ch.compose(u.changes), ChangeSet.empty(unconfirmed[0].changes.length));
+@@ -106,12 +105,7 @@ function receiveUpdates(state, updates) {
+ }
+ /**
+ Returns the set of locally made updates that still have to be sent
+-to the authority. The returned objects will also have an `origin`
+-property that points at the transaction that created them. This
+-may be useful if you want to send along metadata like timestamps.
+-(But note that the updates may have been mapped in the meantime,
+-whereas the transaction is just the original transaction that
+-created them.)
++to the authority.
+ */
+ function sendableUpdates(state) {
+     return state.field(collabField).unconfirmed;

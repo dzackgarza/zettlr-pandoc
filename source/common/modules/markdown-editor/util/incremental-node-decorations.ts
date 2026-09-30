@@ -101,9 +101,18 @@ function collectBlocks (tree: Tree, offset: number, blocks: TopLevelBlocks): voi
   }
 }
 
+// One tree has one list of blocks. Each field of an editor reads it for each
+// tree, so the list is made once and lives as long as its tree.
+const blocksOfTree = new WeakMap<Tree, TopLevelBlocks>()
+
 function topLevelBlocks (tree: Tree): TopLevelBlocks {
+  const known = blocksOfTree.get(tree)
+  if (known !== undefined) {
+    return known
+  }
   const blocks: TopLevelBlocks = { nodes: [], from: [], index: new Map() }
   collectBlocks(tree, 0, blocks)
+  blocksOfTree.set(tree, blocks)
   return blocks
 }
 
