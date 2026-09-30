@@ -16,7 +16,7 @@
  */
 
 import { syntaxTree, syntaxTreeAvailable } from '@codemirror/language'
-import { StateField, type EditorSelection, type EditorState, type Range, type RangeSet } from '@codemirror/state'
+import { type EditorSelection, type EditorState, type Range, type RangeSet } from '@codemirror/state'
 import {
   BlockWrapper,
   Decoration,
@@ -32,6 +32,8 @@ import { reportError } from 'source/common/util/error-reporting'
 import { mathJaxToElem } from 'source/common/util/mathtex-to-html'
 import { VISUAL_INDENT_EXEMPT_CLASS } from '../plugins/visual-indent'
 import { configField } from '../util/configuration'
+import { incrementalNodeDecorations, type SourceRange } from '../util/incremental-node-decorations'
+import { rangeInSelection } from '../util/range-in-selection'
 import { placeCursorFromRenderedPoint, selectRenderedSourceRange } from './reveal-rendered-source'
 import {
   rangeInPreviewSuppression,
@@ -341,59 +343,74 @@ function addFenceWrappers (
   ranges.push(closeWrapper.range(div.closeFrom, div.closeTo))
 }
 
-function collectDocumentDivs (state: EditorState): PandocDivModel[] {
-  const divs: PandocDivModel[] = []
+/**
+ * The headers of the divs whose nodes touch a range. A div has a header while
+ * it is inactive, and it is inactive exactly while no selection range touches
+ * it: a touched div is active itself or holds the active div.
+ */
+function divHeaderDecorations (state: EditorState, from: number, to: number): Range<Decoration>[] {
+  const ranges: Range<Decoration>[] = []
+  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
   syntaxTree(state).iterate({
+    from,
+    to,
     enter (node) {
       if (node.name !== 'PandocDiv') {
         return
       }
-      const model = divModelFromNode(state.doc, node.node)
-      if (model !== undefined) {
-        divs.push(model)
-      } else if (syntaxTreeAvailable(state, state.doc.length)) {
-        reportError(
-          'Pandoc fenced div at ' + String(node.from) + ':' + String(node.to) +
-          ' was recognized by the live parser but could not be modeled by the renderer; ' +
-          'raw source remains visible.',
+      const div = divModelFromNode(state.doc, node.node)
+      if (div === undefined) {
+        if (syntaxTreeAvailable(state, state.doc.length)) {
+          reportError(
+            'Pandoc fenced div at ' + String(node.from) + ':' + String(node.to) +
+            ' was recognized by the live parser but could not be modeled by the renderer; ' +
+            'raw source remains visible.',
+          )
+        }
+        return
+      }
+      if (!rangeInSelection(state.selection, div.from, div.to, includeAdjacent)) {
+        ranges.push(
+          Decoration.replace({
+            widget: new PandocDivHeaderWidget(div.label, div.properties.title),
+            block: true,
+          }).range(div.openFrom, div.contentFrom),
         )
       }
     },
   })
-  return divs
+  return ranges
 }
 
-function createDivHeaderDecorations (state: EditorState): DecorationSet {
-  const ranges: Range<Decoration>[] = []
-  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
-  const divs = collectDocumentDivs(state)
-  const active = activeDivs(divs, state.selection, includeAdjacent)
-
-  for (const div of divs) {
-    if (stateForDiv(div, active) !== 'inactive') {
-      continue
-    }
-    ranges.push(
-      Decoration.replace({
-        widget: new PandocDivHeaderWidget(div.label, div.properties.title),
-        block: true,
-      }).range(div.openFrom, div.contentFrom),
-    )
+/**
+ * The header of a div depends on a selection anywhere in the div, so the reach
+ * of a selection range is the start of each div that the range touches.
+ */
+function divHeaderReach (state: EditorState): SourceRange[] {
+  const starts: SourceRange[] = []
+  const tree = syntaxTree(state)
+  for (const range of state.selection.ranges) {
+    tree.iterate({
+      from: range.from,
+      to: range.to,
+      enter (node) {
+        if (node.name === 'PandocDiv') {
+          starts.push({ from: node.from, to: node.from })
+        }
+      },
+    })
   }
-  return Decoration.set(ranges, true)
+  return starts
 }
 
-const pandocDivHeaderField = StateField.define<DecorationSet>({
-  create: createDivHeaderDecorations,
-  update (value, transaction) {
-    const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState)
-    const selectionChanged = !transaction.startState.selection.eq(transaction.state.selection)
-    if (!transaction.docChanged && !selectionChanged && !treeChanged) {
-      return value
-    }
-    return createDivHeaderDecorations(transaction.state)
+const pandocDivHeaderField = incrementalNodeDecorations({
+  decorate: divHeaderDecorations,
+  inputsChanged: (before, after) => {
+    return before.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent !==
+      after.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
   },
-  provide: (field) => EditorView.decorations.from(field),
+  reach: divHeaderReach,
+  reachChanged: (before, after) => before.selection !== after.selection,
 })
 
 function createDivDecorations (view: EditorView): RangeSet<BlockWrapper> {

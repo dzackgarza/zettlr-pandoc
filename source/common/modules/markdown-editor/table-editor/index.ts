@@ -11,10 +11,9 @@
  *
  * END HEADER
  */
-import { type DecorationSet, EditorView } from '@codemirror/view'
-import { type EditorState, StateField } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 import { subviewUpdatePlugin } from './subview'
-import { TableWidget } from './widget'
+import { tableDecorations } from './widget'
 
 // TODO: Think of an appropriate place for this. Or do we want to keep this
 // confined to this plugin?
@@ -64,15 +63,7 @@ const COLORS = {
 // a few helper extensions that are necessary for the functioning of the widgets
 export const renderTables = [
   // The actual TableEditor provider
-  StateField.define<DecorationSet>({
-    create (state: EditorState) {
-      return TableWidget.createForState(state)
-    },
-    update (field, tr) {
-      return TableWidget.createForState(tr.state)
-    },
-    provide: f => EditorView.decorations.from(f)
-  }),
+  tableDecorations,
   // A theme for the various elements
   EditorView.baseTheme({
     'div.cm-table-editor-widget-wrapper': {

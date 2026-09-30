@@ -22,7 +22,8 @@
  *                  - A range that the source calls its reach moved. The
  *                    reach holds the ranges whose decorations depend on more
  *                    than their own nodes, such as the selection. The field
- *                    computes again the old and the new reach.
+ *                    computes again the old and the new reach, and the
+ *                    decorations that touch them.
  *                  - Another state value that the source reads changed. The
  *                    source reports that, and the field computes all
  *                    decorations again.
@@ -31,6 +32,11 @@
  *                  change. A widget in such a decoration is not created
  *                  again, so a widget must not keep a document position: it
  *                  reads its position from the view when it needs one.
+ *
+ *                  A decoration that the field computes again replaces the
+ *                  one in its place only when the two are not equal. The
+ *                  element of a widget therefore belongs to one widget object
+ *                  until a different widget takes its place.
  *
  * END HEADER
  */
@@ -48,7 +54,7 @@ export interface SourceRange {
 export interface NodeDecorationSource {
   /**
    * Returns the decorations of the syntax nodes that touch `[from, to]`. The
-   * field keeps only the decorations that touch that range themselves.
+   * field keeps only the decorations that belong to that range themselves.
    */
   decorate: (state: EditorState, from: number, to: number) => Array<Range<Decoration>>
   /**
@@ -143,6 +149,18 @@ function mergeTouching (ranges: SourceRange[]): SourceRange[] {
   return merged
 }
 
+/**
+ * Whether a decoration belongs to a region that the field computes again. A
+ * decoration that only meets the region at one of its ends belongs to the
+ * unchanged block on that side. An empty decoration at such an end is what
+ * remains of a deleted block, and belongs to the region.
+ */
+function inRegion (from: number, to: number, region: SourceRange): boolean {
+  const before = from < region.from && to <= region.from
+  const after = from >= region.to && to > region.to
+  return !before && !after
+}
+
 function build (source: NodeDecorationSource, state: EditorState): NodeDecorations {
   const tree = syntaxTree(state)
   return {
@@ -174,13 +192,18 @@ export function incrementalNodeDecorations (source: NodeDecorationSource): State
         dirty.push(...changedRanges(value.blocks, blocks, state.doc.length))
       }
       if (reachMoved) {
-        for (const range of source.reach(transaction.startState)) {
-          dirty.push({
-            from: transaction.changes.mapPos(range.from, -1),
-            to: transaction.changes.mapPos(range.to, 1)
-          })
+        // One position more on each side: a decoration that meets the reach
+        // depends on it, and `inRegion` leaves out a decoration that only
+        // meets a region.
+        const widened = (from: number, to: number): SourceRange => {
+          return { from: Math.max(0, from - 1), to: Math.min(state.doc.length, to + 1) }
         }
-        dirty.push(...source.reach(state))
+        for (const range of source.reach(transaction.startState)) {
+          dirty.push(widened(transaction.changes.mapPos(range.from, -1), transaction.changes.mapPos(range.to, 1)))
+        }
+        for (const range of source.reach(state)) {
+          dirty.push(widened(range.from, range.to))
+        }
       }
 
       let decorations = transaction.docChanged
@@ -188,20 +211,30 @@ export function incrementalNodeDecorations (source: NodeDecorationSource): State
         : value.decorations
       const regions = mergeTouching(dirty)
       const add: Array<Range<Decoration>> = []
-      let previousEnd = -1
+      let previous: SourceRange|undefined
       for (const region of regions) {
+        const replaced = new Map<string, Decoration>()
         decorations = decorations.update({
           filterFrom: region.from,
           filterTo: region.to,
-          filter: (from, to) => to < region.from || from > region.to
+          filter: (from, to, decoration) => {
+            if (!inRegion(from, to, region)) {
+              return true
+            }
+            replaced.set(`${from}-${to}`, decoration)
+            return false
+          }
         })
         for (const range of source.decorate(state, region.from, region.to)) {
-          // A decoration that touches an earlier region is already in `add`.
-          if (range.from <= region.to && range.to >= region.from && range.from > previousEnd) {
-            add.push(range)
+          // A decoration that also belongs to the region before is already in `add`.
+          const added = previous !== undefined && inRegion(range.from, range.to, previous)
+          if (!inRegion(range.from, range.to, region) || added) {
+            continue
           }
+          const old = replaced.get(`${range.from}-${range.to}`)
+          add.push(old?.eq(range.value) === true ? old.range(range.from, range.to) : range)
         }
-        previousEnd = region.to
+        previous = region
       }
       if (add.length > 0) {
         decorations = decorations.update({ add, sort: true })

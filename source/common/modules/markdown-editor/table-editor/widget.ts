@@ -14,24 +14,28 @@
  */
 
 import { reportError } from '@common/util/error-reporting'
-import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
+import { syntaxTree } from '@codemirror/language'
 import type { EditorState, Range } from '@codemirror/state'
-import type { Rect, DecorationSet } from '@codemirror/view'
+import type { Rect } from '@codemirror/view'
 import { WidgetType, EditorView, Decoration } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 import type { TableRow, Table, TableCell } from '../../markdown-utils/markdown-ast'
 import { parseTableNode } from '../../markdown-utils/markdown-ast/parse-table-node'
 import { nodeToHTML } from '../../markdown-utils/markdown-to-html'
 import { createSubviewForCell, hiddenSpanField } from './subview'
-import { getCoordinatesForRange, getTableNodes } from './commands/util'
-import { generateColumnControls, generateEmptyTableWidgetElement, generateRowControls, tableTD, tableTH, tableTR } from './widget-dom'
+import { getCoordinatesForRange } from './commands/util'
+import { generateColumnControls, generateEmptyTableWidgetElement, generateRowControls, tableTD, tableTH, tableTR, TABLE_WIDGET_WRAPPER_CLASS } from './widget-dom'
 import { displayTableContextMenu } from './context-menu'
 import { WIDGET_LINE_STYLE_RESET_CLASS } from '../renderers/base-renderer'
 import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
 import { configField } from '../util/configuration'
 import { interceptAnchorClicks } from './util/anchor-callbacks'
 import openMarkdownLink from '../util/open-markdown-link'
-import { reviewSuggestionsInRange } from '../plugins/review-chunks'
+import { getReviewChunks, reviewSuggestionsInRange } from '../plugins/review-chunks'
+import { documentText } from '../util/document-text'
+import { incrementalNodeDecorations, type SourceRange } from '../util/incremental-node-decorations'
+import { previewSuppressionChanged } from '../util/range-in-preview-suppression'
+import { type CitationRequest, requestRenderedCitation } from '../renderers/render-citations'
 
 function updateTableReviewIndicator (wrapper: HTMLElement, view: EditorView, from: number, to: number): void {
   const count = reviewSuggestionsInRange(view.state, from, to).length
@@ -98,7 +102,12 @@ export class TableWidget extends WidgetType {
   // For more background, see issue #5940.
   private readonly meanRowHeight = 100
 
-  constructor (readonly ast: Table, readonly node: SyntaxNode) {
+  /**
+   * The field below keeps a widget while the table block is unchanged, so a
+   * widget holds no position of the table. `decoratedFrom` is where the table
+   * was when the field made the widget; it only names the height cache entry.
+   */
+  constructor (readonly ast: Table, readonly decoratedFrom: number) {
     super()
   }
 
@@ -132,7 +141,7 @@ export class TableWidget extends WidgetType {
   // By setting the cache key to the node's `from` position,
   // we stabilize the cache while edits happen within the table.
   private get cacheKey (): string {
-    return `${this.node.from}`
+    return `${this.decoratedFrom}`
   }
 
   toDOM (view: EditorView): HTMLElement {
@@ -141,13 +150,14 @@ export class TableWidget extends WidgetType {
       // This block widget cannot route through base-renderer, so it opts into
       // the shared line-style reset itself (see WIDGET_LINE_STYLE_RESET_CLASS).
       wrapper.classList.add(WIDGET_LINE_STYLE_RESET_CLASS)
-      const tableAST = parseTableNode(this.node, view.state.sliceDoc())
+      const node = tableNodeOf(view.state, this)
+      const tableAST = parseTableNode(node, documentText(view.state))
       if (tableAST.type !== 'Table') {
         throw new Error('Cannot render table: Likely malformed')
       }
 
       updateTable(table, tableAST, view)
-      updateTableReviewIndicator(wrapper, view, this.node.from, this.node.to)
+      updateTableReviewIndicator(wrapper, view, node.from, node.to)
 
       const cacheKey = this.cacheKey
       view.requestMeasure({
@@ -179,11 +189,12 @@ export class TableWidget extends WidgetType {
       return false
     }
 
-    const tableAST = parseTableNode(this.node, view.state.sliceDoc())
+    const node = tableNodeOf(view.state, this)
+    const tableAST = parseTableNode(node, documentText(view.state))
     if (tableAST.type === 'Table') {
       const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0
       updateTable(table, tableAST, view)
-      updateTableReviewIndicator(dom, view, this.node.from, this.node.to)
+      updateTableReviewIndicator(dom, view, node.from, node.to)
       // Instruct the editor to remeasure its height; see
       // https://discuss.codemirror.net/t/5604
       const height = table.getBoundingClientRect().height
@@ -235,7 +246,7 @@ export class TableWidget extends WidgetType {
         }
       })
 
-    const realPos = pos + this.node.from // NOTE that `pos` is only an offset.
+    const realPos = pos // NOTE that `pos` is an offset, and so are the cell positions.
 
     // NOTE: This code ignores the "side" parameter. Also, it ignores the offset
     // into the table cell itself.
@@ -266,51 +277,149 @@ export class TableWidget extends WidgetType {
   ignoreEvent (event: Event): boolean {
     return true // In this plugin case, the table should handle everything
   }
+}
 
-  /**
-   * Takes an EditorState and returns a DecorationSet containing TableWidgets
-   * for each Table node found in the state.
-   *
-   * @param   {EditorState}    state  The EditorState
-   *
-   * @return  {DecorationSet}         The DecorationSet
-   */
-  public static createForState (state: EditorState): DecorationSet {
-    // We try to retrieve the full syntax tree, and if that fails, fall back to
-    // the (possibly incomplete) syntax tree.
-    const tree = ensureSyntaxTree(state, state.doc.length, 500) ?? syntaxTree(state)
-    // Constantly calling `sliceDoc()` within the tree traversal
-    // below has some negative performance impacts, so we extract
-    // the markdown text outside of the loop
-    const markdown = state.sliceDoc()
-
-    const newDecos: Array<Range<Decoration>> = getTableNodes(tree)
-      .map(node => {
-        return { node, ast: parseTableNode(node, markdown) }
-      })
-      .filter(({ ast }) => {
-        // The TableEditor cannot support grid tables, since they can have
-        // (a) colspans and rowspans, and (b) multiple lines, which is just
-        // too difficult to represent using our approach here. (Also, grids
-        // are much easier to parse visually than pipes and less common,
-        // reducing the need for us to support them.)
-        if (ast.type === 'Table' && ast.tableType === 'pipe') {
-          const rowLength = ast.alignment?.length ?? 0
-          return ast.rows.every(r => r.cells.length === rowLength)
-        }
-
+/**
+ * Returns the TableWidgets of the Table nodes that touch a range.
+ *
+ * @param   {EditorState}  state  The EditorState
+ * @param   {number}       from   The start of the range
+ * @param   {number}       to     The end of the range
+ *
+ * @return  {Range<Decoration>[]}  The decorations
+ */
+function tableDecorationsBetween (state: EditorState, from: number, to: number): Array<Range<Decoration>> {
+  const newDecos: Array<Range<Decoration>> = []
+  syntaxTree(state).iterate({
+    from,
+    to,
+    enter (node) {
+      if (node.name !== 'Table') {
+        return
+      }
+      const ast = parseTableNode(node.node, documentText(state))
+      // The TableEditor cannot support grid tables, since they can have
+      // (a) colspans and rowspans, and (b) multiple lines, which is just
+      // too difficult to represent using our approach here. (Also, grids
+      // are much easier to parse visually than pipes and less common,
+      // reducing the need for us to support them.)
+      if (ast.type !== 'Table' || ast.tableType !== 'pipe') {
         return false
-      })
-      // Turn the nodes into Decorations
-      .map(({ node, ast }) => {
-        return Decoration.replace({
-          widget: new TableWidget(ast as Table, node.node),
+      }
+      const rowLength = ast.alignment?.length ?? 0
+      if (ast.rows.every(r => r.cells.length === rowLength)) {
+        newDecos.push(Decoration.replace({
+          widget: new TableWidget(ast, node.from),
           // inclusive: false,
           block: true
-        }).range(node.from, node.to)
-      })
-    return Decoration.set(newDecos, true)
+        }).range(node.from, node.to))
+      }
+      return false
+    }
+  })
+  return newDecos
+}
+
+/**
+ * The ranges that decide more of a table than its own source: the selection
+ * (the cell that holds it is an editor) and the review suggestions (a table
+ * shows how many touch it).
+ */
+function tableReach (state: EditorState): SourceRange[] {
+  const ranges: SourceRange[] = [...state.selection.ranges]
+  for (const suggestion of getReviewChunks(state) ?? []) {
+    ranges.push({ from: suggestion.seam, to: suggestion.seam }, ...suggestion.anchors)
   }
+  return ranges
+}
+
+/**
+ * Holds a TableWidget for each Table node of the state. A transaction makes
+ * again only the widgets of the tables that it can change.
+ */
+export const tableDecorations = incrementalNodeDecorations({
+  decorate: tableDecorationsBetween,
+  // A cell renders links and citations as the configuration says.
+  inputsChanged: (before, after) => before.field(configField) !== after.field(configField),
+  reach: tableReach,
+  reachChanged: previewSuppressionChanged
+})
+
+/**
+ * Returns the Table node that a widget replaces in a state.
+ *
+ * @param   {EditorState}  state   The state that holds the widget
+ * @param   {TableWidget}  widget  The widget
+ *
+ * @return  {SyntaxNode}           The Table node
+ */
+function tableNodeOf (state: EditorState, widget: TableWidget): SyntaxNode {
+  const decorations = state.field(tableDecorations).decorations
+  let tableFrom: number|undefined
+  const isWidget = (from: number, _to: number, value: Decoration): false|undefined => {
+    if (value.spec.widget !== widget) {
+      return undefined
+    }
+    tableFrom = from
+    return false
+  }
+  // The widget is where the field made it, unless a later transaction of the
+  // same update moved the table.
+  decorations.between(widget.decoratedFrom, widget.decoratedFrom, isWidget)
+  if (tableFrom === undefined) {
+    decorations.between(0, state.doc.length, isWidget)
+  }
+  if (tableFrom === undefined) {
+    throw new Error('Cannot render table: the editor state does not hold this table widget')
+  }
+
+  let node: SyntaxNode|null = syntaxTree(state).resolveInner(tableFrom, 1)
+  while (node !== null && (node.name !== 'Table' || node.from !== tableFrom)) {
+    node = node.parent
+  }
+  if (node === null) {
+    throw new Error(`Cannot render table: no table starts at position ${tableFrom}`)
+  }
+  return node
+}
+
+/**
+ * Renders the content of a cell into its content wrapper. A citation shows
+ * its source until the citation provider answers.
+ *
+ * @param  {HTMLDivElement}  contentWrapper  The content wrapper of the cell
+ * @param  {TableCell}       cell            The table cell
+ * @param  {EditorView}      view            The EditorView
+ */
+function renderCellContent (contentWrapper: HTMLDivElement, cell: TableCell, view: EditorView): void {
+  const { zknLinkFormat, metadata } = view.state.field(configField)
+  const library = metadata.library === '' ? CITEPROC_MAIN_DB : metadata.library
+  const rendering = JSON.stringify([ cell.textContent, zknLinkFormat, library ])
+  if (contentWrapper.dataset.rendering === rendering) {
+    return
+  }
+  contentWrapper.dataset.rendering = rendering
+
+  const citations: CitationRequest[] = []
+  const html = nodeToHTML(cell.children, {
+    onCitation: (items, composite) => {
+      citations.push({ items, composite })
+      return undefined
+    },
+    zknLinkFormat,
+  }, 0).trim()
+  contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
+  interceptAnchorClicks(contentWrapper, href => openMarkdownLink(href, view))
+
+  contentWrapper.querySelectorAll<HTMLElement>('span.citation').forEach((span, index) => {
+    requestRenderedCitation(library, citations[index]).then(rendered => {
+      if (rendered !== undefined && contentWrapper.dataset.rendering === rendering) {
+        span.innerHTML = rendered
+      }
+    }, (err: unknown) => {
+      reportError('Citation preview IPC failed', err)
+    })
+  })
 }
 
 /**
@@ -347,7 +456,7 @@ function updateTable (table: HTMLTableElement, tableAST: Table, view: EditorView
       trs.push(tr)
     }
     // Transfer the contents
-    updateRow(trs[i], row, i, tableAST.alignment, view, rowsChanged, coords)
+    updateRow(trs[i], row, i, tableAST.alignment, view, rowsChanged, tableAST.from, coords)
   }
 }
 
@@ -361,6 +470,7 @@ function updateTable (table: HTMLTableElement, tableAST: Table, view: EditorView
  * @param  {TableRow}             astRow  The AST table row element
  * @param  {number}               idx     The row's index in the table
  * @param  {EditorView}           view    The EditorView
+ * @param  {number}               tableFrom  The start of the table
  */
 function updateRow (
   tr: HTMLTableRowElement,
@@ -369,6 +479,7 @@ function updateRow (
   align: Array<'left'|'center'|'right'|null>,
   view: EditorView,
   rowsChanged: boolean,
+  tableFrom: number,
   selectionCoords?: { col: number, row: number },
 ): void {
   const tds = [...tr.querySelectorAll(astRow.isHeaderOrFooter ? 'th' : 'td')]
@@ -381,11 +492,6 @@ function updateRow (
 
   const { row, col } = selectionCoords !== undefined ? selectionCoords : { row: -1, col: -1 }
 
-  // Prepare the citation callback
-  let { library } = view.state.field(configField).metadata
-  library = library === '' ? CITEPROC_MAIN_DB : library
-  const onCitation = window.getCitationCallback(library)
-
   for (let i = 0; i < astRow.cells.length; i++) {
     const cell = astRow.cells[i]
     const selectionInCell = row === idx && col === i
@@ -397,11 +503,7 @@ function updateRow (
       contentWrapper.classList.add('content')
       td.appendChild(contentWrapper)
 
-      const { zknLinkFormat } = view.state.field(configField)
-      const html = nodeToHTML(cell.children, {
-        onCitation, zknLinkFormat,
-      }, 0).trim()
-      contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
+      renderCellContent(contentWrapper, cell, view)
 
       // NOTE: This handle gets attached once and then remains on the TD for
       // the existence of the table. Since the `view` will always be the same,
@@ -459,10 +561,11 @@ function updateRow (
       }
     }
 
-    // Save the corresponding document offsets appropriately. NOTE that we
-    // include whitespace here (minus one space padding if applicable).
-    tds[i].dataset.cellFrom = String(cell.from)
-    tds[i].dataset.cellTo = String(cell.to)
+    // Save the corresponding offsets from the table start appropriately. NOTE
+    // that we include whitespace here (minus one space padding if applicable).
+    // An edit before the table moves the table and leaves these offsets valid.
+    tds[i].dataset.cellFrom = String(cell.from - tableFrom)
+    tds[i].dataset.cellTo = String(cell.to - tableFrom)
     tds[i].style.textAlign = align[i] ?? ''
 
     const contentWrapper: HTMLDivElement = tds[i].querySelector('div.content')!
@@ -473,12 +576,8 @@ function updateRow (
     if (subview !== null && !selectionInCell) {
       subview.destroy()
       contentWrapper.classList.remove('editing')
-      const { zknLinkFormat } = view.state.field(configField)
-      const html = nodeToHTML(cell.children, {
-        onCitation, zknLinkFormat,
-      }, 0).trim()
-      contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
-      interceptAnchorClicks(contentWrapper, href => openMarkdownLink(href, view))
+      delete contentWrapper.dataset.rendering
+      renderCellContent(contentWrapper, cell, view)
     } else if (subview === null && selectionInCell) {
       // Before we mount a subview, we need to normalize the selection if
       // necessary. The table commands are allowed to place the new selection
@@ -512,19 +611,13 @@ function updateRow (
         // Create a new subview to represent the selection here. Ensure the cell
         // itself is empty before we mount the subview.
         contentWrapper.innerHTML = ''
+        delete contentWrapper.dataset.rendering
         createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to })
         contentWrapper.classList.add('editing')
       })
     } else if (subview === null) {
       // Simply transfer the contents
-      const { zknLinkFormat } = view.state.field(configField)
-      const html = nodeToHTML(cell.children, {
-        onCitation, zknLinkFormat,
-      }, 0).trim()
-      if (html !== contentWrapper.innerHTML) {
-        contentWrapper.innerHTML = html.length > 0 ? html : '&nbsp;'
-        interceptAnchorClicks(contentWrapper, href => openMarkdownLink(href, view))
-      }
+      renderCellContent(contentWrapper, cell, view)
     } else if ((subviewFrom !== cell.from || subviewTo !== cell.to) && (columnsChanged || rowsChanged)) {
       // Here, there is a subview in the cell and the selection is in this cell,
       // but the subview has been "carried over" from a different column or row,
@@ -553,8 +646,15 @@ function updateRow (
  * @param   {EditorView}            view  The editor view
  */
 function setSelectionToCell (td: HTMLTableCellElement, cell: TableCell, view: EditorView): void {
-  const from = parseInt(td.dataset.cellFrom ?? '0', 10)
-  const cellTo = parseInt(td.dataset.cellTo ?? '0', 10)
+  const wrapper = td.closest<HTMLElement>(`.${TABLE_WIDGET_WRAPPER_CLASS}`)
+  if (wrapper === null) {
+    throw new Error('Cannot select a table cell outside of a table widget')
+  }
+  // The cell holds offsets from the table start; the view knows where the
+  // table is now.
+  const tableFrom = view.posAtDOM(wrapper)
+  const from = tableFrom + parseInt(td.dataset.cellFrom ?? '0', 10)
+  const cellTo = tableFrom + parseInt(td.dataset.cellTo ?? '0', 10)
   const selection = getSelection()
   const textOffset = selection?.focusOffset ?? 0
   const nodeOffset = estimateNodeOffset(selection?.anchorNode ?? td, td, cell.textContent)

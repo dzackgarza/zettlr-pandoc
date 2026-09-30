@@ -32,7 +32,13 @@ const CITATION_RENDER_CACHE_LIMIT = 256
 const citationRenderCache = new Map<string, Promise<string|undefined>>()
 let stopCitationCacheListener: (() => void)|undefined
 
-function citationCacheKey (library: CitationDatabase, citation: CitationReading): string {
+/** The cite items and the form of one citation, as the citation provider reads them. */
+export interface CitationRequest {
+  items: CiteItem[]
+  composite: boolean
+}
+
+function citationCacheKey (library: CitationDatabase, citation: CitationRequest): string {
   return JSON.stringify([ library, citation.composite, citation.items ])
 }
 
@@ -43,7 +49,11 @@ function ensureCitationCacheInvalidation (): void {
   stopCitationCacheListener = window.ipc.on('citeproc-database-updated', () => { citationRenderCache.clear() })
 }
 
-function requestRenderedCitation (library: CitationDatabase, citation: CitationReading): Promise<string|undefined> {
+/**
+ * Asks the citation provider for the rendered form of a citation. Equal
+ * requests share one answer until the citation database changes.
+ */
+export function requestRenderedCitation (library: CitationDatabase, citation: CitationRequest): Promise<string|undefined> {
   ensureCitationCacheInvalidation()
   const key = citationCacheKey(library, citation)
   const cached = citationRenderCache.get(key)

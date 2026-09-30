@@ -15,18 +15,23 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { syntaxTree } from '@codemirror/language'
 import { yaml } from '@codemirror/lang-yaml'
-import { Annotation, EditorState, StateField, type Extension, type Range } from '@codemirror/state'
+import { EditorState, type Extension, type Range } from '@codemirror/state'
 import {
   Decoration,
-  type DecorationSet,
   EditorView,
   keymap,
   WidgetType
 } from '@codemirror/view'
+import type { SyntaxNode } from '@lezer/common'
 import YAML from 'yaml'
 import { codeSyntaxHighlighter } from '../theme/syntax'
 import { configField } from '../util/configuration'
-import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
+import { incrementalNodeDecorations } from '../util/incremental-node-decorations'
+import {
+  previewSuppressionChanged,
+  previewSuppressionRanges,
+  rangeInPreviewSuppression
+} from '../util/range-in-preview-suppression'
 
 // Interaction model adapted from two existing editor implementations rather
 // than inventing another front-matter editor:
@@ -35,7 +40,6 @@ import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 //   events and writes only the front-matter source range back to the document.
 
 const YAML_COMMIT_DELAY_MS = 250
-const yamlFrontmatterEdit = Annotation.define<boolean>()
 
 interface FrontmatterRange {
   blockFrom: number
@@ -63,25 +67,20 @@ function summarizeYaml (source: string): YamlSummary {
 }
 
 function frontmatterRangeAt (state: EditorState, blockFrom: number): FrontmatterRange|null {
-  let found: FrontmatterRange|null = null
-  syntaxTree(state).iterate({
-    enter (node) {
-      if (found !== null || node.name !== 'YAMLFrontmatter' || node.from !== blockFrom) {
-        return
-      }
-      const content = node.node.getChild('CodeText')
-      if (content === null) {
-        return
-      }
-      found = {
-        blockFrom: node.from,
-        blockTo: node.to,
-        contentFrom: content.from,
-        contentTo: content.to
-      }
-    }
-  })
-  return found
+  let node: SyntaxNode|null = syntaxTree(state).resolveInner(blockFrom, 1)
+  while (node !== null && (node.name !== 'YAMLFrontmatter' || node.from !== blockFrom)) {
+    node = node.parent
+  }
+  const content = node?.getChild('CodeText') ?? null
+  if (node === null || content === null) {
+    return null
+  }
+  return {
+    blockFrom: node.from,
+    blockTo: node.to,
+    contentFrom: content.from,
+    contentTo: content.to
+  }
 }
 
 function updateSummaryDom (card: HTMLElement, source: string): void {
@@ -104,23 +103,21 @@ class YamlFrontmatterWidget extends WidgetType {
   private innerView: EditorView|null = null
   private outerView: EditorView|null = null
   private card: HTMLElement|null = null
+  private block: HTMLElement|null = null
   private outsidePointerDocument: Document|null = null
   private outsidePointerHandler: ((event: MouseEvent) => void)|null = null
 
-  constructor (
-    readonly range: FrontmatterRange,
-    readonly source: string
-  ) {
+  constructor (readonly source: string) {
     super()
     this.latestSource = source
   }
 
   eq (other: YamlFrontmatterWidget): boolean {
     // `latestSource` is advanced before this widget commits into the outer
-    // editor. The replacement decoration can therefore move/resize without
-    // CodeMirror tearing down the focused nested editor on every save.
-    return other.range.blockFrom === this.range.blockFrom &&
-      other.latestSource === this.latestSource
+    // editor. The widget that the outer editor makes for the committed source
+    // is therefore equal to this one, and this one stays with its focused
+    // nested editor and its undo history.
+    return other.latestSource === this.latestSource
   }
 
   private clearCommitTimer (): void {
@@ -137,11 +134,13 @@ class YamlFrontmatterWidget extends WidgetType {
   private commit (): void {
     this.clearCommitTimer()
     const view = this.outerView
-    if (view === null) {
+    const block = this.block
+    if (view === null || block === null) {
       return
     }
 
-    const currentRange = frontmatterRangeAt(view.state, this.range.blockFrom)
+    // The widget holds no position: the view knows where the block is now.
+    const currentRange = frontmatterRangeAt(view.state, view.posAtDOM(block))
     if (currentRange === null) {
       return
     }
@@ -157,8 +156,7 @@ class YamlFrontmatterWidget extends WidgetType {
         from: currentRange.contentFrom,
         to: currentRange.contentTo,
         insert: draft
-      },
-      annotations: yamlFrontmatterEdit.of(true)
+      }
     })
   }
 
@@ -302,6 +300,7 @@ class YamlFrontmatterWidget extends WidgetType {
     const block = document.createElement('div')
     block.classList.add('yaml-frontmatter-block')
     block.append(card)
+    this.block = block
     return block
   }
 
@@ -321,61 +320,45 @@ class YamlFrontmatterWidget extends WidgetType {
     this.innerView = null
     this.outerView = null
     this.card = null
+    this.block = null
     this.outsidePointerDocument = null
     this.outsidePointerHandler = null
   }
 }
 
-function createFrontmatterDecorations (state: EditorState): DecorationSet {
-  const ranges: Range<Decoration>[] = []
+function frontmatterDecorations (state: EditorState, from: number, to: number): Array<Range<Decoration>> {
+  const ranges: Array<Range<Decoration>> = []
   const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   syntaxTree(state).iterate({
+    from,
+    to,
     enter (node) {
       if (node.name !== 'YAMLFrontmatter') {
         return
       }
-      if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
-        return
-      }
-
       const content = node.node.getChild('CodeText')
-      if (content === null) {
-        return
+      if (content !== null && !rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {
+        ranges.push(Decoration.replace({
+          block: true,
+          widget: new YamlFrontmatterWidget(state.sliceDoc(content.from, content.to))
+        }).range(node.from, node.to))
       }
-      const range: FrontmatterRange = {
-        blockFrom: node.from,
-        blockTo: node.to,
-        contentFrom: content.from,
-        contentTo: content.to
-      }
-      ranges.push(Decoration.replace({
-        block: true,
-        widget: new YamlFrontmatterWidget(range, state.sliceDoc(content.from, content.to))
-      }).range(node.from, node.to))
+      return false
     }
   })
 
-  return Decoration.set(ranges, true)
+  return ranges
 }
 
-const frontmatterField = StateField.define<DecorationSet>({
-  create: createFrontmatterDecorations,
-  update (value, transaction) {
-    if (transaction.annotation(yamlFrontmatterEdit) === true) {
-      // The nested editor owns this transaction. Map the existing block
-      // decoration through its front-matter-only change so the focused nested
-      // EditorView and its undo history survive the commit intact.
-      return value.map(transaction.changes)
-    }
-    const treeChanged = syntaxTree(transaction.state) !== syntaxTree(transaction.startState)
-    const selectionChanged = !transaction.startState.selection.eq(transaction.state.selection)
-    if (!transaction.docChanged && !selectionChanged && !treeChanged) {
-      return value
-    }
-    return createFrontmatterDecorations(transaction.state)
+const frontmatterField = incrementalNodeDecorations({
+  decorate: frontmatterDecorations,
+  inputsChanged: (before, after) => {
+    return before.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent !==
+      after.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
   },
-  provide: field => EditorView.decorations.from(field)
+  reach: previewSuppressionRanges,
+  reachChanged: previewSuppressionChanged
 })
 
 export const renderYamlFrontmatter = [
