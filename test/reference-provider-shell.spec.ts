@@ -10,15 +10,17 @@
  * Description:     Exercises saved reference snapshots and authority-buffer
  *                  overlays through the production provider and IPC read
  *                  surface. The cases cover FSAL changes, current-buffer
- *                  extraction, debounce, close-before-fire, drop, and unlink.
+ *                  extraction, debounce, close-before-fire, drop, and unlink,
+ *                  and the 'references' broadcasts that a window receives.
  *
  * END HEADER
  */
 
 // The harness must load before any provider module: LogProvider imports
 // 'electron' at module scope.
-import { ipcMainHandlers, userData } from './headless-electron-harness.cjs'
+import { ipcMainHandlers, sentMessagesFor, userData } from './headless-electron-harness.cjs'
 import assert from 'assert'
+import { BrowserWindow } from 'electron'
 import EventEmitter from 'events'
 import { readFileSync } from 'fs'
 import path from 'path'
@@ -26,7 +28,7 @@ import ReferenceProvider from 'source/app/service-providers/references'
 import LogProvider from 'source/app/service-providers/log'
 import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import type { MDFileDescriptor } from 'source/types/common/fsal'
+import type { MDFileDescriptor, OtherFileDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceTextEdit } from '@dts/common/references'
 
 const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
@@ -123,6 +125,7 @@ describe('References provider behavior', function () {
   let authorityBuffers: Map<string, string>
   let scheduler: ReturnType<typeof makeScheduler>
   let provider: ReferenceProvider
+  let window: BrowserWindow
 
   beforeEach(async function () {
     fsalSeam = new EventEmitter()
@@ -146,11 +149,18 @@ describe('References provider behavior', function () {
       { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) },
       { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) }
     ])
+    window = new BrowserWindow()
   })
 
   afterEach(async function () {
+    window.close()
     await provider.shutdown()
   })
+
+  /** The broadcasts that the open window received since it opened. */
+  function broadcasts (): unknown[][] {
+    return sentMessagesFor(window)
+  }
 
   function referenceHandler (): IpcInvoke {
     const handler = ipcMainHandlers.get('reference-provider') as IpcInvoke|undefined
@@ -303,5 +313,82 @@ describe('References provider behavior', function () {
     assert.ok(torelli !== undefined)
     assert.strictEqual(torelli.status, 'resolved')
     assert.strictEqual(torelli.status === 'resolved' ? torelli.definition.documentPath : undefined, OTHER_PAPER_PATH)
+  })
+
+  it('announces a batch of file events with one broadcast, and a batch that changes no reference with none', async function () {
+    const rewritten = '::: {.lemma #lem:batch:new}\nA lemma that the saved file gains.\n:::\n'
+    const theorems: MDFileDescriptor = {
+      ...makeDescriptor(THEOREMS_PATH),
+      references: extractReferences(THEOREMS_PATH, rewritten)
+    }
+    const standalone = makeDescriptor(STANDALONE_PATH)
+    const figure: OtherFileDescriptor = {
+      dir: FIXTURE_ROOT,
+      path: path.join(FIXTURE_ROOT, 'figure.png'),
+      name: 'figure.png',
+      ext: '.png',
+      size: 1,
+      type: 'other',
+      modtime: 0,
+      creationtime: 0
+    }
+
+    fsalSeam.emit('fsal-events', [
+      { event: 'change', descriptor: theorems },
+      { event: 'add', descriptor: standalone },
+      { event: 'add', descriptor: figure }
+    ])
+    assert.deepStrictEqual(broadcasts(), [['references']])
+    const state = await getSnapshotOverIpc()
+    assert.strictEqual(state.resolutions.get('lem:batch:new')?.status, 'resolved')
+    assert.deepStrictEqual(
+      state.snapshots.map(snapshot => snapshot.documentPath).sort(),
+      [ THEOREMS_PATH, OTHER_PAPER_PATH, STANDALONE_PATH ].sort()
+    )
+
+    // A save with the same text, and a file that is not Markdown.
+    fsalSeam.emit('fsal-events', [
+      { event: 'change', descriptor: theorems },
+      { event: 'change', descriptor: standalone },
+      { event: 'change', descriptor: figure }
+    ])
+    assert.deepStrictEqual(broadcasts(), [['references']])
+  })
+
+  it('serves the citations of an edit that changes no citation at once, with one broadcast', async function () {
+    async function standaloneSnapshot (): Promise<WorkspaceReferenceState['snapshots'][number]> {
+      const state = await getSnapshotOverIpc()
+      const snapshot = state.snapshots.find(snapshot => snapshot.documentPath === STANDALONE_PATH)
+      assert.ok(snapshot !== undefined, 'the open document must be part of the workspace state')
+      return snapshot
+    }
+    function citedIds (snapshot: WorkspaceReferenceState['snapshots'][number]): string[][]|undefined {
+      return snapshot.citations?.map(citation => citation.items.map(item => item.id))
+    }
+
+    const opened = 'Discriminant forms appear in [@NikulinUnchangedCitation, p. 12].\n'
+    authorityBuffers.set(STANDALONE_PATH, opened)
+    provider.reportAuthorityBuffer(STANDALONE_PATH, true)
+    firePending(scheduler.tasks)
+    // Pandoc reads the new citation in a process of its own.
+    assert.strictEqual(citedIds(await standaloneSnapshot()), undefined)
+    while (citedIds(await standaloneSnapshot()) === undefined) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    assert.deepStrictEqual(citedIds(await standaloneSnapshot()), [['NikulinUnchangedCitation']])
+    const before = broadcasts().length
+
+    const edited = opened + '\nA new paragraph without a citation.\n'
+    authorityBuffers.set(STANDALONE_PATH, edited)
+    provider.reportAuthorityBuffer(STANDALONE_PATH)
+    firePending(scheduler.tasks)
+    const snapshot = await standaloneSnapshot()
+    assert.strictEqual(snapshot.sourceHash, extractReferences(STANDALONE_PATH, edited).sourceHash)
+    assert.deepStrictEqual(citedIds(snapshot), [['NikulinUnchangedCitation']])
+    assert.strictEqual(snapshot.citations?.[0].items[0].locator, '12')
+    assert.deepStrictEqual(broadcasts().slice(before), [['references']])
+
+    provider.dropAuthorityBuffer(STANDALONE_PATH)
+    authorityBuffers.delete(STANDALONE_PATH)
   })
 })

@@ -143,6 +143,7 @@ function clickMenuItem (getMenu: MenuBuilder, id: string): {
   const menuItem = new MenuItem(item)
   const event: KeyboardEvent = { triggeredByAccelerator: true }
   click(menuItem, focusedWindow, event)
+  focusedWindow.close()
 
   return {
     sent: sentMessagesFor(focusedWindow),

@@ -50,6 +50,7 @@ fs.mkdirSync(path.join(userData, 'lang'), { recursive: true })
  */
 const ipcMainHandlers = new Map()
 const sentMessages = new WeakMap()
+const openWindows = new Set()
 
 class HeadlessBrowserWindow {
   constructor () {
@@ -58,11 +59,15 @@ class HeadlessBrowserWindow {
     this.webContents = {
       send (...args) { messages.push(args) }
     }
+    openWindows.add(this)
   }
 
-  // Real Electron semantics for a process with no open windows: the list is
-  // empty, so broadcastIPCMessage() sends to nobody.
-  static getAllWindows () { return [] }
+  close () { openWindows.delete(this) }
+
+  // Electron semantics: a window is in the list from its construction to its
+  // close, so broadcastIPCMessage() reaches each window that a spec has open
+  // and nobody in a process without one.
+  static getAllWindows () { return [...openWindows] }
 }
 
 class HeadlessMenuItem {
