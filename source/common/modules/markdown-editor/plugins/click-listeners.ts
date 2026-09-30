@@ -64,11 +64,13 @@ export function clickListeners<T = unknown> (callbacks?: ClickListenerCallbacks)
         }
         event.preventDefault()
         return true
-      } else if ([ 'ZknLinkContent', 'ZknLinkTitle', 'ZknLinkPipe', 'ZknLinkMark' ].includes(nodeAt.type.name)) {
-        // We found a Zettelkasten link!
+      } else if ([ 'ZknLink', 'ZknLinkContent', 'ZknLinkTitle', 'ZknLinkPipe', 'ZknLinkMark' ].includes(nodeAt.type.name)) {
+        // We found a Zettelkasten link! A click on the boundary between two of
+        // its children (the first character of a label whose target is
+        // hidden) resolves to the link itself; otherwise the parent is it.
         event.preventDefault()
-        // In these cases, nodeAt.parent is always a ZettelkastenLink
-        const contentNode = nodeAt.parent?.getChild('ZknLinkContent')
+        const linkNode = nodeAt.type.name === 'ZknLink' ? nodeAt : nodeAt.parent
+        const contentNode = linkNode?.getChild('ZknLinkContent')
         if (contentNode != null) {
           const linkContents = view.state.sliceDoc(contentNode.from, contentNode.to)
           callbacks?.onWikiLink?.(linkContents)
