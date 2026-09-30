@@ -1238,6 +1238,11 @@ export interface components {
                 title: string;
                 replacement: string;
             }[];
+            /** @description The one edit a batch fix applies without asking; it needs no choice and keeps the meaning. Absent when no such edit exists. */
+            fix?: {
+                title: string;
+                replacement: string;
+            };
             /** @description Structured rule-specific facts. Human-facing message text is not an API identifier. */
             data?: {
                 [key: string]: unknown;

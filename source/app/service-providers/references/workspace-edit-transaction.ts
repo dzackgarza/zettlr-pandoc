@@ -38,6 +38,7 @@ import writeFileAtomic from 'write-file-atomic'
 import { ChangeSet, Text } from '@codemirror/state'
 import { hashDocumentSource } from '@common/pandoc-util/extract-references'
 import type { WorkspaceTextEdit } from '@dts/common/references'
+import type { SaveFileResult } from '@dts/common/documents'
 
 /** The one journal file; a workspace transaction is never concurrent. */
 const JOURNAL_FILE = 'workspace-edit-journal.json'
@@ -250,6 +251,30 @@ async function rollback (
   }
 
   await unlink(journalFile)
+}
+
+/**
+ * Saves the open buffers a transaction updated, so that a workspace edit
+ * ends on disk for every document it touched: the transaction writes the
+ * closed files itself (VS Code's Replace All saves the edited files the same
+ * way).
+ *
+ * @param   {Function}  saveFile       The document authority's save
+ * @param   {string[]}  documentPaths  The open buffers the transaction updated
+ */
+export async function saveUpdatedBuffers (
+  saveFile: (filePath: string) => Promise<SaveFileResult>,
+  documentPaths: string[]
+): Promise<void> {
+  for (const documentPath of documentPaths) {
+    const saved = await saveFile(documentPath)
+    if (!saved.ok) {
+      const reason = saved.refusal === undefined
+        ? 'the documents provider refused the save and named no reason'
+        : saved.refusal.message
+      throw new Error(`[Workspace Edit] Could not save ${documentPath} after the edit: ${reason}`)
+    }
+  }
 }
 
 /**

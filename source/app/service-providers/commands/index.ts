@@ -58,6 +58,8 @@ import RenameTag from './rename-tag'
 import RenameReference from './rename-reference'
 import TikzRender from './tikz-render'
 import FormatDocument, { type FormatDocumentRequest } from './format-document'
+import FixAll from './fix-all'
+import type { FixAllOutcome, FixAllPlan, FixAllRequest } from '@dts/common/fix-all'
 import WorkspaceSort from './ws-sort'
 import type { CustomExportIPCAPI, ExportIPCAPI } from './export'
 import type { ForceOpenAPI } from './force-open'
@@ -106,6 +108,7 @@ export const commands = [
   FileNew,
   FileRename,
   FileSearch,
+  FixAll,
   FileFindAndReturnMetaData,
   ForceOpen,
   ImportFiles,
@@ -153,6 +156,10 @@ export type ApplicationIPCContract = {
   'commit-reference-rename': {
     request: { payload: { edit: WorkspaceReferenceEdit } }
     response: CommitRenameOutcome
+  }
+  'commit-fix-all': {
+    request: { payload: { plan: FixAllPlan } }
+    response: FixAllOutcome
   }
   'custom-export': {
     request: { payload: CustomExportIPCAPI }
@@ -294,6 +301,10 @@ export type ApplicationIPCContract = {
   'open-update-window': {
     request: { payload?: undefined }
     response: undefined
+  }
+  'preview-fix-all': {
+    request: { payload: FixAllRequest }
+    response: FixAllPlan
   }
   'preview-reference-rename': {
     request: { payload: { oldKey: string, newKey: string } }

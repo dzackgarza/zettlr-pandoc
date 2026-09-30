@@ -213,7 +213,23 @@ export function formatMenu (): MenuItemConstructorOptions {
       { type: 'separator' },
       editorCommandItem('menu.format_bullet_list', trans('Bullet list'), 'markdownBulletList'),
       editorCommandItem('menu.format_ordered_list', trans('Numbered list'), 'markdownOrderedList'),
-      editorCommandItem('menu.format_blockquote', trans('Block quote'), 'markdownBlockquote')
+      editorCommandItem('menu.format_blockquote', trans('Block quote'), 'markdownBlockquote'),
+      { type: 'separator' },
+      {
+        id: 'menu.fix_all_document',
+        label: trans('Fix all auto-fixable issues in the document'),
+        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-document') }
+      },
+      {
+        id: 'menu.fix_all_open',
+        label: trans('Fix all auto-fixable issues in open documents'),
+        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-open') }
+      },
+      {
+        id: 'menu.fix_all_workspace',
+        label: trans('Fix all auto-fixable issues in the workspace'),
+        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-workspace') }
+      }
     ]
   }
 }

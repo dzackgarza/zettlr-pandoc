@@ -15,6 +15,8 @@ export interface FlowmarkLintDiagnostic {
   end_column: number
   /** Candidate fixes; each replaces the diagnostic's whole range. */
   suggestions: FlowmarkLintSuggestion[]
+  /** The edit a batch fix applies without asking; null when the fix needs a choice. */
+  fix: FlowmarkLintSuggestion | null
   data?: Record<string, unknown>
 }
 

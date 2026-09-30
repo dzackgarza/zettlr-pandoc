@@ -11,5 +11,7 @@ export interface SourceLintDiagnostic {
   rule?: string;
   /** Candidate fixes; each replaces the whole `from`–`to` range. */
   suggestions?: { title: string; replacement: string }[];
+  /** The one edit a batch fix applies without asking. */
+  fix?: { title: string; replacement: string };
   data?: Record<string, unknown>;
 }

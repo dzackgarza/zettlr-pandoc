@@ -132,6 +132,7 @@ export async function lintDocumentText(
         source: "Flowmark",
         rule: diagnostic.rule,
         suggestions: diagnostic.suggestions,
+        ...(diagnostic.fix === null ? {} : { fix: diagnostic.fix }),
         data: diagnostic.data,
       }));
     }

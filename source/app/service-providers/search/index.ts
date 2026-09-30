@@ -39,7 +39,7 @@ import path from 'path'
 import vm from 'vm'
 import { hashDocumentSource } from '@common/pandoc-util/extract-references'
 import type { WorkspaceTextEdit } from '@dts/common/references'
-import { runWorkspaceEditTransaction, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
+import { runWorkspaceEditTransaction, saveUpdatedBuffers, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
 
 export type { SearchMatch, SearchQuery } from './util/search-query'
 
@@ -461,7 +461,7 @@ export class SearchProvider implements ProviderContract {
     if (result.status === 'conflict') {
       return { status: 'conflict', documentPath: result.documentPath }
     }
-    await this.saveUpdatedBuffers(result.openBuffersUpdated)
+    await saveUpdatedBuffers(async documentPath => await this._documents.saveFile(documentPath), result.openBuffersUpdated)
     this.pendingUndo = { edits: inverse, expectedSourceHashes: result.resultingHashes }
     return {
       status: 'applied',
@@ -480,29 +480,12 @@ export class SearchProvider implements ProviderContract {
     if (result.status === 'conflict') {
       return { status: 'conflict', documentPath: result.documentPath }
     }
-    await this.saveUpdatedBuffers(result.openBuffersUpdated)
+    await saveUpdatedBuffers(async documentPath => await this._documents.saveFile(documentPath), result.openBuffersUpdated)
     this.pendingUndo = undefined
     return {
       status: 'applied',
       documentsChanged: [ ...result.openBuffersUpdated, ...result.closedFilesWritten ],
       matchesReplaced: pending.edits.length
-    }
-  }
-
-  /**
-   * A replace ends on disk for every document it touched: closed files are
-   * written by the transaction, open buffers are saved here (VS Code's
-   * Replace All saves the edited files the same way).
-   */
-  private async saveUpdatedBuffers (documentPaths: string[]): Promise<void> {
-    for (const documentPath of documentPaths) {
-      const saved = await this._documents.saveFile(documentPath)
-      if (!saved.ok) {
-        const reason = saved.refusal === undefined
-          ? 'the documents provider refused the save and named no reason'
-          : saved.refusal.message
-        throw new Error(`[Search Provider] Could not save ${documentPath} after the replace: ${reason}`)
-      }
     }
   }
 }

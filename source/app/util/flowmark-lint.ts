@@ -60,7 +60,8 @@ function diagnostic (value: unknown): value is FlowmarkLintDiagnostic {
     (candidate.data === undefined ||
       (typeof candidate.data === 'object' && candidate.data !== null && !Array.isArray(candidate.data))) &&
     Array.isArray(candidate.suggestions) &&
-    candidate.suggestions.every(suggestion)
+    candidate.suggestions.every(suggestion) &&
+    (candidate.fix === null || suggestion(candidate.fix))
 }
 
 function suggestion (value: unknown): value is FlowmarkLintSuggestion {

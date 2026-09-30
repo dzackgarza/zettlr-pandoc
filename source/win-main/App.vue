@@ -173,6 +173,7 @@
     @close="createLabelPrompt = undefined"
     @create="handleCreateReferenceLabel($event)"
   />
+  <FixAllDialog ref="fixAllDialog" />
 </template>
 
 <script setup lang="ts">
@@ -208,6 +209,7 @@ import type { LauncherView } from './launcher/launcher-state'
 import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
 import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
+import FixAllDialog from './FixAllDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent
@@ -381,6 +383,16 @@ interface CommandLauncherHandle {
 }
 
 const commandLauncher = ref<CommandLauncherHandle|null>(null)
+const fixAllDialog = ref<InstanceType<typeof FixAllDialog>|null>(null)
+
+/** Opens Fix All on the focused document; with no document open there is nothing to fix. */
+function fixAllInDocument (): void {
+  if (activeFile.value === undefined) {
+    showToast(trans('No document is open.'), 'error')
+    return
+  }
+  fixAllDialog.value?.start({ scope: 'document', documentPath: activeFile.value.path })
+}
 
 /**
  * Opens the command launcher for a reference search request: the plain
@@ -971,6 +983,9 @@ onMounted(() => {
     // and the Files section only have to be visible by then.
     'filter-files': () => navigationSidebar.value?.reveal({ view: 'explorer', section: 'files', focus: 'none' }),
     export: () => openExport(),
+    'fix-all-document': fixAllInDocument,
+    'fix-all-open': () => fixAllDialog.value?.start({ scope: 'open' }),
+    'fix-all-workspace': () => fixAllDialog.value?.start({ scope: 'workspace' }),
     'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
     print: () => {
       if (activeFile.value !== undefined) {

@@ -45,6 +45,8 @@ import type FSAL from '@providers/fsal'
 import type { ConfigOptions } from '@providers/config/get-config-template'
 import type { WorkspaceReferenceState } from '@providers/references/reference-index'
 import { sha256Text } from '@common/util/sha256'
+import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import type { FixAllEdit, FixAllPlan } from '@dts/common/fix-all'
 import { hasMarkdownExt } from '@common/util/file-extention-checks'
 import {
   createDocumentLintContext,
@@ -67,6 +69,8 @@ export interface DocumentLintRecord {
   /** ISO 8601 time the Flowmark run finished. */
   lintedAt: string
   diagnostics: DocumentLintDiagnostic[]
+  /** False when Flowmark itself failed; such a record is never cached. */
+  complete: boolean
 }
 
 export interface DocumentLintLookup {
@@ -122,6 +126,27 @@ function digest (value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
+/**
+ * The fixes of one pass: every diagnostic's `fix` in source order, skipping
+ * one that overlaps a fix already taken. A skipped fix remains a finding for
+ * the next run, as in ESLint's SourceCodeFixer (eslint/lib/linter).
+ */
+export function fixEdits (diagnostics: readonly DocumentLintDiagnostic[]): FixAllEdit[] {
+  const edits: FixAllEdit[] = []
+  let cursor = 0
+  const fixable = diagnostics
+    .filter(diagnostic => diagnostic.fix !== undefined)
+    .sort((a, b) => a.from - b.from || a.to - b.to)
+  for (const diagnostic of fixable) {
+    if (diagnostic.fix === undefined || diagnostic.from < cursor) {
+      continue
+    }
+    edits.push({ from: diagnostic.from, to: diagnostic.to, insert: diagnostic.fix.replacement, rule: diagnostic.rule })
+    cursor = diagnostic.to
+  }
+  return edits
+}
+
 function isRecord (value: unknown): value is DocumentLintRecord {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -130,7 +155,8 @@ function isRecord (value: unknown): value is DocumentLintRecord {
   return typeof candidate.revision === 'string' &&
     typeof candidate.inputs === 'string' &&
     typeof candidate.lintedAt === 'string' &&
-    Array.isArray(candidate.diagnostics)
+    Array.isArray(candidate.diagnostics) &&
+    candidate.complete === true
 }
 
 /** Memoizes file stamps across the documents of one key computation. */
@@ -307,7 +333,8 @@ export default class DocumentLintProvider extends ProviderContract {
       revision: sha256Text(text),
       inputs,
       lintedAt: new Date().toISOString(),
-      diagnostics: outcome.diagnostics
+      diagnostics: outcome.diagnostics,
+      complete: outcome.complete
     }
     // A Flowmark failure (a timeout, a missing install) is not a result of
     // the document; the next lint must try again.
@@ -392,9 +419,7 @@ export default class DocumentLintProvider extends ProviderContract {
     if (this.deps.fsal === undefined || this.flowmarkIdentity === undefined) {
       return
     }
-    const paths = (await this.deps.fsal.getAllLoadedDescriptors())
-      .filter(descriptor => descriptor.type === 'file' && hasMarkdownExt(descriptor.path))
-      .map(descriptor => descriptor.path)
+    const paths = await this.workspaceDocuments()
     const known = new Set(paths)
     for (const entryPath of [...this.entries.keys()]) {
       if (!known.has(entryPath) && this.deps.buffers.readMarkdownBufferContent(entryPath) === undefined) {
@@ -407,6 +432,63 @@ export default class DocumentLintProvider extends ProviderContract {
       text: await this.currentText(documentPath)
     })))
     await this.lookup(sources)
+  }
+
+  /** Every Markdown document of the open workspaces. */
+  async workspaceDocuments (): Promise<string[]> {
+    if (this.deps.fsal === undefined) {
+      throw new Error('[Document Lint] The workspace documents need the FSAL')
+    }
+    return (await this.deps.fsal.getAllLoadedDescriptors())
+      .filter(descriptor => descriptor.type === 'file' && hasMarkdownExt(descriptor.path))
+      .map(descriptor => descriptor.path)
+  }
+
+  /**
+   * The machine-applicable fixes of each document, planned on its current
+   * text. Each document is linted through the cache, WORKER_COUNT at a time,
+   * as one long-running task.
+   */
+  async planFixes (documentPaths: string[]): Promise<FixAllPlan> {
+    const task = this.deps.lrt?.registerTask(trans('Finding fixes'), 'Flowmark', undefined, false)
+    const plan: FixAllPlan = { documents: [], documentsChecked: documentPaths.length, unlinted: [] }
+    let next = 0
+    let done = 0
+    const worker = async (): Promise<void> => {
+      while (next < documentPaths.length) {
+        const documentPath = documentPaths[next]
+        next += 1
+        const text = await this.currentText(documentPath)
+        const record = await this.lint(documentPath, text)
+        if (!record.complete) {
+          plan.unlinted.push(documentPath)
+        } else {
+          const edits = fixEdits(record.diagnostics)
+          if (edits.length > 0) {
+            plan.documents.push({ documentPath, sourceHash: hashDocumentSource(text), edits })
+          }
+        }
+        done += 1
+        task?.update({
+          info: trans('%s of %s documents', done, documentPaths.length),
+          percentage: done / documentPaths.length
+        })
+      }
+    }
+    try {
+      await Promise.all(Array.from({ length: WORKER_COUNT }, worker))
+    } catch (error) {
+      if (task !== undefined) {
+        this.deps.lrt?.settleTask(task, error instanceof Error ? error : new Error(String(error)))
+      }
+      throw error
+    }
+    if (task !== undefined) {
+      this.deps.lrt?.settleTask(task)
+    }
+    plan.documents.sort((a, b) => a.documentPath.localeCompare(b.documentPath))
+    plan.unlinted.sort()
+    return plan
   }
 
   private async currentText (documentPath: string): Promise<string> {

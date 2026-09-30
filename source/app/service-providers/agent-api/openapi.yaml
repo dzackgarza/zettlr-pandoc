@@ -1980,6 +1980,18 @@ components:
                 type: string
               replacement:
                 type: string
+        fix:
+          type: object
+          description: The one edit a batch fix applies without asking; it needs no choice and keeps the meaning. Absent when no such edit exists.
+          additionalProperties: false
+          required:
+            - title
+            - replacement
+          properties:
+            title:
+              type: string
+            replacement:
+              type: string
         data:
           type: object
           properties: {}

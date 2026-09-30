@@ -301,6 +301,10 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   that file for the recipe, whose `filters/wikilinks.lua` in pandoc-config
   turns each resolved link into a link to that heading and any other link into
   its label. The filter resolves nothing itself.
+- **Renderer imports:** `wikilink-resolution.ts` imports Node `path`, which
+  the renderer bundle maps to an empty module. Editor and window code import
+  `splitWikilinkTarget` from `common/util/wikilink-target.ts`, which imports
+  nothing, and ask the main process for resolutions.
 
 ## Debugging entry points
 
@@ -374,6 +378,19 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   with its elapsed time; its indicator opens the task list. A routine task
   ends through `settleTask`: a success leaves the list, a failure stays
   listed with its error. New background work registers a task the same way.
+- **Fix All:** a Flowmark diagnostic carries a `fix` (a machine-applicable
+  edit that keeps the meaning of the text) beside its `suggestions` (edits
+  that need the author's choice). Only a `fix` is ever applied without the
+  author. The Format menu items `menu.fix_all_document`, `menu.fix_all_open`
+  and `menu.fix_all_workspace` (also in the Ctrl+P launcher) open
+  `win-main/FixAllDialog.vue`. It asks `preview-fix-all`
+  (`commands/fix-all.ts`) for a plan: `DocumentLintProvider.planFixes` lints
+  each document of the scope, buffer text first, and `fixEdits` takes its
+  fixes in source order, skipping overlaps. The dialog shows the count per
+  rule and per document; on confirmation `commit-fix-all` applies that plan
+  through `runWorkspaceEditTransaction`, which refuses the whole plan when a
+  document changed after its hash was taken. One pass applies one round of
+  fixes; a fix that exposes another needs a second run.
 - The project's own source code is checked by the global ai-review-ci bun
   profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 
