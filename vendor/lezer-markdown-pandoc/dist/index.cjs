@@ -4090,6 +4090,43 @@ function footnoteComposite(ctx, line, _value) {
 }
 
 /**
+ * Line lookahead over the block input.
+ *
+ * A Lezer BlockParser cannot roll BlockContext back after `nextLine()`, so a
+ * Pandoc rule that needs lookahead reads the input ahead of the context. The
+ * input is read in growing windows: a lookahead that stops after a few lines
+ * reads a few lines, not the rest of the document.
+ */
+const FIRST_WINDOW = 2048;
+/**
+ * The physical lines of `input` that start at or after `from`. The sequence
+ * is the one `input.read(from, input.length).split("\n")` gives.
+ */
+function* linesFrom(input, from) {
+    let text = "";
+    let textFrom = from;
+    let lineFrom = from;
+    let window = FIRST_WINDOW;
+    for (;;) {
+        let newline = text.indexOf("\n", lineFrom - textFrom);
+        while (newline < 0 && textFrom + text.length < input.length) {
+            const readFrom = textFrom + text.length;
+            const readTo = Math.min(input.length, readFrom + window);
+            text = text.slice(lineFrom - textFrom) + input.read(readFrom, readTo);
+            textFrom = lineFrom;
+            window *= 2;
+            newline = text.indexOf("\n");
+        }
+        if (newline < 0) {
+            yield { from: lineFrom, text: text.slice(lineFrom - textFrom) };
+            return;
+        }
+        yield { from: lineFrom, text: text.slice(lineFrom - textFrom, newline) };
+        lineFrom = textFrom + newline + 1;
+    }
+}
+
+/**
  * Pandoc YAML metadata block grammar.
  *
  * Reference implementation: Pandoc 3.10.2 commit
@@ -4108,38 +4145,33 @@ function blockInput$1(ctx) {
  * be complete before the block parser advances at all.
  */
 function frontmatterExtent(ctx, openingStart) {
-    const source = blockInput$1(ctx).read(openingStart, blockInput$1(ctx).length);
-    if (!source.startsWith('---'))
-        return undefined;
-    const openingNewline = source.indexOf('\n');
-    if (openingNewline < 0)
-        return undefined;
-    const bodyFrom = openingStart + openingNewline + 1;
-    let cursor = openingNewline + 1;
-    let linesToClose = 1;
-    let firstBodyLine = true;
-    while (cursor <= source.length) {
-        const newline = source.indexOf('\n', cursor);
-        const lineEnd = newline < 0 ? source.length : newline;
-        const line = source.slice(cursor, lineEnd);
-        if (firstBodyLine && line.trim() === '') {
+    const input = blockInput$1(ctx);
+    let bodyFrom = -1;
+    let linesToClose = 0;
+    for (const line of linesFrom(input, openingStart)) {
+        if (bodyFrom < 0) {
+            if (!line.text.startsWith('---'))
+                return undefined;
+            bodyFrom = line.from + line.text.length + 1;
+            // The opener must end in a line feed.
+            if (bodyFrom > input.length)
+                return undefined;
+            continue;
+        }
+        linesToClose++;
+        if (linesToClose === 1 && line.text.trim() === '') {
             // Pandoc: `notFollowedBy blankline` immediately after the opener.
             return undefined;
         }
-        firstBodyLine = false;
-        if (/^(?:---|\.\.\.)[ \t]*$/u.test(line)) {
+        if (/^(?:---|\.\.\.)[ \t]*$/u.test(line.text)) {
             return {
                 bodyFrom,
-                bodyTo: openingStart + Math.max(openingNewline + 1, cursor - 1),
-                closeFrom: openingStart + cursor,
-                closeTo: openingStart + lineEnd,
+                bodyTo: Math.max(bodyFrom, line.from - 1),
+                closeFrom: line.from,
+                closeTo: line.from + line.text.length,
                 linesToClose,
             };
         }
-        if (newline < 0)
-            return undefined;
-        cursor = newline + 1;
-        linesToClose++;
     }
     return undefined;
 }
@@ -6271,11 +6303,33 @@ function blockInput(ctx) {
  * configured Pandoc inline parser.
  */
 function earlierInlineSpansPosition(ctx, leaf, position) {
-    const input = blockInput(ctx);
-    const source = input.read(leaf.start, input.length);
-    return ctx.parser
-        .parseInline(source, leaf.start)
+    return leafInlineElements(ctx, leaf)
         .some(element => element.from < position && element.to > position);
+}
+const BLANK_LINE = /^[ \t\r]*$/u;
+const inlineElementsOfLeaf = new WeakMap();
+/**
+ * The inline parse of the source that `leaf` can own: from its start to the
+ * next blank line. A blank line ends every leaf block (Pandoc `para` stops at
+ * `blanklines`), so no inline construct of the leaf reaches past it. Each line
+ * of one leaf asks for the same source, so the leaf keeps the parse.
+ */
+function leafInlineElements(ctx, leaf) {
+    const known = inlineElementsOfLeaf.get(leaf);
+    if (known !== undefined) {
+        return known;
+    }
+    const input = blockInput(ctx);
+    let end = input.length;
+    for (const line of linesFrom(input, ctx.lineStart)) {
+        if (BLANK_LINE.test(line.text)) {
+            end = line.from - 1;
+            break;
+        }
+    }
+    const elements = ctx.parser.parseInline(input.read(leaf.start, end), leaf.start);
+    inlineElementsOfLeaf.set(leaf, elements);
+    return elements;
 }
 const rawLatexBlockParser = {
     name: "raw-latex-block",

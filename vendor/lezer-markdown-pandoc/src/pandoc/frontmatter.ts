@@ -9,6 +9,7 @@
  * package; this module owns only Markdown syntax.
  */
 
+import { linesFrom } from './input-lines'
 import type { Input } from '@lezer/common'
 import type { BlockContext, BlockParser } from '../markdown'
 
@@ -35,40 +36,34 @@ interface FrontmatterExtent {
  * be complete before the block parser advances at all.
  */
 function frontmatterExtent (ctx: BlockContext, openingStart: number): FrontmatterExtent | undefined {
-  const source = blockInput(ctx).read(openingStart, blockInput(ctx).length)
-  if (!source.startsWith('---')) return undefined
+  const input = blockInput(ctx)
+  let bodyFrom = -1
+  let linesToClose = 0
 
-  const openingNewline = source.indexOf('\n')
-  if (openingNewline < 0) return undefined
-  const bodyFrom = openingStart + openingNewline + 1
-  let cursor = openingNewline + 1
-  let linesToClose = 1
-  let firstBodyLine = true
+  for (const line of linesFrom(input, openingStart)) {
+    if (bodyFrom < 0) {
+      if (!line.text.startsWith('---')) return undefined
+      bodyFrom = line.from + line.text.length + 1
+      // The opener must end in a line feed.
+      if (bodyFrom > input.length) return undefined
+      continue
+    }
 
-  while (cursor <= source.length) {
-    const newline = source.indexOf('\n', cursor)
-    const lineEnd = newline < 0 ? source.length : newline
-    const line = source.slice(cursor, lineEnd)
-
-    if (firstBodyLine && line.trim() === '') {
+    linesToClose++
+    if (linesToClose === 1 && line.text.trim() === '') {
       // Pandoc: `notFollowedBy blankline` immediately after the opener.
       return undefined
     }
-    firstBodyLine = false
 
-    if (/^(?:---|\.\.\.)[ \t]*$/u.test(line)) {
+    if (/^(?:---|\.\.\.)[ \t]*$/u.test(line.text)) {
       return {
         bodyFrom,
-        bodyTo: openingStart + Math.max(openingNewline + 1, cursor - 1),
-        closeFrom: openingStart + cursor,
-        closeTo: openingStart + lineEnd,
+        bodyTo: Math.max(bodyFrom, line.from - 1),
+        closeFrom: line.from,
+        closeTo: line.from + line.text.length,
         linesToClose,
       }
     }
-
-    if (newline < 0) return undefined
-    cursor = newline + 1
-    linesToClose++
   }
   return undefined
 }

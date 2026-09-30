@@ -12,8 +12,9 @@ import {
   rawLatexBlockStartsAt,
   rawLatexInlineEndAtStart,
 } from "./raw-latex-syntax";
+import { linesFrom } from "./input-lines";
 import type { Input } from "@lezer/common";
-import type { BlockContext, BlockParser, InlineParser, LeafBlock } from "../markdown";
+import type { BlockContext, BlockParser, Element, InlineParser, LeafBlock } from "../markdown";
 
 function isLezerInput(value: unknown): value is Input {
   if (typeof value !== "object" || value === null) {
@@ -51,11 +52,35 @@ function earlierInlineSpansPosition(
   leaf: LeafBlock,
   position: number,
 ): boolean {
-  const input = blockInput(ctx);
-  const source = input.read(leaf.start, input.length);
-  return ctx.parser
-    .parseInline(source, leaf.start)
+  return leafInlineElements(ctx, leaf)
     .some(element => element.from < position && element.to > position);
+}
+
+const BLANK_LINE = /^[ \t\r]*$/u;
+const inlineElementsOfLeaf = new WeakMap<LeafBlock, readonly Element[]>();
+
+/**
+ * The inline parse of the source that `leaf` can own: from its start to the
+ * next blank line. A blank line ends every leaf block (Pandoc `para` stops at
+ * `blanklines`), so no inline construct of the leaf reaches past it. Each line
+ * of one leaf asks for the same source, so the leaf keeps the parse.
+ */
+function leafInlineElements(ctx: BlockContext, leaf: LeafBlock): readonly Element[] {
+  const known = inlineElementsOfLeaf.get(leaf);
+  if (known !== undefined) {
+    return known;
+  }
+  const input = blockInput(ctx);
+  let end = input.length;
+  for (const line of linesFrom(input, ctx.lineStart)) {
+    if (BLANK_LINE.test(line.text)) {
+      end = line.from - 1;
+      break;
+    }
+  }
+  const elements = ctx.parser.parseInline(input.read(leaf.start, end), leaf.start);
+  inlineElementsOfLeaf.set(leaf, elements);
+  return elements;
 }
 
 export const rawLatexBlockParser: BlockParser = {
