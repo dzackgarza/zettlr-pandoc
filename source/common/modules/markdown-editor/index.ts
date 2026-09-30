@@ -420,9 +420,11 @@ export default class MarkdownEditor extends EventEmitter {
     const initialConfig = getDefaultConfig()
     // TODO: This is bad style imho
     initialConfig.metadata.path = representedDocument
+    // The editor sorts and changes its configuration. It keeps a copy, so the
+    // configuration of the caller stays as the caller made it.
     this.config = configOverride === undefined
       ? initialConfig
-      : safeAssign(configOverride, initialConfig)
+      : cloneEditorConfiguration(safeAssign(configOverride, initialConfig))
 
     // Create the editor ...
     this._instance = new EditorView({
@@ -867,7 +869,7 @@ export default class MarkdownEditor extends EventEmitter {
     // Cache the current config first, and then apply it
     this.onConfigUpdate(newOptions)
 
-    this.config = safeAssign(newOptions, this.config)
+    this.config = cloneEditorConfiguration(safeAssign(newOptions, this.config))
 
     this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
   }
