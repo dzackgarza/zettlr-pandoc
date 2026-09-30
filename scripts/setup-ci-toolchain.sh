@@ -13,6 +13,11 @@ pandoc_reference_sha256="$(jq --exit-status --raw-output '.linuxAmd64DebSha256' 
 readonly pandoc_reference_sha256
 readonly crossref_release='0.3.24a'
 readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e67f535a728'
+# Flowmark reads Markdown through `pandoc-flowmark`, the source-position Pandoc
+# fork (dzackgarza/pandoc, branch flowmark-sourcepos), published as a static
+# Linux executable by its `flowmark-*` release workflow.
+readonly pandoc_flowmark_release='flowmark-3.10.2-4'
+readonly pandoc_flowmark_sha256='49df5719dd44f23e9d36250ee3b98265bca91908ad488e5cd2e9dbd16b0b02e7'
 readonly pandoc_config_dir="${HOME}/.pandoc"
 # The LanguageTool CLI backend of the editor's grammar checker runs
 # `languagetool --json`; the release is the one the workstation uses.
@@ -104,6 +109,13 @@ curl --fail --location --silent --show-error \
 printf '%s  %s\n' "${crossref_sha256}" "${crossref_archive}" | sha256sum --check
 sudo tar --extract --xz --file "${crossref_archive}" --directory /usr/local/bin pandoc-crossref
 
+readonly pandoc_flowmark_binary="${setup_dir}/pandoc-flowmark"
+curl --fail --location --silent --show-error \
+  "https://github.com/dzackgarza/pandoc/releases/download/${pandoc_flowmark_release}/pandoc-flowmark" \
+  --output "${pandoc_flowmark_binary}"
+printf '%s  %s\n' "${pandoc_flowmark_sha256}" "${pandoc_flowmark_binary}" | sha256sum --check
+sudo install --mode 0755 "${pandoc_flowmark_binary}" /usr/local/bin/pandoc-flowmark
+
 readonly languagetool_archive="${setup_dir}/LanguageTool.zip"
 curl --fail --location --silent --show-error \
   "https://languagetool.org/download/LanguageTool-${languagetool_version}.zip" \
@@ -125,6 +137,8 @@ readonly actual_crossref_version
 test "${actual_pandoc_version}" = "${pandoc_version}"
 test "${actual_pandoc_reference_version}" = "${pandoc_reference_version}"
 test "${actual_crossref_version}" = "${pandoc_version}"
+pandoc-flowmark --version | grep -q '+server +lua'
+printf '$x$\n' | pandoc-flowmark -f markdown+sourcepos -t json | grep -q '"data-pos"'
 command -v just >/dev/null
 command -v latexmk >/dev/null
 command -v pdflatex >/dev/null
