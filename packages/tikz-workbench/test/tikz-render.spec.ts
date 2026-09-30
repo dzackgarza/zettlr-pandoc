@@ -14,7 +14,9 @@
  *                  diagnostic; a machine without pdflatex/pdf2svg gets a
  *                  typed missing-tools result, never silence; a toolchain
  *                  probe that fails for a reason other than absence reports
- *                  the tool and the errno rather than posing as absence; a
+ *                  the tool and the errno rather than posing as absence; one
+ *                  probe of each tool serves all renders of a session, and
+ *                  a tool installed during the session is found; a
  *                  render whose
  *                  pandoc process is killed reports the signal that killed it
  *                  rather than posing as a pandoc diagnostic; and the
@@ -32,10 +34,11 @@
  */
 
 import { strict as assert } from "assert";
-import { spawnSync } from "child_process";
+import { ChildProcess, spawnSync } from "child_process";
 import { randomBytes } from "crypto";
+import { subscribe, unsubscribe } from "diagnostics_channel";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import {
@@ -144,6 +147,13 @@ function toolPresent(tool: string): boolean {
 
 const toolchainPresent = toolPresent("pdflatex") && toolPresent("pdf2svg");
 
+/** The absolute path of a tool on the PATH of the test process. */
+function hostToolPath(tool: string): string {
+  const found = spawnSync("which", [tool], { encoding: "utf8" });
+  assert.strictEqual(found.status, 0, `${tool} is on the PATH of the test process`);
+  return found.stdout.trim();
+}
+
 /**
  * A figure body no previous run can have compiled, so the filter's
  * content-addressed cache cannot short-circuit the render being observed.
@@ -159,6 +169,31 @@ function filterProcessPids(): number[] {
     .split("\n")
     .map((line) => Number(line.trim()))
     .filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
+/** The message type that Node gives the listener of a diagnostics channel. */
+type ChannelMessage = Parameters<Parameters<typeof subscribe>[1]>[0];
+
+/**
+ * Runs `work` and returns the argument list of each child process that this
+ * process started in that time. Node publishes each started process on its
+ * `child_process` diagnostics channel
+ * (https://nodejs.org/api/diagnostics_channel.html#child-process).
+ */
+async function startedProcesses(work: () => Promise<void>): Promise<string[][]> {
+  const started: ChildProcess[] = [];
+  const record = (message: ChannelMessage): void => {
+    assert.ok(typeof message === "object" && message !== null && "process" in message);
+    assert.ok(message.process instanceof ChildProcess);
+    started.push(message.process);
+  };
+  subscribe("child_process", record);
+  try {
+    await work();
+  } finally {
+    unsubscribe("child_process", record);
+  }
+  return started.map((child) => child.spawnargs);
 }
 
 /** The filter's per-figure scratch directories, named /tmp/<prefix>-<hash>. */
@@ -329,6 +364,90 @@ describe("TikZ render service (issue #14)", function () {
     const elapsed = Date.now() - started;
     assert.ok(second.ok, "the repeat render succeeds");
     assert.ok(elapsed < 5000, `a cache hit must not re-run pdflatex (took ${elapsed}ms)`);
+  });
+
+  it("probes each tool one time for all renders of a session", async function () {
+    this.timeout(120000);
+    if (!toolchainPresent) this.skip();
+    // A PATH that no other case uses, so the first render here is the first
+    // render of its session.
+    const sessionBin = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-session-"));
+    try {
+      const config = {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: { ...process.env, PATH: `${sessionBin}:${process.env.PATH ?? ""}` },
+      };
+      const results: TikzRenderResult[] = [];
+      const started = await startedProcesses(async () => {
+        for (let render = 0; render < 3; render++) {
+          results.push(
+            await renderTikz(
+              { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
+              config,
+            ),
+          );
+        }
+      });
+
+      assert.deepEqual(
+        results.map((result) => result.ok),
+        [true, true, true],
+        `each render succeeds: ${JSON.stringify(results).slice(0, 400)}`,
+      );
+      assert.deepEqual(
+        started.filter((args) => args[1] === "--version"),
+        [
+          ["pandoc", "--version"],
+          ["pdflatex", "--version"],
+          ["pdf2svg", "--version"],
+        ],
+        "three renders probe each tool one time",
+      );
+      assert.strictEqual(
+        started.filter((args) => args[0] === "pandoc" && args.includes("--lua-filter")).length,
+        3,
+        "each render runs the filter",
+      );
+    } finally {
+      await rm(sessionBin, { recursive: true, force: true });
+    }
+  });
+
+  it("finds a tool that the author installs while the session runs", async function () {
+    this.timeout(120000);
+    if (!toolchainPresent) this.skip();
+    const binDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-install-"));
+    try {
+      for (const tool of ["pandoc", "pdflatex"]) {
+        await symlink(hostToolPath(tool), path.join(binDir, tool));
+      }
+      const request = {
+        source: TIKZCD_OK,
+        kind: "raw" as const,
+        language: "tikzcd" as const,
+        docPath: NO_DOC_PATH,
+      };
+      const config = {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: { ...process.env, PATH: binDir },
+      };
+
+      const before = await renderTikz(request, config);
+      assert.deepEqual(before, { ok: false, kind: "missing-tools", missing: ["pdf2svg"] });
+
+      await symlink(hostToolPath("pdf2svg"), path.join(binDir, "pdf2svg"));
+      const after = await renderTikz(request, config);
+      assert.ok(
+        after.ok,
+        `the render uses the installed tool: ${JSON.stringify(after).slice(0, 400)}`,
+      );
+    } finally {
+      await rm(binDir, { recursive: true, force: true });
+    }
   });
 
   it("invalidates identical figure source when a transitive template macro definition changes", async function () {
