@@ -73,20 +73,26 @@ export class ReferenceIndex {
    * (not FSAL) decides when the live side ends, by dropping the buffer.
    *
    * @param   {DocumentReferenceSnapshot}  snapshot  The saved snapshot
+   *
+   * @return  {boolean}                              True when the merged view changed
    */
-  applySavedSnapshot (snapshot: DocumentReferenceSnapshot): void {
+  applySavedSnapshot (snapshot: DocumentReferenceSnapshot): boolean {
+    const previous = this.saved.get(snapshot.documentPath)
     this.saved.set(snapshot.documentPath, snapshot)
+    return !this.live.has(snapshot.documentPath) && previous?.sourceHash !== snapshot.sourceHash
   }
 
   /**
    * Removes the saved snapshot for a document (FSAL unlink event).
    *
    * @param   {string}  documentPath  The unlinked document's path
+   *
+   * @return  {boolean}               True when the merged view changed
    */
-  removeSavedSnapshot (documentPath: string): void {
+  removeSavedSnapshot (documentPath: string): boolean {
     // An unlink never touches a live overlay: an open buffer stays
     // authoritative until it is dropped.
-    this.saved.delete(documentPath)
+    return this.saved.delete(documentPath) && !this.live.has(documentPath)
   }
 
   /**

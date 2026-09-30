@@ -142,8 +142,10 @@ describe('References provider behavior', function () {
       { schedule: scheduler.schedule }
     )
     await provider.boot()
-    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) })
-    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) })
+    fsalSeam.emit('fsal-events', [
+      { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) },
+      { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) }
+    ])
   })
 
   afterEach(async function () {
@@ -162,8 +164,10 @@ describe('References provider behavior', function () {
   }
 
   it('applies FSAL change-event snapshots so get-snapshot serves the workspace definitions', async function () {
-    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) })
-    fsalSeam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) })
+    fsalSeam.emit('fsal-events', [
+      { event: 'change', descriptor: makeDescriptor(THEOREMS_PATH) },
+      { event: 'change', descriptor: makeDescriptor(OTHER_PAPER_PATH) }
+    ])
 
     const state = await getSnapshotOverIpc()
     const theorems = state.snapshots.find(snapshot => snapshot.documentPath === THEOREMS_PATH)
@@ -216,7 +220,8 @@ describe('References provider behavior', function () {
     state = await getSnapshotOverIpc()
     const theorems = state.snapshots.filter(snapshot => snapshot.documentPath === THEOREMS_PATH)
     assert.strictEqual(theorems.length, 1)
-    assert.deepStrictEqual(theorems[0], extractReferences(THEOREMS_PATH, liveContent))
+    // The text has no citation for Pandoc to read, so the snapshot is complete at once.
+    assert.deepStrictEqual(theorems[0], { ...extractReferences(THEOREMS_PATH, liveContent), citations: [] })
     assert.strictEqual(state.resolutions.get('lem:stale:draft'), undefined)
 
     const liveOnly = state.resolutions.get('lem:live:only')
@@ -288,7 +293,7 @@ describe('References provider behavior', function () {
   })
 
   it('removes unlinked documents from the merged state on FSAL unlink events', async function () {
-    fsalSeam.emit('fsal-event', { event: 'unlink', path: THEOREMS_PATH })
+    fsalSeam.emit('fsal-events', [{ event: 'unlink', path: THEOREMS_PATH }])
 
     const state = await getSnapshotOverIpc()
     assert.strictEqual(state.snapshots.length, 1)

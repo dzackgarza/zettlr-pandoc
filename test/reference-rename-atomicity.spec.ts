@@ -241,9 +241,7 @@ async function setUpScratchWorkspace (journalDirectory: string = userData): Prom
     }
   }
   await provider.boot()
-  for (const absolute of originals.keys()) {
-    seam.emit('fsal-event', { event: 'change', descriptor: makeDescriptor(absolute) })
-  }
+  seam.emit('fsal-events', [...originals.keys()].map(absolute => ({ event: 'change', descriptor: makeDescriptor(absolute) })))
 
   // The REAL command object CommandProvider dispatches 'application'-channel
   // rename events to, bound to this provider at the exact injection point

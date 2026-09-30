@@ -16,8 +16,16 @@
 import markdownParser, { type MarkdownParserConfig } from '@common/modules/markdown-editor/parser/markdown-parser'
 import { parseNode, type ASTNode, type ASTNodeType, type TextNode, type Document } from './markdown-ast'
 import { type Tree } from '@lezer/common'
+import { LRUCache } from 'lru-cache'
 
 export { md2html } from './markdown-to-html'
+
+// The ASTs of the sources that were parsed last with the default parser. One
+// version of a document has several readers (references, citations, TikZ
+// blocks, the lint context, the file parser, the save path); they share one
+// parse. Eight entries hold the buffer text and the saved text of the
+// documents that an edit touches.
+const parsedSources = new LRUCache<string, Document|ASTNode>({ max: 8 })
 
 /**
  * Converts a Markdown string into an AST, utilizing the CodeMirror Markdown
@@ -33,14 +41,27 @@ export { md2html } from './markdown-to-html'
  *                               since otherwise the offsets in the parse tree
  *                               will be wrong!
  *
- * @return  {ASTNode}            The root node of the AST
+ * @return  {ASTNode}            The root node of the AST. Callers share it
+ *                               and must not change it.
  */
 export function markdownToAST (markdown: string, tree: Tree|null = null, parserConfig?: MarkdownParserConfig): Document|ASTNode {
-  if (tree === null) {
-    const { parser } = markdownParser(parserConfig).language
-    tree = parser.parse(markdown)
+  if (tree !== null) {
+    return parseNode(tree.topNode, markdown)
   }
-  const ast = parseNode(tree.topNode, markdown)
+
+  if (parserConfig !== undefined) {
+    const { parser } = markdownParser(parserConfig).language
+    return parseNode(parser.parse(markdown).topNode, markdown)
+  }
+
+  const known = parsedSources.get(markdown)
+  if (known !== undefined) {
+    return known
+  }
+
+  const { parser } = markdownParser().language
+  const ast = parseNode(parser.parse(markdown).topNode, markdown)
+  parsedSources.set(markdown, ast)
   return ast
 }
 

@@ -115,10 +115,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  function setDescriptor (descriptor: AnyDescriptor): void {
-    setDescriptors([ descriptor ])
-  }
-
   function deleteDescriptors (paths: readonly string[]): void {
     if (paths.length === 0) {
       return
@@ -137,10 +133,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  function deleteDescriptor (path: string): void {
-    deleteDescriptors([ path ])
-  }
-
   retrieveInitialUpdate(openPaths.value, workspaceMap, descriptorMap)
     .then(() => { refreshRootDescriptors() })
     .catch(err => reportError('[Workspace Store] Could not retrieve initial set of loaded paths', err))
@@ -148,31 +140,62 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       isLoading.value = false
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
       // Finally, listen to FSAL events and keep the descriptor map updated.
-      ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
-        const eventPath = 'path' in payload ? payload.path : payload.descriptor.path
-        console.log(`[WorkspaceStore] Received event ${payload.event}:${eventPath}`)
-        if (payload.event === 'unlink' || payload.event === 'unlinkDir') {
-          for (const [root, paths] of workspaceMap.value) {
-            if (payload.path !== root && !isInsideRoot(payload.path, root)) {
-              continue
-            }
-            workspaceMap.value.set(root, paths.filter(path => path !== payload.path))
-          }
-
-          deleteDescriptor(payload.path)
-        } else if (payload.event === 'change' || payload.event === 'add' || payload.event === 'addDir') {
-          for (const [root, paths] of workspaceMap.value) {
-            const path = payload.descriptor.path
-            if (payload.event === 'change' || (path !== root && !isInsideRoot(path, root)) || paths.includes(path)) {
-              continue
-            }
-            workspaceMap.value.set(root, [...paths, path])
-          }
-
-          setDescriptor(payload.descriptor)
-        }
+      ipcRenderer.on('fsal-events', (_, events: FSALEventPayload[]) => {
+        applyEvents(events)
       })
     })
+
+  /**
+   * Applies one batch of FSAL events. Each workspace whose path list changed
+   * and the descriptor map are published once for the batch.
+   *
+   * @param   {FSALEventPayload[]}  events  The events, in the order they happened
+   */
+  function applyEvents (events: FSALEventPayload[]): void {
+    // The path lists of the workspaces that hold a path of the batch
+    const pathSets = new Map<string, Set<string>>()
+    const changedRoots = new Set<string>()
+    // The last state of each path: its descriptor, or undefined once removed
+    const lastState = new Map<string, AnyDescriptor|undefined>()
+
+    for (const payload of events) {
+      const eventPath = 'path' in payload ? payload.path : payload.descriptor.path
+      lastState.set(eventPath, 'path' in payload ? undefined : payload.descriptor)
+
+      if (payload.event === 'change') {
+        continue
+      }
+
+      for (const [ root, paths ] of workspaceMap.value) {
+        if (eventPath !== root && !isInsideRoot(eventPath, root)) {
+          continue
+        }
+
+        let known = pathSets.get(root)
+        if (known === undefined) {
+          known = new Set(paths)
+          pathSets.set(root, known)
+        }
+
+        if ('path' in payload) {
+          if (known.delete(eventPath)) {
+            changedRoots.add(root)
+          }
+        } else if (!known.has(eventPath)) {
+          known.add(eventPath)
+          changedRoots.add(root)
+        }
+      }
+    }
+
+    for (const root of changedRoots) {
+      workspaceMap.value.set(root, [...pathSets.get(root) ?? []])
+    }
+
+    const removed = [...lastState].filter(([ , descriptor ]) => descriptor === undefined).map(([path]) => path)
+    deleteDescriptors(removed)
+    setDescriptors([...lastState.values()].filter(descriptor => descriptor !== undefined))
+  }
 
   // Update the loaded workspaces as soon as the openPaths property changes.
   configStore.$subscribe((_mutation, state) => {
@@ -231,9 +254,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     // First, start loading new descriptors
-    getDescriptorFor(descriptorsToFetch)
-      .then(descriptors => { setDescriptors(descriptors) })
-      .catch(err => reportError('Could not fetch new descriptors from main!', err))
+    if (descriptorsToFetch.length > 0) {
+      getDescriptorFor(descriptorsToFetch)
+        .then(descriptors => { setDescriptors(descriptors) })
+        .catch(err => reportError('Could not fetch new descriptors from main!', err))
+    }
 
     // Second, drop descriptors no longer loaded in one reactive publication.
     const descriptorsToDelete: string[] = []

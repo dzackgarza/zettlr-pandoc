@@ -172,8 +172,8 @@ import { ref, computed, toRef, watch, onMounted, onUnmounted } from 'vue'
 import { type AnyDescriptor, type MDFileDescriptor } from '@dts/common/fsal'
 import { useConfigStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { useItemComposable } from './util/item-composable'
-import type { FSALEventPayload, FSALEventPayloadChange } from 'source/app/service-providers/fsal'
-import { relativePath } from 'source/common/util/renderer-path-polyfill'
+import type { FSALEventPayload } from 'source/app/service-providers/fsal'
+import { eventsChangeChildren } from './util/events-change-children'
 import getDocumentTitle from '../util/get-document-title'
 import { effectiveExplorerDisplayForDirectory, projectMembershipForPath } from '@common/util/explorer-ordering'
 
@@ -212,36 +212,12 @@ async function fetchChildren (): Promise<void> {
 let stopFsalListener: (() => void)|undefined
 
 onMounted(async () => {
-  stopFsalListener = ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
-    const affectedPath = payload.event === 'unlink' || payload.event === 'unlinkDir'
-      ? payload.path
-      : (payload as FSALEventPayloadChange).descriptor.path
-    
-    // Figure out if this event relates to us, which is only the case if the
-    // affected path is a direct descendant of this tree item. If it's itself or
-    // a parent path, another tree item takes over. If it's a nested dependent,
-    // any of the children of this tree item takes over.
-    // How can we figure this out? Easy, by resolving the path from this item
-    // to the affected path and checking if there are any additional path
-    // separators in there.
-    if (!affectedPath.startsWith(props.item.path)) {
-      return
+  stopFsalListener = ipcRenderer.on('fsal-events', (_, events: FSALEventPayload[]) => {
+    // A batch that pertains to a direct child of this item needs handling.
+    // We'll make it easy and simply re-fetch the list of children, once.
+    if (eventsChangeChildren(events, props.item.path)) {
+      fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
     }
-
-    if (affectedPath === props.item.path) {
-      return // Taken care of by the parent
-    }
-
-    const relative = relativePath(props.item.path, affectedPath)
-    const PATH_SEP = process.platform === 'win32' ? '\\' : '/'
-    if (relative.includes(PATH_SEP)) {
-      return
-    }
-
-    // Now we can be sure that the event pertains to a direct child of this item
-    // and we need to handle it. We'll make it easy and simply re-fetch the list
-    // of children.
-    fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
   })
 
   if (props.item.type === 'directory') {

@@ -29,6 +29,11 @@ import { extractTextnodes } from '@common/modules/markdown-utils'
  */
 function prepareCounts (ast: ASTNode, locale?: string, from = 0, to?: number): { words: string[], chars: number } {
   let textNodes = extractTextnodes(ast)
+  if (from > 0 || to !== undefined) {
+    // The counts of a range shorten the first and the last text. They shorten
+    // copies, because the callers of `markdownToAST` share one AST.
+    textNodes = textNodes.map(node => ({ ...node }))
+  }
   if (from > 0) {
     textNodes = textNodes.filter(node => node.from >= from || node.to >= from)
     textNodes.map(node => {

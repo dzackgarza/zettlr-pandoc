@@ -36,9 +36,12 @@
  *                    debounced per document through the injected scheduler;
  *                    when a debounce fires, the provider reads the CURRENT
  *                    buffer text through the injected authority seam and
- *                    runs reference extraction in main. Pandoc enriches the
- *                    snapshot asynchronously; request identity and source hash
- *                    fence publication against edits and document closure.
+ *                    runs reference extraction in main. When Pandoc read
+ *                    every citation of the text before, the snapshot has
+ *                    its citations at once and one broadcast announces it.
+ *                    Else Pandoc enriches the snapshot asynchronously;
+ *                    request identity and source hash fence publication
+ *                    against edits and document closure.
  *
  *                    The rename protocol (previewRename/commitRename/
  *                    undoRename) is NOT part of this channel (review B7):
@@ -49,16 +52,18 @@
  *                    test/reference-rename-atomicity.spec.ts and
  *                    test/reference-rename-authority.spec.ts.
  *
- *                  - boot() subscribes to the injected FSAL's 'fsal-event':
+ *                  - boot() subscribes to the injected FSAL's 'fsal-events':
  *                    'add'/'change' events carrying a markdown file
  *                    descriptor apply that descriptor's FSAL-owned saved
  *                    snapshot (descriptor.references) via
  *                    index.applySavedSnapshot(); 'unlink' events remove the
  *                    saved snapshot via index.removeSavedSnapshot(path).
- *                    After every state transition the provider broadcasts
- *                    'references' to all windows (broadcastIpcMessage), which
- *                    MainEditor.vue already consumes to refresh the combined
- *                    @-completion database.
+ *                    A batch of events that changed the merged view causes
+ *                    one 'references' broadcast to all windows
+ *                    (broadcastIpcMessage), which MainEditor.vue consumes to
+ *                    refresh the combined @-completion database. A batch
+ *                    that left the merged view as it was (a save below a
+ *                    live buffer, a file that is not Markdown) causes none.
  *
  *                  - getSnapshot() exposes the same merged
  *                    WorkspaceReferenceState the ipc handler serves, for
@@ -77,7 +82,7 @@ import type LogProvider from '@providers/log'
 import type { FSALEventPayload } from '../fsal'
 import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
 import { extractReferences, hashDocumentSource } from '@common/pandoc-util/extract-references'
-import { extractPandocCitations } from './pandoc-citations'
+import { extractPandocCitations, knownPandocCitations } from './pandoc-citations'
 import {
   previewReferenceRename,
   type CommitRenameOutcome,
@@ -132,15 +137,15 @@ export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>
 export type ReferenceDocumentAuthority = WorkspaceEditAuthority
 
 /**
- * The slice of FSAL this provider actually consumes: the 'fsal-event'
+ * The slice of FSAL this provider actually consumes: the 'fsal-events'
  * subscription surface. The real FSAL satisfies it directly, and specs
  * inject a plain EventEmitter — no type escapes anywhere.
  */
 import type { AnyDescriptor } from '@dts/common/fsal'
 
 export interface ReferenceFSALEvents {
-  on: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
-  off: (evt: 'fsal-event', callback: (event: FSALEventPayload) => void) => void
+  on: (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void) => void
+  off: (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void) => void
   getAllLoadedDescriptors?: () => Promise<AnyDescriptor[]>
 }
 
@@ -183,15 +188,19 @@ export default class ReferenceProvider extends ProviderContract {
   /**
    * Applies FSAL state transitions to the index: 'add'/'change' events
    * carrying a markdown file descriptor apply its FSAL-owned saved snapshot,
-   * 'unlink' events remove the document's saved snapshot. Every applied
-   * transition is announced with a 'references' broadcast.
+   * 'unlink' events remove the document's saved snapshot. One 'references'
+   * broadcast announces a batch that changed the merged view.
    */
-  private readonly _onFsalEvent = (payload: FSALEventPayload): void => {
-    if (payload.event === 'unlink') {
-      this._index.removeSavedSnapshot(payload.path)
-      broadcastIpcMessage('references')
-    } else if ((payload.event === 'add' || payload.event === 'change') && payload.descriptor.type === 'file') {
-      this._index.applySavedSnapshot(payload.descriptor.references)
+  private readonly _onFsalEvents = (events: FSALEventPayload[]): void => {
+    let changed = false
+    for (const payload of events) {
+      if (payload.event === 'unlink') {
+        changed = this._index.removeSavedSnapshot(payload.path) || changed
+      } else if ((payload.event === 'add' || payload.event === 'change') && payload.descriptor.type === 'file') {
+        changed = this._index.applySavedSnapshot(payload.descriptor.references) || changed
+      }
+    }
+    if (changed) {
       broadcastIpcMessage('references')
     }
   }
@@ -254,6 +263,12 @@ export default class ReferenceProvider extends ProviderContract {
       this._citationSources.set(filePath, snapshot.sourceHash)
       const request = Symbol(filePath)
       this._citationRequests.set(filePath, request)
+      const citations = knownPandocCitations(content)
+      if (citations !== undefined) {
+        this._index.reportLiveBuffer({ ...snapshot, citations })
+        broadcastIpcMessage('references')
+        return
+      }
       this._index.reportLiveBuffer(snapshot)
       broadcastIpcMessage('references')
       const isCurrent = (): boolean => {
@@ -292,13 +307,13 @@ export default class ReferenceProvider extends ProviderContract {
   }
 
   /**
-   * Subscribes to the injected FSAL's 'fsal-event' stream so saved snapshots
+   * Subscribes to the injected FSAL's 'fsal-events' stream so saved snapshots
    * follow the on-disk workspace state, and finishes any workspace-edit
    * transaction a crash interrupted before the app reads a half-written
    * workspace.
    */
   public async boot (): Promise<void> {
-    this._fsal.on('fsal-event', this._onFsalEvent)
+    this._fsal.on('fsal-events', this._onFsalEvents)
     if (typeof this._fsal.getAllLoadedDescriptors === 'function') {
       try {
         const descriptors = await this._fsal.getAllLoadedDescriptors()
@@ -450,7 +465,7 @@ export default class ReferenceProvider extends ProviderContract {
   public async shutdown (): Promise<void> {
     this._citationRequests.clear()
     this._citationSources.clear()
-    this._fsal.off('fsal-event', this._onFsalEvent)
+    this._fsal.off('fsal-events', this._onFsalEvents)
     for (const task of this._pendingReports.values()) {
       task.cancel()
     }

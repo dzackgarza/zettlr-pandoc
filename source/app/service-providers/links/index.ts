@@ -14,7 +14,7 @@
 
 import { ipcMain } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import { WikilinkIndex, type WikilinkResolution } from '@common/util/wikilink-resolution'
+import { WikilinkIndex, type WikilinkDocument, type WikilinkResolution } from '@common/util/wikilink-resolution'
 import { splitWikilinkTarget } from '@common/util/wikilink-target'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '@providers/log'
@@ -22,7 +22,9 @@ import path from 'path'
 import type FSAL from '../fsal'
 import type ConfigProvider from '../config'
 import type { MDFileDescriptor } from 'source/types/common/fsal'
+import type { FSALEventPayload } from '../fsal'
 import type { WikilinkEdge } from './ipc-contract'
+import _ from 'underscore'
 import { movedPath, retargetedLink, retargetLinks, type PathMove } from '@common/util/replace-links'
 
 /** The wikilinks of every file and the index they resolve against. */
@@ -34,17 +36,20 @@ export interface WikilinkSnapshot {
 /**
  * This class resolves the wikilinks of the loaded workspaces. It keeps the
  * outbound link targets of every file and the workspace's wikilink index, and
- * rebuilds both whenever a workspace changes.
+ * rebuilds both whenever the Markdown files of a workspace change.
  */
 export default class LinkProvider extends ProviderContract {
   private _fileLinkDatabase: Map<string, string[]>
   private _index: WikilinkIndex
+  /** What the index was built from: the comparison value of a reindex */
+  private _indexEntries: WikilinkDocument[]
 
   constructor (private readonly _logger: LogProvider, private readonly _config: ConfigProvider, private readonly _fsal: FSAL) {
     super()
 
     this._fileLinkDatabase = new Map()
     this._index = new WikilinkIndex([])
+    this._indexEntries = []
 
     ipcMain.handle('link-provider', async (event, message) => {
       const { command } = message
@@ -69,10 +74,19 @@ export default class LinkProvider extends ProviderContract {
 
   public async boot (): Promise<void> {
     // Listen to state changes within the Workspaces Provider
-    this._fsal.on('fsal-event', () => {
-      // Some workspace has changed, so simply pull in the new map
+    this._fsal.on('fsal-events', (events: FSALEventPayload[]) => {
+      // Only a Markdown file has links, and only a removal has no descriptor
+      // that says what it was.
+      const affectsLinks = events.some(payload => 'path' in payload || payload.descriptor.type === 'file')
+      if (!affectsLinks) {
+        return
+      }
       this.reindex()
-        .then(() => broadcastIpcMessage('links'))
+        .then(changed => {
+          if (changed) {
+            broadcastIpcMessage('links')
+          }
+        })
         .catch(err => this._logger.error(`[LinkProvider] Could not update the link database: ${err.message}`, err))
     })
 
@@ -82,8 +96,10 @@ export default class LinkProvider extends ProviderContract {
 
   /**
    * Reindexes the entire link database.
+   *
+   * @return  {Promise<boolean>}  True when the links or the index changed
    */
-  public async reindex (): Promise<void> {
+  public async reindex (): Promise<boolean> {
     const descriptors = (await this._fsal.getAllLoadedDescriptors())
       .filter((descriptor): descriptor is MDFileDescriptor => descriptor.type === 'file')
 
@@ -95,14 +111,23 @@ export default class LinkProvider extends ProviderContract {
       return workspaces.find(root => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
     }
 
-    this._fileLinkDatabase = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor.links ]))
-    this._index = new WikilinkIndex(descriptors.map(descriptor => ({
+    const links = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor.links ]))
+    const entries: WikilinkDocument[] = descriptors.map(descriptor => ({
       path: descriptor.path,
       root: rootFor(descriptor.path),
       id: descriptor.id,
       title: descriptor.yamlTitle,
       aliases: descriptor.aliases
-    })))
+    }))
+    // A save that changed no link, name, id, title or alias keeps the index.
+    if (_.isEqual(entries, this._indexEntries) && _.isEqual([...links], [...this._fileLinkDatabase])) {
+      return false
+    }
+
+    this._fileLinkDatabase = links
+    this._indexEntries = entries
+    this._index = new WikilinkIndex(entries)
+    return true
   }
 
   /**

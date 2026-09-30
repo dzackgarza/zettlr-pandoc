@@ -46,6 +46,14 @@ import type { EventName } from 'chokidar/handler.js'
 import type LongRunningTaskProvider from '../long-running-tasks'
 import { trans } from 'source/common/i18n-main'
 import { readDirectoryFromDisk } from './util/read-directory'
+import _ from 'underscore'
+
+/**
+ * The time in which the FSAL collects events for one publication. A burst of
+ * watcher events (a render into the workspace, a branch switch) reaches each
+ * consumer as one batch.
+ */
+const EVENT_BATCH_MS = 50
 
 function isPathAtOrWithin (candidate: string, root: string): boolean {
   const relative = path.relative(root, candidate)
@@ -83,6 +91,13 @@ export default class FSAL extends ProviderContract {
   private readonly _emitter: EventEmitter
   private readonly watchers: Map<string, FSALWatchdog>
   private readonly deadWorkspaces: Set<string>
+  /** The events that wait for the next publication, in the order they happened */
+  private readonly pendingEvents: FSALEventPayload[] = []
+  private readonly publishPendingEvents = _.throttle(() => {
+    const events = this.pendingEvents.splice(0)
+    this._emitter.emit('fsal-events', events)
+    broadcastIPCMessage('fsal-events', events)
+  }, EVENT_BATCH_MS, { leading: false })
 
   constructor (
     private readonly _logger: LogProvider,
@@ -164,17 +179,28 @@ export default class FSAL extends ProviderContract {
   }
 
   // Enable global event listening to updates of the config
-  on (evt: 'fsal-event', callback: (event: FSALEventPayload) => void): void {
+  on (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
     this._emitter.on(evt, callback)
   }
 
-  once (evt: 'fsal-event', callback: (event: FSALEventPayload) => void): void {
+  once (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
     this._emitter.once(evt, callback)
   }
 
   // Also do the same for the removal of listeners
-  off (evt: 'fsal-event', callback: (event: FSALEventPayload) => void): void {
+  off (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
     this._emitter.off(evt, callback)
+  }
+
+  /**
+   * Adds an event to the next batch that the FSAL publishes to the main
+   * process listeners and to every window.
+   *
+   * @param   {FSALEventPayload}  payload  The event
+   */
+  private publishEvent (payload: FSALEventPayload): void {
+    this.pendingEvents.push(payload)
+    this.publishPendingEvents()
   }
 
   /**
@@ -209,16 +235,14 @@ export default class FSAL extends ProviderContract {
       if (event === 'unlinkDir') {
         this.removeHiddenDirectoriesUnder(absPath)
       }
-      this._emitter.emit('fsal-event', { event, path: absPath })
-      broadcastIPCMessage('fsal-event', { event, path: absPath })
+      this.publishEvent({ event, path: absPath })
       return
     }
 
     // But in any other case (change & add), we should be able to get one.
     this.getDescriptorFor(absPath, false)
       .then(descriptor => {
-        this._emitter.emit('fsal-event', { event, descriptor })
-        broadcastIPCMessage('fsal-event', { event, descriptor })
+        this.publishEvent({ event, descriptor })
       })
       .catch(err => {
         this._logger.error(`[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`, err)
@@ -454,6 +478,7 @@ export default class FSAL extends ProviderContract {
    */
   public async shutdown (): Promise<void> {
     this._logger.verbose('FSAL shutting down ...')
+    this.publishPendingEvents.cancel()
     await this._cache.persist()
   }
 
@@ -679,8 +704,7 @@ export default class FSAL extends ProviderContract {
    */
   public async refreshQuartoProject (src: DirDescriptor): Promise<void> {
     await FSALDir.refreshQuartoProject(src)
-    this._emitter.emit('fsal-event', { event: 'change', descriptor: src })
-    broadcastIPCMessage('fsal-event', { event: 'change', descriptor: src })
+    this.publishEvent({ event: 'change', descriptor: src })
   }
 
   /**

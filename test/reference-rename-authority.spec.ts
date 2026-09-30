@@ -170,14 +170,10 @@ async function createScratchBoundary (): Promise<ScratchBoundary> {
   )
   await references.boot()
 
-  fsalEvents.emit('fsal-event', {
-    event: 'change',
-    descriptor: descriptorFor(definitionPath)
-  })
-  fsalEvents.emit('fsal-event', {
-    event: 'change',
-    descriptor: descriptorFor(occurrencePath)
-  })
+  fsalEvents.emit('fsal-events', [
+    { event: 'change', descriptor: descriptorFor(definitionPath) },
+    { event: 'change', descriptor: descriptorFor(occurrencePath) }
+  ])
   await documents.getDocument(definitionPath)
   await documents.getDocument(occurrencePath)
 

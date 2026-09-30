@@ -218,15 +218,15 @@ export default class DocumentLintProvider extends ProviderContract {
   private booted = false
   private stopped = false
 
-  private readonly onFsalEvent = (payload: FSALEventPayload): void => {
-    if (payload.event === 'unlink') {
-      if (this.entries.delete(payload.path)) {
-        this.schedulePersist()
+  private readonly onFsalEvents = (events: FSALEventPayload[]): void => {
+    for (const payload of events) {
+      if (payload.event === 'unlink') {
+        if (this.entries.delete(payload.path)) {
+          this.schedulePersist()
+        }
+      } else if ((payload.event === 'add' || payload.event === 'change') && hasMarkdownExt(payload.descriptor.path)) {
+        this.scheduleReconcile()
       }
-      return
-    }
-    if ((payload.event === 'add' || payload.event === 'change') && hasMarkdownExt(payload.descriptor.path)) {
-      this.scheduleReconcile()
     }
   }
 
@@ -241,14 +241,14 @@ export default class DocumentLintProvider extends ProviderContract {
   async boot (): Promise<void> {
     await this.loadCache()
     await this.refreshFlowmarkIdentity()
-    this.deps.fsal?.on('fsal-event', this.onFsalEvent)
+    this.deps.fsal?.on('fsal-events', this.onFsalEvents)
     this.booted = true
     this.scheduleReconcile()
   }
 
   async shutdown (): Promise<void> {
     this.stopped = true
-    this.deps.fsal?.off('fsal-event', this.onFsalEvent)
+    this.deps.fsal?.off('fsal-events', this.onFsalEvents)
     clearTimeout(this.reconcileTimer)
     clearTimeout(this.persistTimer)
     await this.persist()

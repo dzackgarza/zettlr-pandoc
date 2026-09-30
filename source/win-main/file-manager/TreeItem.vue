@@ -199,7 +199,7 @@ import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
 import { nextTick, ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue'
 import type { AnyDescriptor } from '@dts/common/fsal'
 import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import { pathBasename, relativePath } from '@common/util/renderer-path-polyfill'
+import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { useItemComposable } from './util/item-composable'
 import {
   hasDataExt,
@@ -209,7 +209,8 @@ import {
   hasPDFExt,
   hasExt
 } from 'source/common/util/file-extention-checks'
-import type { FSALEventPayload, FSALEventPayloadChange } from 'source/app/service-providers/fsal'
+import type { FSALEventPayload } from 'source/app/service-providers/fsal'
+import { eventsChangeChildren } from './util/events-change-children'
 import type { WritingTarget } from 'source/app/service-providers/targets'
 import { filterDescriptorChildren } from './util/filter-children'
 import getDocumentTitle from '../util/get-document-title'
@@ -540,36 +541,12 @@ onMounted(async () => {
     await fetchChildren()
   }
 
-  stopFsalListener = ipcRenderer.on('fsal-event', (_, payload: FSALEventPayload) => {
-    const affectedPath = payload.event === 'unlink' || payload.event === 'unlinkDir'
-      ? payload.path
-      : (payload as FSALEventPayloadChange).descriptor.path
-
-    // Figure out if this event relates to us, which is only the case if the
-    // affected path is a direct descendant of this tree item. If it's itself or
-    // a parent path, another tree item takes over. If it's a nested dependent,
-    // any of the children of this tree item takes over.
-    // How can we figure this out? Easy, by resolving the path from this item
-    // to the affected path and checking if there are any additional path
-    // separators in there.
-    if (!affectedPath.startsWith(props.item.path)) {
-      return
+  stopFsalListener = ipcRenderer.on('fsal-events', (_, events: FSALEventPayload[]) => {
+    // A batch that pertains to a direct child of this item needs handling.
+    // We'll make it easy and simply re-fetch the list of children, once.
+    if (eventsChangeChildren(events, props.item.path)) {
+      fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
     }
-
-    if (affectedPath === props.item.path) {
-      return // Taken care of by the parent
-    }
-
-    const relative = relativePath(props.item.path, affectedPath)
-    const PATH_SEP = process.platform === 'win32' ? '\\' : '/'
-    if (relative.includes(PATH_SEP)) {
-      return
-    }
-
-    // Now we can be sure that the event pertains to a direct child of this item
-    // and we need to handle it. We'll make it easy and simply re-fetch the list
-    // of children.
-    fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
   })
 
   // Initially scroll into view if this item is selected
