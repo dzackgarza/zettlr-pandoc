@@ -132,6 +132,11 @@ const chipTheme = EditorView.baseTheme({
 })
 
 export const renderWikilinks = [
-  renderBlockWidgets([ 'ZknLink' ], shouldHandleNode, createWidget),
+  renderBlockWidgets(
+    [ 'ZknLink' ],
+    shouldHandleNode,
+    createWidget,
+    (before, after) => before.field(wikilinkResolutionsField, false) !== after.field(wikilinkResolutionsField, false)
+  ),
   chipTheme
 ]

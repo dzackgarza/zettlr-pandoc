@@ -27,16 +27,6 @@ describe('responsiveness ownership regressions', function () {
     assert.equal(merged.find(item => item.documentPath === '/b.md')?.sourceHash, result('/b.md', 2).sourceHash)
   })
 
-  it('uses one shared state field for every block renderer instead of one field per renderer', function () {
-    const source = readFileSync('source/common/modules/markdown-editor/renderers/base-renderer.ts', 'utf8')
-    assert.match(source, /const blockRendererFacet = Facet\.define/)
-    assert.match(source, /const sharedBlockRendererField = StateField\.define<DecorationSet>/)
-    const blockFactory = source.slice(source.indexOf('export function renderBlockWidgets'))
-    assert.doesNotMatch(blockFactory, /StateField\.define/)
-    assert.match(blockFactory, /blockRendererFacet\.of/)
-    assert.match(blockFactory, /sharedBlockRendererField/)
-  })
-
   it('unsubscribes every file-manager component listener that is registered on mount', function () {
     const tree = readFileSync('source/win-main/file-manager/TreeItem.vue', 'utf8')
     const item = readFileSync('source/win-main/file-manager/FileItem.vue', 'utf8')

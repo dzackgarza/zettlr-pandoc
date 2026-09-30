@@ -464,7 +464,7 @@ function revealDivSource (event: MouseEvent | KeyboardEvent, view: EditorView): 
   // Replacement widgets (math, citations, images, diagrams...) own their
   // activation and exact source range. Do not turn their click into a generic
   // div-body click.
-  if (target.closest('[data-preview-source-from][data-preview-source-to]') !== null) {
+  if (target.closest('[data-preview-source-length]') !== null) {
     return false
   }
 

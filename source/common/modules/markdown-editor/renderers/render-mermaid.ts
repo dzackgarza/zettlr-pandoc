@@ -14,12 +14,13 @@
 
 import { reportError } from '@common/util/error-reporting'
 import { renderBlockWidgets } from './base-renderer'
-import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
+import { type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, type EditorView } from '@codemirror/view'
 import mermaid, { type MermaidConfig } from 'mermaid'
 import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { trans } from '@common/i18n-renderer'
+import { configField } from '../util/configuration'
 
 // Define some default options
 const DEFAULT_MERMAID_OPTIONS: MermaidConfig = {
@@ -54,15 +55,12 @@ function onError (err: unknown, container: HTMLElement) {
 }
 
 class MermaidWidget extends WidgetType {
-  constructor (readonly graph: string, readonly node: SyntaxNode, readonly darkMode: boolean) {
+  constructor (readonly graph: string, readonly darkMode: boolean) {
     super()
   }
 
   eq (other: MermaidWidget): boolean {
-    return other.graph === this.graph &&
-      other.node.from === this.node.from &&
-      other.node.to === this.node.to &&
-      this.darkMode === other.darkMode
+    return other.graph === this.graph && this.darkMode === other.darkMode
   }
 
   toDOM (view: EditorView): HTMLElement {
@@ -148,7 +146,12 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MermaidWidget|u
   // NOTE: We have to pass the current value of the darkMode config value to
   // see in what mode the mermaid graph has actually been rendered to re-render
   // the graph if necessary
-  return new MermaidWidget(graph, node.node, window.config.get('darkMode') as boolean)
+  return new MermaidWidget(graph, state.field(configField).darkMode)
 }
 
-export const renderMermaid = renderBlockWidgets([ 'FencedCode' ], shouldHandleNode, createWidget)
+export const renderMermaid = renderBlockWidgets(
+  [ 'FencedCode' ],
+  shouldHandleNode,
+  createWidget,
+  (before, after) => before.field(configField).darkMode !== after.field(configField).darkMode
+)

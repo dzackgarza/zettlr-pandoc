@@ -20,22 +20,19 @@ import { type EditorState } from '@codemirror/state'
 import clickAndSelect from './click-and-select'
 import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
 import { citationMenu } from '../context-menu/citation-menu'
-import { configField, type EditorConfiguration } from '../util/configuration'
-import { type Citation, NODES, nodeToCiteItem } from '../parser/citation-parser'
+import { configField } from '../util/configuration'
+import { NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { isSupportedPandocCrossref } from '@common/util/pandoc-quick-reference'
 import { referenceFamilyOf } from '@dts/common/references'
-import { workspaceReferencesField } from '../plugins/workspace-references-field'
-import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import { type CitationReading, referencePresentationField } from '../plugins/workspace-references-field'
 import { reportError } from '@common/util/error-reporting'
 import type { CitationDatabase } from '@dts/common/citeproc'
-
-const sourceHashes = new WeakMap<EditorState, string>()
 
 const CITATION_RENDER_CACHE_LIMIT = 256
 const citationRenderCache = new Map<string, Promise<string|undefined>>()
 let stopCitationCacheListener: (() => void)|undefined
 
-function citationCacheKey (library: CitationDatabase, citation: Citation): string {
+function citationCacheKey (library: CitationDatabase, citation: CitationReading): string {
   return JSON.stringify([ library, citation.composite, citation.items ])
 }
 
@@ -46,7 +43,7 @@ function ensureCitationCacheInvalidation (): void {
   stopCitationCacheListener = window.ipc.on('citeproc-database-updated', () => { citationRenderCache.clear() })
 }
 
-function requestRenderedCitation (library: CitationDatabase, citation: Citation): Promise<string|undefined> {
+function requestRenderedCitation (library: CitationDatabase, citation: CitationReading): Promise<string|undefined> {
   ensureCitationCacheInvalidation()
   const key = citationCacheKey(library, citation)
   const cached = citationRenderCache.get(key)
@@ -96,18 +93,23 @@ function applyRenderedCitation (elem: HTMLElement, rawCitation: string, rendered
   }
 }
 
+function sameLibrary (a: CitationDatabase, b: CitationDatabase): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 class CitationWidget extends WidgetType {
+  /** `library` is the document's bibliography setting; '' names the main database. */
   constructor (
-    readonly citation: Citation,
+    readonly citation: CitationReading,
     readonly rawCitation: string,
-    readonly metadata: EditorConfiguration['metadata'],
+    readonly library: CitationDatabase,
     readonly error?: string
   ) {
     super()
   }
 
   eq (other: CitationWidget): boolean {
-    return other.metadata === this.metadata && other.rawCitation === this.rawCitation &&
+    return sameLibrary(other.library, this.library) && other.rawCitation === this.rawCitation &&
       other.error === this.error && other.citation.composite === this.citation.composite &&
       JSON.stringify(other.citation.items) === JSON.stringify(this.citation.items)
   }
@@ -162,8 +164,7 @@ class CitationWidget extends WidgetType {
       return elem
     }
 
-    const config = view.state.field(configField).metadata.library
-    const library = config === '' ? CITEPROC_MAIN_DB : config
+    const library = this.library === '' ? CITEPROC_MAIN_DB : this.library
 
     const elem = document.createElement('span')
     elem.classList.add('citeproc-citation')
@@ -211,26 +212,31 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 }
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): CitationWidget|undefined {
-  const workspace = state.field(workspaceReferencesField, false)
-  let citation = nodeToCiteItem(node.node, state.sliceDoc())
-  if (workspace !== undefined) {
-    // Workspace references belong to reference chips; mixed clusters remain authored text.
-    if (citation.items.some(item => referenceFamilyOf(item.id) !== undefined)) return undefined
-    if (workspace === null) return undefined
-    let sourceHash = sourceHashes.get(state)
-    if (sourceHash === undefined) {
-      sourceHash = hashDocumentSource(state.sliceDoc())
-      sourceHashes.set(state, sourceHash)
-    }
-    if (workspace.snapshot.sourceHash !== sourceHash) return undefined
-    if (workspace.snapshot.citationError !== undefined) {
-      return new CitationWidget(citation, citation.source, state.field(configField).metadata, workspace.snapshot.citationError)
-    }
-    const extracted = workspace.snapshot.citations?.find(candidate => candidate.from === node.from && candidate.to === node.to)
-    if (extracted === undefined) return undefined
-    citation = extracted
+  const rawCitation = state.sliceDoc(node.from, node.to)
+  const library = state.field(configField).metadata.library
+  const authored = nodeToCiteItem(node.node, rawCitation, node.from)
+  // A state without the workspace reference fields has no Pandoc reading; the
+  // editor's own reading of the node stands in.
+  const presentation = state.field(referencePresentationField, false)
+  if (presentation === undefined) {
+    return new CitationWidget(authored, rawCitation, library)
   }
-  return new CitationWidget(citation, state.sliceDoc(node.from, node.to), state.field(configField).metadata)
+
+  // Workspace references belong to reference chips; mixed clusters remain authored text.
+  if (authored.items.some(item => referenceFamilyOf(item.id) !== undefined)) return undefined
+  if (presentation.citationError !== undefined) {
+    return new CitationWidget(authored, rawCitation, library, presentation.citationError)
+  }
+  const reading = presentation.citations?.get(rawCitation)
+  return reading === undefined ? undefined : new CitationWidget(reading, rawCitation, library)
 }
 
-export const renderCitations = renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget)
+function inputsChanged (before: EditorState, after: EditorState): boolean {
+  const presentation = after.field(referencePresentationField, false)
+  const previous = before.field(referencePresentationField, false)
+  return !sameLibrary(before.field(configField).metadata.library, after.field(configField).metadata.library) ||
+    previous?.citations !== presentation?.citations ||
+    previous?.citationError !== presentation?.citationError
+}
+
+export const renderCitations = renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget, inputsChanged)

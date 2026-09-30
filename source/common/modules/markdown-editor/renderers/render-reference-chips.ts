@@ -61,13 +61,12 @@ import { WidgetType, EditorView } from '@codemirror/view'
 import { type EditorState } from '@codemirror/state'
 import { NODES, nodeToCiteItem } from '../parser/citation-parser'
 import { referenceFamilyOf, referenceFamilyDisplayName, type ReferenceFamily } from '@dts/common/references'
-import { workspaceReferencesField } from '../plugins/workspace-references-field'
+import { referencePresentationField } from '../plugins/workspace-references-field'
 import clickAndSelect from './click-and-select'
 import {
   followReferenceNavigationIntent,
   resolveReferenceNavigationIntent
 } from '../util/reference-navigation'
-import { referenceDisplayNumbers } from '@common/pandoc-util/reference-numbering'
 
 /**
  * One chip of a cluster widget: the authored key, its family, and the
@@ -177,24 +176,19 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 }
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): WidgetType|undefined {
-  const references = state.field(workspaceReferencesField, false) ?? null
-  if (references === null) {
-    return undefined // No workspace view yet: nothing renders.
+  // No workspace view yet: there are no display numbers and nothing renders.
+  const displayNumbers = state.field(referencePresentationField, false)?.displayNumbers
+  if (displayNumbers === undefined) {
+    return undefined
   }
 
-  let citation
-  try {
-    citation = nodeToCiteItem(node.node, state.sliceDoc())
-  } catch (err) {
-    return undefined // nodeToCiteItem throws if it is unhappy
-  }
-
+  const rawCluster = state.sliceDoc(node.from, node.to)
+  const citation = nodeToCiteItem(node.node, rawCluster, node.from)
   if (citation.items.length === 0) {
     return undefined
   }
 
   const chips: ChipSpec[] = []
-  const displayNumbers = referenceDisplayNumbers(references.resolutions, references.projectRoots)
   for (const item of citation.items) {
     const family = referenceFamilyOf(item.id)
     if (family === undefined) {
@@ -203,16 +197,12 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): WidgetType|unde
       return undefined
     }
 
-    const resolution = references.resolutions.get(item.id)
-    if (resolution === undefined || resolution.status !== 'resolved') {
-      // Missing or duplicate: the authored source stays raw. Diagnostics
-      // own those states; duplicates never select one definition silently.
-      return undefined
-    }
-
+    // Only a uniquely resolved key has a display number. A missing or
+    // duplicate key stays raw: diagnostics own those states, and a duplicate
+    // never selects one definition silently.
     const displayNumber = displayNumbers.get(item.id)
     if (displayNumber === undefined) {
-      throw new Error(`Resolved reference ${item.id} has no editor-local display number`)
+      return undefined
     }
     chips.push({
       key: item.id,
@@ -221,7 +211,12 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): WidgetType|unde
     })
   }
 
-  return new ReferenceChipClusterWidget(state.sliceDoc(node.from, node.to), chips)
+  return new ReferenceChipClusterWidget(rawCluster, chips)
+}
+
+function displayNumbersChanged (before: EditorState, after: EditorState): boolean {
+  return before.field(referencePresentationField, false)?.displayNumbers !==
+    after.field(referencePresentationField, false)?.displayNumbers
 }
 
 /**
@@ -250,6 +245,6 @@ const chipTheme = EditorView.baseTheme({
 })
 
 export const renderReferenceChips = [
-  renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget),
+  renderBlockWidgets([ NODES.CITATION ], shouldHandleNode, createWidget, displayNumbersChanged),
   chipTheme
 ]

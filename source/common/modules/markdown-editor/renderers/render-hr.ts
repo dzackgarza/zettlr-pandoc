@@ -13,19 +13,15 @@
  */
 
 import { renderBlockWidgets } from './base-renderer'
-import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
+import { type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType } from '@codemirror/view'
 
 import { type EditorState } from '@codemirror/state'
 import { rangeInPreviewSuppression } from '../util/range-in-preview-suppression'
 
 class RuleWidget extends WidgetType {
-  constructor (readonly node: SyntaxNode) {
-    super()
-  }
-
-  eq (other: RuleWidget): boolean {
-    return other.node.from === this.node.from && other.node.to === this.node.to
+  eq (_other: RuleWidget): boolean {
+    return true
   }
 
   toDOM (): HTMLElement {
@@ -38,11 +34,6 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 }
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): RuleWidget|undefined {
-  // Get the node's text contents, determine if this is a displayMode equation,
-  // and then remove the leading and trailing dollars. Also, pass a stable node
-  // reference (SyntaxNodeRef will be dropped, but the SyntaxNode itself will
-  // stay, and keep its position updated depending on what happens in the doc)
-
   // Horizontal rules must always show their syntax even if the cursor is only
   // adjacent for a proper UX. If we didn't do that, users would have to click
   // within this element to show the heading characters, which is undesirable.
@@ -50,7 +41,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): RuleWidget|unde
     return undefined
   }
 
-  return new RuleWidget(node.node)
+  return new RuleWidget()
 }
 
 export const renderHorizontalRules = [

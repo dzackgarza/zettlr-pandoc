@@ -23,7 +23,24 @@ export type WikilinkResolutions = Map<string, WikilinkResolution>
 
 export const wikilinkResolutionsUpdate = StateEffect.define<WikilinkResolutions>()
 
-/** Null until the first resolutions arrive; nothing renders while it is null. */
+function sameResolutions (a: WikilinkResolutions, b: WikilinkResolutions): boolean {
+  if (a.size !== b.size) {
+    return false
+  }
+  for (const [ target, resolution ] of a) {
+    const other = b.get(target)
+    if (other === undefined || JSON.stringify(other) !== JSON.stringify(resolution)) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Null until the first resolutions arrive; nothing renders while it is null.
+ * The field keeps its map when new resolutions say the same, so a consumer
+ * can compare the map objects of two states.
+ */
 export const wikilinkResolutionsField = StateField.define<WikilinkResolutions|null>({
   create () {
     return null
@@ -31,7 +48,7 @@ export const wikilinkResolutionsField = StateField.define<WikilinkResolutions|nu
   update (value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(wikilinkResolutionsUpdate)) {
-        return effect.value
+        return value !== null && sameResolutions(value, effect.value) ? value : effect.value
       }
     }
     return value

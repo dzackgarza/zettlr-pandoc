@@ -43,6 +43,30 @@ export function reviewSuppressionChanged (update: ViewUpdate): boolean {
   return getReviewChunks(update.startState) !== getReviewChunks(update.state)
 }
 
+/**
+ * The ranges that rangeInPreviewSuppression tests a source range against. A
+ * renderer that keeps its decorations between transactions computes again the
+ * decorations that touch these ranges.
+ */
+export function previewSuppressionRanges (state: EditorState): Array<{ from: number, to: number }> {
+  const ranges: Array<{ from: number, to: number }> = [...state.selection.ranges]
+  for (const suggestion of getReviewChunks(state) ?? []) {
+    const ownedSpans = suggestion.anchors.filter(anchor => anchor.to > anchor.from)
+    if (ownedSpans.length === 0) {
+      const seam = suggestion.anchors[0]?.from ?? suggestion.seam
+      ranges.push({ from: seam, to: seam })
+    } else {
+      ranges.push(...ownedSpans)
+    }
+  }
+  return ranges
+}
+
+/** Whether previewSuppressionRanges can differ between two states of one document. */
+export function previewSuppressionChanged (before: EditorState, after: EditorState): boolean {
+  return before.selection !== after.selection || getReviewChunks(before) !== getReviewChunks(after)
+}
+
 export function rangeInPreviewSuppression (
   state: EditorState,
   rangeFrom: number,

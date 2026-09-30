@@ -18,8 +18,9 @@ import { selectRenderedSourceRange } from './reveal-rendered-source'
 
 /**
  * A helper function that returns a click-callback that selects the exact source
- * range owned by a rendered replacement widget. The base renderer stamps that
- * range onto the widget DOM when it creates the Decoration.replace range.
+ * range owned by a rendered replacement widget. The base renderer stamps the
+ * length of that range onto the widget DOM when it creates the
+ * Decoration.replace range.
  *
  * @param   {EditorView}  view   The editor view
  *
@@ -32,17 +33,14 @@ export default function clickAndSelect (view: EditorView): (event: MouseEvent) =
       return
     }
 
-    const sourceOwner = target.closest<HTMLElement>('[data-preview-source-from][data-preview-source-to]')
+    const sourceOwner = target.closest<HTMLElement>('[data-preview-source-length]')
     if (sourceOwner === null) {
       return
     }
 
-    const from = Number(sourceOwner.dataset.previewSourceFrom)
-    const to = Number(sourceOwner.dataset.previewSourceTo)
-    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > view.state.doc.length) {
-      return
-    }
-
-    selectRenderedSourceRange(view, event, from, to)
+    // The widget holds the length of its source, not its position: the view
+    // knows where the widget is now, after every edit before it.
+    const from = view.posAtDOM(sourceOwner)
+    selectRenderedSourceRange(view, event, from, from + Number(sourceOwner.dataset.previewSourceLength))
   }
 }

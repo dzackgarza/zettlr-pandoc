@@ -225,31 +225,36 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
 }
 
 class TikzWidget extends WidgetType {
-  constructor(readonly block: TikzSourceBlock) {
+  /**
+   * The widget holds the figure and the length of the authored block, not the
+   * position of the block: an edit before the figure moves the block and keeps
+   * this widget.
+   */
+  constructor(
+    readonly source: string,
+    readonly kind: TikzSourceBlock["kind"],
+    readonly language: TikzSourceBlock["language"],
+    readonly blockLength: number,
+  ) {
     super();
   }
 
   eq(other: TikzWidget): boolean {
-    // Widget event handlers close over the authored source range. A change in
-    // any preceding block can shift an otherwise byte-identical figure, so
-    // range movement is semantically observable and must rebuild the widget.
     return (
-      other.block.source === this.block.source &&
-      other.block.kind === this.block.kind &&
-      other.block.language === this.block.language &&
-      other.block.from === this.block.from &&
-      other.block.to === this.block.to &&
-      other.block.sourceFrom === this.block.sourceFrom &&
-      other.block.sourceTo === this.block.sourceTo
+      other.source === this.source &&
+      other.kind === this.kind &&
+      other.language === this.language &&
+      other.blockLength === this.blockLength
     );
   }
 
   toDOM(view: EditorView): HTMLElement {
     const elem = document.createElement("div");
     elem.classList.add("tikz-figure", "tikz-pending");
-    elem.dataset.tikzLanguage = this.block.language;
-    elem.dataset.tikzKind = this.block.kind;
+    elem.dataset.tikzLanguage = this.language;
+    elem.dataset.tikzKind = this.kind;
     elem.textContent = "Rendering TikZ figure…";
+    const block = document.createElement("div");
 
     // The configuration carries the buffer's path, using the empty string for
     // a buffer that has none — the same value the request field is declared
@@ -258,13 +263,14 @@ class TikzWidget extends WidgetType {
     const docPath = view.state.field(configField).metadata.path;
     const editTitle = "Click to edit TikZ source";
     const editSource = (): void => {
+      const from = view.posAtDOM(block);
       view.focus();
-      view.dispatch({ selection: { anchor: this.block.from, head: this.block.to } });
+      view.dispatch({ selection: { anchor: from, head: from + this.blockLength } });
     };
     requestTikzRender({
-      source: this.block.source,
-      kind: this.block.kind,
-      language: this.block.language,
+      source: this.source,
+      kind: this.kind,
+      language: this.language,
       docPath,
     }).then(
       (result) => {
@@ -305,7 +311,6 @@ class TikzWidget extends WidgetType {
 
     // CodeMirror measures a block widget by its border box, so the space
     // around the figure is padding on this root, never a margin on the figure.
-    const block = document.createElement("div");
     block.classList.add("tikz-figure-block");
     block.append(elem);
     return block;
@@ -326,7 +331,9 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): TikzWidget | undefined {
   const block = tikzBlockForNode(state, node);
-  return block === undefined ? undefined : new TikzWidget(block);
+  return block === undefined
+    ? undefined
+    : new TikzWidget(block.source, block.kind, block.language, block.to - block.from);
 }
 
 export const renderTikzFigures = [

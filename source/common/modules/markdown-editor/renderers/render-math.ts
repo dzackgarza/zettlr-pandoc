@@ -13,7 +13,7 @@
  */
 
 import { renderBlockWidgets } from './base-renderer'
-import { type SyntaxNode, type SyntaxNodeRef } from '@lezer/common'
+import { type SyntaxNodeRef } from '@lezer/common'
 import { WidgetType, EditorView } from '@codemirror/view'
 
 import { type EditorState } from '@codemirror/state'
@@ -26,14 +26,12 @@ import { configField } from '../util/configuration'
 import { pandocLatexMathEnvironmentAtStart } from '@lezer/markdown'
 
 class MathWidget extends WidgetType {
-  constructor (readonly equation: string, readonly displayMode: boolean, readonly node: SyntaxNode) {
+  constructor (readonly equation: string, readonly displayMode: boolean) {
     super()
   }
 
   eq (other: MathWidget): boolean {
-    return other.equation === this.equation &&
-      other.node.from === this.node.from &&
-      other.node.to === this.node.to
+    return other.equation === this.equation && other.displayMode === this.displayMode
   }
 
   toDOM (view: EditorView): HTMLElement {
@@ -95,9 +93,7 @@ function shouldHandleNode (node: SyntaxNodeRef): boolean {
 
 function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|undefined {
   // Get the node's text contents, determine if this is a displayMode equation,
-  // and then remove the leading and trailing dollars. Also, pass a stable node
-  // reference (SyntaxNodeRef will be dropped, but the SyntaxNode itself will
-  // stay, and keep its position updated depending on what happens in the doc)
+  // and then remove the leading and trailing dollars.
   const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent
 
   // Don't render if the selection is within the node
@@ -112,7 +108,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
     if (environment === null || environment.end !== nodeText.length) {
       return undefined
     }
-    return new MathWidget(nodeText, environment.display, node.node)
+    return new MathWidget(nodeText, environment.display)
   }
 
   // Recognizes $…$, $$…$$, \(…\) and \[…\]; returns null for regular code.
@@ -121,7 +117,7 @@ function createWidget (state: EditorState, node: SyntaxNodeRef): MathWidget|unde
     return undefined // It's regular FencedCode/InlineCode
   }
 
-  return new MathWidget(math.equation, math.display, node.node)
+  return new MathWidget(math.equation, math.display)
 }
 
 export const renderMath = [

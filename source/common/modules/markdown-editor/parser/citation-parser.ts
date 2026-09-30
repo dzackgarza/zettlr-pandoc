@@ -27,13 +27,19 @@ export type { Citation, CiteItem, CSL_LOCATOR_TERM }
  * @param   {SyntaxNode}  node      The Citation node. Function throws an error
  *                                  if the node is malformed.
  * @param   {string}      markdown  The Markdown source.
+ * @param   {number}      offset    The document position of the first
+ *                                  character of `markdown`. A caller that has
+ *                                  the text of the node alone passes the start
+ *                                  of the node.
  *
  * @return  {CiteItem[]}            The citation items.
  */
-export function nodeToCiteItem (node: SyntaxNode, markdown: string): Citation {
+export function nodeToCiteItem (node: SyntaxNode, markdown: string, offset: number = 0): Citation {
   if (node.type.name !== 'Citation') {
     throw new Error(`Expected a Citation node, received type ${node.type.name}`)
   }
+
+  const textOf = (range: { from: number, to: number }): string => markdown.slice(range.from - offset, range.to - offset)
 
   const items: CiteItem[] = []
 
@@ -54,18 +60,18 @@ export function nodeToCiteItem (node: SyntaxNode, markdown: string): Citation {
 
   while (child !== null) {
     if (child.type.name === NODES.PREFIX) {
-      prefix = markdown.slice(child.from, child.to)
+      prefix = textOf(child)
     } else if (child.type.name === NODES.KEY) {
-      citekey = markdown.slice(child.from, child.to)
+      citekey = textOf(child)
     } else if (child.type.name === NODES.LOCATOR) {
-      const parsed = parseCitationLocator(markdown.slice(child.from, child.to))
+      const parsed = parseCitationLocator(textOf(child))
       locator = parsed.locator
       label = parsed.label
     } else if (child.type.name === NODES.SUFFIX) {
-      suffix = markdown.slice(child.from, child.to)
+      suffix = textOf(child)
     } else if (child.type.name === NODES.AUTHORFLAG) {
       suppressAuthor = true
-    } else if (child.type.name === NODES.MARK && markdown.slice(child.from, child.to) === ';') {
+    } else if (child.type.name === NODES.MARK && textOf(child) === ';') {
       // A mark can often be ignored, but if it's a semicolon, we have to flush
       // the state into the cite items and reset.
       if (citekey !== undefined) {
@@ -96,7 +102,7 @@ export function nodeToCiteItem (node: SyntaxNode, markdown: string): Citation {
 
   return {
     from: node.from, to: node.to,
-    source: markdown.slice(node.from, node.to),
+    source: textOf(node),
     composite, items
   }
 }
