@@ -212,10 +212,12 @@ resolves the name in this order, ignoring case, and the first kind that matches
 decides:
 
 1. the document's `id` (Zettelkasten ID);
-2. a path suffix: the file name without `.md`, or the end of its path
-   relative to the workspace (`programs/cusp-correspondence`);
-3. an entry of the document's YAML `aliases`;
-4. the document's YAML `title`.
+2. its full path relative to the workspace, without `.md`
+   (`programs/cusp-correspondence`);
+3. a path suffix: the file name without `.md`, or the end of its path
+   relative to the workspace;
+4. an entry of the document's YAML `aliases`;
+5. the document's YAML `title`.
 
 Write the shortest name that matches one document only; `GET /v1/workspace/files`
 gives it for each file as `linkTarget`. A name survives a move

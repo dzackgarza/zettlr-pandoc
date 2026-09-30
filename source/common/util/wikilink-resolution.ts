@@ -91,9 +91,11 @@ function addTo (map: Map<string, string[]>, key: string, documentPath: string): 
 
 /**
  * The workspace's wikilink keys. A target resolves in tiers, and the first
- * tier with a match decides: the Zettelkasten ID, then a path suffix
- * (`note`, `dir/note`, the workspace-relative path), then a YAML alias, then
- * the YAML title. Matching ignores case and the Markdown extension. Two
+ * tier with a match decides: the Zettelkasten ID, then the workspace-relative
+ * path, then a path suffix (`note`, `dir/note`), then a YAML alias, then the
+ * YAML title. The workspace-relative path comes before the suffixes, as in
+ * Obsidian, so that it names its document even when it is also the end of a
+ * deeper path (`x/note` and `y/x/note`). Matching ignores case and the Markdown extension. Two
  * matches in the deciding tier make the link ambiguous; a link never
  * silently picks one of them.
  */
@@ -104,6 +106,7 @@ export class WikilinkIndex {
 
   constructor (documents: WikilinkDocument[]) {
     const ids = new Map<string, string[]>()
+    const workspacePaths = new Map<string, string[]>()
     const suffixes = new Map<string, string[]>()
     const aliases = new Map<string, string[]>()
     const titles = new Map<string, string[]>()
@@ -112,7 +115,9 @@ export class WikilinkIndex {
       if (document.id !== '') {
         addTo(ids, document.id.toLowerCase(), document.path)
       }
-      const segments = normalizedKey(path.relative(document.root, document.path)).split('/')
+      const workspacePath = normalizedKey(path.relative(document.root, document.path))
+      addTo(workspacePaths, workspacePath, document.path)
+      const segments = workspacePath.split('/')
       for (let start = segments.length - 1; start >= 0; start--) {
         addTo(suffixes, segments.slice(start).join('/'), document.path)
       }
@@ -123,7 +128,7 @@ export class WikilinkIndex {
         addTo(titles, document.title.toLowerCase(), document.path)
       }
     }
-    this.tiers = [ ids, suffixes, aliases, titles ]
+    this.tiers = [ ids, workspacePaths, suffixes, aliases, titles ]
     for (const document of documents) {
       this.canonicalForms.set(document.path, this.shortestUniqueSuffix(document))
     }

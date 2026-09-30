@@ -49,6 +49,14 @@ describe('Workspace wikilink resolution', function () {
     strictEqual(resolution.status === 'resolved' && resolution.path, `${root}/b/notes.md`)
   })
 
+  it('resolves a workspace-relative path even when it ends a deeper path', function () {
+    const nested = new WikilinkIndex([ document('x/lemma.md'), document('y/x/lemma.md') ])
+    const resolution = nested.resolve('x/lemma', source)
+    strictEqual(resolution.status === 'resolved' && resolution.path, `${root}/x/lemma.md`)
+    strictEqual(nested.canonical(`${root}/x/lemma.md`), 'x/lemma')
+    strictEqual(nested.canonical(`${root}/y/x/lemma.md`), 'y/x/lemma')
+  })
+
   it('lets a path suffix win over a title', function () {
     deepStrictEqual(index.resolve('titled', source).status, 'resolved')
     deepStrictEqual(index.resolve('notes', source).status, 'ambiguous')
