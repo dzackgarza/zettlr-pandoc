@@ -49,16 +49,14 @@ let upTimestamp: number
 /**
  * Boots the application
  *
- * @param   {Promise<string>}  shellPathRead  The PATH that the user's shell reports
- *
  * @return  {void}    Nothing to return
  */
-export async function bootApplication (shellPathRead: Promise<string>): Promise<AppServiceContainer> {
+export async function bootApplication (): Promise<AppServiceContainer> {
   upTimestamp = Date.now()
 
   // First of all we MUST perform the environment check, since everything else
   // depends on this.
-  await environmentCheck(shellPathRead)
+  await environmentCheck()
 
   // We need to instantiate the service container right away to have access to
   // the log and config providers. Then we just need to remember to boot it

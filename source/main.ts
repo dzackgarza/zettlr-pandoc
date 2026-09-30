@@ -16,7 +16,6 @@
 import { reportError } from '@common/util/error-reporting'
 import { app, dialog } from "electron";
 import path from "path";
-import { shellPath } from "shell-path";
 import { bootApplication, shutdownApplication } from "./app/lifecycle";
 
 // Helper function to extract files to open from process.argv
@@ -133,10 +132,6 @@ const filesBeforeOpen: string[] = [];
  */
 let canQuit: boolean = false;
 
-// The login shell that reports the user's PATH takes seconds. It starts here,
-// so it runs during the wait for the ready event.
-const shellPathRead = shellPath();
-
 /**
  * Hook into the ready event and initialize the main object creating everything
  * else. It is necessary to wait for the ready event, because prior, some APIs
@@ -162,7 +157,7 @@ app
     // Immediately boot the application. This function performs some initial
     // checks to make sure the environment is as expected for Zettlr, and boots
     // up the providers.
-    bootApplication(shellPathRead)
+    bootApplication()
       .then(() => {
         // The desktop launcher (scripts/desktop/zettlr-pandoc-boot) waits for
         // this exact line on stdout. A window of the app's class is not proof

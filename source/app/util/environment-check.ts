@@ -23,7 +23,7 @@ import { getProgramVersion } from './get-program-version'
 import { runCommand } from './run-command'
 import { preflight } from './preflight'
 
-export default async function environmentCheck (shellPathRead: Promise<string>): Promise<void> {
+export default async function environmentCheck (): Promise<void> {
   console.log('[Application] Performing environment check ...')
 
   // Ensure that the Node process trusts both its own bundled certificates
@@ -34,16 +34,12 @@ export default async function environmentCheck (shellPathRead: Promise<string>):
   tls.setDefaultCACertificates([ ...bundled, ...system ])
   console.log('[Application] Info: The main process now uses both the bundled Mozilla CA as well as the system CA.')
 
-  // This is necessary on macOS and Linux, because GUI applications may not
-  // inherit the same PATH environment variable as terminal programs. This is
-  // necessary, however, to detect additional helper programs, such as quarto.
-  process.env.PATH = await shellPathRead
-
-  // Hard preflight: with PATH now repaired, verify every external tool and file
-  // the app cannot function without actually resolves in this runtime
-  // environment, and fail loud and fast (native error dialog + exit) if any is
-  // missing -- rather than letting a missing `just`/`latexmk`/recipe surface as
-  // a cryptic error mid-export. No fallbacks.
+  // Hard preflight: verify every external tool and file the app cannot
+  // function without actually resolves in the PATH the app was started with,
+  // and fail loud and fast (native error dialog + exit) if any is missing --
+  // rather than letting a missing `just`/`latexmk`/recipe surface as a cryptic
+  // error mid-export. The app reads no other PATH: a launcher with a wrong
+  // PATH is reported here, not repaired.
   const passed = await preflight(
     (title, message) => {
       reportError(`[Application] Preflight FAILED.\n${message}`)
