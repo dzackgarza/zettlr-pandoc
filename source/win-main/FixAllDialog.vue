@@ -7,11 +7,15 @@
         <AlertDialogDescription class="fix-all-body" data-fix-all-summary>{{ summary }}</AlertDialogDescription>
         <template v-if="plan !== undefined && fixCount > 0">
           <table class="fix-all-rules" data-fix-all-rules>
-            <tr><th>{{ trans('Rule') }}</th><th class="fix-all-count">{{ trans('Fixes') }}</th></tr>
-            <tr v-for="[rule, count] in ruleCounts" v-bind:key="rule">
-              <td><code>{{ rule }}</code></td>
-              <td class="fix-all-count">{{ count }}</td>
-            </tr>
+            <thead>
+              <tr><th>{{ trans('Rule') }}</th><th class="fix-all-count">{{ trans('Fixes') }}</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="[rule, count] in ruleCounts" v-bind:key="rule">
+                <td><code>{{ rule }}</code></td>
+                <td class="fix-all-count">{{ count }}</td>
+              </tr>
+            </tbody>
           </table>
           <p class="fix-all-heading">{{ trans('Documents') }}</p>
           <ul class="fix-all-documents" data-fix-all-documents>
