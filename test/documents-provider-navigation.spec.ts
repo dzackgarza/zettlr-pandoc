@@ -107,7 +107,8 @@ describe('Documents-provider navigation join (review C6)', function () {
         synchronizeDatabases: async (_libraries: string[]) => {}
       },
       recentDocs: {
-        add: (_path: string) => {}
+        add: (_path: string) => {},
+        markEdited: (_path: string) => {}
       },
       // The manager drives the references provider's live overlay at its
       // mutation points (issue #53); this spec asserts navigation, not

@@ -68,6 +68,7 @@ import type { DirBindQuartoManifestAPI, DirBindQuartoManifestOutcome } from './d
 import type { DirSettingsCommandAPI } from './dir-settings'
 import type { TikzRenderRequest, TikzRenderResult } from 'tikz-workbench/src/tikz-render'
 import type { LanguageToolIgnoredRuleEntry } from '../config/get-config-template'
+import type { RecentFiles } from '../recent-docs'
 import type { ProgrammaticallyOpenableWindows } from './open-aux-window'
 import type { FindFileAndReturnMetadataRequest, FindFileAndReturnMetadataResult } from './file-find-and-return-meta-data'
 import type { DocumentType } from '@dts/common/documents'
@@ -266,6 +267,11 @@ export type ApplicationIPCContract = {
     request: { payload: string[] }
     response: JustRepositoryCommands[]
   }
+  // Answered inline by run(): the recently opened and recently edited files.
+  'list-recent-files': {
+    request: { payload?: undefined }
+    response: RecentFiles
+  }
   'open-aux-window': {
     request: { payload: { window: ProgrammaticallyOpenableWindows, hash?: string } }
     response: unknown
@@ -449,6 +455,11 @@ export default class CommandProvider extends ProviderContract {
         undefined,
         message => { this._app.log.warning(`[Justfile commands] ${message}`) }
       )
+    } else if (command === 'list-recent-files') {
+      return {
+        opened: this._app.recentDocs.get(),
+        edited: this._app.recentDocs.getEdited()
+      } satisfies RecentFiles
     } else if (command === 'open-terminal-here' && typeof payload === 'string') {
       return await launchKitty(payload)
     } else if (

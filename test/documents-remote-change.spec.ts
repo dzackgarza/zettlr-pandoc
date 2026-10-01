@@ -83,7 +83,8 @@ describe('Documents-provider remote changes', function () {
         synchronizeDatabases: async (_libraries: string[]) => {}
       },
       recentDocs: {
-        add: (_path: string) => {}
+        add: (_path: string) => {},
+        markEdited: (_path: string) => {}
       },
       references: {
         reportAuthorityBuffer: (_filePath: string) => {},

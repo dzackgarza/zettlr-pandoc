@@ -64,12 +64,14 @@
  *
  * Description:     The Ctrl+P command launcher: a modal dialog over the
  *                  editor whose submenu tree IS the serialised application
- *                  menu, plus four dynamic groups (Go to file, Go to
- *                  heading, Search references, Export as). Labels, shortcuts and
- *                  enablement come from the serialised items; a menu leaf
- *                  executes through the menu provider's click-menu-item, the
- *                  dynamic rows through their typed providers. reka-ui's
- *                  Dialog owns the focus trap and the focus return.
+ *                  menu, plus the dynamic groups (Go to file, Recently
+ *                  opened files, Recently edited files, Go to heading,
+ *                  Search references, Preferences, Export as). Labels,
+ *                  shortcuts and enablement come from the serialised items;
+ *                  a menu leaf executes through the menu provider's
+ *                  click-menu-item, the dynamic rows through their typed
+ *                  providers. reka-ui's Dialog owns the focus trap and the
+ *                  focus return.
  *
  * END HEADER
  */
@@ -85,7 +87,8 @@ import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plu
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { invokeReferenceProviderRecoverably } from '../util/recoverable-reference-errors'
 import getDocumentTitle from '../util/get-document-title'
-import { relativePath } from '@common/util/renderer-path-polyfill'
+import { pathBasename, relativePath } from '@common/util/renderer-path-polyfill'
+import type { RecentFiles } from 'source/app/service-providers/recent-docs'
 import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
 import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
 import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
@@ -159,6 +162,8 @@ onBeforeMount(() => {
 
 const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: 'dynamic-group', id: 'go-to-file', label: trans('Go to file') },
+  { kind: 'dynamic-group', id: 'recent-opened', label: trans('Recently opened files') },
+  { kind: 'dynamic-group', id: 'recent-edited', label: trans('Recently edited files') },
   { kind: 'dynamic-group', id: 'go-to-heading', label: trans('Go to heading') },
   { kind: 'dynamic-group', id: 'search-references', label: trans('Search references') },
   { kind: 'dynamic-group', id: 'preferences', label: trans('Preferences') },
@@ -167,16 +172,27 @@ const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
 
 const justRepositories = ref<JustRepositoryCommands[]>([])
 
+/** The base groups, with the Justfile group before Export when a workspace has recipes. */
 const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
   if (justRepositories.value.length === 0) {
     return BASE_DYNAMIC_GROUPS
   }
+  const exportAt = BASE_DYNAMIC_GROUPS.findIndex(row => row.id === 'export')
   return [
-    ...BASE_DYNAMIC_GROUPS.slice(0, 4),
+    ...BASE_DYNAMIC_GROUPS.slice(0, exportAt),
     { kind: 'dynamic-group', id: 'justfile', label: trans('Justfile commands') },
-    ...BASE_DYNAMIC_GROUPS.slice(4)
+    ...BASE_DYNAMIC_GROUPS.slice(exportAt)
   ]
 })
+
+// The recent files view's data: both lists, newest first, fetched when the
+// view opens; the provider keeps them across restarts.
+const recentFiles = ref<RecentFiles>({ opened: [], edited: [] })
+
+async function loadRecentFiles (): Promise<boolean> {
+  recentFiles.value = await ipcRenderer.invoke('application', { command: 'list-recent-files' })
+  return true
+}
 
 /** Git-root Just recipes visible from the currently open workspace roots. */
 async function loadJustfileCommands (): Promise<boolean> {
@@ -256,21 +272,37 @@ function rememberExportProfile (profile: string): void {
   configStore.setConfigValue('export.lastUsedProfile', profile)
 }
 
-/** Every workspace document as a row: its title, and its directory relative to the root that holds it. */
+/**
+ * A document as a row: its title when the workspace knows it, else its file
+ * name; and its directory relative to the root that holds it.
+ */
+function fileRowFor (filePath: string): FileRow {
+  const descriptor = workspaceStore.descriptorMap.get(filePath)
+  const label = descriptor !== undefined && (descriptor.type === 'file' || descriptor.type === 'code')
+    ? getDocumentTitle(descriptor)
+    : pathBasename(filePath)
+  const root = workspaceStore.rootDescriptors.map(root => root.path).find(rootPath => filePath.startsWith(rootPath))
+  const relative = root === undefined ? filePath : relativePath(root, filePath)
+  const directory = relative.split('/').slice(0, -1).filter(segment => segment !== '')
+  return { kind: 'file', path: filePath, label, breadcrumb: directory }
+}
+
+/** Every workspace document as a row. */
 const fileRows = computed<FileRow[]>(() => {
-  const roots = workspaceStore.rootDescriptors.map(root => root.path)
   const rows: FileRow[] = []
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type !== 'file' && descriptor.type !== 'code') {
-      continue
+    if (descriptor.type === 'file' || descriptor.type === 'code') {
+      rows.push(fileRowFor(descriptor.path))
     }
-    const root = roots.find(rootPath => descriptor.path.startsWith(rootPath))
-    const relative = root === undefined ? descriptor.path : relativePath(root, descriptor.path)
-    const directory = relative.split('/').slice(0, -1).filter(segment => segment !== '')
-    rows.push({ kind: 'file', path: descriptor.path, label: getDocumentTitle(descriptor), breadcrumb: directory })
   }
   return rows
 })
+
+/** The recently opened files, newest first; the empty query keeps that order. */
+const recentOpenedRows = computed<FileRow[]>(() => recentFiles.value.opened.map(fileRowFor))
+
+/** The recently edited files, newest save first. */
+const recentEditedRows = computed<FileRow[]>(() => recentFiles.value.edited.map(fileRowFor))
 
 /** The active document's headings, in document order. */
 const headingRows = computed<HeadingRow[]>(() => {
@@ -317,6 +349,8 @@ const preferenceRows = computed<PreferenceRow[]>(() => buildPreferenceIndex(conf
 /** Each dynamic group's rows, by the group that lists them. */
 const dynamicGroupRows = {
   'go-to-file': fileRows,
+  'recent-opened': recentOpenedRows,
+  'recent-edited': recentEditedRows,
   'go-to-heading': headingRows,
   preferences: preferenceRows,
   justfile: justRecipeRows,
@@ -346,6 +380,8 @@ function viewRows (view: LauncherView, query: string): LauncherRow[] {
 
 /** The data a dynamic group fetches before it opens; the others read stores. */
 const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>>> = {
+  'recent-opened': loadRecentFiles,
+  'recent-edited': loadRecentFiles,
   'search-references': loadReferences,
   justfile: loadJustfileCommands,
   export: loadExportProfiles

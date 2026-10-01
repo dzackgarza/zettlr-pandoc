@@ -153,7 +153,7 @@ type DocumentManagerApp = {
     | 'writeTextFile'
   >
   log: Pick<AppServiceContainer['log'], 'error' | 'info' | 'verbose' | 'warning'>
-  recentDocs: Pick<AppServiceContainer['recentDocs'], 'add'>
+  recentDocs: Pick<AppServiceContainer['recentDocs'], 'add' | 'markEdited'>
   /**
    * The live-reference seam of the references provider (issue #53): this
    * manager is the document authority and DRIVES the provider's live
@@ -3280,6 +3280,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`)
+    this._app.recentDocs.markEdited(filePath)
     if (reviewSave !== undefined) {
       try {
         await this._reviewApplication.completeSave(reviewSave, savedSha256)
