@@ -20,16 +20,13 @@
 import { appListeners, appQuitRequests, messageBoxes, userData } from './headless-electron-harness.cjs'
 import { strict as assert } from 'assert'
 import { createPatch } from 'diff'
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
-import DocumentManager from 'source/app/service-providers/documents'
-import LogProvider from 'source/app/service-providers/log'
+import type DocumentManager from 'source/app/service-providers/documents'
 import { sha256Text } from 'source/common/util/sha256'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type { AppServiceContainer } from 'source/app/app-service-container'
-import type { MDFileDescriptor } from 'source/types/common/fsal'
+import { bootDocumentManager } from './documents-provider-seam'
 
 const SHOWN_SOURCE = 'The author is typing here.\n'
 const PROPOSED_SOURCE = 'alpha\nbeta\n'
@@ -37,34 +34,6 @@ const PROPOSED_TARGET = 'alpha\nBETA\n'
 // The quit dialog's buttons: Save, Discard, Cancel.
 const DISCARD = 1
 const CANCEL = 2
-
-function descriptorFor (filePath: string): MDFileDescriptor {
-  const content = readFileSync(filePath, 'utf-8')
-  const stat = statSync(filePath)
-  return {
-    dir: path.dirname(filePath),
-    path: filePath,
-    name: path.basename(filePath),
-    ext: path.extname(filePath),
-    size: stat.size,
-    id: '',
-    tags: [],
-    links: [],
-    citekeys: [],
-    bom: '',
-    type: 'file',
-    wordCount: 0,
-    charCount: content.length,
-    modtime: stat.mtimeMs,
-    creationtime: stat.birthtimeMs,
-    linefeed: '\n',
-    firstHeading: null,
-    yamlTitle: undefined,
-    aliases: [],
-    frontmatter: null,
-    references: extractReferences(filePath, content)
-  }
-}
 
 interface QuitEvent {
   prevented: boolean
@@ -121,59 +90,7 @@ describe('Documents-provider quit prompt', function () {
     messageBoxes.shown.length = 0
     messageBoxes.answer = undefined
 
-    const watcher = {
-      on: () => {},
-      getWatched: () => ({}),
-      watchPath: (_filePath: string) => {},
-      unwatchPath: (_filePath: string) => {},
-      shutdown: async () => {}
-    }
-    const appSeam = {
-      log: new LogProvider(),
-      config: {
-        get: () => ({
-          app: { openFiles: [], openWorkspaces: [root] },
-          editor: { autoSave: 'off' as const },
-          system: { avoidNewTabs: false },
-          appLang: 'en-US',
-          files: {
-            images: { openWith: 'zettlr' as const },
-            pdf: { openWith: 'zettlr' as const }
-          },
-          alwaysReloadFiles: false
-        }),
-        addPath: (_filePath: string) => false,
-        set: (_key: string, _value: unknown) => {}
-      },
-      fsal: {
-        getWatchdog: () => watcher,
-        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
-        loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, 'utf-8'),
-        getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
-        getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
-        testAccess: async (_filePath: string) => true,
-        writeTextFile: async (filePath: string, content: string) => {
-          writeFileSync(filePath, content, 'utf-8')
-        }
-      },
-      citeproc: {
-        synchronizeDatabases: async (_libraries: string[]) => {}
-      },
-      recentDocs: {
-        add: (_filePath: string) => {},
-        markEdited: (_filePath: string) => {}
-      },
-      stats: {
-        updateCounts: (_words: number, _characters: number) => {}
-      },
-      references: {
-        reportAuthorityBuffer: (_filePath: string) => {},
-        dropAuthorityBuffer: (_filePath: string) => {}
-      }
-    }
-
-    provider = new DocumentManager(appSeam as unknown as AppServiceContainer)
-    await provider.boot()
+    provider = await bootDocumentManager(root)
     windowId = provider.windowKeys()[0]
     leafId = provider.leafIds(windowId)[0]
   })
