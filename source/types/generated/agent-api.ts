@@ -525,6 +525,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/zotero/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search the Zotero library and get citation keys
+         * @description Searches the titles, creators and years of the top-level items in the Zotero library. Each result has its Better BibTeX citation key and whether the editor can cite it now. Search before an import: a work that is already in the library needs no import.
+         */
+        get: operations["searchZoteroItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/zotero/imports/identifier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a work to Zotero by arXiv ID, DOI, ISBN or PubMed ID
+         * @description Zotero gets the metadata of the work from the registry of the identifier, and the full text when it can. The response has the citation key of each new item. Prefer this operation when the work has an identifier.
+         */
+        post: operations["importZoteroIdentifier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/zotero/imports/url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a work to Zotero from a URL
+         * @description Zotero identifies the work at the URL with its own translators, identifier discovery and PDF recognition, and stores the full text it gets: the PDF itself when the URL is a PDF. A work that is already in the library is returned with existing true. When Zotero cannot identify the source, the 422 ZOTERO_SOURCE_NOT_IDENTIFIED error has a remediation: find the work at one of its sources and import that. Only when none has the work, send the same URL again with fallbackMetadata; the item then has the tag metadata:unresolved and is citable at once.
+         */
+        post: operations["importZoteroUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -629,7 +689,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "REVIEW_NOT_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH";
+            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "REVIEW_NOT_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH" | "ZOTERO_UNAVAILABLE" | "ZOTERO_SOURCE_NOT_IDENTIFIED" | "ZOTERO_REQUEST_FAILED";
             message: string;
             documentId?: string;
             expected?: components["schemas"]["DocumentRevision"];
@@ -641,6 +701,7 @@ export interface components {
             conflictingClaimIndices?: number[];
             /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
             descriptionSimilarity?: number;
+            remediation?: components["schemas"]["ZoteroSourceRemediation"];
         };
         AgentErrorResponse: {
             error: components["schemas"]["AgentError"];
@@ -1278,6 +1339,99 @@ export interface components {
             }[];
             diagnosticCount: number;
             counts: components["schemas"]["LintSeverityCounts"];
+        };
+        /** @description One creator of a Zotero item. A person has firstName and lastName; an institution has name. */
+        ZoteroCreator: {
+            /** @description The Zotero creator type, for example author or editor. */
+            creatorType: string;
+            firstName?: string;
+            lastName?: string;
+            name?: string;
+        };
+        ZoteroSearchItem: {
+            /** @description The Zotero item key. */
+            itemKey: string;
+            /** @description The Zotero item type, for example journalArticle or book. */
+            itemType: string;
+            /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
+            citationKey: string;
+            /** @description Absent for item types whose title field has another name. */
+            title?: string;
+            creators: components["schemas"]["ZoteroCreator"][];
+            /** @description The date as Zotero stores it, for example 1962 or 8/1962. */
+            date?: string;
+            DOI?: string;
+            url?: string;
+            /** @description The item's tags. metadata:unresolved marks an item that was saved from caller-supplied metadata and needs review. */
+            tags: string[];
+            /** @description Whether the main citation database of the editor contains citationKey, so that a citation of the item renders and exports. */
+            citable: boolean;
+        };
+        ZoteroSearchResponse: {
+            items: components["schemas"]["ZoteroSearchItem"][];
+        };
+        ZoteroAddedItem: {
+            /** @description The Zotero item key. */
+            itemKey: string;
+            /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
+            citationKey: string;
+            /** @description Whether the main citation database of the editor contained citationKey before the response was sent. The import waits for the Better BibTeX export to reach that database; false means the export did not arrive in time, and a later search shows when it does. */
+            citable: boolean;
+        };
+        ZoteroIdentifierImportRequest: {
+            /** @description An arXiv ID (2401.01234 or arXiv:2401.01234), a DOI (10.1007/BF01440955), an ISBN, or a PubMed ID. Zotero gets the metadata from the registry of the identifier. */
+            identifier: string;
+            /** @description Zotero collection keys to add the new items to. */
+            collectionKeys?: string[];
+        };
+        ZoteroIdentifierImportResponse: {
+            items: components["schemas"]["ZoteroAddedItem"][];
+        };
+        /** @description The caller's description of a source that Zotero cannot identify. Send it only after importZoteroUrl answered ZOTERO_SOURCE_NOT_IDENTIFIED and no alternative source in the remediation has the work. Take the title, authors and year from the source itself. */
+        ZoteroFallbackMetadata: {
+            title: string;
+            creators: {
+                firstName?: string;
+                lastName: string;
+            }[];
+            year: string;
+        };
+        ZoteroUrlImportRequest: {
+            /**
+             * Format: uri
+             * @description An http or https URL: an arXiv abstract page, a DOI link, a publisher page, a catalogue page, or a direct link to a PDF.
+             */
+            url: string;
+            /** @description Zotero collection keys to add the new item to. */
+            collectionKeys?: string[];
+            fallbackMetadata?: components["schemas"]["ZoteroFallbackMetadata"];
+        };
+        ZoteroUrlImportResponse: {
+            item: components["schemas"]["ZoteroAddedItem"];
+            /** @description true when the work was already in the library; that item is returned unchanged. */
+            existing: boolean;
+            /**
+             * @description How Zotero identified the source. caller_metadata means the item was made from fallbackMetadata and has the tag metadata:unresolved.
+             * @enum {string}
+             */
+            method: "web_translator" | "page_metadata" | "identifier" | "published_bibtex" | "external_service" | "pdf_recognition" | "caller_metadata";
+            /** @description The URL after redirects. */
+            finalUrl: string;
+            /** @description Attachments that Zotero could not store. The item is saved without them. */
+            attachmentFailures: {
+                title: string;
+                url: string;
+                error: string;
+            }[];
+        };
+        /** @description ZOTERO_SOURCE_NOT_IDENTIFIED: sources whose pages Zotero identifies reliably. Find the work at one of them and import that URL or identifier. Only when none has the work, send the same URL again with fallbackMetadata. */
+        ZoteroSourceRemediation: {
+            message: string;
+            alternativeSources: {
+                name: string;
+                /** @description The form of a URL or identifier at this source. */
+                example: string;
+            }[];
         };
     };
     responses: never;
@@ -2442,6 +2596,177 @@ export interface operations {
             };
             /** @description Lint failed */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    searchZoteroItems: {
+        parameters: {
+            query: {
+                /** @description Words of the title, a creator name, or a year. */
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description At most limit matching items, most recently added first. Standalone notes are left out. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoteroSearchResponse"];
+                };
+            };
+            /** @description Zotero answered with an error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Zotero or the citation database is not available */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    importZoteroIdentifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZoteroIdentifierImportRequest"];
+            };
+        };
+        responses: {
+            /** @description The new items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoteroIdentifierImportResponse"];
+                };
+            };
+            /** @description The request or the identifier is not valid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description No registry has the identifier, or a collection key does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Zotero answered with an error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Zotero or the citation database is not available */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+        };
+    };
+    importZoteroUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZoteroUrlImportRequest"];
+            };
+        };
+        responses: {
+            /** @description The new or existing item */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoteroUrlImportResponse"];
+                };
+            };
+            /** @description The request is not valid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description A collection key does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Zotero could not fetch the source, or answered with an error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentErrorResponse"];
+                };
+            };
+            /** @description Zotero or the citation database is not available */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -237,6 +237,20 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - The agent API listens on `127.0.0.1:27412` only and has no authentication. It
   serves the OpenAPI routes and, at `/mcp`, the same operations as an MCP server
   (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- Operations tagged `zotero` in `openapi.yaml` are served at `/zotero/mcp` (MCP
+  server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
+  leaves out their routes; the Custom GPT Action imports that document and has
+  a limit of 30 operations. `ZoteroLibrary` (`agent-api/zotero-library.ts`)
+  searches through the Zotero local API (`127.0.0.1:23119/api`) and imports
+  through the `/write` route of the zotero-local-write-api add-on. Zotero
+  identifies the source and fetches the metadata and the PDF; the caller sends
+  no BibTeX. A source that Zotero cannot identify answers 422
+  `ZOTERO_SOURCE_NOT_IDENTIFIED` with the add-on's remediation (known-good
+  sources). A repeat with `fallbackMetadata` (title, creators, year) saves the
+  item tagged `metadata:unresolved`. An import returns the Better BibTeX key and
+  waits until the main citation library (the Better BibTeX auto-export) has it
+  (`citable`). `just test-zotero-integration` proves this against the running
+  Zotero.
 - ChatGPT reaches `/mcp` only through the OpenAI Secure MCP Tunnel
   `tunnel_6aba3fe9f56081919348c7060b52188f`. The user unit
   `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs

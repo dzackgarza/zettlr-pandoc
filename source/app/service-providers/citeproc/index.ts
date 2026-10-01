@@ -135,6 +135,8 @@ export default class CiteprocProvider extends ProviderContract {
   private readonly databases: Map<string, DatabaseRecord>
   /** The load that runs for a database. A request for that database waits for it. */
   private readonly loading = new Map<string, Promise<void>>()
+  /** The checks of awaitMainLibraryItem calls. Each runs after every database load. */
+  private readonly loadListeners = new Set<() => void>()
 
   /**
    * This hashmap contains a mapping of citekeys --> CSLItems for quick access
@@ -173,7 +175,6 @@ export default class CiteprocProvider extends ProviderContract {
 
     // Start the watcher
     this._watcher = new FSWatcher({
-      ignored: /(^|[/\\])\../,
       persistent: true,
       ignoreInitial: true,
       // See for the following property the file source/main/modules/fsal/fsal-watchdog.ts
@@ -328,6 +329,42 @@ export default class CiteprocProvider extends ProviderContract {
   public getItem (database: CitationDatabase, citeKey: string): CSLItem | undefined {
     this.selectDatabase(database)
     return this._items[citeKey]
+  }
+
+  /**
+   * Whether the loaded main library contains the cite key. While the watcher
+   * reloads the library, it contains no key.
+   */
+  public mainLibraryHas (citeKey: string): boolean {
+    const record = this.databases.get(this.mainLibrary)
+    return record !== undefined && citeKey in record.cslData
+  }
+
+  /**
+   * Whether the main library contains the cite key now or after a load that
+   * ends within timeoutMs. An item added to Zotero reaches the main library
+   * only when Better BibTeX exports the library again and the watcher reloads
+   * it.
+   */
+  public async awaitMainLibraryItem (citeKey: string, timeoutMs: number): Promise<boolean> {
+    if (this.mainLibraryHas(citeKey)) {
+      return true
+    }
+    return await new Promise<boolean>(resolve => {
+      const check = (): void => {
+        if (!this.mainLibraryHas(citeKey)) {
+          return
+        }
+        clearTimeout(timer)
+        this.loadListeners.delete(check)
+        resolve(true)
+      }
+      const timer = setTimeout(() => {
+        this.loadListeners.delete(check)
+        resolve(false)
+      }, timeoutMs)
+      this.loadListeners.add(check)
+    })
   }
 
   public async boot (): Promise<void> {
@@ -488,6 +525,9 @@ export default class CiteprocProvider extends ProviderContract {
       this._watcher.add(databasePath)
     }
     broadcastIpcMessage('citeproc-database-updated', databasePath)
+    for (const check of [...this.loadListeners]) {
+      check()
+    }
   }
 
   /**

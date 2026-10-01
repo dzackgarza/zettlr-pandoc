@@ -76,7 +76,11 @@ import { app } from "electron";
 import { get as levenshteinDistance } from "fast-levenshtein";
 import fs from "fs";
 import http from "http";
-import OpenAPIBackend, { type Context, type Document as OpenApiDefinition } from "openapi-backend";
+import OpenAPIBackend, {
+  type Context,
+  type Document as OpenApiDefinition,
+  type Operation,
+} from "openapi-backend";
 import path from "path";
 import { fileURLToPath } from "url";
 import { type Document, parseDocument } from "yaml";
@@ -103,10 +107,14 @@ import AgentDocumentQueries, {
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
+import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
 const MAX_REQUEST_BODY_BYTES = 25 * 1024 * 1024;
+
+/** The OpenAPI tag of the operations served at /zotero/mcp instead of /mcp. */
+const ZOTERO_TAG = "zotero";
 
 /**
  * How long a request gets to finish transmitting its body before the read is
@@ -215,6 +223,11 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   FIGURE_ALREADY_EXISTS: 409,
   DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
+  ZOTERO_UNAVAILABLE: 503,
+  ZOTERO_SOURCE_NOT_IDENTIFIED: 422,
+  // A Zotero request that fails on the caller's input keeps the add-on's
+  // 400 or 404 (ZoteroLibrary.request); a failure inside Zotero is a 502.
+  ZOTERO_REQUEST_FAILED: 502,
 };
 
 class RequestTooLargeError extends Error {
@@ -350,10 +363,18 @@ export default class AgentHTTPProvider extends ProviderContract {
    * there is no second route table to keep in step with it.
    */
   private readonly _api: OpenAPIBackend;
-  /** The same operations as MCP tools at /mcp. Built at boot from the dereferenced document. */
+  /**
+   * The operations as MCP tools, built at boot from the dereferenced
+   * document: the operations tagged zotero at /zotero/mcp, all others at /mcp.
+   */
   private _mcp: AgentMcpEndpoint | undefined;
+  private _zoteroMcp: AgentMcpEndpoint | undefined;
+  /** The Zotero operations. Absent when the app has no citation provider. */
+  private readonly _zotero: ZoteroLibrary | undefined;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
+  /** The routes of the operations tagged zotero, which the served document leaves out. */
+  private readonly _zoteroRoutes: string[];
   private readonly _helpText: string;
 
   constructor(
@@ -372,6 +393,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     this._helpText = HELP_DOCUMENT;
+    this._zotero = _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc);
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -417,6 +439,13 @@ export default class AgentHTTPProvider extends ProviderContract {
       throw new Error("Agent API OpenAPI specification declares no info.version");
     }
     this._protocolVersion = version;
+    this._zoteroRoutes = Object.entries(definition.paths ?? {})
+      .filter(([, methods]) =>
+        Object.values(methods ?? {}).some(
+          (operation) => typeof operation === "object" && "tags" in operation && operation.tags?.includes(ZOTERO_TAG) === true,
+        ),
+      )
+      .map(([route]) => route);
     this._api = new OpenAPIBackend({
       definition,
       // strict: a handler named for an operation this document does not
@@ -450,8 +479,14 @@ export default class AgentHTTPProvider extends ProviderContract {
     // Compiles the document's route table and validation schemas. Done before
     // the listener binds, so the first request does not pay for it.
     await this._api.init();
-    this._mcp = new AgentMcpEndpoint(this._api.getOperations(), {
-      name: "zettlr-pandoc",
+    const operations = this._api.getOperations();
+    const isZotero = (operation: Operation): boolean => operation.tags?.includes(ZOTERO_TAG) === true;
+    this._mcp = new AgentMcpEndpoint(
+      operations.filter((operation) => !isZotero(operation)),
+      { name: "zettlr-pandoc", version: this._protocolVersion },
+    );
+    this._zoteroMcp = new AgentMcpEndpoint(operations.filter(isZotero), {
+      name: "zettlr-pandoc-zotero",
       version: this._protocolVersion,
     });
 
@@ -549,6 +584,11 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private specificationForRequest(req: http.IncomingMessage): Document {
     const specification = this._openApiSpecification.clone();
+    // The Zotero operations are tools of /zotero/mcp only. This document is
+    // the surface of /mcp, and the one the Custom GPT Action imports.
+    for (const route of this._zoteroRoutes) {
+      specification.deleteIn(["paths", route]);
+    }
     const host = req.headers.host;
     if (host !== undefined) {
       const isLoopback = /^(127\.0\.0\.1|\[::1\]|localhost)(:\d+)?$/.test(host);
@@ -644,12 +684,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
     }
-    if (url.pathname === "/mcp") {
+    if (url.pathname === "/mcp" || url.pathname === "/zotero/mcp") {
+      const endpoint = url.pathname === "/mcp" ? this._mcp : this._zoteroMcp;
       const address = this._server?.address();
-      if (this._mcp === undefined || address === undefined || address === null || typeof address === "string") {
+      if (endpoint === undefined || address === undefined || address === null || typeof address === "string") {
         throw new Error("Agent API received an MCP request before boot finished");
       }
-      await this._mcp.handle(req, res, body, `http://127.0.0.1:${address.port}`);
+      await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`);
       return;
     }
     if (method === "GET") {
@@ -1009,6 +1050,37 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) =>
         this.handleLintDocuments(res, c.request.query),
+
+      searchZoteroItems: async (
+        c: DefaultedOperationContext<"searchZoteroItems", "limit">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const zotero = this.zoteroLibrary(res);
+        if (zotero !== undefined) {
+          this.sendZoteroResult(res, await zotero.search(c.request.query.q, c.request.query.limit));
+        }
+      },
+      importZoteroIdentifier: async (
+        c: OperationContext<"importZoteroIdentifier">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const zotero = this.zoteroLibrary(res);
+        if (zotero !== undefined) {
+          this.sendZoteroResult(res, await zotero.importIdentifier(c.request.requestBody));
+        }
+      },
+      importZoteroUrl: async (
+        c: OperationContext<"importZoteroUrl">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const zotero = this.zoteroLibrary(res);
+        if (zotero !== undefined) {
+          this.sendZoteroResult(res, await zotero.importUrl(c.request.requestBody));
+        }
+      },
 
       /**
        * The document decided the request was malformed. Its Ajv errors name
@@ -1917,6 +1989,44 @@ export default class AgentHTTPProvider extends ProviderContract {
         ...AgentHTTPProvider.conflictDetail(result),
       });
     }
+  }
+
+  // ==========================================================================
+  // Zotero handlers
+  // ==========================================================================
+
+  /**
+   * The Zotero operations report whether a citation key is citable, so they
+   * need the main citation database. Without it the request is a 503.
+   */
+  private zoteroLibrary(res: http.ServerResponse): ZoteroLibrary | undefined {
+    if (this._zotero === undefined || !this._zotero.citeproc.hasMainLibrary()) {
+      this.sendError(
+        res,
+        503,
+        "CITATION_DATABASE_NOT_LOADED",
+        "The Zotero operations need the main citation database (export.cslLibrary)",
+      );
+      return undefined;
+    }
+    return this._zotero;
+  }
+
+  private sendZoteroResult<Body extends AgentApiResponseBody>(
+    res: http.ServerResponse,
+    result: ZoteroResult<Body>,
+  ): void {
+    if (result.ok) {
+      this.sendJson(res, 200, result.body);
+      return;
+    }
+    this.sendError(
+      res,
+      result.status,
+      result.code,
+      result.message,
+      result.remediation === undefined ? undefined : { remediation: result.remediation },
+    );
   }
 
   // ==========================================================================
