@@ -14,7 +14,8 @@
         selected: selectedFile !== undefined && item.path === selectedFile.path,
         active: activeFile !== undefined && item.path === activeFile.path,
         'has-meta-info': fileMeta,
-        directory: item.type === 'directory'
+        directory: item.type === 'directory',
+        'is-ignored': isIgnored
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
@@ -170,7 +171,7 @@ import PopoverFileProps from './util/PopoverFileProps.vue'
 
 import { ref, computed, toRef, watch, onMounted, onUnmounted } from 'vue'
 import { type AnyDescriptor, type MDFileDescriptor } from '@dts/common/fsal'
-import { useConfigStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useIgnoreRulesStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { useItemComposable } from './util/item-composable'
 import type { FSALEventPayload } from 'source/app/service-providers/fsal'
 import { eventsChangeChildren } from './util/events-change-children'
@@ -196,6 +197,14 @@ const configStore = useConfigStore()
 const tagStore = useTagsStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
+const ignoreRulesStore = useIgnoreRulesStore()
+
+// An ignore rule matches this item. The app lists such an item only while
+// the reveal toggle is on.
+const isIgnored = computed(() => {
+  return ignoreRulesStore.sources.showIgnored &&
+    ignoreRulesStore.filter.matches(props.item.path, props.item.type === 'directory')
+})
 
 const shouldCountChars = computed(() => configStore.config.editor.countChars)
 const writingTargets = computed(() => windowStateStore.writingTargets)
@@ -456,6 +465,7 @@ body {
       }
 
       &.has-meta-info { height: 70px; }
+      &.is-ignored { opacity: 0.58; }
 
       // The meta information div in the extended file list
       div.meta-info {

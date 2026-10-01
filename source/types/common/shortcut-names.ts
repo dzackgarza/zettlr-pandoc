@@ -56,6 +56,7 @@ export const WINDOW_SHORTCUT_NAMES = [
   'copy-as-html',
   'copy-current-id',
   'delete-file',
+  'edit-ignore-rules',
   'edit-quicktex',
   'edit-snippets',
   'export',

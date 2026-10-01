@@ -35,7 +35,7 @@ export type FsalIPCContract = {
    * channel `fsal-ignore-rules` each time they change.
    */
   'get-ignore-rules': {
-    request: {}
+    request: { payload?: undefined }
     response: IgnoreRuleSources
   }
   /** Replaces the rules file of an open workspace. */

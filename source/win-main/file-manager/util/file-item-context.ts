@@ -20,6 +20,7 @@ import type { WindowControlsIPCAPI } from 'source/app/service-providers/windows'
 import { useConfigStore, useWorkspaceStore } from 'source/pinia'
 import { projectMembershipForPath } from '@common/util/explorer-ordering'
 import showToast from '@common/util/show-toast'
+import { ignoreMenuItems } from './ignore-menu'
 
 const ipcRenderer = window.ipc
 
@@ -40,6 +41,7 @@ export function displayFileContext (event: MouseEvent, fileObject: MDFileDescrip
       id: 'properties',
       type: 'normal'
     },
+    ...ignoreMenuItems(fileObject),
     {
       type: 'separator'
     },

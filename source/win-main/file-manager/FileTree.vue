@@ -192,7 +192,7 @@ import { trans } from '@common/i18n-renderer'
 import TreeItem from './TreeItem.vue'
 import matchQuery from './util/match-query'
 import { ref, computed } from 'vue'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
+import { useConfigStore, useDocumentTreeStore, useIgnoreRulesStore, useWindowStateStore } from 'source/pinia'
 import { useWorkspaceStore } from 'source/pinia/workspace-store'
 import { retrieveChildrenAndSort } from './util/retrieve-children-and-sort'
 import type {
@@ -250,6 +250,7 @@ const workspaceStore = useWorkspaceStore()
 const windowStateStore = useWindowStateStore()
 const documentTreeStore = useDocumentTreeStore()
 const configStore = useConfigStore()
+const ignoreRulesStore = useIgnoreRulesStore()
 
 const rootDescriptors = computed(() => workspaceStore.rootDescriptors)
 const hasWorkspaceRoots = computed(() => {
@@ -556,16 +557,22 @@ function workspaceRootContextMenu (event: MouseEvent): void {
       action () { collapseAll(collapseRoots) }
     },
     {
-      id: 'explorer-show-hidden-directories',
-      label: trans('Show hidden folders'),
+      id: 'explorer-show-ignored',
+      label: trans('Show hidden files and folders'),
       type: 'checkbox',
-      checked: configStore.config.fileManager.showHiddenDirectories,
+      checked: configStore.config.fileManager.showIgnored,
       action () {
         configStore.setConfigValue(
-          'fileManager.showHiddenDirectories',
-          !configStore.config.fileManager.showHiddenDirectories
+          'fileManager.showIgnored',
+          !configStore.config.fileManager.showIgnored
         )
       }
+    },
+    {
+      id: 'explorer-edit-ignore-rules',
+      label: trans('Edit filters…'),
+      type: 'normal',
+      action () { ignoreRulesStore.editing = true }
     },
     {
       label: trans('Sort workspaces…'),
