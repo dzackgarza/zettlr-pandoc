@@ -161,15 +161,36 @@ export function wikilinkResolutions(
   }));
 }
 
+/**
+ * The part of the Flowmark context that this app fixes: the packages of the
+ * host compile environment and the reference vocabulary. It is an input of
+ * every lint, so the lint cache keys results by it.
+ */
+export const FLOWMARK_HOST_VOCABULARY = {
+  // Pandoc's default LaTeX template loads these for mathematical output.
+  // Keep this host compile environment in context rather than pretending
+  // AMS commands are TeX/LaTeX core in Flowmark.
+  packages: ["amsmath", "amssymb"],
+  references: {
+    reference_families: [...REFERENCE_FAMILIES],
+    theorem_families: THEOREM_FAMILY_METADATA.map((metadata) => metadata.prefix),
+    family_aliases: Object.fromEntries(
+      QUARTO_FAMILY_ALIASES.map((alias) => [alias.prefix, alias.family]),
+    ),
+    referenceable_div_classes: [...REFERENCEABLE_DIV_CLASSES],
+    proof_div_classes: Object.entries(SEMANTIC_DIV_CLASSES)
+      .filter(([, family]) => family === "proof")
+      .map(([name]) => name),
+    theorem_class_to_prefix: { ...THEOREM_CLASS_TO_PREFIX },
+  },
+};
+
 export async function buildFlowmarkLintContext(
   text: string,
   documentPath: string,
   source: FlowmarkLintContextSource,
   options: FlowmarkLintDocumentOptions = {},
 ): Promise<Record<string, unknown>> {
-  const proofDivClasses = Object.entries(SEMANTIC_DIV_CLASSES)
-    .filter(([, family]) => family === "proof")
-    .map(([name]) => name);
   const tikzCompileDiagnostics = await collectTikzCompilerFindings(
     text,
     documentPath,
@@ -184,20 +205,10 @@ export async function buildFlowmarkLintContext(
       ...(source.env.TEXINPUTS === undefined ? {} : { texinputs: source.env.TEXINPUTS }),
       ...(options.projectRoots === undefined ? {} : { project_roots: options.projectRoots }),
       macro_sources: [...source.macroSources],
-      // Pandoc's default LaTeX template loads these for mathematical output.
-      // Keep this host compile environment in context rather than pretending
-      // AMS commands are TeX/LaTeX core in Flowmark.
-      packages: ["amsmath", "amssymb"],
+      packages: [...FLOWMARK_HOST_VOCABULARY.packages],
     },
     references: {
-      reference_families: [...REFERENCE_FAMILIES],
-      theorem_families: THEOREM_FAMILY_METADATA.map((metadata) => metadata.prefix),
-      family_aliases: Object.fromEntries(
-        QUARTO_FAMILY_ALIASES.map((alias) => [alias.prefix, alias.family]),
-      ),
-      referenceable_div_classes: [...REFERENCEABLE_DIV_CLASSES],
-      proof_div_classes: proofDivClasses,
-      theorem_class_to_prefix: { ...THEOREM_CLASS_TO_PREFIX },
+      ...FLOWMARK_HOST_VOCABULARY.references,
       ...(options.bibliographies === undefined ? {} : { bibliographies: options.bibliographies }),
       ...(options.references === undefined ? {} : options.references),
     },

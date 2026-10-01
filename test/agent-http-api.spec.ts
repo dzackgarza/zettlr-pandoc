@@ -544,7 +544,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       homeDirectory: authoringHome,
       env: {},
       userDataDirectory: lintUserData,
-      buildIdentity: "test",
     });
     await documentLint.boot();
     httpProvider = new AgentHTTPProvider(

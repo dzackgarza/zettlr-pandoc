@@ -38,7 +38,6 @@ describe("document lint cache", function () {
       homeDirectory: home,
       env: {},
       userDataDirectory,
-      buildIdentity: "test",
     });
     providers.push(provider);
     return provider;
