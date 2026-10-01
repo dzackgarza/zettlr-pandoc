@@ -168,7 +168,7 @@ export default class FileRename extends ZettlrCommand {
           return // Do not update the links.
         }
 
-        await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
+        await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents)
       }
     } catch (err: unknown) {
       this._app.log.error(`Error during renaming file: ${err instanceof Error ? err.message : 'Unknown error'}`, err)

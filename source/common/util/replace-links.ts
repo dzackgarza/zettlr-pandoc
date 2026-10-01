@@ -7,7 +7,7 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Rewrites the wikilinks of a file, and retargets the links
+ * Description:     Computes the rewrites that retarget the wikilinks of a file
  *                  after a file or a directory moved
  *
  * END HEADER
@@ -19,8 +19,15 @@ import { type ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
 import { type WikilinkIndex } from './wikilink-resolution'
 import { splitWikilinkTarget } from './wikilink-target'
 
+/** One rewritten link target: the range of the old target and its new text. */
+export interface LinkReplacement {
+  from: number
+  to: number
+  text: string
+}
+
 /**
- * Rewrites the targets of the wikilinks in a Markdown document. `rewrite`
+ * The rewrites of the wikilink targets in a Markdown document. `rewrite`
  * receives each link's target, before its `#` fragment, and returns the new
  * target, or undefined to leave the link as it is. The fragment and the label
  * are kept.
@@ -28,13 +35,13 @@ import { splitWikilinkTarget } from './wikilink-target'
  * @param   {string}   markdown  The document in question.
  * @param   {Function} rewrite   The new target for a link target
  *
- * @return  {string}             The new document
+ * @return  {LinkReplacement[]}  The replacements, in document order
  */
-export default function replaceLinks (markdown: string, rewrite: (target: string) => string|undefined): string {
+function linkReplacements (markdown: string, rewrite: (target: string) => string|undefined): LinkReplacement[] {
   const ast = markdownToAST(markdown)
   const links = extractASTNodes(ast, 'ZettelkastenLink') as ZettelkastenLink[]
 
-  const replacements: Array<{ from: number, to: number, text: string }> = []
+  const replacements: LinkReplacement[] = []
   for (const link of links) {
     const { target, fragment } = splitWikilinkTarget(link.target)
     const replacement = rewrite(target)
@@ -46,13 +53,7 @@ export default function replaceLinks (markdown: string, rewrite: (target: string
       text: fragment === undefined ? replacement : `${replacement}#${fragment}`
     })
   }
-
-  // Apply the replacements back to front, so that each keeps its offsets
-  for (const replacement of replacements.sort((a, b) => b.from - a.from)) {
-    markdown = markdown.slice(0, replacement.from) + replacement.text + markdown.slice(replacement.to)
-  }
-
-  return markdown
+  return replacements.sort((a, b) => a.from - b.from)
 }
 
 /** A file or a directory that moved from `from` to `to`. */
@@ -98,8 +99,8 @@ export function retargetedLink (
 }
 
 /**
- * Retargets the links in `markdown`, the text of the document that was at
- * `sourcePath` before `move` (see `retargetedLink`).
+ * The replacements that retarget the links in `markdown`, the text of the
+ * document that was at `sourcePath` before `move` (see `retargetedLink`).
  */
 export function retargetLinks (
   markdown: string,
@@ -107,6 +108,6 @@ export function retargetLinks (
   move: PathMove,
   before: WikilinkIndex,
   after: WikilinkIndex
-): string {
-  return replaceLinks(markdown, target => retargetedLink(target, sourcePath, move, before, after))
+): LinkReplacement[] {
+  return linkReplacements(markdown, target => retargetedLink(target, sourcePath, move, before, after))
 }
