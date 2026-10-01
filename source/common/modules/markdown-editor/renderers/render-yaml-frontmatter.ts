@@ -41,6 +41,43 @@ import {
 
 const YAML_COMMIT_DELAY_MS = 250
 
+// The nested editor sits inside the outer editor's DOM, so every descendant
+// rule written for the outer editor matches it too: the document margin on
+// `.cm-scroller` (MainEditor.vue) and the prose font and opaque background of
+// the base theme. The `.yaml-frontmatter-editor` prefix outranks those rules.
+// One theme for all cards: `EditorView.theme` mounts a new sheet per call.
+const nestedEditorTheme = EditorView.theme({
+  '.yaml-frontmatter-editor &.cm-editor': {
+    width: '100%',
+    color: 'inherit',
+    backgroundColor: 'transparent',
+    fontSize: '0.9em'
+  },
+  '.yaml-frontmatter-editor &.cm-editor.cm-focused': {
+    outline: 'none'
+  },
+  '.yaml-frontmatter-editor &.cm-editor > .cm-scroller': {
+    padding: '0',
+    overflowX: 'auto',
+    font: 'inherit',
+    fontFamily: 'var(--zettlr-editor-code-font)',
+    lineHeight: '1.5',
+    color: 'inherit',
+    backgroundColor: 'transparent'
+  },
+  '.yaml-frontmatter-editor &.cm-editor .cm-content': {
+    minHeight: '2.2em',
+    padding: '0.55em 0.75em',
+    caretColor: 'var(--zettlr-editor-primary-color)'
+  },
+  '.yaml-frontmatter-editor &.cm-editor .cm-line': {
+    padding: '0'
+  },
+  '.yaml-frontmatter-editor &.cm-editor .cm-gutters': {
+    display: 'none'
+  }
+})
+
 interface FrontmatterRange {
   blockFrom: number
   blockTo: number
@@ -183,32 +220,7 @@ class YamlFrontmatterWidget extends WidgetType {
         updateSummaryDom(card, this.latestSource)
         this.scheduleCommit()
       }),
-      EditorView.theme({
-        '&': {
-          width: '100%',
-          color: 'inherit',
-          backgroundColor: 'transparent',
-          fontSize: '0.9em'
-        },
-        '&.cm-focused': {
-          outline: 'none'
-        },
-        '.cm-scroller': {
-          overflowX: 'auto',
-          fontFamily: 'var(--zettlr-editor-code-font)'
-        },
-        '.cm-content': {
-          minHeight: '2.2em',
-          padding: '0.55em 0.75em',
-          caretColor: 'var(--zettlr-editor-primary-color)'
-        },
-        '.cm-line': {
-          padding: '0'
-        },
-        '.cm-gutters': {
-          display: 'none'
-        }
-      })
+      nestedEditorTheme
     ]
   }
 
@@ -382,7 +394,9 @@ export const renderYamlFrontmatter = [
       border: '1px solid color-mix(in srgb, currentColor 16%, transparent)',
       borderRadius: '0.35em'
     },
-    '.yaml-frontmatter-header': {
+    // The header is a <button>; the card class outranks the window's
+    // platform button rules (generic.css `body.linux.dark button`).
+    '.yaml-frontmatter-card > .yaml-frontmatter-header': {
       display: 'flex',
       alignItems: 'center',
       gap: '0.45em',
@@ -393,11 +407,12 @@ export const renderYamlFrontmatter = [
       backgroundColor: 'color-mix(in srgb, currentColor 2.5%, transparent)',
       border: '0',
       borderBottom: '1px solid color-mix(in srgb, currentColor 13%, transparent)',
+      borderRadius: '0',
       font: 'inherit',
       textAlign: 'left',
       cursor: 'pointer'
     },
-    '.yaml-frontmatter-header:focus-visible': {
+    '.yaml-frontmatter-card > .yaml-frontmatter-header:focus-visible': {
       outline: '2px solid var(--zettlr-editor-primary-color)',
       outlineOffset: '-2px'
     },
