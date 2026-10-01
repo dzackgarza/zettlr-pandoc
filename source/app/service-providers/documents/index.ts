@@ -660,6 +660,9 @@ export default class DocumentManager
   /** Path → documentId mapping for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>
 
+  /** The load of each document that is loading now (getDocument). */
+  private readonly _pendingLoads = new Map<string, Promise<{ content: string, type: DocumentType, startVersion: number }>>()
+
   /**
    * The one owner of a document's collaboration transactions — its review
    * and its annotations: per-document locking, persist-before-commit
@@ -1369,6 +1372,13 @@ export default class DocumentManager
   public async getDocument(
     filePath: string,
   ): Promise<{ content: string; type: DocumentType; startVersion: number }> {
+    // A load adds the document before it reattaches the sidecar, so a
+    // request during a load waits for that load instead of reading the
+    // document half-loaded or loading it a second time.
+    const pendingLoad = this._pendingLoads.get(filePath)
+    if (pendingLoad !== undefined) {
+      await pendingLoad
+    }
     const existingDocument = this.documents.find((doc) => doc.filePath === filePath)
     if (existingDocument !== undefined) {
       return {
@@ -1378,6 +1388,18 @@ export default class DocumentManager
       }
     }
 
+    const load = this._loadDocument(filePath)
+    this._pendingLoads.set(filePath, load)
+    try {
+      return await load
+    } finally {
+      this._pendingLoads.delete(filePath)
+    }
+  }
+
+  private async _loadDocument(
+    filePath: string,
+  ): Promise<{ content: string; type: DocumentType; startVersion: number }> {
     // TODO: We also need to be able to load files not present in the file tree!
     const descriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath)
     if (descriptor === undefined || descriptor.type === 'other') {
