@@ -52,6 +52,13 @@ async function zoteroItem(itemKey: string): Promise<{ citationKey: string; title
   return ((await response.json()) as { data: { citationKey: string; title: string } }).data;
 }
 
+/** A CSL title without the case-protection spans that Better BibTeX braces become. */
+function cslTitle(citeproc: CiteprocProvider, citationKey: string): string {
+  const title = citeproc.getItem("main", citationKey)?.title;
+  if (typeof title !== "string") throw new Error(`The main library has no title for ${citationKey}`);
+  return title.replace(/<span class="nocase">|<\/span>/g, "");
+}
+
 describe("Zotero operations of the agent API against live Zotero (#142)", function () {
   this.timeout(240000);
 
@@ -102,7 +109,7 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
     assert.equal(item.citationKey, stored.citationKey);
     assert.equal(stored.title, "Deep Residual Learning for Image Recognition");
     assert.equal(item.citable, true);
-    assert.equal(citeproc.getItem("main", item.citationKey)?.title, stored.title);
+    assert.equal(cslTitle(citeproc, item.citationKey), stored.title);
   });
 
   it("answers an unidentified page with remediation, and saves it from fallback metadata", async function () {
@@ -113,7 +120,8 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
     assert.equal(refused.code, "ZOTERO_SOURCE_NOT_IDENTIFIED");
     assert.ok(refused.remediation?.alternativeSources.some((source) => source.name === "arXiv"));
 
-    const title = `zettlr-zotero-fallback-${uid}`;
+    // Better BibTeX title-cases an English title; a title-cased one is exported unchanged.
+    const title = `Fallback Item ${uid.toUpperCase()}`;
     const saved = await zotero.importUrl({
       url,
       fallbackMetadata: { title, creators: [{ firstName: "Ada", lastName: "Fallbackauthor" }], year: "2019" },
@@ -123,7 +131,7 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
     assert.equal(saved.body.method, "caller_metadata");
     assert.equal(saved.body.existing, false);
     assert.equal(saved.body.item.citable, true);
-    assert.equal(citeproc.getItem("main", saved.body.item.citationKey)?.title, title);
+    assert.equal(cslTitle(citeproc, saved.body.item.citationKey), title);
 
     const found = await zotero.search(title, 5);
     assert.ok(found.ok, JSON.stringify(found));
