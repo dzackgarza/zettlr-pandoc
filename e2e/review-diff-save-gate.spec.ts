@@ -396,6 +396,19 @@ describe('saving after accepting a reviewed change', function () {
     await teardown(running)
   })
 
+  // A failed test leaves the window as it found it: the screenshot and the
+  // provider's documents are the evidence the hosted run keeps.
+  afterEach(async function () {
+    const test = this.currentTest
+    if (test?.state !== 'failed' || running.browser === undefined || running.client === undefined) {
+      return
+    }
+    const page = await findEditorPage(running.browser, 10_000)
+    const name = test.title.replace(/[^a-z0-9]+/giu, '-')
+    screenshots.set(`failed-${name}.png`, await page.screenshot())
+    console.log(`Documents after the failure of "${test.title}": ${JSON.stringify(await running.client.get('/v1/documents'))}`)
+  })
+
   it('writes the accepted text to disk instead of refusing the save', async function () {
     const activeClient = requireInitialized(running.client, 'The Agent API client must be initialized')
     const activeFixtureRoot = requireInitialized(running.fixtureRoot, 'The fixture root must be initialized')
