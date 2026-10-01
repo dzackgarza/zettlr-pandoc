@@ -67,7 +67,8 @@ export default function getMenu (
     }]
   }
 
-  const docs = recentDocs.get()
+  // The launcher lists the whole history; the menu shows the newest ten.
+  const docs = recentDocs.get().slice(0, 10)
   recentDocsItem = {
     id: 'menu.recent_docs',
     label: trans('Recent files'),

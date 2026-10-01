@@ -26,7 +26,7 @@ import type { PreferencesGroups } from '@dts/common/preferences'
 /** A group's address from the root: one key per nesting level. */
 export type GroupPath = readonly string[]
 
-export type DynamicGroupId = 'go-to-file' | 'go-to-heading' | 'search-references' | 'preferences' | 'justfile' | 'export'
+export type DynamicGroupId = 'go-to-file' | 'recent-opened' | 'recent-edited' | 'go-to-heading' | 'search-references' | 'preferences' | 'justfile' | 'export'
 
 export interface MenuLeafRow {
   kind: 'menu-leaf'
@@ -58,7 +58,7 @@ export interface FileRow {
   kind: 'file'
   path: string
   label: string
-  /** The workspace-relative directory of the file. */
+  /** The directory of the file, relative to the workspace root that holds it; absolute outside every root. */
   breadcrumb: readonly string[]
 }
 

@@ -353,6 +353,8 @@ export interface ConfigOptions {
     sidebarView: SidebarViewId
     /** The sidebar sections the user collapsed; the rest are expanded. */
     sidebarCollapsedSections: SidebarSectionId[]
+    /** How many files the launcher's recently opened and recently edited lists each keep. */
+    recentFilesLimit: number
   }
   system: {
     deleteOnFail: boolean
@@ -417,6 +419,7 @@ export function getConfigTemplate (): ConfigOptions {
       sidebarView: 'explorer',
       // Outline, Book and Related files open on demand under their view's body.
       sidebarCollapsedSections: [ 'outline', 'book', 'relatedFiles' ],
+      recentFilesLimit: 50,
     },
     // Visible attachment filetypes
     attachmentExtensions: [],
