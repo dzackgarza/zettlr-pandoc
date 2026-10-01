@@ -110,7 +110,8 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
         },
         {
           type: 'checkbox',
-          label: trans('Show hidden files and folders'),
+          label: trans('Turn the filters off'),
+          info: trans('No rule hides a file or folder anywhere in the app. The file manager dims each file and folder that a rule matches.'),
           model: 'fileManager.showIgnored'
         }
       ]

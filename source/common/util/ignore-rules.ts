@@ -28,7 +28,10 @@ export interface IgnoreRuleSources {
   globalRules: readonly string[]
   /** Each open workspace root and the text of its rules file ('' when it has none). */
   workspaceRules: ReadonlyMap<string, string>
-  /** The configuration value `fileManager.showIgnored`: the reveal toggle. */
+  /**
+   * The configuration value `fileManager.showIgnored`. While it is true no rule
+   * hides a path from any consumer; the file manager only marks the matches.
+   */
   showIgnored: boolean
 }
 

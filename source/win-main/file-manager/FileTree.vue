@@ -558,7 +558,7 @@ function workspaceRootContextMenu (event: MouseEvent): void {
     },
     {
       id: 'explorer-show-ignored',
-      label: trans('Show hidden files and folders'),
+      label: trans('Turn the filters off'),
       type: 'checkbox',
       checked: configStore.config.fileManager.showIgnored,
       action () {

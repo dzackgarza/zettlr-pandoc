@@ -12,6 +12,7 @@
             <span class="ignore-rules-heading">{{ trans('All workspaces') }}</span>
             <textarea
               v-model="globalDraft"
+              class="ignore-rules-input"
               rows="5"
               spellcheck="false"
               data-ignore-rules-global
@@ -28,6 +29,7 @@
             </span>
             <textarea
               v-model="workspaceDrafts[root]"
+              class="ignore-rules-input"
               rows="5"
               spellcheck="false"
               v-bind:data-ignore-rules-workspace="root"
@@ -199,7 +201,9 @@ function save (): void {
     color: var(--chrome-text-muted);
   }
 
-  textarea {
+  // Three classes outrank the platform rules for every input in
+  // generic.css (body.<platform>.dark textarea).
+  .ignore-rules-sources textarea.ignore-rules-input {
     box-sizing: border-box;
     width: 100%;
     margin: 0;
@@ -234,7 +238,7 @@ function save (): void {
     gap: 6px;
   }
 
-  button.ignore-rules-button {
+  .ignore-rules-actions button.ignore-rules-button {
     appearance: none;
     margin: 0;
     padding: 5px 12px;
