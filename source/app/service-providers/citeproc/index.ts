@@ -175,7 +175,6 @@ export default class CiteprocProvider extends ProviderContract {
 
     // Start the watcher
     this._watcher = new FSWatcher({
-      ignored: /(^|[/\\])\../,
       persistent: true,
       ignoreInitial: true,
       // See for the following property the file source/main/modules/fsal/fsal-watchdog.ts
