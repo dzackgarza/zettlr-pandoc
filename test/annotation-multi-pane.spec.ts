@@ -34,9 +34,6 @@
  */
 
 import { strict as assert } from "assert";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
@@ -50,7 +47,10 @@ import {
   type AnnotationFailure,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { collaborationSessionFor } from "source/app/service-providers/documents/review-diff-store";
-import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
+import {
+  DocumentAuthority as SharedDocumentAuthority,
+  temporarySidecarDirectory,
+} from "./collaboration-test-authority";
 import type { TextAnnotation } from "@dts/common/annotation-domain";
 
 const DOCUMENT_ID = "doc-multi-pane";
@@ -77,7 +77,7 @@ function harness(): { authority: DocumentAuthority; service: CollaborationApplic
   const authority = new DocumentAuthority();
   const service = new CollaborationApplicationService({
     authority,
-    sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-multi-pane-")),
+    sidecarDirectory: temporarySidecarDirectory("zettlr-multi-pane-"),
     emit: () => undefined,
     warn: () => undefined,
   });
