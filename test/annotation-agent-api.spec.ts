@@ -285,7 +285,6 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         homeDirectory: scratch,
         env: {},
         userDataDirectory: scratch,
-        buildIdentity: "test",
       }),
     });
     await httpProvider.boot();

@@ -466,7 +466,8 @@ of an isolated instance are in the first comment of #132.
   API, goes through `DocumentLintProvider`
   (`source/app/service-providers/document-lint/`). It keys a result by the
   document text hash and a digest of every other input Flowmark reads: the
-  build, the Flowmark install (PEP 610 `commit_id`, `flowmarkInstallIdentity`),
+  fixed vocabulary that the app sends (`FLOWMARK_HOST_VOCABULARY`), the
+  Flowmark install (PEP 610 `commit_id`, `flowmarkInstallIdentity`),
   the content hashes of the macro tree, `mathjax-macros.json`, the TikZ
   template graph, the bibliographies and the Flowmark config files,
   `TEXINPUTS`, and the

@@ -176,8 +176,7 @@ export class AppServiceContainer {
       lrt: this._lrtProvider,
       homeDirectory: app.getPath('home'),
       env: process.env,
-      userDataDirectory: app.getPath('userData'),
-      buildIdentity: `${app.getVersion()} ${__GIT_COMMIT_HASH__}`
+      userDataDirectory: app.getPath('userData')
     })
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,

@@ -13,7 +13,7 @@
  *
  *                  A cached result is current while its key still matches:
  *                  the revision of the text it linted, plus every input to
- *                  the Flowmark run (the installed Flowmark, this build, the
+ *                  the Flowmark run (the installed Flowmark, the vocabulary that the app sends, the
  *                  reference resolutions that Flowmark receives for the
  *                  document, the macro sources, the TikZ template graph, the
  *                  document's bibliographies and project roots, and the
@@ -62,6 +62,7 @@ import {
 } from '../../util/document-lint'
 import { documentLintAuthority } from '../../util/document-bibliographies'
 import {
+  FLOWMARK_HOST_VOCABULARY,
   flowmarkReferenceContext,
   wikilinkResolutions,
   workspaceDefinitions,
@@ -118,8 +119,6 @@ export interface DocumentLintDependencies {
   homeDirectory: string
   env: NodeJS.ProcessEnv
   userDataDirectory: string
-  /** The running build, so a new build does not reuse results of another's context. */
-  buildIdentity: string
 }
 
 interface CacheFile {
@@ -492,7 +491,7 @@ export default class DocumentLintProvider extends ProviderContract {
     const macroRoot = path.join(this.deps.homeDirectory, '.pandoc', 'styles', 'macros')
     const mathJaxMacros = path.join(this.deps.homeDirectory, '.pandoc', 'templates', 'css', 'mathjax-macros.json')
     return digest({
-      build: this.deps.buildIdentity,
+      vocabulary: FLOWMARK_HOST_VOCABULARY,
       flowmark: this.flowmarkIdentity,
       macros: [ ...await pass.tree(macroRoot), await pass.stamp(mathJaxMacros) ],
       tikz: pass.tikzTemplate(this.tikzRenderConfig().templatePath),
