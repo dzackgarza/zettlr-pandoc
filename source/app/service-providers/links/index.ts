@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
 import { WikilinkIndex, type WikilinkDocument, type WikilinkResolution } from '@common/util/wikilink-resolution'
 import { splitWikilinkTarget } from '@common/util/wikilink-target'
@@ -26,6 +26,15 @@ import type { FSALEventPayload } from '../fsal'
 import type { WikilinkEdge } from './ipc-contract'
 import _ from 'underscore'
 import { movedPath, retargetedLink, retargetLinks, type PathMove } from '@common/util/replace-links'
+import { hashDocumentSource } from '@common/pandoc-util/extract-references'
+import type { WorkspaceTextEdit } from '@dts/common/references'
+import type { SaveFileResult } from '@dts/common/documents'
+import { runWorkspaceEditTransaction, saveUpdatedBuffers, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
+
+/** The document authority a retarget edits through: open buffers and their save. */
+export interface LinkRetargetAuthority extends WorkspaceEditAuthority {
+  saveFile: (filePath: string) => Promise<SaveFileResult>
+}
 
 /** The wikilinks of every file and the index they resolve against. */
 export interface WikilinkSnapshot {
@@ -170,17 +179,36 @@ export default class LinkProvider extends ProviderContract {
 
   /**
    * Rewrites the wikilinks of `files` (see `filesChangedByMove`) so that each
-   * names the document it named before `move`.
+   * names the document it named before `move`. The rewrite is one workspace
+   * edit: an open document changes in its buffer, which is then saved, and a
+   * closed one on disk. An open document never depends on the file watcher,
+   * which drops a second change of one file within 50 ms.
    */
-  async retargetAfterMove (before: WikilinkSnapshot, move: PathMove, files: string[]): Promise<void> {
+  async retargetAfterMove (before: WikilinkSnapshot, move: PathMove, files: string[], documents: LinkRetargetAuthority): Promise<void> {
+    const edits: WorkspaceTextEdit[] = []
+    const expectedSourceHashes: Record<string, string> = {}
     for (const sourcePath of files) {
       const filePath = movedPath(sourcePath, move)
-      const content = await this._fsal.readTextFile(filePath)
-      const newContent = retargetLinks(content, sourcePath, move, before.index, this._index)
-      if (newContent !== content) {
-        await this._fsal.writeTextFile(filePath, newContent)
-        this._logger.info(`[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`)
+      const buffer = documents.readMarkdownBufferContent(filePath)
+      const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath)
+      const replacements = retargetLinks(content, sourcePath, move, before.index, this._index)
+      if (replacements.length === 0) {
+        continue
       }
+      expectedSourceHashes[filePath] = hashDocumentSource(content)
+      edits.push(...replacements.map(({ from, to, text }) => ({ documentPath: filePath, range: { from, to }, insert: text })))
+    }
+    if (edits.length === 0) {
+      return
+    }
+
+    const result = await runWorkspaceEditTransaction(documents, app.getPath('userData'), { edits, expectedSourceHashes })
+    if (result.status === 'conflict') {
+      throw new Error(`[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`)
+    }
+    await saveUpdatedBuffers(async filePath => await documents.saveFile(filePath), result.openBuffersUpdated)
+    for (const filePath of [ ...result.openBuffersUpdated, ...result.closedFilesWritten ]) {
+      this._logger.info(`[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`)
     }
   }
 

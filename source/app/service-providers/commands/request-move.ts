@@ -90,7 +90,7 @@ export default class RequestMove extends ZettlrCommand {
     // Keep every wikilink pointing at the document it named before the move
     const move = { from: from.path, to: newPath }
     const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move)
-    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
+    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents)
 
     return true
   }
