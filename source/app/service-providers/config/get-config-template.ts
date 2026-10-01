@@ -150,14 +150,17 @@ export interface ConfigOptions {
     sortWorkspacesManually: boolean
     /** Expanded directory rows in the Explorer, persisted across restarts. */
     expandedDirectories: string[];
-    /** Explicitly hidden directory paths. Descendants are hidden by containment. */
-    hiddenDirectories: string[];
-    /** Temporarily reveal every hidden directory without clearing hidden flags. */
-    showHiddenDirectories: boolean;
-    /** Permanent inclusion/exclusion policy shared by the file manager and file picker. */
+    /**
+     * The ignore rules of every workspace, one gitignore line each. The app
+     * lists no file or folder that a rule matches. Each workspace adds the
+     * rules of the `.zettlrignore` file at its root.
+     */
+    ignoreRules: string[];
+    /** Lists the files and folders that the ignore rules match. The rules stay. */
+    showIgnored: boolean;
+    /** The file types that the file manager and the file picker list. */
     filters: {
       include: string[];
-      exclude: string[];
     };
   }
 
@@ -437,11 +440,10 @@ export function getConfigTemplate (): ConfigOptions {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
       expandedDirectories: [],
-      hiddenDirectories: [],
-      showHiddenDirectories: false,
+      ignoreRules: [],
+      showIgnored: false,
       filters: {
         include: [...DEFAULT_FILE_FILTER_INCLUDE],
-        exclude: [],
       },
     },
     newFileNamePattern: '%id.md',

@@ -40,12 +40,26 @@ import type ConfigProvider from '@providers/config'
 import { promises as fs, constants as FS_CONSTANTS, type Stats } from 'fs'
 import { safeDelete } from './util/safe-delete'
 import { type FilesystemMetadata, getFilesystemMetadata } from './util/get-fs-metadata'
-import { ignorePath } from 'source/common/util/ignore-path'
 import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
 import type { EventName } from 'chokidar/handler.js'
 import type LongRunningTaskProvider from '../long-running-tasks'
 import { trans } from 'source/common/i18n-main'
-import { readDirectoryFromDisk } from './util/read-directory'
+import {
+  readDirectoryFromDisk,
+  readDirectoryRecursivelyFromDisk,
+  visibilityChanges,
+  type ListingRules
+} from './util/read-directory'
+import {
+  WORKSPACE_RULES_FILE,
+  createIgnoreFilter,
+  judgingRoot,
+  movePathRules,
+  removePathRules,
+  setPathIgnored,
+  type IgnoreFilter,
+  type IgnoreRuleSources
+} from 'source/common/util/ignore-rules'
 import _ from 'underscore'
 
 /**
@@ -55,13 +69,32 @@ import _ from 'underscore'
  */
 const EVENT_BATCH_MS = 50
 
-function isPathAtOrWithin (candidate: string, root: string): boolean {
-  const relative = path.relative(root, candidate)
-  return relative === '' || (
-    relative !== '..' &&
-    !relative.startsWith('..' + path.sep) &&
-    !path.isAbsolute(relative)
-  )
+/** Reads the rules file of a workspace root. A root without one has no rules. */
+async function readRulesFile (root: string): Promise<string> {
+  try {
+    return await fs.readFile(path.join(root, WORKSPACE_RULES_FILE), 'utf-8')
+  } catch (err: unknown) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return ''
+    }
+    throw err
+  }
+}
+
+/** Writes the rules file of a workspace root. A root without rules has no file. */
+async function writeRulesFile (root: string, text: string): Promise<void> {
+  const rulesFile = path.join(root, WORKSPACE_RULES_FILE)
+  if (text === '') {
+    await fs.rm(rulesFile, { force: true })
+  } else {
+    await fs.writeFile(rulesFile, text, 'utf-8')
+  }
+}
+
+function sameIgnoreSources (a: IgnoreRuleSources, b: IgnoreRuleSources): boolean {
+  return a.showIgnored === b.showIgnored &&
+    _.isEqual(a.globalRules, b.globalRules) &&
+    _.isEqual([...a.workspaceRules], [...b.workspaceRules])
 }
 
 // Re-export all interfaces necessary for other parts of the code (Document Manager)
@@ -98,6 +131,15 @@ export default class FSAL extends ProviderContract {
     this._emitter.emit('fsal-events', events)
     broadcastIPCMessage('fsal-events', events)
   }, EVENT_BATCH_MS, { leading: false })
+
+  /**
+   * The ignore rules the FSAL lists with, and the filter made from them. Both
+   * are replaced together and never changed in place.
+   */
+  private ignoreSources: IgnoreRuleSources = { globalRules: [], workspaceRules: new Map(), showIgnored: false }
+  private ignoreFilter: IgnoreFilter = createIgnoreFilter(this.ignoreSources)
+  /** The last queued change of the ignore rules. Changes run one after the other. */
+  private ignoreUpdate: Promise<void> = Promise.resolve()
 
   constructor (
     private readonly _logger: LogProvider,
@@ -139,6 +181,12 @@ export default class FSAL extends ProviderContract {
         } else {
           return await this.getDescriptorFor(payload)
         }
+      } else if (command === 'get-ignore-rules') {
+        return this.ignoreSources
+      } else if (command === 'set-workspace-ignore-rules' && typeof payload?.root === 'string' && typeof payload.text === 'string') {
+        await this.setWorkspaceIgnoreRules(payload.root, payload.text)
+      } else if (command === 'set-path-ignored' && typeof payload?.path === 'string' && typeof payload.isDirectory === 'boolean' && typeof payload.ignored === 'boolean') {
+        await this.setPathIgnored(payload.path, payload.isDirectory, payload.ignored)
       }
     })
   } // END constructor
@@ -163,8 +211,14 @@ export default class FSAL extends ProviderContract {
     // No reindexing here. Since we're booting, and reindexing takes some time,
     // we def this to the application container which can show a splash screen.
     await this.syncRoots()
+    this.ignoreSources = await this.readIgnoreSources()
+    this.ignoreFilter = createIgnoreFilter(this.ignoreSources)
 
     this._config.on('update', (which: string) => {
+      if (which === 'openPaths' || which === 'fileManager.ignoreRules' || which === 'fileManager.showIgnored') {
+        this.refreshIgnoreRules()
+      }
+
       if (which === 'openPaths' || which === 'files.dotFiles.showInFilemanager') {
         this.syncRoots()
           .then(() => {
@@ -230,11 +284,18 @@ export default class FSAL extends ProviderContract {
     this._cache.del(absPath)
       .catch(err => this._logger.error(`[FSAL Cache] Failed to delete key: ${absPath}`, err))
 
+    if (path.basename(absPath) === WORKSPACE_RULES_FILE && this.ignoreSources.workspaceRules.has(path.dirname(absPath))) {
+      this.refreshIgnoreRules()
+    }
+
+    // A path that the ignore rules hide is not listed, so its events stay
+    // here. The event name says whether an unlinked path was a directory.
+    if (!this.isListed(absPath, event === 'addDir' || event === 'unlinkDir')) {
+      return
+    }
+
     // In unlink-events, there won't be a descriptor.
     if (event === 'unlink' || event === 'unlinkDir') {
-      if (event === 'unlinkDir') {
-        this.removeHiddenDirectoriesUnder(absPath)
-      }
       this.publishEvent({ event, path: absPath })
       return
     }
@@ -242,11 +303,158 @@ export default class FSAL extends ProviderContract {
     // But in any other case (change & add), we should be able to get one.
     this.getDescriptorFor(absPath, false)
       .then(descriptor => {
-        this.publishEvent({ event, descriptor })
+        // A `change` can name a directory, and the rules can change while the
+        // descriptor loads, so the descriptor decides.
+        if (this.isListed(descriptor.path, descriptor.type === 'directory')) {
+          this.publishEvent({ event, descriptor })
+        }
       })
       .catch(err => {
         this._logger.error(`[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`, err)
       })
+  }
+
+  /**
+   * Whether the app lists a path: an open workspace root is listed, and any
+   * other path is listed unless the ignore rules hide it.
+   */
+  private isListed (absPath: string, isDirectory: boolean): boolean {
+    return this.ignoreSources.workspaceRules.has(absPath) || !this.ignoreFilter.hides(absPath, isDirectory)
+  }
+
+  private listingRules (): ListingRules {
+    return {
+      ignoreDotFiles: !this._config.get().files.dotFiles.showInFilemanager,
+      ignoreFilter: this.ignoreFilter
+    }
+  }
+
+  /**
+   * Reads the ignore rules from their sources: the configuration and the rules
+   * file of each open workspace.
+   */
+  private async readIgnoreSources (): Promise<IgnoreRuleSources> {
+    const { app: { openWorkspaces }, fileManager } = this._config.get()
+    const workspaceRules = new Map<string, string>()
+    for (const root of openWorkspaces) {
+      workspaceRules.set(root, await readRulesFile(root))
+    }
+    return {
+      globalRules: [...fileManager.ignoreRules],
+      workspaceRules,
+      showIgnored: fileManager.showIgnored
+    }
+  }
+
+  /**
+   * Runs a change of the ignore rules after the changes queued before it. A
+   * change reads the rules, so two at once could apply the older reading last.
+   */
+  private async queueIgnoreUpdate (update: () => Promise<void>): Promise<void> {
+    const run = async (): Promise<void> => { await update() }
+    this.ignoreUpdate = this.ignoreUpdate.then(run, run)
+    await this.ignoreUpdate
+  }
+
+  /**
+   * Reads the ignore rules again after one of their sources changed.
+   */
+  private refreshIgnoreRules (): void {
+    this.queueIgnoreUpdate(async () => { await this.applyIgnoreSources(await this.readIgnoreSources()) })
+      .catch(err => this._logger.error(`[FSAL] Could not read the ignore rules: ${String(err.message)}`, err))
+  }
+
+  /**
+   * Makes the given rules the current ones, sends them to the windows, and
+   * publishes what they change as ordinary events: an `unlink` for each path
+   * the rules now hide, an `add` for each path they now show. No consumer has
+   * to know that a rule, not the disk, changed.
+   */
+  private async applyIgnoreSources (sources: IgnoreRuleSources): Promise<void> {
+    if (sameIgnoreSources(this.ignoreSources, sources)) {
+      return
+    }
+
+    const before = this.ignoreFilter
+    this.ignoreSources = sources
+    this.ignoreFilter = createIgnoreFilter(sources)
+    broadcastIPCMessage('fsal-ignore-rules', sources)
+
+    const { ignoreDotFiles, ignoreFilter } = this.listingRules()
+    const roots = new Set(sources.workspaceRules.keys())
+    for (const root of roots) {
+      if (this.deadWorkspaces.has(root)) {
+        continue
+      }
+
+      for (const change of await visibilityChanges(root, ignoreDotFiles, roots, before, ignoreFilter, this._logger)) {
+        if (!change.visible) {
+          this.publishEvent({ event: change.isDirectory ? 'unlinkDir' : 'unlink', path: change.path })
+          continue
+        }
+
+        try {
+          const descriptor = await this.getDescriptorFor(change.path)
+          this.publishEvent({ event: change.isDirectory ? 'addDir' : 'add', descriptor })
+        } catch (err: unknown) {
+          this._logger.error(`[FSAL] Could not list ${change.path} after an ignore rule change`, err)
+        }
+      }
+    }
+  }
+
+  /**
+   * Changes rules files and applies the result. `edit` receives the text of
+   * the rules file of each open workspace and returns the new text of each
+   * file that changes.
+   */
+  private async editRulesFiles (edit: (sources: IgnoreRuleSources) => Map<string, string>): Promise<void> {
+    await this.queueIgnoreUpdate(async () => {
+      const sources = await this.readIgnoreSources()
+      for (const [ root, text ] of edit(sources)) {
+        if (!sources.workspaceRules.has(root)) {
+          throw new Error(`[FSAL] Cannot write ignore rules for ${root}: Not an open workspace`)
+        }
+        await writeRulesFile(root, text)
+      }
+      await this.applyIgnoreSources(await this.readIgnoreSources())
+    })
+  }
+
+  /**
+   * Returns the ignore rules the FSAL lists with.
+   */
+  public getIgnoreRuleSources (): IgnoreRuleSources {
+    return this.ignoreSources
+  }
+
+  /**
+   * Replaces the rules file of an open workspace.
+   *
+   * @param  {string}  root  The workspace root
+   * @param  {string}  text  The new rules, one gitignore line each
+   */
+  public async setWorkspaceIgnoreRules (root: string, text: string): Promise<void> {
+    await this.editRulesFiles(() => new Map([[ root, text ]]))
+  }
+
+  /**
+   * Hides one path of a workspace, or shows it again, with a rule in the rules
+   * file of the workspace that contains it.
+   *
+   * @param  {string}   absPath      The file or folder
+   * @param  {boolean}  isDirectory  Whether it is a folder
+   * @param  {boolean}  ignored      True to hide it, false to show it again
+   */
+  public async setPathIgnored (absPath: string, isDirectory: boolean, ignored: boolean): Promise<void> {
+    await this.editRulesFiles(({ globalRules, workspaceRules }) => {
+      const root = judgingRoot(workspaceRules.keys(), absPath)
+      if (root === undefined) {
+        throw new Error(`[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`)
+      }
+      const text = workspaceRules.get(root) ?? ''
+      return new Map([[ root, setPathIgnored(text, globalRules, root, absPath, isDirectory, ignored) ]])
+    })
   }
 
   /**
@@ -632,6 +840,7 @@ export default class FSAL extends ProviderContract {
     // to avoid safeDelete throwing an error as the file or folder does no longer exist.
     if (await this.pathExists(filePath)) {
       await safeDelete(filePath, deleteOnFail, this._logger)
+      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, filePath))
     }
   }
 
@@ -770,7 +979,7 @@ export default class FSAL extends ProviderContract {
     const deleteOnFail: boolean = this._config.get('system.deleteOnFail')
     if (await this.pathExists(dirPath)) {
       await safeDelete(dirPath, deleteOnFail, this._logger)
-      this.removeHiddenDirectoriesUnder(dirPath)
+      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, dirPath))
     }
   }
 
@@ -782,32 +991,9 @@ export default class FSAL extends ProviderContract {
    */
   public async rename (oldPath: string, newPath: string): Promise<void> {
     await fs.rename(oldPath, newPath)
-    this.remapHiddenDirectories(oldPath, newPath)
-  }
-
-  private removeHiddenDirectoriesUnder (directoryPath: string): void {
-    const current = this._config.get().fileManager.hiddenDirectories
-    const next = current.filter(hiddenPath => !isPathAtOrWithin(hiddenPath, directoryPath))
-    if (next.length !== current.length) {
-      this._config.set('fileManager.hiddenDirectories', next)
-    }
-  }
-
-  private remapHiddenDirectories (oldPath: string, newPath: string): void {
-    const current = this._config.get().fileManager.hiddenDirectories
-    let changed = false
-    const next = current.map(hiddenPath => {
-      if (!isPathAtOrWithin(hiddenPath, oldPath)) {
-        return hiddenPath
-      }
-
-      changed = true
-      return path.join(newPath, path.relative(oldPath, hiddenPath))
-    })
-
-    if (changed) {
-      this._config.set('fileManager.hiddenDirectories', next)
-    }
+    // A rule that names the old path keeps its meaning: a hidden folder stays
+    // hidden under its new name.
+    await this.editRulesFiles(({ workspaceRules }) => movePathRules(workspaceRules, oldPath, newPath))
   }
 
   /**
@@ -978,8 +1164,9 @@ export default class FSAL extends ProviderContract {
    * in the directory and any children recursively to construct a list of every
    * file and folder within `absPath` and return it.
    *
-   * NOTE: This function will already exclude dotfiles and ignored directories,
-   * so this function is safe to consume in terms of what Zettlr should display.
+   * NOTE: This function will already exclude dotfiles, ignored directories and
+   * the paths that the ignore rules hide, so this function is safe to consume
+   * in terms of what Zettlr should display.
    *
    * @param   {string}             directoryPath  The absolute path to parse
    *
@@ -990,29 +1177,7 @@ export default class FSAL extends ProviderContract {
       throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`)
     }
 
-    const { files } = this._config.get()
-    const ignoreDotFiles = !files.dotFiles.showInFilemanager
-
-    try {
-      const children = await fs.readdir(directoryPath, { withFileTypes: true })
-      const contents = await Promise.all(
-        children
-          .filter(dirent => !ignorePath(dirent.name, ignoreDotFiles) && (dirent.isFile() || dirent.isDirectory()))
-          .map(dirent => {
-            const childPath = path.join(directoryPath, dirent.name)
-            return dirent.isFile() ? [childPath] : this.readDirectoryRecursively(childPath)
-          })
-      )
-      return [ directoryPath, ...contents.flat() ]
-    } catch (err: unknown) {
-      const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined
-      if (code === 'EACCES' || code === 'EPERM') {
-        this._logger.error(`[FSAL] Could not read directory ${directoryPath}: Could not read/access the directory (code: ${code})`)
-      } else if (err instanceof Error) {
-        this._logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err)
-      }
-      return []
-    }
+    return await readDirectoryRecursivelyFromDisk(directoryPath, this.listingRules(), this._logger)
   }
 
   /**
@@ -1024,11 +1189,9 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory (absPath: string): Promise<AnyDescriptor[]> {
-    const { files } = this._config.get()
-    const ignoreDotFiles = !files.dotFiles.showInFilemanager
     return await readDirectoryFromDisk(
       absPath,
-      ignoreDotFiles,
+      this.listingRules(),
       this.deadWorkspaces.has(absPath),
       async childPath => await this.getDescriptorFor(childPath),
       this._logger

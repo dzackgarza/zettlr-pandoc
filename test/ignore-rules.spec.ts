@@ -18,8 +18,8 @@
 import { strict as assert } from 'assert'
 import {
   createIgnoreFilter,
-  mapPathRules,
-  pathRuleLine,
+  movePathRules,
+  removePathRules,
   ruleForName,
   ruleForPath,
   setPathIgnored,
@@ -154,16 +154,44 @@ describe('Ignore rules', function () {
   })
 
   describe('rules that name a renamed, moved or deleted path', function () {
+    const SITE = '/home/user/site'
     const text = '# keep\n/coble/scripts/\n!/coble/scripts/keep.md\n/coble/scripts-old/\nscripts/\n'
+    const texts = new Map([[ ROOT, text ], [ SITE, '# site\n/drafts/' ]])
 
     it('follows a rename of the path and of a folder above it', function () {
-      const renamed = mapPathRules(text, ROOT, `${ROOT}/coble`, rule => pathRuleLine(ROOT, `${ROOT}/k3`, rule))
-      assert.equal(renamed, '# keep\n/k3/scripts/\n!/k3/scripts/keep.md\n/k3/scripts-old/\nscripts/\n')
+      assert.deepEqual(
+        [...movePathRules(texts, `${ROOT}/coble`, `${ROOT}/k3`)],
+        [[ ROOT, '# keep\n/k3/scripts/\n!/k3/scripts/keep.md\n/k3/scripts-old/\nscripts/\n' ]]
+      )
     })
 
-    it('touches only the rules at or under the path', function () {
-      const removed = mapPathRules(text, ROOT, `${ROOT}/coble/scripts`, () => undefined)
-      assert.equal(removed, '# keep\n/coble/scripts-old/\nscripts/\n')
+    it('moves the rules to the rules file of the workspace the path moves to', function () {
+      assert.deepEqual(
+        [...movePathRules(texts, `${ROOT}/coble/scripts`, `${SITE}/tools/scripts`)],
+        [
+          [ ROOT, '# keep\n/coble/scripts-old/\nscripts/\n' ],
+          [ SITE, '# site\n/drafts/\n/tools/scripts/\n!/tools/scripts/keep.md\n' ]
+        ]
+      )
+    })
+
+    it('drops the rules of a path that leaves every workspace', function () {
+      assert.deepEqual(
+        [...movePathRules(texts, `${ROOT}/coble/scripts`, '/home/user/elsewhere/scripts')],
+        [[ ROOT, '# keep\n/coble/scripts-old/\nscripts/\n' ]]
+      )
+    })
+
+    it('removes the rules at or under a deleted path and keeps every other line', function () {
+      assert.deepEqual(
+        [...removePathRules(texts, `${ROOT}/coble/scripts`)],
+        [[ ROOT, '# keep\n/coble/scripts-old/\nscripts/\n' ]]
+      )
+    })
+
+    it('changes no rules file when no rule names the path', function () {
+      assert.deepEqual([...movePathRules(texts, `${ROOT}/notes.md`, `${ROOT}/renamed.md`)], [])
+      assert.deepEqual([...removePathRules(texts, `${ROOT}/notes.md`)], [])
     })
   })
 })

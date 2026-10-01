@@ -122,7 +122,7 @@ describe('FSAL listing under ignore rules', function () {
   })
 
   it('reports the paths a new rule hides, the content of a folder before the folder', async function () {
-    const changes = await visibilityChanges(root, true, filterOf([]), filterOf(['scripts/']), logger)
+    const changes = await visibilityChanges(root, true, new Set(), filterOf([]), filterOf(['scripts/']), logger)
     assert.deepEqual(
       changes.map(change => [ path.relative(root, change.path), change.isDirectory, change.visible ]).sort(),
       [
@@ -138,7 +138,7 @@ describe('FSAL listing under ignore rules', function () {
   })
 
   it('reports the paths a removed rule shows again, a folder before its content', async function () {
-    const changes = await visibilityChanges(root, true, filterOf([ 'scripts/', 'AGENTS.md' ]), filterOf(['scripts/']), logger)
+    const changes = await visibilityChanges(root, true, new Set(), filterOf([ 'scripts/', 'AGENTS.md' ]), filterOf(['scripts/']), logger)
     assert.deepEqual(
       changes.map(change => [ path.relative(root, change.path), change.isDirectory, change.visible ]).sort(),
       [
@@ -147,7 +147,7 @@ describe('FSAL listing under ignore rules', function () {
       ]
     )
 
-    const shown = await visibilityChanges(root, true, filterOf(['/coble/']), filterOf([]), logger)
+    const shown = await visibilityChanges(root, true, new Set(), filterOf(['/coble/']), filterOf([]), logger)
     const order = shown.map(change => path.relative(root, change.path))
     assert.equal(order[0], 'coble')
     assert.equal(order.length, 9)
@@ -156,7 +156,18 @@ describe('FSAL listing under ignore rules', function () {
   })
 
   it('reports no change for a path below a folder that stays hidden', async function () {
-    const changes = await visibilityChanges(root, true, filterOf(['/coble/']), filterOf([ '/coble/', 'run.md' ]), logger)
+    const changes = await visibilityChanges(root, true, new Set(), filterOf(['/coble/']), filterOf([ '/coble/', 'run.md' ]), logger)
+    assert.deepEqual(changes, [])
+  })
+
+  it('reports no change for a folder that is an open workspace of its own', async function () {
+    const inner = path.join(root, 'coble')
+    const filterWith = (rulesFile: string): IgnoreFilter => createIgnoreFilter({
+      globalRules: [],
+      workspaceRules: new Map([[ root, rulesFile ], [ inner, '' ]]),
+      showIgnored: false
+    })
+    const changes = await visibilityChanges(root, true, new Set([inner]), filterWith(''), filterWith('/coble/\n'), logger)
     assert.deepEqual(changes, [])
   })
 })

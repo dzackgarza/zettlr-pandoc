@@ -17,9 +17,14 @@ import assert from 'assert'
 import os from 'os'
 import path from 'path'
 import { promises as fs } from 'fs'
-import { readDirectoryFromDisk } from 'source/app/service-providers/fsal/util/read-directory'
+import { readDirectoryFromDisk, type ListingRules } from 'source/app/service-providers/fsal/util/read-directory'
+import { createIgnoreFilter } from 'source/common/util/ignore-rules'
 
 const logger = { error: () => {} }
+const rules: ListingRules = {
+  ignoreDotFiles: false,
+  ignoreFilter: createIgnoreFilter({ globalRules: [], workspaceRules: new Map(), showIgnored: false })
+}
 const getDescriptor = async (): Promise<never> => {
   throw new Error('An empty or deleted directory must not request child descriptors')
 }
@@ -41,7 +46,7 @@ describe('FSAL directory reads after explorer deletion events', function () {
     await fs.rm(deletedDirectory, { recursive: true })
 
     assert.deepStrictEqual(
-      await readDirectoryFromDisk(deletedDirectory, false, false, getDescriptor, logger),
+      await readDirectoryFromDisk(deletedDirectory, rules, false, getDescriptor, logger),
       []
     )
   })
@@ -61,7 +66,7 @@ describe('FSAL directory reads after explorer deletion events', function () {
     const results = await Promise.allSettled(
       deletedDescendants.map(async directory => await readDirectoryFromDisk(
         directory,
-        false,
+        rules,
         false,
         getDescriptor,
         logger
@@ -83,7 +88,7 @@ describe('FSAL directory reads after explorer deletion events', function () {
     await fs.writeFile(regularFile, 'content')
 
     await assert.rejects(
-      async () => await readDirectoryFromDisk(regularFile, false, false, getDescriptor, logger),
+      async () => await readDirectoryFromDisk(regularFile, rules, false, getDescriptor, logger),
       /Not a directory/
     )
   })
@@ -93,7 +98,7 @@ describe('FSAL directory reads after explorer deletion events', function () {
     await fs.mkdir(emptyDirectory)
 
     assert.deepStrictEqual(
-      await readDirectoryFromDisk(emptyDirectory, false, false, getDescriptor, logger),
+      await readDirectoryFromDisk(emptyDirectory, rules, false, getDescriptor, logger),
       []
     )
   })

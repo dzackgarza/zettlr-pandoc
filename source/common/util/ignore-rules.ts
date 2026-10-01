@@ -41,23 +41,22 @@ export interface IgnoreFilter {
 }
 
 /**
- * A rule of a rules file that names a path at or below a given path.
- * `rest` is what follows that path in the rule: '' or '/' for the path itself,
- * '/sub/…' for a path below it.
+ * The workspace root whose rules judge a path: the innermost root that
+ * contains it. A root does not contain itself.
  */
-export interface PathRule {
-  negated: boolean
-  rest: string
+export function judgingRoot (roots: Iterable<string>, absPath: string): string|undefined {
+  return [...roots]
+    .sort((a, b) => b.length - a.length)
+    .find(root => absPath.startsWith(`${root}/`))
 }
 
 /**
- * Makes the filter of one set of rule sources. A path is judged by the
- * innermost workspace root that contains it, with the global rules and then
- * the rules file of that root. A root is not inside itself, so no rule hides
- * a root in its own tree, and a path outside every root is never matched.
+ * Makes the filter of one set of rule sources. A path is judged by the global
+ * rules and then the rules file of its judging root. No rule hides a root in
+ * its own tree, and a path outside every root is never matched.
  */
 export function createIgnoreFilter (sources: IgnoreRuleSources): IgnoreFilter {
-  const roots = [...sources.workspaceRules.keys()].sort((a, b) => b.length - a.length)
+  const roots = [...sources.workspaceRules.keys()]
   const matchers = new Map<string, Ignore>()
 
   const matcherOf = (root: string): Ignore => {
@@ -72,7 +71,7 @@ export function createIgnoreFilter (sources: IgnoreRuleSources): IgnoreFilter {
   }
 
   const matches = (absPath: string, isDirectory: boolean): boolean => {
-    const root = roots.find(candidate => absPath.startsWith(`${candidate}/`))
+    const root = judgingRoot(roots, absPath)
     if (root === undefined) {
       return false
     }
@@ -163,16 +162,25 @@ export function setPathIgnored (
 }
 
 /**
- * Rewrites the rules of a rules file that name `absPath` or a path below it.
- * `map` returns the new line of such a rule, or undefined to remove the rule.
- * Every other line stays. This keeps the rules in step with a rename, a move
- * or a deletion of the path.
+ * A rule of a rules file that names a path at or below a given path.
+ * `rest` is what follows that path in the rule: '' or '/' for the path itself,
+ * '/sub/…' for a path below it.
  */
-export function mapPathRules (
+interface PathRule {
+  negated: boolean
+  rest: string
+}
+
+/**
+ * Splits the lines of a rules file into the rules that name `absPath` or a
+ * path below it and the lines that stay. `replace` gives the line that takes
+ * the place of such a rule, or undefined to take the rule out.
+ */
+function mapPathRules (
   text: string,
   root: string,
   absPath: string,
-  map: (rule: PathRule) => string|undefined
+  replace: (rule: PathRule) => string|undefined
 ): string {
   const literal = anchoredLiteral(root, absPath)
   const lines: string[] = []
@@ -184,15 +192,70 @@ export function mapPathRules (
       lines.push(line)
       continue
     }
-    const mapped = map({ negated, rest })
-    if (mapped !== undefined) {
-      lines.push(mapped)
+    const replacement = replace({ negated, rest })
+    if (replacement !== undefined) {
+      lines.push(replacement)
     }
   }
   return textOf(lines)
 }
 
-/** The line of a path rule after its path became `absPath` in the workspace `root`. */
-export function pathRuleLine (root: string, absPath: string, rule: PathRule): string {
+function pathRuleLine (root: string, absPath: string, rule: PathRule): string {
   return (rule.negated ? '!' : '') + anchoredLiteral(root, absPath) + rule.rest
+}
+
+/** The rules files whose text differs from the one in `texts`. */
+function changedTexts (texts: ReadonlyMap<string, string>, next: Map<string, string>): Map<string, string> {
+  return new Map([...next].filter(([ root, text ]) => text !== texts.get(root)))
+}
+
+/**
+ * Keeps the rules that name a path in step with a rename or a move of it.
+ * `texts` holds the rules file of each workspace root. A rule that names
+ * `oldPath`, or a path below it, names the same path under `newPath`
+ * afterwards. When the path moves to another workspace, its rules move to the
+ * rules file of that workspace; when it leaves every workspace, they go.
+ *
+ * @return  The new text of each rules file that changes
+ */
+export function movePathRules (
+  texts: ReadonlyMap<string, string>,
+  oldPath: string,
+  newPath: string
+): Map<string, string> {
+  const oldRoot = judgingRoot(texts.keys(), oldPath)
+  const newRoot = judgingRoot(texts.keys(), newPath)
+  if (oldRoot === undefined) {
+    return new Map()
+  }
+
+  const moved: string[] = []
+  const next = new Map<string, string>()
+  next.set(oldRoot, mapPathRules(texts.get(oldRoot) ?? '', oldRoot, oldPath, rule => {
+    if (newRoot === oldRoot) {
+      return pathRuleLine(oldRoot, newPath, rule)
+    }
+    if (newRoot !== undefined) {
+      moved.push(pathRuleLine(newRoot, newPath, rule))
+    }
+    return undefined
+  }))
+  if (newRoot !== undefined && moved.length > 0) {
+    next.set(newRoot, textOf([ ...linesOf(texts.get(newRoot) ?? ''), ...moved ]))
+  }
+  return changedTexts(texts, next)
+}
+
+/**
+ * Removes the rules that name a deleted path or a path below it.
+ *
+ * @return  The new text of each rules file that changes
+ */
+export function removePathRules (texts: ReadonlyMap<string, string>, absPath: string): Map<string, string> {
+  const root = judgingRoot(texts.keys(), absPath)
+  if (root === undefined) {
+    return new Map()
+  }
+  const text = mapPathRules(texts.get(root) ?? '', root, absPath, () => undefined)
+  return changedTexts(texts, new Map([[ root, text ]]))
 }

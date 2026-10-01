@@ -262,7 +262,7 @@ export default class ConfigProvider extends ProviderContract {
     // The Ctrl+Shift+P picker used to own a separate permanent extension
     // filter. File visibility now has one authority: the file manager's
     // permanent filters, which the picker consumes as a subset. Preserve the
-    // user's exact include/exclude lists while renaming the persisted key.
+    // user's exact include list while renaming the persisted key.
     if (
       typeof readConfig.fileManager === 'object' &&
       readConfig.fileManager !== null &&
@@ -273,9 +273,6 @@ export default class ConfigProvider extends ProviderContract {
       readConfig.fileManager.filters = {
         include: Array.isArray(readConfig.fileManager.filePicker.include)
           ? readConfig.fileManager.filePicker.include
-          : [],
-        exclude: Array.isArray(readConfig.fileManager.filePicker.exclude)
-          ? readConfig.fileManager.filePicker.exclude
           : []
       }
       delete readConfig.fileManager.filePicker

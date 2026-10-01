@@ -52,8 +52,6 @@
     "twoStepCollapseWorkspaces": false,
     "sortWorkspacesManually": false,
     "expandedDirectories": [],
-    "hiddenDirectories": [],
-    "showHiddenDirectories": false,
     "filters": {
       "include": [
         ".md",
@@ -63,9 +61,10 @@
         ".txt",
         ".mdx",
         ".mkd"
-      ],
-      "exclude": []
-    }
+      ]
+    },
+    "ignoreRules": [],
+    "showIgnored": false
   },
   "newFileNamePattern": "%id.md",
   "newFileDontPrompt": false,
