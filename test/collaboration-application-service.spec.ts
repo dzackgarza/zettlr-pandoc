@@ -18,14 +18,16 @@
  */
 
 import { strict as assert } from "assert";
-import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdirSync, writeFileSync } from "fs";
 import { createPatch } from "diff";
 import { sha256Text } from "@common/util/sha256";
 import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
-import { harness as sharedHarness, type Harness } from "./collaboration-test-authority";
+import {
+  harness as sharedHarness,
+  temporarySidecarDirectory,
+  type Harness,
+} from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
@@ -641,7 +643,7 @@ describe("CollaborationApplicationService", function () {
 
   it("fails reattachment when persisted state is version 3 (#68)", async function () {
     const baseline = "alpha\n";
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    const sidecarDirectory = temporarySidecarDirectory("zettlr-review-service-");
     mkdirSync(sidecarDirectory, { recursive: true });
     writeFileSync(
       collaborationSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
