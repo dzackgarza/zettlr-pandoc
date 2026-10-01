@@ -90,6 +90,8 @@ interface PublishedNumericBounds {
 
 interface PublishedOperation {
   [field: string]: unknown;
+  operationId: string;
+  tags?: string[];
   requestBody?: {
     content: Record<string, { schema: { properties: Record<string, PublishedNumericBounds> } }>;
   };
@@ -1178,18 +1180,33 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
-  it("serves every operation as an MCP tool at /mcp", async function () {
+  it("serves the Zotero operations at /zotero/mcp and every other operation at /mcp", async function () {
     const filePath = path.join(scratch, "mcp.md");
     const docId = await openFile(filePath, "mcp content\n");
+    const operations = Object.values(openApiDocument.paths).flatMap((methods) => Object.values(methods));
+    const zoteroClient = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    await zoteroClient.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
+    );
+    try {
+      const { tools } = await zoteroClient.listTools();
+      assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+        "importZoteroIdentifier",
+        "importZoteroUrl",
+        "searchZoteroItems",
+      ]);
+    } finally {
+      await zoteroClient.close();
+    }
     const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
     );
     try {
       const { tools } = await client.listTools();
-      const operationIds = Object.values(openApiDocument.paths).flatMap((methods) =>
-        Object.values(methods).map((operation) => operation.operationId),
-      );
+      const operationIds = operations
+        .filter((operation) => operation.tags?.includes("zotero") !== true)
+        .map((operation) => operation.operationId);
       assert.deepEqual(tools.map((tool) => tool.name).sort(), operationIds.sort());
 
       const read = await client.callTool({

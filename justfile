@@ -159,6 +159,10 @@ test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
 
+# Run the Zotero operations against the running Zotero, its local-write-api add-on and the Better BibTeX export.
+test-zotero-integration: sync-dependencies
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
+
 # Run the repository test suite. The guard executes before Mocha can start.
 test: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
