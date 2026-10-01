@@ -467,14 +467,15 @@ of an isolated instance are in the first comment of #132.
   (`source/app/service-providers/document-lint/`). It keys a result by the
   document text hash and a digest of every other input Flowmark reads: the
   build, the Flowmark install (PEP 610 `commit_id`, `flowmarkInstallIdentity`),
-  stamps of the macro tree, `mathjax-macros.json`, the TikZ template graph,
-  `TEXINPUTS`, the bibliographies, the Flowmark config files, and the
+  the content hashes of the macro tree, `mathjax-macros.json`, the TikZ
+  template graph, the bibliographies and the Flowmark config files,
+  `TEXINPUTS`, and the
   reference resolutions that Flowmark receives for the document
   (`flowmarkReferenceContext`: the resolution of each key that the document
   defines or uses, and all defined workspace keys when one of its references
   is missing). A new label in one document therefore makes stale only the
   documents whose resolutions changed. One `LintPass` reads each shared input
-  (a stamp, a directory descriptor, the workspace definitions) once for all
+  (a content hash, a directory descriptor, the workspace definitions) once for all
   documents of a reconcile, a lookup or a fix plan, and a queued document
   carries the pass that queued it. The cache persists to
   `userData/document-lint-cache.json`. FSAL events and a Flowmark update queue
