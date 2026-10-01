@@ -34,6 +34,9 @@ import type { MDFileDescriptor } from 'source/types/common/fsal'
 const SHOWN_SOURCE = 'The author is typing here.\n'
 const PROPOSED_SOURCE = 'alpha\nbeta\n'
 const PROPOSED_TARGET = 'alpha\nBETA\n'
+// The quit dialog's buttons: Save, Discard, Cancel.
+const DISCARD = 1
+const CANCEL = 2
 
 function descriptorFor (filePath: string): MDFileDescriptor {
   const content = readFileSync(filePath, 'utf-8')
@@ -78,9 +81,10 @@ describe('Documents-provider quit prompt', function () {
 
   /**
    * Fire the registered before-quit listener and wait for its outcome: a
-   * quit request, a dialog, or an unprevented event. The sidecar write on
-   * the way there is real file I/O, so this waits on the outcome and not on
-   * a tick count.
+   * quit request, a cancelled dialog, or an unprevented event. The sidecar
+   * write before the dialog and the save or discard after it are real file
+   * I/O, so this waits on the outcome and not on a tick count; a dialog
+   * answered with Save or Discard is not yet an outcome.
    */
   async function requestQuit (): Promise<QuitEvent> {
     const listeners = appListeners.get('before-quit') ?? []
@@ -93,7 +97,7 @@ describe('Documents-provider quit prompt', function () {
     while (
       event.prevented &&
       appQuitRequests.length === quitsBefore &&
-      messageBoxes.shown.length === dialogsBefore &&
+      (messageBoxes.shown.length === dialogsBefore || messageBoxes.answer !== CANCEL) &&
       Date.now() < deadline
     ) {
       await new Promise(resolve => setTimeout(resolve, 10))
@@ -224,7 +228,7 @@ describe('Documents-provider quit prompt', function () {
       { documentPath: shownPath, range: { from: 0, to: 0 }, insert: 'Draft: ' }
     ])
 
-    messageBoxes.answer = 2
+    messageBoxes.answer = CANCEL
     const cancelled = await requestQuit()
     assert.equal(cancelled.prevented, true)
     assert.equal(messageBoxes.shown.length, 1)
@@ -232,7 +236,7 @@ describe('Documents-provider quit prompt', function () {
     assert.equal(appQuitRequests.length, 0)
     assert.equal(provider.isModified(shownPath), true)
 
-    messageBoxes.answer = 1
+    messageBoxes.answer = DISCARD
     await requestQuit()
     assert.equal(appQuitRequests.length, 1)
     assert.equal(readFileSync(shownPath, 'utf-8'), SHOWN_SOURCE)
