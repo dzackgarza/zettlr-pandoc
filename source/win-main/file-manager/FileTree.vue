@@ -638,55 +638,66 @@ function methodFor (choice: SortChoice, direction: Direction): SortMethod {
   return `${prefix}-${direction}` as SortMethod
 }
 
-async function updateExplorerDirectory (
+/**
+ * Explorer choices apply one at a time, each to the settings the main process
+ * holds once the choice before it is stored. The tree's own descriptor is no
+ * base for a choice: an FSAL broadcast of an earlier state can replace it
+ * after a later choice was made, and a choice computed from it would write
+ * that earlier state back.
+ */
+let explorerUpdates: Promise<void> = Promise.resolve()
+
+function updateExplorerDirectory (
   directory: DirDescriptor,
-  settingsPatch: Partial<DirectorySettings>,
+  settingsPatch: (stored: DirDescriptor) => Partial<DirectorySettings>,
   explorerPatch: Partial<DirectoryExplorerSettings> = {}
-): Promise<void> {
-  const previous = JSON.parse(JSON.stringify(directory.settings)) as DirectorySettings
-  const nextExplorer = { ...directory.settings.explorer, ...explorerPatch }
-  Object.assign(directory.settings, settingsPatch, { explorer: nextExplorer })
-  try {
-    await ipcRenderer.invoke('application', {
-      command: 'set-directory-setting',
-      payload: {
-        path: directory.path,
-        settings: { ...settingsPatch, explorer: nextExplorer }
-      } satisfies DirSettingsCommandAPI
-    })
-  } catch (err) {
-    Object.assign(directory.settings, previous)
-    reportError('Could not update Explorer settings', err)
-  }
+): void {
+  explorerUpdates = explorerUpdates.then(async () => {
+    const stored: AnyDescriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: directory.path })
+    if (stored.type !== 'directory') {
+      throw new Error(`${directory.path} is no longer a directory`)
+    }
+    const settings = { ...settingsPatch(stored), explorer: { ...stored.settings.explorer, ...explorerPatch } }
+    Object.assign(directory.settings, settings)
+    try {
+      await ipcRenderer.invoke('application', {
+        command: 'set-directory-setting',
+        payload: { path: directory.path, settings } satisfies DirSettingsCommandAPI
+      })
+    } catch (err) {
+      Object.assign(directory.settings, stored.settings)
+      throw err
+    }
+  }).catch(err => reportError('Could not update Explorer settings', err))
 }
 
 function setDisplay (directory: DirDescriptor, value: 'inherit'|FileNameDisplay): void {
-  void updateExplorerDirectory(directory, {}, { displayName: value })
+  updateExplorerDirectory(directory, () => ({}), { displayName: value })
 }
 
 function setSort (directory: DirDescriptor, value: SortChoice): void {
   const explorerPatch: Partial<DirectoryExplorerSettings> = value === 'manual'
     ? { sortMetadataKey: 'zettlr-order_' }
     : {}
-  void updateExplorerDirectory(directory, {
-    sorting: methodFor(value, directionForDirectory(directory))
-  }, explorerPatch)
+  updateExplorerDirectory(directory, stored => ({
+    sorting: methodFor(value, directionForDirectory(stored))
+  }), explorerPatch)
 }
 
 function setDirection (directory: DirDescriptor, value: Direction): void {
-  void updateExplorerDirectory(directory, {
-    sorting: methodFor(choiceForDirectory(directory), value)
-  })
+  updateExplorerDirectory(directory, stored => ({
+    sorting: methodFor(choiceForDirectory(stored), value)
+  }))
 }
 
 function setGrouping (directory: DirDescriptor, value: FoldersMode): void {
-  void updateExplorerDirectory(directory, {}, {
+  updateExplorerDirectory(directory, () => ({}), {
     foldersFirst: value === 'inherit' ? null : value === 'folders'
   })
 }
 
 function setProjectFilter (directory: DirDescriptor, value: ProjectFileFilter): void {
-  void updateExplorerDirectory(directory, {}, { projectFilter: value })
+  updateExplorerDirectory(directory, () => ({}), { projectFilter: value })
 }
 
 function openMetadataFieldEditor (directory: DirDescriptor): void {
@@ -701,9 +712,9 @@ function commitMetadataKey (): void {
   if (directory === undefined) return
   const key = metadataKeyDraft.value.trim()
   if (key === '') return
-  void updateExplorerDirectory(directory, {
-    sorting: methodFor('metadata', directionForDirectory(directory))
-  }, { sortMetadataKey: key })
+  updateExplorerDirectory(directory, stored => ({
+    sorting: methodFor('metadata', directionForDirectory(stored))
+  }), { sortMetadataKey: key })
   showMetadataKeyPopover.value = false
 }
 
