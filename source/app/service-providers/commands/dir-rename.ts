@@ -64,7 +64,7 @@ export default class DirRename extends ZettlrCommand {
       // Keep every wikilink pointing at the document it named before the rename
       const move = { from: arg.path, to: newPath }
       const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move)
-      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles)
+      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents)
     } catch (err: unknown) {
       if (err instanceof Error) {
         this._app.log.error(`Error during renaming file: ${err.message}`, err)

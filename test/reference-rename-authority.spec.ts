@@ -140,7 +140,8 @@ async function createScratchBoundary (): Promise<ScratchBoundary> {
       synchronizeDatabases: async (_libraries: string[]) => {}
     },
     recentDocs: {
-      add: (_filePath: string) => {}
+      add: (_filePath: string) => {},
+      markEdited: (_filePath: string) => {}
     },
     stats: {
       updateCounts: (_words: number, _characters: number) => {}

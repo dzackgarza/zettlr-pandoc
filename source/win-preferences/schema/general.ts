@@ -110,6 +110,20 @@ export function getGeneralFields (appLangOptions: Record<string, string>): Prefe
         }
       ]
     },
+    {
+      title: trans('Command launcher'),
+      group: PreferencesGroups.General,
+      help: undefined,
+      fields: [
+        {
+          type: 'number',
+          label: trans('Files kept in the "Recently opened files" and "Recently edited files" lists'),
+          inline: true,
+          min: 1, max: 1000,
+          model: 'ui.recentFilesLimit'
+        }
+      ]
+    },
     ...(__UPDATES_DISABLED__ === '0' ? [updateSetting] : [updatesDisabledSetting])
   ]
 }

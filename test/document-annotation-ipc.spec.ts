@@ -128,7 +128,7 @@ describe('Document annotation IPC (M6, WU-14)', function () {
             .map(entry => path.join(entry.parentPath, entry.name))
       },
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
-      recentDocs: { add: (_path: string) => {} },
+      recentDocs: { add: (_path: string) => {}, markEdited: (_path: string) => {} },
       stats: { updateCounts: (_words: number, _chars: number) => {} },
       windows: {
         askSaveChanges: async (_detail?: string) => ({ response: 2, checkboxChecked: false }),

@@ -2,7 +2,7 @@
 // installs the headless Electron module shim that those imports consume.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
@@ -108,6 +108,30 @@ describe("document lint cache", function () {
     assert.equal(lookup.record?.lintedAt, linted.lintedAt);
     assert.deepEqual(lookup.record?.diagnostics, linted.diagnostics);
     assert.equal((await second.lint(documentPath, text)).lintedAt, linted.lintedAt);
+  });
+
+  it("keeps a persisted result when a restart writes the same macro sources again", async function () {
+    const first = createProvider();
+    await first.boot();
+    const linted = await first.lint(documentPath, text);
+    await first.shutdown();
+
+    // The launcher regenerates the macro projection before each start: the
+    // same bytes, a new modification time.
+    const later = new Date(Date.now() + 60_000);
+    for (const file of [
+      path.join(home, ".pandoc", "styles", "macros", "base.tex"),
+      path.join(home, ".pandoc", "templates", "css", "mathjax-macros.json"),
+    ]) {
+      await writeFile(file, await readFile(file));
+      await utimes(file, later, later);
+    }
+
+    const second = createProvider();
+    await second.boot();
+    const [lookup] = await second.lookup([{ path: documentPath, text }]);
+    assert.equal(lookup.current, true);
+    assert.equal(lookup.record?.lintedAt, linted.lintedAt);
   });
 
   it("reports a document edited on disk as outdated and relints it in the background", async function () {

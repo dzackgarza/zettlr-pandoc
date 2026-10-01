@@ -94,11 +94,8 @@ const visibilityConfig: FileManagerVisibilityConfig = {
   attachmentExtensions: [],
   fileManager: {
     filters: {
-      include: [ '.md', '.tex', '.yaml' ],
-      exclude: [ '.yaml' ]
-    },
-    hiddenDirectories: [],
-    showHiddenDirectories: false
+      include: [ '.md', '.tex' ]
+    }
   },
   files: {
     builtin: { showInFilemanager: true, openWith: 'zettlr' },

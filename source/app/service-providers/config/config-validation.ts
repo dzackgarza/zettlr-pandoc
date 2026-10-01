@@ -24,10 +24,9 @@ const RULES = {
   appLang: 'required|string|min:5|max:7|default:en_US',
   fileManagerMode: 'required|string|in:thin,expanded,combined|default:thin',
   'fileManager.expandedDirectories': 'optional|array',
-  'fileManager.hiddenDirectories': 'optional|array',
-  'fileManager.showHiddenDirectories': 'optional|boolean|default:false',
+  'fileManager.ignoreRules': 'optional|array',
+  'fileManager.showIgnored': 'optional|boolean|default:false',
   'fileManager.filters.include': 'optional|array',
-  'fileManager.filters.exclude': 'optional|array',
   muteLines: 'required|boolean|default:false',
   'export.dir': 'required|string|in:temp,cwd|default:temp',
   'export.stripTags': 'required|boolean|default:false',
@@ -44,7 +43,8 @@ const RULES = {
   cslLibrary: 'optional|string|default:',
   'display.imageWidth': 'required|number|min:1|max:100|default:100',
   'display.imageHeight': 'required|number|min:1|max:100|default:100',
-  'watchdog.stabilityThreshold': 'optional|number|min:1|max:100000|default:1000'
+  'watchdog.stabilityThreshold': 'optional|number|min:1|max:100000|default:1000',
+  'ui.recentFilesLimit': 'required|number|min:1|max:1000|default:50'
 }
 
 export const VALIDATE_RULES = Object.values(RULES)

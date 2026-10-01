@@ -35,7 +35,7 @@ tags: [coble, moduli]
 
 ::: {.remark title="The GIT birational model"}
 
-$\\fco \\da D_{T_{\\Co}}/\\Orth(T_{\\Co})$ is claimed birational to the GIT quotient ${EQUATION}.
+$\\fco \\definedas D_{T_{\\Co}}/\\Orth(T_{\\Co})$ is claimed birational to the GIT quotient ${EQUATION}.
 This gives an independent handle on the dimension 9 already asserted in the project.
 :::
 
@@ -93,17 +93,30 @@ describe('assembled editor: click into rendered math to edit it', function () {
     assertCleanExit(getOutput())
   })
 
-  async function snapshot (activePage: Page): Promise<EditorSnapshot> {
-    return await activePage.evaluate(({ equation, documentText }) => {
+  /**
+   * The centre of the rendered widget of the equation, or null when its source
+   * is revealed. A widget holds no document position, so the view says where
+   * each widget is, as the production click handler asks it.
+   */
+  async function renderedEquationCentre (activePage: Page): Promise<{ x: number, y: number }|null> {
+    return await activePage.evaluate((from) => {
       const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
       if (view === undefined) throw new Error('No CodeMirror view is mounted')
-      const from = documentText.indexOf(equation)
-      return {
-        anchor: view.state.selection.main.anchor,
-        head: view.state.selection.main.head,
-        revealed: document.querySelector(`[data-preview-source-from="${from}"]`) === null
-      }
-    }, { equation: EQUATION, documentText: DOCUMENT })
+      const widget = Array.from(view.contentDOM.querySelectorAll<HTMLElement>('[data-preview-source-length]'))
+        .find(element => view.posAtDOM(element) === from)
+      if (widget === undefined) return null
+      const rect = widget.getBoundingClientRect()
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    }, DOCUMENT.indexOf(EQUATION))
+  }
+
+  async function snapshot (activePage: Page): Promise<EditorSnapshot> {
+    const selection = await activePage.evaluate(() => {
+      const view = document.querySelector<EditorContentElement>('.cm-content')?.cmTile?.root.view
+      if (view === undefined) throw new Error('No CodeMirror view is mounted')
+      return { anchor: view.state.selection.main.anchor, head: view.state.selection.main.head }
+    })
+    return { ...selection, revealed: await renderedEquationCentre(activePage) === null }
   }
 
   it('keeps the CodeMirror height map aligned with every rendered block', async function () {
@@ -128,12 +141,12 @@ describe('assembled editor: click into rendered math to edit it', function () {
   for (const needle of [ '\\PGL_3', '\\modmod', '^{10}', '(\\PP' ]) {
     it(`puts the caret on ${needle} when the revealed source is clicked there`, async function () {
       assert.ok(page !== undefined, 'the assembled editor page must be available')
-      const from = DOCUMENT.indexOf(EQUATION)
       await page.locator('.cm-line', { hasText: 'Outside probe.' }).click()
       await delay(600)
 
-      const widget = page.locator(`[data-preview-source-from="${from}"]`)
-      await widget.click()
+      const widget = await renderedEquationCentre(page)
+      assert.ok(widget !== null, 'with the caret outside, the equation must be rendered')
+      await page.mouse.click(widget.x, widget.y)
       const revealed = await snapshot(page)
       assert.ok(revealed.revealed, 'a click on the rendered equation must reveal its source')
 

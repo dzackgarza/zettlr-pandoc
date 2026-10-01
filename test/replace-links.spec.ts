@@ -1,6 +1,14 @@
+import { ChangeSet, Text } from '@codemirror/state'
 import { retargetLinks } from '@common/util/replace-links'
 import { WikilinkIndex, type WikilinkDocument } from '@common/util/wikilink-resolution'
 import { strictEqual } from 'assert'
+
+/** The text after the retargeting replacements, applied as a workspace edit applies them. */
+function retargeted (markdown: string, ...args: [string, Parameters<typeof retargetLinks>[2], WikilinkIndex, WikilinkIndex]): string {
+  const replacements = retargetLinks(markdown, ...args)
+  const changes = ChangeSet.of(replacements.map(({ from, to, text }) => ({ from, to, insert: text })), markdown.length)
+  return changes.apply(Text.of(markdown.split('\n'))).toString()
+}
 
 const root = '/ws'
 const sourcePath = `${root}/programs/source.md`
@@ -27,7 +35,7 @@ describe('Link retargeting after a rename', function () {
       'A relative link: [[../notes/zettelkasten.md]].',
       ''
     ].join('\n')
-    strictEqual(retargetLinks(markdown, sourcePath, move, before, after), [
+    strictEqual(retargeted(markdown, sourcePath, move, before, after), [
       'See [[luhmann-zettelkasten]], [[luhmann-zettelkasten|the method]] and [[luhmann-zettelkasten#Origins|origins]].',
       'A relative link: [[luhmann-zettelkasten]].',
       ''
@@ -36,7 +44,7 @@ describe('Link retargeting after a rename', function () {
 
   it('keeps links by ID or alias, and links to other documents', function () {
     const markdown = 'By ID [[20240101120000]], by alias [[ZK]], and another [[zettelkasten-luhmann]].\n'
-    strictEqual(retargetLinks(markdown, sourcePath, move, before, after), markdown)
+    strictEqual(retargeted(markdown, sourcePath, move, before, after), markdown)
   })
 })
 
@@ -49,7 +57,7 @@ describe('Link retargeting after a directory rename', function () {
   it('retargets a name the rename gave to another document, and a relative link into the directory', function () {
     const markdown = 'Lemma [[x/lemma]], chain [[./other/chain.md#Step]], basis [[basis]].\n'
     strictEqual(
-      retargetLinks(markdown, `${root}/index.md`, move, before, after),
+      retargeted(markdown, `${root}/index.md`, move, before, after),
       'Lemma [[deep/x/lemma]], chain [[chain#Step]], basis [[basis]].\n'
     )
   })
@@ -57,7 +65,7 @@ describe('Link retargeting after a directory rename', function () {
   it('retargets a relative link out of the renamed directory, read from its old location', function () {
     const markdown = 'Basis [[../notes/basis.md]], sibling [[./lemma.md]].\n'
     strictEqual(
-      retargetLinks(markdown, `${root}/other/chain.md`, { from: `${root}/other`, to: `${root}/x/sub` }, before,
+      retargeted(markdown, `${root}/other/chain.md`, { from: `${root}/other`, to: `${root}/x/sub` }, before,
         new WikilinkIndex([ ...unmoved, document('x/sub/lemma.md'), document('x/sub/chain.md') ])),
       'Basis [[basis]], sibling [[./lemma.md]].\n'
     )

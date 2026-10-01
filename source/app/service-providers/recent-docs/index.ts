@@ -7,33 +7,63 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Manages the list of recently viewed documents.
+ * Description:     Manages the lists of recently opened and recently edited
+ *                  documents. Both lists are newest first, hold one entry
+ *                  per file and at most the configured number of files, and
+ *                  persist in userData/recent-files.json across restarts.
  *
  * END HEADER
  */
 
 import EventEmitter from 'events'
+import { existsSync } from 'fs'
+import { readFile, writeFile } from 'fs/promises'
+import path from 'path'
 import { app } from 'electron'
+import { z } from 'zod'
 import ProviderContract from '../provider-contract'
 import type LogProvider from '../log'
+import type { ConfigOptions } from '../config/get-config-template'
+
+const recentFilesSchema = z.object({
+  opened: z.array(z.string()),
+  edited: z.array(z.string())
+})
+
+/** The recently opened and recently edited files, each newest first. */
+export type RecentFiles = z.infer<typeof recentFilesSchema>
+
+/** The one setting the lists read: how many files each keeps. */
+interface RecentFilesConfig {
+  get: () => { ui: Pick<ConfigOptions['ui'], 'recentFilesLimit'> }
+}
 
 /**
-* This class manages the coloured tags of the app. It reads the tags on each
-* start of the app and writes them after they have been changed.
-*/
+ * Keeps the recently opened and recently edited files, each newest first.
+ */
 export default class RecentDocumentsProvider extends ProviderContract {
-  private _recentDocs: string[]
+  private _files: RecentFiles
+  private readonly _storePath: string
+  private _pendingWrite: Promise<void>
   private readonly _emitter: EventEmitter
 
-  /**
-  * Create the instance on program start and initially load the tags.
-  */
-  constructor (private readonly _logger: LogProvider) {
+  constructor (
+    private readonly _logger: LogProvider,
+    private readonly _config: RecentFilesConfig
+  ) {
     super()
-
-    this._recentDocs = [] // This array holds all recent documents
-
+    this._files = { opened: [], edited: [] }
+    this._storePath = path.join(app.getPath('userData'), 'recent-files.json')
+    this._pendingWrite = Promise.resolve()
     this._emitter = new EventEmitter()
+  }
+
+  /** Reads the persisted lists; a malformed store is an error, not an empty list. */
+  async boot (): Promise<void> {
+    if (!existsSync(this._storePath)) {
+      return
+    }
+    this._files = recentFilesSchema.parse(JSON.parse(await readFile(this._storePath, 'utf-8')))
   }
 
   on (evt: string, callback: (...args: any[]) => void): void {
@@ -46,52 +76,79 @@ export default class RecentDocumentsProvider extends ProviderContract {
 
   /**
    * Add a document to the list of recently opened documents
-   * @param {Object} doc A document exposing at least the metadata of the file
+   * @param {string} docPath The absolute path of the file
    */
   add (docPath: string): void {
-    // First remove the document if it's already somewhere in the list
-    const idx = this._recentDocs.indexOf(docPath)
-    if (idx > -1) {
-      this._recentDocs.splice(idx, 1)
-    }
-
-    // Push the file to the beginning
-    this._recentDocs.unshift(docPath)
+    this._files.opened = this._newestFirst(this._files.opened, docPath)
     // Push the file into the doc-menu if we're on macOS or Windows
     if ([ 'darwin', 'win32' ].includes(process.platform)) {
       app.addRecentDocument(docPath)
     }
+    this._persist()
+  }
 
-    // Make sure we never exceed 10 recent docs
-    if (this._recentDocs.length > 10) {
-      this._recentDocs = this._recentDocs.slice(0, 10)
-    }
-
-    // Finally, announce the fact that the list of recent documents has
-    // changed to whomever it may concern
-    this._emitter.emit('update')
+  /** Puts a document a save just wrote at the top of the recently edited list. */
+  markEdited (docPath: string): void {
+    this._files.edited = this._newestFirst(this._files.edited, docPath)
+    this._persist()
   }
 
   /**
    * Clears out the list of recent files
    */
   clear (): void {
-    this._recentDocs = []
+    this._files = { opened: [], edited: [] }
     // Clear the application's recent docs menu as well on macOS or Windows
     if ([ 'darwin', 'win32' ].includes(process.platform)) {
       app.clearRecentDocuments()
     }
-    // Announce that the list of recent docs has changed
-    this._emitter.emit('update')
+    this._persist()
   }
 
   /**
-   * Retrieve the list of recent documents
+   * Retrieve the list of recently opened documents, newest first.
    * @return {Array} A list containing all documents in the recent list
    */
   get (): string[] {
-    // Return a copy
-    return [ 'darwin', 'win32' ].includes(process.platform) ? app.getRecentDocuments() : this._recentDocs.map(elem => elem)
+    this._files.opened = this._existing(this._files.opened)
+    return [...this._files.opened]
+  }
+
+  /** The recently edited documents, newest first. */
+  getEdited (): string[] {
+    this._files.edited = this._existing(this._files.edited)
+    return [...this._files.edited]
+  }
+
+  /** The list with the path first and once, cut to the configured length. */
+  private _newestFirst (list: string[], docPath: string): string[] {
+    const limit = this._config.get().ui.recentFilesLimit
+    return [ docPath, ...list.filter(item => item !== docPath) ].slice(0, limit)
+  }
+
+  /** The list without the files that are no longer on disk; a removal is written. */
+  private _existing (list: string[]): string[] {
+    const existing = list.filter(item => existsSync(item))
+    if (existing.length !== list.length) {
+      this._write()
+    }
+    return existing
+  }
+
+  /** Writes the store and announces the change. */
+  private _persist (): void {
+    this._write()
+    this._emitter.emit('update')
+  }
+
+  /** Writes the store after the write before it. */
+  private _write (): void {
+    const snapshot = JSON.stringify(this._files, null, 2)
+    this._pendingWrite = this._pendingWrite
+      .then(async () => await writeFile(this._storePath, snapshot, 'utf-8'))
+      .catch((err: unknown) => {
+        this._logger.error(`[RecentDocs] Could not write ${this._storePath}`, err)
+      })
   }
 
   /**
@@ -100,5 +157,6 @@ export default class RecentDocumentsProvider extends ProviderContract {
   */
   async shutdown (): Promise<void> {
     this._logger.verbose('Recent documents provider shutting down ...')
+    await this._pendingWrite
   }
 }

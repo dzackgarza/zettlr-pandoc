@@ -153,7 +153,7 @@ type DocumentManagerApp = {
     | 'writeTextFile'
   >
   log: Pick<AppServiceContainer['log'], 'error' | 'info' | 'verbose' | 'warning'>
-  recentDocs: Pick<AppServiceContainer['recentDocs'], 'add'>
+  recentDocs: Pick<AppServiceContainer['recentDocs'], 'add' | 'markEdited'>
   /**
    * The live-reference seam of the references provider (issue #53): this
    * manager is the document authority and DRIVES the provider's live
@@ -1020,69 +1020,132 @@ export default class DocumentManager
     // listen to close-events on the main window, we should be able to handle
     // this, if we ever switched to the auto updater.
     app.on('before-quit', (event) => {
-      if (!this.isClean()) {
-        event.preventDefault()
-
-        // Re-entrancy guard: quit can be requested again while the prompt is
-        // open (window-all-closed after the last window dies, the tray, a
-        // second Ctrl+Q). Without it, each request stacks another identical
-        // dialog over the unanswered first one.
-        if (this._quitPromptOpen) {
-          return
-        }
-        this._quitPromptOpen = true
-
-        // NOTE: We are re-implementing `askSaveChanges` here since we cannot
-        // give the user the choice to cancel.
-        // TODO: Once the window management logic is put here, we have better
-        // control over the windows and can ask this question *before* the
-        // window is being closed.
-        const opt: MessageBoxOptions = {
-          type: 'question',
-          buttons: [
-            trans('Save changes'),
-            trans('Discard changes'),
-            trans('Cancel')
-          ],
-          defaultId: 0,
-          cancelId: 2,
-          title: trans('Unsaved changes'),
-          message: trans('There are unsaved changes. Do you want to save or discard them?'),
-        }
-
-        dialog.showMessageBox(opt)
-          .then(async ({ response }) => {
-            this._quitPromptOpen = false
-            // 0 = Save, 1 = Don't save, 2 = Cancel
-            if (response === 2) {
-              this._app.log.verbose('User cancelled save-dialog; not quitting.')
-              return // Do nothing
-            }
-
-            // Apply the choice to all open documents
-            for (const document of this.documents) {
-              if (response === 0) {
-                const saved = await this.saveFile(document.filePath)
-                if (!saved.ok) {
-                  this._announceSaveRefusal(document.filePath, saved)
-                  return
-                }
-              } else {
-                await this._discardChanges(document)
-              }
-            }
-
-            app.quit()
-          })
-          .catch((err) => {
-            this._quitPromptOpen = false
-            this._app.log.error('[DocumentManager] Cannot ask user to save or omit changes!', err)
-          })
-      } else {
+      const parked = this._reviewedDocumentsWithoutPane()
+      const unsaved = this._unsavedDocumentsToPrompt()
+      if (parked.length === 0 && unsaved.length === 0) {
         this._shuttingDown = true
+        return
       }
+      event.preventDefault()
+
+      // Re-entrancy guard: quit can be requested again while the prompt is
+      // open (window-all-closed after the last window dies, the tray, a
+      // second Ctrl+Q). Without it, each request stacks another identical
+      // dialog over the unanswered first one.
+      if (this._quitPromptOpen) {
+        return
+      }
+      this._quitPromptOpen = true
+
+      this._settleDocumentsBeforeQuit(parked, unsaved)
+        .then((mayQuit) => {
+          this._quitPromptOpen = false
+          if (mayQuit) {
+            app.quit()
+          }
+        })
+        .catch((err) => {
+          this._quitPromptOpen = false
+          this._app.log.error('[DocumentManager] Cannot ask user to save or omit changes!', err)
+        })
     })
   } // END constructor
+
+  /**
+   * The unsaved changes a quit asks about: a document some pane shows, or
+   * one that no review owns. A reviewed document that no pane shows is not
+   * here; `_reviewedDocumentsWithoutPane` parks it in its sidecar instead.
+   */
+  private _unsavedDocumentsToPrompt(): Document[] {
+    const shown = this._pathsShownInPanes()
+    return this.documents.filter(
+      (document) =>
+        this.isModified(document.filePath) &&
+        (shown.has(document.filePath) ||
+          this._reviewApplication.getReview(document.documentId) === undefined),
+    )
+  }
+
+  /**
+   * An agent proposal loads its document into the authority without a pane,
+   * and the review's working text leaves that buffer modified where nobody is
+   * looking at it. Saving it at quit would write the proposal to disk before
+   * the author decided on it; discarding it would destroy the review. The
+   * sidecar is where a closed document's review lives, so a quit detaches
+   * these the way closing their last tab would.
+   */
+  private _reviewedDocumentsWithoutPane(): Document[] {
+    const shown = this._pathsShownInPanes()
+    return this.documents.filter(
+      (document) =>
+        !shown.has(document.filePath) &&
+        this._reviewApplication.getReview(document.documentId) !== undefined,
+    )
+  }
+
+  private _pathsShownInPanes(): Set<string> {
+    return new Set(
+      Object.values(this._windows).flatMap((tree) =>
+        tree.getAllLeafs().flatMap((leaf) => leaf.tabMan.openFiles.map((file) => file.path)),
+      ),
+    )
+  }
+
+  /**
+   * Park every reviewed document no pane shows, then ask about the rest by
+   * name. Resolves true when the quit may proceed. A detach or save that
+   * fails keeps the app open and announces why, as a window close does.
+   */
+  private async _settleDocumentsBeforeQuit(parked: Document[], unsaved: Document[]): Promise<boolean> {
+    for (const document of parked) {
+      try {
+        await this._detachCollaboration(document.documentId)
+      } catch (err) {
+        this._announceDetachFailure(document.filePath, err)
+        return false
+      }
+      this.documents.splice(this.documents.indexOf(document), 1)
+      this._app.references.dropAuthorityBuffer(document.filePath)
+    }
+    if (parked.length > 0) {
+      this.syncWatchedFilePaths()
+    }
+    if (unsaved.length === 0) {
+      return true
+    }
+
+    const opt: MessageBoxOptions = {
+      type: 'question',
+      buttons: [
+        trans('Save changes'),
+        trans('Discard changes'),
+        trans('Cancel')
+      ],
+      defaultId: 0,
+      cancelId: 2,
+      title: trans('Unsaved changes'),
+      message: trans('There are unsaved changes. Do you want to save or discard them?'),
+      detail: unsaved.map((document) => document.filePath).join('\n'),
+    }
+    const { response } = await dialog.showMessageBox(opt)
+    // 0 = Save, 1 = Don't save, 2 = Cancel
+    if (response === 2) {
+      this._app.log.verbose('User cancelled save-dialog; not quitting.')
+      return false
+    }
+    for (const document of unsaved) {
+      if (response === 0) {
+        const saved = await this.saveFile(document.filePath)
+        if (!saved.ok) {
+          this._announceSaveRefusal(document.filePath, saved)
+          return false
+        }
+      } else {
+        await this._discardChanges(document)
+      }
+    }
+    return true
+  }
 
   /**
    * Use this method to ask the user whether or not the window identified with
@@ -3217,6 +3280,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`)
+    this._app.recentDocs.markEdited(filePath)
     if (reviewSave !== undefined) {
       try {
         await this._reviewApplication.completeSave(reviewSave, savedSha256)

@@ -10,7 +10,6 @@ import { getFileManagerFields } from 'source/win-preferences/schema/file-manager
 import { buildFilePickerCache } from 'source/win-main/file-manager/util/match-query'
 import {
   createFileManagerVisibilityFilter,
-  type FileManagerFilterRules,
   type FileManagerVisibilityConfig
 } from 'source/win-main/file-manager/util/filter-children'
 
@@ -104,35 +103,11 @@ const directory = {
   isGitRepository: false
 } satisfies DirDescriptor
 
-const hiddenDirectory = {
-  ...directory,
-  path: '/notes/build',
-  dir: '/notes',
-  name: 'build'
-} satisfies DirDescriptor
-
-const nestedMarkdown = {
-  ...markdown,
-  path: '/notes/build/hidden.md',
-  dir: '/notes/build',
-  name: 'hidden.md',
-  references: {
-    ...markdown.references,
-    documentPath: '/notes/build/hidden.md'
-  }
-} satisfies MDFileDescriptor
-
-function visibilityConfig (
-  filters: FileManagerFilterRules,
-  hiddenDirectories: string[] = [],
-  showHiddenDirectories = false
-): FileManagerVisibilityConfig {
+function visibilityConfig (include: string[]): FileManagerVisibilityConfig {
   return {
     attachmentExtensions: [],
     fileManager: {
-      filters,
-      hiddenDirectories,
-      showHiddenDirectories
+      filters: { include }
     },
     files: {
       builtin: { showInFilemanager: true, openWith: 'zettlr' },
@@ -146,97 +121,53 @@ function visibilityConfig (
   }
 }
 
-describe('unified permanent file filters', function () {
-  it('defaults Include to all Markdown extensions and Exclude to empty', function () {
+describe('file type filter of the file manager', function () {
+  it('defaults Include to all Markdown extensions', function () {
     assert.deepEqual(
       DEFAULT_FILE_FILTER_INCLUDE,
       [ '.md', '.rmd', '.qmd', '.markdown', '.txt', '.mdx', '.mkd' ]
     )
   })
 
-  it('applies extension exclusions before built-in File Treatment', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig({
-      include: [ '.md', '.yaml' ],
-      exclude: [ '.yaml' ]
-    }))
+  it('shows only files with an included extension, and every folder', function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([ '.md', '.yaml' ]))
 
     assert.equal(visible(markdown), true)
-    assert.equal(visible(yaml), false)
+    assert.equal(visible(yaml), true)
+    assert.equal(visible(latex), false)
+    assert.equal(visible(pdf), false)
+    assert.equal(visible(directory), true)
   })
 
   it('builds the Ctrl+Shift+P cache from the exact file-manager-visible set', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig({
-      include: [ '.md', '.yaml' ],
-      exclude: [ '.yaml' ]
-    }))
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([ '.md', '.yaml' ]))
     const cache = buildFilePickerCache(
       [ markdown, yaml, latex, pdf, directory ],
       visible
     )
 
-    assert.equal(visible(yaml), false)
-    assert.deepEqual(cache.paths, [ markdown.path ])
-    assert.equal(cache.pathSet.has(markdown.path), true)
-    assert.equal(cache.pathSet.has(yaml.path), false)
+    assert.deepEqual(cache.paths, [ markdown.path, yaml.path ])
+    assert.equal(cache.pathSet.has(latex.path), false)
     assert.equal(cache.pathSet.has(directory.path), false)
   })
 
   it('uses an empty Include list as all file types permitted by File Treatment', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig({
-      include: [],
-      exclude: [ '.yaml' ]
-    }))
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([]))
 
     assert.equal(visible(markdown), true)
     assert.equal(visible(latex), true)
+    assert.equal(visible(yaml), true)
     assert.equal(visible(pdf), true)
-    assert.equal(visible(yaml), false)
     assert.equal(visible(directory), true)
   })
 
-  it('hides an explicitly hidden folder and every descendant', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig(
-      { include: [], exclude: [] },
-      [ hiddenDirectory.path ]
-    ))
-
-    assert.equal(visible(hiddenDirectory), false)
-    assert.equal(visible(nestedMarkdown), false)
-    assert.equal(visible(markdown), true)
-  })
-
-  it('reveals all hidden folders without clearing their flags', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig(
-      { include: [], exclude: [] },
-      [ hiddenDirectory.path ],
-      true
-    ))
-
-    assert.equal(visible(hiddenDirectory), true)
-    assert.equal(visible(nestedMarkdown), true)
-  })
-
-  it('keeps hidden subtrees out of the Ctrl+Shift+P cache', function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig(
-      { include: [], exclude: [] },
-      [ hiddenDirectory.path ]
-    ))
-    const cache = buildFilePickerCache(
-      [ markdown, hiddenDirectory, nestedMarkdown ],
-      visible
-    )
-
-    assert.deepEqual(cache.paths, [ markdown.path ])
-  })
-
-  it('exposes both rules in Preferences → File Manager', function () {
+  it('exposes the file types, the ignore rules and the reveal toggle in Preferences → File Manager', function () {
     const models = getFileManagerFields({ fileNameDisplay: 'filename' })
       .flatMap(fieldset => fieldset.fields)
       .flatMap(field => 'model' in field ? [ field.model ] : [])
 
     assert.ok(models.includes('fileManager.filters.include'))
-    assert.ok(models.includes('fileManager.filters.exclude'))
-    assert.ok(models.includes('fileManager.hiddenDirectories'))
-    assert.ok(models.includes('fileManager.showHiddenDirectories'))
+    assert.ok(models.includes('fileManager.ignoreRules'))
+    assert.ok(models.includes('fileManager.showIgnored'))
   })
 })

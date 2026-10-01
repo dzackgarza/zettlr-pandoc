@@ -206,6 +206,12 @@ test-ci:
     bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
+# The scheduled QC run dispatches this tier: the whole-tree debt audit.
+[private]
+ambient:
+    {{bun}} install --frozen-lockfile
+    @just -f ~/ai-review-ci/justfiles/bun.just -d . ambient
+
 [private]
 setup-ci:
     just --justfile "{{justfile_directory()}}/justfile" install-flowmark

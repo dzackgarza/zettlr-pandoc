@@ -124,7 +124,7 @@ export class AppServiceContainer {
     )
 
     // Now according to their dependencies
-    this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider)
+    this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider, this._configProvider)
     this._assetsProvider = new AssetsProvider(this._logProvider, this._configProvider)
     this._cssProvider = new CssProvider(this._logProvider)
     this._statsProvider = new StatsProvider(this._logProvider)

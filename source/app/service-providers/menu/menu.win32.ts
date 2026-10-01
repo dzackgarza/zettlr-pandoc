@@ -30,7 +30,7 @@ import type {
 } from './menu-dependencies'
 import { getCustomShortcut, type MenuShortcutName } from './shortcuts'
 import { cmShortcutToElectron } from 'source/common/util/shortcuts'
-import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
+import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, ignoreRulesItem, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -67,7 +67,8 @@ export default function getMenu (
     }]
   }
 
-  const docs = recentDocs.get()
+  // The launcher lists the whole history; the menu shows the newest ten.
+  const docs = recentDocs.get().slice(0, 10)
   recentDocsItem = {
     id: 'menu.recent_docs',
     label: trans('Recent files'),
@@ -424,6 +425,7 @@ export default function getMenu (
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'filter-files')
           }
         },
+        ignoreRulesItem(),
         {
           type: 'separator'
         },

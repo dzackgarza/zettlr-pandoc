@@ -327,6 +327,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
       recentDocs: {
         add: (_path: string) => {},
+        markEdited: (_path: string) => {},
       },
       stats: {
         updateCounts: (_words: number, _chars: number) => {},

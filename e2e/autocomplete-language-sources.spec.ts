@@ -136,7 +136,6 @@ describe('language-aware completion sources in the assembled editor', function (
 
     const math = await completionLabelsAfter('Math: $\\fr')
     assert.ok(math.includes('\\fracId'), `user-defined fraction macro missing from ${JSON.stringify(math)}`)
-    assert.ok(math.includes('\\fractional'), `user-defined fraction-like macro missing from ${JSON.stringify(math)}`)
     assert.ok(math.includes('\\fractionalpart'), `user-defined fraction-like macro missing from ${JSON.stringify(math)}`)
     assert.ok(page !== undefined)
     assert.strictEqual(

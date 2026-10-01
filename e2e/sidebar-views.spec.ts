@@ -124,7 +124,7 @@ describe('the sidebar views', function () {
         window: { fileManagerVisible: true, sidebarVisible: true },
         // The shipped Include rule admits Markdown only; an empty Include
         // admits every type File Treatment shows, attachments among them.
-        fileManager: { filters: { include: [], exclude: [] } }
+        fileManager: { filters: { include: [] } }
       }
     })
     fixtureRoot = fixture.root
