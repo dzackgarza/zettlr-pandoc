@@ -14,6 +14,7 @@ import { type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { type EditorView } from '@codemirror/view'
 import { type Browser, type Page } from 'playwright'
 import {
@@ -158,9 +159,15 @@ describe('assembled app: wikilinks follow their documents', function () {
 
     // The cursor on the heading leaves every link line rendered
     await page.locator('.cm-line', { hasText: 'Index' }).first().click()
+    // The chips of the links that the rename rewrote wait for the main
+    // process to resolve the new targets; the others are already drawn.
     const chips = page.locator('.wikilink-chip')
-    await chips.filter({ hasText: 'the step' }).waitFor({ state: 'visible', timeout: this.timeout() })
-    assert.deepEqual(await chips.allTextContents(), [ 'chain', 'deep/x/lemma', 'the step' ])
+    const expectedChips = [ 'chain', 'deep/x/lemma', 'the step' ]
+    const deadline = Date.now() + 30_000
+    while (Date.now() < deadline && !isDeepStrictEqual(await chips.allTextContents(), expectedChips)) {
+      await delay(100)
+    }
+    assert.deepEqual(await chips.allTextContents(), expectedChips)
     assert.equal(
       await chips.filter({ hasText: 'the step' }).getAttribute('title'),
       path.join(workspace, 'archive', '2026', 'chain.md')
