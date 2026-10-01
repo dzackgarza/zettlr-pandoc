@@ -122,6 +122,14 @@ describe('the main window panes', function () {
     await editorPage.locator('#navigation-sidebar [data-section="files"]').waitFor({ timeout: 60_000 })
     await editorPage.setViewportSize({ width, height })
     await editorPage.waitForFunction(expected => window.innerWidth === expected, width, { timeout: 10_000 })
+    // The splitter lays the panes out for the new width some frames after the
+    // window reports it. A width read before that is the old window's layout,
+    // while a drag starts from the new one.
+    const stored = await readUiConfig(editorPage)
+    await waitUntil(async () => {
+      return Math.abs(await paneWidth(editorPage, 'navigation-sidebar') - Number(stored.navigationSidebarWidth)) <= 8 &&
+        Math.abs(await paneWidth(editorPage, 'annotation-panel') - Number(stored.annotationPanelWidth)) <= 8
+    }, `the panes to settle at their stored widths in the ${width} px window`)
     return editorPage
   }
 
