@@ -17,8 +17,6 @@ import { type PreferencesFieldset } from './types'
 import { PreferencesGroups } from './_preferences-groups'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
 
-const ipcRenderer = window.ipc
-
 export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDisplay'>): PreferencesFieldset[] {
   return [
     {
@@ -81,8 +79,8 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
       ]
     },
     {
-      title: trans('File filters'),
-      infoString: trans('Permanent inclusion and exclusion settings for the file manager. Ctrl+Shift+P only searches files that pass these same rules. Include is applied first; Exclude always wins. Leave Include empty to allow every file type permitted by File Treatment.'),
+      title: trans('File types'),
+      infoString: trans('The file manager and Ctrl+Shift+P show only files with these extensions. Leave the list empty to show every file type permitted by File Treatment.'),
       group: PreferencesGroups.FileManager,
       help: undefined,
       fields: [
@@ -91,49 +89,30 @@ export function getFileManagerFields (config: Pick<ConfigOptions, 'fileNameDispl
           label: trans('Include file extensions'),
           placeholder: trans('Enter an extension, e.g. ".md"'),
           model: 'fileManager.filters.include'
-        },
-        {
-          type: 'token',
-          label: trans('Exclude file extensions'),
-          placeholder: trans('Enter an extension, e.g. ".tex"'),
-          model: 'fileManager.filters.exclude'
         }
       ]
     },
     {
-      title: trans('Hidden folders'),
-      infoString: trans('Folders hidden here are removed together with their descendants from the file manager and Ctrl+Shift+P. Revealing hidden folders does not clear their hidden flags.'),
+      title: trans('File filters'),
+      infoString: trans('A file or folder that a rule matches is not in the file manager, the launcher, search, links or lint. A rule is one gitignore pattern, for example "*scripts*", "*_files/", "references/" or "AGENTS.md". These rules apply to all workspaces; a workspace adds its own in the file ".zettlrignore" at its root. The menu of the Workspaces header in the file manager has "Edit filters…" for both.'),
       group: PreferencesGroups.FileManager,
       help: undefined,
       fields: [
         {
-          type: 'checkbox',
-          label: trans('Show hidden folders'),
-          model: 'fileManager.showHiddenDirectories'
-        },
-        {
           type: 'list',
           valueType: 'simpleArray',
-          model: 'fileManager.hiddenDirectories',
-          columnLabels: [ trans('Hidden path') ],
+          model: 'fileManager.ignoreRules',
+          columnLabels: [ trans('Rule') ],
+          addable: true,
+          editable: true,
           deletable: true,
-          editable: false,
-          searchable: true,
-          searchLabel: trans('Filter hidden paths…'),
-          emptyMessage: trans('No hidden folders')
+          emptyMessage: trans('No rules')
         },
         {
-          type: 'button',
-          label: trans('Clear hidden folders'),
-          onClick: () => {
-            ipcRenderer.sendSync('config-provider', {
-              command: 'set-config-single',
-              payload: {
-                key: 'fileManager.hiddenDirectories',
-                val: []
-              }
-            })
-          }
+          type: 'checkbox',
+          label: trans('Turn the filters off'),
+          info: trans('No rule hides a file or folder anywhere in the app. The file manager dims each file and folder that a rule matches.'),
+          model: 'fileManager.showIgnored'
         }
       ]
     },

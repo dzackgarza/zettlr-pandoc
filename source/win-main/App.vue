@@ -174,6 +174,7 @@
     @create="handleCreateReferenceLabel($event)"
   />
   <FixAllDialog ref="fixAllDialog" />
+  <IgnoreRulesDialog />
 </template>
 
 <script setup lang="ts">
@@ -210,6 +211,7 @@ import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './
 import { isSidebarViewId } from '@dts/common/sidebar-views'
 import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
 import FixAllDialog from './FixAllDialog.vue'
+import IgnoreRulesDialog from './IgnoreRulesDialog.vue'
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent
@@ -246,7 +248,7 @@ import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
 import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
 import { type UpdateState } from '@providers/updates'
 import { getSemanticDocumentTitle } from './util/get-document-title'
-import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useIgnoreRulesStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { type AnyDescriptor } from 'source/types/common/fsal'
 import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
@@ -272,6 +274,7 @@ const documentTreeStore = useDocumentTreeStore()
 const collaborationStore = useDocumentCollaborationStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
+const ignoreRulesStore = useIgnoreRulesStore()
 
 const SOUND_EFFECTS = [
   {
@@ -982,6 +985,7 @@ onMounted(() => {
     // The file manager focuses its own filter on the next tick; the drawer
     // and the Files section only have to be visible by then.
     'filter-files': () => navigationSidebar.value?.reveal({ view: 'explorer', section: 'files', focus: 'none' }),
+    'edit-ignore-rules': () => { ignoreRulesStore.editing = true },
     export: () => openExport(),
     'fix-all-document': fixAllInDocument,
     'fix-all-open': () => fixAllDialog.value?.start({ scope: 'open' }),

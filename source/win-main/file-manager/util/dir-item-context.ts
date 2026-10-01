@@ -18,6 +18,7 @@ import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register
 import type { DirDescriptor } from '@dts/common/fsal'
 import type { WindowControlsIPCAPI } from 'source/app/service-providers/windows'
 import { useConfigStore } from 'source/pinia'
+import { ignoreMenuItems } from './ignore-menu'
 
 const ipcRenderer = window.ipc
 
@@ -25,7 +26,6 @@ export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, 
   const configStore = useConfigStore()
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
-  const isExplicitlyHidden = configStore.config.fileManager.hiddenDirectories.includes(dirObject.path)
 
   const TEMPLATE: AnyMenuItem[] = [
     {
@@ -33,11 +33,7 @@ export function displayDirContext (event: MouseEvent, dirObject: DirDescriptor, 
       id: 'menu.properties',
       type: 'normal'
     },
-    {
-      label: isExplicitlyHidden ? trans('Unhide folder') : trans('Hide folder'),
-      id: 'menu.toggle_hidden_dir',
-      type: 'normal'
-    },
+    ...ignoreMenuItems(dirObject),
     {
       type: 'separator'
     },

@@ -28,7 +28,7 @@ import type {
 } from './menu-dependencies'
 import { cmShortcutToElectron } from 'source/common/util/shortcuts'
 import { type MenuShortcutName, getCustomShortcut } from './shortcuts'
-import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
+import { authoringSourceItems, commandLauncherItem, desktopFileItems, fileLauncherItem, formatMenu, ignoreRulesItem, insertMenu, sendShortcut, statisticsItem } from './menu-editing'
 
 export default function getMenu (
   logger: MenuLogger,
@@ -420,6 +420,7 @@ export default function getMenu (
             (focusedWindow as BrowserWindow|undefined)?.webContents.send('shortcut', 'filter-files')
           }
         },
+        ignoreRulesItem(),
         {
           type: 'separator'
         },

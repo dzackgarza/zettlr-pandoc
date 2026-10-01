@@ -11,7 +11,7 @@
         selected: isSelected,
         active: activeItem === item.path,
         project: item.type === 'directory' && item.settings.project != null,
-        'is-hidden-directory': isExplicitlyHidden,
+        'is-ignored': isIgnored,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
@@ -198,7 +198,7 @@ import PopoverFileProps from './util/PopoverFileProps.vue'
 import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
 import { nextTick, ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue'
 import type { AnyDescriptor } from '@dts/common/fsal'
-import { useConfigStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
+import { useConfigStore, useIgnoreRulesStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
 import { useItemComposable } from './util/item-composable'
 import {
@@ -248,6 +248,7 @@ const children = ref<AnyDescriptor[]>([])
 const configStore = useConfigStore()
 const windowStateStore = useWindowStateStore()
 const workspaceStore = useWorkspaceStore()
+const ignoreRulesStore = useIgnoreRulesStore()
 
 const {
   nameEditing,
@@ -374,9 +375,13 @@ const writingTargetPercent = computed(() => {
  * Returns true if this item is a root item
  */
 const isRoot = computed(() => workspaceStore.rootDescriptors.find(rd => rd.path === props.item.path) !== undefined)
-const isExplicitlyHidden = computed(() => {
-  return props.item.type === 'directory' &&
-    configStore.config.fileManager.hiddenDirectories.includes(props.item.path)
+/**
+ * Returns true if an ignore rule matches this item. The app lists such an
+ * item only while the reveal toggle is on.
+ */
+const isIgnored = computed(() => {
+  return ignoreRulesStore.sources.showIgnored &&
+    ignoreRulesStore.filter.matches(props.item.path, props.item.type === 'directory')
 })
 
 /**
@@ -788,7 +793,7 @@ body {
       &.orange { color: var(--accent-orange); }
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
-      &.is-hidden-directory { opacity: 0.58; }
+      &.is-ignored { opacity: 0.58; }
 
       .item-icon, .toggle-icon {
         display: flex;

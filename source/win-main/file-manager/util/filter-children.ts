@@ -20,30 +20,13 @@ import { isDotFile } from 'source/common/util/ignore-path'
 import { useConfigStore } from 'source/pinia'
 import type { AnyDescriptor } from 'source/types/common/fsal'
 import type { ConfigOptions } from 'source/app/service-providers/config/get-config-template'
-import { isInsideRoot } from '@common/util/renderer-path-polyfill'
-
-export interface FileManagerFilterRules {
-  include: readonly string[]
-  exclude: readonly string[]
-}
 
 export interface FileManagerVisibilityConfig {
   attachmentExtensions: string[]
   files: ConfigOptions['files']
   fileManager: {
-    filters: FileManagerFilterRules
-    hiddenDirectories: readonly string[]
-    showHiddenDirectories: boolean
+    filters: { include: readonly string[] }
   }
-}
-
-export function isPathHiddenByDirectory (
-  path: string,
-  hiddenDirectories: readonly string[]
-): boolean {
-  return hiddenDirectories.some(hiddenPath => {
-    return path === hiddenPath || isInsideRoot(path, hiddenPath)
-  })
 }
 
 function normalizeExtension (extension: string): string {
@@ -56,27 +39,11 @@ function matchesExtension (filePath: string, extension: string): boolean {
   return normalized !== '' && filePath.toLowerCase().endsWith(normalized)
 }
 
-export function matchesPermanentFileFilter (
-  child: AnyDescriptor,
-  rules: FileManagerFilterRules
-): boolean {
-  if (child.type === 'directory') {
-    return true
-  }
-
-  const included = rules.include.length === 0 ||
-    rules.include.some(extension => matchesExtension(child.path, extension))
-  if (!included) {
-    return false
-  }
-
-  return !rules.exclude.some(extension => matchesExtension(child.path, extension))
-}
-
 /**
  * Utility function that can filter the children of a directory descriptor,
  * taking into account various visibility settings from the configuration. Call
- * this function to get a filter-compatible function.
+ * this function to get a filter-compatible function. The ignore rules are not
+ * its concern: the FSAL lists no path that a rule hides.
  *
  * @return  {(item: AnyDescriptor) => boolean}The filter function
  */
@@ -84,24 +51,17 @@ export function createFileManagerVisibilityFilter (
   config: FileManagerVisibilityConfig
 ): (item: AnyDescriptor) => boolean {
   const { files, attachmentExtensions, fileManager } = config
+  const { include } = fileManager.filters
   return (child: AnyDescriptor) => {
-    if (
-      !fileManager.showHiddenDirectories &&
-      isPathHiddenByDirectory(child.path, fileManager.hiddenDirectories)
-    ) {
-      return false
-    }
-
-    // Permanent include/exclude rules are the first authority for file
-    // visibility. Everything else, including File Treatment, can only further
-    // narrow this set.
-    if (!matchesPermanentFileFilter(child, fileManager.filters)) {
-      return false
-    }
-
     // Filter files based on our settings
     if (child.type === 'directory') {
       return files.dotFiles.showInFilemanager || !isDotFile(child.name)
+    }
+
+    // The Include list is the first authority for file visibility. File
+    // Treatment can only further narrow this set.
+    if (include.length > 0 && !include.some(extension => matchesExtension(child.path, extension))) {
+      return false
     }
 
     // We have to check for hidden files first so they are not

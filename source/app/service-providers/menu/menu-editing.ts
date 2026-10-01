@@ -99,6 +99,15 @@ export function statisticsItem (commands: MenuCommands): MenuItemConstructorOpti
   }
 }
 
+/** Edit file filters…: the dialog that edits the ignore rules. */
+export function ignoreRulesItem (): MenuItemConstructorOptions {
+  return {
+    id: 'menu.edit_ignore_rules',
+    label: trans('Edit file filters…'),
+    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'edit-ignore-rules') }
+  }
+}
+
 /** File-menu desktop actions. Their target is resolved by the focused renderer. */
 export function desktopFileItems (): MenuItemConstructorOptions[] {
   return [
