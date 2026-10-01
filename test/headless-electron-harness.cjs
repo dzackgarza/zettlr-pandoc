@@ -52,6 +52,28 @@ const ipcMainHandlers = new Map()
 const sentMessages = new WeakMap()
 const openWindows = new Set()
 
+/**
+ * The REAL listeners main-process modules register on `app`, keyed by event
+ * name. A spec fires one with its own event object to drive the lifecycle
+ * path under proof (before-quit) without an Electron process.
+ *
+ * @type {Map<string, Function[]>}
+ */
+const appListeners = new Map()
+
+/** One entry per app.quit() call made by the code under proof. */
+const appQuitRequests = []
+
+/**
+ * Every dialog.showMessageBox() call, with the options it was shown. A spec
+ * sets `answer` to the response the user gives; while it is unset a dialog
+ * throws, because a dialog nobody scripted is a defect in the code under
+ * proof, not a prompt to wait on.
+ *
+ * @type {{ shown: Array<{ title?: string, message: string, detail?: string }>, answer: number | undefined }}
+ */
+const messageBoxes = { shown: [], answer: undefined }
+
 class HeadlessBrowserWindow {
   constructor () {
     const messages = []
@@ -100,7 +122,10 @@ Module._load = function (request, ...rest) {
         getName: () => 'Zettlr-Pandoc',
         getVersion: () => '0.0.0-headless-test',
         getLocale: () => 'en-US',
-        on () {},
+        on (event, listener) {
+          appListeners.set(event, [...(appListeners.get(event) ?? []), listener])
+        },
+        quit () { appQuitRequests.push(Date.now()) },
         whenReady: async () => {}
       },
       ipcMain: {
@@ -108,7 +133,17 @@ Module._load = function (request, ...rest) {
         on () {},
         removeHandler (channel) { ipcMainHandlers.delete(channel) }
       },
-      dialog: { showErrorBox () {} },
+      dialog: {
+        showErrorBox () {},
+        async showMessageBox (...args) {
+          const options = args[args.length - 1]
+          messageBoxes.shown.push(options)
+          if (messageBoxes.answer === undefined) {
+            throw new Error(`Unscripted dialog: ${options.title}: ${options.message}`)
+          }
+          return { response: messageBoxes.answer, checkboxChecked: false }
+        }
+      },
       shell: { openPath: async () => '' },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       Notification: class {
@@ -126,4 +161,4 @@ Module._load = function (request, ...rest) {
 // userData is exported because it is now per-process: a spec that needs the
 // directory must ask the harness that created it rather than recomputing the
 // path, which is what coupled the two to a fixed location in the first place.
-module.exports = { ipcMainHandlers, sentMessagesFor, userData }
+module.exports = { appListeners, appQuitRequests, ipcMainHandlers, messageBoxes, sentMessagesFor, userData }
