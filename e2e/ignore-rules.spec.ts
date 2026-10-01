@@ -229,10 +229,12 @@ describe('assembled app: gitignore rules filter the workspace', function () {
     await activePage().locator(MENU_ITEM('explorer-show-ignored')).click()
     await assertListed([ 'AGENTS.md', 'scripts', 'coble/drafts', 'coble/CONTRIBUTING.md', 'coble/references' ])
     await waitForApiFiles([ 'index.md', ...FILES ].sort())
+    const isMarked = async (relativePath: string): Promise<boolean> =>
+      await row(relativePath).evaluate(element => element.classList.contains('is-ignored'))
     for (const hidden of [ 'AGENTS.md', 'scripts', 'coble/drafts', 'coble/references' ]) {
-      assert.match((await row(hidden).getAttribute('class')) ?? '', /\bis-ignored\b/, `${hidden} is marked as hidden`)
+      assert.ok(await isMarked(hidden), `${hidden} is marked as hidden`)
     }
-    assert.doesNotMatch((await row('coble/notes.md').getAttribute('class')) ?? '', /\bis-ignored\b/)
+    assert.ok(!await isMarked('coble/notes.md'), 'a listed file is not marked')
     screenshots.set('hidden-shown.png', await activePage().screenshot())
 
     await expand('scripts')

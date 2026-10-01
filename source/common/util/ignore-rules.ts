@@ -54,6 +54,18 @@ export function judgingRoot (roots: Iterable<string>, absPath: string): string|u
 }
 
 /**
+ * The rules file text of one workspace root. The map holds every open root,
+ * with '' for a root without a rules file, so a missing root is a defect.
+ */
+export function rulesTextOf (texts: ReadonlyMap<string, string>, root: string): string {
+  const text = texts.get(root)
+  if (text === undefined) {
+    throw new Error(`No ignore rules are known for ${root}: Not an open workspace`)
+  }
+  return text
+}
+
+/**
  * Makes the filter of one set of rule sources. A path is judged by the global
  * rules and then the rules file of its judging root. No rule hides a root in
  * its own tree, and a path outside every root is never matched.
@@ -67,7 +79,7 @@ export function createIgnoreFilter (sources: IgnoreRuleSources): IgnoreFilter {
     if (matcher === undefined) {
       matcher = ignore({ ignorecase: false })
         .add(sources.globalRules)
-        .add(sources.workspaceRules.get(root) ?? '')
+        .add(rulesTextOf(sources.workspaceRules, root))
       matchers.set(root, matcher)
     }
     return matcher
@@ -234,7 +246,7 @@ export function movePathRules (
 
   const moved: string[] = []
   const next = new Map<string, string>()
-  next.set(oldRoot, mapPathRules(texts.get(oldRoot) ?? '', oldRoot, oldPath, rule => {
+  next.set(oldRoot, mapPathRules(rulesTextOf(texts, oldRoot), oldRoot, oldPath, rule => {
     if (newRoot === oldRoot) {
       return pathRuleLine(oldRoot, newPath, rule)
     }
@@ -244,7 +256,7 @@ export function movePathRules (
     return undefined
   }))
   if (newRoot !== undefined && moved.length > 0) {
-    next.set(newRoot, textOf([ ...linesOf(texts.get(newRoot) ?? ''), ...moved ]))
+    next.set(newRoot, textOf([ ...linesOf(rulesTextOf(texts, newRoot)), ...moved ]))
   }
   return changedTexts(texts, next)
 }
@@ -259,6 +271,6 @@ export function removePathRules (texts: ReadonlyMap<string, string>, absPath: st
   if (root === undefined) {
     return new Map()
   }
-  const text = mapPathRules(texts.get(root) ?? '', root, absPath, () => undefined)
+  const text = mapPathRules(rulesTextOf(texts, root), root, absPath, () => undefined)
   return changedTexts(texts, new Map([[ root, text ]]))
 }

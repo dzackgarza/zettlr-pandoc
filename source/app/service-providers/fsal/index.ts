@@ -56,6 +56,7 @@ import {
   judgingRoot,
   movePathRules,
   removePathRules,
+  rulesTextOf,
   setPathIgnored,
   type IgnoreFilter,
   type IgnoreRuleSources
@@ -452,7 +453,7 @@ export default class FSAL extends ProviderContract {
       if (root === undefined) {
         throw new Error(`[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`)
       }
-      const text = workspaceRules.get(root) ?? ''
+      const text = rulesTextOf(workspaceRules, root)
       return new Map([[ root, setPathIgnored(text, globalRules, root, absPath, isDirectory, ignored) ]])
     })
   }

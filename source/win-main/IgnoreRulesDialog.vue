@@ -92,7 +92,7 @@ import { trans } from '@common/i18n-renderer'
 import showToast from '@common/util/show-toast'
 import { reportError } from '@common/util/error-reporting'
 import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { WORKSPACE_RULES_FILE } from 'source/common/util/ignore-rules'
+import { WORKSPACE_RULES_FILE, rulesTextOf } from 'source/common/util/ignore-rules'
 import { useConfigStore, useIgnoreRulesStore } from 'source/pinia'
 
 const ipcRenderer = window.ipc
@@ -138,7 +138,7 @@ function save (): void {
 
   const changed = roots.value
     .map(root => ({ root, text: fileTextOf(workspaceDrafts.value[root]) }))
-    .filter(({ root, text }) => text !== fileTextOf(sources.value.workspaceRules.get(root) ?? ''))
+    .filter(({ root, text }) => text !== fileTextOf(rulesTextOf(sources.value.workspaceRules, root)))
 
   Promise.all(changed.map(async payload => {
     await ipcRenderer.invoke('fsal', { command: 'set-workspace-ignore-rules', payload })
