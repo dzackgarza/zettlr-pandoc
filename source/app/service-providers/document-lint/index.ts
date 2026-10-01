@@ -17,7 +17,8 @@
  *                  reference resolutions that Flowmark receives for the
  *                  document, the macro sources, the TikZ template graph, the
  *                  document's bibliographies and project roots, and the
- *                  Flowmark config files above it). A lint whose key matches
+ *                  Flowmark config files above it). Input files enter the key
+ *                  by their content, never by their modification time. A lint whose key matches
  *                  is answered from the cache without running Flowmark.
  *
  *                  The documents of one pass (a reconcile, a fix plan) share
@@ -181,10 +182,34 @@ interface DocumentInputs {
 }
 
 /**
+ * The content hash of each input file. A file is read and hashed again only
+ * when its size or modification time moved, as git's index skips rehashing
+ * a file whose stat data is unchanged (git/read-cache.c, ie_match_stat). The
+ * stat data never enters a cache key: a file written again with the same
+ * bytes keeps its hash.
+ */
+class ContentHashes {
+  private readonly known = new Map<string, { mtimeMs: number, size: number, hash: string }>()
+
+  async of (filePath: string): Promise<string> {
+    const info = await stat(filePath)
+    const known = this.known.get(filePath)
+    if (known !== undefined && known.mtimeMs === info.mtimeMs && known.size === info.size) {
+      return known.hash
+    }
+    const hash = createHash('sha256').update(await readFile(filePath)).digest('hex')
+    this.known.set(filePath, { mtimeMs: info.mtimeMs, size: info.size, hash })
+    return hash
+  }
+}
+
+/**
  * The inputs that the documents of one pass share. Each is read once, when
  * the first document needs it.
  */
 class LintPass {
+  constructor (private readonly contentHashes: ContentHashes) {}
+
   private readonly stamps = new Map<string, Promise<string>>()
   private readonly trees = new Map<string, Promise<string[]>>()
   private readonly directories = new Map<string, Promise<DirDescriptor>>()
@@ -219,8 +244,8 @@ class LintPass {
   async stamp (filePath: string): Promise<string> {
     let pending = this.stamps.get(filePath)
     if (pending === undefined) {
-      pending = stat(filePath).then(
-        info => `${filePath}\0${info.mtimeMs}\0${info.size}`,
+      pending = this.contentHashes.of(filePath).then(
+        hash => `${filePath}\0${hash}`,
         () => `${filePath}\0absent`
       )
       this.stamps.set(filePath, pending)
@@ -269,6 +294,7 @@ class LintPass {
 
 export default class DocumentLintProvider extends ProviderContract {
   private readonly entries = new Map<string, DocumentLintRecord>()
+  private readonly contentHashes = new ContentHashes()
   /** Each queued document, with the pass that found it without a current result. */
   private readonly queue = new Map<string, LintPass>()
   private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>()
@@ -332,7 +358,7 @@ export default class DocumentLintProvider extends ProviderContract {
    * document without a path (an unsaved buffer) is linted and not cached.
    */
   async lint (documentPath: string, text: string): Promise<DocumentLintRecord> {
-    return await this.lintIn(new LintPass(), documentPath, text)
+    return await this.lintIn(new LintPass(this.contentHashes), documentPath, text)
   }
 
   private async lintIn (pass: LintPass, documentPath: string, text: string): Promise<DocumentLintRecord> {
@@ -355,7 +381,7 @@ export default class DocumentLintProvider extends ProviderContract {
    * nothing here waits for Flowmark.
    */
   async lookup (sources: DocumentLintSource[]): Promise<DocumentLintLookup[]> {
-    const pass = new LintPass()
+    const pass = new LintPass(this.contentHashes)
     return await Promise.all(sources.map(async source => {
       const record = this.entries.get(source.path)
       const current = record !== undefined &&
@@ -543,7 +569,7 @@ export default class DocumentLintProvider extends ProviderContract {
   async planFixes (documentPaths: string[]): Promise<FixAllPlan> {
     const task = this.deps.lrt?.registerTask(trans('Finding fixes'), 'Flowmark', undefined, false)
     const plan: FixAllPlan = { documents: [], documentsChecked: documentPaths.length, unlinted: [] }
-    const pass = new LintPass()
+    const pass = new LintPass(this.contentHashes)
     let next = 0
     let done = 0
     const worker = async (): Promise<void> => {
