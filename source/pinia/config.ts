@@ -12,7 +12,8 @@
  * END HEADER
  */
 
-import { type ConfigOptions } from "@providers/config/get-config-template";
+import type { ConfigJsonValue } from "@providers/config/config-validation";
+import type { ConfigOptions, ConfigPath, ConfigValue } from "@providers/config/get-config-template";
 import { defineStore } from "pinia";
 import _ from "underscore";
 import { ref } from "vue";
@@ -45,30 +46,31 @@ export const useConfigStore = defineStore("config", () => {
     }
   });
 
-  function setConfigValue(property: string, value: unknown): boolean {
-    ipcRenderer.sendSync("config-provider", {
+  function setConfigValue<P extends ConfigPath>(property: P, value: ConfigValue<P>): void {
+    setConfigFromForm(property, value);
+  }
+
+  /**
+   * Writes a value of the preferences form. The form builds its fields from a
+   * schema, so the type of a value depends on the field at runtime; the main
+   * process checks the path and the value.
+   */
+  function setConfigFromForm(property: string, value: ConfigJsonValue): void {
+    // The main-process provider is the authority and validates every write; it
+    // answers with the reason it refused one.
+    const refusal: string | null = ipcRenderer.sendSync("config-provider", {
       command: "set-config-single",
       payload: { key: property, val: value },
     });
+    if (refusal !== null) {
+      throw new Error(refusal);
+    }
 
-    // The main-process provider is the authority and validates every write.
     // Its update broadcast reaches this store asynchronously (and is throttled),
     // but callers such as sidebar reveal handlers may need the reactive mirror
-    // to reflect a successful synchronous write before the next Vue render.
-    // Read the authoritative object back now rather than maintaining a second
-    // nested-property setter in the renderer; the later broadcast is harmless.
+    // to reflect the write before the next Vue render.
     config.value = retrieveConfig();
-
-    const segments = property.split(".");
-    let current: unknown = config.value;
-    for (const segment of segments) {
-      if (current === null || typeof current !== "object" || !(segment in current)) {
-        return false;
-      }
-      current = (current as Record<string, unknown>)[segment];
-    }
-    return _.isEqual(current, value);
   }
 
-  return { config, setConfigValue };
+  return { config, setConfigValue, setConfigFromForm };
 });

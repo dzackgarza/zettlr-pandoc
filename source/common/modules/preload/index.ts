@@ -15,7 +15,8 @@
  */
 
 import type { CitationDatabase } from "@dts/common/citeproc";
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { IpcValue } from "@dts/common/ipc";
+import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 import type {
   CiteprocProviderIPCAPI,
   CiteprocSyncCitationResponse,
@@ -36,16 +37,17 @@ contextBridge.exposeInMainWorld("ipc", {
   // no-unsafe-argument problems we have here.
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  send: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),
+  send: (channel: string, ...args: IpcValue[]) => ipcRenderer.send(channel, ...args),
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  sendSync: (event: string, ...args: any[]) => ipcRenderer.sendSync(event, ...args),
+  sendSync: (event: string, ...args: IpcValue[]) => ipcRenderer.sendSync(event, ...args),
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  invoke: async (channel: string, ...args: any[]) => await ipcRenderer.invoke(channel, ...args),
-  on: (channel: string, listener: (...args: any[]) => void) => {
+  invoke: async (channel: string, ...args: IpcValue[]) =>
+    await ipcRenderer.invoke(channel, ...args),
+  on: (channel: string, listener: (event: undefined, ...args: IpcValue[]) => void) => {
     // NOTE: We're returning a stopListening() callback here since the function
     // will be cloned across the context bridge, so not the same object, hence
     // it cannot be removed otherwise.
-    const callback = (event: any, ...args: any[]): void => {
+    const callback = (_event: IpcRendererEvent, ...args: IpcValue[]): void => {
       // Omit the event when calling the listener
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       listener(undefined, ...args);
@@ -63,11 +65,14 @@ contextBridge.exposeInMainWorld("config", {
       payload: { key: property },
     });
   },
-  set: function (property: string, value: any) {
-    ipcRenderer.sendSync("config-provider", {
+  set: function (property: string, value: IpcValue) {
+    const refusal: string | null = ipcRenderer.sendSync("config-provider", {
       command: "set-config-single",
       payload: { key: property, val: value },
     });
+    if (refusal !== null) {
+      throw new Error(refusal);
+    }
   },
 });
 

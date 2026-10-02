@@ -45,7 +45,7 @@ export default function enumLangFiles(
 
       const schema = bcp47.parse(file.substring(0, file.lastIndexOf(".")));
       const tag = bcp47.stringify(schema);
-      if (schema.language !== undefined && tag !== undefined) {
+      if (schema.language !== null && schema.language !== undefined && tag !== undefined) {
         candidates.push({ tag, path: path.join(p, file) });
       }
     }

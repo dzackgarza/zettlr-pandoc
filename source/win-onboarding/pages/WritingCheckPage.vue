@@ -40,7 +40,8 @@ const dictIntro = trans(
   "Here you can configure how you wish to check for spelling errors. You can select a built-in dictionary, or set up LanguageTool.",
 );
 const dictLabel = computed(() => {
-  return trans("Set %s as a spellchecking dictionary", dictionaryCandidateLanguage.value);
+  const language = dictionaryCandidateLanguage.value;
+  return language === false ? undefined : trans("Set %s as a spellchecking dictionary", language);
 });
 const ltIntro = trans(
   "Zettlr integrates with LanguageTool, a free grammar and spellchecker. You can turn it on with simple defaults.",
@@ -77,7 +78,7 @@ onMounted(async () => {
   const candidates = dictionaries.map((dict) => ({ tag: dict }));
   // Now we should have a list of all available dictionaries. Next, we need to
   // search for a best and a close match.
-  const { exact, close } = findLangCandidates(String(window.config.get("appLang")), candidates);
+  const { exact, close } = findLangCandidates(window.config.get("appLang"), candidates);
   if (exact !== undefined) {
     dictionaryCandidate.value = exact.tag;
   } else if (close !== undefined) {
@@ -91,7 +92,11 @@ function toggleDictionary() {
   if (hasChosenDict.value) {
     window.config.set("selectedDicts", []);
   } else {
-    window.config.set("selectedDicts", [dictionaryCandidate.value]);
+    const candidate = dictionaryCandidate.value;
+    if (candidate === undefined) {
+      throw new Error("No dictionary candidate is known yet.");
+    }
+    window.config.set("selectedDicts", [candidate]);
   }
 }
 

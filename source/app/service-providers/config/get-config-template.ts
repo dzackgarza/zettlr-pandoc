@@ -19,22 +19,21 @@ import * as bcp47 from "bcp-47";
 import { app, nativeTheme } from "electron";
 import path from "path";
 import type { EditorShortcutName } from "source/common/modules/markdown-editor/keymaps/shortcuts";
+import type { Get, Paths } from "type-fest";
 import { v4 as uuid4 } from "uuid";
 import { type MenuShortcutName } from "../menu/shortcuts";
+import AUTOCORRECT_REPLACEMENTS from "./autocorrect-replacements.json";
 
 export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
 export const DEFAULT_FILE_FILTER_INCLUDE = [...MD_EXT];
 
-// This is a handy interface to add groups of file types to the settings in
+// This type adds groups of file types to the settings in
 // order to allow users to display them in the file tree, and open them
 // internally or externally.
 // NOTE: The generics are meant so that you can restrict certain groupings.
 // E.g., FileTypeSettings<true, 'zettlr'> enforces these values for the two
 // properties.
-interface FileTypeSettings<F = boolean, O = "zettlr" | "system"> {
-  showInFilemanager: F;
-  openWith: O;
-}
+type FileTypeSettings<F = boolean, O = "zettlr" | "system"> = { showInFilemanager: F; openWith: O };
 
 // The following lines make a subset of all available editor/UI shortcuts
 // configurable. This way, we do not have to specify *all* shortcuts, but only
@@ -75,7 +74,7 @@ export type ConfigurableUIShortcuts = Extends<
  * config, it is harder for us to forget to write a migration rule if we ever
  * change this structure.
  */
-export interface LanguageToolIgnoredRuleEntry {
+export type LanguageToolIgnoredRuleEntry = {
   /**
    * The description of the rule (usually localized).
    */
@@ -88,9 +87,9 @@ export interface LanguageToolIgnoredRuleEntry {
    * The category for this rule.
    */
   category: string;
-}
+};
 
-export interface AgentApiConfig {
+export type AgentApiConfig = {
   enabled: boolean;
   /**
    * Loopback port for the HTTP listener. `0` requests a kernel-assigned port.
@@ -104,13 +103,11 @@ export interface AgentApiConfig {
    * is refused with DUPLICATE_CLAIM_DESCRIPTION.
    */
   claimDescriptionSimilarityThreshold: number;
-}
+};
 
-export interface ReferenceConfig {
-  authorityReportDebounceMs: number;
-}
+export type ReferenceConfig = { authorityReportDebounceMs: number };
 
-export interface ConfigOptions {
+export type ConfigOptions = {
   version: string;
   buildDate: string;
   uuid: string;
@@ -368,7 +365,17 @@ export interface ConfigOptions {
     editor: Record<ConfigurableEditorShortcuts, string>;
     ui: Record<MenuShortcutName, string>;
   };
-}
+};
+
+/**
+ * The dotted path of one option, for example `editor.indentUnit`.
+ */
+export type ConfigPath = Paths<ConfigOptions>;
+
+/**
+ * The type of the option at a dotted path.
+ */
+export type ConfigValue<P extends ConfigPath> = Get<ConfigOptions, P>;
 
 export function getConfigTemplate(): ConfigOptions {
   // Before returning the settings object, we have to make sure we retrieve a
@@ -376,7 +383,8 @@ export function getConfigTemplate(): ConfigOptions {
   // wish.
   let locale = app.getLocale();
   let locSchema = bcp47.parse(locale);
-  if (locSchema.language === undefined) {
+  // bcp-47 sets the language to null for a tag that it cannot parse.
+  if (locSchema.language === null || locSchema.language === undefined) {
     // Fall back to en-US
     locale = "en-US";
   } else {
@@ -466,7 +474,7 @@ export function getConfigTemplate(): ConfigOptions {
       injectMathHeaders: true, // Inject local MathJax config/preamble into exports; off defers to the profile template
       htmlTemplate: "", // Default Pandoc template for HTML/revealjs exports (when the profile declares none)
       latexTemplate: "", // Default Pandoc template for latex/pdf/beamer exports (when the profile declares none)
-      scripts: [], // Pipeline-integrated export scripts (base profile -> command -> output); see interface above
+      scripts: [],
       selectedProfiles: [], // Remembers the last chosen exporter per file for easy re-exporting
       lastUsedProfile: "HTML.yaml", // Remembers the last chosen exporter for easy re-exporting
     },
@@ -541,62 +549,7 @@ export function getConfigTemplate(): ConfigOptions {
           primary: '"…"',
           secondary: "'…'",
         },
-        replacements: [
-          // Arrows
-          { key: "-->", value: "→" },
-          { key: "–>", value: "→" }, // For Word mode arrows
-          { key: "<--", value: "←" },
-          { key: "<->", value: "↔" },
-          { key: "<-->", value: "↔" },
-          { key: "==>", value: "⇒" },
-          { key: "<==", value: "⇐" },
-          { key: "<=>", value: "⇔" },
-          { key: "<==>", value: "⇔" },
-          // Mathematical symbols
-          { key: "!=", value: "≠" },
-          { key: "<>", value: "≠" },
-          { key: "+-", value: "±" },
-          { key: ":time:", value: "×" },
-          { key: ":division:", value: "÷" },
-          { key: "<=", value: "≤" },
-          { key: ">=", value: "≥" },
-          { key: "1/2", value: "½" },
-          { key: "1/3", value: "⅓" },
-          { key: "2/3", value: "⅔" },
-          { key: "1/4", value: "¼" },
-          { key: "3/4", value: "¾" },
-          { key: "1/8", value: "⅛" },
-          { key: "3/8", value: "⅜" },
-          { key: "5/8", value: "⅝" },
-          { key: "7/8", value: "⅞" },
-          // Units
-          { key: "mm2", value: "mm²" },
-          { key: "cm2", value: "cm²" },
-          { key: "m2", value: "m²" },
-          { key: "km2", value: "km²" },
-          { key: "mm3", value: "mm³" },
-          { key: "cm3", value: "cm³" },
-          { key: "ccm", value: "cm³" },
-          { key: "m3", value: "m³" },
-          { key: "km3", value: "km³" },
-          { key: ":sup2:", value: "²" },
-          { key: ":sup3:", value: "³" },
-          { key: ":deg:", value: "°" },
-          // Currencies
-          { key: ":eur", value: "€" },
-          { key: ":gbp", value: "£" },
-          { key: ":yen", value: "¥" },
-          { key: ":cent", value: "¢" },
-          { key: ":inr:", value: "₹" },
-          // Special symbols
-          { key: "(c)", value: "©" },
-          { key: "(tm)", value: "™" },
-          { key: "(r)", value: "®" },
-          // Interpunctation
-          { key: "...", value: "…" },
-          { key: "--", value: "–" },
-          { key: "---", value: "—" },
-        ],
+        replacements: structuredClone(AUTOCORRECT_REPLACEMENTS),
         matchWholeWords: false, // Whether to only autocorrect entire words, not parts
       }, // END autoCorrect options
     },

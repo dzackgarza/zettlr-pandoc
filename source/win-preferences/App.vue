@@ -345,7 +345,7 @@ function handleInput(prop: string, val: unknown): void {
     // do it the brute-force-way and stringify it. This will basically read
     // out every value from the proxy and store it in vanilla objects/arrays
     // again.
-    configStore.setConfigValue(prop, JSON.parse(JSON.stringify(val)));
+    configStore.setConfigFromForm(prop, JSON.parse(JSON.stringify(val)));
   }
 }
 

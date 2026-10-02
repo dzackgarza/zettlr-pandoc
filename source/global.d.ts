@@ -118,23 +118,24 @@ declare interface Window {
    */
   config: {
     /**
-     * Returns the config value associated with the provided key. If key is
-     * undefined, returns the full configuration. The caller knows which
-     * option it asked for and states the expected type through T (or handles
-     * the default unknown); the config template is the source of truth.
-     *
-     * @param   {string}  key  The key to retrieve
-     *
-     * @return  {T}            The value associated with key
+     * Returns the config value at the dotted path key. Without a key, returns
+     * the full configuration.
      */
-    get: <T = unknown>(key?: string) => T;
+    get: {
+      (): import("@providers/config/get-config-template").ConfigOptions;
+      <P extends import("@providers/config/get-config-template").ConfigPath>(
+        key: P,
+      ): import("@providers/config/get-config-template").ConfigValue<P>;
+    };
     /**
-     * Sets the configuration value associated with key to value.
+     * Sets the configuration value at the dotted path key to value.
      *
-     * @param   {string}  key    The key to set
-     * @param   {any}     value  The value to set the key to
+     * @throws {Error} If the main process refuses the value.
      */
-    set: (key: string, value: unknown) => void;
+    set: <P extends import("@providers/config/get-config-template").ConfigPath>(
+      key: P,
+      value: import("@providers/config/get-config-template").ConfigValue<P>,
+    ) => void;
   };
   /**
    * Takes citation items and returns a rendered citation from main

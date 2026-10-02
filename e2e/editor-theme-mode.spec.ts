@@ -19,7 +19,12 @@ import { type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { inflateSync } from "node:zlib";
 import { type Browser, type Page } from "playwright";
+import type { ConfigValue } from "source/app/service-providers/config/get-config-template";
 import { attach, createFixture, findEditorPage, shutdown } from "./support/electron-app";
+
+type ThemeSetting =
+  | { key: "darkMode"; value: ConfigValue<"darkMode"> }
+  | { key: "darkModeEditor"; value: ConfigValue<"darkModeEditor"> };
 
 interface ThemeSample {
   appDarkMode: boolean;
@@ -160,17 +165,15 @@ describe("Editor theme enum in the assembled app", function () {
     });
   }
 
-  async function setConfig(
-    key: "darkMode" | "darkModeEditor",
-    value: boolean | string,
-  ): Promise<void> {
+  async function setConfig(setting: ThemeSetting): Promise<void> {
     assert.ok(page !== undefined);
-    await page.evaluate(
-      ([configKey, configValue]) => {
-        window.config.set(configKey, configValue);
-      },
-      [key, value] as const,
-    );
+    await page.evaluate((themeSetting) => {
+      if (themeSetting.key === "darkMode") {
+        window.config.set(themeSetting.key, themeSetting.value);
+      } else {
+        window.config.set(themeSetting.key, themeSetting.value);
+      }
+    }, setting);
     await page.waitForTimeout(150);
   }
 
@@ -251,7 +254,7 @@ describe("Editor theme enum in the assembled app", function () {
     );
 
     // The third enum value retains its independent contract as well.
-    await setConfig("darkModeEditor", "match");
+    await setConfig({ key: "darkModeEditor", value: "match" });
     assert.deepStrictEqual(await sample(), {
       appDarkMode: true,
       editorMode: "match",
@@ -260,7 +263,7 @@ describe("Editor theme enum in the assembled app", function () {
       foreground: "rgb(240, 240, 240)",
     });
 
-    await setConfig("darkMode", false);
+    await setConfig({ key: "darkMode", value: false });
     assert.deepStrictEqual(await sample(), {
       appDarkMode: false,
       editorMode: "match",

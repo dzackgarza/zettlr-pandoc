@@ -29,11 +29,62 @@ import { DateTime } from "luxon";
 import path from "path";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
-import { VALIDATE_PROPERTIES, VALIDATE_RULES, ValidationRule } from "./config-validation";
-import { type ConfigOptions, getConfigTemplate } from "./get-config-template";
+import { type ConfigJsonValue, type ValidationRule, validationRules } from "./config-validation";
+import {
+  type ConfigOptions,
+  type ConfigPath,
+  type ConfigValue,
+  getConfigTemplate,
+} from "./get-config-template";
 import { showOnboardingWindow } from "./onboarding-window";
 
 const ZETTLR_VERSION = app.getVersion();
+
+type ConfigRecord = { [key: string]: ConfigJsonValue };
+
+function isConfigRecord(value: ConfigJsonValue): value is ConfigRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Finds the object that holds the option at a dotted path, and the option's
+ * key in that object.
+ *
+ * @throws {Error} If the configuration has no option at that path.
+ */
+function locateOption(config: ConfigRecord, option: string): { holder: ConfigRecord; key: string } {
+  const segments = option.split(".");
+  const key = segments.pop();
+  let holder: ConfigJsonValue = config;
+  for (const segment of segments) {
+    holder = isConfigRecord(holder) ? holder[segment] : undefined;
+  }
+  if (key === undefined || !isConfigRecord(holder) || !(key in holder)) {
+    throw new Error(`The configuration has no option "${option}".`);
+  }
+  return { holder, key };
+}
+
+/**
+ * Asserts that a dotted path from another process names an option.
+ *
+ * @throws {Error} If the configuration has no option at that path.
+ */
+function assertConfigPath(config: ConfigOptions, option: string): asserts option is ConfigPath {
+  locateOption(config, option);
+}
+
+/**
+ * A config.json as an earlier version may have written it: a subset of the
+ * current options, plus the keys that `runMigrations` rewrites.
+ */
+type StoredConfig = Partial<Omit<ConfigOptions, "app" | "fileManager">> & {
+  app?: Partial<ConfigOptions["app"]>;
+  fileManager?: Partial<ConfigOptions["fileManager"]> & {
+    filePicker?: { include?: string[] } | null;
+  };
+  openPaths?: string[];
+};
 
 /**
  * The following options require a relaunch after being changed. NOTE: These are
@@ -74,13 +125,13 @@ export default class ConfigProvider extends ProviderContract {
   /**
    * Contains a set of validation rules
    *
-   * @var {any[]}
+   * @var {ValidationRule[]}
    */
-  private readonly _rules: any[];
+  private readonly _rules: ValidationRule[];
   /**
    * Contains the actual configuration
    *
-   * @var {any}
+   * @var {ConfigOptions}
    */
   private config: ConfigOptions;
   /**
@@ -116,7 +167,7 @@ export default class ConfigProvider extends ProviderContract {
     this._emitter = new EventEmitter(); // Initiate the emitter
 
     this.config = getConfigTemplate();
-    this._rules = []; // This array holds all validation rules
+    this._rules = validationRules();
     this._firstStart = false; // Only true if a config file has been created
     this._newVersion = false; // True if the last read config had a different version
 
@@ -127,9 +178,27 @@ export default class ConfigProvider extends ProviderContract {
       const { command, payload } = message;
 
       if (command === "get-config") {
-        event.returnValue = payload !== undefined ? this.get(payload.key as string) : this.get();
+        if (payload === undefined) {
+          event.returnValue = this.get();
+          return;
+        }
+        const key: string = payload.key;
+        assertConfigPath(this.config, key);
+        event.returnValue = this.get(key);
       } else if (command === "set-config-single") {
-        event.returnValue = this.set(payload.key as string, payload.val);
+        // A synchronous sender waits for a return value, so a refusal goes
+        // back to it as the reason instead of as an exception in this process.
+        try {
+          const key: string = payload.key;
+          assertConfigPath(this.config, key);
+          this.set(key, payload.val);
+          event.returnValue = null;
+        } catch (err) {
+          if (!(err instanceof Error)) {
+            throw err;
+          }
+          event.returnValue = err.message;
+        }
       }
     });
 
@@ -141,6 +210,7 @@ export default class ConfigProvider extends ProviderContract {
         // Sets the complete config object
         const { payload } = message;
         for (const opt in payload) {
+          assertConfigPath(this.config, opt);
           this.set(opt, payload[opt]);
         }
         return true;
@@ -228,11 +298,6 @@ export default class ConfigProvider extends ProviderContract {
       this.config.appLang = file.tag;
     }
 
-    // Boot up the validation rules
-    for (let i = 0; i < VALIDATE_RULES.length; i++) {
-      this._rules.push(new ValidationRule(VALIDATE_RULES[i], VALIDATE_PROPERTIES[i]));
-    }
-
     // Now for the fun part: Show a brand new onboarding experience.
     if (this._firstStart || this._newVersion) {
       await showOnboardingWindow(this, this._logger, this._firstStart ? "first-start" : "update");
@@ -240,12 +305,13 @@ export default class ConfigProvider extends ProviderContract {
   }
 
   // Enable global event listening to updates of the config
-  on(evt: string, callback: (...args: any[]) => void): void {
+  // An "update" names the changed option; a whole-config update names none.
+  on(evt: string, callback: (option?: string) => void): void {
     this._emitter.on(evt, callback);
   }
 
   // Also do the same for the removal of listeners
-  off(evt: string, callback: (...args: any[]) => void): void {
+  off(evt: string, callback: (option?: string) => void): void {
     this._emitter.off(evt, callback);
   }
 
@@ -254,9 +320,9 @@ export default class ConfigProvider extends ProviderContract {
    * updates to a new version. It modifies the read configuration object in
    * place so that it can then be merged into the correct config template.
    *
-   * @param  {any}  readConfig  The read config from disk.
+   * @param  {StoredConfig}  readConfig  The read config from disk.
    */
-  private runMigrations(readConfig: any): void {
+  private runMigrations(readConfig: StoredConfig): void {
     // The Ctrl+Shift+P picker used to own a separate permanent extension
     // filter. File visibility now has one authority: the file manager's
     // permanent filters, which the picker consumes as a subset. Preserve the
@@ -278,31 +344,19 @@ export default class ConfigProvider extends ProviderContract {
 
     // After version 4.0.0, we have split up `openPaths` into separate file and
     // workspaces arrays.
-    if ("openPaths" in readConfig) {
-      const openPaths: string[] = readConfig.openPaths;
+    if (readConfig.openPaths !== undefined) {
+      const openFiles = readConfig.app?.openFiles ?? [];
+      const openWorkspaces = readConfig.app?.openWorkspaces ?? [];
 
-      if (!("app" in readConfig)) {
-        readConfig.app = {
-          openFiles: [],
-          openWorkspaces: [],
-        };
-      }
-
-      if (!("openFiles" in readConfig.app)) {
-        readConfig.app.openFiles = [];
-      }
-
-      if (!("openWorkspaces" in readConfig.app)) {
-        readConfig.app.openWorkspaces = [];
-      }
-
-      for (const absPath of openPaths) {
+      for (const absPath of readConfig.openPaths) {
         if (isFile(absPath)) {
-          readConfig.app.openFiles.push(absPath);
+          openFiles.push(absPath);
         } else if (isDir(absPath)) {
-          readConfig.app.openWorkspaces.push(absPath);
+          openWorkspaces.push(absPath);
         }
       }
+
+      readConfig.app = { openFiles, openWorkspaces };
     } // END: openPaths migration
   }
 
@@ -477,39 +531,13 @@ export default class ConfigProvider extends ProviderContract {
    * @return {any|ConfigOptions}        Either the config property or null
    */
   get(): ConfigOptions;
-  get(attr: string): any;
-  get(attr?: string): any {
+  get<P extends ConfigPath>(attr: P): ConfigValue<P>;
+  get(attr?: string): ConfigOptions | ConfigJsonValue {
     if (attr === undefined) {
-      // If no attribute is given, simply return the complete config object.
       return this.getConfig();
     }
-
-    if (attr.indexOf(".") > 0) {
-      // A nested argument was requested, so iterate until we find it
-      let nested = attr.split(".");
-      let cfg = this.config;
-      for (let arg of nested) {
-        if (arg in cfg) {
-          // arg will be a keyof ConfigOptions at this point
-          cfg = cfg[arg as keyof ConfigOptions] as unknown as any;
-        } else {
-          this._logger.warning(
-            `[Config Provider] Someone has requested a non-existent key: ${attr}`,
-          );
-          return null; // The config option must match exactly
-        }
-      }
-
-      return cfg; // Now not the requested config option.
-    }
-
-    // Plain attribute requested
-    if (attr in this.config) {
-      return this.config[attr as keyof ConfigOptions];
-    } else {
-      this._logger.warning(`[Config Provider] Someone has requested a non-existent key: ${attr}`);
-      return null;
-    }
+    const { holder, key } = locateOption(this.config, attr);
+    return holder[key];
   }
 
   /**
@@ -523,67 +551,36 @@ export default class ConfigProvider extends ProviderContract {
 
   /**
    * Sets a configuration option
-   * @param  {string}   option      The option to be set
+   * @param  {string}   option      The dotted path of the option to be set
    * @param  {any}      value       The value of the config variable.
    * @param  {boolean}  skipChecks  For internal use only. Do not use.
+   * @throws {Error}                If the option does not exist or its rule refuses the value.
    */
-  set(option: string, value: any, skipChecks = false): void {
-    // Don't add non-existent options
-    if (option in this.config && this._validate(option, value)) {
-      // Do not set the option if it already has the requested value
-      if (this.config[option as keyof ConfigOptions] === value) {
-        return;
-      }
+  set<P extends ConfigPath>(option: P, value: ConfigValue<P>, skipChecks?: boolean): void;
+  set(option: string, value: ConfigJsonValue, skipChecks = false): void {
+    const { holder, key } = locateOption(this.config, option);
+    const rule = this._rules.find((candidate) => candidate.getKey() === option);
+    if (rule !== undefined && !rule.validate(value)) {
+      throw new Error(rule.why());
+    }
+    if (holder[key] === value) {
+      return;
+    }
 
-      // Set the new value and inform the listeners
-      // @ts-expect-error Since we're dynamically assigning a value here.
-      this.config[option as keyof ConfigOptions] = value;
-      this._container.set(this.config);
-      this._emitter.emit("update", option);
-      broadcastIpcMessage("config-provider", { command: "update", payload: option });
-      if (!skipChecks) {
-        this.checkOptionForGuard(option);
-      }
-    } else if (option.indexOf(".") > 0) {
-      // A nested argument was requested, so iterate until we find it
-      let nested = option.split(".");
-      // Last one must be set manually, b/c simple attributes aren't pointers
-      let prop = nested.pop()!; // We can be sure it's not undefined
-      let cfg = this.config;
-      for (let arg of nested) {
-        if (arg in cfg) {
-          cfg = cfg[arg as keyof ConfigOptions] as unknown as any;
-        } else {
-          return; // The config option must match exactly
-        }
-      }
-
-      // Set the nested property
-      if (prop in cfg && this._validate(option, value)) {
-        // Do not set the option if it already has the requested value
-        if (cfg[prop as keyof ConfigOptions] === value) {
-          return;
-        }
-
-        // Set the new value and inform the listeners
-        // @ts-expect-error Since we're dynamically assigning a value here
-        cfg[prop as keyof ConfigOptions] = value;
-        this._container.set(this.config);
-        this._emitter.emit("update", option);
-        broadcastIpcMessage("config-provider", { command: "update", payload: option });
-        if (!skipChecks) {
-          this.checkOptionForGuard(option);
-
-          // Special treatment, since this is a config option that affects the
-          // config provider itself.
-          if (
-            option === "fileManager.sortWorkspacesManually" &&
-            !this.config.fileManager.sortWorkspacesManually
-          ) {
-            this.sortPaths();
-          }
-        }
-      }
+    holder[key] = value;
+    this._container.set(this.config);
+    this._emitter.emit("update", option);
+    broadcastIpcMessage("config-provider", { command: "update", payload: option });
+    if (skipChecks) {
+      return;
+    }
+    this.checkOptionForGuard(option);
+    // This option affects the order that the provider itself keeps.
+    if (
+      option === "fileManager.sortWorkspacesManually" &&
+      !this.config.fileManager.sortWorkspacesManually
+    ) {
+      this.sortPaths();
     }
   }
 
@@ -649,21 +646,5 @@ export default class ConfigProvider extends ProviderContract {
     // Broadcast to all open windows
     broadcastIpcMessage("config-provider", { command: "update", payload: undefined });
     this._container.set(this.config);
-  }
-
-  /**
-   * Validates a key's value based upon previously set up validation rules
-   * @param  {string} key   The key (can be dotted) to be validated
-   * @param  {mixed} value The value to be validated
-   * @return {Boolean}       False, if a given validation failed, otherwise true.
-   */
-  _validate(key: string, value: any): boolean {
-    let rule = this._rules.find((elem) => elem.getKey() === key);
-    // There is a rule for this key, so validate
-    if (rule !== undefined) {
-      return rule.validate(value);
-    }
-    // There are some options for which there is no validation.
-    return true;
   }
 }

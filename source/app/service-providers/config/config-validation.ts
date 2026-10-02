@@ -13,77 +13,76 @@
  */
 
 import { trans } from "@common/i18n-main";
+import type { ConfigPath } from "./get-config-template";
 
+// The defaults of these options live in the configuration template.
 const RULES = {
-  darkMode: "required|boolean|default:false",
-  darkModeEditor: "required|string|in:match,light,dark|default:match",
-  autoDarkMode: "required|string|in:off,system,schedule,auto|default:off",
-  fileMeta: "required|boolean|default:true",
-  sorting: "required|string|in:natural,ascii|default:natural",
-  newFileNamePattern: "required|string|default:%id.md",
-  appLang: "required|string|min:5|max:7|default:en_US",
-  fileManagerMode: "required|string|in:thin,expanded,combined|default:thin",
+  darkMode: "required|boolean",
+  darkModeEditor: "required|string|in:match,light,dark",
+  autoDarkMode: "required|string|in:off,system,schedule",
+  fileMeta: "required|boolean",
+  sorting: "required|string|in:natural,ascii",
+  newFileNamePattern: "required|string",
+  appLang: "required|string|min:5|max:7",
+  fileManagerMode: "required|string|in:thin,expanded,combined",
   "fileManager.expandedDirectories": "optional|array",
   "fileManager.ignoreRules": "optional|array",
-  "fileManager.showIgnored": "optional|boolean|default:false",
+  "fileManager.showIgnored": "optional|boolean",
   "fileManager.filters.include": "optional|array",
-  muteLines: "required|boolean|default:false",
-  "export.dir": "required|string|in:temp,cwd|default:temp",
-  "export.stripTags": "required|boolean|default:false",
-  "export.stripLinks": "required|string|in:full,unlink,no|default:full",
-  "zkn.idRE": "required|string|default:",
-  "zkn.idGen": "required|string|min:2|default:",
+  muteLines: "required|boolean",
+  "export.dir": "required|string|in:temp,cwd,ask",
+  "export.stripTags": "required|boolean",
+  "export.stripLinks": "required|string|in:full,unlink,no",
+  "export.cslLibrary": "optional|string",
+  "zkn.idRE": "required|string",
+  "zkn.idGen": "required|string|min:2",
   attachmentExtensions: "optional|array",
-  debug: "required|boolean|default:false",
-  title: "required|string|default:",
+  debug: "required|boolean",
   "editor.indentUnit": "required|number|min:1|max:24",
-  "editor.boldFormatting": "required|string|in:__,**|default:**",
-  "editor.italicFormatting": "required|string|in:_,*|default:_",
+  "editor.boldFormatting": "required|string|in:__,**",
+  "editor.italicFormatting": "required|string|in:_,*",
   "editor.readabilityAlgorithm":
-    "required|string|in:dale-chall,gunning-fog,coleman-liau,automated-readability|default:dale-chall",
-  cslLibrary: "optional|string|default:",
-  "display.imageWidth": "required|number|min:1|max:100|default:100",
-  "display.imageHeight": "required|number|min:1|max:100|default:100",
-  "watchdog.stabilityThreshold": "optional|number|min:1|max:100000|default:1000",
-  "ui.recentFilesLimit": "required|number|min:1|max:1000|default:50",
-};
+    "required|string|in:dale-chall,gunning-fog,coleman-liau,automated-readability",
+  "display.imageWidth": "required|number|min:1|max:100",
+  "display.imageHeight": "required|number|min:1|max:100",
+  "watchdog.stabilityThreshold": "optional|number|min:1|max:100000",
+  "ui.recentFilesLimit": "required|number|min:1|max:1000",
+} satisfies Partial<Record<ConfigPath, string>>;
 
-export const VALIDATE_RULES = Object.values(RULES);
-export const VALIDATE_PROPERTIES = Object.keys(RULES);
-
-interface ValidationError {
-  key: string;
-  reason: string;
+/**
+ * One rule for each option that has a ruleset.
+ */
+export function validationRules(): ValidationRule[] {
+  return Object.entries(RULES).map(([option, ruleset]) => new ValidationRule(option, ruleset));
 }
 
-export function validate(data: any): ValidationError[] {
-  // Validate the given form data.
-  if (data === undefined) {
-    throw new Error("No data given!");
-  }
+/**
+ * A value that config.json can hold, which is what a rule validates.
+ */
+export type ConfigJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | ConfigJsonValue[]
+  | { [key: string]: ConfigJsonValue };
 
-  const unvalidated: ValidationError[] = [];
-  for (const key in data) {
-    if (VALIDATE_PROPERTIES.includes(key)) {
-      const rule = VALIDATE_RULES[VALIDATE_PROPERTIES.indexOf(key)];
-      const val = new ValidationRule(key, rule);
-      if (!val.validate(data[key])) {
-        unvalidated.push({ key, reason: val.why() });
-      }
-    }
-  }
-  return unvalidated;
+const RULE_TYPES = ["boolean", "string", "number", "array"] as const;
+type RuleType = (typeof RULE_TYPES)[number];
+
+function isRuleType(rule: string): rule is RuleType {
+  return RULE_TYPES.some((type) => type === rule);
 }
 
 export class ValidationRule {
-  private _input: any;
+  private _input: ConfigJsonValue;
   private readonly _option: string;
   private readonly _isRequired: boolean;
-  private readonly _type: any;
+  private readonly _type: RuleType | undefined;
   private readonly _min: undefined | number;
   private readonly _max: undefined | number;
-  private readonly _in: undefined | any;
-  private readonly _default: string | undefined;
+  private readonly _in: undefined | string[];
   /**
    * Create a validation ruleset.
    * @param {string} option  The key/option that can be validated with this ruleset.
@@ -123,7 +122,7 @@ export class ValidationRule {
         this._isRequired = true;
       } else if (rule === "optional") {
         this._isRequired = false;
-      } else if (["boolean", "string", "number", "array"].includes(rule)) {
+      } else if (isRuleType(rule)) {
         this._type = rule;
       } else if (rule.startsWith("min:")) {
         const minValue = rule.split(":")[1];
@@ -145,18 +144,16 @@ export class ValidationRule {
         }
 
         this._in = inValue.split(",");
-      } else if (rule.startsWith("default:")) {
-        this._default = rule.split(":")[1];
       }
     }
   }
 
   /**
    * Validates an input and returns a boolean indicating the result.
-   * @param  {any} input The input to be checked.
+   * @param  {ConfigJsonValue} input The input to be checked.
    * @return {boolean}       True, if the input passes the validation, or false.
    */
-  validate(input: any): boolean {
+  validate(input: ConfigJsonValue): boolean {
     let isValidated = false;
     this._input = input;
 
@@ -278,7 +275,7 @@ export class ValidationRule {
       // includes() returns false if the types don't match. We allow for this here.
       return this._in.includes(String(this._input));
     } else {
-      return this._in.includes(this._input);
+      return typeof this._input === "string" && this._in.includes(this._input);
     }
   }
 
@@ -291,7 +288,7 @@ export class ValidationRule {
     if (!this.isTypeCorrect()) {
       return trans("Option %s has to be of type %s.", this._option, this._type);
     }
-    if (!this.isValueCorrect()) {
+    if (this._in !== undefined && !this.isValueCorrect()) {
       return trans("Option %s must be one of: %s.", this._option, this._in.join(", "));
     }
     if (!this.isInRange() && this._min !== undefined && this._max !== undefined) {
@@ -312,14 +309,6 @@ export class ValidationRule {
       return trans("Option %s is required.", this._option);
     }
     return ""; // Failsafe
-  }
-
-  /**
-   * Returns the default value that inputs for this rule should have, if any.
-   * @return {[type]} [description]
-   */
-  getDefault(): string | undefined {
-    return this._default;
   }
 
   /**

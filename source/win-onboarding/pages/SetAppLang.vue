@@ -46,7 +46,7 @@ const emit = defineEmits<{
   (e: "enable-navigation"): void;
 }>();
 
-const originalLanguage = window.config.get<string>("appLang");
+const originalLanguage = window.config.get("appLang");
 
 const pageHeading = ref(trans("Which Language do you speak?"));
 const langIntro = ref(
