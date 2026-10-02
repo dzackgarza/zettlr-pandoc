@@ -654,7 +654,9 @@ export default class DocumentLintProvider extends ProviderContract {
         pendingPaths.push(filePath);
         return;
       }
-      if (record.diagnostics.length === 0) return;
+      if (record.diagnostics.length === 0) {
+        return;
+      }
       const counts = { error: 0, warning: 0, info: 0 };
       const diagnostics = record.diagnostics.map((diagnostic) => {
         counts[diagnostic.severity] += 1;
@@ -691,11 +693,17 @@ export default class DocumentLintProvider extends ProviderContract {
 
   /** A single-fix request must still name a current Flowmark machine edit. */
   async hasCurrentFix(request: ApplyProblemFixRequest): Promise<boolean> {
-    if (!(await this.workspaceDocuments()).includes(request.documentPath)) return false;
+    if (!(await this.workspaceDocuments()).includes(request.documentPath)) {
+      return false;
+    }
     const text = await this.currentText(request.documentPath);
-    if (hashDocumentSource(text) !== request.sourceHash) return false;
+    if (hashDocumentSource(text) !== request.sourceHash) {
+      return false;
+    }
     const [lookup] = await this.lookup([{ path: request.documentPath, text }]);
-    if (!lookup.current || lookup.record === undefined) return false;
+    if (!lookup.current || lookup.record === undefined) {
+      return false;
+    }
     return lookup.record.diagnostics.some(
       (diagnostic) =>
         diagnostic.from === request.from &&

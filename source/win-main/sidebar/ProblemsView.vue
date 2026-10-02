@@ -135,7 +135,9 @@ async function refresh(): Promise<void> {
 }
 
 async function applyFix(document: ProblemDocument, finding: ProblemFinding): Promise<void> {
-  if (finding.fix === null || document.state !== "current") return;
+  if (finding.fix === null || document.state !== "current") {
+    return;
+  }
   try {
     const result = await ipcRenderer.invoke("application", {
       command: "apply-lint-fix",
@@ -147,9 +149,11 @@ async function applyFix(document: ProblemDocument, finding: ProblemFinding): Pro
         replacement: finding.fix.replacement,
       },
     });
-    if (result.status === "conflict")
+    if (result.status === "conflict") {
       error.value = "Document changed. Refresh problems before fixing it.";
-    else await refresh();
+    } else {
+      await refresh();
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   }

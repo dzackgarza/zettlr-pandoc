@@ -790,7 +790,9 @@ watch(
 watch(
   () => documentTreeStore.pendingTreeUpdates,
   (count) => {
-    if (count === 0) void nextTick().then(applyPendingNavigation);
+    if (count === 0) {
+      void nextTick().then(applyPendingNavigation);
+    }
   },
 );
 

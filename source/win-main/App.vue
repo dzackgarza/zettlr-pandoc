@@ -1085,8 +1085,11 @@ onMounted(() => {
     },
     "global-search": () =>
       navigationSidebar.value?.reveal({ view: "search", focus: "search-query" }),
-    "problems-reveal": () =>
-      navigationSidebar.value?.reveal({ view: "problems", section: "problems", focus: "none" }),
+    "problems-reveal": () => {
+      void navigationSidebar.value
+        ?.reveal({ view: "problems", section: "problems", focus: "none" })
+        .catch((err) => reportError(err));
+    },
     "toggle-navigation-sidebar": () => {
       configStore.setConfigValue("window.fileManagerVisible", !fileManagerVisible.value);
     },
