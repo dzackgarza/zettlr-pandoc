@@ -17,7 +17,7 @@ default:
 
 # Edit and compile one .tikz or .tikzcd file in the standalone TikZ workbench.
 [no-cd]
-tikz-standalone file:
+tikz-standalone file="":
     {{bun}} run "{{justfile_directory()}}/packages/tikz-workbench/standalone/server.ts" "{{file}}"
 
 # Rebuild the pinned source-aware TikZ editor and local MathJax assets.
