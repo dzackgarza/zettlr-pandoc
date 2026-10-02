@@ -26,6 +26,9 @@ Module._extensions[".svg"] = function (mod, filename) {
 Module._extensions[".md"] = function (mod, filename) {
   mod.exports = readFileSync(filename, "utf8");
 };
+// Stylesheets are injected by style-loader in the renderer; a spec under
+// jsdom renders no CSS, so an imported stylesheet is an empty module.
+Module._extensions[".css"] = function () {};
 
 /**
  * Emulates a browser environment, which is required for some tests (especially if Vue is involved).

@@ -18,7 +18,7 @@
 import "./provision-renderer-window-seams";
 import { DocumentType } from "@dts/common/documents";
 import { strict as assert } from "assert";
-import type { DocumentAuthorityAPI } from "source/common/modules/markdown-editor";
+import MarkdownEditor, { type DocumentAuthorityAPI } from "source/common/modules/markdown-editor";
 import {
   configField,
   type EditorConfigOptions,
@@ -46,28 +46,8 @@ function polyfillJsdomForCodeMirror(): void {
 }
 
 describe("MarkdownEditor configuration ownership", function () {
-  let MarkdownEditor: typeof import("source/common/modules/markdown-editor").default;
-  let previousCssLoader: ((module: NodeModule, filename: string) => void) | undefined;
-
-  before(async function () {
+  before(function () {
     polyfillJsdomForCodeMirror();
-    const cjsRequire = require as NodeRequire & {
-      extensions: Record<string, (module: NodeModule, filename: string) => void>;
-    };
-    previousCssLoader = cjsRequire.extensions[".css"];
-    cjsRequire.extensions[".css"] = () => {};
-    MarkdownEditor = (await import("source/common/modules/markdown-editor")).default;
-  });
-
-  after(function () {
-    const cjsRequire = require as NodeRequire & {
-      extensions: Record<string, (module: NodeModule, filename: string) => void>;
-    };
-    if (previousCssLoader === undefined) {
-      delete cjsRequire.extensions[".css"];
-    } else {
-      cjsRequire.extensions[".css"] = previousCssLoader;
-    }
   });
 
   const never = new Promise<never>(() => {});

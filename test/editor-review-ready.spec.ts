@@ -8,7 +8,7 @@ import "./provision-renderer-window-seams";
 import { DocumentType } from "@dts/common/documents";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { strict as assert } from "assert";
-import type { DocumentAuthorityAPI } from "source/common/modules/markdown-editor";
+import MarkdownEditor, { type DocumentAuthorityAPI } from "source/common/modules/markdown-editor";
 
 function polyfillJsdomForCodeMirror(): void {
   if (typeof globalThis.requestAnimationFrame !== "function") {
@@ -45,28 +45,8 @@ function polyfillJsdomForCodeMirror(): void {
 }
 
 describe("MarkdownEditor review activation at readiness", function () {
-  let MarkdownEditor: typeof import("source/common/modules/markdown-editor").default;
-  let previousCssLoader: ((module: NodeModule, filename: string) => void) | undefined;
-
-  before(async function () {
+  before(function () {
     polyfillJsdomForCodeMirror();
-    const cjsRequire = require as NodeRequire & {
-      extensions: Record<string, (module: NodeModule, filename: string) => void>;
-    };
-    previousCssLoader = cjsRequire.extensions[".css"];
-    cjsRequire.extensions[".css"] = () => {};
-    MarkdownEditor = (await import("source/common/modules/markdown-editor")).default;
-  });
-
-  after(function () {
-    const cjsRequire = require as NodeRequire & {
-      extensions: Record<string, (module: NodeModule, filename: string) => void>;
-    };
-    if (previousCssLoader === undefined) {
-      delete cjsRequire.extensions[".css"];
-    } else {
-      cjsRequire.extensions[".css"] = previousCssLoader;
-    }
   });
 
   it("activates a review received before the authority fetch resolves", async function () {
