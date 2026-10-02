@@ -16,7 +16,7 @@
  * END HEADER
  */
 
-export const SIDEBAR_VIEW_IDS = ["explorer", "search", "references"] as const;
+export const SIDEBAR_VIEW_IDS = ["explorer", "search", "references", "problems"] as const;
 
 export type SidebarViewId = (typeof SIDEBAR_VIEW_IDS)[number];
 
@@ -30,6 +30,7 @@ export const SIDEBAR_SECTION_IDS = [
   "book",
   "citations",
   "relatedFiles",
+  "problems",
 ] as const;
 
 export type SidebarSectionId = (typeof SIDEBAR_SECTION_IDS)[number];
