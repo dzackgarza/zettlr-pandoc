@@ -30,7 +30,10 @@ import {
   defaultKeybindings,
 } from "source/common/modules/markdown-editor/keymaps/shortcuts";
 import { editorMetadataFacet } from "source/common/modules/markdown-editor/plugins/editor-metadata";
-import { getDefaultConfig } from "source/common/modules/markdown-editor/util/configuration";
+import {
+  configField,
+  getDefaultConfig,
+} from "source/common/modules/markdown-editor/util/configuration";
 
 /** One recorded renderer->main request at the window.ipc preload seam. */
 interface RecordedInvoke {
@@ -88,6 +91,7 @@ describe("Configurable navigation shortcuts (review A8)", function () {
       const state = EditorState.create({
         doc: "Navigation scene",
         extensions: [
+          configField,
           editorMetadataFacet.of({ windowId: "window-1", leafId: "leaf-1" }),
           zettlrKeymap(shortcuts, getDefaultConfig()),
         ],
