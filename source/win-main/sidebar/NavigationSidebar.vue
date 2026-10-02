@@ -1,34 +1,34 @@
 <template>
   <div
     id="navigation-sidebar"
-    v-bind:data-view="view.id"
+    :data-view="view.id"
   >
     <ViewContainer
       v-if="view.id === 'explorer'"
       ref="explorerContainer"
-      v-bind:sections="explorerSections"
-      v-bind:counts="explorerCounts"
+      :sections="explorerSections"
+      :counts="explorerCounts"
     >
       <template #files>
         <FileManager
-          v-bind:window-id="props.windowId"
-          v-on:jump-to-line="emit('jump-to-line', $event)"
-        ></FileManager>
+          :window-id="props.windowId"
+          @jump-to-line="emit('jump-to-line', $event)"
+        />
       </template>
       <template #outline>
         <ToCTab
-          v-on:jump-to-line="emit('jump-to-active-line', $event)"
-          v-on:move-section="emit('move-section', $event)"
-        ></ToCTab>
+          @jump-to-line="emit('jump-to-active-line', $event)"
+          @move-section="emit('move-section', $event)"
+        />
       </template>
       <template #book>
         <QuartoBookOutline
           v-if="book !== undefined"
-          v-bind:root-path="book.path"
-          v-bind:navigation="book.navigation"
-          v-bind:active-item="activeFilePath"
-          v-on:jump="emit('jump-to-line', $event)"
-        ></QuartoBookOutline>
+          :root-path="book.path"
+          :navigation="book.navigation"
+          :active-item="activeFilePath"
+          @jump="emit('jump-to-line', $event)"
+        />
       </template>
     </ViewContainer>
     <div
@@ -37,29 +37,32 @@
     >
       <SearchView
         ref="globalSearch"
-        v-bind:window-id="props.windowId"
-        v-on:jtl="(filePath: string, lineNumber: number, newTab: boolean) => emit('jtl', filePath, lineNumber, newTab)"
-      ></SearchView>
+        :window-id="props.windowId"
+        @jtl="(filePath: string, lineNumber: number, newTab: boolean) => emit('jtl', filePath, lineNumber, newTab)"
+      />
     </div>
     <ViewContainer
       v-else-if="view.id === 'problems'"
       ref="problemsContainer"
-      v-bind:sections="problemsSections"
+      :sections="problemsSections"
     >
       <template #problems>
-        <ProblemsView v-on:navigate="emit('navigate-problem', $event)" v-on:count="emit('problems-count', $event)"></ProblemsView>
+        <ProblemsView
+          @navigate="emit('navigate-problem', $event)"
+          @count="emit('problems-count', $event)"
+        />
       </template>
     </ViewContainer>
     <ViewContainer
       v-else
       ref="referencesContainer"
-      v-bind:sections="referencesSections"
+      :sections="referencesSections"
     >
       <template #citations>
-        <ReferencesTab></ReferencesTab>
+        <ReferencesTab />
       </template>
       <template #relatedFiles>
-        <RelatedFilesTab></RelatedFilesTab>
+        <RelatedFilesTab />
       </template>
     </ViewContainer>
   </div>
@@ -233,7 +236,8 @@ async function searchView(): Promise<GlobalSearchHandle> {
 /** Reveals the Search view and runs a search for the given terms. */
 async function startSearch(terms: string): Promise<void> {
   await reveal({ view: "search", focus: "none" });
-  await (await searchView()).startSearch(terms);
+  const search = await searchView();
+  search.startSearch(terms);
 }
 
 defineExpose({ reveal, startSearch });

@@ -1,52 +1,152 @@
 <template>
   <div id="problems-view">
     <div class="problems-controls">
-      <select v-model="scope" aria-label="Problem scope">
-        <option value="workspace">This workspace</option>
-        <option value="all">All workspaces</option>
+      <select
+        v-model="scope"
+        aria-label="Problem scope"
+      >
+        <option value="workspace">
+          This workspace
+        </option>
+        <option value="all">
+          All workspaces
+        </option>
       </select>
-      <select v-model="minimumSeverity" aria-label="Minimum severity">
-        <option value="info">All severities</option>
-        <option value="warning">Warnings and errors</option>
-        <option value="error">Errors</option>
+      <select
+        v-model="minimumSeverity"
+        aria-label="Minimum severity"
+      >
+        <option value="info">
+          All severities
+        </option>
+        <option value="warning">
+          Warnings and errors
+        </option>
+        <option value="error">
+          Errors
+        </option>
       </select>
-      <select v-model="grouping" aria-label="Group problems">
-        <option value="document">By document</option>
-        <option value="rule">By rule</option>
+      <select
+        v-model="grouping"
+        aria-label="Group problems"
+      >
+        <option value="document">
+          By document
+        </option>
+        <option value="rule">
+          By rule
+        </option>
       </select>
-      <button type="button" aria-label="Refresh problems" @click="refresh">Refresh</button>
+      <button
+        type="button"
+        aria-label="Refresh problems"
+        @click="refresh"
+      >
+        Refresh
+      </button>
     </div>
-    <p v-if="error" class="problems-state">{{ error }}</p>
-    <p v-else-if="answer === null" class="problems-state">Loading problems…</p>
+    <p
+      v-if="error"
+      class="problems-state"
+    >
+      {{ error }}
+    </p>
+    <p
+      v-else-if="answer === null"
+      class="problems-state"
+    >
+      Loading problems…
+    </p>
     <template v-else>
-      <p v-if="visibleFindings.length === 0 && answer.pendingPaths.length === 0" class="problems-state">No problems</p>
+      <p
+        v-if="visibleFindings.length === 0 && answer.pendingPaths.length === 0"
+        class="problems-state"
+      >
+        No problems
+      </p>
       <div v-if="grouping === 'document'">
-        <details v-for="document in visibleDocuments" :key="document.path" :open="visibleDocuments.length <= 30" class="problems-group">
+        <details
+          v-for="document in visibleDocuments"
+          :key="document.path"
+          :open="visibleDocuments.length <= 30"
+          class="problems-group"
+        >
           <summary>{{ document.name }} <span>{{ document.counts.error }} errors · {{ document.counts.warning }} warnings · {{ document.counts.info }} info</span><span v-if="document.state === 'stale'"> · Stale</span></summary>
-          <div v-for="finding in filtered(document.diagnostics)" :key="`${finding.rule}:${finding.from}:${finding.to}:${finding.message}`" class="problems-finding" :data-severity="finding.severity">
-            <button type="button" class="problems-jump" @click="emit('navigate', { path: document.path, from: finding.from, to: finding.to })">
+          <div
+            v-for="finding in filtered(document.diagnostics)"
+            :key="`${finding.rule}:${finding.from}:${finding.to}:${finding.message}`"
+            class="problems-finding"
+            :data-severity="finding.severity"
+          >
+            <button
+              type="button"
+              class="problems-jump"
+              @click="emit('navigate', { path: document.path, from: finding.from, to: finding.to })"
+            >
               <strong>{{ finding.severity }}</strong> {{ finding.message }}
               <small>{{ finding.rule }} · {{ finding.line }}:{{ finding.column }}</small>
             </button>
-            <button v-if="finding.fix !== null && document.state === 'current'" type="button" class="problems-fix" :title="finding.fix.title" @click="applyFix(document, finding)">Fix</button>
+            <button
+              v-if="finding.fix !== null && document.state === 'current'"
+              type="button"
+              class="problems-fix"
+              :title="finding.fix.title"
+              @click="applyFix(document, finding)"
+            >
+              Fix
+            </button>
           </div>
         </details>
       </div>
       <div v-else>
-        <details v-for="group in ruleGroups" :key="group.rule" open class="problems-group">
+        <details
+          v-for="group in ruleGroups"
+          :key="group.rule"
+          open
+          class="problems-group"
+        >
           <summary>{{ group.rule }} <span>{{ group.findings.length }}</span></summary>
-          <div v-for="entry in group.findings" :key="`${entry.document.path}:${entry.finding.from}:${entry.finding.message}`" class="problems-finding" :data-severity="entry.finding.severity">
-            <button type="button" class="problems-jump" @click="emit('navigate', { path: entry.document.path, from: entry.finding.from, to: entry.finding.to })">
+          <div
+            v-for="entry in group.findings"
+            :key="`${entry.document.path}:${entry.finding.from}:${entry.finding.message}`"
+            class="problems-finding"
+            :data-severity="entry.finding.severity"
+          >
+            <button
+              type="button"
+              class="problems-jump"
+              @click="emit('navigate', { path: entry.document.path, from: entry.finding.from, to: entry.finding.to })"
+            >
               <strong>{{ entry.finding.severity }}</strong> {{ entry.finding.message }}
               <small>{{ entry.document.name }} · {{ entry.finding.line }}:{{ entry.finding.column }}<span v-if="entry.document.state === 'stale'"> · Stale</span></small>
             </button>
-            <button v-if="entry.finding.fix !== null && entry.document.state === 'current'" type="button" class="problems-fix" :title="entry.finding.fix.title" @click="applyFix(entry.document, entry.finding)">Fix</button>
+            <button
+              v-if="entry.finding.fix !== null && entry.document.state === 'current'"
+              type="button"
+              class="problems-fix"
+              :title="entry.finding.fix.title"
+              @click="applyFix(entry.document, entry.finding)"
+            >
+              Fix
+            </button>
           </div>
         </details>
       </div>
-      <details v-if="answer.pendingPaths.length" open class="problems-group" data-problems-pending>
+      <details
+        v-if="answer.pendingPaths.length"
+        open
+        class="problems-group"
+        data-problems-pending
+      >
         <summary>{{ answer.pendingPaths.length }} pending</summary>
-        <div v-for="path in answer.pendingPaths" :key="path" class="problems-state" :title="path">{{ pathBasename(path) }}</div>
+        <div
+          v-for="path in answer.pendingPaths"
+          :key="path"
+          class="problems-state"
+          :title="path"
+        >
+          {{ pathBasename(path) }}
+        </div>
       </details>
     </template>
   </div>
