@@ -13,8 +13,8 @@
  * END HEADER
  */
 
-import type { FSALEventPayload } from 'source/app/service-providers/fsal'
-import { relativePath } from '@common/util/renderer-path-polyfill'
+import { relativePath } from "@common/util/renderer-path-polyfill";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
 
 /**
  * Whether one of the events adds, changes or removes a direct child of the
@@ -26,16 +26,16 @@ import { relativePath } from '@common/util/renderer-path-polyfill'
  *
  * @return  {boolean}                            True when the children changed
  */
-export function eventsChangeChildren (events: FSALEventPayload[], directoryPath: string): boolean {
-  const PATH_SEP = process.platform === 'win32' ? '\\' : '/'
-  return events.some(payload => {
-    const affectedPath = 'path' in payload ? payload.path : payload.descriptor.path
+export function eventsChangeChildren(events: FSALEventPayload[], directoryPath: string): boolean {
+  const PATH_SEP = process.platform === "win32" ? "\\" : "/";
+  return events.some((payload) => {
+    const affectedPath = "path" in payload ? payload.path : payload.descriptor.path;
 
     if (!affectedPath.startsWith(directoryPath) || affectedPath === directoryPath) {
-      return false
+      return false;
     }
 
     // The relative path of a direct child has no path separator.
-    return !relativePath(directoryPath, affectedPath).includes(PATH_SEP)
-  })
+    return !relativePath(directoryPath, affectedPath).includes(PATH_SEP);
+  });
 }

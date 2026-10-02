@@ -51,7 +51,9 @@ function longDocument(): string {
 
 async function mount(): Promise<void> {
   const host = document.querySelector<HTMLElement>("#editor");
-  if (host === null) {throw new Error("Fast-scroll visual host is missing");}
+  if (host === null) {
+    throw new Error("Fast-scroll visual host is missing");
+  }
 
   const config = getDefaultConfig();
   config.metadata.path = "/tmp/fast-scroll.md";

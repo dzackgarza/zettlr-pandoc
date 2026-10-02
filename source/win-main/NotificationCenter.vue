@@ -115,51 +115,53 @@
  * END HEADER
  */
 
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
-import { trans } from '@common/i18n-renderer'
+import { trans } from "@common/i18n-renderer";
 import {
   copyNotificationText,
   dismissAllNotifications,
   dismissNotification,
+  type NotificationEntry,
   notificationEntries,
   onNotificationsChanged,
   runNotificationAction,
   setNotificationCenterOpen,
-  type NotificationEntry
-} from '@common/util/show-toast'
+} from "@common/util/show-toast";
+import { computed, onBeforeUnmount, ref, shallowRef } from "vue";
 
-const toggleTitle = trans('Notifications')
-const panelTitle = trans('Notifications')
-const dismissAllLabel = trans('Dismiss all')
-const closeLabel = trans('Close')
-const emptyLabel = trans('No notifications')
+const toggleTitle = trans("Notifications");
+const panelTitle = trans("Notifications");
+const dismissAllLabel = trans("Dismiss all");
+const closeLabel = trans("Close");
+const emptyLabel = trans("No notifications");
 
-const entries = shallowRef<readonly NotificationEntry[]>([...notificationEntries()])
-const open = ref(false)
-const newestFirst = computed(() => [...entries.value].reverse())
+const entries = shallowRef<readonly NotificationEntry[]>([...notificationEntries()]);
+const open = ref(false);
+const newestFirst = computed(() => [...entries.value].reverse());
 
 const unsubscribe = onNotificationsChanged(() => {
-  entries.value = [...notificationEntries()]
-})
-onBeforeUnmount(unsubscribe)
+  entries.value = [...notificationEntries()];
+});
+onBeforeUnmount(unsubscribe);
 
-function closeOnEscape (event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    setOpen(false)
+function closeOnEscape(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    setOpen(false);
   }
 }
 
-function setOpen (value: boolean): void {
-  open.value = value
-  setNotificationCenterOpen(value)
+function setOpen(value: boolean): void {
+  open.value = value;
+  setNotificationCenterOpen(value);
   if (value) {
-    window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener("keydown", closeOnEscape);
   } else {
-    window.removeEventListener('keydown', closeOnEscape)
+    window.removeEventListener("keydown", closeOnEscape);
   }
 }
 
-onBeforeUnmount(() => { window.removeEventListener('keydown', closeOnEscape) })
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", closeOnEscape);
+});
 </script>
 
 <style lang="less">

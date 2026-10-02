@@ -53,58 +53,58 @@
  *
  * END HEADER
  */
-import { trans } from '@common/i18n-renderer'
-import { computed, ref, watch, toRef, onMounted } from 'vue'
+import { trans } from "@common/i18n-renderer";
+import { computed, onMounted, ref, toRef, watch } from "vue";
 
 const props = defineProps<{
-  autofocus?: boolean
-  modelValue: string
-  disabled?: boolean
-  placeholder?: string
-  label?: string
-  name?: string
-  reset?: string|boolean
-  inline?: boolean
-  info?: string
-  searchIcon?: boolean
-}>()
+  autofocus?: boolean;
+  modelValue: string;
+  disabled?: boolean;
+  placeholder?: string;
+  label?: string;
+  name?: string;
+  reset?: string | boolean;
+  inline?: boolean;
+  info?: string;
+  searchIcon?: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string): void
-  (e: 'confirm', value: string): void
-  (e: 'escape', value: string): void
-  (e: 'blur', value: string): void
-}>()
+  (e: "update:modelValue", value: string): void;
+  (e: "confirm", value: string): void;
+  (e: "escape", value: string): void;
+  (e: "blur", value: string): void;
+}>();
 
-const fieldID = computed<string>(() => 'field-input-' + (props.name ?? ''))
-const textField = ref<HTMLInputElement|null>(null)
+const fieldID = computed<string>(() => "field-input-" + (props.name ?? ""));
+const textField = ref<HTMLInputElement | null>(null);
 
-const inputValue = ref<string>(props.modelValue)
+const inputValue = ref<string>(props.modelValue);
 
-watch(toRef(props, 'modelValue'), () => {
-  inputValue.value = props.modelValue
-})
+watch(toRef(props, "modelValue"), () => {
+  inputValue.value = props.modelValue;
+});
 
 onMounted(() => {
   if (props.autofocus) {
     // The browser will only auto-focus the textfield natively if it is added to
     // the DOM the first time. With this check, we ensure it always receives
     // focus whenever it gets mounted.
-    focus()
+    focus();
   }
-})
+});
 
-const resetLabel = trans('Reset')
+const resetLabel = trans("Reset");
 
-function focus (): void {
-  textField.value?.focus()
+function focus(): void {
+  textField.value?.focus();
 }
 
-function select (): void {
-  textField.value?.select()
+function select(): void {
+  textField.value?.select();
 }
 
-defineExpose({ select, focus })
+defineExpose({ select, focus });
 </script>
 
 <style lang="less">

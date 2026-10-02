@@ -13,24 +13,24 @@
  * END HEADER
  */
 
-import type { AppServiceContainer } from 'source/app/app-service-container'
-import ZettlrCommand from './zettlr-command'
-import type { QuartoManifestBinding } from '../fsal/fsal-directory'
+import type { AppServiceContainer } from "source/app/app-service-container";
+import type { QuartoManifestBinding } from "../fsal/fsal-directory";
+import ZettlrCommand from "./zettlr-command";
 
 export interface DirBindQuartoManifestAPI {
-  path: string
+  path: string;
   /** The manifest to bind to, or null to unbind the directory. */
-  manifest: string|null
+  manifest: string | null;
 }
 
 export type DirBindQuartoManifestOutcome =
   | QuartoManifestBinding
-  | { kind: 'unbound' }
-  | { kind: 'rejected', reason: 'no-such-directory' }
+  | { kind: "unbound" }
+  | { kind: "rejected"; reason: "no-such-directory" };
 
 export default class DirBindQuartoManifest extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'dir-bind-quarto-manifest')
+  constructor(app: AppServiceContainer) {
+    super(app, "dir-bind-quarto-manifest");
   }
 
   /**
@@ -41,18 +41,18 @@ export default class DirBindQuartoManifest extends ZettlrCommand {
    *
    * @return  {Promise<DirBindQuartoManifestOutcome>}  What became of the binding
    */
-  async run (evt: string, arg: DirBindQuartoManifestAPI): Promise<DirBindQuartoManifestOutcome> {
-    const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path)
+  async run(evt: string, arg: DirBindQuartoManifestAPI): Promise<DirBindQuartoManifestOutcome> {
+    const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
 
     if (dir === undefined) {
-      return { kind: 'rejected', reason: 'no-such-directory' }
+      return { kind: "rejected", reason: "no-such-directory" };
     }
 
     if (arg.manifest === null) {
-      await this._app.fsal.unbindQuartoManifest(dir)
-      return { kind: 'unbound' }
+      await this._app.fsal.unbindQuartoManifest(dir);
+      return { kind: "unbound" };
     }
 
-    return await this._app.fsal.bindQuartoManifest(dir, arg.manifest)
+    return await this._app.fsal.bindQuartoManifest(dir, arg.manifest);
   }
 }

@@ -30,7 +30,8 @@
     "test/**/*",
     "e2e/**/*",
     "packages/*/src/**/*",
-    "packages/*/test/**/*"
+    "packages/*/test/**/*",
+    "scripts/**/*.ts"
   ],
   "ts-node": {
     "require": ["tsconfig-paths/register"]

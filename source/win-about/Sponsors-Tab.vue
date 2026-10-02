@@ -31,27 +31,28 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import ky from 'ky'
-import { ref } from 'vue'
+import { reportError } from "@common/util/error-reporting";
+import ky from "ky";
+import { ref } from "vue";
 
 interface Sponsor {
-  id: string
-  name: string
-  link?: string
+  id: string;
+  name: string;
+  link?: string;
 }
 
-const sponsors = ref<Sponsor[]>([])
+const sponsors = ref<Sponsor[]>([]);
 
-ky('https://zettlr.com/api/sponsors')
-  .then(response => {
-    response.json<Sponsor[]>()
-      .then(res => {
-        sponsors.value = res
+ky("https://zettlr.com/api/sponsors")
+  .then((response) => {
+    response
+      .json<Sponsor[]>()
+      .then((res) => {
+        sponsors.value = res;
       })
-      .catch(err => reportError(err))
+      .catch((err) => reportError(err));
   })
-  .catch(e => reportError(e))
+  .catch((e) => reportError(e));
 </script>
 
 <style lang="less">

@@ -17,25 +17,25 @@
  * END HEADER
  */
 
-import type { AnyDescriptor } from '@dts/common/fsal'
+import type { AnyDescriptor } from "@dts/common/fsal";
 
 export interface FilePickerCache {
-  paths: string[]
-  pathSet: Set<string>
+  paths: string[];
+  pathSet: Set<string>;
 }
 
 /** Precomputes picker candidates from the file manager's visibility authority. */
-export function buildFilePickerCache (
+export function buildFilePickerCache(
   descriptors: Iterable<AnyDescriptor>,
-  isVisible: (item: AnyDescriptor) => boolean
+  isVisible: (item: AnyDescriptor) => boolean,
 ): FilePickerCache {
-  const paths: string[] = []
+  const paths: string[] = [];
   for (const descriptor of descriptors) {
-    if (descriptor.type !== 'directory' && isVisible(descriptor)) {
-      paths.push(descriptor.path)
+    if (descriptor.type !== "directory" && isVisible(descriptor)) {
+      paths.push(descriptor.path);
     }
   }
-  return { paths, pathSet: new Set(paths) }
+  return { paths, pathSet: new Set(paths) };
 }
 
 /**
@@ -48,68 +48,70 @@ export function buildFilePickerCache (
  *
  * @return  {(item: AnyDescriptor) => boolean}  The filter function. Takes a descriptor as its only argument.
  */
-export default function matchQuery (
+export default function matchQuery(
   query: string,
   includeTitle: boolean,
-  includeH1: boolean
+  includeH1: boolean,
 ): (item: AnyDescriptor) => boolean {
-  const queries = query.split(' ').map(q => q.trim()).filter(q => q !== '')
+  const queries = query
+    .split(" ")
+    .map((q) => q.trim())
+    .filter((q) => q !== "");
 
   // Returns a function that takes a Meta descriptor and returns whether it matches all queries or not
   return function (item: AnyDescriptor): boolean {
-    let allQueriesMatched = true
+    let allQueriesMatched = true;
 
     for (const q of queries) {
-      let queryMatched = false
+      let queryMatched = false;
 
       // First, see if the name gives a match since that's what all descriptors have.
       if (item.name.toLowerCase().includes(q)) {
-        queryMatched = true
+        queryMatched = true;
       }
 
       // The rest can only match files
-      if (item.type === 'file') {
+      if (item.type === "file") {
         // Type assertion to check if 'firstHeading' exists on file descriptors
-        const fileDescriptor = item
+        const fileDescriptor = item;
 
         // If the query only consists of a "#" also include files that
         // contain tags, no matter which.
-        if (q === '#' && item.tags.length > 0) {
-          queryMatched = true
+        if (q === "#" && item.tags.length > 0) {
+          queryMatched = true;
         }
 
         // Let's check for tag matches
-        if (q.startsWith('#')) {
-          const tagMatch = item.tags.find(tag => tag.includes(q.substr(1)))
+        if (q.startsWith("#")) {
+          const tagMatch = item.tags.find((tag) => tag.includes(q.substr(1)));
           if (tagMatch !== undefined) {
-            queryMatched = true
+            queryMatched = true;
           }
         }
 
-        const frontmatter: unknown = item.frontmatter
-        const hasTitle = typeof frontmatter === 'object' && frontmatter !== null && 'title' in frontmatter
+        const frontmatter: unknown = item.frontmatter;
+        const hasTitle =
+          typeof frontmatter === "object" && frontmatter !== null && "title" in frontmatter;
 
         // Does the frontmatter work?
         if (includeTitle && hasTitle && String(frontmatter.title).toLowerCase().includes(q)) {
-          queryMatched = true
+          queryMatched = true;
         }
 
-        // Check if 'firstHeading' exists before accessing it
-        // Should we use headings 1 and, if so, does it match?
-        if (includeH1 && 'firstHeading' in fileDescriptor && fileDescriptor.firstHeading !== null) {
+        if (includeH1 && "firstHeading" in fileDescriptor && fileDescriptor.firstHeading !== null) {
           if (fileDescriptor.firstHeading?.toLowerCase().includes(q)) {
-            queryMatched = true
+            queryMatched = true;
           }
         }
       }
 
       // If any of the queries are not matched, set allQueriesMatched to false
       if (!queryMatched) {
-        allQueriesMatched = false
-        break // No need to continue checking other queries if one is not matched
+        allQueriesMatched = false;
+        break; // No need to continue checking other queries if one is not matched
       }
     } // END for
 
-    return allQueriesMatched
-  }
+    return allQueriesMatched;
+  };
 }

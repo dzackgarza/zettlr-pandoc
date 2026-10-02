@@ -43,23 +43,23 @@
  * END HEADER
  */
 
-import ZettlrCommand from './zettlr-command'
-import type { AppServiceContainer } from 'source/app/app-service-container'
 import type {
   CommitRenameOutcome,
   ReferenceRenamePreview,
-  UndoRenameOutcome
-} from '@common/pandoc-util/compute-reference-edits'
-import type { WorkspaceReferenceEdit } from '@dts/common/references'
+  UndoRenameOutcome,
+} from "@common/pandoc-util/compute-reference-edits";
+import type { WorkspaceReferenceEdit } from "@dts/common/references";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 type RenameReferenceCommandArgument =
-  | { oldKey: string, newKey: string }
+  | { oldKey: string; newKey: string }
   | { edit: WorkspaceReferenceEdit }
-  | undefined
+  | undefined;
 
 export default class RenameReference extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, [ 'preview-reference-rename', 'commit-reference-rename', 'undo-reference-rename' ])
+  constructor(app: AppServiceContainer) {
+    super(app, ["preview-reference-rename", "commit-reference-rename", "undo-reference-rename"]);
   }
 
   /**
@@ -73,22 +73,22 @@ export default class RenameReference extends ZettlrCommand {
    * @return  {Promise<ReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome>}
    *   The provider's typed outcome, verbatim
    */
-  async run (
+  async run(
     evt: string,
-    arg: RenameReferenceCommandArgument
-  ): Promise<ReferenceRenamePreview|CommitRenameOutcome|UndoRenameOutcome> {
-    if (evt === 'preview-reference-rename') {
-      if (arg === undefined || !('oldKey' in arg)) {
-        throw new Error('preview-reference-rename requires oldKey and newKey')
+    arg: RenameReferenceCommandArgument,
+  ): Promise<ReferenceRenamePreview | CommitRenameOutcome | UndoRenameOutcome> {
+    if (evt === "preview-reference-rename") {
+      if (arg === undefined || !("oldKey" in arg)) {
+        throw new Error("preview-reference-rename requires oldKey and newKey");
       }
-      return this._app.references.previewRename(arg.oldKey, arg.newKey)
-    } else if (evt === 'commit-reference-rename') {
-      if (arg === undefined || !('edit' in arg)) {
-        throw new Error('commit-reference-rename requires a workspace edit')
+      return this._app.references.previewRename(arg.oldKey, arg.newKey);
+    } else if (evt === "commit-reference-rename") {
+      if (arg === undefined || !("edit" in arg)) {
+        throw new Error("commit-reference-rename requires a workspace edit");
       }
-      return await this._app.references.commitRename(arg.edit)
+      return await this._app.references.commitRename(arg.edit);
     } else {
-      return await this._app.references.undoRename()
+      return await this._app.references.undoRename();
     }
   }
 }

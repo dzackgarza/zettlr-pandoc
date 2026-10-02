@@ -59,16 +59,16 @@
  * END HEADER
  */
 
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
+import { tikzCompilerLogHeadline } from "../compiler-log";
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
 import {
   TikzLivePreviewController,
   type TikzLivePreviewState,
   type TikzLivePreviewTarget,
   type TikzRenderFailure,
 } from "../live-preview";
-import { tikzCompilerLogHeadline } from "../compiler-log";
-import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
 import type { TikzRenderRequest, TikzRenderResult } from "../tikz-render";
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import TikzFigureViewer from "./TikzFigureViewer.vue";
 
 const props = defineProps<{
@@ -195,9 +195,12 @@ const failureDetails = computed(() => {
     return "";
   }
   if (failure.kind === "compile-error") {
-    return failure.log || failure.errors
-      .map((error) => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
-      .join("\n\n");
+    return (
+      failure.log ||
+      failure.errors
+        .map((error) => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
+        .join("\n\n")
+    );
   }
   if (failure.kind === "pandoc-error" || failure.kind === "render-terminated") {
     return failure.log;
@@ -206,9 +209,11 @@ const failureDetails = computed(() => {
 });
 
 function copyDiagnostics(): void {
-  void navigator.clipboard.writeText(failureDetails.value || failureSummary.value).catch((error) => {
-    props.host.reportError("Could not copy TikZ diagnostics", error);
-  });
+  void navigator.clipboard
+    .writeText(failureDetails.value || failureSummary.value)
+    .catch((error) => {
+      props.host.reportError("Could not copy TikZ diagnostics", error);
+    });
 }
 
 function refresh(): void {

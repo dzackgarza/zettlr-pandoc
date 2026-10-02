@@ -77,8 +77,11 @@
  * END HEADER
  */
 
-import { computed, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import { storeToRefs } from "pinia";
 import {
   DialogClose,
   DialogContent,
@@ -86,68 +89,74 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogRoot,
-  DialogTitle
-} from 'reka-ui'
-import { trans } from '@common/i18n-renderer'
-import showToast from '@common/util/show-toast'
-import { reportError } from '@common/util/error-reporting'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { WORKSPACE_RULES_FILE, rulesTextOf } from 'source/common/util/ignore-rules'
-import { useConfigStore, useIgnoreRulesStore } from 'source/pinia'
+  DialogTitle,
+} from "reka-ui";
+import { rulesTextOf, WORKSPACE_RULES_FILE } from "source/common/util/ignore-rules";
+import { useConfigStore, useIgnoreRulesStore } from "source/pinia";
+import { computed, ref, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const SYNTAX: ReadonlyArray<[rule: string, meaning: string]> = [
-  [ '*scripts*', trans('Each file and folder with “scripts” in its name') ],
-  [ '*_files/', trans('Each folder with a name that ends in “_files”') ],
-  [ 'references/', trans('Each folder with the name “references”') ],
-  [ 'AGENTS.md', trans('Each file and folder with the name “AGENTS.md”') ],
-  [ '/drafts/old/', trans('The one folder “drafts/old” at the workspace root') ],
-  [ '!keep.md', trans('Shows “keep.md” again, but not below a hidden folder') ]
-]
+  ["*scripts*", trans("Each file and folder with “scripts” in its name")],
+  ["*_files/", trans("Each folder with a name that ends in “_files”")],
+  ["references/", trans("Each folder with the name “references”")],
+  ["AGENTS.md", trans("Each file and folder with the name “AGENTS.md”")],
+  ["/drafts/old/", trans("The one folder “drafts/old” at the workspace root")],
+  ["!keep.md", trans("Shows “keep.md” again, but not below a hidden folder")],
+];
 
-const configStore = useConfigStore()
-const { sources, editing } = storeToRefs(useIgnoreRulesStore())
+const configStore = useConfigStore();
+const { sources, editing } = storeToRefs(useIgnoreRulesStore());
 
-const roots = computed(() => [...sources.value.workspaceRules.keys()])
-const globalDraft = ref('')
-const workspaceDrafts = ref<Record<string, string>>({})
+const roots = computed(() => [...sources.value.workspaceRules.keys()]);
+const globalDraft = ref("");
+const workspaceDrafts = ref<Record<string, string>>({});
 
-watch(editing, isOpen => {
+watch(editing, (isOpen) => {
   if (isOpen) {
-    globalDraft.value = sources.value.globalRules.join('\n')
-    workspaceDrafts.value = Object.fromEntries(sources.value.workspaceRules)
+    globalDraft.value = sources.value.globalRules.join("\n");
+    workspaceDrafts.value = Object.fromEntries(sources.value.workspaceRules);
   }
-})
+});
 
-function rulesOf (text: string): string[] {
-  return text.split('\n').filter(line => line.trim() !== '')
+function rulesOf(text: string): string[] {
+  return text.split("\n").filter((line) => line.trim() !== "");
 }
 
 /** The text of a rules file: no text when it holds no line, else one final line end. */
-function fileTextOf (draft: string): string {
-  const text = draft.replace(/\s+$/, '')
-  return text === '' ? '' : `${text}\n`
+function fileTextOf(draft: string): string {
+  const text = draft.replace(/\s+$/, "");
+  return text === "" ? "" : `${text}\n`;
 }
 
-function save (): void {
-  const globalRules = rulesOf(globalDraft.value)
-  if (globalRules.join('\n') !== sources.value.globalRules.join('\n')) {
-    configStore.setConfigValue('fileManager.ignoreRules', globalRules)
+function save(): void {
+  const globalRules = rulesOf(globalDraft.value);
+  if (globalRules.join("\n") !== sources.value.globalRules.join("\n")) {
+    configStore.setConfigValue("fileManager.ignoreRules", globalRules);
   }
 
   const changed = roots.value
-    .map(root => ({ root, text: fileTextOf(workspaceDrafts.value[root]) }))
-    .filter(({ root, text }) => text !== fileTextOf(rulesTextOf(sources.value.workspaceRules, root)))
+    .map((root) => ({ root, text: fileTextOf(workspaceDrafts.value[root]) }))
+    .filter(
+      ({ root, text }) => text !== fileTextOf(rulesTextOf(sources.value.workspaceRules, root)),
+    );
 
-  Promise.all(changed.map(async payload => {
-    await ipcRenderer.invoke('fsal', { command: 'set-workspace-ignore-rules', payload })
-  }))
-    .then(() => { editing.value = false })
-    .catch(err => {
-      reportError('Could not save the ignore rules', err)
-      showToast(trans('Could not save the filters: %s', err instanceof Error ? err.message : String(err)), 'error')
+  Promise.all(
+    changed.map(async (payload) => {
+      await ipcRenderer.invoke("fsal", { command: "set-workspace-ignore-rules", payload });
+    }),
+  )
+    .then(() => {
+      editing.value = false;
     })
+    .catch((err) => {
+      reportError("Could not save the ignore rules", err);
+      showToast(
+        trans("Could not save the filters: %s", err instanceof Error ? err.message : String(err)),
+        "error",
+      );
+    });
 }
 </script>
 

@@ -12,8 +12,8 @@
  * END HEADER
  */
 
-import { sendableUpdates } from '@codemirror/collab'
-import type { EditorState } from '@codemirror/state'
+import { sendableUpdates } from "@codemirror/collab";
+import type { EditorState } from "@codemirror/state";
 
 /**
  * Resolves once the editor state has no sendable collab updates left, i.e. the
@@ -37,23 +37,23 @@ import type { EditorState } from '@codemirror/state'
  *
  * @return  {Promise<void>}                Resolves only when nothing is unsent.
  */
-export async function whenAuthoritySynced (
+export async function whenAuthoritySynced(
   getState: () => EditorState,
-  timeout = 2000
+  timeout = 2000,
 ): Promise<void> {
-  const start = Date.now()
-  let unsent = sendableUpdates(getState()).length
+  const start = Date.now();
+  let unsent = sendableUpdates(getState()).length;
 
   while (unsent > 0) {
-    const elapsed = Date.now() - start
+    const elapsed = Date.now() - start;
     if (elapsed >= timeout) {
       throw new Error(
         `The document authority has not confirmed ${unsent} pending update(s) ` +
-        `after ${elapsed} ms; the buffer and the authority still differ`
-      )
+          `after ${elapsed} ms; the buffer and the authority still differ`,
+      );
     }
 
-    await new Promise(resolve => setTimeout(resolve, 20))
-    unsent = sendableUpdates(getState()).length
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    unsent = sendableUpdates(getState()).length;
   }
 }

@@ -15,14 +15,14 @@
  * END HEADER
  */
 
-import type { MathJaxMacro } from './mathjax-config'
-import { tikzTemplateQuiverMacros } from './tikz-render'
+import type { MathJaxMacro } from "./mathjax-config";
+import { tikzTemplateQuiverMacros } from "./tikz-render";
 
 export interface QuiverMacroProjection {
   /** KaTeX macro map. Keys include the leading backslash. */
-  macros: Record<string, string>
+  macros: Record<string, string>;
   /** User macros whose semantics cannot be represented faithfully in KaTeX. */
-  unsupported: string[]
+  unsupported: string[];
 }
 
 /**
@@ -31,37 +31,39 @@ export interface QuiverMacroProjection {
  * to override MathJax-safe fallbacks, so reversing this precedence would make
  * Quiver disagree with the compiler.
  */
-export function projectQuiverMacros (
+export function projectQuiverMacros(
   mathJaxMacros: Record<string, MathJaxMacro>,
-  tikzTemplatePath: string
+  tikzTemplatePath: string,
 ): QuiverMacroProjection {
-  const macros: Record<string, string> = {}
-  const unsupported = new Set<string>()
+  const macros: Record<string, string> = {};
+  const unsupported = new Set<string>();
 
-  for (const [name, definition] of Object.entries(mathJaxMacros).sort(([a], [b]) => a.localeCompare(b))) {
-    const key = `\\${name}`
-    if (typeof definition === 'string') {
-      macros[key] = definition
-      continue
+  for (const [name, definition] of Object.entries(mathJaxMacros).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const key = `\\${name}`;
+    if (typeof definition === "string") {
+      macros[key] = definition;
+      continue;
     }
 
-    const [body, _requiredArguments, optionalDefault] = definition
+    const [body, _requiredArguments, optionalDefault] = definition;
     if (optionalDefault !== undefined) {
-      unsupported.add(key)
-      continue
+      unsupported.add(key);
+      continue;
     }
-    macros[key] = body
+    macros[key] = body;
   }
 
   for (const [key, definition] of Object.entries(tikzTemplateQuiverMacros(tikzTemplatePath))) {
-    macros[key] = definition
-    unsupported.delete(key)
+    macros[key] = definition;
+    unsupported.delete(key);
   }
 
   return {
     macros: Object.fromEntries(Object.entries(macros).sort(([a], [b]) => a.localeCompare(b))),
-    unsupported: [...unsupported].sort((a, b) => a.localeCompare(b))
-  }
+    unsupported: [...unsupported].sort((a, b) => a.localeCompare(b)),
+  };
 }
 
-export type QuiverMacrosIPCResponse = QuiverMacroProjection
+export type QuiverMacrosIPCResponse = QuiverMacroProjection;

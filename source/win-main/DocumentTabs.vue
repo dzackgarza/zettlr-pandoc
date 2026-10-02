@@ -86,44 +86,46 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { displayTabbarContext } from './tabs-context'
-import tippy from 'tippy.js'
-import { nextTick, computed, ref, watch, onMounted } from 'vue'
-import { useDocumentTreeStore } from 'source/pinia'
-import type { LeafNodeJSON, OpenDocument } from '@dts/common/documents'
-import { pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
-import type { WindowControlsIPCAPI } from 'source/app/service-providers/windows'
-import { useWorkspaceStore } from 'source/pinia/workspace-store'
-import type { AnyMenuItem } from 'source/common/modules/window-register/application-menu-helper'
-import { trans } from 'source/common/i18n-renderer'
-import showPopupMenu from 'source/common/modules/window-register/application-menu-helper'
-import { closeFile } from './file-manager/util/item-composable'
-import { getSemanticDocumentTitle } from './util/get-document-title'
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import type { LeafNodeJSON, OpenDocument } from "@dts/common/documents";
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
+import { trans } from "source/common/i18n-renderer";
+import type { AnyMenuItem } from "source/common/modules/window-register/application-menu-helper";
+import showPopupMenu from "source/common/modules/window-register/application-menu-helper";
+import { useDocumentTreeStore } from "source/pinia";
+import { useWorkspaceStore } from "source/pinia/workspace-store";
+import tippy from "tippy.js";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { closeFile } from "./file-manager/util/item-composable";
+import { displayTabbarContext } from "./tabs-context";
+import { getSemanticDocumentTitle } from "./util/get-document-title";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const props = defineProps<{
-  leafId: string
-  windowId: string
-}>()
+  leafId: string;
+  windowId: string;
+}>();
 
 // Is there a document being dragged over this tabbar?
-const documentTabDragOver = ref<boolean>(false)
+const documentTabDragOver = ref<boolean>(false);
 // Is the document originating from here? (If so we should not display the
 // dropzone)
-const documentTabDragOverOrigin = ref<boolean>(false)
+const documentTabDragOverOrigin = ref<boolean>(false);
 
-const workspaceStore = useWorkspaceStore()
-const documentTreeStore = useDocumentTreeStore()
+const workspaceStore = useWorkspaceStore();
+const documentTreeStore = useDocumentTreeStore();
 
-const container = ref<HTMLDivElement|null>(null)
-const node = computed<LeafNodeJSON|undefined>(() => documentTreeStore.paneData.find((leaf: LeafNodeJSON) => leaf.id === props.leafId))
-const openFiles = computed(() => node.value?.openFiles ?? [])
-const activeFile = computed(() => node.value?.activeFile ?? null)
-const modifiedPaths = computed(() => documentTreeStore.modifiedDocuments)
-const unsavedChangesLabel = trans('Unsaved changes')
+const container = ref<HTMLDivElement | null>(null);
+const node = computed<LeafNodeJSON | undefined>(() =>
+  documentTreeStore.paneData.find((leaf: LeafNodeJSON) => leaf.id === props.leafId),
+);
+const openFiles = computed(() => node.value?.openFiles ?? []);
+const activeFile = computed(() => node.value?.activeFile ?? null);
+const modifiedPaths = computed(() => documentTreeStore.modifiedDocuments);
+const unsavedChangesLabel = trans("Unsaved changes");
 
 watch(activeFile, () => {
   // Make sure the activeFile is in view
@@ -131,32 +133,34 @@ watch(activeFile, () => {
   // new file tab so that our handler retrieves the correct one, not the old.
   nextTick()
     .then(scrollActiveFileIntoView)
-    .catch(err => reportError(err))
-})
+    .catch((err) => reportError(err));
+});
 
 onMounted(() => {
   // Listen for shortcuts so that we can switch tabs programmatically
-  ipcRenderer.on('shortcut', (event, shortcut) => {
+  ipcRenderer.on("shortcut", (event, shortcut) => {
     if (documentTreeStore.lastLeafId !== props.leafId) {
-      return // Doesn't apply to this pane
+      return; // Doesn't apply to this pane
     }
 
-    const currentIdx = openFiles.value.findIndex(elem => activeFile.value !== null && elem.path === activeFile.value.path)
-    if (shortcut === 'previous-tab') {
+    const currentIdx = openFiles.value.findIndex(
+      (elem) => activeFile.value !== null && elem.path === activeFile.value.path,
+    );
+    if (shortcut === "previous-tab") {
       if (currentIdx > 0) {
-        selectFile(openFiles.value[currentIdx - 1])
+        selectFile(openFiles.value[currentIdx - 1]);
       } else {
-        selectFile(openFiles.value[openFiles.value.length - 1])
+        selectFile(openFiles.value[openFiles.value.length - 1]);
       }
-    } else if (shortcut === 'next-tab') {
+    } else if (shortcut === "next-tab") {
       if (currentIdx < openFiles.value.length - 1) {
-        selectFile(openFiles.value[currentIdx + 1])
+        selectFile(openFiles.value[currentIdx + 1]);
       } else {
-        selectFile(openFiles.value[0])
+        selectFile(openFiles.value[0]);
       }
-    } else if (shortcut === 'close-window') {
+    } else if (shortcut === "close-window") {
       if (documentTreeStore.lastLeafId !== props.leafId) {
-        return // Otherwise all document tabs would close one file at the same
+        return; // Otherwise all document tabs would close one file at the same
         // time
       }
       // The tab bar has the responsibility to first close the activeFile if
@@ -164,130 +168,134 @@ onMounted(() => {
       // this window as if the user had clicked on the close-button.
       if (currentIdx > -1) {
         // There's an active file, so request the closure
-        ipcRenderer.invoke('documents-provider', {
-          command: 'close-file',
-          payload: {
-            path: openFiles.value[currentIdx].path,
-            leafId: props.leafId,
-            windowId: props.windowId
-          }
-        } as DocumentManagerIPCAPI)
-          .catch(e => reportError(e))
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-file",
+            payload: {
+              path: openFiles.value[currentIdx].path,
+              leafId: props.leafId,
+              windowId: props.windowId,
+            },
+          } as DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
       } else {
         // No more open files, so request closing of the window
         // TODO: This must be managed centrally
         // ipcRenderer.send('window-controls', { command: 'win-close' })
       }
-    } else if (shortcut === 'close-all-tabs' || shortcut === 'save-all' || shortcut === 'save-all-and-close') {
-      ipcRenderer.invoke('documents-provider', {
-        command: shortcut,
-        payload: { windowId: props.windowId }
-      } as DocumentManagerIPCAPI)
-        .catch(e => reportError(e))
-    } else if (shortcut === 'rename-file') {
+    } else if (
+      shortcut === "close-all-tabs" ||
+      shortcut === "save-all" ||
+      shortcut === "save-all-and-close"
+    ) {
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: shortcut,
+          payload: { windowId: props.windowId },
+        } as DocumentManagerIPCAPI)
+        .catch((e) => reportError(e));
+    } else if (shortcut === "rename-file") {
       // Renaming via shortcut (= Cmd/Ctrl+R) works via a tooltip underneath
       // the corresponding filetab. First, make sure the container is visible
-      scrollActiveFileIntoView()
+      scrollActiveFileIntoView();
 
-      const containerElement = container.value?.querySelector('.active')
+      const containerElement = container.value?.querySelector(".active");
       if (containerElement == null) {
-        return
+        return;
       }
 
-      const wrapper = document.createElement('div')
-      wrapper.classList.add('file-rename')
+      const wrapper = document.createElement("div");
+      wrapper.classList.add("file-rename");
 
-      const input = document.createElement('input')
-      input.style.backgroundColor = 'transparent'
-      input.style.border = 'none'
-      input.style.color = 'white'
-      input.value = pathBasename(openFiles.value[currentIdx].path)
+      const input = document.createElement("input");
+      input.style.backgroundColor = "transparent";
+      input.style.border = "none";
+      input.style.color = "white";
+      input.value = pathBasename(openFiles.value[currentIdx].path);
 
-      wrapper.appendChild(input)
+      wrapper.appendChild(input);
 
       // Then do the magic
       const instance = tippy(containerElement, {
         content: wrapper,
         allowHTML: true,
         interactive: true,
-        placement: 'bottom',
+        placement: "bottom",
         showOnCreate: true, // Immediately show the tooltip
         arrow: true, // Arrow for these tooltips
         onShown: function () {
-          input.focus()
+          input.focus();
           // Select from the beginning until the last dot
-          input.setSelectionRange(0, input.value.lastIndexOf('.'))
-        }
-      })
+          input.setSelectionRange(0, input.value.lastIndexOf("."));
+        },
+      });
 
-      input.addEventListener('keydown', (event) => {
-        if (![ 'Enter', 'Escape' ].includes(event.key)) {
-          return
+      input.addEventListener("keydown", (event) => {
+        if (!["Enter", "Escape"].includes(event.key)) {
+          return;
         }
 
-        if (event.key === 'Enter' && input.value.trim() !== '') {
-          ipcRenderer.invoke('application', {
-            command: 'file-rename',
-            payload: {
-              path: openFiles.value[currentIdx].path,
-              name: input.value
-            }
-          })
-            .catch(e => reportError(e))
+        if (event.key === "Enter" && input.value.trim() !== "") {
+          ipcRenderer
+            .invoke("application", {
+              command: "file-rename",
+              payload: {
+                path: openFiles.value[currentIdx].path,
+                name: input.value,
+              },
+            })
+            .catch((e) => reportError(e));
         }
-        instance.hide()
-      })
+        instance.hide();
+      });
     }
-  })
-})
+  });
+});
 
-function scrollActiveFileIntoView (): void {
+function scrollActiveFileIntoView(): void {
   if (container.value === null) {
-    return
+    return;
   }
 
   // First, we need to find the tab displaying the active file
-  const elem = container.value.querySelector('.active')
+  const elem = container.value.querySelector(".active");
   if (elem === null || !(elem instanceof HTMLDivElement)) {
-    return // The container is not yet present
+    return; // The container is not yet present
   }
   // Then, find out where the element is ...
-  const left = elem.offsetLeft
-  const right = left + elem.getBoundingClientRect().width
+  const left = elem.offsetLeft;
+  const right = left + elem.getBoundingClientRect().width;
   // ... with respect to the container
-  const leftEdge = container.value.scrollLeft
-  const containerWidth = container.value.getBoundingClientRect().width
-  const rightEdge = leftEdge + containerWidth
+  const leftEdge = container.value.scrollLeft;
+  const containerWidth = container.value.getBoundingClientRect().width;
+  const rightEdge = leftEdge + containerWidth;
 
   if (left < leftEdge) {
     // The active tab is (partially) hidden to the left -> Decrease scrollLeft
-    container.value.scrollLeft -= leftEdge - left
+    container.value.scrollLeft -= leftEdge - left;
   } else if (right > rightEdge) {
     // The active tab is (partially) hidden to the right -> Increase scrollLeft
-    container.value.scrollLeft += right - rightEdge
+    container.value.scrollLeft += right - rightEdge;
   }
 }
 
-
-function hasDuplicate (doc: OpenDocument): boolean {
-  const focalTabname = getSemanticDocumentTitle(doc).toLowerCase()
-  const duplicates = openFiles.value.filter(doc => {
-    return getSemanticDocumentTitle(doc).toLowerCase() === focalTabname
-  })
+function hasDuplicate(doc: OpenDocument): boolean {
+  const focalTabname = getSemanticDocumentTitle(doc).toLowerCase();
+  const duplicates = openFiles.value.filter((doc) => {
+    return getSemanticDocumentTitle(doc).toLowerCase() === focalTabname;
+  });
 
   // NOTE that `doc` is also contained in `openFiles`, i.e. we should have 1
-  return duplicates.length !== 1
+  return duplicates.length !== 1;
 }
 
-function getDirBasename (doc: OpenDocument): string {
-  return pathBasename(pathDirname(doc.path))
+function getDirBasename(doc: OpenDocument): string {
+  return pathBasename(pathDirname(doc.path));
 }
 
-function getAccessibleTabLabel (doc: OpenDocument): string {
-  const title = getSemanticDocumentTitle(doc)
-  return modifiedPaths.value.includes(doc.path)
-    ? `${title} — ${unsavedChangesLabel}`
-    : title
+function getAccessibleTabLabel(doc: OpenDocument): string {
+  const title = getSemanticDocumentTitle(doc);
+  return modifiedPaths.value.includes(doc.path) ? `${title} — ${unsavedChangesLabel}` : title;
 }
 
 /**
@@ -296,7 +304,7 @@ function getAccessibleTabLabel (doc: OpenDocument): string {
  * @param   {MouseEvent}    event  The triggering event
  * @param   {OpenDocument}  file   The file descriptor
  */
-function handleClickClose (event: MouseEvent, file: OpenDocument): void {
+function handleClickClose(event: MouseEvent, file: OpenDocument): void {
   if (event.button < 2) {
     // It was either a left-click (button === 0) or an auxiliary/middle
     // click (button === 1), so we should prevent the event from bubbling up
@@ -304,21 +312,22 @@ function handleClickClose (event: MouseEvent, file: OpenDocument): void {
     // (button === 2), we should let it bubble up to the container to show
     // the context menu.
     // See: https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/button#return_value
-    event.stopPropagation()
-    event.preventDefault()
+    event.stopPropagation();
+    event.preventDefault();
   } else {
-    return // We don't handle this event here.
+    return; // We don't handle this event here.
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command: 'close-file',
-    payload: {
-      path: file.path,
-      windowId: props.windowId,
-      leafId: props.leafId
-    }
-  } as DocumentManagerIPCAPI)
-    .catch(e => reportError(e))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "close-file",
+      payload: {
+        path: file.path,
+        windowId: props.windowId,
+        leafId: props.leafId,
+      },
+    } as DocumentManagerIPCAPI)
+    .catch((e) => reportError(e));
 }
 
 /**
@@ -327,12 +336,12 @@ function handleClickClose (event: MouseEvent, file: OpenDocument): void {
  * @param   {MouseEvent}    event  The triggering event
  * @param   {OpenDocument}  file   The file descriptor
  */
-function handleClickFilename (event: MouseEvent, file: OpenDocument): void {
+function handleClickFilename(event: MouseEvent, file: OpenDocument): void {
   if (event.button === 0) {
     // It was a left-click. (We must check because otherwise we would also
     // perform this action on a right-click (button === 2), but that event
     // must be handled by the container).
-    selectFile(file)
+    selectFile(file);
   }
 }
 
@@ -345,177 +354,199 @@ function handleClickFilename (event: MouseEvent, file: OpenDocument): void {
  * @param   {MouseEvent}    event  The triggering event
  * @param   {OpenDocument}  file   The file descriptor
  */
-function handleMiddleMouseClick (event: MouseEvent, file: OpenDocument): void {
+function handleMiddleMouseClick(event: MouseEvent, file: OpenDocument): void {
   if (event.button === 1) {
     // It was a middle-click (auxiliary button), so we should close
     // the file.
-    event.preventDefault() // Otherwise, on Windows we'd have a middle-click-scroll
-    handleClickClose(event, file)
+    event.preventDefault(); // Otherwise, on Windows we'd have a middle-click-scroll
+    handleClickClose(event, file);
   }
 }
 
-function selectFile (file: OpenDocument): void {
+function selectFile(file: OpenDocument): void {
   // NOTE: We're handling active file setting via the open-file command. As
   // long as a given file is already open, the document manager will simply
   // set it as active. That is why we don't provide the newTab property.
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: { path: file.path, windowId: props.windowId, leafId: props.leafId }
-  } as DocumentManagerIPCAPI)
-    .catch(e => reportError(e))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: { path: file.path, windowId: props.windowId, leafId: props.leafId },
+    } as DocumentManagerIPCAPI)
+    .catch((e) => reportError(e));
 }
 
-function handleTabbarContext (event: MouseEvent): void {
+function handleTabbarContext(event: MouseEvent): void {
   // If the person didn't click on a file, let them to close the whole leaf
   displayTabbarContext(event, (clickedID: string) => {
-    if (clickedID === 'close-leaf') {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'close-leaf',
-        payload: {
-          leafId: props.leafId,
-          windowId: props.windowId
-        }
-      } as DocumentManagerIPCAPI).catch(e => reportError(e))
+    if (clickedID === "close-leaf") {
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "close-leaf",
+          payload: {
+            leafId: props.leafId,
+            windowId: props.windowId,
+          },
+        } as DocumentManagerIPCAPI)
+        .catch((e) => reportError(e));
     }
-  })
+  });
 }
 
-function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
-  const descriptor = workspaceStore.descriptorMap.get(doc.path)
-  if (descriptor === undefined || descriptor.type === 'directory') {
-    return
+function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
+  const descriptor = workspaceStore.descriptorMap.get(doc.path);
+  if (descriptor === undefined || descriptor.type === "directory") {
+    return;
   }
 
-  const isMac = process.platform === 'darwin'
-  const isWin = process.platform === 'win32'
+  const isMac = process.platform === "darwin";
+  const isWin = process.platform === "win32";
 
   const items: AnyMenuItem[] = [
     {
-      label: trans('Close tab'),
-      type: 'normal',
+      label: trans("Close tab"),
+      type: "normal",
       enabled: !doc.pinned,
-      action () {
-        ipcRenderer.invoke('documents-provider', {
-          command: 'close-file',
-          payload: { path: descriptor.path, leafId: props.leafId, windowId: props.windowId }
-        } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
-      }
+      action() {
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-file",
+            payload: { path: descriptor.path, leafId: props.leafId, windowId: props.windowId },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
+      },
     },
     {
-      label: trans('Close other tabs'),
-      type: 'normal',
-      action () {
+      label: trans("Close other tabs"),
+      type: "normal",
+      action() {
         for (const openFile of openFiles.value) {
           if (openFile.path === descriptor.path) {
-            continue
+            continue;
           }
 
-          ipcRenderer.invoke('documents-provider', {
-            command: 'close-file',
-            payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId }
-          } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
+          ipcRenderer
+            .invoke("documents-provider", {
+              command: "close-file",
+              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
+            } satisfies DocumentManagerIPCAPI)
+            .catch((e) => reportError(e));
         }
-      }
+      },
     },
     {
-      label: trans('Close all tabs'),
-      type: 'normal',
+      label: trans("Close all tabs"),
+      type: "normal",
       enabled: !doc.pinned,
-      action () {
+      action() {
         for (const openFile of openFiles.value) {
-          ipcRenderer.invoke('documents-provider', {
-            command: 'close-file',
-            payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId }
-          } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
+          ipcRenderer
+            .invoke("documents-provider", {
+              command: "close-file",
+              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
+            } satisfies DocumentManagerIPCAPI)
+            .catch((e) => reportError(e));
         }
-      }
+      },
     },
     {
-      type: 'separator'
+      type: "separator",
     },
     {
-      label: trans('Move'),
-      type: 'submenu',
+      label: trans("Move"),
+      type: "submenu",
       enabled: !doc.pinned,
       submenu: [
         {
-          label: trans('Move to start'),
+          label: trans("Move to start"),
           enabled: !isFirstUnpinned(doc.path),
-          type: 'normal',
-          action () { moveFile(doc.path, 'start') }
+          type: "normal",
+          action() {
+            moveFile(doc.path, "start");
+          },
         },
         {
-          label: trans('Move to end'),
+          label: trans("Move to end"),
           enabled: !isLast(doc.path),
-          type: 'normal',
-          action () { moveFile(doc.path, 'end') }
+          type: "normal",
+          action() {
+            moveFile(doc.path, "end");
+          },
+        },
+      ],
+    },
+    {
+      label: doc.pinned ? trans("Unpin tab") : trans("Pin tab"),
+      type: "normal",
+      action() {
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "set-pinned",
+            payload: {
+              path: doc.path,
+              leafId: props.leafId,
+              windowId: props.windowId,
+              pinned: !doc.pinned,
+            },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
+      },
+    },
+    {
+      type: "separator",
+    },
+    {
+      label: trans("Copy filename"),
+      type: "normal",
+      action() {
+        navigator.clipboard.writeText(descriptor.name).catch((err) => reportError(err));
+      },
+    },
+    {
+      label: trans("Copy path"),
+      type: "normal",
+      action() {
+        navigator.clipboard.writeText(descriptor.path).catch((err) => reportError(err));
+      },
+    },
+    {
+      label: isMac
+        ? trans("Reveal in Finder")
+        : isWin
+          ? trans("Reveal in Explorer")
+          : trans("Reveal in File Browser"),
+      type: "normal",
+      action() {
+        ipcRenderer.send("window-controls", {
+          command: "show-item-in-folder",
+          payload: { itemPath: descriptor.path },
+        } satisfies WindowControlsIPCAPI);
+      },
+    },
+    {
+      label: trans("Copy ID"),
+      type: "normal",
+      enabled: descriptor.type === "file" && descriptor.id !== "",
+      action() {
+        if (descriptor.type === "file" && descriptor.id !== "") {
+          navigator.clipboard.writeText(descriptor.id).catch((err) => reportError(err));
         }
-      ]
+      },
     },
     {
-      label: doc.pinned ? trans('Unpin tab') : trans('Pin tab'),
-      type: 'normal',
-      action () {
-        ipcRenderer.invoke('documents-provider', {
-          command: 'set-pinned',
-          payload: {
-            path: doc.path, leafId: props.leafId, windowId: props.windowId, pinned: !doc.pinned
-          }
-        } satisfies DocumentManagerIPCAPI).catch(e => reportError(e))
-      }
+      type: "separator",
     },
     {
-      type: 'separator'
-    },
-    {
-      label: trans('Copy filename'),
-      type: 'normal',
-      action () {
-        navigator.clipboard.writeText(descriptor.name).catch(err => reportError(err))
-      }
-    },
-    {
-      label: trans('Copy path'),
-      type: 'normal',
-      action () {
-        navigator.clipboard.writeText(descriptor.path).catch(err => reportError(err))
-      }
-    },
-    {
-      label: isMac ? trans('Reveal in Finder') : isWin ? trans('Reveal in Explorer') : trans('Reveal in File Browser'),
-      type: 'normal',
-      action () {
-        ipcRenderer.send('window-controls', {
-          command: 'show-item-in-folder',
-          payload: { itemPath: descriptor.path }
-        } satisfies WindowControlsIPCAPI)
-      }
-    },
-    {
-      label: trans('Copy ID'),
-      type: 'normal',
-      enabled: descriptor.type === 'file' && descriptor.id !== '',
-      action () {
-        if (descriptor.type === 'file' && descriptor.id !== '') {
-          navigator.clipboard.writeText(descriptor.id).catch(err => reportError(err))
-        }
-      }
-    },
-    {
-      type: 'separator'
-    },
-    {
-      label: trans('Close file'),
-      type: 'normal',
+      label: trans("Close file"),
+      type: "normal",
       enabled: workspaceStore.rootDescriptors.includes(descriptor),
-      action () {
-        closeFile(descriptor.path)
-      }
+      action() {
+        closeFile(descriptor.path);
+      },
     },
-  ]
+  ];
 
-  const point = { x: event.clientX, y: event.clientY }
-  showPopupMenu(point, items)
+  const point = { x: event.clientX, y: event.clientY };
+  showPopupMenu(point, items);
 }
 
 /**
@@ -525,14 +556,14 @@ function handleContextMenu (event: MouseEvent, doc: OpenDocument): void {
  * @param   {DragEvent}  event     The Drag event
  * @param   {string}     filePath  The file to be dragged
  */
-function handleDragStart (event: DragEvent, filePath: string): void {
-  const DELIM = (process.platform === 'win32') ? ';' : ':'
+function handleDragStart(event: DragEvent, filePath: string): void {
+  const DELIM = process.platform === "win32" ? ";" : ":";
   // NOTE: When retrieving this data, destructure as an array and capture
   // any remaining parts with `...filePath` and re-join with DELIM to
   // account for the fact that Unixoid systems allow colons in paths.
-  const data = [ props.windowId, props.leafId, filePath ].join(DELIM)
-  event.dataTransfer?.setData('zettlr/document-tab', data)
-  documentTabDragOverOrigin.value = true
+  const data = [props.windowId, props.leafId, filePath].join(DELIM);
+  event.dataTransfer?.setData("zettlr/document-tab", data);
+  documentTabDragOverOrigin.value = true;
 }
 
 /**
@@ -541,62 +572,62 @@ function handleDragStart (event: DragEvent, filePath: string): void {
  *
  * @param   {DragEvent}  event  The drag event
  */
-function handleDrag (event: DragEvent): void {
+function handleDrag(event: DragEvent): void {
   if (container.value === null) {
-    return
+    return;
   }
 
-  const tab = event.target as Element
-  const tablist = tab.parentNode as Element
-  let coordsX = event.clientX
-  let coordsY = event.clientY
+  const tab = event.target as Element;
+  const tablist = tab.parentNode as Element;
+  let coordsX = event.clientX;
+  let coordsY = event.clientY;
 
   // Ensure the coords are somewhere inside the tablist. NOTE that exactly
   // the border would only select the tablist, not the actual tab at that
   // point. NOTE that the value of five is arbitrary and relies on the fact
   // that the tablist only contains tabs.
-  const { left, top, right, bottom, height } = container.value.getBoundingClientRect()
+  const { left, top, right, bottom, height } = container.value.getBoundingClientRect();
   // Stop handling if the user drags the tab out of the document tab bar
   // This is so that editor instances can enable splitting via drag&drop
   if (coordsX < left - 10 || coordsX > right + 10 || coordsY < top - 10 || coordsY > bottom + 10) {
-    return
+    return;
   }
 
-  const middle = height / 2
+  const middle = height / 2;
   if (coordsX < left) {
-    coordsX = left + 5
+    coordsX = left + 5;
   }
 
   if (coordsX > right) {
-    coordsX = right - 5
+    coordsX = right - 5;
   }
 
   if (coordsY < top) {
-    coordsY = top + middle
+    coordsY = top + middle;
   }
 
   if (coordsY > bottom) {
-    coordsY = bottom - middle
+    coordsY = bottom - middle;
   }
 
-  let swapItem: Element = tab
-  const elemAtCoords = document.elementFromPoint(coordsX, coordsY)
+  let swapItem: Element = tab;
+  const elemAtCoords = document.elementFromPoint(coordsX, coordsY);
   if (elemAtCoords !== null) {
-    swapItem = elemAtCoords
+    swapItem = elemAtCoords;
   }
 
   // We need to make sure we got the DIV, not one of the containing spans
-  while (swapItem.getAttribute('role') !== 'tab') {
+  while (swapItem.getAttribute("role") !== "tab") {
     if (swapItem.parentNode === document) {
-      break // Don't overdo it
+      break; // Don't overdo it
     }
-    swapItem = swapItem.parentNode as Element
+    swapItem = swapItem.parentNode as Element;
   }
 
   if (tablist === swapItem.parentNode) {
     // @ts-expect-error TODO This didn't lead to a bug yet, but may
-    swapItem = swapItem !== tab.nextSibling ? swapItem : swapItem.nextSibling
-    tablist.insertBefore(tab, swapItem)
+    swapItem = swapItem !== tab.nextSibling ? swapItem : swapItem.nextSibling;
+    tablist.insertBefore(tab, swapItem);
   }
 }
 
@@ -607,77 +638,80 @@ function handleDrag (event: DragEvent): void {
  *
  * @param   {DragEvent}  event  The drag event
  */
-function handleDragEnd (event: DragEvent): void {
-  documentTabDragOverOrigin.value = false
+function handleDragEnd(event: DragEvent): void {
+  documentTabDragOverOrigin.value = false;
   if (container.value === null) {
-    return
+    return;
   }
 
   // Here we just need to inspect the actual order and notify the main
   // process of that order.
-  const newOrder: string[] = []
+  const newOrder: string[] = [];
   for (let i = 0; i < container.value.children.length; i++) {
-    if (container.value.children[i].getAttribute('role') !== 'tab') {
+    if (container.value.children[i].getAttribute("role") !== "tab") {
       // The strip also holds the drop zone while a tab is dragged over it.
-      continue
+      continue;
     }
-    const fpath = container.value.children[i].getAttribute('data-path')
+    const fpath = container.value.children[i].getAttribute("data-path");
     if (fpath === null) {
-      console.warn(`Could not determine file path of document tab index ${i}: data-path was empty.`)
-      continue
+      console.warn(
+        `Could not determine file path of document tab index ${i}: data-path was empty.`,
+      );
+      continue;
     }
 
-    newOrder.push(fpath)
+    newOrder.push(fpath);
   }
 
-  const originalOrdering = openFiles.value.map(file => file.path)
+  const originalOrdering = openFiles.value.map((file) => file.path);
 
   // Did the order change at all?
-  let somethingChanged = false
+  let somethingChanged = false;
   for (let i = 0; i < newOrder.length; i++) {
     if (newOrder[i] !== originalOrdering[i]) {
-      somethingChanged = true
-      break
+      somethingChanged = true;
+      break;
     }
   }
 
   if (!somethingChanged) {
-    return
+    return;
   }
 
   // Now that we have the correct NEW ordering, we need to temporarily
   // restore the old ordering, because otherwise Vue will be confused since
   // it needs to keep track of the element ordering, and we just messed with
   // that big time.
-  const targetElement = event.target as Element|null
+  const targetElement = event.target as Element | null;
   if (targetElement === null) {
-    return
+    return;
   }
 
-  const dataPath = targetElement.getAttribute('data-path')
+  const dataPath = targetElement.getAttribute("data-path");
 
   if (dataPath === null) {
-    return
+    return;
   }
 
-  const originalIndex = originalOrdering.indexOf(dataPath)
+  const originalIndex = originalOrdering.indexOf(dataPath);
   if (originalIndex === 0) {
-    container.value.insertBefore(targetElement, container.value.children[0])
+    container.value.insertBefore(targetElement, container.value.children[0]);
   } else if (originalIndex === container.value.children.length - 1) {
-    container.value.insertBefore(targetElement, null) // null means append at the end
+    container.value.insertBefore(targetElement, null); // null means append at the end
   } else {
-    container.value.insertBefore(targetElement, container.value.children[originalIndex + 1])
+    container.value.insertBefore(targetElement, container.value.children[originalIndex + 1]);
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command: 'sort-open-files',
-    payload: {
-      newOrder,
-      windowId: props.windowId,
-      leafId: props.leafId
-    }
-  } satisfies DocumentManagerIPCAPI)
-    .catch(err => reportError(err))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "sort-open-files",
+      payload: {
+        newOrder,
+        windowId: props.windowId,
+        leafId: props.leafId,
+      },
+    } satisfies DocumentManagerIPCAPI)
+    .catch((err) => reportError(err));
 }
 
 /**
@@ -688,10 +722,10 @@ function handleDragEnd (event: DragEvent): void {
  *
  * @return  {boolean}            Whether it's the first unpinned.
  */
-function isFirstUnpinned (itemPath: string): boolean {
-  const idx = getIndexInTabList(itemPath)
-  const firstUnpinned = openFiles.value.findIndex(doc => !doc.pinned)
-  return idx === firstUnpinned
+function isFirstUnpinned(itemPath: string): boolean {
+  const idx = getIndexInTabList(itemPath);
+  const firstUnpinned = openFiles.value.findIndex((doc) => !doc.pinned);
+  return idx === firstUnpinned;
 }
 
 /**
@@ -702,9 +736,9 @@ function isFirstUnpinned (itemPath: string): boolean {
  *
  * @return  {boolean}            Whether it's last
  */
-function isLast (itemPath: string): boolean {
-  const idx = getIndexInTabList(itemPath)
-  return idx === openFiles.value.length - 1
+function isLast(itemPath: string): boolean {
+  const idx = getIndexInTabList(itemPath);
+  return idx === openFiles.value.length - 1;
 }
 
 /**
@@ -715,8 +749,8 @@ function isLast (itemPath: string): boolean {
  *
  * @return  {number}            The item's index
  */
-function getIndexInTabList (itemPath: string): number {
-  return openFiles.value.findIndex(doc => doc.path === itemPath)
+function getIndexInTabList(itemPath: string): number {
+  return openFiles.value.findIndex((doc) => doc.path === itemPath);
 }
 
 /**
@@ -726,31 +760,32 @@ function getIndexInTabList (itemPath: string): number {
  * @param  {string}         itemPath  The item to move
  * @param  {'start'|'end'}  where     Where to move the file to
  */
-function moveFile (itemPath: string, where: 'start'|'end') {
-  const currentIdx = getIndexInTabList(itemPath)
+function moveFile(itemPath: string, where: "start" | "end") {
+  const currentIdx = getIndexInTabList(itemPath);
 
   if (currentIdx < 0) {
-    return
+    return;
   }
 
-  const newOrder = openFiles.value.map(f => f.path)
-  newOrder.splice(currentIdx, 1)
+  const newOrder = openFiles.value.map((f) => f.path);
+  newOrder.splice(currentIdx, 1);
 
-  if (where === 'start') {
-    newOrder.unshift(itemPath)
+  if (where === "start") {
+    newOrder.unshift(itemPath);
   } else {
-    newOrder.push(itemPath)
+    newOrder.push(itemPath);
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command: 'sort-open-files',
-    payload: {
-      newOrder,
-      windowId: props.windowId,
-      leafId: props.leafId
-    }
-  } satisfies DocumentManagerIPCAPI)
-    .catch(err => reportError(err))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "sort-open-files",
+      payload: {
+        newOrder,
+        windowId: props.windowId,
+        leafId: props.leafId,
+      },
+    } satisfies DocumentManagerIPCAPI)
+    .catch((err) => reportError(err));
 }
 
 /**
@@ -760,40 +795,43 @@ function moveFile (itemPath: string, where: 'start'|'end') {
  *
  * @param   {DragEvent}  event  The drag event
  */
-function handleExternalDrop (event: DragEvent): void {
-  documentTabDragOver.value = false
-  const DELIM = (process.platform === 'win32') ? ';' : ':'
-  const documentTab = event.dataTransfer?.getData('zettlr/document-tab')
+function handleExternalDrop(event: DragEvent): void {
+  documentTabDragOver.value = false;
+  const DELIM = process.platform === "win32" ? ";" : ":";
+  const documentTab = event.dataTransfer?.getData("zettlr/document-tab");
   if (documentTab === undefined) {
-    return
+    return;
   } else if (!documentTab.includes(DELIM)) {
-    return
+    return;
   }
 
   // The user dropped the file onto the origin (this indicates a bug as
   // the dropzone shouldn't even be on the DOM in that case)
   if (documentTabDragOverOrigin.value) {
-    reportError('A document tab has been dropped onto its origin, but the dropzone was in the DOM. This is a bug.')
-    documentTabDragOverOrigin.value = false
-    return
+    reportError(
+      "A document tab has been dropped onto its origin, but the dropzone was in the DOM. This is a bug.",
+    );
+    documentTabDragOverOrigin.value = false;
+    return;
   }
 
   // At this point, we have received a drop we need to handle it. The drag
   // data contains both the origin and the path, separated by the $PATH
   // delimiter -> window:leaf:absPath
-  const [ originWindow, originLeaf, ...filePath ] = documentTab.split(DELIM)
+  const [originWindow, originLeaf, ...filePath] = documentTab.split(DELIM);
   // Now actually perform the act
-  ipcRenderer.invoke('documents-provider', {
-    command: 'move-file',
-    payload: {
-      originWindow,
-      targetWindow: props.windowId,
-      originLeaf,
-      targetLeaf: props.leafId,
-      path: filePath.join(DELIM)
-    }
-  } as DocumentManagerIPCAPI)
-    .catch(err => reportError(err))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "move-file",
+      payload: {
+        originWindow,
+        targetWindow: props.windowId,
+        originLeaf,
+        targetLeaf: props.leafId,
+        path: filePath.join(DELIM),
+      },
+    } as DocumentManagerIPCAPI)
+    .catch((err) => reportError(err));
 }
 
 /**
@@ -804,16 +842,16 @@ function handleExternalDrop (event: DragEvent): void {
  *
  * @param   {DragEvent}  event  The drag event
  */
-function handleExternalDragover (event: DragEvent): void {
+function handleExternalDragover(event: DragEvent): void {
   if (documentTabDragOverOrigin.value) {
-    return // The document tab is coming from this tabbar
+    return; // The document tab is coming from this tabbar
   }
 
-  const hasDocumentTab = event.dataTransfer?.types.includes('zettlr/document-tab') ?? false
+  const hasDocumentTab = event.dataTransfer?.types.includes("zettlr/document-tab") ?? false;
   if (hasDocumentTab) {
-    documentTabDragOver.value = true
+    documentTabDragOver.value = true;
   } else {
-    documentTabDragOver.value = false
+    documentTabDragOver.value = false;
   }
 }
 
@@ -823,8 +861,8 @@ function handleExternalDragover (event: DragEvent): void {
  *
  * @param   {DragEvent}  _event  The drag event, which this handler ignores
  */
-function handleExternalDragleave (_event: DragEvent): void {
-  documentTabDragOver.value = false
+function handleExternalDragleave(_event: DragEvent): void {
+  documentTabDragOver.value = false;
 }
 </script>
 

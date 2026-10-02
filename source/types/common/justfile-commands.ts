@@ -13,38 +13,38 @@
  * END HEADER
  */
 
-export type JustParameterKind = 'singular'|'plus'|'star'
+export type JustParameterKind = "singular" | "plus" | "star";
 
 export interface JustRecipeParameter {
-  name: string
-  kind: JustParameterKind
-  hasDefault: boolean
-  flag: boolean
-  hasValue: boolean
-  long: string|null
-  short: string|null
-  multiple: boolean
-  min: string|null
-  max: string|null
-  help: string|null
+  name: string;
+  kind: JustParameterKind;
+  hasDefault: boolean;
+  flag: boolean;
+  hasValue: boolean;
+  long: string | null;
+  short: string | null;
+  multiple: boolean;
+  min: string | null;
+  max: string | null;
+  help: string | null;
 }
 
 export interface JustRecipeCommand {
-  name: string
-  doc: string|null
-  group: string|null
-  parameters: JustRecipeParameter[]
+  name: string;
+  doc: string | null;
+  group: string | null;
+  parameters: JustRecipeParameter[];
 }
 
 export interface JustRepositoryCommands {
-  repoRoot: string
-  repoLabel: string
-  justfilePath: string
-  recipes: JustRecipeCommand[]
+  repoRoot: string;
+  repoLabel: string;
+  justfilePath: string;
+  recipes: JustRecipeCommand[];
 }
 
 export interface RunJustRecipeRequest {
-  repoRoot: string
-  recipe: string
-  args: string[]
+  repoRoot: string;
+  recipe: string;
+  args: string[];
 }

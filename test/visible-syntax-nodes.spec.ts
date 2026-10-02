@@ -9,24 +9,6 @@ import {
 } from "source/common/modules/markdown-editor/util/visible-syntax-nodes";
 
 describe("shared visible syntax traversal", function () {
-  before(function () {
-    if (typeof window.requestAnimationFrame !== "function") {
-      Object.defineProperties(window, {
-        requestAnimationFrame: {
-          configurable: true,
-          value: (callback: FrameRequestCallback) =>
-            Number(setTimeout(() => callback(Date.now()), 0)),
-          writable: true,
-        },
-        cancelAnimationFrame: {
-          configurable: true,
-          value: (id: number) => clearTimeout(id),
-          writable: true,
-        },
-      });
-    }
-  });
-
   function createView(doc: string): EditorView {
     const parent = document.createElement("div");
     document.body.appendChild(parent);
@@ -49,11 +31,17 @@ describe("shared visible syntax traversal", function () {
 
       // Tree.iterate passes a mutable TreeCursor. The cache must hold stable
       // snapshots, not repeated aliases to that cursor's final node.
-      const names = first.map(node => node.name);
-      assert.ok(names.includes("ATXHeading"), `missing heading from cached stream: ${names.join(", ")}`);
-      assert.ok(names.includes("Emphasis"), `missing emphasis from cached stream: ${names.join(", ")}`);
+      const names = first.map((node) => node.name);
+      assert.ok(
+        names.includes("ATXHeading"),
+        `missing heading from cached stream: ${names.join(", ")}`,
+      );
+      assert.ok(
+        names.includes("Emphasis"),
+        `missing emphasis from cached stream: ${names.join(", ")}`,
+      );
       assert.ok(names.includes("Link"), `missing link from cached stream: ${names.join(", ")}`);
-      assert.ok(new Set(first.map(node => `${node.name}:${node.from}:${node.to}`)).size > 3);
+      assert.ok(new Set(first.map((node) => `${node.name}:${node.from}:${node.to}`)).size > 3);
 
       view.dispatch({ selection: { anchor: view.state.doc.length } });
       const afterStateChange = visibleSyntaxNodes(view);

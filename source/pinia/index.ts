@@ -12,13 +12,13 @@
  * END HEADER
  */
 
-export { useWorkspaceStore } from './workspace-store'
-export { useConfigStore } from './config'
-export { useStatisticsStore } from './statistics-store'
-export { useWindowStateStore } from './window-state-store'
-export { useDocumentTreeStore } from './document-tree-store'
-export { useDocumentCollaborationStore } from './document-collaboration-store'
-export { useWritingTargetsStore } from './writing-targets-store'
-export { useTagsStore } from './tags-store'
-export { useLRTStore } from './lrt-store'
-export { useIgnoreRulesStore } from './ignore-rules-store'
+export { useConfigStore } from "./config";
+export { useDocumentCollaborationStore } from "./document-collaboration-store";
+export { useDocumentTreeStore } from "./document-tree-store";
+export { useIgnoreRulesStore } from "./ignore-rules-store";
+export { useLRTStore } from "./lrt-store";
+export { useStatisticsStore } from "./statistics-store";
+export { useTagsStore } from "./tags-store";
+export { useWindowStateStore } from "./window-state-store";
+export { useWorkspaceStore } from "./workspace-store";
+export { useWritingTargetsStore } from "./writing-targets-store";

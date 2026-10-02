@@ -49,38 +49,44 @@
  * END HEADER
  */
 
-import { computed } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import type { AnnotationProposalAction } from '@dts/common/annotation-domain'
-import { proposalCardView } from '../sidebar/annotations/annotation-presentation'
+import { trans } from "@common/i18n-renderer";
+import type { AnnotationProposalAction } from "@dts/common/annotation-domain";
+import { computed } from "vue";
+import { proposalCardView } from "../sidebar/annotations/annotation-presentation";
 
 const props = defineProps<{
-  actions: readonly AnnotationProposalAction[]
+  actions: readonly AnnotationProposalAction[];
   /** The review is frozen: its chunks are not in the editor to show or decide. */
-  reviewFrozen: boolean
-}>()
+  reviewFrozen: boolean;
+}>();
 
-const emit = defineEmits<(e: 'show-proposal') => void>()
+const emit = defineEmits<(e: "show-proposal") => void>();
 
-const view = computed(() => proposalCardView(props.actions))
+const view = computed(() => proposalCardView(props.actions));
 
 const countLabel = computed(() => {
-  const pending = view.value.pendingCount
+  const pending = view.value.pendingCount;
   if (pending === 0) {
-    return trans('Decided')
+    return trans("Decided");
   }
-  return pending === 1 ? trans('1 suggestion') : trans('%s suggestions', String(pending))
-})
+  return pending === 1 ? trans("1 suggestion") : trans("%s suggestions", String(pending));
+});
 
 const noteLabel = computed(() => {
   if (view.value.pendingCount === 0) {
-    return trans('All changes have been accepted or rejected.')
+    return trans("All changes have been accepted or rejected.");
   }
   if (props.reviewFrozen) {
-    return trans('The file changed on disk, so these changes are frozen. Reapply, return or discard the review in the annotations panel.')
+    return trans(
+      "The file changed on disk, so these changes are frozen. Reapply, return or discard the review in the annotations panel.",
+    );
   }
-  return trans('%s of %s pending. Accept or reject each change where it appears in the document.', String(view.value.pendingCount), String(view.value.totalCount))
-})
+  return trans(
+    "%s of %s pending. Accept or reject each change where it appears in the document.",
+    String(view.value.pendingCount),
+    String(view.value.totalCount),
+  );
+});
 </script>
 
 <style lang="less">

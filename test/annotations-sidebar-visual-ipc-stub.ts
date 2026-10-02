@@ -13,11 +13,11 @@
  * which is only observable at this bridge.
  */
 
-import type { DocumentCollaborationSession } from '@dts/common/document-collaboration'
-import type { LeafNodeJSON } from '@dts/common/documents'
-import { documentCollaborationIpcDouble } from './document-collaboration-ipc-double'
-import { SCENE_DOCUMENT_PATH } from './annotations-sidebar-scene-fixture'
-import editorConfig from './fixtures/editor-config.json'
+import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type { LeafNodeJSON } from "@dts/common/documents";
+import { SCENE_DOCUMENT_PATH } from "./annotations-sidebar-scene-fixture";
+import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
+import editorConfig from "./fixtures/editor-config.json";
 
 /**
  * One request the page raised, as it reached the preload bridge: the
@@ -25,55 +25,55 @@ import editorConfig from './fixtures/editor-config.json'
  * inner command) and the raw request the caller sent on it.
  */
 export interface RecordedRequest {
-  channel: string
-  message: unknown
+  channel: string;
+  message: unknown;
 }
 
-let sceneSession: DocumentCollaborationSession | undefined
-const recorded: RecordedRequest[] = []
+let sceneSession: DocumentCollaborationSession | undefined;
+const recorded: RecordedRequest[] = [];
 
 // The capture page carries a window_id search param (see
 // annotations-sidebar-visual-capture.mjs's page() query), which makes
 // documentTreeStore request this leaf on construction. One pane, holding the
 // scene document, is enough for the mounted panel to settle.
 const sceneLeaf: LeafNodeJSON = {
-  type: 'leaf',
-  id: 'scene-leaf',
+  type: "leaf",
+  id: "scene-leaf",
   openFiles: [{ path: SCENE_DOCUMENT_PATH, pinned: false }],
   activeFile: { path: SCENE_DOCUMENT_PATH, pinned: false },
-}
+};
 
 documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
-  recorded.push({ channel: message.command, message: message.payload })
+  recorded.push({ channel: message.command, message: message.payload });
   switch (message.command) {
-    case 'get-collaboration-session':
-      return sceneSession
-    case 'get-workspace-collaboration-sessions':
-      return sceneSession === undefined ? [] : [sceneSession]
-    case 'get-file-modification-status':
-      return []
-    case 'retrieve-tab-config':
-      return sceneLeaf
+    case "get-collaboration-session":
+      return sceneSession;
+    case "get-workspace-collaboration-sessions":
+      return sceneSession === undefined ? [] : [sceneSession];
+    case "get-file-modification-status":
+      return [];
+    case "retrieve-tab-config":
+      return sceneLeaf;
     default:
       // Every typed documents:* mutation channel answers with the
       // provider's success shape, so the controls' busy state settles
       // the way it does in the app.
-      return message.command.startsWith('documents:') ? { ok: true } : undefined
+      return message.command.startsWith("documents:") ? { ok: true } : undefined;
   }
-})
+});
 
 // The window-state and config stores read the config at construction, as
 // they do in a real window; the capture serves the same snapshot the tab
 // persistence harness uses.
 documentCollaborationIpcDouble.setSendSyncResponder((channel, message) =>
-  channel === 'config-provider' && message?.command === 'get-config' ? editorConfig : undefined
-)
+  channel === "config-provider" && message?.command === "get-config" ? editorConfig : undefined,
+);
 
-export function setAnnotationsSceneSession (session: DocumentCollaborationSession): void {
-  sceneSession = session
+export function setAnnotationsSceneSession(session: DocumentCollaborationSession): void {
+  sceneSession = session;
 }
 
 /** Every request the page raised, in order. */
-export function recordedRequests (): RecordedRequest[] {
-  return recorded
+export function recordedRequests(): RecordedRequest[] {
+  return recorded;
 }

@@ -18,19 +18,19 @@
  * END HEADER
  */
 
-import type LogProvider from '@providers/log'
-import { BrowserWindow } from 'electron'
-import errorToString from '@common/util/error-to-string'
+import errorToString from "@common/util/error-to-string";
+import type LogProvider from "@providers/log";
+import { BrowserWindow } from "electron";
 
-let splashScreen: BrowserWindow|undefined
+let splashScreen: BrowserWindow | undefined;
 
 // These two properties always hold the last message/percent that has been
 // provided via updateSplashScreen. This is necessary if progress already
 // happens before the splash screen has actually opened.
-let initSplashScreenMessage = ''
-let initSplashScreenPercent = 0
+let initSplashScreenMessage = "";
+let initSplashScreenPercent = 0;
 
-let debounceTimeout: NodeJS.Timeout|undefined
+let debounceTimeout: NodeJS.Timeout | undefined;
 
 /**
  * Shows a splash screen for Zettlr. NOTE: Remember to call `closeSplashScreen`
@@ -38,10 +38,10 @@ let debounceTimeout: NodeJS.Timeout|undefined
  *
  * @param   {LogProvider}  logger  The logger for potential error messages.
  */
-export function showSplashScreen (logger: LogProvider): void {
+export function showSplashScreen(logger: LogProvider): void {
   if (splashScreen !== undefined) {
-    splashScreen.show()
-    return
+    splashScreen.show();
+    return;
   }
 
   splashScreen = new BrowserWindow({
@@ -57,36 +57,36 @@ export function showSplashScreen (logger: LogProvider): void {
     fullscreenable: false,
     skipTaskbar: true,
     frame: false,
-    titleBarStyle: 'hidden',
+    titleBarStyle: "hidden",
     show: false,
     webPreferences: {
       // contextIsolation and sandbox mean: Preload scripts have access to
       // Node modules, the renderers not
       contextIsolation: true,
       sandbox: false,
-      preload: SPLASH_SCREEN_PRELOAD_WEBPACK_ENTRY
-    }
-  })
+      preload: SPLASH_SCREEN_PRELOAD_WEBPACK_ENTRY,
+    },
+  });
 
-  const window = splashScreen
+  const window = splashScreen;
   window.loadURL(SPLASH_SCREEN_WEBPACK_ENTRY).catch((error: unknown) => {
     if (window.isDestroyed() || window.webContents.isDestroyed()) {
-      return
+      return;
     }
     logger.error(
       `Could not load URL ${SPLASH_SCREEN_WEBPACK_ENTRY}: ${errorToString(error)}`,
-      error
-    )
-  })
+      error,
+    );
+  });
 
-  splashScreen.once('ready-to-show', () => {
-    splashScreen?.show()
-    updateSplashScreen(initSplashScreenMessage, initSplashScreenPercent)
-  })
+  splashScreen.once("ready-to-show", () => {
+    splashScreen?.show();
+    updateSplashScreen(initSplashScreenMessage, initSplashScreenPercent);
+  });
 
-  splashScreen.once('closed', () => {
-    splashScreen = undefined
-  })
+  splashScreen.once("closed", () => {
+    splashScreen = undefined;
+  });
 }
 
 /**
@@ -96,28 +96,31 @@ export function showSplashScreen (logger: LogProvider): void {
  * @param   {string}  currentStepMessage     The current step message.
  * @param   {number}  currentStepPercentage  The step percentage (0-100).
  */
-export function updateSplashScreen (currentStepMessage: string, currentStepPercentage: number): void {
-  initSplashScreenMessage = currentStepMessage
-  initSplashScreenPercent = currentStepPercentage
+export function updateSplashScreen(
+  currentStepMessage: string,
+  currentStepPercentage: number,
+): void {
+  initSplashScreenMessage = currentStepMessage;
+  initSplashScreenPercent = currentStepPercentage;
 
   if (debounceTimeout !== undefined) {
-    return
+    return;
   }
 
-  splashScreen?.webContents.send('step-update', { currentStepMessage, currentStepPercentage })
+  splashScreen?.webContents.send("step-update", { currentStepMessage, currentStepPercentage });
 
   debounceTimeout = setTimeout(() => {
-    debounceTimeout = undefined
-  }, 1000/60)
+    debounceTimeout = undefined;
+  }, 1000 / 60);
 }
 
 /**
  * Closes the splash screen. Do not forget to call this function once you're
  * done.
  */
-export function closeSplashScreen (): void {
+export function closeSplashScreen(): void {
   // NOTE: We must "destroy" the window, because otherwise 'closable: false'
   // will prevent programmatic closing.
-  splashScreen?.destroy()
-  splashScreen = undefined
+  splashScreen?.destroy();
+  splashScreen = undefined;
 }

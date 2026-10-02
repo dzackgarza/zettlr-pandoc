@@ -17,27 +17,45 @@
  * END HEADER
  */
 
-const w = globalThis as any
+import type { CitationDatabase } from "source/types/common/citeproc";
 
-if (w.window !== undefined && w.window.ipc === undefined) {
-  w.window.ipc = {
+interface CitationRequest {
+  command?: string;
+  payload?: { database?: CitationDatabase; citations?: CiteItem[]; composite?: boolean };
+}
+
+if (window.ipc === undefined) {
+  const ipc = {
     on: () => () => {},
-    invoke: async (channel: string, message?: { command?: string, payload?: { database?: unknown, citations?: unknown[], composite?: boolean } }) => {
-      if (channel === 'citeproc-provider' && message?.command === 'get-citation') {
-        const callback = w.window.getCitationCallback?.(message.payload?.database)
-        return callback?.(message.payload?.citations ?? [], message.payload?.composite ?? false)
+    invoke: async (channel: string, message?: CitationRequest) => {
+      const payload = message?.payload;
+      if (channel !== "citeproc-provider" || message?.command !== "get-citation") {
+        return undefined;
       }
-      return undefined
+      if (payload?.database === undefined) {
+        throw new Error("renderer seam received get-citation without a database");
+      }
+      return window.getCitationCallback(payload.database)(
+        payload.citations ?? [],
+        payload.composite ?? false,
+      );
     },
     send: () => {},
     sendSync: () => undefined,
-  }
-  w.ipc = w.window.ipc
+  };
+  Object.defineProperty(window, "ipc", { configurable: true, writable: true, value: ipc });
+  Object.defineProperty(globalThis, "ipc", { configurable: true, writable: true, value: ipc });
 }
 
-if (w.window !== undefined && typeof w.window.getCitationCallback !== 'function') {
-  w.window.getCitationCallback = () => (citations: Array<{ id: string }>) => citations.map(citation => citation.id).join('; ')
-  w.getCitationCallback = w.window.getCitationCallback
+if (typeof window.getCitationCallback !== "function") {
+  const getCitationCallback: Window["getCitationCallback"] = () => (citations) =>
+    citations.map((citation) => citation.id).join("; ");
+  window.getCitationCallback = getCitationCallback;
+  Object.defineProperty(globalThis, "getCitationCallback", {
+    configurable: true,
+    writable: true,
+    value: getCitationCallback,
+  });
 }
 
-export {}
+export {};

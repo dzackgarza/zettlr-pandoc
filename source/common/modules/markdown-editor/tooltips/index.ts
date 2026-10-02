@@ -12,6 +12,6 @@
  * END HEADER
  */
 
-export { footnoteHover } from './footnotes'
-export { filePreview } from './file-preview'
-export { urlHover } from './hyperlinks'
+export { filePreview } from "./file-preview";
+export { footnoteHover } from "./footnotes";
+export { urlHover } from "./hyperlinks";

@@ -13,40 +13,42 @@
  * END HEADER
  */
 
-import { spawn } from 'child_process'
+import { spawn } from "child_process";
 
-export function kittyArguments (directory: string, command?: readonly string[]): string[] {
-  const args = [ '--detach', '--directory', directory ]
+export function kittyArguments(directory: string, command?: readonly string[]): string[] {
+  const args = ["--detach", "--directory", directory];
   if (command !== undefined) {
-    args.push('--hold', ...command)
+    args.push("--hold", ...command);
   }
-  return args
+  return args;
 }
 
-export async function launchKitty (directory: string, command?: readonly string[]): Promise<string> {
-  return await new Promise(resolve => {
-    const proc = spawn('kitty', kittyArguments(directory, command), {
+export async function launchKitty(directory: string, command?: readonly string[]): Promise<string> {
+  return await new Promise((resolve) => {
+    const proc = spawn("kitty", kittyArguments(directory, command), {
       shell: false,
-      stdio: 'ignore'
-    })
-    let resolved = false
+      stdio: "ignore",
+    });
+    let resolved = false;
     const finish = (message: string): void => {
       if (!resolved) {
-        resolved = true
-        resolve(message)
+        resolved = true;
+        resolve(message);
       }
-    }
-    proc.once('error', err => { finish(err.message) })
-    proc.once('close', code => {
-      finish(code === 0 ? '' : `kitty exited with status ${String(code)}`)
-    })
-  })
+    };
+    proc.once("error", (err) => {
+      finish(err.message);
+    });
+    proc.once("close", (code) => {
+      finish(code === 0 ? "" : `kitty exited with status ${String(code)}`);
+    });
+  });
 }
 
-export function justRecipeCommand (
+export function justRecipeCommand(
   repoRoot: string,
   recipe: string,
-  args: readonly string[]
+  args: readonly string[],
 ): string[] {
-  return [ 'just', '--ceiling', repoRoot, '--one', recipe, ...args ]
+  return ["just", "--ceiling", repoRoot, "--one", recipe, ...args];
 }

@@ -189,66 +189,73 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import generateFilename from '@common/util/generate-filename'
-import { trans } from '@common/i18n-renderer'
-import PopoverDirProps from './util/PopoverDirProps.vue'
-import PopoverFileProps from './util/PopoverFileProps.vue'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import {
+  effectiveExplorerDisplayForDirectory,
+  projectMembershipForPath,
+  sortExplorerChildren,
+} from "@common/util/explorer-ordering";
+import generateFilename from "@common/util/generate-filename";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
 
-import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
-import { nextTick, ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue'
-import type { AnyDescriptor } from '@dts/common/fsal'
-import { useConfigStore, useIgnoreRulesStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { useItemComposable } from './util/item-composable'
+import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
+import type { AnyDescriptor } from "@dts/common/fsal";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
+import type { WritingTarget } from "source/app/service-providers/targets";
 import {
   hasDataExt,
+  hasExt,
   hasImageExt,
   hasMSOfficeExt,
   hasOpenOfficeExt,
   hasPDFExt,
-  hasExt
-} from 'source/common/util/file-extention-checks'
-import type { FSALEventPayload } from 'source/app/service-providers/fsal'
-import { eventsChangeChildren } from './util/events-change-children'
-import type { WritingTarget } from 'source/app/service-providers/targets'
-import { filterDescriptorChildren } from './util/filter-children'
-import getDocumentTitle from '../util/get-document-title'
+} from "source/common/util/file-extention-checks";
 import {
-  effectiveExplorerDisplayForDirectory,
-  projectMembershipForPath,
-  sortExplorerChildren
-} from '@common/util/explorer-ordering'
+  useConfigStore,
+  useIgnoreRulesStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
+import getDocumentTitle from "../util/get-document-title";
+import { eventsChangeChildren } from "./util/events-change-children";
+import { filterDescriptorChildren } from "./util/filter-children";
+import { useItemComposable } from "./util/item-composable";
+import PopoverDirProps from "./util/PopoverDirProps.vue";
+import PopoverFileProps from "./util/PopoverFileProps.vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const emit = defineEmits<(e: 'toggle-file-list') => void>()
+const emit = defineEmits<(e: "toggle-file-list") => void>();
 
 const props = defineProps<{
   // How deep is this tree item nested?
-  depth: number
-  hasDuplicateName: boolean
-  item: AnyDescriptor
-  filterResults: string[]
-  activeItem?: string
-  windowId: string
-}>()
+  depth: number;
+  hasDuplicateName: boolean;
+  item: AnyDescriptor;
+  filterResults: string[];
+  activeItem?: string;
+  windowId: string;
+}>();
 
 // const collapsed = ref<boolean>(true) // Initial: collapsed list (if there are children)
-const collapsed = computed(() => !windowStateStore.uncollapsedDirectories.includes(props.item.path))
-const canAcceptDraggable = ref<boolean>(false) // Helper var set to true while something hovers over this element
-const uncollapseTimeout = ref<undefined|ReturnType<typeof setTimeout>>(undefined) // Used to uncollapse directories during drag&drop ops
-const nameEditingInput = ref<HTMLInputElement|null>(null)
-const displayText = ref<HTMLDivElement|null>(null)
-const rootElement = ref<HTMLDivElement|null>(null)
-const newObjectInput = ref<HTMLInputElement|null>(null)
+const collapsed = computed(
+  () => !windowStateStore.uncollapsedDirectories.includes(props.item.path),
+);
+const canAcceptDraggable = ref<boolean>(false); // Helper var set to true while something hovers over this element
+const uncollapseTimeout = ref<undefined | ReturnType<typeof setTimeout>>(undefined); // Used to uncollapse directories during drag&drop ops
+const nameEditingInput = ref<HTMLInputElement | null>(null);
+const displayText = ref<HTMLDivElement | null>(null);
+const rootElement = ref<HTMLDivElement | null>(null);
+const newObjectInput = ref<HTMLInputElement | null>(null);
 
-const children = ref<AnyDescriptor[]>([])
+const children = ref<AnyDescriptor[]>([]);
 
-const configStore = useConfigStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
-const ignoreRulesStore = useIgnoreRulesStore()
+const configStore = useConfigStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
+const ignoreRulesStore = useIgnoreRulesStore();
 
 const {
   nameEditing,
@@ -261,29 +268,31 @@ const {
   isDirectory,
   selectedFile,
   selectedDir,
-  updateObject
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput)
+  updateObject,
+} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput);
 
-const filenameInputPlaceholder = trans('Enter a name')
+const filenameInputPlaceholder = trans("Enter a name");
 
-function sel (event: MouseEvent): void {
-  requestSelection(event)
+function sel(event: MouseEvent): void {
+  requestSelection(event);
   // We have one problem: We can't emit events from within the composable, so we
   // have to wrap this function for one specific instance: When the user clicks
   // again on the already selected directory, the file manager must toggle to
   // the file list. This doesn't work by implication because the configuration
   // doesn't update if oldValue === newValue.
   if (selectedDir.value === props.item.path) {
-    emit('toggle-file-list')
+    emit("toggle-file-list");
   }
 }
 
-const shouldBeCollapsed = computed<boolean>(() => props.filterResults.length === 0 && collapsed.value)
+const shouldBeCollapsed = computed<boolean>(
+  () => props.filterResults.length === 0 && collapsed.value,
+);
 
-const showDotFiles = ref<boolean>(configStore.config.files.dotFiles.showInFilemanager)
+const showDotFiles = ref<boolean>(configStore.config.files.dotFiles.showInFilemanager);
 configStore.$subscribe((_mutation, state) => {
-  showDotFiles.value = state.config.files.dotFiles.showInFilemanager
-})
+  showDotFiles.value = state.config.files.dotFiles.showInFilemanager;
+});
 
 /**
  * The secondary icon's shape -- this is the visually FIRST icon to be
@@ -292,7 +301,7 @@ configStore.$subscribe((_mutation, state) => {
  *
  * @return  {string|boolean}  False if no secondary icon
  */
-const secondaryIcon = computed(() => filteredChildren.value.length > 0 ? 'angle' : false)
+const secondaryIcon = computed(() => (filteredChildren.value.length > 0 ? "angle" : false));
 
 /**
  * The primary icon's shape -- this is the visually SECOND icon to be
@@ -301,46 +310,48 @@ const secondaryIcon = computed(() => filteredChildren.value.length > 0 ? 'angle'
  * @return  {string}  The icon name (as in: cds-shape)
  */
 const primaryIcon = computed(() => {
-  const { files, attachmentExtensions } = configStore.config
+  const { files, attachmentExtensions } = configStore.config;
 
-  if (props.item.type === 'file' && writingTarget.value !== undefined) {
-    return 'writing-target'
-  } else if (props.item.type === 'file') {
-    return 'markdown'
-  } else if (props.item.type === 'code') {
-    return 'code'
-  } else if (props.item.type === 'other') {
+  if (props.item.type === "file" && writingTarget.value !== undefined) {
+    return "writing-target";
+  } else if (props.item.type === "file") {
+    return "markdown";
+  } else if (props.item.type === "code") {
+    return "code";
+  } else if (props.item.type === "other") {
     if (hasImageExt(props.item.path)) {
-      return 'image'
+      return "image";
     } else if (hasPDFExt(props.item.path)) {
-      return 'pdf-file'
+      return "pdf-file";
     } else if (hasMSOfficeExt(props.item.path)) {
-      return 'file'
+      return "file";
     } else if (hasOpenOfficeExt(props.item.path)) {
-      return 'file'
+      return "file";
     } else if (hasDataExt(props.item.path)) {
-      return 'code'
+      return "code";
     } else if (hasExt(props.item.path, attachmentExtensions)) {
-      return 'file-group'
+      return "file-group";
     } else {
       // Generic other file (this should not happen as they get filtered out before)
       if (!files.dotFiles.showInFilemanager) {
-        console.warn(`Encountered a file with extension ${props.item.ext}. These should've been filtered out before reaching this point!`)
+        console.warn(
+          `Encountered a file with extension ${props.item.ext}. These should've been filtered out before reaching this point!`,
+        );
       }
-      return 'unknown-status'
+      return "unknown-status";
     }
-  } else if (props.item.type === 'directory' && props.item.dirNotFoundFlag === true) {
-    return 'disconnect'
-  } else if (props.item.type === 'directory' && props.item.settings.project !== null) {
+  } else if (props.item.type === "directory" && props.item.dirNotFoundFlag === true) {
+    return "disconnect";
+  } else if (props.item.type === "directory" && props.item.settings.project !== null) {
     // Indicate that this directory has a project.
-    return 'blocks-group'
-  } else if (props.item.type === 'directory' && props.item.settings.icon != null) {
+    return "blocks-group";
+  } else if (props.item.type === "directory" && props.item.settings.icon != null) {
     // Display the custom icon
-    return props.item.settings.icon
+    return props.item.settings.icon;
   } else {
-    return shouldBeCollapsed.value ? 'folder' : 'folder-open'
+    return shouldBeCollapsed.value ? "folder" : "folder-open";
   }
-})
+});
 
 /**
  * The direction of the folder's angle icon: Right if collapsed, down if
@@ -348,84 +359,91 @@ const primaryIcon = computed(() => {
  *
  * @return  {string}  Either 'right' or 'down'
  */
-const angleDirection = computed(() => shouldBeCollapsed.value ? 'right' : 'down')
+const angleDirection = computed(() => (shouldBeCollapsed.value ? "right" : "down"));
 
-const writingTarget = computed<undefined|{ path: string, mode: 'words'|'chars', count: number }>(() => {
-  if (props.item.type !== 'file') {
-    return undefined
+const writingTarget = computed<
+  undefined | { path: string; mode: "words" | "chars"; count: number }
+>(() => {
+  if (props.item.type !== "file") {
+    return undefined;
   } else {
-    return windowStateStore.writingTargets.find((x: WritingTarget) => x.path === props.item.path)
+    return windowStateStore.writingTargets.find((x: WritingTarget) => x.path === props.item.path);
   }
-})
+});
 
 const writingTargetPercent = computed(() => {
-  if (writingTarget.value !== undefined && props.item.type === 'file') {
-    const count = writingTarget.value.mode === 'words'
-      ? props.item.wordCount
-      : props.item.charCount
+  if (writingTarget.value !== undefined && props.item.type === "file") {
+    const count =
+      writingTarget.value.mode === "words" ? props.item.wordCount : props.item.charCount;
 
-    let ratio = count / writingTarget.value.count
-    return Math.min(1, ratio)
+    let ratio = count / writingTarget.value.count;
+    return Math.min(1, ratio);
   } else {
-    return 0.0
+    return 0.0;
   }
-})
+});
 
 /**
  * Returns true if this item is a root item
  */
-const isRoot = computed(() => workspaceStore.rootDescriptors.find(rd => rd.path === props.item.path) !== undefined)
+const isRoot = computed(
+  () => workspaceStore.rootDescriptors.find((rd) => rd.path === props.item.path) !== undefined,
+);
 /**
  * Returns true if an ignore rule matches this item. The app lists such an
  * item only while the reveal toggle is on.
  */
 const isIgnored = computed(() => {
-  return ignoreRulesStore.sources.showIgnored &&
-    ignoreRulesStore.filter.matches(props.item.path, props.item.type === 'directory')
-})
+  return (
+    ignoreRulesStore.sources.showIgnored &&
+    ignoreRulesStore.filter.matches(props.item.path, props.item.type === "directory")
+  );
+});
 
 /**
  * Returns true if the file manager mode is set to "combined"
  */
-const combined = computed(() => configStore.config.fileManagerMode === 'combined')
+const combined = computed(() => configStore.config.fileManagerMode === "combined");
 
 /**
  * Returns the (containing) directory name.
  */
-const dirname = computed(() => pathBasename(props.item.dir))
+const dirname = computed(() => pathBasename(props.item.dir));
 
 /**
  * Returns a list of children that can be displayed inside the tree view
  */
 const filteredChildren = computed(() => {
-  if (props.item.type !== 'directory') {
-    return []
+  if (props.item.type !== "directory") {
+    return [];
   }
 
-  const filter = filterDescriptorChildren()
+  const filter = filterDescriptorChildren();
 
-  return children.value
-    // Ensure we only consider filtered files
-    .filter(child => {
-      if (props.filterResults.length === 0) {
-        return true
-      }
+  return (
+    children.value
+      // Ensure we only consider filtered files
+      .filter((child) => {
+        if (props.filterResults.length === 0) {
+          return true;
+        }
 
-      return props.filterResults.some(res => res.startsWith(child.path))
-    })
-    // Filter based on our rules
-    .filter(child => {
-      if (!combined.value) {
-        return child.type === 'directory' && filter(child)
-      }
+        return props.filterResults.some((res) => res.startsWith(child.path));
+      })
+      // Filter based on our rules
+      .filter((child) => {
+        if (!combined.value) {
+          return child.type === "directory" && filter(child);
+        }
 
-      return filter(child)
-    })
-})
+        return filter(child);
+      })
+  );
+});
 
 const sortedChildren = computed(() => {
-  if (props.item.type !== 'directory') {
-    return []
+  if (props.item.type !== "directory") {
+    return [];
   }
 
   const defaults = {
@@ -433,232 +451,258 @@ const sortedChildren = computed(() => {
     sortFoldersFirst: configStore.config.sortFoldersFirst,
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
-    fileMetaTime: configStore.config.fileMetaTime
-  } as const
+    fileMetaTime: configStore.config.fileMetaTime,
+  } as const;
 
-  return sortExplorerChildren(props.item, filteredChildren.value, defaults, workspaceStore.rootDescriptors)
-})
+  return sortExplorerChildren(
+    props.item,
+    filteredChildren.value,
+    defaults,
+    workspaceStore.rootDescriptors,
+  );
+});
 
 const ownerDirectory = computed(() => {
-  if (props.item.type === 'directory') {
-    return undefined
+  if (props.item.type === "directory") {
+    return undefined;
   }
-  const descriptor = workspaceStore.descriptorMap.get(props.item.dir)
-  return descriptor?.type === 'directory' ? descriptor : undefined
-})
+  const descriptor = workspaceStore.descriptorMap.get(props.item.dir);
+  return descriptor?.type === "directory" ? descriptor : undefined;
+});
 
 const basename = computed(() => {
-  const display = ownerDirectory.value === undefined
-    ? configStore.config.fileNameDisplay
-    : effectiveExplorerDisplayForDirectory(ownerDirectory.value, workspaceStore.rootDescriptors, configStore.config.fileNameDisplay)
-  return getDocumentTitle(props.item, display)
-})
+  const display =
+    ownerDirectory.value === undefined
+      ? configStore.config.fileNameDisplay
+      : effectiveExplorerDisplayForDirectory(
+          ownerDirectory.value,
+          workspaceStore.rootDescriptors,
+          configStore.config.fileNameDisplay,
+        );
+  return getDocumentTitle(props.item, display);
+});
 
-const projectMembership = computed(() => props.item.type === 'directory'
-  ? undefined
-  : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors))
+const projectMembership = computed(() =>
+  props.item.type === "directory"
+    ? undefined
+    : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors),
+);
 
 const projectMembershipTitle = computed(() => {
-  const membership = projectMembership.value
-  if (membership === undefined) return ''
-  if (membership.status === 'omitted') {
-    return membership.manifestKind === 'quarto'
-      ? trans('This document is not included in the Quarto book')
-      : trans('This document is not included in the Project')
+  const membership = projectMembership.value;
+  if (membership === undefined) return "";
+  if (membership.status === "omitted") {
+    return membership.manifestKind === "quarto"
+      ? trans("This document is not included in the Quarto book")
+      : trans("This document is not included in the Project");
   }
-  return membership.manifestKind === 'quarto'
-    ? trans('Book chapter %s', String(membership.position ?? ''))
-    : trans('Project file %s', String(membership.position ?? ''))
-})
+  return membership.manifestKind === "quarto"
+    ? trans("Book chapter %s", String(membership.position ?? ""))
+    : trans("Project file %s", String(membership.position ?? ""));
+});
 
 const isSelected = computed(() => {
-  if (props.item.type === 'directory') {
-    return selectedDir.value === props.item.path
+  if (props.item.type === "directory") {
+    return selectedDir.value === props.item.path;
   } else {
-    return selectedFile.value?.path === props.item.path
+    return selectedFile.value?.path === props.item.path;
   }
-})
+});
 
 watch(isSelected, (value, oldValue) => {
   // Scrolls this item into view, but only if it has just been selected and is
   // not yet visible.
   if (value !== oldValue && value) {
-    scrollIntoView()
+    scrollIntoView();
   }
-})
+});
 
 // We need to reset the scroll position when exiting editing mode
 // so that the filename is displayed within the element correctly.
 // It would otherwise be offset to the left edge of the container.
 watch(nameEditing, (isEditing) => {
   if (!isEditing && displayText.value !== null) {
-    displayText.value.scrollLeft = 0
+    displayText.value.scrollLeft = 0;
   }
-})
+});
 
 watch(operationType, (newVal) => {
   if (newVal !== undefined) {
-    nextTick().then(() => {
-      if (newObjectInput.value === null) {
-        return
-      }
+    nextTick()
+      .then(() => {
+        if (newObjectInput.value === null) {
+          return;
+        }
 
-      if (operationType.value === 'createFile') {
-        // If we're generating a file, generate a filename
-        const filenamePattern = configStore.config.newFileNamePattern
-        const idGenPattern = configStore.config.zkn.idGen
-        newObjectInput.value.value = generateFilename(filenamePattern, idGenPattern)
-      } else if (operationType.value === 'createDir') {
-        // Else standard val for new dirs.
-        newObjectInput.value.value = trans('Untitled')
-      }
-      newObjectInput.value.focus()
-      // Select from the beginning until the last dot
-      newObjectInput.value.setSelectionRange(0, newObjectInput.value.value.lastIndexOf('.'))
-    })
-      .catch(err => reportError(err))
+        if (operationType.value === "createFile") {
+          // If we're generating a file, generate a filename
+          const filenamePattern = configStore.config.newFileNamePattern;
+          const idGenPattern = configStore.config.zkn.idGen;
+          newObjectInput.value.value = generateFilename(filenamePattern, idGenPattern);
+        } else if (operationType.value === "createDir") {
+          // Else standard val for new dirs.
+          newObjectInput.value.value = trans("Untitled");
+        }
+        newObjectInput.value.focus();
+        // Select from the beginning until the last dot
+        newObjectInput.value.setSelectionRange(0, newObjectInput.value.value.lastIndexOf("."));
+      })
+      .catch((err) => reportError(err));
   }
-})
+});
 
 // I have no idea why passing this as a Ref to the composable doesn't work, but
 // this way it does.
-watch(toRef(props, 'item'), function (value) {
-  updateObject(value)
-})
+watch(toRef(props, "item"), function (value) {
+  updateObject(value);
+});
 
 watch(showDotFiles, async function () {
-  if (props.item.type === 'directory') {
-    await fetchChildren()
+  if (props.item.type === "directory") {
+    await fetchChildren();
   }
-})
+});
 
-let stopShortcutListener: (() => void)|undefined
-let stopFsalListener: (() => void)|undefined
+let stopShortcutListener: (() => void) | undefined;
+let stopFsalListener: (() => void) | undefined;
 
 onMounted(async () => {
-  if (props.item.type === 'directory') {
-    stopShortcutListener = ipcRenderer.on('shortcut', (_, message) => {
-      if (message === 'new-dir') {
-        operationType.value = 'createDir'
+  if (props.item.type === "directory") {
+    stopShortcutListener = ipcRenderer.on("shortcut", (_, message) => {
+      if (message === "new-dir") {
+        operationType.value = "createDir";
       }
-    })
+    });
 
-    await fetchChildren()
+    await fetchChildren();
   }
 
-  stopFsalListener = ipcRenderer.on('fsal-events', (_, events: FSALEventPayload[]) => {
+  stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
     // A batch that pertains to a direct child of this item needs handling.
     // We'll make it easy and simply re-fetch the list of children, once.
     if (eventsChangeChildren(events, props.item.path)) {
-      fetchChildren().catch(err => reportError(`[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`, err))
+      fetchChildren().catch((err) =>
+        reportError(
+          `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
+          err,
+        ),
+      );
     }
-  })
+  });
 
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
-    scrollIntoView()
+    scrollIntoView();
   }
-})
+});
 
 onUnmounted(() => {
-  stopShortcutListener?.()
-  stopFsalListener?.()
+  stopShortcutListener?.();
+  stopFsalListener?.();
   if (uncollapseTimeout.value !== undefined) {
-    clearTimeout(uncollapseTimeout.value)
+    clearTimeout(uncollapseTimeout.value);
   }
-})
+});
 
 /**
  * Scrolls this item into view
  */
-function scrollIntoView () {
+function scrollIntoView() {
   // We need to wait, so that the app can render the displayText element.
-  nextTick().then(() => {
-    if (displayText.value === null) {
-      return
-    }
+  nextTick()
+    .then(() => {
+      if (displayText.value === null) {
+        return;
+      }
 
-    const fileTreeRoot = document.querySelector<HTMLDivElement>('#file-tree')
+      const fileTreeRoot = document.querySelector<HTMLDivElement>("#file-tree");
 
-    if (fileTreeRoot === null) {
-      return
-    }
+      if (fileTreeRoot === null) {
+        return;
+      }
 
-    const safetyMargin = 100 // Height of the quick filter + the sticky elements
+      const safetyMargin = 100; // Height of the quick filter + the sticky elements
 
-    const treeHeight = fileTreeRoot.clientHeight
-    const topEdge = fileTreeRoot.scrollTop + safetyMargin
-    const bottomEdge = fileTreeRoot.scrollTop + treeHeight
+      const treeHeight = fileTreeRoot.clientHeight;
+      const topEdge = fileTreeRoot.scrollTop + safetyMargin;
+      const bottomEdge = fileTreeRoot.scrollTop + treeHeight;
 
-    // Top and bottom are dynamically calculated from the top edge of the scroll
-    // element.
-    const { top, bottom } = displayText.value.getBoundingClientRect()
-    const absTop = fileTreeRoot.scrollTop + top
-    const absBottom = fileTreeRoot.scrollTop + bottom
+      // Top and bottom are dynamically calculated from the top edge of the scroll
+      // element.
+      const { top, bottom } = displayText.value.getBoundingClientRect();
+      const absTop = fileTreeRoot.scrollTop + top;
+      const absBottom = fileTreeRoot.scrollTop + bottom;
 
-    if (absTop < topEdge) {
-      fileTreeRoot.scrollTo({ top: absTop - safetyMargin, behavior: 'smooth' })
-    } else if (absBottom > bottomEdge) {
-      const pos = absBottom - treeHeight
-      fileTreeRoot.scrollTo({ top: pos, behavior: 'smooth' })
-    }
-  }).catch(err => reportError(err))
+      if (absTop < topEdge) {
+        fileTreeRoot.scrollTo({ top: absTop - safetyMargin, behavior: "smooth" });
+      } else if (absBottom > bottomEdge) {
+        const pos = absBottom - treeHeight;
+        fileTreeRoot.scrollTo({ top: pos, behavior: "smooth" });
+      }
+    })
+    .catch((err) => reportError(err));
 }
 
-async function fetchChildren (): Promise<void> {
-  children.value = await ipcRenderer.invoke('fsal', { command: 'read-directory', payload: props.item.path })
+async function fetchChildren(): Promise<void> {
+  children.value = await ipcRenderer.invoke("fsal", {
+    command: "read-directory",
+    payload: props.item.path,
+  });
 }
 
 /**
  * Initiates a drag movement and inserts the correct data
  * @param {DragEvent} event The drag event
  */
-function beginDragging (event: DragEvent): void {
+function beginDragging(event: DragEvent): void {
   if (event.dataTransfer === null) {
-    return
+    return;
   }
 
-  event.dataTransfer.dropEffect = 'move'
-  event.dataTransfer.setData('text/x-zettlr-file', JSON.stringify({
-    type: props.item.type,
-    path: props.item.path,
-    id: (props.item.type === 'file') ? props.item.id : ''
-  }))
+  event.dataTransfer.dropEffect = "move";
+  event.dataTransfer.setData(
+    "text/x-zettlr-file",
+    JSON.stringify({
+      type: props.item.type,
+      path: props.item.path,
+      id: props.item.type === "file" ? props.item.id : "",
+    }),
+  );
 }
 
 /**
  * Called when a drag operation enters this item; adds a highlight class
  */
-function enterDragging (_event: DragEvent): void {
+function enterDragging(_event: DragEvent): void {
   if (!isDirectory.value) {
-    return
+    return;
   }
 
-  canAcceptDraggable.value = true
+  canAcceptDraggable.value = true;
 
   if (!collapsed.value) {
-    return
+    return;
   }
 
   uncollapseTimeout.value = setTimeout(() => {
-    windowStateStore.uncollapsedDirectories.push(props.item.path)
-    uncollapseTimeout.value = undefined
-  }, 1000)
+    windowStateStore.uncollapsedDirectories.push(props.item.path);
+    uncollapseTimeout.value = undefined;
+  }, 1000);
 }
 
 /**
  * The oppossite of enterDragging; removes the highlight class
  */
-function leaveDragging (_event: DragEvent): void {
+function leaveDragging(_event: DragEvent): void {
   if (!isDirectory.value) {
-    return
+    return;
   }
 
-  canAcceptDraggable.value = false
+  canAcceptDraggable.value = false;
 
   if (uncollapseTimeout.value !== undefined) {
-    clearTimeout(uncollapseTimeout.value)
-    uncollapseTimeout.value = undefined
+    clearTimeout(uncollapseTimeout.value);
+    uncollapseTimeout.value = undefined;
   }
 }
 
@@ -666,21 +710,21 @@ function leaveDragging (_event: DragEvent): void {
  * Called whenever something is dropped onto the element.
  * Only executes if it's a valid tree-item/file-list object.
  */
-function handleDrop (event: DragEvent): void {
-  canAcceptDraggable.value = false
-  event.preventDefault()
+function handleDrop(event: DragEvent): void {
+  canAcceptDraggable.value = false;
+  event.preventDefault();
 
   if (!isDirectory.value) {
-    return
+    return;
   }
 
   if (uncollapseTimeout.value !== undefined) {
-    clearTimeout(uncollapseTimeout.value)
-    uncollapseTimeout.value = undefined
+    clearTimeout(uncollapseTimeout.value);
+    uncollapseTimeout.value = undefined;
   }
 
   if (event.dataTransfer === null) {
-    return
+    return;
   }
 
   // Now we have to be careful. The user can now ALSO
@@ -688,79 +732,84 @@ function handleDrop (event: DragEvent): void {
   // to make sure it's really an element from in here and
   // NOT a file, because these need to be handled by the
   // app itself.
-  let data
+  let data;
 
   try {
-    const eventData = event.dataTransfer.getData('text/x-zettlr-file')
-    data = JSON.parse(eventData) // Throws error if eventData === ''
+    const eventData = event.dataTransfer.getData("text/x-zettlr-file");
+    data = JSON.parse(eventData); // Throws error if eventData === ''
   } catch (err) {
     // Error in JSON stringifying (either b/c malformed or no text)
-    return
+    return;
   }
 
   // The user dropped the file onto itself
   if (data.path === props.item.path) {
-    return
+    return;
   }
 
   // Finally, request the move!
-  ipcRenderer.invoke('application', {
-    command: 'request-move',
-    payload: {
-      from: data.path,
-      to: props.item.path
-    }
-  })
-    .catch(err => reportError(err))
+  ipcRenderer
+    .invoke("application", {
+      command: "request-move",
+      payload: {
+        from: data.path,
+        to: props.item.path,
+      },
+    })
+    .catch((err) => reportError(err));
 }
 
 /**
  * Makes sure the browser doesn't do unexpected stuff when dragging, e.g., external files.
  * @param {DragEvent} event The drag event
  */
-function acceptDrags (event: DragEvent): void {
+function acceptDrags(event: DragEvent): void {
   // We need to constantly preventDefault to ensure
   // that, e.g., a Python or other script file doesn't
   // override the location.href to display.
-  event.preventDefault()
+  event.preventDefault();
 }
 
-function handleOperationFinish (newName: string): void {
-  if (operationType.value === 'createFile' && newName.trim() !== '') {
-    ipcRenderer.invoke('application', {
-      command: 'file-new',
-      payload: {
-        path: props.item.path,
-        name: newName.trim()
-      }
-    }).catch(e => reportError(e))
-  } else if (operationType.value === 'createDir' && newName.trim() !== '') {
-    ipcRenderer.invoke('application', {
-      command: 'dir-new',
-      payload: {
-        path: props.item.path,
-        name: newName.trim()
-      }
-    }).catch(e => reportError(e))
+function handleOperationFinish(newName: string): void {
+  if (operationType.value === "createFile" && newName.trim() !== "") {
+    ipcRenderer
+      .invoke("application", {
+        command: "file-new",
+        payload: {
+          path: props.item.path,
+          name: newName.trim(),
+        },
+      })
+      .catch((e) => reportError(e));
+  } else if (operationType.value === "createDir" && newName.trim() !== "") {
+    ipcRenderer
+      .invoke("application", {
+        command: "dir-new",
+        payload: {
+          path: props.item.path,
+          name: newName.trim(),
+        },
+      })
+      .catch((e) => reportError(e));
   }
 
-  operationType.value = undefined
+  operationType.value = undefined;
 }
 
 /**
  * Helper function to toggle the collapsed status on a directory item with children
  */
-function maybeUncollapse (): void {
+function maybeUncollapse(): void {
   if (filteredChildren.value.length === 0) {
-    return
+    return;
   }
 
   if (collapsed.value) {
-    windowStateStore.uncollapsedDirectories.push(props.item.path)
+    windowStateStore.uncollapsedDirectories.push(props.item.path);
   } else {
-    const idx = windowStateStore.uncollapsedDirectories.indexOf(props.item.path)
+    const idx = windowStateStore.uncollapsedDirectories.indexOf(props.item.path);
     if (idx > -1) {
-      windowStateStore.uncollapsedDirectories.splice(idx, 1)
+      windowStateStore.uncollapsedDirectories.splice(idx, 1);
     }
   }
 }

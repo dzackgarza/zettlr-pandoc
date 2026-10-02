@@ -19,18 +19,17 @@
  * END HEADER
  */
 
+// Must be the first local import: it installs window.ipc as a side effect,
+// before the store below reads window.ipc at its own module top level.
+import "./document-collaboration-ipc-double";
+import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
 import { strict as assert } from "assert";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-// Must be the first local import: it installs window.ipc as a side effect,
-// before the store below reads window.ipc at its own module top level.
-import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 import { createPinia, setActivePinia } from "pinia";
-import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
 import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
-import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
-import type { TextAnnotation, AnnotationMessage } from "@dts/common/annotation-domain";
+import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
 import {
   buildAnnotationCards,
   buildSuggestionCards,
@@ -62,6 +61,8 @@ import {
   SCENE_REVIEW_ID,
   SCENE_WORKING_SHA256,
 } from "./annotations-sidebar-scene-fixture";
+import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
+import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
 describe("annotation-panel-model", function () {
   const session = buildSceneSession();
@@ -69,7 +70,10 @@ describe("annotation-panel-model", function () {
   const cards = buildAnnotationCards(annotations.items, workingText);
 
   it("derives a card's title from the first sentence of its first message, not a stored field (I8)", function () {
-    assert.equal(deriveCardTitle("Do we have examples of tasks that remain resistant? Add sources."), "Do we have examples of tasks that remain resistant?");
+    assert.equal(
+      deriveCardTitle("Do we have examples of tasks that remain resistant? Add sources."),
+      "Do we have examples of tasks that remain resistant?",
+    );
     // Two different annotation objects with the SAME first-message text get
     // the SAME title: proof it is computed fresh, not read off an object
     // field that could drift from the message.
@@ -88,7 +92,7 @@ describe("annotation-panel-model", function () {
 
   it("assigns ordinals by document position across open AND resolved annotations together (S4)", function () {
     // Document order: thread (line 3) < proposal (line 7) < resolved (line 11).
-    const byId = new Map(cards.map(card => [card.annotation.annotationId, card.ordinal]));
+    const byId = new Map(cards.map((card) => [card.annotation.annotationId, card.ordinal]));
     assert.equal(byId.get(SCENE_ANNOTATION_THREAD_ID), 1);
     assert.equal(byId.get(SCENE_ANNOTATION_PROPOSAL_ID), 2);
     assert.equal(byId.get(SCENE_ANNOTATION_RESOLVED_ID), 3);
@@ -111,7 +115,7 @@ describe("annotation-panel-model", function () {
   });
 
   it("reports the source line a target still occupies, and reports orphaned targets as having none", function () {
-    const threadCard = cards.find(c => c.annotation.annotationId === SCENE_ANNOTATION_THREAD_ID);
+    const threadCard = cards.find((c) => c.annotation.annotationId === SCENE_ANNOTATION_THREAD_ID);
     assert.ok(threadCard !== undefined);
     assert.equal(threadCard.lineLocator, "Ln 3");
     assert.equal(threadCard.lineNumber, 3);
@@ -121,7 +125,14 @@ describe("annotation-panel-model", function () {
       documentId: session.documentId,
       anchor: { state: "orphaned", quotedText: "vanished text", reason: "external-drift" },
       state: "open",
-      messages: [{ messageId: "m", author: "owner", text: "Where did this go?", createdAt: new Date().toISOString() }],
+      messages: [
+        {
+          messageId: "m",
+          author: "owner",
+          text: "Where did this go?",
+          createdAt: new Date().toISOString(),
+        },
+      ],
       proposalActions: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -134,38 +145,73 @@ describe("annotation-panel-model", function () {
 
   it("partitions resolved cards out of the primary list entirely (S9)", function () {
     const { open, resolved } = partitionByResolution(cards);
-    assert.deepEqual(open.map(c => c.annotation.annotationId).sort(), [SCENE_ANNOTATION_PROPOSAL_ID, SCENE_ANNOTATION_THREAD_ID].sort());
-    assert.deepEqual(resolved.map(c => c.annotation.annotationId), [SCENE_ANNOTATION_RESOLVED_ID]);
+    assert.deepEqual(
+      open.map((c) => c.annotation.annotationId).sort(),
+      [SCENE_ANNOTATION_PROPOSAL_ID, SCENE_ANNOTATION_THREAD_ID].sort(),
+    );
+    assert.deepEqual(
+      resolved.map((c) => c.annotation.annotationId),
+      [SCENE_ANNOTATION_RESOLVED_ID],
+    );
   });
 
   it("counts open annotations only, not the resolved one sitting alongside them (S10)", function () {
     assert.equal(openAnnotationCount(annotations.items), 2);
-    assert.equal(annotations.items.length, 3, "the fixture must actually carry a resolved annotation for this to be a real proof");
+    assert.equal(
+      annotations.items.length,
+      3,
+      "the fixture must actually carry a resolved annotation for this to be a real proof",
+    );
   });
 
   it("derives the terminal action row from annotation state, not a stored menu (S8)", function () {
-    const threadRow = deriveActionRow(annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_THREAD_ID)!);
-    assert.deepEqual(threadRow, { canReply: true, canShowProposal: false, canReattach: false, resolveLabel: "Resolve" });
+    const threadRow = deriveActionRow(
+      annotations.items.find((a) => a.annotationId === SCENE_ANNOTATION_THREAD_ID)!,
+    );
+    assert.deepEqual(threadRow, {
+      canReply: true,
+      canShowProposal: false,
+      canReattach: false,
+      resolveLabel: "Resolve",
+    });
 
-    const proposalRow = deriveActionRow(annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_PROPOSAL_ID)!);
-    assert.equal(proposalRow.canShowProposal, true, "an annotation with a linked proposal must expose Show proposal");
+    const proposalRow = deriveActionRow(
+      annotations.items.find((a) => a.annotationId === SCENE_ANNOTATION_PROPOSAL_ID)!,
+    );
+    assert.equal(
+      proposalRow.canShowProposal,
+      true,
+      "an annotation with a linked proposal must expose Show proposal",
+    );
 
-    const resolvedRow = deriveActionRow(annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_RESOLVED_ID)!);
+    const resolvedRow = deriveActionRow(
+      annotations.items.find((a) => a.annotationId === SCENE_ANNOTATION_RESOLVED_ID)!,
+    );
     assert.equal(resolvedRow.resolveLabel, "Reopen");
 
     const orphanedRow = deriveActionRow({
       ...annotations.items[0],
       anchor: { state: "orphaned", quotedText: "x", reason: "external-drift" },
     });
-    assert.equal(orphanedRow.canReattach, true, "only an orphaned anchor exposes Reattach (S8: never a background guess)");
+    assert.equal(
+      orphanedRow.canReattach,
+      true,
+      "only an orphaned anchor exposes Reattach (S8: never a background guess)",
+    );
   });
 
   it("filters cards by quoted text and by instruction text, case-insensitively", function () {
     const byQuote = filterCards(cards, "meaning-making");
-    assert.deepEqual(byQuote.map(c => c.annotation.annotationId), [SCENE_ANNOTATION_THREAD_ID]);
+    assert.deepEqual(
+      byQuote.map((c) => c.annotation.annotationId),
+      [SCENE_ANNOTATION_THREAD_ID],
+    );
 
     const byInstruction = filterCards(cards, "PUSH BACK");
-    assert.deepEqual(byInstruction.map(c => c.annotation.annotationId), [SCENE_ANNOTATION_PROPOSAL_ID]);
+    assert.deepEqual(
+      byInstruction.map((c) => c.annotation.annotationId),
+      [SCENE_ANNOTATION_PROPOSAL_ID],
+    );
 
     assert.equal(filterCards(cards, "no such text anywhere").length, 0);
   });
@@ -175,7 +221,9 @@ describe("annotation-panel-model", function () {
     const annotation: TextAnnotation = {
       ...annotations.items[0],
       annotationId: "annotation-long-reason",
-      messages: [ { ...annotations.items[0].messages[0], messageId: "message-long-reason", text: long } ]
+      messages: [
+        { ...annotations.items[0].messages[0], messageId: "message-long-reason", text: long },
+      ],
     };
     const [card] = buildAnnotationCards([annotation], workingText);
     assert.equal(card.instructionText, long);
@@ -186,7 +234,9 @@ describe("annotation-panel-model", function () {
     const documentPath = "/tmp/real-service-note.md";
     const baseline = "Zeroth line.\nThe target sentence sits here.\nThird line.\n";
     const authority = new (class extends SharedDocumentAuthority {
-      constructor() { super(baseline, documentId, documentPath); }
+      constructor() {
+        super(baseline, documentId, documentPath);
+      }
     })();
     const service = new CollaborationApplicationService({
       authority,
@@ -198,11 +248,19 @@ describe("annotation-panel-model", function () {
     const from = baseline.indexOf("target sentence");
     const to = from + "target sentence".length;
     const created = await service.createAnnotation({
-      documentId, actor: "owner", from, to, instruction: "Tighten this.", expectedAnnotationGeneration: 0,
+      documentId,
+      actor: "owner",
+      from,
+      to,
+      instruction: "Tighten this.",
+      expectedAnnotationGeneration: 0,
     });
     assert.ok("annotationId" in created, "annotation creation must succeed against a real service");
     const resolved = await service.resolveAnnotation({
-      documentId, annotationId: (created as TextAnnotation).annotationId, actor: "owner", expectedAnnotationGeneration: 1,
+      documentId,
+      annotationId: (created as TextAnnotation).annotationId,
+      actor: "owner",
+      expectedAnnotationGeneration: 1,
     });
     assert.ok("state" in resolved && resolved.state === "resolved");
 
@@ -211,7 +269,11 @@ describe("annotation-panel-model", function () {
     assert.equal(realCards.length, 1);
     assert.equal(realCards[0].title, "Tighten this.");
     assert.equal(realCards[0].lineLocator, "Ln 2");
-    assert.equal(openAnnotationCount(realAnnotations.items), 0, "the annotation is resolved, so the open count must be zero");
+    assert.equal(
+      openAnnotationCount(realAnnotations.items),
+      0,
+      "the annotation is resolved, so the open count must be zero",
+    );
   });
 
   it("builds a fast line index that maps positions to 1-based line numbers via binary search", function () {
@@ -258,9 +320,11 @@ describe("useDocumentCollaborationStore panel surface", function () {
 
     const cards = store.getCards(session.documentPath);
     assert.equal(cards.length, session.annotations.items.length);
-    assert.equal(store.cardsByDocumentPath[session.documentPath]?.length, session.annotations.items.length);
+    assert.equal(
+      store.cardsByDocumentPath[session.documentPath]?.length,
+      session.annotations.items.length,
+    );
   });
-
 
   it("toggleShowResolved flips the disclosure, and accepts an explicit value", function () {
     const store = useDocumentCollaborationStore();
@@ -312,14 +376,23 @@ describe("useDocumentCollaborationStore panel surface", function () {
 
     let seenCommand: string | undefined;
     let seenPayload: unknown;
-    const postedMessage: AnnotationMessage = { messageId: "reply-1", author: "owner", text: "Please add a source.", createdAt: new Date().toISOString() };
+    const postedMessage: AnnotationMessage = {
+      messageId: "reply-1",
+      author: "owner",
+      text: "Please add a source.",
+      createdAt: new Date().toISOString(),
+    };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seenCommand = message.command;
       seenPayload = message.payload;
       return postedMessage;
     });
 
-    const result = await store.addAnnotationMessage(session.documentPath, SCENE_ANNOTATION_PROPOSAL_ID, "Please add a source.");
+    const result = await store.addAnnotationMessage(
+      session.documentPath,
+      SCENE_ANNOTATION_PROPOSAL_ID,
+      "Please add a source.",
+    );
     assert.equal(seenCommand, "documents:add-annotation-message");
     assert.deepEqual(seenPayload, {
       path: session.documentPath,
@@ -340,7 +413,10 @@ describe("useDocumentCollaborationStore panel surface", function () {
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seenCommand = message.command;
       seenPayload = message.payload;
-      return { ...session.annotations.items[0], anchor: { state: "range", from: 40, to: 52, quotedText: "replacement" } };
+      return {
+        ...session.annotations.items[0],
+        anchor: { state: "range", from: 40, to: 52, quotedText: "replacement" },
+      };
     });
 
     await store.reattachAnnotation(session.documentPath, SCENE_ANNOTATION_THREAD_ID, 40, 52);
@@ -382,7 +458,10 @@ describe("workspace suggestion navigator model", function () {
     const review = buildSceneReview();
     const rows = buildSuggestionNavigatorRows(review);
     assert.equal(rows.length, review.suggestions.length);
-    assert.deepEqual(rows.map(row => row.description), review.suggestions.map(suggestion => suggestion.description));
+    assert.deepEqual(
+      rows.map((row) => row.description),
+      review.suggestions.map((suggestion) => suggestion.description),
+    );
     for (const row of rows) {
       assert.ok(row.contextText.length > 0, "workspace review rows carry useful source context");
       assert.equal("lineLocator" in row, false);
@@ -394,10 +473,17 @@ describe("workspace suggestion navigator model", function () {
 describe("frozen review navigator rows", function () {
   it("take their context from the frozen text and point at no range in the current buffer", function () {
     const review = buildSceneReview();
-    const frozen = { ...review, workingText: "unrelated current text\n", frozenText: review.workingText };
+    const frozen = {
+      ...review,
+      workingText: "unrelated current text\n",
+      frozenText: review.workingText,
+    };
     const rows = buildSuggestionNavigatorRows(frozen);
-    assert.deepEqual(rows.map(row => row.contextText), buildSuggestionNavigatorRows(review).map(row => row.contextText));
-    assert.ok(rows.every(row => row.range === undefined));
+    assert.deepEqual(
+      rows.map((row) => row.contextText),
+      buildSuggestionNavigatorRows(review).map((row) => row.contextText),
+    );
+    assert.ok(rows.every((row) => row.range === undefined));
   });
 });
 
@@ -406,24 +492,42 @@ describe("inline chunk controls model", function () {
   const cards = buildSuggestionCards(review);
 
   it("shows each outstanding chunk with the claim that proposed it", function () {
-    assert.deepEqual(cards.map(card => card.suggestionId), [SCENE_CHUNK_TASKS_ID, SCENE_CHUNK_GOAL_ID]);
-    assert.deepEqual(cards.map(card => card.description), [
-      "Say which tasks automation actually handles.",
-      "Frame the goal as collaboration, not replacement.",
-    ]);
+    assert.deepEqual(
+      cards.map((card) => card.suggestionId),
+      [SCENE_CHUNK_TASKS_ID, SCENE_CHUNK_GOAL_ID],
+    );
+    assert.deepEqual(
+      cards.map((card) => card.description),
+      [
+        "Say which tasks automation actually handles.",
+        "Frame the goal as collaboration, not replacement.",
+      ],
+    );
   });
 
   it("prefills a chunk's note field from the provider, and only its own chunk's", function () {
     assert.equal(cards[1].comment, SCENE_CHUNK_GOAL_NOTE);
-    assert.equal(cards[0].comment, "", "a chunk with no note starts empty rather than borrowing another's");
+    assert.equal(
+      cards[0].comment,
+      null,
+      "a chunk with no note has none rather than borrowing another's",
+    );
   });
 
   it("commits a trimmed note, commits nothing when it did not change, and commits an emptied field as the removal", function () {
     const noted = cards[1];
-    assert.equal(chunkNoteCommit(noted, `  ${SCENE_CHUNK_GOAL_NOTE}  `), undefined, "an unchanged note is no mutation");
+    assert.equal(
+      chunkNoteCommit(noted, `  ${SCENE_CHUNK_GOAL_NOTE}  `),
+      undefined,
+      "an unchanged note is no mutation",
+    );
     assert.equal(chunkNoteCommit(noted, "  rewritten  "), "rewritten");
     assert.equal(chunkNoteCommit(noted, ""), "", "an emptied field removes the note");
-    assert.equal(chunkNoteCommit(cards[0], "   "), undefined, "whitespace in an already-empty field is still no mutation");
+    assert.equal(
+      chunkNoteCommit(cards[0], "   "),
+      undefined,
+      "whitespace in an already-empty field is still no mutation",
+    );
   });
 
   it("finds only the chunk(s) a given set of packets produced (S7: Show proposal)", function () {
@@ -448,7 +552,7 @@ describe("useDocumentCollaborationStore review surface", function () {
   });
 
   /** A store hydrated with the reviewed session, ready to adjudicate. */
-  async function hydratedStore (): Promise<ReturnType<typeof useDocumentCollaborationStore>> {
+  async function hydratedStore(): Promise<ReturnType<typeof useDocumentCollaborationStore>> {
     documentCollaborationIpcDouble.setInvokeResponder(async () => session);
     const store = useDocumentCollaborationStore();
     await store.ensureSession(session.documentPath);
@@ -456,8 +560,10 @@ describe("useDocumentCollaborationStore review surface", function () {
   }
 
   /** Records the next invoke and answers it with the provider's own shape. */
-  function captureNextRequest (response: unknown): { seen: { command?: string, payload?: unknown } } {
-    const seen: { command?: string, payload?: unknown } = {};
+  function captureNextRequest(response: unknown): {
+    seen: { command?: string; payload?: unknown };
+  } {
+    const seen: { command?: string; payload?: unknown } = {};
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seen.command = message.command;
       seen.payload = message.payload;
@@ -477,7 +583,11 @@ describe("useDocumentCollaborationStore review surface", function () {
     const before = store.getSession(session.documentPath);
     const { seen } = captureNextRequest({ ok: true, chunkId: SCENE_CHUNK_TASKS_ID });
 
-    const result = await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_TASKS_ID, "accept");
+    const result = await store.decideReviewChunk(
+      session.documentPath,
+      SCENE_CHUNK_TASKS_ID,
+      "accept",
+    );
 
     assert.equal(seen.command, "documents:decide-review-chunk");
     assert.deepEqual(seen.payload, { ...fence, chunkId: SCENE_CHUNK_TASKS_ID, decision: "accept" });
@@ -546,7 +656,11 @@ describe("useDocumentCollaborationStore review surface", function () {
       reviewGeneration: 5,
     });
 
-    const result = await store.decideReviewChunk(session.documentPath, SCENE_CHUNK_TASKS_ID, "accept");
+    const result = await store.decideReviewChunk(
+      session.documentPath,
+      SCENE_CHUNK_TASKS_ID,
+      "accept",
+    );
 
     assert.equal(result.ok, false);
     assert.deepEqual(store.getSession(session.documentPath), before);
@@ -588,7 +702,9 @@ describe("useDocumentCollaborationStore review surface", function () {
     const store = useDocumentCollaborationStore();
     await store.ensureSession(annotationsOnly.documentPath);
 
-    await assert.rejects(async () => await store.acceptAllReviewChunks(annotationsOnly.documentPath));
+    await assert.rejects(
+      async () => await store.acceptAllReviewChunks(annotationsOnly.documentPath),
+    );
     assert.equal(
       documentCollaborationIpcDouble.invokeCallCount("documents:accept-all-review-chunks"),
       0,
@@ -610,14 +726,16 @@ describe("useDocumentCollaborationStore review surface", function () {
       },
     };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
-      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined
+      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined,
     );
     const store = useDocumentCollaborationStore();
 
     await store.refreshWorkspaceSessions([session.documentPath, second.documentPath]);
 
-    assert.deepEqual(store.workspaceSessions.map(item => item.documentPath).sort(),
-      [session.documentPath, second.documentPath].sort());
+    assert.deepEqual(
+      store.workspaceSessions.map((item) => item.documentPath).sort(),
+      [session.documentPath, second.documentPath].sort(),
+    );
     assert.equal(
       store.workspaceUnresolvedCount,
       unresolvedCollaborationCount(session) + unresolvedCollaborationCount(second),
@@ -625,7 +743,7 @@ describe("useDocumentCollaborationStore review surface", function () {
   });
 
   it("accepts all outstanding review chunks for one workspace document through the workspace channel", async function () {
-    const seen: Array<{ command: string, payload: unknown }> = [];
+    const seen: Array<{ command: string; payload: unknown }> = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seen.push({ command: message.command, payload: message.payload });
       if (message.command === "get-workspace-collaboration-sessions") {
@@ -641,9 +759,14 @@ describe("useDocumentCollaborationStore review surface", function () {
 
     await store.acceptAllWorkspaceReviewChunks(session.documentPath);
 
-    const request = seen.find(item => item.command === "documents:accept-all-workspace-review-chunks");
+    const request = seen.find(
+      (item) => item.command === "documents:accept-all-workspace-review-chunks",
+    );
     assert.deepEqual(request?.payload, { path: session.documentPath, ...fence });
-    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"), 2);
+    assert.equal(
+      documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"),
+      2,
+    );
   });
 
   it("global Accept all sends one fenced workspace acceptance per reviewed document", async function () {
@@ -653,7 +776,12 @@ describe("useDocumentCollaborationStore review surface", function () {
       documentId: "doc-second",
       documentPath: secondPath,
       workingSha256: "d".repeat(64),
-      review: { ...session.review!, id: "review-second", documentPath: secondPath, reviewGeneration: 9 },
+      review: {
+        ...session.review!,
+        id: "review-second",
+        documentPath: secondPath,
+        reviewGeneration: 9,
+      },
     };
     const accepted: string[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
@@ -682,16 +810,27 @@ describe("useDocumentCollaborationStore review surface", function () {
       documentId: "doc-second",
       documentPath: secondPath,
       workingSha256: "d".repeat(64),
-      review: { ...session.review!, id: "review-second", documentPath: secondPath, reviewGeneration: 9 },
+      review: {
+        ...session.review!,
+        id: "review-second",
+        documentPath: secondPath,
+        reviewGeneration: 9,
+      },
     };
-    const invalidated = { ok: false, code: "REVIEW_INVALIDATED", message: "The file changed on disk, so this review is no longer current." };
+    const invalidated = {
+      ok: false,
+      code: "REVIEW_INVALIDATED",
+      message: "The file changed on disk, so this review is no longer current.",
+    };
     const logged: unknown[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
         return [session, second];
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
-        return (message.payload as { path: string }).path === secondPath ? invalidated : { ok: true, acceptedChunks: 2 };
+        return (message.payload as { path: string }).path === secondPath
+          ? invalidated
+          : { ok: true, acceptedChunks: 2 };
       }
       if (message.command === "log-provider") {
         logged.push(message.payload);
@@ -704,9 +843,11 @@ describe("useDocumentCollaborationStore review surface", function () {
     await store.acceptAllWorkspaceReviews();
 
     assert.equal(logged.length, 1);
-    const record = logged[0] as { command: string, payload: { details: string } };
+    const record = logged[0] as { command: string; payload: { details: string } };
     assert.equal(record.command, "record-error");
-    assert.deepEqual(JSON.parse(record.payload.details), [{ path: secondPath, result: invalidated }]);
+    assert.deepEqual(JSON.parse(record.payload.details), [
+      { path: secondPath, result: invalidated },
+    ]);
   });
 });
 
@@ -714,7 +855,9 @@ describe("workspace annotation fixtures", function () {
   it("buildSceneSessionWithOrphan carries a fourth, orphaned, OPEN annotation alongside the base three", function () {
     const fixture = buildSceneSessionWithOrphan();
     assert.equal(fixture.annotations.items.length, 4);
-    const orphaned = fixture.annotations.items.find(a => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID);
+    const orphaned = fixture.annotations.items.find(
+      (a) => a.annotationId === SCENE_ANNOTATION_ORPHANED_ID,
+    );
     assert.ok(orphaned !== undefined);
     assert.equal(orphaned.anchor.state, "orphaned");
     assert.equal(orphaned.state, "open");

@@ -15,29 +15,29 @@
  * END HEADER
  */
 
-import registerThemes from './register-themes'
-import registerDefaultContextMenu from './register-default-context'
-import loadIcons from './load-icons'
-import { loadData } from '@common/i18n-renderer'
-import { initializeMathJax } from '@common/util/mathtex-to-html'
-import type { MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
-import { reportError } from '@common/util/error-reporting'
+import { loadData } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { initializeMathJax } from "@common/util/mathtex-to-html";
+import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
+import loadIcons from "./load-icons";
+import registerDefaultContextMenu from "./register-default-context";
+import registerThemes from "./register-themes";
 
-let rendererErrorCaptureInstalled = false
+let rendererErrorCaptureInstalled = false;
 
 /** Route otherwise-uncaught renderer failures into the durable application log. */
-export function registerRendererErrorCapture (): void {
+export function registerRendererErrorCapture(): void {
   if (rendererErrorCaptureInstalled) {
-    return
+    return;
   }
-  rendererErrorCaptureInstalled = true
+  rendererErrorCaptureInstalled = true;
 
-  window.addEventListener('error', event => {
-    reportError('[Renderer] Uncaught error', event.error ?? event.message)
-  })
-  window.addEventListener('unhandledrejection', event => {
-    reportError('[Renderer] Unhandled promise rejection', event.reason)
-  })
+  window.addEventListener("error", (event) => {
+    reportError("[Renderer] Uncaught error", event.error ?? event.message);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    reportError("[Renderer] Unhandled promise rejection", event.reason);
+  });
 }
 
 /**
@@ -45,21 +45,21 @@ export function registerRendererErrorCapture (): void {
  * configuration and registers stuff like custom window controls and the menu
  * bar (on Windows and Linux, if native is off)
  */
-export default async function windowRegister (): Promise<void> {
-  registerRendererErrorCapture()
+export default async function windowRegister(): Promise<void> {
+  registerRendererErrorCapture();
   // Immediately load the translations
-  await loadData()
+  await loadData();
   // Load the clarity icons
-  await loadIcons()
+  await loadIcons();
 
   // Fetch the user's MathJax macros from the main process (the renderer is
   // sandboxed and cannot read the config file itself), then preload the font
   // data before synchronous document conversion begins.
-  const macros = await window.ipc.invoke('mathjax-macros') as Record<string, MathJaxMacro>
-  await initializeMathJax(macros)
+  const macros = (await window.ipc.invoke("mathjax-macros")) as Record<string, MathJaxMacro>;
+  await initializeMathJax(macros);
 
   // ... the theming functionality ...
-  registerThemes()
+  registerThemes();
   // ... the default context menus
-  registerDefaultContextMenu()
+  registerDefaultContextMenu();
 }

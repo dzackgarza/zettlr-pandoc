@@ -20,35 +20,42 @@
  * A math delimiter pair the editor understands. `open`/`close` are the literal
  * source delimiters.
  */
-export interface MathDelimiterPair { open: string, close: string, display: boolean }
+export interface MathDelimiterPair {
+  open: string;
+  close: string;
+  display: boolean;
+}
 
 /**
  * Every math delimiter pair, most specific first so `$$` is tried before `$`.
  */
 export const MATH_DELIMITERS: MathDelimiterPair[] = [
-  { open: '$$', close: '$$', display: true },
-  { open: '\\[', close: '\\]', display: true },
-  { open: '\\(', close: '\\)', display: false },
-  { open: '$', close: '$', display: false }
-]
+  { open: "$$", close: "$$", display: true },
+  { open: "\\[", close: "\\]", display: true },
+  { open: "\\(", close: "\\)", display: false },
+  { open: "$", close: "$", display: false },
+];
 
 /**
  * The math a code node carries, from the parts the Markdown AST keeps. Pandoc's
  * Markdown reader recognizes only the delimiter forms here; LaTeX environments
  * are raw TeX in Markdown.
  */
-export function mathFromCodeNode (info: string, source: string): { display: boolean, equation: string }|null {
-  const display = mathDisplayForOpen(info)
-  return display === null ? null : { display, equation: source }
+export function mathFromCodeNode(
+  info: string,
+  source: string,
+): { display: boolean; equation: string } | null {
+  const display = mathDisplayForOpen(info);
+  return display === null ? null : { display, equation: source };
 }
 
 /**
  * Given an opening delimiter string, returns whether it opens display math, or
  * null if it is not a recognized math delimiter.
  */
-export function mathDisplayForOpen (open: string): boolean | null {
-  const pair = MATH_DELIMITERS.find(d => d.open === open)
-  return pair === undefined ? null : pair.display
+export function mathDisplayForOpen(open: string): boolean | null {
+  const pair = MATH_DELIMITERS.find((d) => d.open === open);
+  return pair === undefined ? null : pair.display;
 }
 
 /**
@@ -57,12 +64,16 @@ export function mathDisplayForOpen (open: string): boolean | null {
  * null if the text is not delimited math. Tolerates a single trailing newline
  * (block math nodes can carry one).
  */
-export function stripMathDelimiters (text: string): { display: boolean, equation: string } | null {
-  const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text
+export function stripMathDelimiters(text: string): { display: boolean; equation: string } | null {
+  const trimmed = text.endsWith("\n") ? text.slice(0, -1) : text;
   for (const { open, close, display } of MATH_DELIMITERS) {
-    if (trimmed.length >= open.length + close.length && trimmed.startsWith(open) && trimmed.endsWith(close)) {
-      return { display, equation: trimmed.slice(open.length, trimmed.length - close.length) }
+    if (
+      trimmed.length >= open.length + close.length &&
+      trimmed.startsWith(open) &&
+      trimmed.endsWith(close)
+    ) {
+      return { display, equation: trimmed.slice(open.length, trimmed.length - close.length) };
     }
   }
-  return null
+  return null;
 }

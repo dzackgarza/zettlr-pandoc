@@ -74,6 +74,7 @@
  */
 
 import {
+  type AcceptableValue,
   ToggleGroupItem,
   ToggleGroupRoot,
   TooltipContent,
@@ -81,43 +82,42 @@ import {
   TooltipProvider,
   TooltipRoot,
   TooltipTrigger,
-  type AcceptableValue
-} from 'reka-ui'
-import type { ActivityBarItem } from './sidebar-views'
+} from "reka-ui";
+import type { ActivityBarItem } from "./sidebar-views";
 
 const props = defineProps<{
   /** This bar's element id: a window carries one per edge. */
-  barId: string
+  barId: string;
   /** The edge it sits on, which decides its border and its tooltips' side. */
-  side: 'left' | 'right'
-  items: readonly ActivityBarItem[]
+  side: "left" | "right";
+  items: readonly ActivityBarItem[];
   /** The pressed item's id, or '' while the pane is closed. */
-  pressed: string
-  label: string
+  pressed: string;
+  label: string;
   /** Dynamic unresolved-item counts keyed by activity id. */
-  badges?: Readonly<Record<string, number>>
-}>()
+  badges?: Readonly<Record<string, number>>;
+}>();
 
 /** Reports the pressed item, or '' when the pressed one was pressed again. */
-const emit = defineEmits<(e: 'press', id: string) => void>()
+const emit = defineEmits<(e: "press", id: string) => void>();
 
-function onPress (value: AcceptableValue): void {
-  emit('press', typeof value === 'string' ? value : '')
+function onPress(value: AcceptableValue): void {
+  emit("press", typeof value === "string" ? value : "");
 }
 
-function badgeCount (id: string): number {
-  const count = props.badges?.[id]
-  return typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+function badgeCount(id: string): number {
+  const count = props.badges?.[id];
+  return typeof count === "number" && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
 }
 
-function badgeLabel (id: string): string {
-  const count = badgeCount(id)
-  return count > 99 ? '99+' : String(count)
+function badgeLabel(id: string): string {
+  const count = badgeCount(id);
+  return count > 99 ? "99+" : String(count);
 }
 
-function accessibleLabel (item: ActivityBarItem): string {
-  const count = badgeCount(item.id)
-  return count === 0 ? item.label() : `${item.label()}, ${count} unresolved`
+function accessibleLabel(item: ActivityBarItem): string {
+  const count = badgeCount(item.id);
+  return count === 0 ? item.label() : `${item.label()}, ${count} unresolved`;
 }
 </script>
 

@@ -34,6 +34,7 @@
  * END HEADER
  */
 
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import {
   type TikzEditorSourceSession,
   tikzEditorReplacement,
@@ -41,7 +42,6 @@ import {
 } from "../editor-bridge";
 import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
 import type { TikzLivePreviewTarget } from "../live-preview";
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 
 interface PreviewSession {
   id: string;

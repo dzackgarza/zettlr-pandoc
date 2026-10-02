@@ -12,18 +12,15 @@
  * END HEADER
  */
 
-import { editorTheme } from './editor'
-import { codeTheme } from './code'
+import { codeTheme } from "./code";
+import { editorTheme } from "./editor";
 
-export { darkMode, useDarkModeEditor } from './dark-mode'
+export { darkMode, useDarkModeEditor } from "./dark-mode";
 
-export { themeBerlinLight, themeBerlinDark } from './themes/berlin'
-export { themeBielefeldLight, themeBielefeldDark } from './themes/bielefeld'
-export { themeBordeauxLight, themeBordeauxDark } from './themes/bordeaux'
-export { themeFrankfurtLight, themeFrankfurtDark } from './themes/frankfurt'
-export { themeKarlMarxStadtLight, themeKarlMarxStadtDark } from './themes/karl-marx-stadt'
+export { themeBerlinDark, themeBerlinLight } from "./themes/berlin";
+export { themeBielefeldDark, themeBielefeldLight } from "./themes/bielefeld";
+export { themeBordeauxDark, themeBordeauxLight } from "./themes/bordeaux";
+export { themeFrankfurtDark, themeFrankfurtLight } from "./themes/frankfurt";
+export { themeKarlMarxStadtDark, themeKarlMarxStadtLight } from "./themes/karl-marx-stadt";
 
-export const mainThemes = [
-  editorTheme,
-  codeTheme
-]
+export const mainThemes = [editorTheme, codeTheme];

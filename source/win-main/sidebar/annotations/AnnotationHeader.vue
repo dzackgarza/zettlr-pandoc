@@ -81,53 +81,58 @@
  * END HEADER
  */
 
-import { computed, onBeforeMount, onBeforeUnmount, ref } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
-import { explodeAccelerator } from '@common/util/shortcuts'
-import { menuProviderMessageSchema } from '@dts/common/serialized-menu'
-import { allMenuLeafRows } from '../../launcher/launcher-rows'
-
+import { trans } from "@common/i18n-renderer";
+import { explodeAccelerator } from "@common/util/shortcuts";
+import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
+import { menuProviderMessageSchema } from "@dts/common/serialized-menu";
+import { computed, onBeforeMount, onBeforeUnmount, ref } from "vue";
+import { allMenuLeafRows } from "../../launcher/launcher-rows";
 
 const props = defineProps<{
-  outstandingCount: number
-  acceptAllCount: number
-  query: string
-  busy: boolean
-}>()
+  outstandingCount: number;
+  acceptAllCount: number;
+  query: string;
+  busy: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'update:query', value: string): void
-  (e: 'accept-all'): void
-  (e: 'close'): void
-}>()
+  (e: "update:query", value: string): void;
+  (e: "accept-all"): void;
+  (e: "close"): void;
+}>();
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const closeLabel = trans('Close')
-const filterLabel = trans('Filter annotations')
+const closeLabel = trans("Close");
+const filterLabel = trans("Filter annotations");
 
-const filterOpen = ref(false)
+const filterOpen = ref(false);
 
 // The panel toggle's shortcut, from the one definition of that command: the
 // application menu item the menu provider serialises.
-const TOGGLE_ITEM_ID = 'menu.toggle_annotation_panel'
-const accelerator = ref<string | undefined>(undefined)
-let stopListening: () => void = () => {}
+const TOGGLE_ITEM_ID = "menu.toggle_annotation_panel";
+const accelerator = ref<string | undefined>(undefined);
+let stopListening: () => void = () => {};
 
 onBeforeMount(() => {
-  stopListening = ipcRenderer.on('menu-provider', (_event, payload: unknown) => {
-    const message = menuProviderMessageSchema.parse(payload)
-    if (message.command === 'application-menu') {
-      accelerator.value = allMenuLeafRows(message.payload).find(row => row.id === TOGGLE_ITEM_ID)?.accelerator
+  stopListening = ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
+    const message = menuProviderMessageSchema.parse(payload);
+    if (message.command === "application-menu") {
+      accelerator.value = allMenuLeafRows(message.payload).find(
+        (row) => row.id === TOGGLE_ITEM_ID,
+      )?.accelerator;
     }
-  })
-  ipcRenderer.send('menu-provider', { command: 'get-application-menu' })
-})
+  });
+  ipcRenderer.send("menu-provider", { command: "get-application-menu" });
+});
 
-onBeforeUnmount(() => { stopListening() })
+onBeforeUnmount(() => {
+  stopListening();
+});
 
-const shortcut = computed(() => accelerator.value === undefined ? undefined : explodeAccelerator(accelerator.value))
+const shortcut = computed(() =>
+  accelerator.value === undefined ? undefined : explodeAccelerator(accelerator.value),
+);
 </script>
 
 <style lang="less">

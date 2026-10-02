@@ -46,60 +46,62 @@
 </template>
 
 <script setup lang="ts">
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import DefaultsTab from './DefaultsTab.vue'
-import CustomCSS from './CustomCSS.vue'
-import SnippetsTab from './SnippetsTab.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, computed } from 'vue'
-import { type WindowTab } from '@common/vue/window/WindowTabbar.vue'
-import { useConfigStore } from 'source/pinia'
-import FilterTab from './FilterTab.vue'
+import { trans } from "@common/i18n-renderer";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type WindowTab } from "@common/vue/window/WindowTabbar.vue";
+import { useConfigStore } from "source/pinia";
+import { computed, ref } from "vue";
+import CustomCSS from "./CustomCSS.vue";
+import DefaultsTab from "./DefaultsTab.vue";
+import FilterTab from "./FilterTab.vue";
+import SnippetsTab from "./SnippetsTab.vue";
 
-const currentTab = ref(0)
+const currentTab = ref(0);
 const windowTitle = computed(() => {
-  if (document.body.classList.contains('darwin')) {
-    return tabs[currentTab.value].label
+  if (document.body.classList.contains("darwin")) {
+    return tabs[currentTab.value].label;
   } else {
-    return trans('Assets Manager')
+    return trans("Assets Manager");
   }
-})
+});
 
-const configStore = useConfigStore()
-const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
+const configStore = useConfigStore();
+const hasVibrancy = computed(
+  () => configStore.config.window.vibrancy && process.platform === "darwin",
+);
 
 const tabs: WindowTab[] = [
   {
-    label: trans('Exporting'),
-    controls: 'tab-export',
-    id: 'tab-export-control',
-    icon: 'export'
+    label: trans("Exporting"),
+    controls: "tab-export",
+    id: "tab-export-control",
+    icon: "export",
   },
   {
-    label: trans('Importing'),
-    controls: 'tab-import',
-    id: 'tab-import-control',
-    icon: 'import'
+    label: trans("Importing"),
+    controls: "tab-import",
+    id: "tab-import-control",
+    icon: "import",
   },
   {
-    label: trans('Lua Filter'),
-    controls: 'tab-filter',
-    id: 'tab-filter-control',
-    icon: 'filter'
+    label: trans("Lua Filter"),
+    controls: "tab-filter",
+    id: "tab-filter-control",
+    icon: "filter",
   },
   {
-    label: trans('Snippets'),
-    controls: 'tab-snippets',
-    id: 'tab-snippets-control',
-    icon: 'pinboard'
+    label: trans("Snippets"),
+    controls: "tab-snippets",
+    id: "tab-snippets-control",
+    icon: "pinboard",
   },
   {
-    label: trans('Custom CSS'),
-    controls: 'tab-custom-css',
-    id: 'tab-custom-css-control',
-    icon: 'code'
-  }
-]
+    label: trans("Custom CSS"),
+    controls: "tab-custom-css",
+    id: "tab-custom-css-control",
+    icon: "code",
+  },
+];
 </script>
 
 <style lang="less">

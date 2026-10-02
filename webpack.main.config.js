@@ -2,20 +2,10 @@ const CopyWebpackPlugin = require("copy-webpack-plugin");
 const { DefinePlugin } = require("webpack");
 const path = require("path");
 const rules = require("./webpack.rules");
+const { gitCommitHash } = require("./scripts/get-git-hash.js");
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
-const externals = {};
-
-if (process.env.BUNDLE_FSEVENTS !== "1") {
-  // Do not embed fsevents (otherwise this leads to problems on Linux and
-  // Windows, see https://github.com/paulmillr/chokidar/issues/618#issuecomment-392618390)
-  // NOTE: The environment variable is set in the generateAssets hook of electron
-  // forge since that runs before this module is required and has access to the
-  // *target* platform (rather than process.platform)
-  externals.fsevents = "require('fsevents')";
-}
-
-module.exports = {
+const config = {
   // Main entry point: the file that runs in the main process
   entry: "./source/main.ts",
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
@@ -75,7 +65,7 @@ module.exports = {
       ],
     }),
     new DefinePlugin({
-      __GIT_COMMIT_HASH__: JSON.stringify(process.env.GIT_COMMIT_HASH),
+      __GIT_COMMIT_HASH__: JSON.stringify(gitCommitHash()),
       __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
       __UPDATES_DISABLED__: JSON.stringify(
         process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? "1" : "0",
@@ -91,5 +81,15 @@ module.exports = {
       "@dts": [path.resolve(__dirname, "source/types")],
     },
   },
-  externals,
+};
+
+/**
+ * The main-process configuration for one target platform. forge.config.js
+ * passes the target platform, which only its generateAssets hook knows.
+ */
+module.exports = function createMainConfig(targetPlatform) {
+  // fsevents exists only on macOS; embedding it breaks Linux and Windows
+  // builds (https://github.com/paulmillr/chokidar/issues/618#issuecomment-392618390).
+  const externals = targetPlatform === "darwin" ? {} : { fsevents: "require('fsevents')" };
+  return { ...config, externals };
 };

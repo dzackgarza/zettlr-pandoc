@@ -29,9 +29,10 @@
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
+import { sanitizedFragment } from "@common/util/sanitize-html";
 import { type SyntaxNodeRef } from "@lezer/common";
-import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
+import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import { tikzBlockForNode } from "../tikz-block";
 import { tikzWidthEm } from "../tikz-display-size";
 import { requestTikzRender } from "../tikz-render-client";
@@ -58,14 +59,13 @@ export { __resetTikzRenderMemoForTests } from "../tikz-render-client";
  * the mount to fall back from.
  */
 function figureNodes(html: string): Node[] {
-  const template = document.createElement("template");
-  template.innerHTML = html;
+  const fragment = sanitizedFragment(html, "graphic");
 
   // An ok result is only issued after the service confirmed the pandoc output
   // carries an <svg>…</svg>; markup without one means service and widget
   // disagree about what a successful render is, which no presentation can
   // repair.
-  if (template.content.querySelector("svg") === null) {
+  if (fragment.querySelector("svg") === null) {
     throw new Error(
       "render-tikz: the render service reported a successful figure whose markup carries no <svg> element. " +
         `Markup received (${html.length} chars): ${html.slice(0, 200)}. ` +
@@ -75,7 +75,7 @@ function figureNodes(html: string): Node[] {
   }
 
   const nodes: Node[] = [];
-  for (const child of Array.from(template.content.childNodes)) {
+  for (const child of Array.from(fragment.childNodes)) {
     if (child instanceof HTMLParagraphElement) {
       nodes.push(...Array.from(child.childNodes));
     } else {
@@ -108,7 +108,12 @@ function normalizeSvgTypography(
   svg.style.width = "100%";
 }
 
-function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string, editSource: () => void): void {
+function populate(
+  elem: HTMLElement,
+  result: TikzRenderResult,
+  editTitle: string,
+  editSource: () => void,
+): void {
   if (result.ok) {
     const figure = figureNodes(result.html);
     const frame = document.createElement("div");
@@ -162,9 +167,11 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
         line.appendChild(source);
         box.appendChild(line);
       }
-      diagnosticText = result.log || result.errors.map((error) =>
-        `line ${error.line}: ${error.message}\n${error.sourceLine}`,
-      ).join("\n\n");
+      diagnosticText =
+        result.log ||
+        result.errors
+          .map((error) => `line ${error.line}: ${error.message}\n${error.sourceLine}`)
+          .join("\n\n");
       if (result.log !== "") {
         const log = document.createElement("pre");
         log.classList.add("tikz-compiler-log");
@@ -210,9 +217,11 @@ function populate(elem: HTMLElement, result: TikzRenderResult, editTitle: string
   copy.type = "button";
   copy.textContent = "Copy diagnostics";
   copy.addEventListener("click", () => {
-    void navigator.clipboard.writeText(diagnosticText === "" ? summary : diagnosticText).catch((error) => {
-      reportError("Could not copy TikZ diagnostics", error);
-    });
+    void navigator.clipboard
+      .writeText(diagnosticText === "" ? summary : diagnosticText)
+      .catch((error) => {
+        reportError("Could not copy TikZ diagnostics", error);
+      });
   });
   box.insertBefore(copy, title);
   const edit = document.createElement("button");

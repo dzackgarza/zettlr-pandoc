@@ -126,81 +126,90 @@
  * END HEADER
  */
 
-// The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
-// where both vue-tsc and the type-aware linter can resolve it (issue #50).
-import type { ReferenceJumpIntent } from '../component-contracts'
-import { ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxRoot, ComboboxViewport } from 'reka-ui'
-import { computed, nextTick, ref, watch } from 'vue'
-import { trans } from '@common/i18n-renderer'
+import { trans } from "@common/i18n-renderer";
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import {
-  searchWorkspaceDefinitions,
   isCurrentProjectDefinition,
-  type WorkspaceSearchContext
-} from '@common/modules/markdown-editor/util/reference-search'
+  searchWorkspaceDefinitions,
+  type WorkspaceSearchContext,
+} from "@common/modules/markdown-editor/util/reference-search";
 import {
   computeProjectReferenceStatus,
-  projectStatusDisplayName
-} from '@common/pandoc-util/project-reference-status'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+  projectStatusDisplayName,
+} from "@common/pandoc-util/project-reference-status";
 import {
-  referenceFamilyDisplayName,
   type ProjectRootSpec,
   type ReferenceDefinition,
-  type ReferenceOccurrence
-} from '@dts/common/references'
-import LauncherRow from './LauncherRow.vue'
+  type ReferenceOccurrence,
+  referenceFamilyDisplayName,
+} from "@dts/common/references";
+import {
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxRoot,
+  ComboboxViewport,
+} from "reka-ui";
+import { computed, nextTick, ref, watch } from "vue";
+// The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
+// where both vue-tsc and the type-aware linter can resolve it (issue #50).
+import type { ReferenceJumpIntent } from "../component-contracts";
+import LauncherRow from "./LauncherRow.vue";
 
-const props = withDefaults(defineProps<{
-  definitions: ReferenceDefinition[]
-  /** The merged workspace occurrence list feeding the reverse lookup */
-  occurrences?: ReferenceOccurrence[]
-  /** The relayed request: null keeps the plain definition search */
-  initialRequest?: ReferenceSearchRequest
-  /** Every visible Project root (review A3: current-Project-first ranking) */
-  projectRoots?: ProjectRootSpec[]
-  /** The document the search was invoked from (review A3) */
-  activeDocumentPath?: string
-}>(), {
-  occurrences: () => [],
-  initialRequest: null,
-  projectRoots: () => [],
-  activeDocumentPath: undefined
-})
+const props = withDefaults(
+  defineProps<{
+    definitions: ReferenceDefinition[];
+    /** The merged workspace occurrence list feeding the reverse lookup */
+    occurrences?: ReferenceOccurrence[];
+    /** The relayed request: null keeps the plain definition search */
+    initialRequest?: ReferenceSearchRequest;
+    /** Every visible Project root (review A3: current-Project-first ranking) */
+    projectRoots?: ProjectRootSpec[];
+    /** The document the search was invoked from (review A3) */
+    activeDocumentPath?: string;
+  }>(),
+  {
+    occurrences: () => [],
+    initialRequest: null,
+    projectRoots: () => [],
+    activeDocumentPath: undefined,
+  },
+);
 
 const emit = defineEmits<{
-  (e: 'jump', intent: ReferenceJumpIntent): void
-  (e: 'close'): void
-  (e: 'back'): void
-  (e: 'open-help'): void
-}>()
+  (e: "jump", intent: ReferenceJumpIntent): void;
+  (e: "close"): void;
+  (e: "back"): void;
+  (e: "open-help"): void;
+}>();
 
 interface ComboboxHandle {
-  highlightFirstItem: () => void
+  highlightFirstItem: () => void;
 }
 
-const combobox = ref<ComboboxHandle | null>(null)
+const combobox = ref<ComboboxHandle | null>(null);
 
 /** The US-16 ranking context, when the host names the invoking document. */
-const searchContext = computed<WorkspaceSearchContext|undefined>(() => {
+const searchContext = computed<WorkspaceSearchContext | undefined>(() => {
   return props.activeDocumentPath === undefined
     ? undefined
-    : { activeDocumentPath: props.activeDocumentPath, projectRoots: props.projectRoots }
-})
+    : { activeDocumentPath: props.activeDocumentPath, projectRoots: props.projectRoots };
+});
 
 /** A keyed request opens the reverse lookup; null keeps definition search. */
-const mode = computed<'definitions'|'citing-locations'>(() => {
-  return props.initialRequest === null ? 'definitions' : 'citing-locations'
-})
+const mode = computed<"definitions" | "citing-locations">(() => {
+  return props.initialRequest === null ? "definitions" : "citing-locations";
+});
 
-const breadcrumbLabel = computed(() => mode.value === 'citing-locations'
-  ? trans('Reference uses')
-  : trans('Search references'))
+const breadcrumbLabel = computed(() =>
+  mode.value === "citing-locations" ? trans("Reference uses") : trans("Search references"),
+);
 
-const query = ref<string>(props.initialRequest?.key ?? '')
+const query = ref<string>(props.initialRequest?.key ?? "");
 
 const matches = computed<ReferenceDefinition[]>(() => {
-  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value)
-})
+  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value);
+});
 
 /**
  * The Project marker of a result row (review A3, US-16): current-Project
@@ -211,18 +220,20 @@ const matches = computed<ReferenceDefinition[]>(() => {
  *
  * @return  {{ status: string, display: string }|null}  The marker, if any
  */
-function projectMarkerOf (definition: ReferenceDefinition): { status: string, display: string }|null {
-  const context = searchContext.value
+function projectMarkerOf(
+  definition: ReferenceDefinition,
+): { status: string; display: string } | null {
+  const context = searchContext.value;
   if (context === undefined || isCurrentProjectDefinition(definition, context)) {
-    return null
+    return null;
   }
 
   const status = computeProjectReferenceStatus(
     definition.documentPath,
     context.activeDocumentPath,
-    context.projectRoots
-  )
-  return { status, display: projectStatusDisplayName(status) }
+    context.projectRoots,
+  );
+  return { status, display: projectStatusDisplayName(status) };
 }
 
 /**
@@ -230,23 +241,25 @@ function projectMarkerOf (definition: ReferenceDefinition): { status: string, di
  * order (the merged occurrence list's own order): filtering never reorders.
  */
 const citingLocations = computed<ReferenceOccurrence[]>(() => {
-  return props.occurrences.filter(occurrence => occurrence.key === query.value)
-})
+  return props.occurrences.filter((occurrence) => occurrence.key === query.value);
+});
 
 /**
  * Restarts the selection at the top match. reka-ui's listbox clears its
  * highlight on pointerleave, and Chromium fires pointerleave when a shrinking
  * list moves out from under a resting pointer, so this runs there too.
  */
-function highlightFirstRow (): void {
+function highlightFirstRow(): void {
   // No catch: the combobox is mounted with the rows, so a rejection here is
   // a defect in this view rather than a condition to carry on from, and the
   // window's recoverable-error boundary is where it belongs.
-  void nextTick().then(() => { combobox.value?.highlightFirstItem() })
+  void nextTick().then(() => {
+    combobox.value?.highlightFirstItem();
+  });
 }
 
 // A new query re-ranks the rows.
-watch([ matches, citingLocations ], highlightFirstRow, { immediate: true })
+watch([matches, citingLocations], highlightFirstRow, { immediate: true });
 
 /**
  * Returns the row headline: `Type — title`, or just the type when nothing
@@ -259,9 +272,9 @@ watch([ matches, citingLocations ], highlightFirstRow, { immediate: true })
  *
  * @return  {string}                           The row headline
  */
-function typeAndTitle (definition: ReferenceDefinition): string {
-  const type = referenceFamilyDisplayName(definition.family)
-  return definition.title === undefined ? type : `${type} — ${definition.title}`
+function typeAndTitle(definition: ReferenceDefinition): string {
+  const type = referenceFamilyDisplayName(definition.family);
+  return definition.title === undefined ? type : `${type} — ${definition.title}`;
 }
 
 /**
@@ -269,12 +282,12 @@ function typeAndTitle (definition: ReferenceDefinition): string {
  *
  * @param   {ReferenceDefinition}  definition  The chosen definition
  */
-function emitJump (definition: ReferenceDefinition): void {
-  emit('jump', {
+function emitJump(definition: ReferenceDefinition): void {
+  emit("jump", {
     key: definition.key,
     documentPath: definition.documentPath,
-    range: { from: definition.range.from, to: definition.range.to }
-  })
+    range: { from: definition.range.from, to: definition.range.to },
+  });
 }
 
 /**
@@ -283,23 +296,23 @@ function emitJump (definition: ReferenceDefinition): void {
  *
  * @param   {ReferenceOccurrence}  occurrence  The chosen citing location
  */
-function emitOccurrenceJump (occurrence: ReferenceOccurrence): void {
-  emit('jump', {
+function emitOccurrenceJump(occurrence: ReferenceOccurrence): void {
+  emit("jump", {
     key: occurrence.key,
     documentPath: occurrence.documentPath,
-    range: { from: occurrence.range.from, to: occurrence.range.to }
-  })
+    range: { from: occurrence.range.from, to: occurrence.range.to },
+  });
 }
 
-function onBackspace (): void {
-  if (query.value === '') {
-    emit('back')
+function onBackspace(): void {
+  if (query.value === "") {
+    emit("back");
   }
 }
 
-function onEscape (event: Event): void {
-  event.preventDefault()
-  emit('close')
+function onEscape(event: Event): void {
+  event.preventDefault();
+  emit("close");
 }
 </script>
 

@@ -18,20 +18,25 @@
  * END HEADER
  */
 
-import picomatch from 'picomatch'
+import picomatch from "picomatch";
 
 /**
  * One glob the way a search field means it: `*.md` matches at any depth,
  * `src/*.md` only where it says. Several patterns are separated by commas,
  * and an empty field names no pattern at all.
  */
-function compileGlobs (patterns: string): ((relativePath: string) => boolean) | undefined {
-  const globs = patterns.split(',').map(glob => glob.trim()).filter(glob => glob !== '')
+function compileGlobs(patterns: string): ((relativePath: string) => boolean) | undefined {
+  const globs = patterns
+    .split(",")
+    .map((glob) => glob.trim())
+    .filter((glob) => glob !== "");
   if (globs.length === 0) {
-    return undefined
+    return undefined;
   }
-  const matchers = globs.map(glob => picomatch(glob.includes('/') ? glob : `**/${glob}`, { dot: true }))
-  return relativePath => matchers.some(matches => matches(relativePath))
+  const matchers = globs.map((glob) =>
+    picomatch(glob.includes("/") ? glob : `**/${glob}`, { dot: true }),
+  );
+  return (relativePath) => matchers.some((matches) => matches(relativePath));
 }
 
 /**
@@ -43,13 +48,16 @@ function compileGlobs (patterns: string): ((relativePath: string) => boolean) | 
  *
  * @return  {(relativePath: string) => boolean}  Whether to search that file
  */
-export function compilePathFilter (include: string, exclude: string): (relativePath: string) => boolean {
-  const included = compileGlobs(include)
-  const excluded = compileGlobs(exclude)
-  return relativePath => {
+export function compilePathFilter(
+  include: string,
+  exclude: string,
+): (relativePath: string) => boolean {
+  const included = compileGlobs(include);
+  const excluded = compileGlobs(exclude);
+  return (relativePath) => {
     if (included !== undefined && !included(relativePath)) {
-      return false
+      return false;
     }
-    return excluded === undefined || !excluded(relativePath)
-  }
+    return excluded === undefined || !excluded(relativePath);
+  };
 }

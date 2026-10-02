@@ -12,36 +12,37 @@
  * END HEADER
  */
 
-import path from 'path'
-import isFile from '@common/util/is-file'
-
-import { EXT2READER } from '@common/pandoc-util/pandoc-maps'
+import { EXT2READER } from "@common/pandoc-util/pandoc-maps";
+import isFile from "@common/util/is-file";
+import path from "path";
 
 /**
-* This function checks a given file list and checks how good it is at guessing
-* the file format. Also this is used to decide manually which files to import
-* and which not.
-* @param  {Array} fileList An array containing a file list. If it's a string, a directory is assumed which is then read.
-* @return {Object} A sanitised object containing all files with some detected attributes.
-*/
-export default async function checkImportIntegrity (fileList: string[]): Promise<Array<{ path: string, availableReaders: string[] }>> {
+ * This function checks a given file list and checks how good it is at guessing
+ * the file format. Also this is used to decide manually which files to import
+ * and which not.
+ * @param  {Array} fileList An array containing a file list. If it's a string, a directory is assumed which is then read.
+ * @return {Object} A sanitised object containing all files with some detected attributes.
+ */
+export default async function checkImportIntegrity(
+  fileList: string[],
+): Promise<Array<{ path: string; availableReaders: string[] }>> {
   // Now do the integrity check.
-  const resList = []
+  const resList = [];
 
   for (const file of fileList) {
     // Is this a standard file? Textbundle is a directory, so make sure we check for that.
-    if (!isFile(file) && path.extname(file) !== '.textbundle') {
-      continue
+    if (!isFile(file) && path.extname(file) !== ".textbundle") {
+      continue;
     }
 
     // Guess the file format from the extension.
-    let ext = path.extname(file).substring(1).toLowerCase()
+    let ext = path.extname(file).substring(1).toLowerCase();
     const detectedFile = {
       path: file,
-      availableReaders: (ext in EXT2READER) ? EXT2READER[ext] : []
-    }
+      availableReaders: ext in EXT2READER ? EXT2READER[ext] : [],
+    };
 
-    resList.push(detectedFile)
+    resList.push(detectedFile);
   }
-  return resList
+  return resList;
 }

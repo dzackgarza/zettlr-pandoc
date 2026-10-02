@@ -17,16 +17,22 @@
  * END HEADER
  */
 
-import { spawn } from 'child_process'
-import path from 'path'
-import os from 'os'
 // The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
 // symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
-import resolvesToFile from '@common/util/resolves-to-file'
-import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from 'tikz-workbench/src/tikz-render'
+import resolvesToFile from "@common/util/resolves-to-file";
+import { spawn } from "child_process";
+import os from "os";
+import path from "path";
+import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from "tikz-workbench/src/tikz-render";
 
-export interface CommandRequirement { command: string, purpose: string }
-export interface PathRequirement { target: string, purpose: string }
+export interface CommandRequirement {
+  command: string;
+  purpose: string;
+}
+export interface PathRequirement {
+  target: string;
+  purpose: string;
+}
 
 /**
  * External commands this fork cannot function without. The PDF export pipeline
@@ -34,37 +40,37 @@ export interface PathRequirement { target: string, purpose: string }
  * latexmk, pdflatex, and biber; `just` runs the recipe itself.
  */
 export const REQUIRED_COMMANDS: CommandRequirement[] = [
-  { command: 'pandoc', purpose: 'preview and export' },
-  { command: 'just', purpose: 'PDF export' },
-  { command: 'latexmk', purpose: 'PDF export' },
-  { command: 'pdflatex', purpose: 'PDF export' },
-  { command: 'biber', purpose: 'PDF bibliography generation' },
-  { command: 'pandoc-crossref', purpose: 'cross-references in Project exports' }
-]
+  { command: "pandoc", purpose: "preview and export" },
+  { command: "just", purpose: "PDF export" },
+  { command: "latexmk", purpose: "PDF export" },
+  { command: "pdflatex", purpose: "PDF export" },
+  { command: "biber", purpose: "PDF bibliography generation" },
+  { command: "pandoc-crossref", purpose: "cross-references in Project exports" },
+];
 
 /**
  * Files that must exist on disk for core functionality.
  */
-export function requiredPaths (): PathRequirement[] {
-  const pandocDir = path.join(os.homedir(), '.pandoc')
+export function requiredPaths(): PathRequirement[] {
+  const pandocDir = path.join(os.homedir(), ".pandoc");
   return [
     {
-      target: path.join(pandocDir, 'justfile'),
-      purpose: 'PDF export'
+      target: path.join(pandocDir, "justfile"),
+      purpose: "PDF export",
     },
     {
-      target: path.join(pandocDir, 'filters', 'tikzcd.lua'),
-      purpose: 'TikZ preview rendering'
+      target: path.join(pandocDir, "filters", "tikzcd.lua"),
+      purpose: "TikZ preview rendering",
     },
     {
-      target: path.join(pandocDir, 'filters', 'utilities.lua'),
-      purpose: 'TikZ preview rendering'
+      target: path.join(pandocDir, "filters", "utilities.lua"),
+      purpose: "TikZ preview rendering",
     },
     {
-      target: path.join(pandocDir, 'templates', 'standalone-tikz.tex'),
-      purpose: 'TikZ preview rendering'
-    }
-  ]
+      target: path.join(pandocDir, "templates", "standalone-tikz.tex"),
+      purpose: "TikZ preview rendering",
+    },
+  ];
 }
 
 /**
@@ -72,12 +78,12 @@ export function requiredPaths (): PathRequirement[] {
  * `--version` with shell:false; an ENOENT 'error' event means it is not
  * installed. Any exit code counts as "present" — we only care that it resolves.
  */
-export async function commandResolves (command: string): Promise<boolean> {
+export async function commandResolves(command: string): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
-    const proc = spawn(command, ['--version'], { shell: false })
-    proc.on('error', () => resolve(false))
-    proc.on('close', () => resolve(true))
-  })
+    const proc = spawn(command, ["--version"], { shell: false });
+    proc.on("error", () => resolve(false));
+    proc.on("close", () => resolve(true));
+  });
 }
 
 /**
@@ -86,20 +92,22 @@ export async function commandResolves (command: string): Promise<boolean> {
  * command checks run at the same time: the slowest of them, not their sum, is
  * the time of the check.
  */
-export async function findMissingRequirements (
+export async function findMissingRequirements(
   commands: CommandRequirement[],
-  paths: PathRequirement[]
+  paths: PathRequirement[],
 ): Promise<string[]> {
-  const resolved = await Promise.all(commands.map(async ({ command }) => await commandResolves(command)))
+  const resolved = await Promise.all(
+    commands.map(async ({ command }) => await commandResolves(command)),
+  );
   const missing = commands
     .filter((_, index) => !resolved[index])
-    .map(({ command, purpose }) => `${command} — not found on PATH (needed for ${purpose})`)
+    .map(({ command, purpose }) => `${command} — not found on PATH (needed for ${purpose})`);
   for (const { target, purpose } of paths) {
     if (!resolvesToFile(target)) {
-      missing.push(`${target} — missing (${purpose})`)
+      missing.push(`${target} — missing (${purpose})`);
     }
   }
-  return missing
+  return missing;
 }
 
 /**
@@ -117,8 +125,12 @@ export async function findMissingRequirements (
  *   yield a version (that side's field stays undefined).
  */
 export type CrossrefCompatibility =
-  | { status: 'compatible' | 'incompatible', crossrefBuiltWithPandoc: string, pandocVersion: string }
-  | { status: 'unparseable', crossrefBuiltWithPandoc?: string, pandocVersion?: string }
+  | {
+      status: "compatible" | "incompatible";
+      crossrefBuiltWithPandoc: string;
+      pandocVersion: string;
+    }
+  | { status: "unparseable"; crossrefBuiltWithPandoc?: string; pandocVersion?: string };
 
 /**
  * Runs a command and captures its stdout — the injectable seam of the
@@ -129,7 +141,7 @@ export type CrossrefCompatibility =
  * yields an empty stdout, which assessCrossrefCompatibility already reports
  * loudly as 'unparseable'.
  */
-export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ stdout: string }>
+export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ stdout: string }>;
 
 /**
  * The pure comparison at the heart of the compatibility check: given the two
@@ -141,33 +153,35 @@ export type VersionOutputRunner = (command: string, args: string[]) => Promise<{
  *
  * @return  {CrossrefCompatibility}           The typed compatibility outcome
  */
-export function assessCrossrefCompatibility (
+export function assessCrossrefCompatibility(
   crossrefVersionOutput: string,
-  pandocVersionOutput: string
+  pandocVersionOutput: string,
 ): CrossrefCompatibility {
-  const crossrefMatch = /built with Pandoc v(\d[\d.]*)/.exec(crossrefVersionOutput)
-  const pandocMatch = /^pandoc(?:\.exe)?\s+(\d[\d.]*)/.exec(pandocVersionOutput.split('\n')[0])
+  const crossrefMatch = /built with Pandoc v(\d[\d.]*)/.exec(crossrefVersionOutput);
+  const pandocMatch = /^pandoc(?:\.exe)?\s+(\d[\d.]*)/.exec(pandocVersionOutput.split("\n")[0]);
 
-  const crossrefBuiltWithPandoc = crossrefMatch?.[1]
-  const pandocVersion = pandocMatch?.[1]
+  const crossrefBuiltWithPandoc = crossrefMatch?.[1];
+  const pandocVersion = pandocMatch?.[1];
 
   if (crossrefBuiltWithPandoc === undefined || pandocVersion === undefined) {
     // A side that does not name its version cannot be assumed compatible.
-    const unparseable: Extract<CrossrefCompatibility, { status: 'unparseable' }> = { status: 'unparseable' }
+    const unparseable: Extract<CrossrefCompatibility, { status: "unparseable" }> = {
+      status: "unparseable",
+    };
     if (crossrefBuiltWithPandoc !== undefined) {
-      unparseable.crossrefBuiltWithPandoc = crossrefBuiltWithPandoc
+      unparseable.crossrefBuiltWithPandoc = crossrefBuiltWithPandoc;
     }
     if (pandocVersion !== undefined) {
-      unparseable.pandocVersion = pandocVersion
+      unparseable.pandocVersion = pandocVersion;
     }
-    return unparseable
+    return unparseable;
   }
 
   return {
-    status: crossrefBuiltWithPandoc === pandocVersion ? 'compatible' : 'incompatible',
+    status: crossrefBuiltWithPandoc === pandocVersion ? "compatible" : "incompatible",
     crossrefBuiltWithPandoc,
-    pandocVersion
-  }
+    pandocVersion,
+  };
 }
 
 /**
@@ -178,13 +192,15 @@ export function assessCrossrefCompatibility (
  */
 const runVersionCommand: VersionOutputRunner = async (command, args) => {
   return await new Promise((resolve) => {
-    const proc = spawn(command, args, { shell: false })
-    let stdout = ''
-    proc.stdout.on('data', (data) => { stdout += String(data) })
-    proc.on('error', () => resolve({ stdout: '' }))
-    proc.on('close', () => resolve({ stdout }))
-  })
-}
+    const proc = spawn(command, args, { shell: false });
+    let stdout = "";
+    proc.stdout.on("data", (data) => {
+      stdout += String(data);
+    });
+    proc.on("error", () => resolve({ stdout: "" }));
+    proc.on("close", () => resolve({ stdout }));
+  });
+};
 
 /**
  * Executes `pandoc-crossref --version` and `pandoc --version` through the
@@ -195,14 +211,14 @@ const runVersionCommand: VersionOutputRunner = async (command, args) => {
  *
  * @return  {Promise<CrossrefCompatibility>}  The typed compatibility outcome
  */
-export async function checkCrossrefCompatibility (
-  run: VersionOutputRunner = runVersionCommand
+export async function checkCrossrefCompatibility(
+  run: VersionOutputRunner = runVersionCommand,
 ): Promise<CrossrefCompatibility> {
-  const [ crossref, pandoc ] = await Promise.all([
-    run('pandoc-crossref', ['--version']),
-    run('pandoc', ['--version'])
-  ])
-  return assessCrossrefCompatibility(crossref.stdout, pandoc.stdout)
+  const [crossref, pandoc] = await Promise.all([
+    run("pandoc-crossref", ["--version"]),
+    run("pandoc", ["--version"]),
+  ]);
+  return assessCrossrefCompatibility(crossref.stdout, pandoc.stdout);
 }
 
 /**
@@ -216,23 +232,27 @@ export async function checkCrossrefCompatibility (
  *
  * @return  {Promise<string|null>}      The failure message, or null
  */
-export async function crossrefCompatibilityFailure (
-  run?: VersionOutputRunner
-): Promise<string|null> {
-  const result = await checkCrossrefCompatibility(run)
+export async function crossrefCompatibilityFailure(
+  run?: VersionOutputRunner,
+): Promise<string | null> {
+  const result = await checkCrossrefCompatibility(run);
 
-  if (result.status === 'compatible') {
-    return null
+  if (result.status === "compatible") {
+    return null;
   }
 
-  if (result.status === 'incompatible') {
-    return `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc}, ` +
+  if (result.status === "incompatible") {
+    return (
+      `pandoc-crossref was built for Pandoc v${result.crossrefBuiltWithPandoc}, ` +
       `but Pandoc v${result.pandocVersion} is installed. Install matching versions before exporting Projects.`
+    );
   }
 
-  return 'Could not verify that pandoc-crossref matches the installed Pandoc version ' +
-    `(pandoc-crossref: ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : 'version unknown'}; ` +
-    `Pandoc: ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : 'version unknown'}).`
+  return (
+    "Could not verify that pandoc-crossref matches the installed Pandoc version " +
+    `(pandoc-crossref: ${result.crossrefBuiltWithPandoc !== undefined ? `Pandoc v${result.crossrefBuiltWithPandoc}` : "version unknown"}; ` +
+    `Pandoc: ${result.pandocVersion !== undefined ? `v${result.pandocVersion}` : "version unknown"}).`
+  );
 }
 
 /**
@@ -241,18 +261,20 @@ export async function crossrefCompatibilityFailure (
  * enough: a stale checkout would accept the render command but silently violate
  * those semantics. The protocol marker makes that drift a startup error.
  */
-export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
-  const pandocDir = path.join(os.homedir(), '.pandoc')
-  const filterPath = path.join(pandocDir, 'filters', 'tikzcd.lua')
+export async function tikzFilterCompatibilityFailure(): Promise<string | null> {
+  const pandocDir = path.join(os.homedir(), ".pandoc");
+  const filterPath = path.join(pandocDir, "filters", "tikzcd.lua");
   if (!resolvesToFile(filterPath)) {
-    return null // requiredPaths() owns the missing-file diagnostic.
+    return null; // requiredPaths() owns the missing-file diagnostic.
   }
-  const actual = tikzRenderProtocolVersion(pandocDir)
+  const actual = tikzRenderProtocolVersion(pandocDir);
   if (actual === TIKZ_RENDER_PROTOCOL) {
-    return null
+    return null;
   }
-  return `${filterPath} uses TikZ renderer protocol ${actual === undefined ? 'unknown' : actual}; ` +
+  return (
+    `${filterPath} uses TikZ renderer protocol ${actual === undefined ? "unknown" : actual}; ` +
     `this app requires protocol ${TIKZ_RENDER_PROTOCOL}. Update the TikZ filter files under ~/.pandoc.`
+  );
 }
 
 /**
@@ -271,33 +293,34 @@ export async function tikzFilterCompatibilityFailure (): Promise<string|null> {
  * @param   crossrefFailure The pandoc-crossref compatibility gate.
  * @param   tikzFailure     The shared TikZ-filter protocol gate.
  */
-export async function preflight (
+export async function preflight(
   showError: (title: string, message: string) => void,
   exit: (code: number) => void,
   commands: CommandRequirement[] = REQUIRED_COMMANDS,
   paths: PathRequirement[] = requiredPaths(),
-  crossrefFailure: () => Promise<string|null> = crossrefCompatibilityFailure,
-  tikzFailure: () => Promise<string|null> = tikzFilterCompatibilityFailure
+  crossrefFailure: () => Promise<string | null> = crossrefCompatibilityFailure,
+  tikzFailure: () => Promise<string | null> = tikzFilterCompatibilityFailure,
 ): Promise<boolean> {
-  const [ missing, incompatibility, tikzIncompatibility ] = await Promise.all([
+  const [missing, incompatibility, tikzIncompatibility] = await Promise.all([
     findMissingRequirements(commands, paths),
     crossrefFailure(),
-    tikzFailure()
-  ])
+    tikzFailure(),
+  ]);
   if (incompatibility !== null) {
-    missing.push(incompatibility)
+    missing.push(incompatibility);
   }
   if (tikzIncompatibility !== null) {
-    missing.push(tikzIncompatibility)
+    missing.push(tikzIncompatibility);
   }
   if (missing.length === 0) {
-    return true
+    return true;
   }
 
-  const message = 'Zettlr-Pandoc cannot start — required tools or files are missing:\n\n' +
-    missing.map(item => '  • ' + item).join('\n') +
-    '\n\nInstall the missing dependencies (or fix the app\'s PATH), then relaunch.'
-  showError('Zettlr-Pandoc — missing dependencies', message)
-  exit(1)
-  return false
+  const message =
+    "Zettlr-Pandoc cannot start — required tools or files are missing:\n\n" +
+    missing.map((item) => "  • " + item).join("\n") +
+    "\n\nInstall the missing dependencies (or fix the app's PATH), then relaunch.";
+  showError("Zettlr-Pandoc — missing dependencies", message);
+  exit(1);
+  return false;
 }

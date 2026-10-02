@@ -1,9 +1,9 @@
-import type { ExternalLinter } from '@common/diagnostics/external-linter'
-import { ipcExternalLinter } from '@common/diagnostics/providers/ipc'
+import type { ExternalLinter } from "@common/diagnostics/external-linter";
+import { ipcExternalLinter } from "@common/diagnostics/providers/ipc";
 
 export interface FlowmarkDiagnosticContext extends Record<string, unknown> {
-  sourcePath?: string
+  sourcePath?: string;
 }
 
 export const flowmarkDiagnosticProvider: ExternalLinter<FlowmarkDiagnosticContext> =
-  ipcExternalLinter<FlowmarkDiagnosticContext, undefined>('flowmark')
+  ipcExternalLinter<FlowmarkDiagnosticContext, undefined>("flowmark");

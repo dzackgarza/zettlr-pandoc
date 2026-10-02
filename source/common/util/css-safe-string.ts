@@ -23,7 +23,7 @@
  *
  * @return  {string}              The sane string
  */
-export default function cssSafeString (unsaneText: string): string {
+export default function cssSafeString(unsaneText: string): string {
   // From the W3C (https://www.w3.org/TR/CSS21/syndata.html#characters):
   //
   // > In CSS, identifiers (including element names, classes, and IDs in
@@ -33,16 +33,18 @@ export default function cssSafeString (unsaneText: string): string {
   // > digit.
   //
   // To keep it simple, we only allow [a-zA-Z0-9], hyphens, and underscores.
-  return unsaneText
-    .toLowerCase()
-    // Spaces --> Hyphens
-    .replace(/\s/g, '-')
-    // Remove anything non-a-z0-9
-    .replace(/[^a-z0-9-_]/g, '')
-    // Replace a leading digit with underscore
-    .replace(/^\d/, '_')
-    // Replace two leading hyphens with underscores
-    .replace(/^--/, '__')
-    // Replace a leading hyphen-digit combo with underscores
-    .replace(/^-\d/, '__')
+  return (
+    unsaneText
+      .toLowerCase()
+      // Spaces --> Hyphens
+      .replace(/\s/g, "-")
+      // Remove anything non-a-z0-9
+      .replace(/[^a-z0-9-_]/g, "")
+      // Replace a leading digit with underscore
+      .replace(/^\d/, "_")
+      // Replace two leading hyphens with underscores
+      .replace(/^--/, "__")
+      // Replace a leading hyphen-digit combo with underscores
+      .replace(/^-\d/, "__")
+  );
 }

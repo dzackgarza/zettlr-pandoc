@@ -13,15 +13,15 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { defineStore } from 'pinia'
-import { type Ref, ref, watch, computed, shallowRef, triggerRef } from 'vue'
-import { useConfigStore } from './config'
-import type { AnyDescriptor } from 'source/types/common/fsal'
-import type { FSALEventPayload } from 'source/app/service-providers/fsal'
-import { isInsideRoot } from '@common/util/renderer-path-polyfill'
+import { reportError } from "@common/util/error-reporting";
+import { isInsideRoot } from "@common/util/renderer-path-polyfill";
+import { defineStore } from "pinia";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
+import type { AnyDescriptor } from "source/types/common/fsal";
+import { computed, type Ref, ref, shallowRef, triggerRef, watch } from "vue";
+import { useConfigStore } from "./config";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 /**
  * Reads in an entire (workspace) path into a 1d array of absolute file paths.
@@ -30,8 +30,8 @@ const ipcRenderer = window.ipc
  *
  * @return  {Promise<string>[]}           A list of everything recursively within the path.
  */
-async function readPathRecursively (absPath: string): Promise<string[]> {
-  return await ipcRenderer.invoke('fsal', { command: 'read-path-recursively', payload: absPath })
+async function readPathRecursively(absPath: string): Promise<string[]> {
+  return await ipcRenderer.invoke("fsal", { command: "read-path-recursively", payload: absPath });
 }
 
 /**
@@ -41,109 +41,119 @@ async function readPathRecursively (absPath: string): Promise<string[]> {
  *
  * @return  {Promise<AnyDescriptor>}           The descriptor for path.
  */
-async function getDescriptorFor (absPath: string): Promise<AnyDescriptor>
-async function getDescriptorFor (absPath: string[]): Promise<AnyDescriptor[]>
-async function getDescriptorFor (absPath: string|string[]): Promise<AnyDescriptor|AnyDescriptor[]> {
-  return await ipcRenderer.invoke('fsal', {
-    command: 'get-descriptor',
+async function getDescriptorFor(absPath: string): Promise<AnyDescriptor>;
+async function getDescriptorFor(absPath: string[]): Promise<AnyDescriptor[]>;
+async function getDescriptorFor(
+  absPath: string | string[],
+): Promise<AnyDescriptor | AnyDescriptor[]> {
+  return await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
     // De-proxy as necessary
-    payload: Array.isArray(absPath) ? absPath.map(p => p) : absPath
-  })
+    payload: Array.isArray(absPath) ? absPath.map((p) => p) : absPath,
+  });
 }
 
 // In order to avoid frequent updates of the workspaceMap on initial load, we
 // retrieve the bulk immediately on load, and then only patch where necessary.
-async function retrieveInitialUpdate (rootPaths: string[], workspaceMap: Ref<Map<string, string[]>>, descriptorMap: Ref<Map<string, AnyDescriptor>>) {
-  let start = Date.now()
-  const entries: Array<[string, string[]]> = []
-  const flatMap: string[] = []
+async function retrieveInitialUpdate(
+  rootPaths: string[],
+  workspaceMap: Ref<Map<string, string[]>>,
+  descriptorMap: Ref<Map<string, AnyDescriptor>>,
+) {
+  let start = Date.now();
+  const entries: Array<[string, string[]]> = [];
+  const flatMap: string[] = [];
   for (const rootPath of rootPaths) {
-    const response = await readPathRecursively(rootPath)
-    entries.push([ rootPath, response ])
-    flatMap.push(...response)
+    const response = await readPathRecursively(rootPath);
+    entries.push([rootPath, response]);
+    flatMap.push(...response);
   }
-  console.log(`Fetched all paths in ${Date.now() - start}ms`)
-  start = Date.now()
+  console.log(`Fetched all paths in ${Date.now() - start}ms`);
+  start = Date.now();
 
   // Now do one huge roundtrip to main to fetch every descriptor at once.
-  const descriptors = await getDescriptorFor(flatMap)
-  console.log(`Fetched all descriptors in ${Date.now() - start}ms`)
+  const descriptors = await getDescriptorFor(flatMap);
+  console.log(`Fetched all descriptors in ${Date.now() - start}ms`);
 
   // Now we can set the stuff immediately
-  workspaceMap.value = new Map(entries)
-  descriptorMap.value = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor ]))
+  workspaceMap.value = new Map(entries);
+  descriptorMap.value = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
 }
 
-export const useWorkspaceStore = defineStore('workspace', () => {
+export const useWorkspaceStore = defineStore("workspace", () => {
   // Dependent stores and watched variables
-  const configStore = useConfigStore()
+  const configStore = useConfigStore();
 
   // SECTION 1: WORKSPACES AND FILE DESCRIPTORS
-  const openFiles = configStore.config.app.openFiles
-  const openWorkspaces = configStore.config.app.openWorkspaces
-  const openPaths = ref(openFiles.concat(openWorkspaces))
+  const openFiles = configStore.config.app.openFiles;
+  const openWorkspaces = configStore.config.app.openWorkspaces;
+  const openPaths = ref(openFiles.concat(openWorkspaces));
 
-  const workspaceMap = ref<Map<string, string[]>>(new Map())
-  const pathList = computed(() => ([...workspaceMap.value.values()].flat()))
+  const workspaceMap = ref<Map<string, string[]>>(new Map());
+  const pathList = computed(() => [...workspaceMap.value.values()].flat());
   // The collection is reactive, but descriptor values are immutable snapshots
   // replaced wholesale on FSAL events. Avoid recursively proxying every nested
   // descriptor in large workspaces.
-  const descriptorMap = shallowRef(new Map<string, AnyDescriptor>())
-  const rootDescriptors = shallowRef<AnyDescriptor[]>([])
+  const descriptorMap = shallowRef(new Map<string, AnyDescriptor>());
+  const rootDescriptors = shallowRef<AnyDescriptor[]>([]);
 
-  const isLoading = ref(true)
+  const isLoading = ref(true);
 
-  function refreshRootDescriptors (): void {
+  function refreshRootDescriptors(): void {
     rootDescriptors.value = openPaths.value
-      .filter(rootPath => descriptorMap.value.has(rootPath))
-      .map(rootPath => descriptorMap.value.get(rootPath))
-      .filter(root => root !== undefined)
+      .filter((rootPath) => descriptorMap.value.has(rootPath))
+      .map((rootPath) => descriptorMap.value.get(rootPath))
+      .filter((root) => root !== undefined);
   }
 
-  function setDescriptors (descriptors: readonly AnyDescriptor[]): void {
+  function setDescriptors(descriptors: readonly AnyDescriptor[]): void {
     if (descriptors.length === 0) {
-      return
+      return;
     }
-    let rootsChanged = false
+    let rootsChanged = false;
     for (const descriptor of descriptors) {
-      descriptorMap.value.set(descriptor.path, descriptor)
-      rootsChanged ||= openPaths.value.includes(descriptor.path)
+      descriptorMap.value.set(descriptor.path, descriptor);
+      rootsChanged ||= openPaths.value.includes(descriptor.path);
     }
-    triggerRef(descriptorMap)
+    triggerRef(descriptorMap);
     if (rootsChanged) {
-      refreshRootDescriptors()
+      refreshRootDescriptors();
     }
   }
 
-  function deleteDescriptors (paths: readonly string[]): void {
+  function deleteDescriptors(paths: readonly string[]): void {
     if (paths.length === 0) {
-      return
+      return;
     }
-    let rootsChanged = false
-    let changed = false
+    let rootsChanged = false;
+    let changed = false;
     for (const path of paths) {
-      changed ||= descriptorMap.value.delete(path)
-      rootsChanged ||= openPaths.value.includes(path)
+      changed ||= descriptorMap.value.delete(path);
+      rootsChanged ||= openPaths.value.includes(path);
     }
     if (changed) {
-      triggerRef(descriptorMap)
+      triggerRef(descriptorMap);
     }
     if (rootsChanged) {
-      refreshRootDescriptors()
+      refreshRootDescriptors();
     }
   }
 
   retrieveInitialUpdate(openPaths.value, workspaceMap, descriptorMap)
-    .then(() => { refreshRootDescriptors() })
-    .catch(err => reportError('[Workspace Store] Could not retrieve initial set of loaded paths', err))
+    .then(() => {
+      refreshRootDescriptors();
+    })
+    .catch((err) =>
+      reportError("[Workspace Store] Could not retrieve initial set of loaded paths", err),
+    )
     .finally(() => {
-      isLoading.value = false
+      isLoading.value = false;
       // Now we can set up the watchers. (We need to do this afterwards to not cause a hiccup)
       // Finally, listen to FSAL events and keep the descriptor map updated.
-      ipcRenderer.on('fsal-events', (_, events: FSALEventPayload[]) => {
-        applyEvents(events)
-      })
-    })
+      ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
+        applyEvents(events);
+      });
+    });
 
   /**
    * Applies one batch of FSAL events. Each workspace whose path list changed
@@ -151,127 +161,134 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    *
    * @param   {FSALEventPayload[]}  events  The events, in the order they happened
    */
-  function applyEvents (events: FSALEventPayload[]): void {
+  function applyEvents(events: FSALEventPayload[]): void {
     // The path lists of the workspaces that hold a path of the batch
-    const pathSets = new Map<string, Set<string>>()
-    const changedRoots = new Set<string>()
+    const pathSets = new Map<string, Set<string>>();
+    const changedRoots = new Set<string>();
     // The last state of each path: its descriptor, or undefined once removed
-    const lastState = new Map<string, AnyDescriptor|undefined>()
+    const lastState = new Map<string, AnyDescriptor | undefined>();
 
     for (const payload of events) {
-      const eventPath = 'path' in payload ? payload.path : payload.descriptor.path
-      lastState.set(eventPath, 'path' in payload ? undefined : payload.descriptor)
+      const eventPath = "path" in payload ? payload.path : payload.descriptor.path;
+      lastState.set(eventPath, "path" in payload ? undefined : payload.descriptor);
 
-      if (payload.event === 'change') {
-        continue
+      if (payload.event === "change") {
+        continue;
       }
 
-      for (const [ root, paths ] of workspaceMap.value) {
+      for (const [root, paths] of workspaceMap.value) {
         if (eventPath !== root && !isInsideRoot(eventPath, root)) {
-          continue
+          continue;
         }
 
-        let known = pathSets.get(root)
+        let known = pathSets.get(root);
         if (known === undefined) {
-          known = new Set(paths)
-          pathSets.set(root, known)
+          known = new Set(paths);
+          pathSets.set(root, known);
         }
 
-        if ('path' in payload) {
+        if ("path" in payload) {
           if (known.delete(eventPath)) {
-            changedRoots.add(root)
+            changedRoots.add(root);
           }
         } else if (!known.has(eventPath)) {
-          known.add(eventPath)
-          changedRoots.add(root)
+          known.add(eventPath);
+          changedRoots.add(root);
         }
       }
     }
 
     for (const [root, paths] of pathSets) {
       if (changedRoots.has(root)) {
-        workspaceMap.value.set(root, [...paths])
+        workspaceMap.value.set(root, [...paths]);
       }
     }
 
-    const removed = [...lastState].filter(([ , descriptor ]) => descriptor === undefined).map(([path]) => path)
-    deleteDescriptors(removed)
-    setDescriptors([...lastState.values()].filter(descriptor => descriptor !== undefined))
+    const removed = [...lastState]
+      .filter(([, descriptor]) => descriptor === undefined)
+      .map(([path]) => path);
+    deleteDescriptors(removed);
+    setDescriptors([...lastState.values()].filter((descriptor) => descriptor !== undefined));
   }
 
   // Update the loaded workspaces as soon as the openPaths property changes.
   configStore.$subscribe((_mutation, state) => {
-    const openFiles = state.config.app.openFiles
-    const openWorkspaces = state.config.app.openWorkspaces
-    openPaths.value = openFiles.concat(openWorkspaces)
-  })
+    const openFiles = state.config.app.openFiles;
+    const openWorkspaces = state.config.app.openWorkspaces;
+    openPaths.value = openFiles.concat(openWorkspaces);
+  });
 
   watch(openPaths, async (value) => {
     // Whenever openPaths changes, also update the rootDescriptors to reflect a
     // potentially changed sorting.
-    refreshRootDescriptors()
+    refreshRootDescriptors();
 
     // Retrieve all new paths to load.
-    const pathsToLoad: string[] = []
+    const pathsToLoad: string[] = [];
     for (const newPath of value) {
       if (!workspaceMap.value.has(newPath)) {
-        pathsToLoad.push(newPath)
+        pathsToLoad.push(newPath);
       }
     }
 
     // Fetch the new paths.
     for (const rootPath of pathsToLoad) {
       try {
-        const response = await readPathRecursively(rootPath)
-        workspaceMap.value.set(rootPath, response)
+        const response = await readPathRecursively(rootPath);
+        workspaceMap.value.set(rootPath, response);
       } catch (err) {
-        reportError(`[Workspace Store] Could not retrieve path: "${rootPath}"`, err)
+        reportError(`[Workspace Store] Could not retrieve path: "${rootPath}"`, err);
       }
     }
 
     // Unload any path no longer part of the open paths.
     for (const existingPath of workspaceMap.value.keys()) {
       if (!value.includes(existingPath)) {
-        workspaceMap.value.delete(existingPath)
+        workspaceMap.value.delete(existingPath);
       }
     }
-  })
+  });
 
   // Keep the descriptor map up to date
-  watch(workspaceMap, value => {
-    if (isLoading.value) {
-      return // The loader will update the descriptorMap once with a huge chunk of updates.
-    }
+  watch(
+    workspaceMap,
+    (value) => {
+      if (isLoading.value) {
+        return; // The loader will update the descriptorMap once with a huge chunk of updates.
+      }
 
-    const descriptorsToFetch: string[] = []
-    const flatMap: Set<string> = new Set()
+      const descriptorsToFetch: string[] = [];
+      const flatMap: Set<string> = new Set();
 
-    for (const contents of value.values()) {
-      for (const absPath of contents) {
-        flatMap.add(absPath)
-        if (!descriptorMap.value.has(absPath)) {
-          descriptorsToFetch.push(absPath)
+      for (const contents of value.values()) {
+        for (const absPath of contents) {
+          flatMap.add(absPath);
+          if (!descriptorMap.value.has(absPath)) {
+            descriptorsToFetch.push(absPath);
+          }
         }
       }
-    }
 
-    // First, start loading new descriptors
-    if (descriptorsToFetch.length > 0) {
-      getDescriptorFor(descriptorsToFetch)
-        .then(descriptors => { setDescriptors(descriptors) })
-        .catch(err => reportError('Could not fetch new descriptors from main!', err))
-    }
-
-    // Second, drop descriptors no longer loaded in one reactive publication.
-    const descriptorsToDelete: string[] = []
-    for (const existingDescriptor of descriptorMap.value.keys()) {
-      if (!flatMap.has(existingDescriptor)) {
-        descriptorsToDelete.push(existingDescriptor)
+      // First, start loading new descriptors
+      if (descriptorsToFetch.length > 0) {
+        getDescriptorFor(descriptorsToFetch)
+          .then((descriptors) => {
+            setDescriptors(descriptors);
+          })
+          .catch((err) => reportError("Could not fetch new descriptors from main!", err));
       }
-    }
-    deleteDescriptors(descriptorsToDelete)
-  }, { deep: true })
 
+      // Second, drop descriptors no longer loaded in one reactive publication.
+      const descriptorsToDelete: string[] = [];
+      for (const existingDescriptor of descriptorMap.value.keys()) {
+        if (!flatMap.has(existingDescriptor)) {
+          descriptorsToDelete.push(existingDescriptor);
+        }
+      }
+      deleteDescriptors(descriptorsToDelete);
+    },
+    { deep: true },
+  );
 
-  return { workspaceMap, pathList, descriptorMap, rootDescriptors }
-})
+  return { workspaceMap, pathList, descriptorMap, rootDescriptors };
+});

@@ -25,12 +25,13 @@
  * END HEADER
  */
 
-import { strict as assert } from 'node:assert'
-import type { ChildProcess } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
-import { createPatch } from 'diff'
-import type { Browser, Locator, Page } from 'playwright'
+import { strict as assert } from "node:assert";
+import type { ChildProcess } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
+import { createPatch } from "diff";
+import type { Browser, Locator, Page } from "playwright";
 import {
+  type AgentClient,
   agentClient,
   attach,
   createFixture,
@@ -40,17 +41,22 @@ import {
   readAgentApiPort,
   requireInitialized,
   shutdown,
-  type AgentClient
-} from './support/electron-app'
+} from "./support/electron-app";
 
 const BASELINE = [
-  '# Authority sync', '',
-  'alpha original', '',
-  'bravo original', '',
-  'charlie original', '',
-  'delta original', '',
-  'echo original', ''
-].join('\n')
+  "# Authority sync",
+  "",
+  "alpha original",
+  "",
+  "bravo original",
+  "",
+  "charlie original",
+  "",
+  "delta original",
+  "",
+  "echo original",
+  "",
+].join("\n");
 
 /**
  * The CodeMirror view behind a mounted pane, as this spec drives it. Reached
@@ -60,34 +66,34 @@ const BASELINE = [
 interface PageEditorView {
   state: {
     doc: {
-      lines: number
-      line: (number: number) => { from: number, to: number, text: string }
-      toString: () => string
-    }
-  }
-  dispatch: (spec: unknown) => void
+      lines: number;
+      line: (number: number) => { from: number; to: number; text: string };
+      toString: () => string;
+    };
+  };
+  dispatch: (spec: unknown) => void;
 }
 
 /** The editor content element, with the CodeMirror handle it carries. */
 interface PageContentElement extends Element {
-  cmTile?: { root?: { view?: PageEditorView } }
+  cmTile?: { root?: { view?: PageEditorView } };
 }
 
 /** The editor panes, in DOM order; the review controls live inside each. */
-const EDITORS = '.main-editor-wrapper .cm-editor'
+const EDITORS = ".main-editor-wrapper .cm-editor";
 
 /** The first pane: the one every decision in this spec is made from. */
-function reviewPane (page: Page): Locator {
-  return page.locator(EDITORS).first()
+function reviewPane(page: Page): Locator {
+  return page.locator(EDITORS).first();
 }
 
 interface EditInput {
   /** Which mounted pane is edited, in DOM order. */
-  editPane: number
+  editPane: number;
   /** The working line edited twice, by its exact text before the first edit. */
-  line: string
+  line: string;
   /** What that line reads after the first, then the second, edit. */
-  edits: [string, string]
+  edits: [string, string];
   /**
    * A control in the FIRST pane clicked in the SAME renderer task as the
    * edits. Omitted, the helper only edits, and the caller clicks once the
@@ -95,10 +101,10 @@ interface EditInput {
    */
   click?: {
     /** Id of the chunk whose controls are clicked, if any. */
-    chunk?: string
+    chunk?: string;
     /** The control, as a selector resolved inside the pane or that chunk's controls. */
-    control: string
-  }
+    control: string;
+  };
 }
 
 /**
@@ -118,102 +124,103 @@ interface EditInput {
  *
  * Returns the edited pane's buffer text at the end of the task.
  */
-async function editLines (page: Page, input: EditInput): Promise<string> {
+async function editLines(page: Page, input: EditInput): Promise<string> {
   return page.evaluate((options: EditInput) => {
-    const contents = Array.from(
-      document.querySelectorAll<PageContentElement>('.cm-content')
-    )
-    const content = contents[options.editPane]
+    const contents = Array.from(document.querySelectorAll<PageContentElement>(".cm-content"));
+    const content = contents[options.editPane];
     if (content === undefined) {
       throw new Error(
-        `No editor pane at index ${options.editPane}; ${contents.length} are mounted`
-      )
+        `No editor pane at index ${options.editPane}; ${contents.length} are mounted`,
+      );
     }
-    const view = content.cmTile?.root?.view
+    const view = content.cmTile?.root?.view;
     if (view === undefined) {
-      throw new Error('The mounted pane exposes no CodeMirror view')
+      throw new Error("The mounted pane exposes no CodeMirror view");
     }
 
     // Changes only the characters that differ, as typing does: the text the
     // two versions of the line share is left in place.
     const replaceLine = (from: string, to: string): void => {
-      const doc = view.state.doc
+      const doc = view.state.doc;
       for (let number = 1; number <= doc.lines; number++) {
-        const line = doc.line(number)
+        const line = doc.line(number);
         if (line.text === from) {
-          const shorter = Math.min(from.length, to.length)
-          let prefix = 0
+          const shorter = Math.min(from.length, to.length);
+          let prefix = 0;
           while (prefix < shorter && from[prefix] === to[prefix]) {
-            prefix++
+            prefix++;
           }
-          let suffix = 0
-          while (suffix < shorter - prefix && from[from.length - 1 - suffix] === to[to.length - 1 - suffix]) {
-            suffix++
+          let suffix = 0;
+          while (
+            suffix < shorter - prefix &&
+            from[from.length - 1 - suffix] === to[to.length - 1 - suffix]
+          ) {
+            suffix++;
           }
           view.dispatch({
             changes: {
               from: line.from + prefix,
               to: line.to - suffix,
-              insert: to.slice(prefix, to.length - suffix)
+              insert: to.slice(prefix, to.length - suffix),
             },
-            userEvent: 'input.type'
-          })
-          return
+            userEvent: "input.type",
+          });
+          return;
         }
       }
-      throw new Error(`No line reads ${JSON.stringify(from)}`)
-    }
+      throw new Error(`No line reads ${JSON.stringify(from)}`);
+    };
 
-    replaceLine(options.line, options.edits[0])
-    replaceLine(options.edits[0], options.edits[1])
+    replaceLine(options.line, options.edits[0]);
+    replaceLine(options.edits[0], options.edits[1]);
 
-    const textAfterEdits = view.state.doc.toString()
+    const textAfterEdits = view.state.doc.toString();
     if (options.click === undefined) {
-      return textAfterEdits
+      return textAfterEdits;
     }
 
-    const pane = document.querySelector('.main-editor-wrapper .cm-editor')
+    const pane = document.querySelector(".main-editor-wrapper .cm-editor");
     if (pane === null) {
-      throw new Error('No editor pane is mounted')
+      throw new Error("No editor pane is mounted");
     }
     // The controls carry the chunk's own id, which is what the provider
     // listing names it by too.
-    const scope = options.click.chunk === undefined
-      ? pane
-      : pane.querySelector(`.suggestion-chunk[data-chunk-id="${options.click.chunk}"]`)
+    const scope =
+      options.click.chunk === undefined
+        ? pane
+        : pane.querySelector(`.suggestion-chunk[data-chunk-id="${options.click.chunk}"]`);
     if (scope === null) {
-      throw new Error(`No chunk controls carry the id ${JSON.stringify(options.click.chunk)}`)
+      throw new Error(`No chunk controls carry the id ${JSON.stringify(options.click.chunk)}`);
     }
-    const button = scope.querySelector(options.click.control)
+    const button = scope.querySelector(options.click.control);
     if (!(button instanceof HTMLButtonElement)) {
-      throw new Error(`No control matches ${options.click.control}`)
+      throw new Error(`No control matches ${options.click.control}`);
     }
     // The clicked pane was not edited, so its controls are live: a refusal
     // below comes from main's fence, not from the pane holding back.
-    if (button.disabled || button.closest('[inert]') !== null) {
-      throw new Error(`The control ${options.click.control} does not take input`)
+    if (button.disabled || button.closest("[inert]") !== null) {
+      throw new Error(`The control ${options.click.control} does not take input`);
     }
-    button.click()
-    return textAfterEdits
-  }, input)
+    button.click();
+    return textAfterEdits;
+  }, input);
 }
 
 /** The pane's buffer text: the bytes the reviewer is looking at right now. */
-async function bufferText (page: Page, pane = 0): Promise<string> {
+async function bufferText(page: Page, pane = 0): Promise<string> {
   return page.evaluate((index: number) => {
-    const view = document
-      .querySelectorAll<PageContentElement>('.cm-content')[index]
-      ?.cmTile?.root?.view
+    const view =
+      document.querySelectorAll<PageContentElement>(".cm-content")[index]?.cmTile?.root?.view;
     if (view === undefined) {
-      throw new Error(`No mounted pane at index ${index} exposes a CodeMirror view`)
+      throw new Error(`No mounted pane at index ${index} exposes a CodeMirror view`);
     }
-    return view.state.doc.toString()
-  }, pane)
+    return view.state.doc.toString();
+  }, pane);
 }
 
 /** The controls the first pane draws under one chunk. */
-function chunkControls (page: Page, chunkId: string): Locator {
-  return reviewPane(page).locator(`.suggestion-chunk[data-chunk-id="${chunkId}"]`)
+function chunkControls(page: Page, chunkId: string): Locator {
+  return reviewPane(page).locator(`.suggestion-chunk[data-chunk-id="${chunkId}"]`);
 }
 
 /**
@@ -223,51 +230,49 @@ function chunkControls (page: Page, chunkId: string): Locator {
  * exist, so define it there once. It is inert, and the application never
  * looks at it.
  */
-async function definePageNameHelper (page: Page): Promise<void> {
-  await page.evaluate(
-    'globalThis.__name = globalThis.__name ?? (function (fn) { return fn })'
-  )
+async function definePageNameHelper(page: Page): Promise<void> {
+  await page.evaluate("globalThis.__name = globalThis.__name ?? (function (fn) { return fn })");
 }
 
-function patch (filePath: string, from: string, to: string): string {
-  return createPatch(filePath, from, to, '', '', { context: 0 })
+function patch(filePath: string, from: string, to: string): string {
+  return createPatch(filePath, from, to, "", "", { context: 0 });
 }
 
-function isRecord (value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function stringField (payload: unknown, field: string): string {
-  assert.ok(isRecord(payload), `expected an object carrying ${field}`)
-  assert.equal(typeof payload[field], 'string', `${field} is missing: ${JSON.stringify(payload)}`)
-  return payload[field] as string
+function stringField(payload: unknown, field: string): string {
+  assert.ok(isRecord(payload), `expected an object carrying ${field}`);
+  assert.equal(typeof payload[field], "string", `${field} is missing: ${JSON.stringify(payload)}`);
+  return payload[field] as string;
 }
 
-async function openDocumentId (api: AgentClient): Promise<string> {
-  const payload = await api.get('/v1/documents')
-  assert.ok(isRecord(payload) && Array.isArray(payload.documents))
+async function openDocumentId(api: AgentClient): Promise<string> {
+  const payload = await api.get("/v1/documents");
+  assert.ok(isRecord(payload) && Array.isArray(payload.documents));
   assert.equal(
     payload.documents.length,
     1,
-    `unexpected open documents: ${JSON.stringify(payload)}`
-  )
-  return stringField(payload.documents[0], 'documentId')
+    `unexpected open documents: ${JSON.stringify(payload)}`,
+  );
+  return stringField(payload.documents[0], "documentId");
 }
 
 /** The provider's authoritative working text, as bytes. */
-async function workingText (api: AgentClient): Promise<string> {
+async function workingText(api: AgentClient): Promise<string> {
   const payload = await api.get(
-    `/v1/documents/${await openDocumentId(api)}?includeContent=true&side=working`
-  )
-  return stringField(payload, 'content')
+    `/v1/documents/${await openDocumentId(api)}?includeContent=true&side=working`,
+  );
+  return stringField(payload, "content");
 }
 
 interface ChunkView {
-  chunkId: string
-  referenceText: string
-  workingText: string
-  workingSpans: Array<{ from: number, to: number }>
-  comment?: string
+  chunkId: string;
+  referenceText: string;
+  workingText: string;
+  workingSpans: Array<{ from: number; to: number }>;
+  comment?: string;
 }
 
 /**
@@ -276,94 +281,86 @@ interface ChunkView {
  * replacement is rendered -- which side of the seam the removed text sits on,
  * and whether the change reads as one span or several.
  */
-function chunkOnLine (
-  chunks: ChunkView[],
-  documentText: string,
-  lineText: string
-): string {
-  const lineFrom = documentText.indexOf(lineText)
-  assert.notEqual(lineFrom, -1, `no line reads ${JSON.stringify(lineText)}`)
-  const lineTo = lineFrom + lineText.length
-  const owner = chunks.find(chunk =>
-    chunk.workingSpans.some(span => span.from >= lineFrom && span.to <= lineTo)
-  )
-  assert.ok(owner !== undefined, `no chunk covers ${JSON.stringify(lineText)}`)
-  return owner.chunkId
+function chunkOnLine(chunks: ChunkView[], documentText: string, lineText: string): string {
+  const lineFrom = documentText.indexOf(lineText);
+  assert.notEqual(lineFrom, -1, `no line reads ${JSON.stringify(lineText)}`);
+  const lineTo = lineFrom + lineText.length;
+  const owner = chunks.find((chunk) =>
+    chunk.workingSpans.some((span) => span.from >= lineFrom && span.to <= lineTo),
+  );
+  assert.ok(owner !== undefined, `no chunk covers ${JSON.stringify(lineText)}`);
+  return owner.chunkId;
 }
 
 /** The chunk partition and the fence values a decision has to bind to. */
-async function chunkListing (
+async function chunkListing(
   api: AgentClient,
-  reviewId: string
-): Promise<{ chunks: ChunkView[], generation: number, workingSha256: string }> {
-  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`)
+  reviewId: string,
+): Promise<{ chunks: ChunkView[]; generation: number; workingSha256: string }> {
+  const payload = await api.get(`/v1/reviews/${reviewId}?view=chunks`);
   assert.ok(
-    isRecord(payload) &&
-      Array.isArray(payload.chunks) &&
-      typeof payload.generation === 'number',
-    `chunk listing must carry chunks and a generation: ${JSON.stringify(payload)}`
-  )
+    isRecord(payload) && Array.isArray(payload.chunks) && typeof payload.generation === "number",
+    `chunk listing must carry chunks and a generation: ${JSON.stringify(payload)}`,
+  );
   return {
     chunks: payload.chunks as ChunkView[],
     generation: payload.generation,
-    workingSha256: stringField(payload, 'workingSha256')
-  }
+    workingSha256: stringField(payload, "workingSha256"),
+  };
 }
 
 /**
  * Submits one proposal against whatever the provider currently holds, and
  * returns its review id once the editor has rendered the controls.
  */
-async function propose (
+async function propose(
   api: AgentClient,
   page: Page,
   clientRequestId: string,
-  claims: Array<{ description: string, patch: string }>
+  claims: Array<{ description: string; patch: string }>,
 ): Promise<string> {
-  const documentId = await openDocumentId(api)
-  const content = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`)
-  assert.ok(isRecord(content) && isRecord(content.revision))
-  assert.equal(typeof content.reviewGeneration, 'number')
+  const documentId = await openDocumentId(api);
+  const content = await api.get(`/v1/documents/${documentId}?includeContent=true&side=working`);
+  assert.ok(isRecord(content) && isRecord(content.revision));
+  assert.equal(typeof content.reviewGeneration, "number");
   const reviewId = stringField(
     await api.post(`/v1/documents/${documentId}/proposals`, {
-      baselineSha256: stringField(content.revision, 'sha256'),
+      baselineSha256: stringField(content.revision, "sha256"),
       expectedReviewGeneration: content.reviewGeneration,
       clientRequestId,
-      claims
+      claims,
     }),
-    'reviewId'
-  )
+    "reviewId",
+  );
   await reviewPane(page)
-    .locator('.suggestion-decision.accept')
+    .locator(".suggestion-decision.accept")
     .first()
-    .waitFor({ state: 'visible', timeout: 30_000 })
-  return reviewId
+    .waitFor({ state: "visible", timeout: 30_000 });
+  return reviewId;
 }
 
 /** Every toast currently on screen, as its message text. */
-function toastMessages (page: Page): Promise<string[]> {
-  return page
-    .locator('#zettlr-toast-container .zettlr-toast span:first-child')
-    .allInnerTexts()
+function toastMessages(page: Page): Promise<string[]> {
+  return page.locator("#zettlr-toast-container .zettlr-toast span:first-child").allInnerTexts();
 }
 
 /** Polls `probe` until `holds` accepts what it answers. */
-async function waitFor<T> (
+async function waitFor<T>(
   probe: () => Promise<T>,
   holds: (value: T) => boolean,
   what: string,
-  timeoutMs = 30_000
+  timeoutMs = 30_000,
 ): Promise<T> {
-  const deadline = Date.now() + timeoutMs
-  let last = await probe()
+  const deadline = Date.now() + timeoutMs;
+  let last = await probe();
   while (Date.now() < deadline) {
     if (holds(last)) {
-      return last
+      return last;
     }
-    await delay(100)
-    last = await probe()
+    await delay(100);
+    last = await probe();
   }
-  throw new Error(`Timed out waiting for ${what}. Last value: ${JSON.stringify(last)}`)
+  throw new Error(`Timed out waiting for ${what}. Last value: ${JSON.stringify(last)}`);
 }
 
 /**
@@ -373,23 +370,23 @@ async function waitFor<T> (
  * so acting on the provider's answer alone would decide against a snapshot
  * the reviewer has not been shown.
  */
-async function settledChunks (
+async function settledChunks(
   api: AgentClient,
   page: Page,
   reviewId: string,
-  holds: (chunks: ChunkView[]) => boolean
+  holds: (chunks: ChunkView[]) => boolean,
 ): Promise<ChunkView[]> {
   const chunks = await waitFor(
     async () => (await chunkListing(api, reviewId)).chunks,
     holds,
-    'the provider to commit the decision'
-  )
+    "the provider to commit the decision",
+  );
   await waitFor(
-    async () => await reviewPane(page).locator('.suggestion-chunk').count(),
-    count => count === chunks.length,
-    `the pane to redraw ${chunks.length} chunk control block(s)`
-  )
-  return chunks
+    async () => await reviewPane(page).locator(".suggestion-chunk").count(),
+    (count) => count === chunks.length,
+    `the pane to redraw ${chunks.length} chunk control block(s)`,
+  );
+  return chunks;
 }
 
 /**
@@ -399,18 +396,19 @@ async function settledChunks (
  * carries exactly the buffer's text — so this is the moment the fence they
  * send names the edited chunk rather than the one they were drawn with.
  */
-async function controlsLiveOver (
-  page: Page,
-  chunkId: string,
-  text: string
-): Promise<void> {
-  assert.ok((await bufferText(page)).includes(text), `the buffer must read ${JSON.stringify(text)}`)
+async function controlsLiveOver(page: Page, chunkId: string, text: string): Promise<void> {
+  assert.ok(
+    (await bufferText(page)).includes(text),
+    `the buffer must read ${JSON.stringify(text)}`,
+  );
   await reviewPane(page)
-    .locator(`.cm-collaborationControl-review-chunk:not([inert]) .suggestion-chunk[data-chunk-id="${chunkId}"]`)
-    .waitFor({ state: 'visible', timeout: 30_000 })
+    .locator(
+      `.cm-collaborationControl-review-chunk:not([inert]) .suggestion-chunk[data-chunk-id="${chunkId}"]`,
+    )
+    .waitFor({ state: "visible", timeout: 30_000 });
   await reviewPane(page)
-    .locator('.cm-collaborationControl-review-bar:not([inert])')
-    .waitFor({ state: 'visible', timeout: 30_000 })
+    .locator(".cm-collaborationControl-review-bar:not([inert])")
+    .waitFor({ state: "visible", timeout: 30_000 });
 }
 
 /**
@@ -418,346 +416,350 @@ async function controlsLiveOver (
  * decision — resolved, awaiting the save that closes it — but with nothing
  * outstanding every chunk's controls and the review bar leave the editor.
  */
-async function waitForNoCards (page: Page): Promise<void> {
+async function waitForNoCards(page: Page): Promise<void> {
   await waitFor(
-    async () => await reviewPane(page).locator('.suggestion-chunk, .suggestion-review-bar').count(),
-    count => count === 0,
-    'every chunk control block and the review bar to leave the editor'
-  )
+    async () => await reviewPane(page).locator(".suggestion-chunk, .suggestion-review-bar").count(),
+    (count) => count === 0,
+    "every chunk control block and the review bar to leave the editor",
+  );
 }
 
-describe('a review decision waits for the document authority', function () {
+describe("a review decision waits for the document authority", function () {
   // One cold `forge start` compile plus the interactions below.
-  this.timeout(300_000)
+  this.timeout(300_000);
 
-  let fixtureRoot: string | undefined
-  let documentPath: string | undefined
-  let browser: Browser | undefined
-  let appProcess: ChildProcess | undefined
-  let api: AgentClient | undefined
-  let page: Page | undefined
-  let reviewId: string | undefined
+  let fixtureRoot: string | undefined;
+  let documentPath: string | undefined;
+  let browser: Browser | undefined;
+  let appProcess: ChildProcess | undefined;
+  let api: AgentClient | undefined;
+  let page: Page | undefined;
+  let reviewId: string | undefined;
 
   before(async function () {
-    const fixture = await createFixture('zettlr-review-authority-sync-', {
-      documentName: 'authority-sync.md',
+    const fixture = await createFixture("zettlr-review-authority-sync-", {
+      documentName: "authority-sync.md",
       documentContents: BASELINE,
       config: {
         agentApi: { enabled: true, port: 0 },
         // The workspace panel stays open beside the editor, as a reviewer
         // works: every decision here is still made from the controls the
         // editor draws under each chunk.
-        window: { sidebarVisible: true }
-      }
-    })
-    fixtureRoot = fixture.root
-    documentPath = fixture.documentPath
-    const running = await attach(fixture.configDirectory, [], this.timeout())
-    appProcess = running.appProcess
-    browser = running.browser
-    api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000))
-    page = await findEditorPage(running.browser, this.timeout())
-    await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await definePageNameHelper(page)
-    await hideDevServerOverlay(page)
+        window: { sidebarVisible: true },
+      },
+    });
+    fixtureRoot = fixture.root;
+    documentPath = fixture.documentPath;
+    const running = await attach(fixture.configDirectory, [], this.timeout());
+    appProcess = running.appProcess;
+    browser = running.browser;
+    api = agentClient(await readAgentApiPort(fixture.configDirectory, 60_000));
+    page = await findEditorPage(running.browser, this.timeout());
+    await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
+    await definePageNameHelper(page);
+    await hideDevServerOverlay(page);
 
     // One claim per line: each change carries its own justification.
-    const claims: Array<{ description: string, patch: string }> = []
-    let text = BASELINE
-    for (const word of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) {
-      const next = text.replace(`${word} original`, `${word} proposed`)
-      claims.push({ description: `Rewrite the ${word} line`, patch: patch(fixture.documentPath, text, next) })
-      text = next
+    const claims: Array<{ description: string; patch: string }> = [];
+    let text = BASELINE;
+    for (const word of ["alpha", "bravo", "charlie", "delta", "echo"]) {
+      const next = text.replace(`${word} original`, `${word} proposed`);
+      claims.push({
+        description: `Rewrite the ${word} line`,
+        patch: patch(fixture.documentPath, text, next),
+      });
+      text = next;
     }
-    reviewId = await propose(api, page, 'authority-sync-1', claims)
-  })
+    reviewId = await propose(api, page, "authority-sync-1", claims);
+  });
 
   after(async function () {
-    await shutdown(browser, appProcess)
+    await shutdown(browser, appProcess);
     if (fixtureRoot !== undefined) {
-      await rm(fixtureRoot, { recursive: true, force: true })
+      await rm(fixtureRoot, { recursive: true, force: true });
     }
-  })
+  });
 
-  it('accepts the edited chunk, not the chunk the pane was drawn with', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activeReviewId = requireInitialized(reviewId, 'the review must be open')
+  it("accepts the edited chunk, not the chunk the pane was drawn with", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activeReviewId = requireInitialized(reviewId, "the review must be open");
 
     const drawn = await settledChunks(
       activeApi,
       activePage,
       activeReviewId,
-      chunks => chunks.length === 5
-    )
-    assert.equal(drawn.length, 5, 'the proposal must partition into five chunks')
+      (chunks) => chunks.length === 5,
+    );
+    assert.equal(drawn.length, 5, "the proposal must partition into five chunks");
 
-    const acceptedChunk = chunkOnLine(drawn, await workingText(activeApi), 'alpha proposed')
+    const acceptedChunk = chunkOnLine(drawn, await workingText(activeApi), "alpha proposed");
     await editLines(activePage, {
       editPane: 0,
-      line: 'alpha proposed',
-      edits: ['alpha proposed one', 'alpha proposed one two']
-    })
-    await controlsLiveOver(activePage, acceptedChunk, 'alpha proposed one two')
+      line: "alpha proposed",
+      edits: ["alpha proposed one", "alpha proposed one two"],
+    });
+    await controlsLiveOver(activePage, acceptedChunk, "alpha proposed one two");
 
-    const textAtClick = await bufferText(activePage)
-    await chunkControls(activePage, acceptedChunk)
-      .locator('.suggestion-decision.accept')
-      .click()
+    const textAtClick = await bufferText(activePage);
+    await chunkControls(activePage, acceptedChunk).locator(".suggestion-decision.accept").click();
 
-    const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.every(chunk => chunk.chunkId !== acceptedChunk)
-    )
-    assert.equal(chunks.length, 4, 'exactly the accepted chunk leaves the partition')
+    const chunks = await settledChunks(activeApi, activePage, activeReviewId, (list) =>
+      list.every((chunk) => chunk.chunkId !== acceptedChunk),
+    );
+    assert.equal(chunks.length, 4, "exactly the accepted chunk leaves the partition");
     assert.deepEqual(
       await toastMessages(activePage),
       [],
-      'a decision fenced on the snapshot the pane drew is never refused'
-    )
+      "a decision fenced on the snapshot the pane drew is never refused",
+    );
     assert.equal(
       await workingText(activeApi),
       textAtClick,
-      'accepting keeps the working text the reviewer was looking at'
-    )
+      "accepting keeps the working text the reviewer was looking at",
+    );
 
     // The decisive part: the accepted reference is the EDITED text. Had the
     // provider accepted the chunk as the pane was first drawn — before either
     // edit reached the authority — the two edits would still differ from the
     // reference and would be sitting here as a fresh outstanding chunk.
     assert.deepEqual(
-      chunks.filter(chunk => chunk.workingText.includes('alpha')),
+      chunks.filter((chunk) => chunk.workingText.includes("alpha")),
       [],
-      'accepting the edited chunk must leave nothing about alpha outstanding'
-    )
-  })
+      "accepting the edited chunk must leave nothing about alpha outstanding",
+    );
+  });
 
-  it('rejects the edited chunk back to its reference text and keeps the owner\'s edits', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activeReviewId = requireInitialized(reviewId, 'the review must be open')
+  it("rejects the edited chunk back to its reference text and keeps the owner's edits", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activeReviewId = requireInitialized(reviewId, "the review must be open");
 
     const rejectedChunk = chunkOnLine(
       (await chunkListing(activeApi, activeReviewId)).chunks,
       await workingText(activeApi),
-      'bravo proposed'
-    )
+      "bravo proposed",
+    );
     await editLines(activePage, {
       editPane: 0,
-      line: 'bravo proposed',
-      edits: ['bravo proposed one', 'bravo proposed one two']
-    })
-    await controlsLiveOver(activePage, rejectedChunk, 'bravo proposed one two')
+      line: "bravo proposed",
+      edits: ["bravo proposed one", "bravo proposed one two"],
+    });
+    await controlsLiveOver(activePage, rejectedChunk, "bravo proposed one two");
 
-    const textAtClick = await bufferText(activePage)
-    await chunkControls(activePage, rejectedChunk)
-      .locator('.suggestion-decision.reject')
-      .click()
+    const textAtClick = await bufferText(activePage);
+    await chunkControls(activePage, rejectedChunk).locator(".suggestion-decision.reject").click();
 
-    const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.every(chunk => chunk.chunkId !== rejectedChunk)
-    )
-    assert.equal(chunks.length, 3, 'exactly the rejected chunk leaves the partition')
-    assert.deepEqual(await toastMessages(activePage), [])
+    const chunks = await settledChunks(activeApi, activePage, activeReviewId, (list) =>
+      list.every((chunk) => chunk.chunkId !== rejectedChunk),
+    );
+    assert.equal(chunks.length, 3, "exactly the rejected chunk leaves the partition");
+    assert.deepEqual(await toastMessages(activePage), []);
     assert.equal(
       await workingText(activeApi),
-      textAtClick.replace('bravo proposed one two', 'bravo original one two'),
-      'rejecting the edited chunk restores its reference text and keeps what the owner typed'
-    )
-  })
+      textAtClick.replace("bravo proposed one two", "bravo original one two"),
+      "rejecting the edited chunk restores its reference text and keeps what the owner typed",
+    );
+  });
 
-  it('comments on the edited chunk with the exact text visible at click time', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activeReviewId = requireInitialized(reviewId, 'the review must be open')
+  it("comments on the edited chunk with the exact text visible at click time", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activeReviewId = requireInitialized(reviewId, "the review must be open");
 
     const notedChunk = chunkOnLine(
       (await chunkListing(activeApi, activeReviewId)).chunks,
       await workingText(activeApi),
-      'charlie proposed'
-    )
+      "charlie proposed",
+    );
     await editLines(activePage, {
       editPane: 0,
-      line: 'charlie proposed',
-      edits: ['charlie proposed one', 'charlie proposed one two']
-    })
-    await controlsLiveOver(activePage, notedChunk, 'charlie proposed one two')
+      line: "charlie proposed",
+      edits: ["charlie proposed one", "charlie proposed one two"],
+    });
+    await controlsLiveOver(activePage, notedChunk, "charlie proposed one two");
 
-    const textAtClick = await bufferText(activePage)
-    const noteField = chunkControls(activePage, notedChunk)
-      .locator('input.suggestion-chunk-comment')
-    await noteField.fill('second thoughts')
+    const textAtClick = await bufferText(activePage);
+    const noteField = chunkControls(activePage, notedChunk).locator(
+      "input.suggestion-chunk-comment",
+    );
+    await noteField.fill("second thoughts");
     // Enter is the field's commit gesture; the note is a fenced mutation like
     // any other decision, not a local draft.
-    await noteField.press('Enter')
+    await noteField.press("Enter");
 
-    const chunks = await settledChunks(activeApi, activePage, activeReviewId, list =>
-      list.some(chunk => chunk.comment !== undefined)
-    )
-    assert.equal(chunks.length, 3, 'a comment adjudicates nothing, so nothing leaves')
+    const chunks = await settledChunks(activeApi, activePage, activeReviewId, (list) =>
+      list.some((chunk) => chunk.comment !== undefined),
+    );
+    assert.equal(chunks.length, 3, "a comment adjudicates nothing, so nothing leaves");
     // The field is re-seeded from the provider's own note on every broadcast,
     // so what it reads back is the committed value, not the keystrokes.
     assert.equal(
       await noteField.inputValue(),
-      'second thoughts',
-      'the committed note is what the field keeps'
-    )
-    assert.deepEqual(await toastMessages(activePage), [])
+      "second thoughts",
+      "the committed note is what the field keeps",
+    );
+    assert.deepEqual(await toastMessages(activePage), []);
     // A comment moves no text, so the provider's working text must be, byte
     // for byte, what was on screen when the control was clicked.
-    assert.equal(await workingText(activeApi), textAtClick)
+    assert.equal(await workingText(activeApi), textAtClick);
 
-    const noted = chunks.filter(chunk => chunk.comment !== undefined)
-    assert.equal(noted.length, 1, `exactly one chunk must carry the note: ${JSON.stringify(chunks)}`)
+    const noted = chunks.filter((chunk) => chunk.comment !== undefined);
+    assert.equal(
+      noted.length,
+      1,
+      `exactly one chunk must carry the note: ${JSON.stringify(chunks)}`,
+    );
     assert.equal(
       noted[0].chunkId,
       notedChunk,
-      'the note must land on the chunk the owner edited around'
-    )
-  })
+      "the note must land on the chunk the owner edited around",
+    );
+  });
 
-  it('accepts every remaining chunk against the text at click time', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activeReviewId = requireInitialized(reviewId, 'the review must be open')
+  it("accepts every remaining chunk against the text at click time", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activeReviewId = requireInitialized(reviewId, "the review must be open");
 
     const sweptChunk = chunkOnLine(
       (await chunkListing(activeApi, activeReviewId)).chunks,
       await workingText(activeApi),
-      'delta proposed'
-    )
+      "delta proposed",
+    );
     await editLines(activePage, {
       editPane: 0,
-      line: 'delta proposed',
-      edits: ['delta proposed one', 'delta proposed one two']
-    })
-    await controlsLiveOver(activePage, sweptChunk, 'delta proposed one two')
+      line: "delta proposed",
+      edits: ["delta proposed one", "delta proposed one two"],
+    });
+    await controlsLiveOver(activePage, sweptChunk, "delta proposed one two");
 
-    const textAtClick = await bufferText(activePage)
-    await reviewPane(activePage).locator('.suggestion-accept-all').click()
+    const textAtClick = await bufferText(activePage);
+    await reviewPane(activePage).locator(".suggestion-accept-all").click();
 
     await waitFor(
       async () => await activeApi.get(`/v1/reviews/${activeReviewId}`),
-      value => isRecord(value) && value.unresolvedChunks === 0,
-      'the review to hold no unresolved chunk'
-    )
+      (value) => isRecord(value) && value.unresolvedChunks === 0,
+      "the review to hold no unresolved chunk",
+    );
     // The review survives its last decision — it is resolved, awaiting the
     // save that closes it — but that state is the agent's to read: with
     // nothing outstanding, the pane offers no decision at all.
-    await waitForNoCards(activePage)
-    assert.deepEqual(await toastMessages(activePage), [])
+    await waitForNoCards(activePage);
+    assert.deepEqual(await toastMessages(activePage), []);
     assert.equal(
       await workingText(activeApi),
       textAtClick,
-      'accepting everything keeps every byte that was on screen'
-    )
-  })
+      "accepting everything keeps every byte that was on screen",
+    );
+  });
 
-  it('rejects every remaining chunk and keeps the owner\'s edits beside them', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activePath = requireInitialized(documentPath, 'the document path must be initialized')
+  it("rejects every remaining chunk and keeps the owner's edits beside them", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activePath = requireInitialized(documentPath, "the document path must be initialized");
 
-    const before = await workingText(activeApi)
-    const rejectedReviewId = await propose(activeApi, activePage, 'authority-sync-2', [
+    const before = await workingText(activeApi);
+    const rejectedReviewId = await propose(activeApi, activePage, "authority-sync-2", [
       {
-        description: 'Rewrite the echo line again',
-        patch: patch(activePath, before, before.replace('echo proposed', 'echo revised'))
-      }
-    ])
+        description: "Rewrite the echo line again",
+        patch: patch(activePath, before, before.replace("echo proposed", "echo revised")),
+      },
+    ]);
     const [echoChunk] = await settledChunks(
       activeApi,
       activePage,
       rejectedReviewId,
-      chunks => chunks.length === 1
-    )
+      (chunks) => chunks.length === 1,
+    );
 
     await editLines(activePage, {
       editPane: 0,
-      line: 'echo revised',
-      edits: ['echo revised one', 'echo revised one two']
-    })
-    await controlsLiveOver(activePage, echoChunk.chunkId, 'echo revised one two')
+      line: "echo revised",
+      edits: ["echo revised one", "echo revised one two"],
+    });
+    await controlsLiveOver(activePage, echoChunk.chunkId, "echo revised one two");
 
-    const textAtClick = await bufferText(activePage)
+    const textAtClick = await bufferText(activePage);
     assert.ok(
-      textAtClick.includes('echo revised one two'),
-      'both edits must be in the buffer when the control is clicked'
-    )
-    await reviewPane(activePage).locator('.suggestion-clear').click()
+      textAtClick.includes("echo revised one two"),
+      "both edits must be in the buffer when the control is clicked",
+    );
+    await reviewPane(activePage).locator(".suggestion-clear").click();
 
     await waitFor(
       async () => await workingText(activeApi),
-      text => text === before.replace('echo proposed', 'echo proposed one two'),
-      'the rejected proposal to restore its reference text beside what the owner typed'
-    )
-    await waitForNoCards(activePage)
-    assert.deepEqual(await toastMessages(activePage), [])
-  })
+      (text) => text === before.replace("echo proposed", "echo proposed one two"),
+      "the rejected proposal to restore its reference text beside what the owner typed",
+    );
+    await waitForNoCards(activePage);
+    assert.deepEqual(await toastMessages(activePage), []);
+  });
 
-  it('refuses a decision when another pane changed the document after the sync', async function () {
-    const activeApi = requireInitialized(api, 'the Agent API client must be initialized')
-    const activePage = requireInitialized(page, 'the editor page must be initialized')
-    const activePath = requireInitialized(documentPath, 'the document path must be initialized')
+  it("refuses a decision when another pane changed the document after the sync", async function () {
+    const activeApi = requireInitialized(api, "the Agent API client must be initialized");
+    const activePage = requireInitialized(page, "the editor page must be initialized");
+    const activePath = requireInitialized(documentPath, "the document path must be initialized");
 
     // A second pane on the same document, through the provider's own split.
     // The window id is the one this renderer was opened with, and the leaf id
     // comes from the provider's own tab config: assuming either would test the
     // fixture rather than the app.
     const paneCount = await activePage.evaluate(async (pathInPage: string) => {
-      const windowId = new URLSearchParams(location.search).get('window_id')
+      const windowId = new URLSearchParams(location.search).get("window_id");
       if (windowId === null) {
-        throw new Error('The main window carries no window_id')
+        throw new Error("The main window carries no window_id");
       }
       const readTree = async (): Promise<unknown> =>
-        await window.ipc.invoke('documents-provider', {
-          command: 'retrieve-tab-config',
-          payload: { windowId }
-        })
+        await window.ipc.invoke("documents-provider", {
+          command: "retrieve-tab-config",
+          payload: { windowId },
+        });
       const leafIds = (node: unknown): string[] => {
-        const tree = node as { type: string, id: string, nodes: unknown[] }
-        return tree.type === 'leaf' ? [tree.id] : tree.nodes.flatMap(leafIds)
-      }
+        const tree = node as { type: string; id: string; nodes: unknown[] };
+        return tree.type === "leaf" ? [tree.id] : tree.nodes.flatMap(leafIds);
+      };
 
-      const before = leafIds(await readTree())
+      const before = leafIds(await readTree());
       if (before.length !== 1) {
-        throw new Error(`Expected a single leaf to split, found ${before.length}`)
+        throw new Error(`Expected a single leaf to split, found ${before.length}`);
       }
-      await window.ipc.invoke('documents-provider', {
-        command: 'split-leaf',
+      await window.ipc.invoke("documents-provider", {
+        command: "split-leaf",
         payload: {
           originWindow: windowId,
           originLeaf: before[0],
-          direction: 'vertical',
-          insertion: 'after'
-        }
-      })
+          direction: "vertical",
+          insertion: "after",
+        },
+      });
       // Splitting replaces the origin leaf with a branch, so the leaves to
       // open the document in are only knowable from the tree afterwards.
-      const after = leafIds(await readTree())
+      const after = leafIds(await readTree());
       for (const leafId of after) {
-        await window.ipc.invoke('documents-provider', {
-          command: 'open-file',
-          payload: { windowId, leafId, path: pathInPage, newTab: true }
-        })
+        await window.ipc.invoke("documents-provider", {
+          command: "open-file",
+          payload: { windowId, leafId, path: pathInPage, newTab: true },
+        });
       }
-      return after.length
-    }, activePath)
-    assert.equal(paneCount, 2, 'the split must produce a second leaf')
-    const contents = activePage.locator('.cm-content')
-    await contents.nth(1).waitFor({ state: 'visible', timeout: 30_000 })
-    assert.equal(await contents.count(), 2, 'the document must be open in two panes')
+      return after.length;
+    }, activePath);
+    assert.equal(paneCount, 2, "the split must produce a second leaf");
+    const contents = activePage.locator(".cm-content");
+    await contents.nth(1).waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await contents.count(), 2, "the document must be open in two panes");
 
-    const before = await workingText(activeApi)
-    const staleReviewId = await propose(activeApi, activePage, 'authority-sync-3', [
+    const before = await workingText(activeApi);
+    const staleReviewId = await propose(activeApi, activePage, "authority-sync-3", [
       {
-        description: 'Rewrite the delta line',
-        patch: patch(activePath, before, before.replace('delta proposed one two', 'delta final'))
-      }
-    ])
-    const beforeDecision = await chunkListing(activeApi, staleReviewId)
-    assert.equal(beforeDecision.chunks.length, 1)
+        description: "Rewrite the delta line",
+        patch: patch(activePath, before, before.replace("delta proposed one two", "delta final")),
+      },
+    ]);
+    const beforeDecision = await chunkListing(activeApi, staleReviewId);
+    assert.equal(beforeDecision.chunks.length, 1);
     // One chunk; each pane draws controls for it, and the first one decides.
-    await settledChunks(activeApi, activePage, staleReviewId, chunks => chunks.length === 1)
+    await settledChunks(activeApi, activePage, staleReviewId, (chunks) => chunks.length === 1);
 
     // The second pane's edit is issued first and travels the same ordered IPC
     // channel, so it takes the provider's per-document lock before the
@@ -766,63 +768,63 @@ describe('a review decision waits for the document authority', function () {
     // exists by the time the decision is applied.
     await editLines(activePage, {
       editPane: 1,
-      line: '# Authority sync',
-      edits: ['# Authority sync edited', '# Authority sync edited twice'],
+      line: "# Authority sync",
+      edits: ["# Authority sync edited", "# Authority sync edited twice"],
       click: {
         chunk: beforeDecision.chunks[0].chunkId,
-        control: '.suggestion-decision.accept'
-      }
-    })
+        control: ".suggestion-decision.accept",
+      },
+    });
 
-    const toast = activePage.locator('#zettlr-toast-container .zettlr-toast.error')
-    await toast.first().waitFor({ state: 'visible', timeout: 30_000 })
+    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    await toast.first().waitFor({ state: "visible", timeout: 30_000 });
     assert.equal(
-      await toast.first().locator('span').first().innerText(),
-      'The document changed after this decision was prepared. Reload the review and try again.',
-      'the refusal must name the hash precondition, not a generic failure'
-    )
+      await toast.first().locator("span").first().innerText(),
+      "The document changed after this decision was prepared. Reload the review and try again.",
+      "the refusal must name the hash precondition, not a generic failure",
+    );
 
-    const afterDecision = await chunkListing(activeApi, staleReviewId)
+    const afterDecision = await chunkListing(activeApi, staleReviewId);
     assert.equal(
       afterDecision.generation,
       beforeDecision.generation,
-      'a refused decision must not advance the review generation'
-    )
+      "a refused decision must not advance the review generation",
+    );
     assert.ok(
-      afterDecision.chunks.some(
-        chunk => chunk.chunkId === beforeDecision.chunks[0].chunkId
-      ),
-      'the chunk the refused decision named must still be outstanding'
-    )
+      afterDecision.chunks.some((chunk) => chunk.chunkId === beforeDecision.chunks[0].chunkId),
+      "the chunk the refused decision named must still be outstanding",
+    );
     await waitFor(
       async () => await workingText(activeApi),
-      text => text.includes('# Authority sync edited twice'),
-      'the authority to hold the other pane\'s edits'
-    )
+      (text) => text.includes("# Authority sync edited twice"),
+      "the authority to hold the other pane's edits",
+    );
 
     // Leave the window closable: resolve the review and flush the buffer.
-    await toast.first().locator('button[aria-label="Dismiss"]').click()
+    await toast.first().locator('button[aria-label="Dismiss"]').click();
     // Disposing of the remaining chunks is the reviewer's: the review bar's
     // own control, which is the only surface that offers it. The other
     // pane's edits reach this pane as remote changes, so its bar is inert
     // until the broadcast for them lands; only then does its fence name the
     // text main holds.
-    const liveClear = reviewPane(activePage).locator('.cm-collaborationControl-review-bar:not([inert]) .suggestion-clear')
-    await liveClear.waitFor({ state: 'visible', timeout: 30_000 })
-    await liveClear.click()
-    await waitForNoCards(activePage)
+    const liveClear = reviewPane(activePage).locator(
+      ".cm-collaborationControl-review-bar:not([inert]) .suggestion-clear",
+    );
+    await liveClear.waitFor({ state: "visible", timeout: 30_000 });
+    await liveClear.click();
+    await waitForNoCards(activePage);
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>
-          await window.ipc.invoke('documents:save-file', { path: pathInPage }),
-        activePath
+          await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        activePath,
       ),
-      { ok: true }
-    )
+      { ok: true },
+    );
     assert.equal(
-      await readFile(activePath, 'utf8'),
+      await readFile(activePath, "utf8"),
       await workingText(activeApi),
-      'the saved bytes are the provider\'s working text'
-    )
-  })
-})
+      "the saved bytes are the provider's working text",
+    );
+  });
+});

@@ -26,28 +26,27 @@
  * END HEADER
  */
 
-import { ref, toRef, watch } from 'vue'
+import { ref, toRef, watch } from "vue";
 
 const props = defineProps<{
-  modelValue: number
-  min?: number
-  max?: number
-  label?: string
-  name?: string
-}>()
+  modelValue: number;
+  min?: number;
+  max?: number;
+  label?: string;
+  name?: string;
+}>();
 
-const emit = defineEmits<(e: 'update:modelValue', value: number) => void>()
+const emit = defineEmits<(e: "update:modelValue", value: number) => void>();
 
-const internalModel = ref<number>(props.modelValue)
+const internalModel = ref<number>(props.modelValue);
 
-watch(toRef(props, 'modelValue'), () => {
-  internalModel.value = props.modelValue
-})
+watch(toRef(props, "modelValue"), () => {
+  internalModel.value = props.modelValue;
+});
 
 watch(internalModel, () => {
-  emit('update:modelValue', internalModel.value)
-})
-
+  emit("update:modelValue", internalModel.value);
+});
 </script>
 
 <style lang="less">

@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { ChangeSet, type EditorState, type StateCommand } from '@codemirror/state'
+import { ChangeSet, type EditorState, type StateCommand } from "@codemirror/state";
 
 /**
  * Transform the supplied `text`.
@@ -27,7 +27,7 @@ import { ChangeSet, type EditorState, type StateCommand } from '@codemirror/stat
  *
  * @return  {string}              The transformed text.
  */
-export type TransformText = (text: string, state: EditorState) => string
+export type TransformText = (text: string, state: EditorState) => string;
 
 /**
  * Return a `Command` to transform selected text.
@@ -37,37 +37,34 @@ export type TransformText = (text: string, state: EditorState) => string
  *
  * @return  {StateCommand}            A `Command` to transform selected text.
  */
-export function transformSelectedText (transform: TransformText): StateCommand {
+export function transformSelectedText(transform: TransformText): StateCommand {
   return ({ state, dispatch }) => {
     if (state.selection.ranges.length === 0) {
       // when nothing is selected there's nothing to do
-      return false
+      return false;
     }
 
     const changes = state.selection.ranges.reduce((change, { from, to }) => {
-      const text = state.sliceDoc(from, to)
+      const text = state.sliceDoc(from, to);
 
-      const transformedText = transform(text, state)
+      const transformedText = transform(text, state);
 
       if (transformedText === text) {
         // when there's no change just return the existing change (if any)
-        return change
+        return change;
       }
 
-      const nextChange = ChangeSet.of(
-        { from, to, insert: transformedText },
-        state.doc.length
-      )
+      const nextChange = ChangeSet.of({ from, to, insert: transformedText }, state.doc.length);
 
-      return change.compose(nextChange)
-    }, ChangeSet.empty(state.doc.length))
+      return change.compose(nextChange);
+    }, ChangeSet.empty(state.doc.length));
 
     if (changes.empty) {
       // when there are no changes there's nothing to do
-      return false
+      return false;
     }
 
-    dispatch(state.update({ changes }))
-    return true
-  }
+    dispatch(state.update({ changes }));
+    return true;
+  };
 }

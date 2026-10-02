@@ -73,9 +73,7 @@ export function resolveCentralFiguresDirectory(
   }
   const trimmed = environment.trim();
   if (trimmed === "") {
-    throw new Error(
-      "FIGURES_SOURCE_DIR is set but empty; unset it or name the figures directory",
-    );
+    throw new Error("FIGURES_SOURCE_DIR is set but empty; unset it or name the figures directory");
   }
   return path.resolve(expandHome(trimmed, homeDirectory));
 }
@@ -105,9 +103,7 @@ async function rootRealPath(root: string, create: boolean): Promise<string> {
 function assertContained(root: string, candidate: string): void {
   const relative = path.relative(root, candidate);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new CentralFigureInputError(
-      "Figure path is outside the configured figures directory",
-    );
+    throw new CentralFigureInputError("Figure path is outside the configured figures directory");
   }
 }
 
@@ -163,9 +159,7 @@ async function prepareWritableFile(
     try {
       const stats = await fs.lstat(next);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
-        throw new CentralFigureInputError(
-          `Figure folder ${segment} is not a directory`,
-        );
+        throw new CentralFigureInputError(`Figure folder ${segment} is not a directory`);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {

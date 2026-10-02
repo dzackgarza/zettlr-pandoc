@@ -1,3 +1,5 @@
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./provision-renderer-window-seams";
 import { strict as assert } from "node:assert";
 import "./provision-renderer-window-seams";
 import {
@@ -35,6 +37,15 @@ interface SourcedCompletion extends Completion {
 
 function sourceOf(completion: Completion): string | undefined {
   return (completion as SourcedCompletion).zettlrSource;
+}
+
+/** The code under the "Expands to" heading of a completion info panel. */
+function expansionIn(info: Node): string | null | undefined {
+  assert.ok(info instanceof Element);
+  const heading = Array.from(info.querySelectorAll(".zettlr-completion-info-section-label")).find(
+    (label) => label.textContent === "Expands to",
+  );
+  return heading?.nextElementSibling?.textContent;
 }
 
 function installFakeInvoke(
@@ -139,7 +150,7 @@ describe("LaTeX/TikZ completion sources", function () {
     assert.equal(macro.detail, "user macro");
     assert.equal(typeof macro.info, "function");
     const info = (macro.info as (completion: typeof macro) => Node)(macro);
-    assert.match(info.textContent ?? "", /\\ZZ → \\mathbb\{Z\}/u);
+    assert.equal(expansionIn(info), "\\mathbb{Z}");
   });
 
   it("offers compiler-only canonical macros even when MathJax cannot project them", async function () {
@@ -160,7 +171,7 @@ describe("LaTeX/TikZ completion sources", function () {
     assert.equal(typeof macro.apply, "function");
     assert.equal(typeof macro.info, "function");
     const info = (macro.info as (completion: typeof macro) => Node)(macro);
-    assert.match(info.textContent ?? "", /\\pair → #1\\otimes#2/u);
+    assert.equal(expansionIn(info), "#1\\otimes#2");
     assert.match(info.textContent ?? "", /\\pair\{\$\{1\}\}\{\$\{2\}\}/u);
   });
 

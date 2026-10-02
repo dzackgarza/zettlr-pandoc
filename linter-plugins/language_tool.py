@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """LanguageTool external-linter plugin.
 
 Wire protocol: read one JSON object from stdin with ``text`` and ``context``;
@@ -288,18 +287,24 @@ def project_math(text: str) -> Projection:
     return Projection("".join(out), tuple(source_map), tuple(placeholders))
 
 
-def _overlaps_placeholder(start: int, end: int, placeholders: tuple[tuple[int, int], ...]) -> bool:
+def _overlaps_placeholder(
+    start: int, end: int, placeholders: tuple[tuple[int, int], ...]
+) -> bool:
     return any(start < right and end > left for left, right in placeholders)
 
 
-def _mapped_range(projection: Projection, offset: int, length: int, source_length: int) -> tuple[int, int]:
+def _mapped_range(
+    projection: Projection, offset: int, length: int, source_length: int
+) -> tuple[int, int]:
     if not projection.source_map:
         return 0, 0
     start_index = max(0, min(offset, len(projection.source_map) - 1))
     if length <= 0:
         source = projection.source_map[start_index]
         return source, source
-    end_index = max(start_index, min(offset + length - 1, len(projection.source_map) - 1))
+    end_index = max(
+        start_index, min(offset + length - 1, len(projection.source_map) - 1)
+    )
     start = projection.source_map[start_index]
     end = min(source_length, projection.source_map[end_index] + 1)
     return min(start, end), max(start, end)
@@ -321,8 +326,13 @@ def _cli_check(text: str, context: LanguageToolContext) -> LTResponse:
     args.append("-")
     # The JVM reads JAVA_TOOL_OPTIONS itself, so the system property reaches
     # LanguageTool through its launcher script unchanged.
-    environment = {**os.environ, "JAVA_TOOL_OPTIONS": f"-Dlogback.configurationFile={LOGBACK_CONFIGURATION}"}
-    completed = subprocess.run(args, input=text, text=True, capture_output=True, check=True, env=environment)
+    environment = {
+        **os.environ,
+        "JAVA_TOOL_OPTIONS": f"-Dlogback.configurationFile={LOGBACK_CONFIGURATION}",
+    }
+    completed = subprocess.run(
+        args, input=text, text=True, capture_output=True, check=True, env=environment
+    )
     response: LTResponse = json.loads(completed.stdout)
     return response
 
@@ -338,7 +348,9 @@ def _remote_server(context: LanguageToolContext) -> str:
         return "https://api.languagetool.org"
     server = context["customServer"].strip().rstrip("/")
     if not server:
-        raise ValueError("The custom LanguageTool backend is selected but no server URL is configured")
+        raise ValueError(
+            "The custom LanguageTool backend is selected but no server URL is configured"
+        )
     return server
 
 
@@ -358,7 +370,9 @@ def _remote_check(text: str, context: LanguageToolContext) -> LTResponse:
         params["apiKey"] = context["apiKey"].strip()
     if context["language"] == "auto":
         variants = context["variants"]
-        params["preferredVariants"] = ",".join((variants["en"], variants["de"], variants["pt"], variants["ca"]))
+        params["preferredVariants"] = ",".join(
+            (variants["en"], variants["de"], variants["pt"], variants["ca"])
+        )
     request = urllib.request.Request(
         _remote_server(context) + "/v2/check",
         data=urllib.parse.urlencode(params).encode(),
@@ -375,8 +389,14 @@ def _supported_languages(context: LanguageToolContext) -> list[str]:
     if context["supportedLanguages"]:
         return context["supportedLanguages"]
     if context["backend"] == "cli":
-        completed = subprocess.run(["languagetool", "--list"], text=True, capture_output=True, check=True)
-        return [line.split(maxsplit=1)[0] for line in completed.stdout.splitlines() if line.strip()]
+        completed = subprocess.run(
+            ["languagetool", "--list"], text=True, capture_output=True, check=True
+        )
+        return [
+            line.split(maxsplit=1)[0]
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        ]
     request = urllib.request.Request(
         _remote_server(context) + "/v2/languages",
         headers={"User-Agent": "external-linter/language-tool"},
@@ -394,36 +414,34 @@ def _severity(issue_type: str) -> Literal["info", "warning", "error"]:
     return "warning"
 
 
-def _actions(match: LTMatch, replaceable: bool) -> list[ReplaceAction | CommandAction]:
-    actions: list[ReplaceAction | CommandAction] = []
-    if replaceable:
-        for replacement in match["replacements"][:10]:
-            actions.append(
-                {
-                    "kind": "replace",
-                    "name": replacement["value"],
-                    "replacement": replacement["value"],
-                    "markClass": "cm-ltSuggestAction",
-                }
-            )
-    rule = match["rule"]
-    actions.append(
+def _replace_actions(match: LTMatch) -> list[ReplaceAction]:
+    return [
         {
-            "kind": "command",
-            "name": "Disable Rule",
-            "command": "language-tool:disable-rule",
-            "markClass": "cm-ltDisableAction",
-            "payload": {
-                "rule": {
-                    "description": rule["description"],
-                    "id": rule["id"],
-                    "category": rule["category"]["name"],
-                },
-                "ruleId": rule["id"],
-            },
+            "kind": "replace",
+            "name": replacement["value"],
+            "replacement": replacement["value"],
+            "markClass": "cm-ltSuggestAction",
         }
-    )
-    return actions
+        for replacement in match["replacements"][:10]
+    ]
+
+
+def _disable_rule_action(match: LTMatch) -> CommandAction:
+    rule = match["rule"]
+    return {
+        "kind": "command",
+        "name": "Disable Rule",
+        "command": "language-tool:disable-rule",
+        "markClass": "cm-ltDisableAction",
+        "payload": {
+            "rule": {
+                "description": rule["description"],
+                "id": rule["id"],
+                "category": rule["category"]["name"],
+            },
+            "ruleId": rule["id"],
+        },
+    }
 
 
 def run(payload: Payload) -> Result | InactiveResult:
@@ -445,13 +463,21 @@ def run(payload: Payload) -> Result | InactiveResult:
         length = match["length"]
         end = offset + length
         issue_type = match["rule"]["issueType"]
-        if length > 0 and any(left <= offset and end <= right for left, right in projection.placeholders):
+        if length > 0 and any(
+            left <= offset and end <= right for left, right in projection.placeholders
+        ):
             continue
         source_from, source_to = _mapped_range(projection, offset, length, len(text))
         authored = text[source_from:source_to]
         if issue_type == "misspelling" and authored in user_dictionary:
             continue
 
+        # A replacement over a math placeholder would overwrite the authored TeX.
+        replacements = (
+            []
+            if _overlaps_placeholder(offset, end, projection.placeholders)
+            else _replace_actions(match)
+        )
         diagnostics.append(
             {
                 "from": source_from,
@@ -463,7 +489,7 @@ def run(payload: Payload) -> Result | InactiveResult:
                     "ruleId": match["rule"]["id"],
                     "issueType": issue_type,
                 },
-                "actions": _actions(match, not _overlaps_placeholder(offset, end, projection.placeholders)),
+                "actions": [*replacements, _disable_rule_action(match)],
             }
         )
 

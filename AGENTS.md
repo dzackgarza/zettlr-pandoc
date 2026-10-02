@@ -532,11 +532,10 @@ of an isolated instance are in the first comment of #132.
 - `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
-- Files that also exist in upstream Zettlr keep upstream's formatting (single
-  quotes, no semicolons, upstream's import order) on every line they share with
-  upstream; never run a formatter over them. A reformatted shared file conflicts
-  with every upstream edit. Upstream's `eslint.config.mjs`
-  (`git show upstream/develop:eslint.config.mjs`) is the style authority.
+- The global biome configuration formats every file, the files shared with
+  upstream Zettlr included: double quotes, semicolons, sorted imports. Run
+  `biome check --config-path ~/ai-review-ci/tool-configs/biome.json --write .`
+  before a commit; `qc-ci / qc` fails on an unformatted file.
 
 # Review Guidelines
 

@@ -14,15 +14,15 @@
  * END HEADER
  */
 
-import type { EditorState, Text } from '@codemirror/state'
+import type { EditorState, Text } from "@codemirror/state";
 
-const texts = new WeakMap<Text, string>()
+const texts = new WeakMap<Text, string>();
 
-export function documentText (state: EditorState): string {
-  let text = texts.get(state.doc)
+export function documentText(state: EditorState): string {
+  let text = texts.get(state.doc);
   if (text === undefined) {
-    text = state.sliceDoc()
-    texts.set(state.doc, text)
+    text = state.sliceDoc();
+    texts.set(state.doc, text);
   }
-  return text
+  return text;
 }

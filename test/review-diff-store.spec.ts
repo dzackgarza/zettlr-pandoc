@@ -14,16 +14,15 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
 import { ChangeSet } from "@codemirror/state";
+import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import {
+  collaborationSidecar,
   proposalRequestFingerprint,
   ReviewDiffStore,
   reviewFromSidecar,
-  collaborationSidecar,
 } from "source/app/service-providers/documents/review-diff-store";
-import { sha256Text } from "source/common/util/sha256";
 import {
   isTransitionError,
   prepareChunkComment,
@@ -34,6 +33,7 @@ import {
   prepareWorkingTextEdit,
   type ReviewTransitionError,
 } from "source/app/service-providers/documents/review-transitions";
+import { sha256Text } from "source/common/util/sha256";
 
 const DOCUMENT_ID = "doc-test";
 const DOCUMENT_PATH = "/home/user/note.md";
@@ -42,11 +42,7 @@ function patch(oldText: string, newText: string): string {
   return createPatch(DOCUMENT_PATH, oldText, newText, "", "", { context: 3 });
 }
 
-function committedProposal(
-  baseline: string,
-  proposed: string,
-  clientRequestId = "request-1",
-) {
+function committedProposal(baseline: string, proposed: string, clientRequestId = "request-1") {
   const claims = [{ patch: patch(baseline, proposed), description: "one claim" }];
   const plan = prepareProposalSubmission({
     review: undefined,
@@ -74,10 +70,7 @@ function withReview(baseline: string, proposed: string) {
   return { review: plan.nextReview!, workingText: plan.nextWorkingText };
 }
 
-function assertTransitionError(
-  value: unknown,
-  code: string,
-): void {
+function assertTransitionError(value: unknown, code: string): void {
   assert.equal((value as { ok?: boolean }).ok, false);
   assert.equal((value as ReviewTransitionError).code, code);
 }
@@ -109,12 +102,12 @@ describe("pure review transitions", function () {
 
   it("makes one suggestion of a claim that rewrites adjacent lines", function () {
     const baseline = "Intro.\n\n::: {#def-forms}\n\n## Forms\n\nBody.\n:::\n";
-    const proposed = "Intro.\n\n::: {#def-forms .title=\"Forms\"}\n\nBody.\n:::\n";
+    const proposed = 'Intro.\n\n::: {#def-forms .title="Forms"}\n\nBody.\n:::\n';
     const { review, workingText } = withReview(baseline, proposed);
     assert.equal(review.suggestions.length, 1);
     const [suggestion] = review.suggestions;
     const [anchor] = suggestion.anchors;
-    assert.equal(workingText.slice(anchor.from, anchor.to), " .title=\"Forms\"}");
+    assert.equal(workingText.slice(anchor.from, anchor.to), ' .title="Forms"}');
     assert.equal(suggestion.removedText, "}\n\n## Forms");
   });
 
@@ -173,8 +166,7 @@ describe("pure review transitions", function () {
 
   it("provides targeted patch invalid diagnostics for bad headers and diff syntax errors", function () {
     const baseline = "alpha\nbeta\n";
-    const badHeader =
-      "--- a/wrong.md\n+++ b/wrong.md\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n";
+    const badHeader = "--- a/wrong.md\n+++ b/wrong.md\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n";
     const resultHeader = prepareProposalSubmission({
       review: undefined,
       documentId: DOCUMENT_ID,
@@ -189,8 +181,7 @@ describe("pure review transitions", function () {
     assert.match((resultHeader as ReviewTransitionError).message, /headers/);
     assert.match((resultHeader as ReviewTransitionError).message, /wrong\.md/);
 
-    const badSyntax =
-      "--- document\n+++ document\n@@ -1,5 +1,5 @@\n alpha\n-beta\n+BETA\n";
+    const badSyntax = "--- document\n+++ document\n@@ -1,5 +1,5 @@\n alpha\n-beta\n+BETA\n";
     const resultSyntax = prepareProposalSubmission({
       review: undefined,
       documentId: DOCUMENT_ID,
@@ -245,10 +236,12 @@ describe("pure review transitions", function () {
       documentPath: DOCUMENT_PATH,
       workingText: first.nextWorkingText,
       diskSha256: first.nextReview!.diskFenceSha256,
-      claims: [{
-        patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
-        description: "prefix",
-      }],
+      claims: [
+        {
+          patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
+          description: "prefix",
+        },
+      ],
       clientRequestId: "request-2",
       requestFingerprint: sha256Text("request-2"),
     });
@@ -333,15 +326,11 @@ describe("suggestions through owner edits and later claims", function () {
     );
     const insertionAt = workingText.indexOf("middle");
     const ownerText = "OWNER ";
-    const edited =
-      workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
+    const edited = workingText.slice(0, insertionAt) + ownerText + workingText.slice(insertionAt);
     const edit = prepareWorkingTextEdit({
       review,
       workingText: edited,
-      changes: ChangeSet.of(
-        { from: insertionAt, insert: ownerText },
-        workingText.length,
-      ),
+      changes: ChangeSet.of({ from: insertionAt, insert: ownerText }, workingText.length),
     });
     assert.ok(edit !== undefined);
 
@@ -400,9 +389,7 @@ describe("suggestions through owner edits and later claims", function () {
     const store = new ReviewDiffStore();
     store.replaceReview(DOCUMENT_ID, submitted.nextReview!);
     const chunks = store.getOutstandingChunks(DOCUMENT_ID, final)!;
-    const capitalized = chunks.find((chunk) =>
-      chunk.descriptions.includes("capitalize alpha"),
-    );
+    const capitalized = chunks.find((chunk) => chunk.descriptions.includes("capitalize alpha"));
     const prefixed = chunks.find((chunk) => chunk.descriptions.includes("add prefix"));
     assert.equal(capitalized?.workingText, "ALPHA");
     assert.equal(prefixed?.workingText, "prefix ");

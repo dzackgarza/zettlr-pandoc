@@ -140,276 +140,295 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import formatDate from '@common/util/format-date'
-import localiseNumber from '@common/util/localise-number'
-import PopoverWrapper from '@common/vue/PopoverWrapper.vue'
-import SelectControl from '@common/vue/form/elements/SelectControl.vue'
-import SwitchControl from '@common/vue/form/elements/SwitchControl.vue'
-import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import showToast from '@common/util/show-toast'
-import { trans } from '@common/i18n-renderer'
-import type { AnyDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
-import { ref, computed, watch, toRef, onBeforeMount } from 'vue'
-import { useConfigStore } from 'source/pinia'
-import type { DirSettingsCommandAPI } from 'source/app/service-providers/commands/dir-settings'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import formatDate from "@common/util/format-date";
+import localiseNumber from "@common/util/localise-number";
+import showToast from "@common/util/show-toast";
+import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
+import SelectControl from "@common/vue/form/elements/SelectControl.vue";
+import SwitchControl from "@common/vue/form/elements/SwitchControl.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import PopoverWrapper from "@common/vue/PopoverWrapper.vue";
+import type { AnyDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type {
   DirBindQuartoManifestAPI,
-  DirBindQuartoManifestOutcome
-} from 'source/app/service-providers/commands/dir-bind-quarto-manifest'
-import type { RequestFilesIPCAPI } from 'source/app/service-providers/windows'
+  DirBindQuartoManifestOutcome,
+} from "source/app/service-providers/commands/dir-bind-quarto-manifest";
+import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
+import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
+import { useConfigStore } from "source/pinia";
+import { computed, onBeforeMount, ref, toRef, watch } from "vue";
 
 /** Where Quarto looks for a book's manifest when nothing says otherwise. */
-const DIRECTORY_MANIFEST = '_quarto.yml'
+const DIRECTORY_MANIFEST = "_quarto.yml";
 
 // Currently defined directory colors
 const AVAILABLE_DIRECTORY_COLORS = [
-  null, 'blue', 'purple', 'rose',
-  'red', 'orange', 'yellow', 'green'
-] as const // Necessary so that we can use it to index the labels
+  null,
+  "blue",
+  "purple",
+  "rose",
+  "red",
+  "orange",
+  "yellow",
+  "green",
+] as const; // Necessary so that we can use it to index the labels
 
 // Labels/titles for the swatches
 const COLOR_SWATCH_LABELS = {
-  null: trans('Remove the custom color'),
-  blue: trans('Assign a blue accent color'),
-  purple: trans('Assign a purple accent color'),
-  rose: trans('Assign a rose accent color'),
-  red: trans('Assign a red accent color'),
-  orange: trans('Assign a orange accent color'),
-  yellow: trans('Assign a yellow accent color'),
-  green: trans('Assign a green accent color'),
-} as const
+  null: trans("Remove the custom color"),
+  blue: trans("Assign a blue accent color"),
+  purple: trans("Assign a purple accent color"),
+  rose: trans("Assign a rose accent color"),
+  red: trans("Assign a red accent color"),
+  orange: trans("Assign a orange accent color"),
+  yellow: trans("Assign a yellow accent color"),
+  green: trans("Assign a green accent color"),
+} as const;
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const foldersLabel = trans('Directories')
-const modifiedLabel = trans('Modified')
-const createdLabel = trans('Created')
-const filesLabel = trans('Files')
-const projectPropertiesLabel = trans('Project Settings…')
-const projectToggleLabel = trans('Enable Project')
-const quartoProjectLabel = trans('Quarto book')
-const bindManifestLabel = trans('Quarto book file')
-const selectManifestLabel = trans('Select book file…')
-const unbindManifestLabel = trans('Unbind')
-const sortByNameLabel = trans('Sort by name')
-const sortByTimeLabel = trans('Sort by time')
-const ascendingLabel = trans('ascending')
-const descendingLabel = trans('descending')
+const foldersLabel = trans("Directories");
+const modifiedLabel = trans("Modified");
+const createdLabel = trans("Created");
+const filesLabel = trans("Files");
+const projectPropertiesLabel = trans("Project Settings…");
+const projectToggleLabel = trans("Enable Project");
+const quartoProjectLabel = trans("Quarto book");
+const bindManifestLabel = trans("Quarto book file");
+const selectManifestLabel = trans("Select book file…");
+const unbindManifestLabel = trans("Unbind");
+const sortByNameLabel = trans("Sort by name");
+const sortByTimeLabel = trans("Sort by time");
+const ascendingLabel = trans("ascending");
+const descendingLabel = trans("descending");
 
 const icons = [
-  { shape: null, title: trans('Reset') },
-  { shape: 'cog', title: trans('Cog') },
-  { shape: 'cloud', title: trans('Cloud') },
-  { shape: 'check', title: trans('Check') },
-  { shape: 'times', title: trans('Times') },
-  { shape: 'help-info', title: trans('Help') },
-  { shape: 'info-standard', title: trans('Info') },
-  { shape: 'success-standard', title: trans('Success') },
-  { shape: 'error-standard', title: trans('Error') },
-  { shape: 'warning-standard', title: trans('Warning') },
-  { shape: 'bell', title: trans('Bell') },
-  { shape: 'user', title: trans('Person') },
-  { shape: 'users', title: trans('People') },
-  { shape: 'home', title: trans('Home') },
-  { shape: 'ban', title: trans('Ban') },
-  { shape: 'image', title: trans('Image') },
-  { shape: 'eye', title: trans('Eye') },
-  { shape: 'eye-hide', title: trans('Eye (crossed)') },
-  { shape: 'calendar', title: trans('Calendar') },
-  { shape: 'calculator', title: trans('Calculator') },
-  { shape: 'store', title: trans('Store') },
-  { shape: 'shopping-bag', title: trans('Shopping bag') },
-  { shape: 'shopping-cart', title: trans('Shopping cart') },
-  { shape: 'factory', title: trans('Factory') },
-  { shape: 'heart', title: trans('Heart') },
-  { shape: 'heart-broken', title: trans('Heart (broken)') },
-  { shape: 'talk-bubbles', title: trans('Bubbles') },
-  { shape: 'chat-bubble', title: trans('Bubble') },
-  { shape: 'bubble-exclamation', title: trans('Bubble (exclamation)') },
-  { shape: 'color-palette', title: trans('Colour Palette') },
-  { shape: 'bars', title: trans('Bars') },
-  { shape: 'thermometer', title: trans('Thermometer') },
-  { shape: 'book', title: trans('Book') },
-  { shape: 'library', title: trans('Library') },
-  { shape: 'bug', title: trans('Bug') },
-  { shape: 'note', title: trans('Note') },
-  { shape: 'lightbulb', title: trans('Lightbulb') },
-  { shape: 'trash', title: trans('Trash') },
-  { shape: 'snowflake', title: trans('Snowflake') },
-  { shape: 'asterisk', title: trans('Asterisk') },
-  { shape: 'key', title: trans('Key') },
-  { shape: 'bolt', title: trans('Bolt') },
-  { shape: 'wrench', title: trans('Wrench') },
-  { shape: 'flame', title: trans('Flame') },
-  { shape: 'hourglass', title: trans('Hourglass') },
-  { shape: 'briefcase', title: trans('Briefcase') },
-  { shape: 'tools', title: trans('Tools') },
-  { shape: 'moon', title: trans('Moon') },
-  { shape: 'sun', title: trans('Sun') },
-  { shape: 'tree', title: trans('Tree') },
-  { shape: 'dot-circle', title: trans('Circle (dot)') },
-  { shape: 'circle', title: trans('Circle') },
-  { shape: 'video-camera', title: trans('Video camera') },
-  { shape: 'film-strip', title: trans('Film strip') },
-  { shape: 'microphone', title: trans('Microphone') },
-  { shape: 'crown', title: trans('Crown') },
-  { shape: 'star', title: trans('Star') },
-  { shape: 'flag', title: trans('Flag') },
-  { shape: 'envelope', title: trans('Envelope') },
-  { shape: 'airplane', title: trans('Airplane') },
-  { shape: 'happy-face', title: trans('Happy emoji') },
-  { shape: 'neutral-face', title: trans('Neutral emoji') },
-  { shape: 'sad-face', title: trans('Sad emoji') },
-  { shape: 'thumbs-up', title: trans('Thumbs up') },
-  { shape: 'thumbs-down', title: trans('Thumbs down') },
-  { shape: 'map', title: trans('Map') },
-  { shape: 'compass', title: trans('Compass') },
-  { shape: 'map-marker', title: trans('Map marker') },
-  { shape: 'flask', title: trans('Flask') },
-  { shape: 'cd-dvd', title: trans('CD/DVD') }
-]
+  { shape: null, title: trans("Reset") },
+  { shape: "cog", title: trans("Cog") },
+  { shape: "cloud", title: trans("Cloud") },
+  { shape: "check", title: trans("Check") },
+  { shape: "times", title: trans("Times") },
+  { shape: "help-info", title: trans("Help") },
+  { shape: "info-standard", title: trans("Info") },
+  { shape: "success-standard", title: trans("Success") },
+  { shape: "error-standard", title: trans("Error") },
+  { shape: "warning-standard", title: trans("Warning") },
+  { shape: "bell", title: trans("Bell") },
+  { shape: "user", title: trans("Person") },
+  { shape: "users", title: trans("People") },
+  { shape: "home", title: trans("Home") },
+  { shape: "ban", title: trans("Ban") },
+  { shape: "image", title: trans("Image") },
+  { shape: "eye", title: trans("Eye") },
+  { shape: "eye-hide", title: trans("Eye (crossed)") },
+  { shape: "calendar", title: trans("Calendar") },
+  { shape: "calculator", title: trans("Calculator") },
+  { shape: "store", title: trans("Store") },
+  { shape: "shopping-bag", title: trans("Shopping bag") },
+  { shape: "shopping-cart", title: trans("Shopping cart") },
+  { shape: "factory", title: trans("Factory") },
+  { shape: "heart", title: trans("Heart") },
+  { shape: "heart-broken", title: trans("Heart (broken)") },
+  { shape: "talk-bubbles", title: trans("Bubbles") },
+  { shape: "chat-bubble", title: trans("Bubble") },
+  { shape: "bubble-exclamation", title: trans("Bubble (exclamation)") },
+  { shape: "color-palette", title: trans("Colour Palette") },
+  { shape: "bars", title: trans("Bars") },
+  { shape: "thermometer", title: trans("Thermometer") },
+  { shape: "book", title: trans("Book") },
+  { shape: "library", title: trans("Library") },
+  { shape: "bug", title: trans("Bug") },
+  { shape: "note", title: trans("Note") },
+  { shape: "lightbulb", title: trans("Lightbulb") },
+  { shape: "trash", title: trans("Trash") },
+  { shape: "snowflake", title: trans("Snowflake") },
+  { shape: "asterisk", title: trans("Asterisk") },
+  { shape: "key", title: trans("Key") },
+  { shape: "bolt", title: trans("Bolt") },
+  { shape: "wrench", title: trans("Wrench") },
+  { shape: "flame", title: trans("Flame") },
+  { shape: "hourglass", title: trans("Hourglass") },
+  { shape: "briefcase", title: trans("Briefcase") },
+  { shape: "tools", title: trans("Tools") },
+  { shape: "moon", title: trans("Moon") },
+  { shape: "sun", title: trans("Sun") },
+  { shape: "tree", title: trans("Tree") },
+  { shape: "dot-circle", title: trans("Circle (dot)") },
+  { shape: "circle", title: trans("Circle") },
+  { shape: "video-camera", title: trans("Video camera") },
+  { shape: "film-strip", title: trans("Film strip") },
+  { shape: "microphone", title: trans("Microphone") },
+  { shape: "crown", title: trans("Crown") },
+  { shape: "star", title: trans("Star") },
+  { shape: "flag", title: trans("Flag") },
+  { shape: "envelope", title: trans("Envelope") },
+  { shape: "airplane", title: trans("Airplane") },
+  { shape: "happy-face", title: trans("Happy emoji") },
+  { shape: "neutral-face", title: trans("Neutral emoji") },
+  { shape: "sad-face", title: trans("Sad emoji") },
+  { shape: "thumbs-up", title: trans("Thumbs up") },
+  { shape: "thumbs-down", title: trans("Thumbs down") },
+  { shape: "map", title: trans("Map") },
+  { shape: "compass", title: trans("Compass") },
+  { shape: "map-marker", title: trans("Map marker") },
+  { shape: "flask", title: trans("Flask") },
+  { shape: "cd-dvd", title: trans("CD/DVD") },
+];
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-const props = defineProps<{ target: HTMLElement, directory: DirDescriptor, children: AnyDescriptor[] }>()
+const props = defineProps<{
+  target: HTMLElement;
+  directory: DirDescriptor;
+  children: AnyDescriptor[];
+}>();
 
-const emit = defineEmits<(e: 'close') => void>()
+const emit = defineEmits<(e: "close") => void>();
 
-const sortingType = ref<'name'|'time'>('name')
-const sortingDirection = ref<'up'|'down'>('up')
-const isProject = ref<boolean>(props.directory.settings.project !== null)
-const isQuartoProject = computed(() => props.directory.settings.project?.manifest.kind === 'quarto')
-const boundManifest = computed(() => props.directory.settings.quartoManifest)
-const manifestBinding = ref<string>(props.directory.settings.quartoManifest ?? '')
+const sortingType = ref<"name" | "time">("name");
+const sortingDirection = ref<"up" | "down">("up");
+const isProject = ref<boolean>(props.directory.settings.project !== null);
+const isQuartoProject = computed(
+  () => props.directory.settings.project?.manifest.kind === "quarto",
+);
+const boundManifest = computed(() => props.directory.settings.quartoManifest);
+const manifestBinding = ref<string>(props.directory.settings.quartoManifest ?? "");
 
 const creationTime = computed(() => {
-  return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true)
-})
+  return formatDate(new Date(props.directory.creationtime), configStore.config.appLang, true);
+});
 
 const modificationTime = computed(() => {
-  return formatDate(new Date(props.directory.modtime), configStore.config.appLang, true)
-})
+  return formatDate(new Date(props.directory.modtime), configStore.config.appLang, true);
+});
 
 const formattedFiles = computed(() => {
-  return localiseNumber(props.children.filter(x => x.type !== 'directory').length)
-})
+  return localiseNumber(props.children.filter((x) => x.type !== "directory").length);
+});
 
 const formattedDirs = computed(() => {
-  return localiseNumber(props.children.filter(x => x.type === 'directory').length)
-})
+  return localiseNumber(props.children.filter((x) => x.type === "directory").length);
+});
 
 const formattedWordCount = computed(() => {
   const totalWords = props.children
-    .filter((x): x is MDFileDescriptor => x.type === 'file')
-    .map(x => x.wordCount)
-    .reduce((prev, cur) => { return prev + cur }, 0)
+    .filter((x): x is MDFileDescriptor => x.type === "file")
+    .map((x) => x.wordCount)
+    .reduce((prev, cur) => {
+      return prev + cur;
+    }, 0);
 
-  return trans('%s words', localiseNumber(totalWords))
-})
+  return trans("%s words", localiseNumber(totalWords));
+});
 
-watch(sortingType, updateSorting)
-watch(sortingDirection, updateSorting)
-watch(isProject, updateProject)
-watch(toRef(props, 'directory'), () => {
-  setSorting()
-  isProject.value = props.directory.settings.project !== null
-  manifestBinding.value = props.directory.settings.quartoManifest ?? ''
-})
+watch(sortingType, updateSorting);
+watch(sortingDirection, updateSorting);
+watch(isProject, updateProject);
+watch(toRef(props, "directory"), () => {
+  setSorting();
+  isProject.value = props.directory.settings.project !== null;
+  manifestBinding.value = props.directory.settings.quartoManifest ?? "";
+});
 
-onBeforeMount(setSorting)
+onBeforeMount(setSorting);
 
 /**
  * Presets the sorting value with the sorting of the directory descriptor prop.
  */
-function setSorting (): void {
-  const [ type, direction ] = props.directory.settings.sorting.split('-')
+function setSorting(): void {
+  const [type, direction] = props.directory.settings.sorting.split("-");
   // This legacy popover exposes only the historical name/time pair. Extended
   // Explorer orderings are managed by the visible Explorer controls; opening
   // Properties must not coerce one of those methods back to a legacy value.
-  if (type !== 'name' && type !== 'time') {
-    return
+  if (type !== "name" && type !== "time") {
+    return;
   }
-  sortingType.value = type
-  sortingDirection.value = direction === 'down' ? 'down' : 'up'
+  sortingType.value = type;
+  sortingDirection.value = direction === "down" ? "down" : "up";
 }
 
-function openProjectPreferences (): void {
-  ipcRenderer.invoke('application', {
-    command: 'open-project-preferences',
-    payload: props.directory.path
-  })
-    .catch(err => reportError(err))
-  emit('close')
+function openProjectPreferences(): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "open-project-preferences",
+      payload: props.directory.path,
+    })
+    .catch((err) => reportError(err));
+  emit("close");
 }
 
-function updateIcon (iconShape: string|null): void {
-  ipcRenderer.invoke('application', {
-    command: 'set-directory-setting',
-    payload: {
-      path: props.directory.path,
-      settings: { icon: iconShape }
-    } satisfies DirSettingsCommandAPI
-  })
-    .catch(e => reportError(e))
+function updateIcon(iconShape: string | null): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "set-directory-setting",
+      payload: {
+        path: props.directory.path,
+        settings: { icon: iconShape },
+      } satisfies DirSettingsCommandAPI,
+    })
+    .catch((e) => reportError(e));
 }
 
-function updateColor (color: string|null): void {
-  ipcRenderer.invoke('application', {
-    command: 'set-directory-setting',
-    payload: {
-      path: props.directory.path,
-      settings: { color }
-    } satisfies DirSettingsCommandAPI
-  })
-    .catch(e => reportError(e))
+function updateColor(color: string | null): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "set-directory-setting",
+      payload: {
+        path: props.directory.path,
+        settings: { color },
+      } satisfies DirSettingsCommandAPI,
+    })
+    .catch((e) => reportError(e));
 }
 
-function updateSorting (): void {
-  ipcRenderer.invoke('application', {
-    command: 'dir-sort',
-    payload: {
-      path: props.directory.path,
-      sorting: `${sortingType.value}-${sortingDirection.value}`
-    }
-  })
-    .catch(e => reportError(e))
+function updateSorting(): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "dir-sort",
+      payload: {
+        path: props.directory.path,
+        sorting: `${sortingType.value}-${sortingDirection.value}`,
+      },
+    })
+    .catch((e) => reportError(e));
 }
 
 /**
  * Binds this directory to the manifest named in the field, so that the book it
  * describes becomes this directory's project.
  */
-function bindManifest (): void {
-  const manifest = manifestBinding.value.trim()
-  if (manifest === '') {
-    return
+function bindManifest(): void {
+  const manifest = manifestBinding.value.trim();
+  if (manifest === "") {
+    return;
   }
 
-  sendBinding(manifest)
+  sendBinding(manifest);
 }
 
 /** Opens a picker on the manifest, and binds this directory to what it names. */
-function selectManifest (): void {
+function selectManifest(): void {
   const payload: RequestFilesIPCAPI = {
-    filters: [{ name: trans('Quarto manifest'), extensions: [ 'yml', 'yaml' ] }],
-    multiSelection: false
-  }
+    filters: [{ name: trans("Quarto manifest"), extensions: ["yml", "yaml"] }],
+    multiSelection: false,
+  };
 
-  ipcRenderer.invoke('request-files', payload)
+  ipcRenderer
+    .invoke("request-files", payload)
     .then((chosen: string[]) => {
-      if (chosen.length > 0 && chosen[0].trim() !== '') {
-        sendBinding(chosen[0])
+      if (chosen.length > 0 && chosen[0].trim() !== "") {
+        sendBinding(chosen[0]);
       }
     })
-    .catch(err => surfaceBindingFailure(err))
+    .catch((err) => surfaceBindingFailure(err));
 }
 
 /** Removes the binding, and the project derived from the manifest it named. */
-function unbindManifest (): void {
-  manifestBinding.value = ''
-  sendBinding(null)
+function unbindManifest(): void {
+  manifestBinding.value = "";
+  sendBinding(null);
 }
 
 /**
@@ -418,17 +437,18 @@ function unbindManifest (): void {
  *
  * @param  {string|null}  manifest  The manifest, or null to unbind
  */
-function sendBinding (manifest: string|null): void {
-  ipcRenderer.invoke('application', {
-    command: 'dir-bind-quarto-manifest',
-    payload: { path: props.directory.path, manifest } satisfies DirBindQuartoManifestAPI
-  })
+function sendBinding(manifest: string | null): void {
+  ipcRenderer
+    .invoke("application", {
+      command: "dir-bind-quarto-manifest",
+      payload: { path: props.directory.path, manifest } satisfies DirBindQuartoManifestAPI,
+    })
     .then((outcome: DirBindQuartoManifestOutcome) => {
-      if (outcome.kind === 'rejected') {
-        showToast(describeBindingRejection(outcome.reason), 'error')
+      if (outcome.kind === "rejected") {
+        showToast(describeBindingRejection(outcome.reason), "error");
       }
     })
-    .catch(err => surfaceBindingFailure(err))
+    .catch((err) => surfaceBindingFailure(err));
 }
 
 /**
@@ -438,9 +458,12 @@ function sendBinding (manifest: string|null): void {
  *
  * @param  {unknown}  err  The error the call rejected with
  */
-function surfaceBindingFailure (err: unknown): void {
-  reportError(err)
-  showToast(trans('Could not change the Quarto book: %s', err instanceof Error ? err.message : String(err)), 'error')
+function surfaceBindingFailure(err: unknown): void {
+  reportError(err);
+  showToast(
+    trans("Could not change the Quarto book: %s", err instanceof Error ? err.message : String(err)),
+    "error",
+  );
 }
 
 /**
@@ -450,36 +473,40 @@ function surfaceBindingFailure (err: unknown): void {
  *
  * @return  {string}          What the user needs to know
  */
-function describeBindingRejection (reason: 'not-a-file'|'outside-directory'|'no-such-directory'): string {
+function describeBindingRejection(
+  reason: "not-a-file" | "outside-directory" | "no-such-directory",
+): string {
   switch (reason) {
-    case 'not-a-file':
-      return trans('No Quarto book file exists at that path.')
-    case 'outside-directory':
-      return trans('Choose a Quarto book file inside this folder.')
-    case 'no-such-directory':
-      return trans('The directory %s is no longer open.', props.directory.name)
+    case "not-a-file":
+      return trans("No Quarto book file exists at that path.");
+    case "outside-directory":
+      return trans("Choose a Quarto book file inside this folder.");
+    case "no-such-directory":
+      return trans("The directory %s is no longer open.", props.directory.name);
   }
 }
 
-function updateProject (): void {
-  const hasProject = props.directory.settings.project !== null
+function updateProject(): void {
+  const hasProject = props.directory.settings.project !== null;
   if (isProject.value === hasProject) {
-    return
+    return;
   }
 
   // NOTE: The toggle describes *wanted* behavior
   if (isProject.value) {
-    ipcRenderer.invoke('application', {
-      command: 'dir-new-project',
-      payload: { path: props.directory.path }
-    })
-      .catch(e => reportError(e))
+    ipcRenderer
+      .invoke("application", {
+        command: "dir-new-project",
+        payload: { path: props.directory.path },
+      })
+      .catch((e) => reportError(e));
   } else {
-    ipcRenderer.invoke('application', {
-      command: 'dir-remove-project',
-      payload: { path: props.directory.path }
-    })
-      .catch(e => reportError(e))
+    ipcRenderer
+      .invoke("application", {
+        command: "dir-remove-project",
+        payload: { path: props.directory.path },
+      })
+      .catch((e) => reportError(e));
   }
 }
 </script>

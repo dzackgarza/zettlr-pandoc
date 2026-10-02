@@ -23,14 +23,8 @@
     "recentGlobalSearches": []
   },
   "ui": {
-    "fileManagerSplitSize": [
-      40,
-      60
-    ],
-    "editorSidebarSplitSize": [
-      55,
-      45
-    ]
+    "fileManagerSplitSize": [40, 60],
+    "editorSidebarSplitSize": [55, 45]
   },
   "attachmentExtensions": [],
   "darkMode": true,
@@ -53,15 +47,7 @@
     "sortWorkspacesManually": false,
     "expandedDirectories": [],
     "filters": {
-      "include": [
-        ".md",
-        ".rmd",
-        ".qmd",
-        ".markdown",
-        ".txt",
-        ".mdx",
-        ".mkd"
-      ]
+      "include": [".md", ".rmd", ".qmd", ".markdown", ".txt", ".mdx", ".mkd"]
     },
     "ignoreRules": [],
     "showIgnored": false
@@ -76,7 +62,6 @@
     "stripLinks": "full",
     "cslLibrary": "",
     "cslStyle": "",
-    "useBundledPandoc": true,
     "exportQmdWithQuarto": false,
     "customCommands": [],
     "filters": [],
@@ -413,10 +398,7 @@
     "deleteOnFail": false,
     "leaveAppRunning": false,
     "avoidNewTabs": false,
-    "iframeWhitelist": [
-      "www.youtube.com",
-      "player.vimeo.com"
-    ],
+    "iframeWhitelist": ["www.youtube.com", "player.vimeo.com"],
     "checkForUpdates": true,
     "zoomBehavior": "gui"
   },

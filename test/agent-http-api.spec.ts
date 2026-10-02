@@ -21,20 +21,9 @@
 import "./headless-electron-harness.cjs";
 
 import type {
-  AgentErrorResponse,
-  DiscardReviewResponse,
-  FigureFileResponse,
-  FigureListResponse,
-  FigureSearchResponse,
-  LintResponse,
-  MacroInventoryResponse,
-  ReadDocumentResponse,
+  AgentApiComponents,
   ReapplyReviewRequest,
-  RetractProposalResponse,
-  ReviewDetailResponse,
   ReviewMutationPrecondition,
-  SearchDocumentResponse,
-  WorkspaceSearchResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -58,16 +47,16 @@ import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
+import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
-import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import DocumentManager from "source/app/service-providers/documents";
-import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
+import { SearchProvider } from "source/app/service-providers/search";
 import { sha256Text } from "source/common/util/sha256";
+import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
 import { userData } from "./headless-electron-harness.cjs";
-import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 
 // ============================================================================
 // Contract conformance
@@ -213,15 +202,18 @@ for (const [name, schema] of Object.entries(openApiDocument.components.schemas))
   ajv.addSchema(schema as object, `#/components/schemas/${name}`);
 }
 
-function assertMatchesSchema(body: unknown, schemaName: string): void {
-  const validate = ajv.getSchema(`#/components/schemas/${schemaName}`);
-  assert.ok(validate !== undefined, `openapi.yaml declares no schema ${schemaName}`);
-  if (validate(body) !== true) {
-    assert.fail(
-      `Response does not conform to ${schemaName}: ${ajv.errorsText(validate.errors)}\n` +
-        JSON.stringify(body, null, 2),
-    );
+type AgentApiSchemas = AgentApiComponents["schemas"];
+
+/** Parse a response body and prove that it conforms to the named OpenAPI schema. */
+function parseAs<N extends keyof AgentApiSchemas & string>(
+  body: string,
+  schemaName: N,
+): AgentApiSchemas[N] {
+  const value: JsonValue = JSON.parse(body);
+  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
+    return value;
   }
+  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
 }
 
 describe("Agent HTTP API (OpenAPI / REST)", function () {
@@ -620,29 +612,32 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(inapplicable.status, 400);
-    assert.equal(JSON.parse(inapplicable.body).error.code, "PATCH_NOT_APPLICABLE");
+    assert.equal(
+      parseAs(inapplicable.body, "AgentErrorResponse").error.code,
+      "PATCH_NOT_APPLICABLE",
+    );
     const response = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify(request),
     });
     assert.equal(response.status, 200, response.body);
-    const result = JSON.parse(response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
     const content = await httpRequest(
       "GET",
       `/v1/documents/${result.documentId}?includeContent=true`,
     );
-    assert.equal(JSON.parse(content.body).content, after);
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, after);
     assert.equal(result.focused, false);
     assert.deepEqual(provider.getFocusedView(), focused);
     const stale = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({ ...request, clientRequestId: "stale-submission" }),
     });
     assert.equal(stale.status, 412);
-    assert.equal(JSON.parse(stale.body).error.code, "BASELINE_MISMATCH");
+    assert.equal(parseAs(stale.body, "AgentErrorResponse").error.code, "BASELINE_MISMATCH");
     const replay = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({ ...request, baseline: undefined }),
     });
     assert.equal(replay.status, 409);
-    assert.equal(JSON.parse(replay.body).error.code, "IDEMPOTENCY_CONFLICT");
+    assert.equal(parseAs(replay.body, "AgentErrorResponse").error.code, "IDEMPOTENCY_CONFLICT");
   });
 
   it("review-submission applies ordered claims and rejects paths outside the workspace", async function () {
@@ -686,14 +681,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(invalid.status, 404);
-    assert.equal(JSON.parse(invalid.body).error.code, "ANNOTATION_NOT_FOUND");
-    const unchanged = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
-    assert.equal(JSON.parse(unchanged.body).content, before);
+    assert.equal(parseAs(invalid.body, "AgentErrorResponse").error.code, "ANNOTATION_NOT_FOUND");
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(unchanged.body, "ReadDocumentResponse").content, before);
     const unlinked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
-    assert.deepEqual(JSON.parse(unlinked.body).proposalActions, []);
+    assert.deepEqual(parseAs(unlinked.body, "AnnotationResponse").proposalActions, []);
     const response = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({
         document: { uri: filePath },
@@ -702,21 +694,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(response.status, 200, response.body);
-    const result = JSON.parse(response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
     assert.equal(result.focused, true);
     assert.equal(provider.getFocusedView()?.documentId, documentId);
     const content = await httpRequest(
       "GET",
       `/v1/documents/${result.documentId}?includeContent=true`,
     );
-    assert.equal(JSON.parse(content.body).content, after);
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, after);
     const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}?view=packets`);
     assert.deepEqual(
-      JSON.parse(packets.body).packets.map((packet: { description: string }) => packet.description),
+      parseAs(packets.body, "ReviewPacketsResponse").packets.map((packet) => packet.description),
       claims.map((claim) => claim.description),
     );
     const linked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
-    assert.equal(JSON.parse(linked.body).proposalActions[0].packetId, result.packetIds[0]);
+    assert.equal(
+      parseAs(linked.body, "AnnotationResponse").proposalActions[0].packetId,
+      result.packetIds[0],
+    );
   });
 
   it("rejects duplicate and near-duplicate claim descriptions", async function () {
@@ -746,8 +741,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(exact.status, 400, exact.body);
-    const exactError = (JSON.parse(exact.body) as AgentErrorResponse).error;
-    assertMatchesSchema(exactError, "AgentError");
+    const exactError = parseAs(exact.body, "AgentErrorResponse").error;
     assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
     assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
     assert.equal(exactError.descriptionSimilarity, 1);
@@ -756,7 +750,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "GET",
       `/v1/documents/${documentId}?includeContent=true`,
     );
-    assert.equal((JSON.parse(unchangedAfterExact.body) as ReadDocumentResponse).content, before);
+    assert.equal(parseAs(unchangedAfterExact.body, "ReadDocumentResponse").content, before);
 
     const fuzzyDescriptions = [
       "Correct this theorem statement by adding the missing hypothesis at this location.",
@@ -780,8 +774,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(fuzzy.status, 400, fuzzy.body);
-    const fuzzyError = (JSON.parse(fuzzy.body) as AgentErrorResponse).error;
-    assertMatchesSchema(fuzzyError, "AgentError");
+    const fuzzyError = parseAs(fuzzy.body, "AgentErrorResponse").error;
     assert.equal(fuzzyError.code, "DUPLICATE_CLAIM_DESCRIPTION");
     assert.deepEqual(fuzzyError.conflictingClaimIndices, [0, 1]);
     assert.ok(fuzzyError.descriptionSimilarity !== undefined);
@@ -792,7 +785,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "GET",
       `/v1/documents/${documentId}?includeContent=true`,
     );
-    assert.equal((JSON.parse(unchangedAfterFuzzy.body) as ReadDocumentResponse).content, before);
+    assert.equal(parseAs(unchangedAfterFuzzy.body, "ReadDocumentResponse").content, before);
   });
 
   it("fails enabled startup when the configured port is taken", async function () {
@@ -863,7 +856,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
     const rawHelp = HELP_DOCUMENT;
     // The served guide is HELP.md with the theorem-family table filled in.
-    assert.ok(rawHelp.startsWith(readFileSync(path.join(__dirname, "../HELP.md"), "utf8").split("<!--")[0]));
+    assert.ok(
+      rawHelp.startsWith(readFileSync(path.join(__dirname, "../HELP.md"), "utf8").split("<!--")[0]),
+    );
     assert.ok(rawHelp.includes("| Lemma | `.lemma` | `#lem:key` |"));
 
     // Markdown by default
@@ -882,16 +877,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       headers: { accept: "application/json" },
     });
     assert.equal(jsonHelp.status, 200);
-    const parsed = JSON.parse(jsonHelp.body);
-    assert.equal(parsed.help, rawHelp);
-    assertMatchesSchema(parsed, "HelpResponse");
+    assert.equal(parseAs(jsonHelp.body, "HelpResponse").help, rawHelp);
 
     // JSON format via query parameter
     const queryJson = await httpRequest("GET", "/v1/help?format=json");
     assert.equal(queryJson.status, 200);
-    const parsedQuery = JSON.parse(queryJson.body);
-    assert.equal(parsedQuery.help, rawHelp);
-    assertMatchesSchema(parsedQuery, "HelpResponse");
+    assert.equal(parseAs(queryJson.body, "HelpResponse").help, rawHelp);
   });
 
   it("serves a parsable specification for a Host header that is not a YAML scalar", async function () {
@@ -1102,7 +1093,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.on("close", () => resolve(received));
     });
     assert.match(raw.split("\r\n")[0], /^HTTP\/1\.1 500 /);
-    assert.equal(JSON.parse(raw.split("\r\n\r\n")[1]).error.code, "INTERNAL_ERROR");
+    assert.equal(
+      parseAs(raw.split("\r\n\r\n")[1], "AgentErrorResponse").error.code,
+      "INTERNAL_ERROR",
+    );
 
     assert.equal((await httpRequest("GET", "/v1/ping")).status, 200);
   });
@@ -1110,10 +1104,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("GET /v1/ping returns protocol version", async function () {
     const response = await httpRequest("GET", "/v1/ping");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
-    assert.ok(body.protocolVersion !== undefined);
-    assert.ok(body.instanceId !== undefined);
-    assertMatchesSchema(body, "PingResponse");
+    const body = parseAs(response.body, "PingResponse");
+    assert.ok(body.protocolVersion.length > 0);
+    assert.ok(body.instanceId.length > 0);
   });
 
   it("preserves workspace walk failures in the HTTP error detail", async function () {
@@ -1123,35 +1116,28 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const response = await httpRequest("GET", "/v1/workspace/files");
     assert.equal(response.status, 500);
-    const body = JSON.parse(response.body) as {
-      error: { code: string; message: string };
-    };
+    const body = parseAs(response.body, "AgentErrorResponse");
     assert.equal(body.error.code, "INTERNAL_ERROR");
     assert.match(body.error.message, /ENOTDIR|not a directory/i);
     assert.ok(body.error.message.includes(invalidWorkspace));
-    assertMatchesSchema(body, "AgentErrorResponse");
 
     const documents = await httpRequest(
       "GET",
       `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=documents`,
     );
     assert.equal(documents.status, 500);
-    const documentsBody = JSON.parse(documents.body) as {
-      error: { code: string; message: string };
-    };
+    const documentsBody = parseAs(documents.body, "AgentErrorResponse");
     assert.equal(documentsBody.error.code, "INTERNAL_ERROR");
     assert.match(documentsBody.error.message, /ENOTDIR|not a directory/i);
     assert.ok(documentsBody.error.message.includes(invalidWorkspace));
-    assertMatchesSchema(documentsBody, "AgentErrorResponse");
   });
 
   it("GET /v1/capabilities reports supported features", async function () {
     const response = await httpRequest("GET", "/v1/capabilities");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = parseAs(response.body, "CapabilitiesResponse");
     assert.deepEqual(body.supportedPatchFormats, ["unified-diff"]);
     assert.equal(body.reviewSupport, true);
-    assertMatchesSchema(body, "CapabilitiesResponse");
   });
 
   it("GET /v1/context returns open documents", async function () {
@@ -1159,9 +1145,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await openFile(filePath, "content\n");
     const response = await httpRequest("GET", "/v1/context");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = parseAs(response.body, "EditorContext");
     assert.ok(body.openDocuments.length > 0);
-    assertMatchesSchema(body, "EditorContext");
   });
 
   it("GET /v1/documents lists open documents", async function () {
@@ -1169,21 +1154,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await openFile(filePath, "content\n");
     const response = await httpRequest("GET", "/v1/documents");
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body) as {
-      documents: Array<{ path: string }>;
-    };
+    const body = parseAs(response.body, "DocumentListResponse");
     assert.ok(body.documents.length > 0);
-    assert.ok(body.documents.some((d: { path: string }) => d.path === filePath));
-    assertMatchesSchema(body, "DocumentListResponse");
-    for (const document of body.documents) {
-      assertMatchesSchema(document, "DocumentSummary");
-    }
+    assert.ok(body.documents.some((d) => d.path === filePath));
   });
 
   it("serves the Zotero operations at /zotero/mcp and every other operation at /mcp", async function () {
     const filePath = path.join(scratch, "mcp.md");
     const docId = await openFile(filePath, "mcp content\n");
-    const operations = Object.values(openApiDocument.paths).flatMap((methods) => Object.values(methods));
+    const operations = Object.values(openApiDocument.paths).flatMap((methods) =>
+      Object.values(methods),
+    );
     const zoteroClient = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
     await zoteroClient.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
@@ -1215,9 +1196,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
       assert.equal(read.isError, false);
       const [content] = read.content as Array<{ type: "text"; text: string }>;
-      const document = JSON.parse(content.text) as ReadDocumentResponse;
+      const document = parseAs(content.text, "ReadDocumentResponse");
       assert.equal(document.content, "mcp content\n");
-      assertMatchesSchema(document, "ReadDocumentResponse");
 
       const missing = await client.callTool({
         name: "getDocument",
@@ -1243,8 +1223,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const found = await httpRequest("GET", "/v1/workspace/search?text=lattice");
     assert.equal(found.status, 200);
-    const body = JSON.parse(found.body) as WorkspaceSearchResponse;
-    assertMatchesSchema(body, "WorkspaceSearchResponse");
+    const body = parseAs(found.body, "WorkspaceSearchResponse");
     assert.equal(body.truncated, false);
     assert.equal(body.matchCount, 3);
     const byPath = new Map(body.files.map((file) => [file.path, file]));
@@ -1263,37 +1242,49 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         [2, "Lattice"],
       ],
     );
-    const closedRead = JSON.parse(
+    const closedRead = parseAs(
       (await httpRequest("GET", `/v1/documents/${closed.documentId}?includeContent=true`)).body,
-    ) as ReadDocumentResponse;
+      "ReadDocumentResponse",
+    );
     assert.equal(closedRead.content, "first line\nan even lattice and a Lattice\n");
     const closedSearch = await httpRequest("POST", `/v1/documents/${closed.documentId}/search`, {
       body: JSON.stringify({ literal: "Lattice" }),
     });
     assert.equal(closedSearch.status, 200, closedSearch.body);
-    const closedHits = JSON.parse(closedSearch.body) as SearchDocumentResponse;
-    assertMatchesSchema(closedHits, "SearchDocumentResponse");
-    assert.deepEqual(closedHits.hits.map((hit) => [hit.line, hit.column]), [[2, 9], [2, 23]]);
+    const closedHits = parseAs(closedSearch.body, "SearchDocumentResponse");
+    assert.deepEqual(
+      closedHits.hits.map((hit) => [hit.line, hit.column]),
+      [
+        [2, 9],
+        [2, 23],
+      ],
+    );
 
-    const cased = JSON.parse(
-      (await httpRequest("GET", "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md"))
-        .body,
-    ) as WorkspaceSearchResponse;
+    const cased = parseAs(
+      (
+        await httpRequest(
+          "GET",
+          "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md",
+        )
+      ).body,
+      "WorkspaceSearchResponse",
+    );
     assert.deepEqual(
       cased.files.map((file) => file.path),
       [closedPath],
     );
     assert.equal(cased.matchCount, 1);
 
-    const capped = JSON.parse(
+    const capped = parseAs(
       (await httpRequest("GET", "/v1/workspace/search?text=lattice&maxMatches=2")).body,
-    ) as WorkspaceSearchResponse;
+      "WorkspaceSearchResponse",
+    );
     assert.equal(capped.matchCount, 2);
     assert.equal(capped.truncated, true);
 
     const invalid = await httpRequest("GET", "/v1/workspace/search?text=(&regex=true");
     assert.equal(invalid.status, 400);
-    assert.equal((JSON.parse(invalid.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+    assert.equal(parseAs(invalid.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
 
     // A catastrophic pattern is stopped at the per-file deadline, and the
     // refusal names the file it could not finish.
@@ -1304,7 +1295,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/workspace/search?regex=true&text=${encodeURIComponent("(a+)+$")}`,
     );
     assert.equal(stalled.status, 422);
-    const refusal = JSON.parse(stalled.body) as AgentErrorResponse;
+    const refusal = parseAs(stalled.body, "AgentErrorResponse");
     assert.equal(refusal.error.code, "SEARCH_TIMEOUT");
     assert.ok(refusal.error.message.includes(stallPath), refusal.error.message);
   });
@@ -1314,10 +1305,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "content\n");
     const response = await httpRequest("GET", `/v1/documents/${docId}`);
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body);
+    const body = parseAs(response.body, "DocumentSummary");
     assert.equal(body.documentId, docId);
     assert.equal(body.path, filePath);
-    assertMatchesSchema(body, "DocumentSummary");
   });
 
   it("GET /v1/documents/{id}?includeContent=true returns live buffer with ETag", async function () {
@@ -1325,11 +1315,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const docId = await openFile(filePath, "alpha\nbeta\n");
     const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
     assert.equal(response.status, 200);
-    const body = JSON.parse(response.body) as ReadDocumentResponse;
+    const body = parseAs(response.body, "ReadDocumentResponse");
     assert.ok(body.content.includes("alpha"));
     // The revision hash is the whole external identity a proposal sends back.
     assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
-    assertMatchesSchema(body, "ReadDocumentResponse");
     // ETag must be present
     const etag = response.headers["etag"];
     assert.ok(etag !== undefined, "ETag header must be present");
@@ -1399,17 +1388,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const content = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
     assert.equal(content.status, 200);
-    assert.equal((JSON.parse(content.body) as ReadDocumentResponse).content, revised);
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, revised);
 
     const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
     assert.equal(chunks.status, 200);
-    const chunkBody = JSON.parse(chunks.body) as {
-      chunks: Array<{
-        descriptions: string[];
-        workingText: string;
-        workingSpans: Array<{ from: number; to: number }>;
-      }>;
-    };
+    const chunkBody = parseAs(chunks.body, "ReviewChunksResponse");
     // The reviewer reads the chunk as text, so the change is reported the way
     // it reads -- one replaced word -- rather than as the letters a character
     // diff happens to share between "before" and "after".
@@ -1511,10 +1494,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const submitted = await provider.submitProposal(
       documentId,
       sha256Text("alpha\nbeta\n"),
-      [{
-        description: "capitalize beta",
-        patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
-      }],
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
+        },
+      ],
       "frozen-review",
       0,
     );
@@ -1525,24 +1510,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       body: JSON.stringify({ expectedReviewGeneration: submitted.reviewGeneration }),
     });
     assert.equal(live.status, 409);
-    assert.equal(JSON.parse(live.body).error.code, "REVIEW_NOT_INVALIDATED");
+    assert.equal(parseAs(live.body, "AgentErrorResponse").error.code, "REVIEW_NOT_INVALIDATED");
 
     await reopenAfterDiskEdit(filePath, "alpha\nBETA\ngamma\n");
 
     const frozen = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}`);
     assert.equal(frozen.status, 200, frozen.body);
-    const frozenBody = JSON.parse(frozen.body);
+    const frozenBody = parseAs(frozen.body, "ReviewDetailResponse");
     assert.equal(frozenBody.state, "invalidated");
     const chunks = await httpRequest("GET", `/v1/reviews/${submitted.reviewId}?view=chunks`);
     assert.equal(chunks.status, 200, chunks.body);
-    assert.equal(JSON.parse(chunks.body).chunks.length, 1);
+    assert.equal(parseAs(chunks.body, "ReviewChunksResponse").chunks.length, 1);
 
     const reapplied = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/reapply`, {
       body: JSON.stringify({ expectedReviewGeneration: frozenBody.generation }),
     });
     assert.equal(reapplied.status, 200, reapplied.body);
-    const body = JSON.parse(reapplied.body);
-    assertMatchesSchema(body, "ReapplyReviewResponse");
+    const body = parseAs(reapplied.body, "ReapplyReviewResponse");
     assert.equal(body.unresolvedChunks, 1);
     assert.deepEqual(body.withdrawnChunkIds, []);
     assert.equal(body.state, "active");
@@ -1555,7 +1539,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       description: "capitalize beta",
       patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
     };
-    const first = await provider.submitProposal(documentId, sha256Text("alpha\nbeta\n"), [capitalize], "mcp-first", 0);
+    const first = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [capitalize],
+      "mcp-first",
+      0,
+    );
     if (!first.ok) {
       assert.fail(`The first proposal was refused: ${first.code}`);
     }
@@ -1563,24 +1553,28 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
     );
-    const call = async <Body>(
+    const call = async <N extends keyof AgentApiSchemas & string>(
       name: string,
       args: Record<string, string | ReviewMutationPrecondition | ReapplyReviewRequest>,
-    ): Promise<{ isError: boolean; body: Body }> => {
+      schemaName: N,
+    ): Promise<{ isError: boolean; body: AgentApiSchemas[N] }> => {
       const result = await client.callTool({ name, arguments: args });
       const [content] = result.content as Array<{ type: "text"; text: string }>;
-      return { isError: result.isError === true, body: JSON.parse(content.text) as Body };
+      return { isError: result.isError === true, body: parseAs(content.text, schemaName) };
     };
     try {
-      const retracted = await call<RetractProposalResponse>("retractProposal", {
-        packetId: first.packetIds[0],
-        body: {
-          expectedReviewGeneration: first.reviewGeneration,
-          expectedWorkingSha256: sha256Text("alpha\nBETA\n"),
+      const retracted = await call(
+        "retractProposal",
+        {
+          packetId: first.packetIds[0],
+          body: {
+            expectedReviewGeneration: first.reviewGeneration,
+            expectedWorkingSha256: sha256Text("alpha\nBETA\n"),
+          },
         },
-      });
+        "RetractProposalResponse",
+      );
       assert.equal(retracted.isError, false, JSON.stringify(retracted.body));
-      assertMatchesSchema(retracted.body, "RetractProposalResponse");
 
       const second = await provider.submitProposal(
         documentId,
@@ -1593,26 +1587,33 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         assert.fail(`The second proposal was refused: ${second.code}`);
       }
       await reopenAfterDiskEdit(filePath, "alpha\nBETA\ngamma\n");
-      const frozen = await call<ReviewDetailResponse>("getReview", { reviewId: second.reviewId });
+      const frozen = await call("getReview", { reviewId: second.reviewId }, "ReviewDetailResponse");
       assert.equal(frozen.body.state, "invalidated");
 
-      const refused = await call<AgentErrorResponse>("retractProposal", {
-        packetId: second.packetIds[0],
-        body: {
-          expectedReviewGeneration: frozen.body.generation,
-          expectedWorkingSha256: sha256Text("alpha\nBETA\ngamma\n"),
+      const refused = await call(
+        "retractProposal",
+        {
+          packetId: second.packetIds[0],
+          body: {
+            expectedReviewGeneration: frozen.body.generation,
+            expectedWorkingSha256: sha256Text("alpha\nBETA\ngamma\n"),
+          },
         },
-      });
+        "AgentErrorResponse",
+      );
       assert.equal(refused.isError, true);
       assert.equal(refused.body.error.code, "REVIEW_INVALIDATED");
 
-      const discarded = await call<DiscardReviewResponse>("discardReview", {
-        reviewId: second.reviewId,
-        body: { expectedReviewGeneration: frozen.body.generation },
-      });
+      const discarded = await call(
+        "discardReview",
+        {
+          reviewId: second.reviewId,
+          body: { expectedReviewGeneration: frozen.body.generation },
+        },
+        "DiscardReviewResponse",
+      );
       assert.equal(discarded.isError, false, JSON.stringify(discarded.body));
-      assertMatchesSchema(discarded.body, "DiscardReviewResponse");
-      const gone = await call<AgentErrorResponse>("getReview", { reviewId: second.reviewId });
+      const gone = await call("getReview", { reviewId: second.reviewId }, "AgentErrorResponse");
       assert.equal(gone.body.error.code, "REVIEW_NOT_FOUND");
       assert.equal(readFileSync(filePath, "utf8"), "alpha\nBETA\ngamma\n");
     } finally {
@@ -1646,16 +1647,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(refusal.error.code, "PATCH_INVALID");
     assert.equal(refusal.error.status, 400);
 
-    const documents = JSON.parse((await httpRequest("GET", "/v1/documents")).body) as {
-      documents: Array<{ path: string }>;
-    };
+    const documents = parseAs(
+      (await httpRequest("GET", "/v1/documents")).body,
+      "DocumentListResponse",
+    );
     assert.equal(
       documents.documents.some((document) => document.path === filePath),
       false,
     );
     const content = await httpRequest("GET", "/v1/workspace/files");
     assert.equal(content.status, 200);
-    const files = JSON.parse(content.body) as { files: Array<{ path: string; open: boolean }> };
+    const files = parseAs(content.body, "WorkspaceFilesResponse");
     const file = files.files.find((entry) => entry.path === filePath);
     assert.ok(file !== undefined);
     assert.equal(file.open, false);
@@ -1667,21 +1669,24 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       mkdirSync(path.dirname(path.join(scratch, relative)), { recursive: true });
       writeFileSync(path.join(scratch, relative), "# Note\n", "utf8");
     }
-    links.index = new WikilinkIndex(relativePaths.map((relative) => ({
-      path: path.join(scratch, relative),
-      root: scratch,
-      id: "",
-      title: undefined,
-      aliases: [],
-    })));
+    links.index = new WikilinkIndex(
+      relativePaths.map((relative) => ({
+        path: path.join(scratch, relative),
+        root: scratch,
+        id: "",
+        title: undefined,
+        aliases: [],
+      })),
+    );
     try {
       const response = await httpRequest("GET", "/v1/workspace/files");
       assert.equal(response.status, 200);
-      const body = JSON.parse(response.body) as { files: Array<{ path: string; linkTarget?: string }> };
-      assertMatchesSchema(body, "WorkspaceFilesResponse");
-      const linkTargets = Object.fromEntries(body.files
-        .filter((entry) => entry.linkTarget !== undefined)
-        .map((entry) => [path.relative(scratch, entry.path), entry.linkTarget]));
+      const body = parseAs(response.body, "WorkspaceFilesResponse");
+      const linkTargets = Object.fromEntries(
+        body.files
+          .filter((entry) => entry.linkTarget !== undefined)
+          .map((entry) => [path.relative(scratch, entry.path), entry.linkTarget]),
+      );
       assert.deepEqual(linkTargets, {
         "programs/cusp-chain.md": "cusp-chain",
         "a/moduli.md": "a/moduli",
@@ -1695,8 +1700,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
     const response = await httpRequest("GET", "/v1/macros");
     assert.equal(response.status, 200, response.body);
-    const payload = JSON.parse(response.body) as MacroInventoryResponse;
-    assertMatchesSchema(payload, "MacroInventoryResponse");
+    const payload = parseAs(response.body, "MacroInventoryResponse");
     assert.equal(payload.root, path.join(authoringHome, ".pandoc", "styles", "macros"));
 
     const zz = payload.macros.find((macro) => macro.name === "\\ZZ");
@@ -1713,8 +1717,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const filtered = await httpRequest("GET", "/v1/macros?query=compileronly");
     assert.equal(filtered.status, 200, filtered.body);
-    const filteredPayload = JSON.parse(filtered.body) as MacroInventoryResponse;
-    assertMatchesSchema(filteredPayload, "MacroInventoryResponse");
+    const filteredPayload = parseAs(filtered.body, "MacroInventoryResponse");
     assert.deepEqual(
       filteredPayload.macros.map((macro) => macro.name),
       ["\\CompilerOnly"],
@@ -1724,23 +1727,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("lists and reads text and binary files from the configured centralized figures directory", async function () {
     const listed = await httpRequest("GET", "/v1/figures");
     assert.equal(listed.status, 200, listed.body);
-    const listPayload = JSON.parse(listed.body) as FigureListResponse;
-    assertMatchesSchema(listPayload, "FigureListResponse");
+    const listPayload = parseAs(listed.body, "FigureListResponse");
     assert.equal(listPayload.root, figuresRoot);
     assert.ok(listPayload.entries.some((entry) => entry.path === "diagrams/main.tikz"));
     assert.ok(listPayload.entries.some((entry) => entry.path === "images/pixel.bin"));
 
     const text = await httpRequest("GET", "/v1/figures?action=read&path=diagrams%2Fmain.tikz");
     assert.equal(text.status, 200, text.body);
-    const textPayload = JSON.parse(text.body) as FigureFileResponse;
-    assertMatchesSchema(textPayload, "FigureFileResponse");
+    const textPayload = parseAs(text.body, "FigureFileResponse");
     assert.equal(textPayload.encoding, "utf8");
     assert.match(textPayload.content, /elliptic surface/u);
 
     const binary = await httpRequest("GET", "/v1/figures?action=read&path=images%2Fpixel.bin");
     assert.equal(binary.status, 200, binary.body);
-    const binaryPayload = JSON.parse(binary.body) as FigureFileResponse;
-    assertMatchesSchema(binaryPayload, "FigureFileResponse");
+    const binaryPayload = parseAs(binary.body, "FigureFileResponse");
     assert.equal(binaryPayload.encoding, "base64");
     assert.equal(binaryPayload.content, Buffer.from([0, 255, 1, 254]).toString("base64"));
   });
@@ -1757,8 +1757,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(written.status, 200, written.body);
-    const writtenPayload = JSON.parse(written.body) as FigureFileResponse;
-    assertMatchesSchema(writtenPayload, "FigureFileResponse");
+    const writtenPayload = parseAs(written.body, "FigureFileResponse");
     assert.equal(
       readFileSync(path.join(figuresRoot, "new", "nested", "figure.tikz"), "utf8"),
       source,
@@ -1785,8 +1784,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: source }),
     });
     assert.equal(created.status, 201, created.body);
-    const payload = JSON.parse(created.body) as FigureFileResponse;
-    assertMatchesSchema(payload, "FigureFileResponse");
+    const payload = parseAs(created.body, "FigureFileResponse");
     assert.equal(payload.path, "generated/nested/new-figure.tikz");
     assert.equal(payload.encoding, "utf8");
     assert.equal(payload.content, source);
@@ -1805,7 +1803,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         body: JSON.stringify({ path: invalidPath, content: source }),
       });
       assert.equal(invalid.status, 400, `${invalidPath}: ${invalid.body}`);
-      assert.equal((JSON.parse(invalid.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+      assert.equal(parseAs(invalid.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
       assert.equal(existsSync(path.join(figuresRoot, invalidPath)), false);
     }
 
@@ -1815,10 +1813,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: replacement }),
     });
     assert.equal(collision.status, 409, collision.body);
-    assert.equal(
-      (JSON.parse(collision.body) as AgentErrorResponse).error.code,
-      "FIGURE_ALREADY_EXISTS",
-    );
+    assert.equal(parseAs(collision.body, "AgentErrorResponse").error.code, "FIGURE_ALREADY_EXISTS");
     assert.equal(
       readFileSync(path.join(figuresRoot, "generated", "nested", "new-figure.tikz"), "utf8"),
       source,
@@ -1829,8 +1824,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("searches figure paths and text contents while refusing traversal outside the configured root", async function () {
     const searched = await httpRequest("GET", "/v1/figures?action=search&query=elliptic");
     assert.equal(searched.status, 200, searched.body);
-    const searchPayload = JSON.parse(searched.body) as FigureSearchResponse;
-    assertMatchesSchema(searchPayload, "FigureSearchResponse");
+    const searchPayload = parseAs(searched.body, "FigureSearchResponse");
     assert.ok(
       searchPayload.hits.some(
         (hit) => hit.path === "diagrams/main.tikz" && hit.matchType === "content" && hit.line === 2,
@@ -1839,7 +1833,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const pathSearch = await httpRequest("GET", "/v1/figures?action=search&query=pixel.bin");
     assert.equal(pathSearch.status, 200, pathSearch.body);
-    const pathSearchPayload = JSON.parse(pathSearch.body) as FigureSearchResponse;
+    const pathSearchPayload = parseAs(pathSearch.body, "FigureSearchResponse");
     assert.ok(
       pathSearchPayload.hits.some(
         (hit) => hit.path === "images/pixel.bin" && hit.matchType === "path",
@@ -1848,11 +1842,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const traversal = await httpRequest("GET", "/v1/figures?action=read&path=..%2Fescape.tikz");
     assert.equal(traversal.status, 400, traversal.body);
-    assert.equal((JSON.parse(traversal.body) as AgentErrorResponse).error.code, "INVALID_PARAMS");
+    assert.equal(parseAs(traversal.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
 
     const missing = await httpRequest("GET", "/v1/figures?action=read&path=missing.tikz");
     assert.equal(missing.status, 404, missing.body);
-    assert.equal((JSON.parse(missing.body) as AgentErrorResponse).error.code, "FIGURE_NOT_FOUND");
+    assert.equal(parseAs(missing.body, "AgentErrorResponse").error.code, "FIGURE_NOT_FOUND");
   });
 
   it("lints focused, open, document, workspace, and all-workspace scopes over authoritative text", async function () {
@@ -1870,8 +1864,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const focused = await httpRequest("GET", "/v1/lint");
     assert.equal(focused.status, 200, focused.body);
-    const focusedPayload = JSON.parse(focused.body) as LintResponse;
-    assertMatchesSchema(focusedPayload, "LintResponse");
+    const focusedPayload = parseAs(focused.body, "LintResponse");
     assert.equal(focusedPayload.scope, "focused");
     assert.deepEqual(
       focusedPayload.documents.map((document) => document.documentId),
@@ -1889,13 +1882,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const open = await httpRequest("GET", "/v1/lint?scope=open");
     assert.equal(open.status, 200, open.body);
-    const openPayload = JSON.parse(open.body) as LintResponse;
+    const openPayload = parseAs(open.body, "LintResponse");
     assert.ok(openPayload.documents.some((document) => document.path === focusedPath));
     assert.ok(openPayload.documents.some((document) => document.path === otherOpenPath));
 
-    const workspaceFiles = JSON.parse((await httpRequest("GET", "/v1/workspace/files")).body) as {
-      files: Array<{ documentId: string; path: string }>;
-    };
+    const workspaceFiles = parseAs(
+      (await httpRequest("GET", "/v1/workspace/files")).body,
+      "WorkspaceFilesResponse",
+    );
     const closedId = workspaceFiles.files.find((file) => file.path === closedPath)?.documentId;
     assert.ok(closedId !== undefined);
 
@@ -1904,14 +1898,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/lint?scope=document&documentId=${encodeURIComponent(closedId)}`,
     );
     assert.equal(document.status, 200, document.body);
-    const documentPayload = JSON.parse(document.body) as LintResponse;
+    const documentPayload = parseAs(document.body, "LintResponse");
     assert.equal(documentPayload.documents.length, 1);
     assert.equal(documentPayload.documents[0].path, closedPath);
     assert.equal(documentPayload.documents[0].open, false);
     assert.ok(
-      documentPayload.documents[0].diagnostics.some((diagnostic) =>
-        diagnostic.rule === "document/authorial-residue" &&
-        diagnostic.data?.marker === "???",
+      documentPayload.documents[0].diagnostics.some(
+        (diagnostic) =>
+          diagnostic.rule === "document/authorial-residue" && diagnostic.data?.marker === "???",
       ),
     );
 
@@ -1920,7 +1914,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`,
     );
     assert.equal(workspace.status, 200, workspace.body);
-    const workspacePayload = JSON.parse(workspace.body) as LintResponse;
+    const workspacePayload = parseAs(workspace.body, "LintResponse");
     // Every document was linted above, so the workspace reads them all from the cache.
     assert.deepEqual(workspacePayload.pending, []);
     assert.deepEqual(
@@ -1931,7 +1925,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const all = await httpRequest("GET", "/v1/lint?scope=all");
     assert.equal(all.status, 200, all.body);
-    const allPayload = JSON.parse(all.body) as LintResponse;
+    const allPayload = parseAs(all.body, "LintResponse");
     assert.deepEqual(
       new Set([...allPayload.documents, ...allPayload.pending].map((item) => item.path)),
       new Set(workspacePayload.documents.map((item) => item.path)),
@@ -1942,7 +1936,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/lint?scope=document&documentId=${encodeURIComponent(focusedId)}&minimumSeverity=warning`,
     );
     assert.equal(warningsOnly.status, 200, warningsOnly.body);
-    const warningsPayload = JSON.parse(warningsOnly.body) as LintResponse;
+    const warningsPayload = parseAs(warningsOnly.body, "LintResponse");
     assert.ok(warningsPayload.documents[0].diagnostics.length > 0);
     assert.ok(
       warningsPayload.documents[0].diagnostics.every(
@@ -2077,9 +2071,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       socket.write(STALLED_REQUEST);
       const response = await readUntilClose(socket);
       assert.match(response, /^HTTP\/1\.1 408 /);
-      const body = JSON.parse(response.slice(response.indexOf("\r\n\r\n") + 4));
+      const body = parseAs(response.slice(response.indexOf("\r\n\r\n") + 4), "AgentErrorResponse");
       assert.equal(body.error.code, "REQUEST_BODY_TIMEOUT");
-      assertMatchesSchema(body.error, "AgentError");
     });
 
     it("answers an oversized body with structured 413 and logs the refusal", async function () {
@@ -2119,18 +2112,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
 
       assert.equal(response.status, 413, response.body);
-      const responsePayload: unknown = JSON.parse(response.body);
-      assert.ok(
-        responsePayload !== null &&
-          typeof responsePayload === "object" &&
-          "error" in responsePayload &&
-          responsePayload.error !== null &&
-          typeof responsePayload.error === "object" &&
-          "code" in responsePayload.error,
-        `Oversized-body refusal carried no error code: ${response.body}`,
-      );
-      assert.equal(responsePayload.error.code, "REQUEST_TOO_LARGE");
-      assertMatchesSchema(responsePayload.error, "AgentError");
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "REQUEST_TOO_LARGE");
 
       await lifecycleLog.shutdown();
       const emittedRecord = readLogAfter(logBoundary)
@@ -2185,25 +2167,25 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       // Keep this boundary check limited to response shapes.
       const health = await httpRequest("GET", "/health");
       assert.equal(health.status, 200);
-      assertMatchesSchema(JSON.parse(health.body), "PingResponse");
+      parseAs(health.body, "PingResponse");
 
       const views = await httpRequest("GET", "/v1/views");
       assert.equal(views.status, 200);
-      assertMatchesSchema(JSON.parse(views.body), "ViewsResponse");
+      parseAs(views.body, "ViewsResponse");
 
       const workspaces = await httpRequest("GET", "/v1/workspaces");
       assert.equal(workspaces.status, 200);
-      assertMatchesSchema(JSON.parse(workspaces.body), "WorkspacesResponse");
+      parseAs(workspaces.body, "WorkspacesResponse");
     });
 
     it("supports consolidated operations with query options", async function () {
       const workspacesSummary = await httpRequest("GET", "/v1/workspaces?include=summary");
       assert.equal(workspacesSummary.status, 200);
-      assertMatchesSchema(JSON.parse(workspacesSummary.body), "WorkspacesResponse");
+      parseAs(workspacesSummary.body, "WorkspacesResponse");
 
       const figuresList = await httpRequest("GET", "/v1/figures?action=list");
       assert.equal(figuresList.status, 200);
-      assertMatchesSchema(JSON.parse(figuresList.body), "FigureListResponse");
+      parseAs(figuresList.body, "FigureListResponse");
     });
   });
 });

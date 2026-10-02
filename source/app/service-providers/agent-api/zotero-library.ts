@@ -18,7 +18,6 @@
  * END HEADER
  */
 
-import type CiteprocProvider from "@providers/citeproc";
 import type {
   AgentErrorCode,
   ZoteroAddedItem,
@@ -30,6 +29,7 @@ import type {
   ZoteroUrlImportRequest,
   ZoteroUrlImportResponse,
 } from "@dts/common/agent-api";
+import type CiteprocProvider from "@providers/citeproc";
 
 /** Zotero's local HTTP server, at the default of its httpServer.port preference. */
 const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
@@ -221,7 +221,10 @@ export default class ZoteroLibrary {
    * Zotero-side failure (5xx) is a 502 of this API; the 422 of a source that
    * no method identifies carries the add-on's remediation.
    */
-  private async request<Body>(url: URL, body: AddonWriteRequest | undefined): Promise<ZoteroResult<Body>> {
+  private async request<Body>(
+    url: URL,
+    body: AddonWriteRequest | undefined,
+  ): Promise<ZoteroResult<Body>> {
     let response: Response;
     try {
       response = await fetch(url, {
@@ -246,13 +249,20 @@ export default class ZoteroLibrary {
       return { ok: true, body: JSON.parse(text) as Body };
     }
     if (url.pathname !== "/write") {
-      return { ok: false, status: 502, code: "ZOTERO_REQUEST_FAILED", message: `Zotero ${response.status}: ${text}` };
+      return {
+        ok: false,
+        status: 502,
+        code: "ZOTERO_REQUEST_FAILED",
+        message: `Zotero ${response.status}: ${text}`,
+      };
     }
     const error = JSON.parse(text) as AddonError;
     if (error.stage === "identify_source") {
       const remediation = error.details.remediation;
       if (remediation === undefined) {
-        throw new Error("The Zotero add-on answered identify_source without a remediation; it is older than 3.4.0");
+        throw new Error(
+          "The Zotero add-on answered identify_source without a remediation; it is older than 3.4.0",
+        );
       }
       return {
         ok: false,

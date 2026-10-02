@@ -14,14 +14,18 @@
  * END HEADER
  */
 
-import { onBeforeUnmount, ref, type Ref } from 'vue'
-import { DateTime } from 'luxon'
+import { DateTime } from "luxon";
+import { onBeforeUnmount, type Ref, ref } from "vue";
 
-const MINUTE_MS = 60_000
+const MINUTE_MS = 60_000;
 
-export function useMinuteClock (): Ref<DateTime> {
-  const now = ref(DateTime.now())
-  const handle = setInterval(() => { now.value = DateTime.now() }, MINUTE_MS)
-  onBeforeUnmount(() => { clearInterval(handle) })
-  return now
+export function useMinuteClock(): Ref<DateTime> {
+  const now = ref(DateTime.now());
+  const handle = setInterval(() => {
+    now.value = DateTime.now();
+  }, MINUTE_MS);
+  onBeforeUnmount(() => {
+    clearInterval(handle);
+  });
+  return now;
 }

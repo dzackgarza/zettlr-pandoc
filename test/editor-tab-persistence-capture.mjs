@@ -245,7 +245,10 @@ try {
 
   // A file, not stdout: Ubuntu's xvfb-run merges the driver's stderr (page
   // console errors) into stdout.
-  await writeFile(path.join(outputDirectory, "report.json"), JSON.stringify({ initial, restored }, null, 2));
+  await writeFile(
+    path.join(outputDirectory, "report.json"),
+    JSON.stringify({ initial, restored }, null, 2),
+  );
 } finally {
   await scene.close();
 }

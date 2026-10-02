@@ -14,53 +14,56 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { syntaxTree } from '@codemirror/language'
-import { EditorView } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
-import { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
-import { defaultMenu } from '../context-menu/default-menu'
-import { linkImageMenu } from '../context-menu/link-image-menu'
-import { nodeAtPos } from '../util/node-in-selection'
-import { NODES } from '../parser/citation-parser'
-import { citationMenu } from '../context-menu/citation-menu'
-import { requestCreateReferenceLabel, resolveCreateReferenceLabelRequest } from './create-reference-label'
-import { resolveAnnotateSelectionMenuItem } from './annotate-selection'
+import { syntaxTree } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import { type AnyMenuItem } from "@common/modules/window-register/application-menu-helper";
+import { reportError } from "@common/util/error-reporting";
+import { citationMenu } from "../context-menu/citation-menu";
+import { defaultMenu } from "../context-menu/default-menu";
+import { linkImageMenu } from "../context-menu/link-image-menu";
+import { NODES } from "../parser/citation-parser";
+import { nodeAtPos } from "../util/node-in-selection";
+import { resolveAnnotateSelectionMenuItem } from "./annotate-selection";
+import {
+  requestCreateReferenceLabel,
+  resolveCreateReferenceLabelRequest,
+} from "./create-reference-label";
 
 export const defaultContextMenu = EditorView.domEventHandlers({
-  contextmenu (event, view) {
-    const coords = { x: event.clientX, y: event.clientY }
+  contextmenu(event, view) {
+    const coords = { x: event.clientX, y: event.clientY };
     // First, determine where we clicked
-    const pos = view.posAtCoords(coords)
+    const pos = view.posAtCoords(coords);
 
     if (pos === null) {
-      return false // No context menu to show
+      return false; // No context menu to show
     }
 
-    const tree = syntaxTree(view.state)
+    const tree = syntaxTree(view.state);
 
-    const maybeLinkNode = nodeAtPos(pos, tree, [ 'URL', 'Link', 'Image', 'LinkReference' ])
+    const maybeLinkNode = nodeAtPos(pos, tree, ["URL", "Link", "Image", "LinkReference"]);
     if (maybeLinkNode !== null) {
       // We can show a Link/Image context menu!
-      linkImageMenu(view, maybeLinkNode, coords)
-      return true
+      linkImageMenu(view, maybeLinkNode, coords);
+      return true;
     }
 
-    const citationNode = nodeAtPos(pos, tree, [NODES.CITATION])
+    const citationNode = nodeAtPos(pos, tree, [NODES.CITATION]);
 
     if (citationNode !== null) {
       // We can show a citation menu
-      citationMenu(view, coords, citationNode)
-      return true
+      citationMenu(view, coords, citationNode);
+      return true;
     }
 
-    const extraItems: AnyMenuItem[] = []
+    const extraItems: AnyMenuItem[] = [];
 
     // Selection-anchored annotation composer (M6): resolved before the
     // word-selection fallback below can turn an empty selection non-empty.
-    const annotateItem = resolveAnnotateSelectionMenuItem(view)
+    const annotateItem = resolveAnnotateSelectionMenuItem(view);
     if (annotateItem !== null) {
-      extraItems.unshift(annotateItem)
+      extraItems.unshift(annotateItem);
     }
 
     // Node-routed create-label entry (issue #1 Phase 6): a supported,
@@ -69,23 +72,23 @@ export const defaultContextMenu = EditorView.domEventHandlers({
     // of the default menu.
     if (resolveCreateReferenceLabelRequest(view, pos) !== null) {
       extraItems.push({
-        label: trans('Create reference label…'),
-        type: 'normal',
-        action () {
-          requestCreateReferenceLabel(view, pos)
-        }
-      })
+        label: trans("Create reference label…"),
+        type: "normal",
+        action() {
+          requestCreateReferenceLabel(view, pos);
+        },
+      });
     }
 
     // If there is nothing selected, select the word at the coords
-    const nothingSelected = view.state.selection.ranges.every(x => x.empty)
-    const wordAt = view.state.wordAt(pos)
+    const nothingSelected = view.state.selection.ranges.every((x) => x.empty);
+    const wordAt = view.state.wordAt(pos);
     if (nothingSelected && wordAt !== null) {
-      view.dispatch({ selection: wordAt })
+      view.dispatch({ selection: wordAt });
     }
 
-    const node = tree.resolveInner(pos)
-    defaultMenu(view, node, coords, extraItems).catch(err => reportError(err))
-    return true
-  }
-})
+    const node = tree.resolveInner(pos);
+    defaultMenu(view, node, coords, extraItems).catch((err) => reportError(err));
+    return true;
+  },
+});

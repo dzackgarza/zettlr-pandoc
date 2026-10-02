@@ -52,9 +52,6 @@ export function surfaceFormatResult(result: FormatResult): void {
       "error",
     );
   } else {
-    showToast(
-      `Couldn't format the document: ${result.message}`,
-      "error",
-    );
+    showToast(`Couldn't format the document: ${result.message}`, "error");
   }
 }

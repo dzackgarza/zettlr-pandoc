@@ -46,8 +46,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
     const input = "The cat sat. The dog ran.\n";
     assert.equal(input.trimEnd().includes("\n"), false, "premise: input is a single physical line");
 
-    // No opts -> the real FLOWMARK_COMMAND + FLOWMARK_ARGS_PREFIX are used.
-    const result = await formatMarkdownText(input);
+    const result = await formatMarkdownText(input, 180_000);
 
     assert.equal(result.ok, true, "the real production flowmark invocation must launch and exit 0");
     if (result.ok) {
@@ -71,7 +70,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   it("runs the pinned submodule linter and treats TeX math as math, not Markdown emphasis", async function () {
     const result = await lintMarkdownText(
       "The classes $x_i$, \\(y_j\\), and \\underline{z_k} are mathematical.\n",
-      { timeoutMs: 60_000 },
+      { command: "flowmark-lint", timeoutMs: 60_000 },
     );
     assert.equal(result.ok, true, "the vendored Flowmark linter must launch successfully");
     if (result.ok) {
@@ -84,7 +83,10 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   });
 
   it("does not turn formatter normalization into editor lint", async function () {
-    const result = await lintMarkdownText("Use _emphasis_ in prose.\n", { timeoutMs: 60_000 });
+    const result = await lintMarkdownText("Use _emphasis_ in prose.\n", {
+      command: "flowmark-lint",
+      timeoutMs: 60_000,
+    });
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.deepEqual(
@@ -98,7 +100,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
   it("reports mathematical defects that normalization cannot decide", async function () {
     const result = await lintMarkdownText(
       "The map $Hom_R(M,N)$ has component $x_i_j$ and value $x_{i$.\n",
-      { timeoutMs: 60_000 },
+      { command: "flowmark-lint", timeoutMs: 60_000 },
     );
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -116,6 +118,7 @@ describe("flowmark real-toolchain integration (issue #26)", function () {
       const result = await lintMarkdownText(
         "---\ncsl: styles/does-not-exist.csl\n---\n\n[missing](does-not-exist.md)\n",
         {
+          command: "flowmark-lint",
           sourcePath: path.join(dir, "document.md"),
           timeoutMs: 60_000,
         },

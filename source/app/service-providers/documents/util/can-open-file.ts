@@ -1,5 +1,6 @@
-import { hasMdOrCodeExt } from '@common/util/file-extention-checks'
-import { promises as fs, constants as FSConstants } from 'fs'
+import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
+import { constants as FSConstants, promises as fs } from "fs";
 
 /**
  * Checks if the given absolute path represents a file supported by Zettlr
@@ -10,22 +11,27 @@ import { promises as fs, constants as FSConstants } from 'fs'
  *
  * @return  {Promise<boolean>}  True if everything is okay with the file
  */
-export async function canOpenFile (filePath: string): Promise<boolean> {
+export async function canOpenFile(filePath: string): Promise<boolean> {
   try {
     // 1. Check for access and rights issues
-    await fs.access(filePath,
+    await fs.access(
+      filePath,
       FSConstants.F_OK | // File must be visible to the process
-      FSConstants.R_OK | // We need to read it
-      FSConstants.W_OK // And write it
-    )
-  } catch (err: any) {
-    return false
+        FSConstants.R_OK | // We need to read it
+        FSConstants.W_OK, // And write it
+    );
+  } catch (err) {
+    // A missing file or denied access means Zettlr cannot open it.
+    if (hasErrnoCode(err, "ENOENT", "ENOTDIR", "EACCES", "EPERM", "EROFS")) {
+      return false;
+    }
+    throw err;
   }
 
   // Then check if it's actually a file we can handle
   if (!hasMdOrCodeExt(filePath)) {
-    return false
+    return false;
   }
 
-  return true
+  return true;
 }

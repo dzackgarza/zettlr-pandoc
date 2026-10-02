@@ -6,70 +6,72 @@
  */
 
 export const PANDOC_CITATION_EXAMPLES = [
-  { kind: 'parenthetical', syntax: '[@Ols04]' },
-  { kind: 'narrative', syntax: '@Ols04 says …' },
-  { kind: 'locator', syntax: '[@Ols04, pp. 7-9]' },
-  { kind: 'prefix-and-suffix', syntax: '[see @Ols04, Lem. 7.1]' },
-  { kind: 'multiple', syntax: '[see @Ols04; @AEGS23]' },
-  { kind: 'suppress-author', syntax: 'Smith argues this [-@Smith04].' },
-] as const
+  { kind: "parenthetical", syntax: "[@Ols04]" },
+  { kind: "narrative", syntax: "@Ols04 says …" },
+  { kind: "locator", syntax: "[@Ols04, pp. 7-9]" },
+  { kind: "prefix-and-suffix", syntax: "[see @Ols04, Lem. 7.1]" },
+  { kind: "multiple", syntax: "[see @Ols04; @AEGS23]" },
+  { kind: "suppress-author", syntax: "Smith argues this [-@Smith04]." },
+] as const;
 
 export const PANDOC_CROSS_REFERENCE_EXAMPLES = [
   {
-    kind: 'figure',
-    prefix: 'fig',
-    displayName: 'Figure',
-    label: '![Caption](figure.png){#fig:key}',
-    reference: '@fig:key',
+    kind: "figure",
+    prefix: "fig",
+    displayName: "Figure",
+    label: "![Caption](figure.png){#fig:key}",
+    reference: "@fig:key",
   },
   {
-    kind: 'table',
-    prefix: 'tbl',
-    displayName: 'Table',
-    label: ': Caption {#tbl:key}',
-    reference: '@tbl:key',
+    kind: "table",
+    prefix: "tbl",
+    displayName: "Table",
+    label: ": Caption {#tbl:key}",
+    reference: "@tbl:key",
   },
   {
-    kind: 'equation',
-    prefix: 'eq',
-    displayName: 'Equation',
-    label: '$$ E = mc^2 $$ {#eq:key}',
-    reference: '@eq:key',
+    kind: "equation",
+    prefix: "eq",
+    displayName: "Equation",
+    label: "$$ E = mc^2 $$ {#eq:key}",
+    reference: "@eq:key",
   },
   {
-    kind: 'section',
-    prefix: 'sec',
-    displayName: 'Section',
-    label: '## Heading {#sec:key}',
-    reference: '@sec:key',
+    kind: "section",
+    prefix: "sec",
+    displayName: "Section",
+    label: "## Heading {#sec:key}",
+    reference: "@sec:key",
   },
   {
-    kind: 'listing',
-    prefix: 'lst',
-    displayName: 'Listing',
-    label: '```{#lst:key}',
-    reference: '@lst:key',
+    kind: "listing",
+    prefix: "lst",
+    displayName: "Listing",
+    label: "```{#lst:key}",
+    reference: "@lst:key",
   },
-] as const
+] as const;
 
 export const PANDOC_REFERENCE_MODIFIERS = [
-  { kind: 'group', syntax: '[@fig:first; @fig:second]' },
-  { kind: 'custom-prefix', syntax: '[See @fig:key]' },
-  { kind: 'suppress-prefix', syntax: '[-@fig:key]' },
-] as const
+  { kind: "group", syntax: "[@fig:first; @fig:second]" },
+  { kind: "custom-prefix", syntax: "[See @fig:key]" },
+  { kind: "suppress-prefix", syntax: "[-@fig:key]" },
+] as const;
 
 export const PANDOC_ATTRIBUTE_EXAMPLES = [
-  { kind: 'attributes', syntax: '{#identifier .class key="value"}' },
-  { kind: 'fenced-div', syntax: '::: {.theorem #main-result}\nContent\n:::' },
-  { kind: 'bracketed-span', syntax: '[text]{.class #identifier}' },
-] as const
+  { kind: "attributes", syntax: '{#identifier .class key="value"}' },
+  { kind: "fenced-div", syntax: "::: {.theorem #main-result}\nContent\n:::" },
+  { kind: "bracketed-span", syntax: "[text]{.class #identifier}" },
+] as const;
 
 /**
  * The crossref label-family authority (review B5): the typed model's
  * CROSSREF_FAMILIES tuple in types/common/references.ts is DERIVED from this
  * list, so the help examples and the reference model cannot drift apart.
  */
-export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(example => example.prefix)
+export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(
+  (example) => example.prefix,
+);
 
 /**
  * The shared quick-help text filter (issue #1, review A2 / US-06): keeps the
@@ -84,23 +86,25 @@ export const PANDOC_CROSSREF_PREFIXES = PANDOC_CROSS_REFERENCE_EXAMPLES.map(exam
  *
  * @return  {T[]}                                            The matching entries
  */
-export function filterHelpEntries<T> (
+export function filterHelpEntries<T>(
   entries: readonly T[],
   query: string,
-  partsOf: (entry: T) => Array<string|undefined>
+  partsOf: (entry: T) => Array<string | undefined>,
 ): T[] {
-  const needle = query.trim().toLowerCase()
-  if (needle === '') {
-    return [...entries]
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return [...entries];
   }
 
-  return entries.filter(entry => {
-    return partsOf(entry).some(part => part !== undefined && part.toLowerCase().includes(needle))
-  })
+  return entries.filter((entry) => {
+    return partsOf(entry).some((part) => part !== undefined && part.toLowerCase().includes(needle));
+  });
 }
 
-export function isSupportedPandocCrossref (id: string): boolean {
-  return PANDOC_CROSSREF_PREFIXES.some(prefix => id.startsWith(`${prefix}:`) || id.startsWith(`${prefix}-`))
+export function isSupportedPandocCrossref(id: string): boolean {
+  return PANDOC_CROSSREF_PREFIXES.some(
+    (prefix) => id.startsWith(`${prefix}:`) || id.startsWith(`${prefix}-`),
+  );
 }
 
 /**
@@ -109,9 +113,9 @@ export function isSupportedPandocCrossref (id: string): boolean {
  * omitting the word rendered for it.
  */
 export interface TheoremFamilyMetadata {
-  prefix: string
-  divClass: string
-  displayName: string
+  prefix: string;
+  divClass: string;
+  displayName: string;
 }
 
 /**
@@ -120,62 +124,62 @@ export interface TheoremFamilyMetadata {
  * they stay unnumbered and unreferenceable.
  */
 export const THEOREM_FAMILY_METADATA = [
-  { prefix: 'thm', divClass: 'theorem', displayName: 'Theorem' },
-  { prefix: 'lem', divClass: 'lemma', displayName: 'Lemma' },
-  { prefix: 'prop', divClass: 'proposition', displayName: 'Proposition' },
-  { prefix: 'cor', divClass: 'corollary', displayName: 'Corollary' },
-  { prefix: 'def', divClass: 'definition', displayName: 'Definition' },
-  { prefix: 'rmk', divClass: 'remark', displayName: 'Remark' },
-  { prefix: 'ex', divClass: 'example', displayName: 'Example' },
-  { prefix: 'conj', divClass: 'conjecture', displayName: 'Conjecture' },
-  { prefix: 'clm', divClass: 'claim', displayName: 'Claim' },
-  { prefix: 'obs', divClass: 'observation', displayName: 'Observation' },
-  { prefix: 'qst', divClass: 'question', displayName: 'Question' },
-  { prefix: 'prob', divClass: 'problem', displayName: 'Problem' },
-  { prefix: 'ass', divClass: 'assumption', displayName: 'Assumption' },
-  { prefix: 'warn', divClass: 'warning', displayName: 'Warning' },
-  { prefix: 'exr', divClass: 'exercise', displayName: 'Exercise' },
-  { prefix: 'cons', divClass: 'construction', displayName: 'Construction' },
-  { prefix: 'not', divClass: 'notation', displayName: 'Notation' },
-  { prefix: 'conv', divClass: 'convention', displayName: 'Convention' },
-] as const satisfies readonly TheoremFamilyMetadata[]
+  { prefix: "thm", divClass: "theorem", displayName: "Theorem" },
+  { prefix: "lem", divClass: "lemma", displayName: "Lemma" },
+  { prefix: "prop", divClass: "proposition", displayName: "Proposition" },
+  { prefix: "cor", divClass: "corollary", displayName: "Corollary" },
+  { prefix: "def", divClass: "definition", displayName: "Definition" },
+  { prefix: "rmk", divClass: "remark", displayName: "Remark" },
+  { prefix: "ex", divClass: "example", displayName: "Example" },
+  { prefix: "conj", divClass: "conjecture", displayName: "Conjecture" },
+  { prefix: "clm", divClass: "claim", displayName: "Claim" },
+  { prefix: "obs", divClass: "observation", displayName: "Observation" },
+  { prefix: "qst", divClass: "question", displayName: "Question" },
+  { prefix: "prob", divClass: "problem", displayName: "Problem" },
+  { prefix: "ass", divClass: "assumption", displayName: "Assumption" },
+  { prefix: "warn", divClass: "warning", displayName: "Warning" },
+  { prefix: "exr", divClass: "exercise", displayName: "Exercise" },
+  { prefix: "cons", divClass: "construction", displayName: "Construction" },
+  { prefix: "not", divClass: "notation", displayName: "Notation" },
+  { prefix: "conv", divClass: "convention", displayName: "Convention" },
+] as const satisfies readonly TheoremFamilyMetadata[];
 
-export type TheoremFamilyPrefix = typeof THEOREM_FAMILY_METADATA[number]['prefix']
+export type TheoremFamilyPrefix = (typeof THEOREM_FAMILY_METADATA)[number]["prefix"];
 
 export const QUARTO_FAMILY_ALIASES = [
-  { prefix: 'prp', family: 'prop' },
-  { prefix: 'cnj', family: 'conj' },
-  { prefix: 'exm', family: 'ex' },
-  { prefix: 'rem', family: 'rmk' },
-  { prefix: 'wrn', family: 'warn' }
-] as const satisfies ReadonlyArray<{ prefix: string, family: TheoremFamilyPrefix }>
+  { prefix: "prp", family: "prop" },
+  { prefix: "cnj", family: "conj" },
+  { prefix: "exm", family: "ex" },
+  { prefix: "rem", family: "rmk" },
+  { prefix: "wrn", family: "warn" },
+] as const satisfies ReadonlyArray<{ prefix: string; family: TheoremFamilyPrefix }>;
 
-export const THEOREM_CLASS_TO_PREFIX: Readonly<Record<string, TheoremFamilyPrefix>> = Object.fromEntries([
-  ...THEOREM_FAMILY_METADATA.flatMap(metadata => [
-    [metadata.divClass, metadata.prefix],
-    [metadata.prefix, metadata.prefix]
-  ]),
-  ...QUARTO_FAMILY_ALIASES.map(alias => [alias.prefix, alias.family])
-])
+export const THEOREM_CLASS_TO_PREFIX: Readonly<Record<string, TheoremFamilyPrefix>> =
+  Object.fromEntries([
+    ...THEOREM_FAMILY_METADATA.flatMap((metadata) => [
+      [metadata.divClass, metadata.prefix],
+      [metadata.prefix, metadata.prefix],
+    ]),
+    ...QUARTO_FAMILY_ALIASES.map((alias) => [alias.prefix, alias.family]),
+  ]);
 
-export const REFERENCEABLE_DIV_CLASSES: readonly string[] =
-  Object.keys(THEOREM_CLASS_TO_PREFIX)
+export const REFERENCEABLE_DIV_CLASSES: readonly string[] = Object.keys(THEOREM_CLASS_TO_PREFIX);
 
 /**
  * Returns the fenced-div class owned by a supported theorem family.
  */
-export function theoremDivClass (prefix: TheoremFamilyPrefix): string {
+export function theoremDivClass(prefix: TheoremFamilyPrefix): string {
   for (const metadata of THEOREM_FAMILY_METADATA) {
     if (metadata.prefix === prefix) {
-      return metadata.divClass
+      return metadata.divClass;
     }
   }
 
-  throw new Error(`Theorem family ${prefix} has no fenced-div metadata`)
+  throw new Error(`Theorem family ${prefix} has no fenced-div metadata`);
 }
 
-export function isReferenceableDivClass (className: string): boolean {
-  return REFERENCEABLE_DIV_CLASSES.includes(className.toLowerCase())
+export function isReferenceableDivClass(className: string): boolean {
+  return REFERENCEABLE_DIV_CLASSES.includes(className.toLowerCase());
 }
 
 /**
@@ -185,13 +189,13 @@ export function isReferenceableDivClass (className: string): boolean {
  */
 export interface ReferenceAuthoringTopic {
   /** The stable topic identity the help surface keys its rows on */
-  kind: string
+  kind: string;
   /** The short user-facing capability name */
-  title: string
+  title: string;
   /** The one-line user-facing description */
-  detail: string
+  detail: string;
   /** The affordance that invokes it: a syntax token, shortcut, or gesture */
-  syntax: string
+  syntax: string;
 }
 
 /**
@@ -209,42 +213,43 @@ export interface ReferenceAuthoringTopic {
  */
 export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic[] = [
   {
-    kind: 'completion',
-    title: 'Autocomplete',
-    detail: 'Typing @ suggests bibliography entries and reference IDs together.',
-    syntax: '@'
+    kind: "completion",
+    title: "Autocomplete",
+    detail: "Typing @ suggests bibliography entries and reference IDs together.",
+    syntax: "@",
   },
   {
-    kind: 'hover-preview',
-    title: 'Preview targets',
-    detail: 'Hover a reference to preview the text it points to.',
-    syntax: 'Hover'
+    kind: "hover-preview",
+    title: "Preview targets",
+    detail: "Hover a reference to preview the text it points to.",
+    syntax: "Hover",
   },
   {
-    kind: 'definition-search',
-    title: 'Find reference targets',
-    detail: 'Search reference targets and jump to the selected one.',
-    syntax: 'Mod-P'
+    kind: "definition-search",
+    title: "Find reference targets",
+    detail: "Search reference targets and jump to the selected one.",
+    syntax: "Mod-P",
   },
   {
-    kind: 'navigation',
-    title: 'Follow references',
-    detail: 'Jumps to the definition of the clicked reference; Back/Forward restores your previous location.',
-    syntax: 'Mod-Click'
+    kind: "navigation",
+    title: "Follow references",
+    detail:
+      "Jumps to the definition of the clicked reference; Back/Forward restores your previous location.",
+    syntax: "Mod-Click",
   },
   {
-    kind: 'rename',
-    title: 'Rename references',
-    detail: 'Editing a reference ID can rename every use of it across the workspace.',
-    syntax: 'Edit #key'
+    kind: "rename",
+    title: "Rename references",
+    detail: "Editing a reference ID can rename every use of it across the workspace.",
+    syntax: "Edit #key",
   },
   {
-    kind: 'project-warnings',
-    title: 'Project export warnings',
-    detail: 'References to files outside the current Project are flagged before export.',
-    syntax: '⚠ Project'
+    kind: "project-warnings",
+    title: "Project export warnings",
+    detail: "References to files outside the current Project are flagged before export.",
+    syntax: "⚠ Project",
   },
-]
+];
 
 /**
  * One fenced-div labeling example pairing a theorem-div label prefix with
@@ -252,13 +257,13 @@ export const PANDOC_REFERENCE_AUTHORING_TOPICS: readonly ReferenceAuthoringTopic
  */
 export interface TheoremDivExample {
   /** The authored label prefix */
-  prefix: string
+  prefix: string;
   /** The fenced-div class the prefix labels */
-  divClass: string
+  divClass: string;
   /** The exact authored definition example */
-  label: string
+  label: string;
   /** The exact authored reference example */
-  reference: string
+  reference: string;
 }
 
 /**
@@ -271,10 +276,11 @@ export interface TheoremDivExample {
  * from the extractor's supported set: label
  * `::: {.<divClass> #<prefix>:key}` and reference `@<prefix>:key`.
  */
-export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] =
-  THEOREM_FAMILY_METADATA.map(metadata => ({
+export const THEOREM_DIV_EXAMPLES: readonly TheoremDivExample[] = THEOREM_FAMILY_METADATA.map(
+  (metadata) => ({
     prefix: metadata.prefix,
     divClass: metadata.divClass,
     label: `::: {.${metadata.divClass} #${metadata.prefix}:key}`,
     reference: `@${metadata.prefix}:key`,
-  }))
+  }),
+);

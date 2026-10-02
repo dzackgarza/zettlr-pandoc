@@ -22,10 +22,10 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { ChangeSet, type ChangeDesc } from "@codemirror/state";
+import { type ChangeDesc, ChangeSet } from "@codemirror/state";
 import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
 import type { AnnotationAnchor } from "@dts/common/annotation-domain";
+import { strict as assert } from "assert";
 
 const DOC = "The quick brown fox jumps over the lazy dog.";
 
@@ -91,10 +91,7 @@ describe("Annotation anchor mapping", function () {
   describe("rule 1: a change strictly before the target shifts it", function () {
     it("shifts both coordinates past an insertion", function () {
       const mapped = mapRange(TARGET, { from: 0, insert: "Yesterday " });
-      assert.deepEqual(
-        { from: mapped.from, to: mapped.to },
-        { from: 20, to: 29 },
-      );
+      assert.deepEqual({ from: mapped.from, to: mapped.to }, { from: 20, to: 29 });
       assert.equal(mapped.covers, "brown fox");
       assert.equal(mapped.changed, true);
     });

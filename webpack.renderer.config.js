@@ -5,6 +5,7 @@ const path = require("path");
 
 const { VueLoaderPlugin } = require("vue-loader");
 const { DefinePlugin } = require("webpack");
+const { gitCommitHash } = require("./scripts/get-git-hash.js");
 const isE2E = process.env.ZETTLR_E2E === "1";
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
@@ -48,7 +49,7 @@ const plugins = [
     // replacement, the value given to it must include actual quotes inside of
     // the string itself. Typically, this is done either with alternate quotes,
     // such as '"production"', or by using JSON.stringify('production')."
-    __GIT_COMMIT_HASH__: JSON.stringify(process.env.GIT_COMMIT_HASH),
+    __GIT_COMMIT_HASH__: JSON.stringify(gitCommitHash()),
     __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
     __UPDATES_DISABLED__: JSON.stringify(
       process.env.ZETTLR_DISABLE_UPDATE_CHECK !== undefined ? "1" : "0",

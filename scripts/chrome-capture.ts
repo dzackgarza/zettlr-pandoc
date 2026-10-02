@@ -6,7 +6,7 @@
 // convergence milestones (PLAN-main-window-chrome-convergence, M0): each later
 // milestone edits the scene list, never the launch.
 //
-// Usage: node --import tsx e2e/chrome-capture.ts <output-directory> <launch-timeout-ms>
+// Usage: node --import tsx scripts/chrome-capture.ts <output-directory> <launch-timeout-ms>
 
 import { strict as assert } from 'node:assert'
 import { mkdir, rm } from 'node:fs/promises'
@@ -22,7 +22,7 @@ import {
   preserveArtifacts,
   REPO_ROOT,
   shutdown
-} from './support/electron-app'
+} from '../e2e/support/electron-app'
 
 const [ output, launchTimeoutArgument ] = process.argv.slice(2)
 if (output === undefined || launchTimeoutArgument === undefined) {

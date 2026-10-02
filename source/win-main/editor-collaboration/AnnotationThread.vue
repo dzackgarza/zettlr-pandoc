@@ -46,21 +46,23 @@
  * END HEADER
  */
 
-import { computed } from 'vue'
-import { AvatarFallback, AvatarRoot } from 'reka-ui'
-import type { DateTime } from 'luxon'
-import { trans } from '@common/i18n-renderer'
-import type { AnnotationMessage } from '@dts/common/annotation-domain'
-import { threadMessageView } from '../sidebar/annotations/annotation-presentation'
+import { trans } from "@common/i18n-renderer";
+import type { AnnotationMessage } from "@dts/common/annotation-domain";
+import type { DateTime } from "luxon";
+import { AvatarFallback, AvatarRoot } from "reka-ui";
+import { computed } from "vue";
+import { threadMessageView } from "../sidebar/annotations/annotation-presentation";
 
 const props = defineProps<{
-  messages: AnnotationMessage[]
-  now: DateTime
-}>()
+  messages: AnnotationMessage[];
+  now: DateTime;
+}>();
 
-const labels = { owner: trans('You'), agent: trans('AI'), justNow: trans('Just now') }
+const labels = { owner: trans("You"), agent: trans("AI"), justNow: trans("Just now") };
 
-const rows = computed(() => props.messages.map(message => threadMessageView(message, props.now, labels)))
+const rows = computed(() =>
+  props.messages.map((message) => threadMessageView(message, props.now, labels)),
+);
 </script>
 
 <style lang="less">

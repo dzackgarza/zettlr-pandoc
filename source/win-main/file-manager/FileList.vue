@@ -93,81 +93,87 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { trans } from '@common/i18n-renderer'
-import tippy, { type Instance } from 'tippy.js'
-import FileItem from './FileItem.vue'
-import { RecycleScroller } from 'vue-virtual-scroller'
-import matchQuery from './util/match-query'
-
-import { nextTick, ref, computed, watch, onUpdated } from 'vue'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
-import type { AnyDescriptor } from '@dts/common/fsal'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
-import { useWorkspaceStore } from 'source/pinia/workspace-store'
-import { retrieveChildrenAndSort } from './util/retrieve-children-and-sort'
-import { filterDescriptorChildren } from './util/filter-children'
-import { effectiveExplorerDisplayForDirectory, sortExplorerChildren } from '@common/util/explorer-ordering'
-import { isInsideRoot } from '@common/util/renderer-path-polyfill'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import {
+  effectiveExplorerDisplayForDirectory,
+  sortExplorerChildren,
+} from "@common/util/explorer-ordering";
+import { isInsideRoot } from "@common/util/renderer-path-polyfill";
+import type { AnyDescriptor } from "@dts/common/fsal";
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
+import { useWorkspaceStore } from "source/pinia/workspace-store";
+import tippy, { type Instance } from "tippy.js";
+import { computed, nextTick, onUpdated, ref, watch } from "vue";
+import { RecycleScroller } from "vue-virtual-scroller";
+import FileItem from "./FileItem.vue";
+import { filterDescriptorChildren } from "./util/filter-children";
+import matchQuery from "./util/match-query";
+import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
 
 interface RecycleScrollerData {
-  id: number
-  props: AnyDescriptor
+  id: number;
+  props: AnyDescriptor;
 }
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const props = defineProps<{
-  isVisible: boolean
-  filterQuery: string
-  filePickerActive: boolean
-  filePickerPathSet: Set<string>
-  windowId: string
-}>()
+  isVisible: boolean;
+  filterQuery: string;
+  filePickerActive: boolean;
+  filePickerPathSet: Set<string>;
+  windowId: string;
+}>();
 
-const emit = defineEmits<(e: 'lock-file-tree') => void>()
+const emit = defineEmits<(e: "lock-file-tree") => void>();
 
-const activeDescriptor = ref<AnyDescriptor|undefined>(undefined) // Can contain the active ("focused") item
+const activeDescriptor = ref<AnyDescriptor | undefined>(undefined); // Can contain the active ("focused") item
 
-const documentTreeStore = useDocumentTreeStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
-const configStore = useConfigStore()
+const documentTreeStore = useDocumentTreeStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
+const configStore = useConfigStore();
 
-const selectedDirectory = computed(() => configStore.config.openDirectory)
+const selectedDirectory = computed(() => configStore.config.openDirectory);
 const selectedDirDescriptor = computed(() => {
   if (selectedDirectory.value === null) {
-    return undefined
+    return undefined;
   }
 
-  return workspaceStore.descriptorMap.get(selectedDirectory.value)
-})
+  return workspaceStore.descriptorMap.get(selectedDirectory.value);
+});
 
-const noResultsMessage = trans('No results')
-const emptyFileListMessage = trans('No directory selected')
-const emptyDirectoryMessage = trans('Empty directory')
-const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile)
+const noResultsMessage = trans("No results");
+const emptyFileListMessage = trans("No directory selected");
+const emptyDirectoryMessage = trans("Empty directory");
+const selectedFile = computed(() => documentTreeStore.lastLeafActiveFile);
 const displayMode = computed(() => {
-  const dir = selectedDirDescriptor.value
-  return dir?.type === 'directory'
-    ? effectiveExplorerDisplayForDirectory(dir, workspaceStore.rootDescriptors, configStore.config.fileNameDisplay)
-    : configStore.config.fileNameDisplay
-})
-const useH1 = computed(() => displayMode.value.includes('heading'))
-const useTitle = computed(() => displayMode.value.includes('title'))
-const itemHeight = computed(() => configStore.config.fileMeta ? 70 : 30)
-const rootElement = ref<HTMLDivElement|null>(null)
+  const dir = selectedDirDescriptor.value;
+  return dir?.type === "directory"
+    ? effectiveExplorerDisplayForDirectory(
+        dir,
+        workspaceStore.rootDescriptors,
+        configStore.config.fileNameDisplay,
+      )
+    : configStore.config.fileNameDisplay;
+});
+const useH1 = computed(() => displayMode.value.includes("heading"));
+const useTitle = computed(() => displayMode.value.includes("title"));
+const itemHeight = computed(() => (configStore.config.fileMeta ? 70 : 30));
+const rootElement = ref<HTMLDivElement | null>(null);
 
 const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
-  const dir = selectedDirDescriptor.value
-  if (dir === undefined || dir.type !== 'directory') {
-    return []
+  const dir = selectedDirDescriptor.value;
+  if (dir === undefined || dir.type !== "directory") {
+    return [];
   }
 
   // Fetch all descriptors ...
   const allDescriptors = [...workspaceStore.descriptorMap.keys()]
-    .filter(absPath => absPath === dir.path || isInsideRoot(absPath, dir.path))
-    .map(absPath => workspaceStore.descriptorMap.get(absPath)!)
+    .filter((absPath) => absPath === dir.path || isInsideRoot(absPath, dir.path))
+    .map((absPath) => workspaceStore.descriptorMap.get(absPath)!);
 
   // ... sort them recursively ...
   const defaults = {
@@ -175,215 +181,218 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
     sortFoldersFirst: configStore.config.sortFoldersFirst,
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
-    fileMetaTime: configStore.config.fileMetaTime
-  } as const
+    fileMetaTime: configStore.config.fileMetaTime,
+  } as const;
 
   // ... and add them to our RecycleScroller.
-  const filter = filterDescriptorChildren()
+  const filter = filterDescriptorChildren();
   const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, (directory, children) => {
-    return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors)
+    return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
   })
     .filter(filter)
     .map((props, id) => {
       return {
         id, // This helps the virtual scroller to adequately position the items
         props, // The actual item
-      }
-    })
+      };
+    });
 
-  return sortedDescendants
-})
+  return sortedDescendants;
+});
 
 const getFilteredDirectoryContents = computed(() => {
   // Returns a list of directory contents, filtered
-  const originalContents = getDirectoryContents.value
+  const originalContents = getDirectoryContents.value;
 
-  const q = props.filterQuery.trim().toLowerCase() // Easy access
+  const q = props.filterQuery.trim().toLowerCase(); // Easy access
 
-  if (q === '' && !props.filePickerActive) {
-    return originalContents
+  if (q === "" && !props.filePickerActive) {
+    return originalContents;
   }
 
-  const filter = q === '' ? undefined : matchQuery(q, useTitle.value, useH1.value)
+  const filter = q === "" ? undefined : matchQuery(q, useTitle.value, useH1.value);
 
   // Filter based on the query (remember: there's an ID and a "props" property)
-  return originalContents.filter(element => {
+  return originalContents.filter((element) => {
     if (props.filePickerActive && !props.filePickerPathSet.has(element.props.path)) {
-      return false
+      return false;
     }
-    return filter === undefined || filter(element.props)
-  })
-})
+    return filter === undefined || filter(element.props);
+  });
+});
 
 onUpdated(() => {
   nextTick()
     .then(updateDynamics)
-    .catch(err => reportError(err))
-})
+    .catch((err) => reportError(err));
+});
 
 watch(getFilteredDirectoryContents, () => {
   // Whenever the directory contents change, reset the active file if it's
   // no longer in the list
   const foundDescriptor = getFilteredDirectoryContents.value.find((elem) => {
-    return elem.props === activeDescriptor.value
-  })
+    return elem.props === activeDescriptor.value;
+  });
 
   if (foundDescriptor === undefined) {
-    activeDescriptor.value = undefined
+    activeDescriptor.value = undefined;
   }
-})
+});
 
 watch(selectedFile, () => {
-  scrollIntoView()
+  scrollIntoView();
   const foundDescriptor = getFilteredDirectoryContents.value.find((elem) => {
-    return elem.props.path === selectedFile.value?.path
-  })
+    return elem.props.path === selectedFile.value?.path;
+  });
 
   if (foundDescriptor === undefined) {
-    activeDescriptor.value = undefined
+    activeDescriptor.value = undefined;
   } else {
-    activeDescriptor.value = foundDescriptor.props
+    activeDescriptor.value = foundDescriptor.props;
   }
-})
+});
 
 watch(getDirectoryContents, () => {
   nextTick()
-    .then(() => { scrollIntoView() })
-    .catch(err => reportError(err))
-})
+    .then(() => {
+      scrollIntoView();
+    })
+    .catch((err) => reportError(err));
+});
 
 /**
  * Navigates the filelist to the next/prev file or directory.
  * Hold Shift for moving by 10 files, Command or Control to
  * jump to the very end.
  */
-function navigate (evt: KeyboardEvent): void {
+function navigate(evt: KeyboardEvent): void {
   // Only capture arrow movements
-  if (![ 'ArrowDown', 'ArrowUp', 'Enter' ].includes(evt.key)) {
-    return
+  if (!["ArrowDown", "ArrowUp", "Enter"].includes(evt.key)) {
+    return;
   }
 
-  evt.stopPropagation()
-  evt.preventDefault()
+  evt.stopPropagation();
+  evt.preventDefault();
 
-  const shift = evt.shiftKey
-  const cmd = evt.metaKey && process.platform === 'darwin'
-  const ctrl = evt.ctrlKey && process.platform !== 'darwin'
-  const cmdOrCtrl = cmd || ctrl
+  const shift = evt.shiftKey;
+  const cmd = evt.metaKey && process.platform === "darwin";
+  const ctrl = evt.ctrlKey && process.platform !== "darwin";
+  const cmdOrCtrl = cmd || ctrl;
 
   // On pressing enter, that's the same as clicking
-  if (evt.key === 'Enter' && activeDescriptor.value !== undefined) {
-    if (activeDescriptor.value.type === 'directory') {
-      configStore.setConfigValue('openDirectory', activeDescriptor.value.path)
+  if (evt.key === "Enter" && activeDescriptor.value !== undefined) {
+    if (activeDescriptor.value.type === "directory") {
+      configStore.setConfigValue("openDirectory", activeDescriptor.value.path);
     } else {
       // Select the active file (if there is one)
-      ipcRenderer.invoke('documents-provider', {
-        command: 'open-file',
-        payload: {
-          path: activeDescriptor.value.path,
-          newTab: false
-        }
-      } as DocumentManagerIPCAPI)
-        .catch(e => reportError(e))
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "open-file",
+          payload: {
+            path: activeDescriptor.value.path,
+            newTab: false,
+          },
+        } as DocumentManagerIPCAPI)
+        .catch((e) => reportError(e));
     }
-    return // Stop handling
+    return; // Stop handling
   }
 
-  const list = getFilteredDirectoryContents.value.map(e => e.props)
-  const descriptor = list.find(e => {
+  const list = getFilteredDirectoryContents.value.map((e) => e.props);
+  const descriptor = list.find((e) => {
     if (activeDescriptor.value !== undefined) {
-      return e.path === activeDescriptor.value.path
+      return e.path === activeDescriptor.value.path;
     } else if (selectedFile.value !== undefined) {
-      return e.path === selectedFile.value.path
+      return e.path === selectedFile.value.path;
     } else {
-      return false
+      return false;
     }
-  })
+  });
 
   switch (evt.key) {
-    case 'ArrowDown': {
-      let index = descriptor !== undefined ? list.indexOf(descriptor) : 0
-      index++
+    case "ArrowDown": {
+      let index = descriptor !== undefined ? list.indexOf(descriptor) : 0;
+      index++;
       if (shift) {
-        index += 9 // Fast-scrolling
+        index += 9; // Fast-scrolling
       }
       if (index >= list.length) {
-        index = list.length - 1
+        index = list.length - 1;
       }
       if (cmdOrCtrl) {
         // Select the last file
-        activeDescriptor.value = list[list.length - 1]
+        activeDescriptor.value = list[list.length - 1];
       } else if (index < list.length) {
-        activeDescriptor.value = list[index]
+        activeDescriptor.value = list[index];
       }
-      break
+      break;
     }
-    case 'ArrowUp': {
-      let index = descriptor !== undefined ? list.indexOf(descriptor) : list.length
-      index--
+    case "ArrowUp": {
+      let index = descriptor !== undefined ? list.indexOf(descriptor) : list.length;
+      index--;
       if (shift) {
-        index -= 9 // Fast-scrolling
+        index -= 9; // Fast-scrolling
       }
       if (index < 0) {
-        index = 0
+        index = 0;
       }
       if (cmdOrCtrl) {
         // Select the first file
-        activeDescriptor.value = list[0]
+        activeDescriptor.value = list[0];
       } else if (index >= 0) {
-        activeDescriptor.value = list[index]
+        activeDescriptor.value = list[index];
       }
-      break
+      break;
     }
   }
 
   if (activeDescriptor.value !== undefined) {
-    windowStateStore.desktopFocusPath = activeDescriptor.value.path
+    windowStateStore.desktopFocusPath = activeDescriptor.value.path;
   }
 
-  scrollIntoView()
+  scrollIntoView();
 }
 
-function stopNavigate (): void {
-  activeDescriptor.value = undefined
+function stopNavigate(): void {
+  activeDescriptor.value = undefined;
 }
 
-function getRootElement (): HTMLDivElement|null {
-  return rootElement.value
+function getRootElement(): HTMLDivElement | null {
+  return rootElement.value;
 }
 
-function scrollIntoView (): void {
+function scrollIntoView(): void {
   if (rootElement.value === null) {
-    return
+    return;
   }
 
   // In case the file changed, make sure it's in view.
-  let scrollTop = rootElement.value.scrollTop
-  const activeDescriptorOrFile = getFilteredDirectoryContents.value.find(e => {
+  let scrollTop = rootElement.value.scrollTop;
+  const activeDescriptorOrFile = getFilteredDirectoryContents.value.find((e) => {
     if (activeDescriptor.value !== undefined) {
-      return e.props.path === activeDescriptor.value.path
+      return e.props.path === activeDescriptor.value.path;
     } else if (selectedFile.value !== undefined) {
-      return e.props.path === selectedFile.value.path
+      return e.props.path === selectedFile.value.path;
     } else {
-      return false
+      return false;
     }
-  })
+  });
 
   if (activeDescriptorOrFile === undefined) {
-    return
+    return;
   }
 
-  const index = getFilteredDirectoryContents.value.indexOf(activeDescriptorOrFile)
+  const index = getFilteredDirectoryContents.value.indexOf(activeDescriptorOrFile);
 
-  let modifier = itemHeight.value
-  let position = index * modifier
-  const fileFilterModifier = 40 // Height of the file filter
+  let modifier = itemHeight.value;
+  let position = index * modifier;
+  const fileFilterModifier = 40; // Height of the file filter
 
   if (position < scrollTop) {
-    rootElement.value.scrollTo({ top: position, behavior: 'smooth' })
+    rootElement.value.scrollTo({ top: position, behavior: "smooth" });
   } else if (position > scrollTop + rootElement.value.offsetHeight - modifier) {
-    const top = position - rootElement.value.offsetHeight + modifier + fileFilterModifier
-    rootElement.value.scrollTo({ top, behavior: 'smooth' })
+    const top = position - rootElement.value.offsetHeight + modifier + fileFilterModifier;
+    rootElement.value.scrollTo({ top, behavior: "smooth" });
   }
 }
 
@@ -392,50 +401,50 @@ function scrollIntoView (): void {
  * dynamically enable all newly rendered tippy instances.
  * @return {void}     Does not return.
  */
-function updateDynamics (): void {
+function updateDynamics(): void {
   if (rootElement.value === null) {
-    return
+    return;
   }
 
   // Tippy.js cannot observe changes within attributes, so because
   // the instances are all created in advance, we have to update
   // the content so that it reflects the current content of
   // the data-tippy-content-property.
-  const elements = rootElement.value.querySelectorAll('[data-tippy-content]')
+  const elements = rootElement.value.querySelectorAll("[data-tippy-content]");
   for (const elem of elements) {
     if (!(elem instanceof HTMLElement)) {
-      continue
+      continue;
     }
 
     // Either there's already an instance on the element,
     // then only update its contents ...
-    if ('_tippy' in elem) {
-      (elem._tippy as Instance).setContent(elem.dataset.tippyContent ?? '')
+    if ("_tippy" in elem) {
+      (elem._tippy as Instance).setContent(elem.dataset.tippyContent ?? "");
     } else {
       // ... or there is none, so let's add a tippy instance.
       tippy(elem, {
         delay: 100,
         arrow: true,
-        duration: 100
-      })
+        duration: 100,
+      });
     }
   }
 }
 
-async function handleOperation (type: 'dir-new'|'file-new', idx: number): Promise<void> {
+async function handleOperation(type: "dir-new" | "file-new", idx: number): Promise<void> {
   // Creates files and directories, or duplicates a file.
-  const source = getDirectoryContents.value.find(item => item.id === idx)?.props
+  const source = getDirectoryContents.value.find((item) => item.id === idx)?.props;
   if (source === undefined) {
-    throw new Error('Could not handle file list operation: Source was undefined')
+    throw new Error("Could not handle file list operation: Source was undefined");
   }
 
-  await ipcRenderer.invoke('application', {
+  await ipcRenderer.invoke("application", {
     command: type,
-    payload: { path: source.path }
-  })
+    payload: { path: source.path },
+  });
 }
 
-defineExpose({ navigate, stopNavigate, getRootElement })
+defineExpose({ navigate, stopNavigate, getRootElement });
 </script>
 
 <style lang="less">

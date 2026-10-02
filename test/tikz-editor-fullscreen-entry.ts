@@ -1,9 +1,9 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
-import { createApp, nextTick } from "vue";
 import { zettlrTikzWorkbenchHost } from "source/win-main/tikz-workbench-host";
+import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
 import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
+import { createApp, nextTick } from "vue";
 
 declare global {
   interface Window {

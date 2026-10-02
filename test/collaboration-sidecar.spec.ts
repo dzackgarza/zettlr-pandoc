@@ -34,23 +34,22 @@ import {
 } from "fs";
 import os from "os";
 import path from "path";
-import type { TextAnnotation } from "source/types/common/annotation-domain";
+import {
+  type AnnotationDomainValidationCode,
+  AnnotationDomainValidationError,
+} from "source/app/service-providers/documents/annotation-domain-validation";
 import type { CollaborationSidecarData } from "source/app/service-providers/documents/collaboration-sidecar-schema";
 import {
   CollaborationSidecarStore,
   collaborationSidecarFilePath,
 } from "source/app/service-providers/documents/collaboration-sidecar-store";
-import {
-  AnnotationDomainValidationError,
-  type AnnotationDomainValidationCode,
-} from "source/app/service-providers/documents/annotation-domain-validation";
+import type { TextAnnotation } from "source/types/common/annotation-domain";
 
 function annotationIssue(code: AnnotationDomainValidationCode): (error: unknown) => boolean {
   return (error) => error instanceof AnnotationDomainValidationError && error.issue.code === code;
 }
 
-const FINGERPRINT =
-  "1111111111111111111111111111111111111111111111111111111111111111";
+const FINGERPRINT = "1111111111111111111111111111111111111111111111111111111111111111";
 
 /** The version-5 `review` block: everything version 4 kept flat, now nested. */
 function persistedReview(): CollaborationSidecarData["review"] & object {
@@ -152,11 +151,28 @@ function annotation(annotationId: string): TextAnnotation {
     anchor: { state: "range", from: 0, to: 5, quotedText: "ALPHA" },
     state: "open",
     messages: [
-      { messageId: "message-1", author: "owner", text: "check this capitalization", createdAt: "2026-08-01T00:00:00.000Z" },
-      { messageId: "message-2", author: "agent", clientRequestId: "request-a1", text: "capitalization is intentional here", createdAt: "2026-08-01T00:03:00.000Z" },
+      {
+        messageId: "message-1",
+        author: "owner",
+        text: "check this capitalization",
+        createdAt: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        messageId: "message-2",
+        author: "agent",
+        clientRequestId: "request-a1",
+        text: "capitalization is intentional here",
+        createdAt: "2026-08-01T00:03:00.000Z",
+      },
     ],
     proposalActions: [
-      { actionId: "action-1", packetId: "packet-1", reviewId: "review-1", linkedAt: "2026-08-01T00:04:00.000Z", terminalOutcome: "accepted" },
+      {
+        actionId: "action-1",
+        packetId: "packet-1",
+        reviewId: "review-1",
+        linkedAt: "2026-08-01T00:04:00.000Z",
+        terminalOutcome: "accepted",
+      },
     ],
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:03:00.000Z",
@@ -306,7 +322,10 @@ describe("CollaborationSidecarStore", function () {
   it("rejects duplicate suggestion identities", async function () {
     const valid = sidecar(documentPath);
     const review = valid.review!;
-    persistRaw({ ...valid, review: { ...review, suggestions: [review.suggestions[0], review.suggestions[0]] } });
+    persistRaw({
+      ...valid,
+      review: { ...review, suggestions: [review.suggestions[0], review.suggestions[0]] },
+    });
     await assert.rejects(store.read(documentPath), /duplicate suggestion id suggestion-1/);
   });
 
@@ -315,15 +334,24 @@ describe("CollaborationSidecarStore", function () {
     const review = valid.review!;
     persistRaw({
       ...valid,
-      review: { ...review, suggestions: [{ ...review.suggestions[0], packetId: "missing-packet" }] },
+      review: {
+        ...review,
+        suggestions: [{ ...review.suggestions[0], packetId: "missing-packet" }],
+      },
     });
     await assert.rejects(store.read(documentPath), /has no owning packet/);
   });
 
   it("rejects unsorted, overlapping, and out-of-bounds anchors", async function () {
     const invalidAnchors = [
-      [{ from: 3, to: 5 }, { from: 1, to: 2 }],
-      [{ from: 0, to: 4 }, { from: 3, to: 5 }],
+      [
+        { from: 3, to: 5 },
+        { from: 1, to: 2 },
+      ],
+      [
+        { from: 0, to: 4 },
+        { from: 3, to: 5 },
+      ],
       [{ from: 0, to: 7 }],
       [{ from: -1, to: 1 }],
     ];
@@ -344,7 +372,10 @@ describe("CollaborationSidecarStore", function () {
 
     persistRaw({
       ...valid,
-      review: { ...review, suggestions: [{ ...review.suggestions[0], seam: valid.workingText.length + 1 }] },
+      review: {
+        ...review,
+        suggestions: [{ ...review.suggestions[0], seam: valid.workingText.length + 1 }],
+      },
     });
     await assert.rejects(store.read(documentPath), /has an invalid seam|must be >= 0/);
 
@@ -358,16 +389,15 @@ describe("CollaborationSidecarStore", function () {
       ...valid,
       review: {
         ...review,
-        suggestions: [{
-          ...review.suggestions[0],
-          restorations: [{ at: valid.workingText.length + 1, text: "alpha" }],
-        }],
+        suggestions: [
+          {
+            ...review.suggestions[0],
+            restorations: [{ at: valid.workingText.length + 1, text: "alpha" }],
+          },
+        ],
       },
     });
-    await assert.rejects(
-      store.read(documentPath),
-      /has an invalid restoration|must be >= 0/,
-    );
+    await assert.rejects(store.read(documentPath), /has an invalid restoration|must be >= 0/);
 
     persistRaw({
       ...valid,
@@ -376,10 +406,7 @@ describe("CollaborationSidecarStore", function () {
         suggestions: [{ ...review.suggestions[0], restorations: [{ at: -1, text: "alpha" }] }],
       },
     });
-    await assert.rejects(
-      store.read(documentPath),
-      /has an invalid restoration|must be >= 0/,
-    );
+    await assert.rejects(store.read(documentPath), /has an invalid restoration|must be >= 0/);
   });
 
   it("rejects incoherent insertion, deletion, and substitution data", async function () {
@@ -403,7 +430,9 @@ describe("CollaborationSidecarStore", function () {
       ...valid,
       review: {
         ...review,
-        suggestions: [{ ...review.suggestions[0], kind: "deletion", anchors: [{ from: 0, to: 0 }] }],
+        suggestions: [
+          { ...review.suggestions[0], kind: "deletion", anchors: [{ from: 0, to: 0 }] },
+        ],
       },
     };
     await store.write(deletion);
@@ -417,12 +446,20 @@ describe("CollaborationSidecarStore", function () {
       ...valid,
       review: {
         ...review,
-        suggestions: [{
-          ...review.suggestions[0],
-          kind: "deletion",
-          restorations: [{ at: 0, text: "al" }, { at: 2, text: "pha" }],
-          anchors: [{ from: 0, to: 0 }, { from: 2, to: 2 }],
-        }],
+        suggestions: [
+          {
+            ...review.suggestions[0],
+            kind: "deletion",
+            restorations: [
+              { at: 0, text: "al" },
+              { at: 2, text: "pha" },
+            ],
+            anchors: [
+              { from: 0, to: 0 },
+              { from: 2, to: 2 },
+            ],
+          },
+        ],
       },
     };
     await store.write(deletion);
@@ -436,10 +473,16 @@ describe("CollaborationSidecarStore", function () {
       ...valid,
       review: {
         ...review,
-        suggestions: [review.suggestions[0], { ...review.suggestions[0], suggestionId: "suggestion-2" }],
+        suggestions: [
+          review.suggestions[0],
+          { ...review.suggestions[0], suggestionId: "suggestion-2" },
+        ],
       },
     });
-    await assert.rejects(store.read(documentPath), /suggestions suggestion-1 and suggestion-2 overlap/);
+    await assert.rejects(
+      store.read(documentPath),
+      /suggestions suggestion-1 and suggestion-2 overlap/,
+    );
   });
 
   it("rejects a sidecar whose payload path does not match its hashed filename", async function () {
@@ -461,7 +504,10 @@ describe("CollaborationSidecarStore", function () {
     persistRaw({
       ...sidecar(documentPath),
       review: null,
-      annotations: { generation: 1, items: [annotation("annotation-1"), annotation("annotation-1")] },
+      annotations: {
+        generation: 1,
+        items: [annotation("annotation-1"), annotation("annotation-1")],
+      },
     });
     await assert.rejects(store.read(documentPath), annotationIssue("DUPLICATE_ANNOTATION_ID"));
   });
@@ -553,8 +599,7 @@ describe("CollaborationSidecarStore", function () {
     };
     await assert.rejects(
       store.write(second),
-      (error: unknown) =>
-        error instanceof Error && "code" in error && error.code === "EACCES",
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "EACCES",
       "the refused write must surface the filesystem's own structured error",
     );
     chmodSync(sidecarDirectory, 0o700);

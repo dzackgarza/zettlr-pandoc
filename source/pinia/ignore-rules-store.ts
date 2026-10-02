@@ -15,60 +15,82 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { defineStore } from 'pinia'
-import { computed, ref, shallowRef, watch } from 'vue'
-import { createIgnoreFilter, judgingRoot, type IgnoreFilter, type IgnoreRuleSources } from 'source/common/util/ignore-rules'
-import { useConfigStore } from './config'
+import { reportError } from "@common/util/error-reporting";
+import { defineStore } from "pinia";
+import {
+  createIgnoreFilter,
+  type IgnoreFilter,
+  type IgnoreRuleSources,
+  judgingRoot,
+} from "source/common/util/ignore-rules";
+import { computed, ref, shallowRef, watch } from "vue";
+import { useConfigStore } from "./config";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 /**
  * The folder itself when the app lists it, else the nearest folder above it
  * that the app lists.
  */
-function nearestListedDirectory (filter: IgnoreFilter, roots: Iterable<string>, dirPath: string): string {
-  const root = judgingRoot(roots, dirPath)
+function nearestListedDirectory(
+  filter: IgnoreFilter,
+  roots: Iterable<string>,
+  dirPath: string,
+): string {
+  const root = judgingRoot(roots, dirPath);
   if (root === undefined) {
-    return dirPath
+    return dirPath;
   }
 
-  let listed = root
-  for (const segment of dirPath.slice(root.length + 1).split('/')) {
-    const next = `${listed}/${segment}`
+  let listed = root;
+  for (const segment of dirPath.slice(root.length + 1).split("/")) {
+    const next = `${listed}/${segment}`;
     if (filter.hides(next, true)) {
-      return listed
+      return listed;
     }
-    listed = next
+    listed = next;
   }
-  return dirPath
+  return dirPath;
 }
 
-export const useIgnoreRulesStore = defineStore('ignore-rules', () => {
-  const configStore = useConfigStore()
-  const sources = shallowRef<IgnoreRuleSources>({ globalRules: [], workspaceRules: new Map(), showIgnored: false })
-  const filter = computed(() => createIgnoreFilter(sources.value))
+export const useIgnoreRulesStore = defineStore("ignore-rules", () => {
+  const configStore = useConfigStore();
+  const sources = shallowRef<IgnoreRuleSources>({
+    globalRules: [],
+    workspaceRules: new Map(),
+    showIgnored: false,
+  });
+  const filter = computed(() => createIgnoreFilter(sources.value));
   /** True while the dialog that edits the rules is open. */
-  const editing = ref(false)
+  const editing = ref(false);
 
-  ipcRenderer.invoke('fsal', { command: 'get-ignore-rules' })
-    .then(current => { sources.value = current })
-    .catch(err => reportError('Could not fetch the ignore rules', err))
+  ipcRenderer
+    .invoke("fsal", { command: "get-ignore-rules" })
+    .then((current) => {
+      sources.value = current;
+    })
+    .catch((err) => reportError("Could not fetch the ignore rules", err));
 
-  ipcRenderer.on('fsal-ignore-rules', (_, next: IgnoreRuleSources) => { sources.value = next })
+  ipcRenderer.on("fsal-ignore-rules", (_, next: IgnoreRuleSources) => {
+    sources.value = next;
+  });
 
   // A rule can hide the selected folder. The selection then moves to the
   // nearest folder that is still listed.
   watch(filter, () => {
-    const selected = configStore.config.openDirectory
+    const selected = configStore.config.openDirectory;
     if (selected === null) {
-      return
+      return;
     }
-    const listed = nearestListedDirectory(filter.value, sources.value.workspaceRules.keys(), selected)
+    const listed = nearestListedDirectory(
+      filter.value,
+      sources.value.workspaceRules.keys(),
+      selected,
+    );
     if (listed !== selected) {
-      configStore.setConfigValue('openDirectory', listed)
+      configStore.setConfigValue("openDirectory", listed);
     }
-  })
+  });
 
-  return { sources, filter, editing }
-})
+  return { sources, filter, editing };
+});

@@ -14,68 +14,74 @@
  * END HEADER
  */
 
-import path from 'path'
-import { spawn } from 'child_process'
-import { z } from 'zod'
 import type {
   JustRecipeCommand,
   JustRecipeParameter,
-  JustRepositoryCommands
-} from '@dts/common/justfile-commands'
+  JustRepositoryCommands,
+} from "@dts/common/justfile-commands";
+import { spawn } from "child_process";
+import path from "path";
+import { z } from "zod";
 
 export interface CapturedCommand {
-  code: number
-  stdout: string
-  stderr: string
+  code: number;
+  stdout: string;
+  stderr: string;
 }
 
 export type CommandRunner = (
   command: string,
   args: readonly string[],
-  cwd?: string
-) => Promise<CapturedCommand>
+  cwd?: string,
+) => Promise<CapturedCommand>;
 
-const rawParameterSchema = z.object({
-  name: z.string(),
-  kind: z.enum([ 'singular', 'plus', 'star' ]),
-  default: z.unknown().nullable(),
-  flag: z.boolean(),
-  value: z.unknown().nullable(),
-  long: z.string().nullable(),
-  short: z.string().nullable(),
-  multiple: z.boolean(),
-  min: z.string().nullable(),
-  max: z.string().nullable(),
-  help: z.string().nullable()
-}).passthrough()
+const rawParameterSchema = z
+  .object({
+    name: z.string(),
+    kind: z.enum(["singular", "plus", "star"]),
+    default: z.unknown().nullable(),
+    flag: z.boolean(),
+    value: z.unknown().nullable(),
+    long: z.string().nullable(),
+    short: z.string().nullable(),
+    multiple: z.boolean(),
+    min: z.string().nullable(),
+    max: z.string().nullable(),
+    help: z.string().nullable(),
+  })
+  .passthrough();
 
-const rawRecipeSchema = z.object({
-  name: z.string(),
-  doc: z.string().nullable(),
-  private: z.boolean(),
-  parameters: z.array(rawParameterSchema),
-  attributes: z.array(z.unknown())
-}).passthrough()
+const rawRecipeSchema = z
+  .object({
+    name: z.string(),
+    doc: z.string().nullable(),
+    private: z.boolean(),
+    parameters: z.array(rawParameterSchema),
+    attributes: z.array(z.unknown()),
+  })
+  .passthrough();
 
-const justDumpSchema = z.object({
-  source: z.string(),
-  recipes: z.record(z.string(), rawRecipeSchema)
-}).passthrough()
+const justDumpSchema = z
+  .object({
+    source: z.string(),
+    recipes: z.record(z.string(), rawRecipeSchema),
+  })
+  .passthrough();
 
-function isRecord (value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function recipeGroup (attributes: readonly unknown[]): string|null {
+function recipeGroup(attributes: readonly unknown[]): string | null {
   for (const attribute of attributes) {
-    if (isRecord(attribute) && typeof attribute.group === 'string') {
-      return attribute.group
+    if (isRecord(attribute) && typeof attribute.group === "string") {
+      return attribute.group;
     }
   }
-  return null
+  return null;
 }
 
-function normalizeParameter (parameter: z.infer<typeof rawParameterSchema>): JustRecipeParameter {
+function normalizeParameter(parameter: z.infer<typeof rawParameterSchema>): JustRecipeParameter {
   return {
     name: parameter.name,
     kind: parameter.kind,
@@ -87,117 +93,127 @@ function normalizeParameter (parameter: z.infer<typeof rawParameterSchema>): Jus
     multiple: parameter.multiple,
     min: parameter.min,
     max: parameter.max,
-    help: parameter.help
-  }
+    help: parameter.help,
+  };
 }
 
-async function captureCommand (
+async function captureCommand(
   command: string,
   args: readonly string[],
-  cwd?: string
+  cwd?: string,
 ): Promise<CapturedCommand> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, [ ...args ], {
+    const child = spawn(command, [...args], {
       cwd,
       shell: false,
-      stdio: [ 'ignore', 'pipe', 'pipe' ]
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', chunk => { stdout += String(chunk) })
-    child.stderr.on('data', chunk => { stderr += String(chunk) })
-    child.once('error', reject)
-    child.once('close', (code, signal) => {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
       // Node reports a null exit code exactly when a signal ended the process.
       if (code === null) {
-        reject(new Error(`${command} was terminated by signal ${String(signal)}`))
-        return
+        reject(new Error(`${command} was terminated by signal ${String(signal)}`));
+        return;
       }
-      resolve({ code, stdout, stderr })
-    })
-  })
+      resolve({ code, stdout, stderr });
+    });
+  });
 }
 
 /** Public root recipes of every distinct Git repository containing a workspace. */
-export async function discoverJustfileCommands (
+export async function discoverJustfileCommands(
   workspaceRoots: readonly string[],
   run: CommandRunner = captureCommand,
-  diagnostic: (message: string) => void = () => {}
+  diagnostic: (message: string) => void = () => {},
 ): Promise<JustRepositoryCommands[]> {
-  const repoRoots = new Set<string>()
+  const repoRoots = new Set<string>();
 
   for (const workspaceRoot of workspaceRoots) {
-    let git: CapturedCommand
+    let git: CapturedCommand;
     try {
-      git = await run('git', [ '-C', workspaceRoot, 'rev-parse', '--show-toplevel' ])
+      git = await run("git", ["-C", workspaceRoot, "rev-parse", "--show-toplevel"]);
     } catch (err: unknown) {
-      diagnostic(`Could not inspect ${workspaceRoot} with git: ${err instanceof Error ? err.message : String(err)}`)
-      continue
+      diagnostic(
+        `Could not inspect ${workspaceRoot} with git: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      continue;
     }
     if (git.code !== 0) {
-      continue
+      continue;
     }
-    const repoRoot = git.stdout.trim()
-    if (repoRoot !== '') {
-      repoRoots.add(path.resolve(repoRoot))
+    const repoRoot = git.stdout.trim();
+    if (repoRoot !== "") {
+      repoRoots.add(path.resolve(repoRoot));
     }
   }
 
-  const repositories: JustRepositoryCommands[] = []
+  const repositories: JustRepositoryCommands[] = [];
   for (const repoRoot of repoRoots) {
-    let dumped: CapturedCommand
+    let dumped: CapturedCommand;
     try {
       dumped = await run(
-        'just',
-        [ '--ceiling', repoRoot, '--dump', '--dump-format', 'json' ],
-        repoRoot
-      )
+        "just",
+        ["--ceiling", repoRoot, "--dump", "--dump-format", "json"],
+        repoRoot,
+      );
     } catch (err: unknown) {
-      diagnostic(`Could not inspect Just recipes in ${repoRoot}: ${err instanceof Error ? err.message : String(err)}`)
-      continue
+      diagnostic(
+        `Could not inspect Just recipes in ${repoRoot}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      continue;
     }
     if (dumped.code !== 0) {
-      if (!dumped.stderr.includes('no justfile found')) {
-        diagnostic(`Could not inspect Just recipes in ${repoRoot}: ${dumped.stderr.trim()}`)
+      if (!dumped.stderr.includes("no justfile found")) {
+        diagnostic(`Could not inspect Just recipes in ${repoRoot}: ${dumped.stderr.trim()}`);
       }
-      continue
+      continue;
     }
 
-    let parsed: z.infer<typeof justDumpSchema>
+    let parsed: z.infer<typeof justDumpSchema>;
     try {
-      parsed = justDumpSchema.parse(JSON.parse(dumped.stdout) as unknown)
+      parsed = justDumpSchema.parse(JSON.parse(dumped.stdout) as unknown);
     } catch (err: unknown) {
-      diagnostic(`Just returned malformed JSON for ${repoRoot}: ${err instanceof Error ? err.message : String(err)}`)
-      continue
+      diagnostic(
+        `Just returned malformed JSON for ${repoRoot}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      continue;
     }
 
     // `cwd = repoRoot` and `--ceiling repoRoot` should already force this, but
     // keep the top-level-only requirement explicit at the boundary.
-    const justfilePath = path.resolve(parsed.source)
+    const justfilePath = path.resolve(parsed.source);
     if (path.dirname(justfilePath) !== repoRoot) {
-      diagnostic(`Ignoring non-top-level Justfile ${justfilePath} for repository ${repoRoot}`)
-      continue
+      diagnostic(`Ignoring non-top-level Justfile ${justfilePath} for repository ${repoRoot}`);
+      continue;
     }
 
     const recipes: JustRecipeCommand[] = Object.values(parsed.recipes)
-      .filter(recipe => !recipe.private)
-      .map(recipe => ({
+      .filter((recipe) => !recipe.private)
+      .map((recipe) => ({
         name: recipe.name,
         doc: recipe.doc,
         group: recipeGroup(recipe.attributes),
-        parameters: recipe.parameters.map(normalizeParameter)
+        parameters: recipe.parameters.map(normalizeParameter),
       }))
-      .sort((left, right) => left.name.localeCompare(right.name))
+      .sort((left, right) => left.name.localeCompare(right.name));
 
     if (recipes.length > 0) {
       repositories.push({
         repoRoot,
         repoLabel: path.basename(repoRoot),
         justfilePath,
-        recipes
-      })
+        recipes,
+      });
     }
   }
 
-  return repositories.sort((left, right) => left.repoRoot.localeCompare(right.repoRoot))
+  return repositories.sort((left, right) => left.repoRoot.localeCompare(right.repoRoot));
 }

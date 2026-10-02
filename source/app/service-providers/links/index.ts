@@ -12,34 +12,47 @@
  * END HEADER
  */
 
-import { app, ipcMain } from 'electron'
-import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import { WikilinkIndex, type WikilinkDocument, type WikilinkResolution } from '@common/util/wikilink-resolution'
-import { splitWikilinkTarget } from '@common/util/wikilink-target'
-import ProviderContract from '../provider-contract'
-import type LogProvider from '@providers/log'
-import path from 'path'
-import type FSAL from '../fsal'
-import type ConfigProvider from '../config'
-import type { MDFileDescriptor } from 'source/types/common/fsal'
-import type { FSALEventPayload } from '../fsal'
-import type { WikilinkEdge } from './ipc-contract'
-import _ from 'underscore'
-import { movedPath, retargetedLink, retargetLinks, type PathMove } from '@common/util/replace-links'
-import { hashDocumentSource } from '@common/pandoc-util/extract-references'
-import type { WorkspaceTextEdit } from '@dts/common/references'
-import type { SaveFileResult } from '@dts/common/documents'
-import { runWorkspaceEditTransaction, saveUpdatedBuffers, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
+import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import {
+  movedPath,
+  type PathMove,
+  retargetedLink,
+  retargetLinks,
+} from "@common/util/replace-links";
+import {
+  type WikilinkDocument,
+  WikilinkIndex,
+  type WikilinkResolution,
+} from "@common/util/wikilink-resolution";
+import { splitWikilinkTarget } from "@common/util/wikilink-target";
+import type { SaveFileResult } from "@dts/common/documents";
+import type { WorkspaceTextEdit } from "@dts/common/references";
+import type LogProvider from "@providers/log";
+import { app, ipcMain } from "electron";
+import path from "path";
+import type { MDFileDescriptor } from "source/types/common/fsal";
+import _ from "underscore";
+import type ConfigProvider from "../config";
+import type FSAL from "../fsal";
+import type { FSALEventPayload } from "../fsal";
+import ProviderContract from "../provider-contract";
+import {
+  runWorkspaceEditTransaction,
+  saveUpdatedBuffers,
+  type WorkspaceEditAuthority,
+} from "../references/workspace-edit-transaction";
+import type { WikilinkEdge } from "./ipc-contract";
 
 /** The document authority a retarget edits through: open buffers and their save. */
 export interface LinkRetargetAuthority extends WorkspaceEditAuthority {
-  saveFile: (filePath: string) => Promise<SaveFileResult>
+  saveFile: (filePath: string) => Promise<SaveFileResult>;
 }
 
 /** The wikilinks of every file and the index they resolve against. */
 export interface WikilinkSnapshot {
-  index: WikilinkIndex
-  links: Map<string, string[]>
+  index: WikilinkIndex;
+  links: Map<string, string[]>;
 }
 
 /**
@@ -48,59 +61,75 @@ export interface WikilinkSnapshot {
  * rebuilds both whenever the Markdown files of a workspace change.
  */
 export default class LinkProvider extends ProviderContract {
-  private _fileLinkDatabase: Map<string, string[]>
-  private _index: WikilinkIndex
+  private _fileLinkDatabase: Map<string, string[]>;
+  private _index: WikilinkIndex;
   /** What the index was built from: the comparison value of a reindex */
-  private _indexEntries: WikilinkDocument[]
+  private _indexEntries: WikilinkDocument[];
 
-  constructor (private readonly _logger: LogProvider, private readonly _config: ConfigProvider, private readonly _fsal: FSAL) {
-    super()
+  constructor(
+    private readonly _logger: LogProvider,
+    private readonly _config: ConfigProvider,
+    private readonly _fsal: FSAL,
+  ) {
+    super();
 
-    this._fileLinkDatabase = new Map()
-    this._index = new WikilinkIndex([])
-    this._indexEntries = []
+    this._fileLinkDatabase = new Map();
+    this._index = new WikilinkIndex([]);
+    this._indexEntries = [];
 
-    ipcMain.handle('link-provider', async (event, message) => {
-      const { command } = message
+    ipcMain.handle("link-provider", async (event, message) => {
+      const { command } = message;
 
-      if (command === 'get-inbound-links') {
+      if (command === "get-inbound-links") {
         // Return whatever links to the given file
-        const filePath: string = message.payload.filePath
+        const filePath: string = message.payload.filePath;
         return {
           inbound: this.retrieveInbound(filePath),
-          outbound: this.retrieveOutbound(filePath)
-        }
-      } else if (command === 'get-link-database') {
-        return this.linkDatabase()
-      } else if (command === 'get-link-targets') {
-        return this.linkTargets()
-      } else if (command === 'resolve-wikilinks') {
-        const { sourcePath, targets } = message.payload as { sourcePath: string, targets: string[] }
-        return Object.fromEntries(targets.map(target => [ target, this.resolve(target, sourcePath) ]))
+          outbound: this.retrieveOutbound(filePath),
+        };
+      } else if (command === "get-link-database") {
+        return this.linkDatabase();
+      } else if (command === "get-link-targets") {
+        return this.linkTargets();
+      } else if (command === "resolve-wikilinks") {
+        const { sourcePath, targets } = message.payload as {
+          sourcePath: string;
+          targets: string[];
+        };
+        return Object.fromEntries(
+          targets.map((target) => [target, this.resolve(target, sourcePath)]),
+        );
       }
-    })
+    });
   }
 
-  public async boot (): Promise<void> {
+  public async boot(): Promise<void> {
     // Listen to state changes within the Workspaces Provider
-    this._fsal.on('fsal-events', (events: FSALEventPayload[]) => {
+    this._fsal.on("fsal-events", (events: FSALEventPayload[]) => {
       // Only a Markdown file has links, and only a removal has no descriptor
       // that says what it was.
-      const affectsLinks = events.some(payload => 'path' in payload || payload.descriptor.type === 'file')
+      const affectsLinks = events.some(
+        (payload) => "path" in payload || payload.descriptor.type === "file",
+      );
       if (!affectsLinks) {
-        return
+        return;
       }
       this.reindex()
-        .then(changed => {
+        .then((changed) => {
           if (changed) {
-            broadcastIpcMessage('links')
+            broadcastIpcMessage("links");
           }
         })
-        .catch(err => this._logger.error(`[LinkProvider] Could not update the link database: ${err.message}`, err))
-    })
+        .catch((err) =>
+          this._logger.error(
+            `[LinkProvider] Could not update the link database: ${err.message}`,
+            err,
+          ),
+        );
+    });
 
     // Pull in the initial update
-    await this.reindex()
+    await this.reindex();
   }
 
   /**
@@ -108,73 +137,84 @@ export default class LinkProvider extends ProviderContract {
    *
    * @return  {Promise<boolean>}  True when the links or the index changed
    */
-  public async reindex (): Promise<boolean> {
-    const descriptors = (await this._fsal.getAllLoadedDescriptors())
-      .filter((descriptor): descriptor is MDFileDescriptor => descriptor.type === 'file')
+  public async reindex(): Promise<boolean> {
+    const descriptors = (await this._fsal.getAllLoadedDescriptors()).filter(
+      (descriptor): descriptor is MDFileDescriptor => descriptor.type === "file",
+    );
 
     // A file belongs to the innermost open workspace that contains it; a file
     // opened on its own is its own workspace.
-    const workspaces = [...this._config.get().app.openWorkspaces]
-      .sort((a, b) => b.length - a.length)
+    const workspaces = [...this._config.get().app.openWorkspaces].sort(
+      (a, b) => b.length - a.length,
+    );
     const rootFor = (filePath: string): string => {
-      return workspaces.find(root => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
-    }
+      return (
+        workspaces.find((root) => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
+      );
+    };
 
-    const links = new Map(descriptors.map(descriptor => [ descriptor.path, descriptor.links ]))
-    const entries: WikilinkDocument[] = descriptors.map(descriptor => ({
+    const links = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor.links]));
+    const entries: WikilinkDocument[] = descriptors.map((descriptor) => ({
       path: descriptor.path,
       root: rootFor(descriptor.path),
       id: descriptor.id,
       title: descriptor.yamlTitle,
-      aliases: descriptor.aliases
-    }))
+      aliases: descriptor.aliases,
+    }));
     // A save that changed no link, name, id, title or alias keeps the index.
-    if (_.isEqual(entries, this._indexEntries) && _.isEqual([...links], [...this._fileLinkDatabase])) {
-      return false
+    if (
+      _.isEqual(entries, this._indexEntries) &&
+      _.isEqual([...links], [...this._fileLinkDatabase])
+    ) {
+      return false;
     }
 
-    this._fileLinkDatabase = links
-    this._indexEntries = entries
-    this._index = new WikilinkIndex(entries)
-    return true
+    this._fileLinkDatabase = links;
+    this._indexEntries = entries;
+    this._index = new WikilinkIndex(entries);
+    return true;
   }
 
   /**
    * Shuts down the service provider
    * @return {Boolean} Returns true after successful shutdown
    */
-  async shutdown (): Promise<void> {
-    this._logger.verbose('Link provider shutting down ...')
+  async shutdown(): Promise<void> {
+    this._logger.verbose("Link provider shutting down ...");
   }
 
   /**
    * Resolves the target of a wikilink, before its `#` fragment and `|` label,
    * written in the document at `sourcePath`.
    */
-  resolve (target: string, sourcePath: string): WikilinkResolution {
-    return this._index.resolve(target, sourcePath)
+  resolve(target: string, sourcePath: string): WikilinkResolution {
+    return this._index.resolve(target, sourcePath);
   }
 
   /** The index as it stands now; a later reindex does not change it. */
-  get index (): WikilinkIndex {
-    return this._index
+  get index(): WikilinkIndex {
+    return this._index;
   }
 
   /** The links and the index as they stand now, to retarget after a move. */
-  snapshot (): WikilinkSnapshot {
-    return { index: this._index, links: this._fileLinkDatabase }
+  snapshot(): WikilinkSnapshot {
+    return { index: this._index, links: this._fileLinkDatabase };
   }
 
   /**
    * Reindexes after `move`, and returns the files, at their paths before the
    * move, that hold a wikilink whose document the move changed.
    */
-  async filesChangedByMove (before: WikilinkSnapshot, move: PathMove): Promise<string[]> {
-    await this.reindex()
-    return [...before.links].filter(([ sourcePath, links ]) => links.some(link => {
-      const { target } = splitWikilinkTarget(link)
-      return retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined
-    })).map(([sourcePath]) => sourcePath)
+  async filesChangedByMove(before: WikilinkSnapshot, move: PathMove): Promise<string[]> {
+    await this.reindex();
+    return [...before.links]
+      .filter(([sourcePath, links]) =>
+        links.some((link) => {
+          const { target } = splitWikilinkTarget(link);
+          return retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined;
+        }),
+      )
+      .map(([sourcePath]) => sourcePath);
   }
 
   /**
@@ -184,49 +224,74 @@ export default class LinkProvider extends ProviderContract {
    * closed one on disk. An open document never depends on the file watcher,
    * which drops a second change of one file within 50 ms.
    */
-  async retargetAfterMove (before: WikilinkSnapshot, move: PathMove, files: string[], documents: LinkRetargetAuthority): Promise<void> {
-    const edits: WorkspaceTextEdit[] = []
-    const expectedSourceHashes: Record<string, string> = {}
+  async retargetAfterMove(
+    before: WikilinkSnapshot,
+    move: PathMove,
+    files: string[],
+    documents: LinkRetargetAuthority,
+  ): Promise<void> {
+    const edits: WorkspaceTextEdit[] = [];
+    const expectedSourceHashes: Record<string, string> = {};
     for (const sourcePath of files) {
-      const filePath = movedPath(sourcePath, move)
-      const buffer = documents.readMarkdownBufferContent(filePath)
-      const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath)
-      const replacements = retargetLinks(content, sourcePath, move, before.index, this._index)
+      const filePath = movedPath(sourcePath, move);
+      const buffer = documents.readMarkdownBufferContent(filePath);
+      const content = buffer !== undefined ? buffer : await this._fsal.readTextFile(filePath);
+      const replacements = retargetLinks(content, sourcePath, move, before.index, this._index);
       if (replacements.length === 0) {
-        continue
+        continue;
       }
-      expectedSourceHashes[filePath] = hashDocumentSource(content)
-      edits.push(...replacements.map(({ from, to, text }) => ({ documentPath: filePath, range: { from, to }, insert: text })))
+      expectedSourceHashes[filePath] = hashDocumentSource(content);
+      edits.push(
+        ...replacements.map(({ from, to, text }) => ({
+          documentPath: filePath,
+          range: { from, to },
+          insert: text,
+        })),
+      );
     }
     if (edits.length === 0) {
-      return
+      return;
     }
 
-    const result = await runWorkspaceEditTransaction(documents, app.getPath('userData'), { edits, expectedSourceHashes })
-    if (result.status === 'conflict') {
-      throw new Error(`[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`)
+    const result = await runWorkspaceEditTransaction(documents, app.getPath("userData"), {
+      edits,
+      expectedSourceHashes,
+    });
+    if (result.status === "conflict") {
+      throw new Error(
+        `[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`,
+      );
     }
-    await saveUpdatedBuffers(async filePath => await documents.saveFile(filePath), result.openBuffersUpdated)
-    for (const filePath of [ ...result.openBuffersUpdated, ...result.closedFilesWritten ]) {
-      this._logger.info(`[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`)
+    await saveUpdatedBuffers(
+      async (filePath) => await documents.saveFile(filePath),
+      result.openBuffersUpdated,
+    );
+    for (const filePath of [...result.openBuffersUpdated, ...result.closedFilesWritten]) {
+      this._logger.info(
+        `[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`,
+      );
     }
   }
 
   /** The written form of a wikilink to `filePath`. */
-  canonicalTarget (filePath: string): string {
-    return this._index.canonical(filePath)
+  canonicalTarget(filePath: string): string {
+    return this._index.canonical(filePath);
   }
 
   /** The other documents the links in `sourceFilePath` resolve to. */
-  private resolvedTargets (sourceFilePath: string): string[] {
-    const paths: string[] = []
+  private resolvedTargets(sourceFilePath: string): string[] {
+    const paths: string[] = [];
     for (const link of this._fileLinkDatabase.get(sourceFilePath) ?? []) {
-      const resolution = this.resolve(splitWikilinkTarget(link).target, sourceFilePath)
-      if (resolution.status === 'resolved' && resolution.path !== sourceFilePath && !paths.includes(resolution.path)) {
-        paths.push(resolution.path)
+      const resolution = this.resolve(splitWikilinkTarget(link).target, sourceFilePath);
+      if (
+        resolution.status === "resolved" &&
+        resolution.path !== sourceFilePath &&
+        !paths.includes(resolution.path)
+      ) {
+        paths.push(resolution.path);
       }
     }
-    return paths
+    return paths;
   }
 
   /**
@@ -236,9 +301,10 @@ export default class LinkProvider extends ProviderContract {
    *
    * @return  {string[]}                  A list of all files linking to sourceFile
    */
-  retrieveInbound (sourceFilePath: string): string[] {
-    return [...this._fileLinkDatabase.keys()]
-      .filter(file => this.resolvedTargets(file).includes(sourceFilePath))
+  retrieveInbound(sourceFilePath: string): string[] {
+    return [...this._fileLinkDatabase.keys()].filter((file) =>
+      this.resolvedTargets(file).includes(sourceFilePath),
+    );
   }
 
   /**
@@ -248,29 +314,35 @@ export default class LinkProvider extends ProviderContract {
    *
    * @return  {string[]}                  A list of outbound links from source
    */
-  retrieveOutbound (sourceFilePath: string): string[] {
-    return this.resolvedTargets(sourceFilePath)
+  retrieveOutbound(sourceFilePath: string): string[] {
+    return this.resolvedTargets(sourceFilePath);
   }
 
   /**
    * Every file's links to other documents, each with the document it
    * resolves to.
    */
-  private linkDatabase (): Record<string, WikilinkEdge[]> {
-    const database: Record<string, WikilinkEdge[]> = {}
-    for (const [ sourcePath, links ] of this._fileLinkDatabase) {
-      database[sourcePath] = links.map(link => {
-        const { target } = splitWikilinkTarget(link)
-        const resolution = this.resolve(target, sourcePath)
-        return { target, path: resolution.status === 'resolved' ? resolution.path : undefined }
-      }).filter(edge => edge.path !== sourcePath)
+  private linkDatabase(): Record<string, WikilinkEdge[]> {
+    const database: Record<string, WikilinkEdge[]> = {};
+    for (const [sourcePath, links] of this._fileLinkDatabase) {
+      database[sourcePath] = links
+        .map((link) => {
+          const { target } = splitWikilinkTarget(link);
+          const resolution = this.resolve(target, sourcePath);
+          return { target, path: resolution.status === "resolved" ? resolution.path : undefined };
+        })
+        .filter((edge) => edge.path !== sourcePath);
     }
-    return database
+    return database;
   }
 
   /** The written wikilink form of every file. */
-  private linkTargets (): Record<string, string> {
-    return Object.fromEntries([...this._fileLinkDatabase.keys()]
-      .map(filePath => [ filePath, this.canonicalTarget(filePath) ]))
+  private linkTargets(): Record<string, string> {
+    return Object.fromEntries(
+      [...this._fileLinkDatabase.keys()].map((filePath) => [
+        filePath,
+        this.canonicalTarget(filePath),
+      ]),
+    );
   }
 }

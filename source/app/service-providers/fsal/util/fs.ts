@@ -11,7 +11,8 @@
  *
  * END HEADER
  */
-import { promises as fs, constants as FS_CONSTANTS } from 'fs'
+import { hasErrnoCode } from "@common/util/is-errno-exception";
+import { constants as FS_CONSTANTS, promises as fs } from "fs";
 
 /**
  * Checks if a given path exists on the file system. Optional flags can be
@@ -24,11 +25,18 @@ import { promises as fs, constants as FS_CONSTANTS } from 'fs'
  *
  * @return  {Promise<boolean>}           Resolves to true or false
  */
-export async function pathExists (absPath: string, flags: number = FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK): Promise<boolean> {
+export async function pathExists(
+  absPath: string,
+  flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
+): Promise<boolean> {
   try {
-    await fs.access(absPath, flags)
-    return true
-  } catch (err: any) {
-    return false
+    await fs.access(absPath, flags);
+    return true;
+  } catch (err) {
+    // A missing path or a denied access check answers the question with false.
+    if (hasErrnoCode(err, "ENOENT", "ENOTDIR", "EACCES", "EPERM", "EROFS")) {
+      return false;
+    }
+    throw err;
   }
 }
