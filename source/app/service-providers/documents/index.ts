@@ -2085,9 +2085,12 @@ current contents from the editor somewhere else, and restart the application.`,
 
     const ret = leaf.tabMan.closeFile(filePath);
     if (ret) {
-      const history = this._closedTabs.get(windowId) ?? [];
+      let history = this._closedTabs.get(windowId);
+      if (history === undefined) {
+        history = [];
+        this._closedTabs.set(windowId, history);
+      }
       history.push(filePath);
-      this._closedTabs.set(windowId, history);
       this.syncToConfig();
       this.syncWatchedFilePaths();
       this.broadcastEvent(DP_EVENTS.CLOSE_FILE, { windowId, leafId, filePath });
@@ -2109,11 +2112,11 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   public async reopenClosedTab(windowId: string): Promise<boolean> {
-    const history = this._closedTabs.get(windowId) ?? [];
-    const filePath = history.at(-1);
-    if (filePath === undefined) {
+    const history = this._closedTabs.get(windowId);
+    if (history === undefined || history.length === 0) {
       return false;
     }
+    const filePath = history[history.length - 1];
     const reopened = await this.openFile(windowId, undefined, filePath, true);
     if (reopened) {
       history.pop();
