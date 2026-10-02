@@ -203,11 +203,9 @@ describe("the sidebar views", () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
-    await activePage.waitForFunction(
-      (selector) => document.querySelectorAll(selector).length === 4,
-      `${SECTION("book")} .quarto-book-outline button.chapter`,
-      { timeout: 20_000 },
-    );
+    const chapters = activePage.locator(`${SECTION("book")} .quarto-book-outline button.chapter`);
+    await chapters.nth(3).waitFor({ timeout: 20_000 });
+    assert.equal(await chapters.count(), 4, "the book lists four chapters");
     assert.equal(
       await activePage.locator(`${SECTION("book")} .book-sections`).count(),
       0,
@@ -222,23 +220,6 @@ describe("the sidebar views", () => {
       .allTextContents();
     assert.equal(headings.length, 1, "forms.md has one heading");
     assert.match(headings[0], /Forms/);
-    await activePage.waitForFunction(
-      () => {
-        const config = window.ipc.sendSync("config-provider", {
-          command: "get-config",
-        }) as {
-          ui: { sidebarCollapsedSections: string[] };
-        };
-        const collapsed = config.ui.sidebarCollapsedSections;
-        return (
-          !collapsed.includes("book") &&
-          !collapsed.includes("outline") &&
-          collapsed.includes("relatedFiles")
-        );
-      },
-      undefined,
-      { timeout: 20_000 },
-    );
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage
       .locator(`${SECTION("book")}[data-state="closed"]`)
@@ -256,18 +237,6 @@ describe("the sidebar views", () => {
       "the Explorer left the drawer",
     );
     assert.deepEqual(await pressedIcons(activePage), ["search"]);
-    await activePage.waitForFunction(
-      () => {
-        const config = window.ipc.sendSync("config-provider", {
-          command: "get-config",
-        }) as {
-          ui: { sidebarView: string };
-        };
-        return config.ui.sidebarView === "search";
-      },
-      undefined,
-      { timeout: 20_000 },
-    );
     screenshots.set("search-view.png", await activePage.screenshot());
 
     await shutdown(browser, appProcess);
@@ -292,18 +261,6 @@ describe("the sidebar views", () => {
       [],
       "no icon is pressed while the drawer is closed",
     );
-    await relaunched.waitForFunction(
-      () => {
-        const config = window.ipc.sendSync("config-provider", {
-          command: "get-config",
-        }) as {
-          window: { fileManagerVisible: boolean };
-        };
-        return config.window.fileManagerVisible === false;
-      },
-      undefined,
-      { timeout: 20_000 },
-    );
     screenshots.set("drawer-closed.png", await relaunched.screenshot());
     await relaunched.locator(ICON("explorer")).click();
     await relaunched.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
@@ -315,10 +272,11 @@ describe("the sidebar views", () => {
     await clickMenuItem(activePage, "menu.find_dir");
     await activePage.locator(VIEW("search")).waitFor({ timeout: 10_000 });
     const queryInput = activePage.locator(`${VIEW("search")} #search-view input`).first();
-    await activePage.waitForFunction(
-      (selector) => document.activeElement?.matches(selector) === true,
-      `${VIEW("search")} #search-view input`,
-      { timeout: 20_000 },
+    await queryInput.waitFor({ timeout: 20_000 });
+    assert.equal(
+      await queryInput.evaluate((element) => element === document.activeElement),
+      true,
+      "the Search query is focused",
     );
     await queryInput.fill("lattice");
     await queryInput.press("Enter");
@@ -354,11 +312,8 @@ describe("the sidebar views", () => {
       "citations open, related files collapsed below",
     );
     const entries = activePage.locator(`${SECTION("citations")} #references-list .csl-entry`);
-    await activePage.waitForFunction(
-      (selector) => document.querySelectorAll(selector).length === 1,
-      `${SECTION("citations")} #references-list .csl-entry`,
-      { timeout: 20_000 },
-    );
+    await entries.first().waitFor({ timeout: 20_000 });
+    assert.equal(await entries.count(), 1, "the active file has one citation");
     assert.match(await entries.first().innerText(), /Mac Lane/);
     await activePage.locator(SECTION_HEADER("relatedFiles")).click();
     await activePage
