@@ -98,13 +98,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
 import type { TikzLivePreviewTarget } from "../live-preview";
-import { defaultTikzPreviewMode, type TikzPreviewModeId } from "../preview-modes";
+import type { TikzPreviewModeId } from "../preview-modes";
 import { TIKZ_PREVIEW_PROVIDERS, type TikzPreviewProvider } from "./providers";
 
 const props = defineProps<{
   target: TikzLivePreviewTarget;
   host: TikzWorkbenchHost;
   theme: TikzWorkbenchTheme;
+  requestedMode: TikzPreviewModeId;
 }>();
 
 // The host may lay itself out around the active mode; the visual editor, for
@@ -114,7 +115,7 @@ const emit = defineEmits<{
 }>();
 
 const fullscreen = ref(false);
-const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target));
+const requestedMode = ref<TikzPreviewModeId>(props.requestedMode);
 const activeStatus = ref("");
 const activeBusy = ref(false);
 const copyError = ref("");
@@ -159,8 +160,15 @@ function targetIdentity(target: TikzLivePreviewTarget): string {
 watch(
   () => targetIdentity(props.target),
   () => {
-    requestedMode.value = defaultTikzPreviewMode(props.target);
+    requestedMode.value = props.requestedMode;
     fullscreen.value = false;
+  },
+);
+
+watch(
+  () => props.requestedMode,
+  (mode) => {
+    requestedMode.value = mode;
   },
 );
 

@@ -9,7 +9,8 @@ export function __resetTikzRenderMemoForTests(): void {
 }
 
 export function requestTikzRender(request: TikzRenderRequest): Promise<TikzRenderResult> {
-  const key = `${request.kind}\0${request.language}\0${request.docPath}\0${request.source}`;
+  const policy = request.cachePolicy === undefined ? "use" : request.cachePolicy;
+  const key = `${policy}\0${request.kind}\0${request.language}\0${request.docPath}\0${request.source}`;
   const memoized = renderMemo.get(key);
   if (memoized !== undefined) {
     return memoized;

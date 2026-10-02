@@ -39,6 +39,8 @@ import { requestTikzRender } from "../tikz-render-client";
 import { configField } from "../util/configuration";
 import { renderBlockWidgets } from "./base-renderer";
 
+export const OPEN_TIKZ_VISUAL_EDITOR_EVENT = "open-tikz-visual-editor";
+
 /**
  * One in-flight render per figure source. Settled requests are removed: the
  * main process/filter own the durable content-addressed cache, and keeping a
@@ -276,13 +278,19 @@ class TikzWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: from, head: from + this.blockLength } });
     };
-    requestTikzRender({
-      source: this.source,
-      kind: this.kind,
-      language: this.language,
-      docPath,
-    }).then(
+    let renderVersion = 0;
+    const render = (cachePolicy: "use" | "refresh"): void => {
+      const version = ++renderVersion;
+      elem.classList.add("tikz-pending");
+      requestTikzRender({
+        source: this.source,
+        kind: this.kind,
+        language: this.language,
+        docPath,
+        cachePolicy,
+      }).then(
       (result) => {
+        if (version !== renderVersion) return;
         populate(elem, result, editTitle, editSource);
       },
       // Only the IPC round-trip is handled here. A failure to reach the main
@@ -290,6 +298,7 @@ class TikzWidget extends WidgetType {
       // populate is a broken service/widget contract and must not be dressed
       // up as one of the render service's outcomes.
       (err: unknown) => {
+        if (version !== renderVersion) return;
         reportError("TikZ inline render IPC failed", err);
         populate(
           elem,
@@ -303,6 +312,35 @@ class TikzWidget extends WidgetType {
         );
       },
     );
+    };
+    render("use");
+
+    const actions = document.createElement("div");
+    actions.className = "tikz-figure-actions";
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "tikz-figure-action";
+    refresh.textContent = "↻";
+    refresh.title = "Rebuild TikZ figure";
+    refresh.setAttribute("aria-label", "Rebuild TikZ figure");
+    refresh.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      render("refresh");
+    });
+    const visual = document.createElement("button");
+    visual.type = "button";
+    visual.className = "tikz-figure-action";
+    visual.textContent = this.language === "tikzcd" ? "Quiver" : "Visual";
+    visual.title = this.language === "tikzcd" ? "Open Quiver editor" : "Open visual editor";
+    visual.setAttribute("aria-label", visual.title);
+    visual.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      editSource();
+      elem.dispatchEvent(new CustomEvent(OPEN_TIKZ_VISUAL_EDITOR_EVENT, { bubbles: true }));
+    });
+    actions.append(refresh, visual);
 
     // Every rendered TikZ figure now has one edit-first activation path:
     // select its authored source and let the unified RHS preview choose the
@@ -310,7 +348,7 @@ class TikzWidget extends WidgetType {
     // locked to the vanilla renderer.
     elem.addEventListener("click", (event) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(".tikz-error") !== null) {
+      if (target instanceof Element && target.closest("button, .tikz-error") !== null) {
         return;
       }
       event.preventDefault();
@@ -321,7 +359,7 @@ class TikzWidget extends WidgetType {
     // CodeMirror measures a block widget by its border box, so the space
     // around the figure is padding on this root, never a margin on the figure.
     block.classList.add("tikz-figure-block");
-    block.append(elem);
+    block.append(elem, actions);
     return block;
   }
 
@@ -351,6 +389,28 @@ export const renderTikzFigures = [
     ".tikz-figure-block": {
       display: "block",
       padding: "0.35em 0",
+      position: "relative",
+    },
+    ".tikz-figure-actions": {
+      position: "absolute",
+      top: "0.7em",
+      right: "0.45em",
+      display: "flex",
+      gap: "0.3em",
+      opacity: "0.42",
+      transition: "opacity 120ms ease",
+    },
+    ".tikz-figure-block:hover .tikz-figure-actions, .tikz-figure-actions:focus-within": {
+      opacity: "1",
+    },
+    ".tikz-figure-action": {
+      border: "1px solid currentColor",
+      borderRadius: "0.3em",
+      background: "var(--bg-primary, Canvas)",
+      color: "inherit",
+      cursor: "pointer",
+      font: "inherit",
+      padding: "0.15em 0.45em",
     },
     ".tikz-figure": {
       display: "block",

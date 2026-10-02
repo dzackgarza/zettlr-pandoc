@@ -750,6 +750,24 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await preview.waitFor({ state: "detached", timeout: 20_000 });
     const ordinaryFigure = page.locator('.tikz-figure[data-tikz-language="tikz"]');
     await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
+    await ordinaryFigure.getByRole("button", { name: "Rebuild TikZ figure" }).click();
+    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
+    await preview.waitFor({ state: "detached", timeout: 20_000 });
+    await ordinaryFigure.getByRole("button", { name: "Open visual editor" }).click();
+    await preview.waitFor({ state: "visible", timeout: 20_000 });
+    assert.strictEqual(
+      await preview.getByRole("button", { name: "Visual editor", exact: true }).getAttribute("aria-pressed"),
+      "true",
+      "the inline visual control opens the matching provider",
+    );
+    await page.evaluate(`(() => {
+      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
+      if (!view) throw new Error('CodeMirror view disappeared')
+      view.dispatch({ selection: { anchor: 1 } })
+      view.focus()
+    })()`);
+    await preview.waitFor({ state: "detached", timeout: 20_000 });
+    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
     await ordinaryFigure.locator("svg").click();
     await preview.waitFor({ state: "visible", timeout: 20_000 });
     await page.waitForFunction(

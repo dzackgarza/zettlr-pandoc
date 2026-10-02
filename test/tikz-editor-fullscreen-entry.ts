@@ -61,6 +61,7 @@ async function mount(): Promise<void> {
       authoredSource: source,
     },
     host: zettlrTikzWorkbenchHost(view),
+    requestedMode: "tikz",
     theme: "light",
   }).mount(previewHost);
   await nextTick();
