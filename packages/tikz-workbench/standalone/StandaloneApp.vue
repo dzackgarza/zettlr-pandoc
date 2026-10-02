@@ -17,6 +17,7 @@
         class="tikz-standalone-workbench"
         :target="target"
         :host="host"
+        :requested-mode="target.language === 'tikzcd' ? 'quiver' : 'tikz'"
         :theme="theme"
         @mode="mode = $event"
       />

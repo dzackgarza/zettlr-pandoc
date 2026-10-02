@@ -1403,7 +1403,7 @@ export default class DocumentManager
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
     await this._watcher.shutdown();
-    this._config.shutdown();
+    await this._config.shutdown();
   }
 
   private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {

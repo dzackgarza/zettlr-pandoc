@@ -120,6 +120,7 @@ async function mount(): Promise<void> {
         authoredSource: view.state.sliceDoc(block.sourceFrom, block.sourceTo),
       },
       host: zettlrTikzWorkbenchHost(view),
+      requestedMode: block.language === "tikzcd" ? "quiver" : "tikz",
       theme: dark ? "dark" : "light",
     }).mount(previewHost);
     // The visual corpus exercises the compiler-backed TikZ rendering surface;

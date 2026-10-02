@@ -10,12 +10,13 @@ The package imports no Zettlr code. Zettlr and the standalone server are two hos
 
 ## Host contract
 
-A host mounts `TikzWorkbench` with three props:
+A host mounts `TikzWorkbench` with four props:
 
 | Prop | Contract |
 | --- | --- |
 | `target` | The figure: its source bytes, their range in the host document, `kind`, `language` and `docPath` (`src/live-preview.ts`). |
 | `host` | The services of `TikzWorkbenchHost` (`src/host.ts`), listed below. |
+| `requestedMode` | The host's selected provider: `tikz`, `quiver`, or `visual`. |
 | `theme` | `"light"` or `"dark"`. |
 
 | `TikzWorkbenchHost` member | Contract |
