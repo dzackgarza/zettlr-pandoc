@@ -290,7 +290,9 @@ class TikzWidget extends WidgetType {
         cachePolicy,
       }).then(
         (result) => {
-          if (version !== renderVersion) return;
+          if (version !== renderVersion) {
+            return;
+          }
           populate(elem, result, editTitle, editSource);
         },
         // Only the IPC round-trip is handled here. A failure to reach the main
@@ -298,7 +300,9 @@ class TikzWidget extends WidgetType {
         // populate is a broken service/widget contract and must not be dressed
         // up as one of the render service's outcomes.
         (err: unknown) => {
-          if (version !== renderVersion) return;
+          if (version !== renderVersion) {
+            return;
+          }
           reportError("TikZ inline render IPC failed", err);
           populate(
             elem,

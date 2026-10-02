@@ -410,7 +410,9 @@ const activeEditorView = shallowRef<EditorView | null>(null);
 const tikzRequestedMode = ref<TikzPreviewModeId>("tikz");
 
 function openInlineTikzVisualEditor(event: Event): void {
-  if (!(event instanceof CustomEvent)) return;
+  if (!(event instanceof CustomEvent)) {
+    return;
+  }
   tikzRequestedMode.value = event.detail === "tikzcd" ? "quiver" : "visual";
 }
 
