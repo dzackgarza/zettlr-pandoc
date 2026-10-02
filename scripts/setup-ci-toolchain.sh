@@ -52,7 +52,7 @@ mkdir --parents "${downloads_dir}"
 # download cache, and download it first when it is absent or does not match.
 fetch() {
   local -r url="$1" sha256="$2" file="${downloads_dir}/$3"
-  if ! printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check --status 2>/dev/null; then
+  if [[ ! -f "${file}" ]] || ! printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check --status; then
     curl --fail --location --silent --show-error "${url}" --output "${file}" || return
     printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check >&2 || return
   fi
