@@ -13,7 +13,7 @@
   "version": "4.7.3",
   "license": "GPL-3.0",
   "description": "Your One-Stop Publication Workbench",
-  "main": ".webpack/main",
+  "main": ".webpack/main/index.cjs",
   "type": "commonjs",
   "scripts": {
     "start": "cross-env NODE_ENV=develop node scripts/test-gui/index.mjs",
