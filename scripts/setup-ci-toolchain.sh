@@ -42,7 +42,7 @@ setup_dir="$(mktemp -d)"
 readonly setup_dir
 trap 'rm -r -- "${setup_dir}"' EXIT
 
-# The check workflow caches ${downloads_dir} and ${texlive_dir}, keyed by
+# The check and QC workflows cache ${downloads_dir} and ${texlive_dir}, keyed by
 # this script. Every download below is pinned by its checksum, so a cached
 # file is reused only when it still matches.
 readonly downloads_dir="${HOME}/ci-downloads"
@@ -69,7 +69,7 @@ sudo apt-get install --yes pdf2svg xvfb
 # repository is one fixed mirror: mirror.ctan.org redirects to a random
 # mirror, and some of those serve a certificate curl cannot verify.
 #
-# A ${texlive_dir} that the check workflow restored from its cache only
+# A ${texlive_dir} that a workflow restored from its cache only
 # needs its paths linked.
 readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
