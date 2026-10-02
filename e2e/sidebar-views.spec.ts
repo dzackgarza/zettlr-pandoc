@@ -20,11 +20,11 @@
  */
 
 import { strict as assert } from "node:assert";
-import { type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type Browser, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import {
   assertCleanExit,
   attach,
@@ -48,7 +48,9 @@ const SECTION_HEADER = (id: string): string => `${SECTION(id)} .chrome-section-t
 
 async function readConfig(page: Page): Promise<Record<string, unknown>> {
   return await page.evaluate(() => {
-    const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
+    const config: unknown = window.ipc.sendSync("config-provider", {
+      command: "get-config",
+    });
     if (typeof config !== "object" || config === null) {
       throw new Error("The config provider returned no config object");
     }
@@ -66,7 +68,10 @@ function section(config: Record<string, unknown>, key: string): Record<string, u
 
 async function clickMenuItem(page: Page, id: string): Promise<void> {
   await page.evaluate((itemId) => {
-    window.ipc.send("menu-provider", { command: "click-menu-item", payload: itemId });
+    window.ipc.send("menu-provider", {
+      command: "click-menu-item",
+      payload: itemId,
+    });
   }, id);
 }
 
@@ -82,7 +87,7 @@ async function pressedIcons(page: Page): Promise<string[]> {
   );
 }
 
-describe("the sidebar views", function () {
+describe("the sidebar views", () => {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let fixtureRoot: string | undefined;
@@ -126,7 +131,7 @@ describe("the sidebar views", function () {
     page = await launch.call(this);
   });
 
-  after(async function () {
+  after(async () => {
     await shutdown(browser, appProcess);
     await preserveArtifacts(
       ARTIFACT_DIRECTORY,
@@ -142,7 +147,7 @@ describe("the sidebar views", function () {
     assertCleanExit(getOutput());
   });
 
-  it("opens on the Explorer with its sections and one selected activity-bar view", async function () {
+  it("opens on the Explorer with its sections and one selected activity-bar view", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     const icons = await activePage
       .locator(`${BAR} [data-activity]`)
@@ -194,7 +199,7 @@ describe("the sidebar views", function () {
     screenshots.set("explorer.png", await activePage.screenshot());
   });
 
-  it("lists the book's chapters and the document's headings once their sections are expanded, and persists the collapsed set", async function () {
+  it("lists the book's chapters and the document's headings once their sections are expanded, and persists the collapsed set", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
@@ -217,13 +222,23 @@ describe("the sidebar views", function () {
       .allTextContents();
     assert.equal(headings.length, 1, "forms.md has one heading");
     assert.match(headings[0], /Forms/);
-    await activePage.waitForFunction(() => {
-      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
-        ui: { sidebarCollapsedSections: string[] };
-      };
-      const collapsed = config.ui.sidebarCollapsedSections;
-      return !collapsed.includes("book") && !collapsed.includes("outline") && collapsed.includes("relatedFiles");
-    }, undefined, { timeout: 20_000 });
+    await activePage.waitForFunction(
+      () => {
+        const config = window.ipc.sendSync("config-provider", {
+          command: "get-config",
+        }) as {
+          ui: { sidebarCollapsedSections: string[] };
+        };
+        const collapsed = config.ui.sidebarCollapsedSections;
+        return (
+          !collapsed.includes("book") &&
+          !collapsed.includes("outline") &&
+          collapsed.includes("relatedFiles")
+        );
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage
       .locator(`${SECTION("book")}[data-state="closed"]`)
@@ -241,12 +256,18 @@ describe("the sidebar views", function () {
       "the Explorer left the drawer",
     );
     assert.deepEqual(await pressedIcons(activePage), ["search"]);
-    await activePage.waitForFunction(() => {
-      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
-        ui: { sidebarView: string };
-      };
-      return config.ui.sidebarView === "search";
-    }, undefined, { timeout: 20_000 });
+    await activePage.waitForFunction(
+      () => {
+        const config = window.ipc.sendSync("config-provider", {
+          command: "get-config",
+        }) as {
+          ui: { sidebarView: string };
+        };
+        return config.ui.sidebarView === "search";
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     screenshots.set("search-view.png", await activePage.screenshot());
 
     await shutdown(browser, appProcess);
@@ -271,18 +292,24 @@ describe("the sidebar views", function () {
       [],
       "no icon is pressed while the drawer is closed",
     );
-    await relaunched.waitForFunction(() => {
-      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
-        window: { fileManagerVisible: boolean };
-      };
-      return config.window.fileManagerVisible === false;
-    }, undefined, { timeout: 20_000 });
+    await relaunched.waitForFunction(
+      () => {
+        const config = window.ipc.sendSync("config-provider", {
+          command: "get-config",
+        }) as {
+          window: { fileManagerVisible: boolean };
+        };
+        return config.window.fileManagerVisible === false;
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     screenshots.set("drawer-closed.png", await relaunched.screenshot());
     await relaunched.locator(ICON("explorer")).click();
     await relaunched.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
   });
 
-  it('opens the Search view with its query focused on "Search all files", and a search yields results', async function () {
+  it('opens the Search view with its query focused on "Search all files", and a search yields results', async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(".cm-content").click();
     await clickMenuItem(activePage, "menu.find_dir");
@@ -295,11 +322,14 @@ describe("the sidebar views", function () {
     );
     await queryInput.fill("lattice");
     await queryInput.press("Enter");
-    await activePage.locator(`${VIEW("search")} .file-match`).first().waitFor({ timeout: 20_000 });
+    await activePage
+      .locator(`${VIEW("search")} .file-match`)
+      .first()
+      .waitFor({ timeout: 20_000 });
     screenshots.set("search-results.png", await activePage.screenshot());
   });
 
-  it("lists the active file's citations and its related files in the References view", async function () {
+  it("lists the active file's citations and its related files in the References view", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(ICON("explorer")).click();
     await activePage
