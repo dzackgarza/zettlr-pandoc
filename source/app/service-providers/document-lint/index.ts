@@ -326,6 +326,8 @@ export default class DocumentLintProvider extends ProviderContract {
   private flowmarkIdentity: string | undefined;
   private reconcileTimer: NodeJS.Timeout | undefined;
   private persistTimer: NodeJS.Timeout | undefined;
+  private readonly backgroundTasks = new Set<Promise<void>>();
+  private backgroundFailure: Error | undefined;
   private booted = false;
   private stopped = false;
 
@@ -365,7 +367,9 @@ export default class DocumentLintProvider extends ProviderContract {
     this.deps.fsal?.off("fsal-events", this.onFsalEvents);
     clearTimeout(this.reconcileTimer);
     clearTimeout(this.persistTimer);
+    await Promise.all(this.backgroundTasks);
     await this.persist();
+    this.assertBackgroundHealthy();
   }
 
   /** Call after the Flowmark install changed: every result it produced is outdated. */
@@ -383,6 +387,7 @@ export default class DocumentLintProvider extends ProviderContract {
    * document without a path (an unsaved buffer) is linted and not cached.
    */
   async lint(documentPath: string, text: string): Promise<DocumentLintRecord> {
+    this.assertBackgroundHealthy();
     return await this.lintIn(new LintPass(this.contentHashes), documentPath, text);
   }
 
@@ -410,6 +415,7 @@ export default class DocumentLintProvider extends ProviderContract {
    * nothing here waits for Flowmark.
    */
   async lookup(sources: DocumentLintSource[]): Promise<DocumentLintLookup[]> {
+    this.assertBackgroundHealthy();
     const pass = new LintPass(this.contentHashes);
     return await Promise.all(
       sources.map(async (source) => {
@@ -584,10 +590,31 @@ export default class DocumentLintProvider extends ProviderContract {
     }
     clearTimeout(this.reconcileTimer);
     this.reconcileTimer = setTimeout(() => {
-      this.reconcile().catch((error) => {
-        this.deps.log.error("[Document Lint] Could not reconcile the workspace lint cache", error);
-      });
+      this.startBackground(this.reconcile(), "Reconcile workspace lint cache");
     }, RECONCILE_DEBOUNCE_MS);
+  }
+
+  private assertBackgroundHealthy(): void {
+    if (this.backgroundFailure !== undefined) {
+      throw this.backgroundFailure;
+    }
+  }
+
+  private startBackground(operation: Promise<void>, title: string): void {
+    const task = operation
+      .catch((error: unknown) => {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        this.backgroundFailure = failure;
+        this.deps.log.error(`[Document Lint] ${title} failed`, failure);
+        if (this.deps.lrt !== undefined) {
+          const status = this.deps.lrt.registerTask(trans(title), "Flowmark", undefined, false);
+          this.deps.lrt.settleTask(status, failure);
+        }
+      })
+      .finally(() => {
+        this.backgroundTasks.delete(task);
+      });
+    this.backgroundTasks.add(task);
   }
 
   /** Queue every workspace Markdown document without a current result. */
@@ -627,6 +654,7 @@ export default class DocumentLintProvider extends ProviderContract {
 
   /** Answer the Problems view from cached records and queue outdated documents. */
   async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
+    this.assertBackgroundHealthy();
     const allPaths = await this.workspaceDocuments();
     const paths =
       request.scope === "all"
@@ -693,6 +721,7 @@ export default class DocumentLintProvider extends ProviderContract {
 
   /** A single-fix request must still name a current Flowmark machine edit. */
   async hasCurrentFix(request: ApplyProblemFixRequest): Promise<boolean> {
+    this.assertBackgroundHealthy();
     if (!(await this.workspaceDocuments()).includes(request.documentPath)) {
       return false;
     }
@@ -718,6 +747,7 @@ export default class DocumentLintProvider extends ProviderContract {
    * as one long-running task.
    */
   async planFixes(documentPaths: string[]): Promise<FixAllPlan> {
+    this.assertBackgroundHealthy();
     const task = this.deps.lrt?.registerTask(trans("Finding fixes"), "Flowmark", undefined, false);
     const plan: FixAllPlan = {
       documents: [],
@@ -782,33 +812,36 @@ export default class DocumentLintProvider extends ProviderContract {
     this.queue.set(documentPath, pass);
     while (this.activeWorkers < WORKER_COUNT && this.queue.size > 0) {
       this.activeWorkers += 1;
-      void this.work();
+      this.startBackground(this.work(), "Lint workspace documents");
     }
   }
 
   private async work(): Promise<void> {
-    for (const [documentPath, pass] of this.queue) {
-      if (this.stopped) {
-        break;
-      }
-      this.queue.delete(documentPath);
-      try {
-        await this.lintIn(pass, documentPath, await this.currentText(documentPath));
-      } catch (error) {
-        this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error);
+    try {
+      for (const [documentPath, pass] of this.queue) {
+        if (this.stopped) {
+          break;
+        }
+        this.queue.delete(documentPath);
+        try {
+          await this.lintIn(pass, documentPath, await this.currentText(documentPath));
+        } catch (error) {
+          this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error);
+          if (this.batch !== undefined) {
+            this.batch.failed += 1;
+          }
+        }
         if (this.batch !== undefined) {
-          this.batch.failed += 1;
+          this.batch.done += 1;
+          this.showProgress(this.batch);
         }
       }
-      if (this.batch !== undefined) {
-        this.batch.done += 1;
-        this.showProgress(this.batch);
+    } finally {
+      this.activeWorkers -= 1;
+      if (this.activeWorkers === 0 && this.queue.size === 0) {
+        this.settleBatch();
+        this.deps.onDrain?.();
       }
-    }
-    this.activeWorkers -= 1;
-    if (this.activeWorkers === 0 && this.queue.size === 0) {
-      this.settleBatch();
-      this.deps.onDrain?.();
     }
   }
 
@@ -887,11 +920,12 @@ export default class DocumentLintProvider extends ProviderContract {
   }
 
   private schedulePersist(): void {
+    if (this.stopped) {
+      return;
+    }
     clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => {
-      this.persist().catch((error) => {
-        this.deps.log.error("[Document Lint] Could not write the lint cache", error);
-      });
+      this.startBackground(this.persist(), "Write the workspace lint cache");
     }, PERSIST_DEBOUNCE_MS);
   }
 
