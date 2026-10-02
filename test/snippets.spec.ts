@@ -1,3 +1,5 @@
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./provision-renderer-window-seams";
 import { strict as assert } from "assert";
 import "./provision-renderer-window-seams";
 import {
@@ -265,40 +267,6 @@ describe("always-on completion sources", function () {
   });
 
   it("merges and ranks snippet and buffer-word candidates in the real production completion session", async function () {
-    if (typeof window.requestAnimationFrame !== "function") {
-      window.requestAnimationFrame = globalThis.requestAnimationFrame;
-      window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-    }
-    const rangePrototype = globalThis.Range.prototype;
-    if (typeof rangePrototype.getClientRects !== "function") {
-      Object.defineProperty(rangePrototype, "getClientRects", {
-        configurable: true,
-        value: () => Object.assign([] as DOMRect[], { item: (_index: number) => null }),
-      });
-      Object.defineProperty(rangePrototype, "getBoundingClientRect", {
-        configurable: true,
-        value: () =>
-          ({
-            bottom: 0,
-            height: 0,
-            left: 0,
-            right: 0,
-            top: 0,
-            width: 0,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-          }) as DOMRect,
-      });
-    }
-    if (typeof globalThis.ResizeObserver !== "function") {
-      globalThis.ResizeObserver = class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      } as typeof ResizeObserver;
-    }
-
     const state = EditorState.create({
       doc: "algebra algebraic al",
       selection: { anchor: "algebra algebraic al".length },

@@ -22,13 +22,14 @@
  * END HEADER
  */
 
+// The harness must load before any provider module: LogProvider imports
+// 'electron' at module scope.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { app } from "electron";
 import { mkdir, readFile, rm } from "fs/promises";
 import path from "path";
 import LogProvider from "source/app/service-providers/log";
-// The harness must load before any provider module: LogProvider imports
-// 'electron' at module scope.
 import { ipcMainHandlers } from "./headless-electron-harness.cjs";
 
 /**

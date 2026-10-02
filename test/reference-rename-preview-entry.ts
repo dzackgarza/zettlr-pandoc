@@ -6,8 +6,7 @@
  * extractor over them, previews the rename with the REAL
  * previewReferenceRename(), and builds the per-file summary with the REAL
  * buildRenamePreviewSummary() — the same pipeline MainEditor.vue feeds the
- * dialog from. The dialog is resolved through a webpack context so its
- * ABSENCE is a structured, reportable state instead of a bundler crash.
+ * dialog from.
  *
  * Dialog contract exercised here (locked by
  * test/reference-rename-preview.spec.ts):
@@ -34,6 +33,7 @@ import {
   type RenamePreviewFileSummary,
 } from "source/common/pandoc-util/compute-reference-edits";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
+import RenameReferencePreviewDialog from "source/win-main/RenameReferencePreviewDialog.vue";
 import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
@@ -69,14 +69,6 @@ declare global {
   }
 }
 
-// Resolved through a context (not a static import) so the bundle builds and
-// reports structured absence while the dialog does not exist yet.
-const dialogContext = require.context(
-  "../source/win-main/",
-  false,
-  /RenameReferencePreviewDialog\.vue$/,
-);
-
 let applyCount = 0;
 let closeCount = 0;
 
@@ -97,34 +89,11 @@ window.renamePreviewProbeMount = async (
 
   const expectedFiles = buildRenamePreviewSummary(preview.edit, snapshots, oldKey);
 
-  const dialogKey = dialogContext
-    .keys()
-    .find((key) => key.includes("RenameReferencePreviewDialog"));
-  if (dialogKey === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure:
-        "source/win-main/RenameReferencePreviewDialog.vue does not exist yet (review A4 red)",
-      expectedFiles,
-    };
-  }
-
-  const dialogModule = dialogContext(dialogKey) as { default?: unknown };
-  if (dialogModule.default === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure:
-        "RenameReferencePreviewDialog.vue exists but has no default component export",
-      expectedFiles,
-    };
-  }
-
   // The host contract: either intent closes the preview surface (the
   // production host clears its prompt state) — the probe mirrors that by
   // unmounting, so the after-cancel/after-apply captures show the REAL
   // closed state instead of a frozen receipt frame.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const app = createApp(dialogModule.default as any, {
+  const app = createApp(RenameReferencePreviewDialog, {
     oldKey,
     newKey,
     files: expectedFiles,

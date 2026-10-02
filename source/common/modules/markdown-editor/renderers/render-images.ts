@@ -163,14 +163,18 @@ class ImageWidget extends WidgetType {
     // Display a replacement image in case the correct one is not found
     img.onerror = () => {
       img.src = img404;
-      caption.textContent = trans("Image not found: %s", img.dataset.originalUrl);
+      const originalUrl = img.dataset.originalUrl;
+      if (originalUrl === undefined) {
+        throw new Error("An image widget has no original URL.");
+      }
+      caption.textContent = trans("Image not found: %s", originalUrl);
       caption.contentEditable = "false";
     };
 
     // Update the image title on load to retrieve the real image size.
     img.onload = () => {
       img.title = `${img.dataset.title!.replace(/\\"/g, '"')} (${img.naturalWidth}x${img.naturalHeight}px)`;
-      size.innerHTML = `${img.naturalWidth}&times;${img.naturalHeight}`;
+      size.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
 
       // Determine if the image can be opened externally
       if (isDataUrl(img.dataset.originalUrl!) && figure.contains(openExternally)) {
@@ -327,8 +331,6 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): ImageWidget | undefined {
-  // Get the actual link contents, extract title and URL and create a
-  // replacement widget
   const marks = node.node.getChildren("LinkMark");
   const titleNode = node.node.getChild("LinkTitle");
   const urlNode = node.node.getChild("URL");
@@ -351,12 +353,8 @@ function createWidget(state: EditorState, node: SyntaxNodeRef): ImageWidget | un
   let data: ParsedPandocAttributes = {};
   const nextSibling = node.node.nextSibling;
   if (nextSibling !== null && nextSibling.name === "PandocAttribute") {
-    try {
-      const text = state.sliceDoc(nextSibling.from, nextSibling.to);
-      data = parsePandocAttributes(text);
-    } catch (err) {
-      // Silently ignore error
-    }
+    // parsePandocAttributes returns {} for a malformed attribute list.
+    data = parsePandocAttributes(state.sliceDoc(nextSibling.from, nextSibling.to));
   }
 
   const resolvedImageSrc = resolveImageUrl(state.field(configField).metadata.path, url);

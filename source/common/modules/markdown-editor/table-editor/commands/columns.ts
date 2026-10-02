@@ -415,7 +415,6 @@ export function deleteCol(target: EditorView): boolean {
     const delimOffsets = getDelimiterLineCellOffsets(delimLine.text, delimChar);
 
     return [
-      // Handle the delimiter line
       ...colIdx.map((col) => {
         const [delimFrom, delimTo] = delimOffsets[col];
         return {

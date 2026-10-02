@@ -18,6 +18,7 @@ import type { EditorState, Range } from "@codemirror/state";
 import type { Rect } from "@codemirror/view";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import type { SyntaxNode } from "@lezer/common";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
 import type { Table, TableCell, TableRow } from "../../markdown-utils/markdown-ast";
@@ -443,14 +444,18 @@ function renderCellContent(
     },
     0,
   ).trim();
-  contentWrapper.innerHTML = html.length > 0 ? html : "&nbsp;";
+  if (html.length > 0) {
+    setSanitizedHTML(contentWrapper, html, "document");
+  } else {
+    contentWrapper.textContent = " ";
+  }
   interceptAnchorClicks(contentWrapper, (href) => openMarkdownLink(href, view));
 
   contentWrapper.querySelectorAll<HTMLElement>("span.citation").forEach((span, index) => {
     requestRenderedCitation(library, citations[index]).then(
       (rendered) => {
         if (rendered !== undefined && contentWrapper.dataset.rendering === rendering) {
-          span.innerHTML = rendered;
+          setSanitizedHTML(span, rendered, "document");
         }
       },
       (err: unknown) => {

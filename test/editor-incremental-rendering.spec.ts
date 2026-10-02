@@ -211,58 +211,6 @@ describe("Block widgets follow the size of a change", function () {
   });
 });
 
-/** A frame handle: the number of a browser, or the timer that stands in for it under Node. */
-type FrameHandle = number | ReturnType<typeof setTimeout>;
-
-/** The browser surface that CodeMirror measures through and jsdom does not have. */
-interface MeasurableGlobals {
-  requestAnimationFrame?: (callback: (time: number) => void) => FrameHandle;
-  cancelAnimationFrame?: (handle: FrameHandle) => void;
-  ResizeObserver?: typeof ResizeObserver;
-  window?: MeasurableGlobals;
-  Range?: { prototype: Partial<Range> };
-}
-
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as MeasurableGlobals;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (handle: FrameHandle) => clearTimeout(handle);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function" && w.Range !== undefined) {
-    const noRects: DOMRectList = Object.assign([] as DOMRect[], {
-      item: (): DOMRect | null => null,
-    });
-    w.Range.prototype.getClientRects = () => noRects;
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const AGGREGATE_DOC = `---
 title: Lattices
 tags: [forms, surfaces]
@@ -312,7 +260,6 @@ describe("The production renderers", function () {
   const views: EditorView[] = [];
 
   before(async function () {
-    polyfillJsdomForCodeMirror();
     await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 

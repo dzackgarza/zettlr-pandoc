@@ -82,7 +82,6 @@ function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
       return;
     }
 
-    // Parse the classes and other attributes to render in the decoration.
     // An identifier or class list the span does not name is not rendered: an
     // empty `id` is not a valid HTML identifier.
     const attributes = parsePandocAttributes(view.state.sliceDoc(attrs.from, attrs.to));

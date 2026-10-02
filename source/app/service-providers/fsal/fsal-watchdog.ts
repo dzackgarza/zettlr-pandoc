@@ -86,7 +86,7 @@ export default class FSALWatchdog {
   public on(
     channel: "change",
     report: (eventName: EventName, eventPath: string, stats?: Stats) => void,
-  ): any {
+  ): void {
     this.process.on("all", (event, p, stats) => {
       const basename = path.basename(p);
       const dirname = path.dirname(p);

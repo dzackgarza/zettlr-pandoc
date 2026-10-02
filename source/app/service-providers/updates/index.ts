@@ -92,7 +92,7 @@ export interface ServerAPIResponse {
  * This struct holds all information necessary to guide a user through the
  * complete update process
  */
-export interface UpdateState {
+export type UpdateState = {
   /**
    * If lastErrorMessage is not undefined, an error occurred. The error
    * corresponds to the got error classes
@@ -158,7 +158,7 @@ export interface UpdateState {
    * How long the update will approximately still need
    */
   eta_seconds: number;
-}
+};
 
 type UpdateErrorCode = "ERR_BODY_PARSE_FAILURE" | "SHA_CHECKSUM_ERR";
 /**
@@ -172,6 +172,79 @@ class UpdateError extends Error {
   ) {
     super(message, options);
   }
+}
+
+/**
+ * A value that JSON.parse can return (RFC 8259).
+ */
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+interface JsonObject {
+  [key: string]: JsonValue;
+}
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function releaseShapeError(detail: string): UpdateError {
+  return new UpdateError(
+    "ERR_BODY_PARSE_FAILURE",
+    trans("Could not check for updates: The server sent malformed release data (%s)", detail),
+  );
+}
+
+function parseAsset(value: JsonValue): UpdateAsset {
+  if (!isJsonObject(value)) {
+    throw releaseShapeError("an asset is not an object");
+  }
+  const { name, size, browser_download_url } = value;
+  if (
+    typeof name !== "string" ||
+    typeof size !== "number" ||
+    typeof browser_download_url !== "string"
+  ) {
+    throw releaseShapeError("an asset lacks name, size or browser_download_url");
+  }
+  return { name, size, browser_download_url };
+}
+
+function parseRelease(value: JsonValue): ServerAPIResponse {
+  if (!isJsonObject(value)) {
+    throw releaseShapeError("a release is not an object");
+  }
+  const { id, tag_name, name, prerelease, html_url, body, published_at, assets } = value;
+  if (
+    typeof id !== "number" ||
+    typeof tag_name !== "string" ||
+    typeof name !== "string" ||
+    typeof prerelease !== "boolean" ||
+    typeof html_url !== "string" ||
+    typeof body !== "string" ||
+    typeof published_at !== "string" ||
+    !Array.isArray(assets)
+  ) {
+    throw releaseShapeError(`release ${String(tag_name)} does not match the GitHub release schema`);
+  }
+  return {
+    id,
+    tag_name,
+    name,
+    prerelease,
+    html_url,
+    body,
+    published_at,
+    assets: assets.map(parseAsset),
+  };
+}
+
+/**
+ * Validates the GitHub releases response against ServerAPIResponse.
+ */
+function parseReleases(value: JsonValue): ServerAPIResponse[] {
+  if (!Array.isArray(value)) {
+    throw releaseShapeError("the response is not a list of releases");
+  }
+  return value.map(parseRelease);
 }
 
 const CUR_VER = app.getVersion();
@@ -320,9 +393,12 @@ export default class UpdateProvider extends ProviderContract {
         platformString = `Linux ${process.arch === "x64" ? "x86_64" : process.arch}`;
       }
 
-      const response: Response<string> = await got(REPO_URL, {
+      // got parses the body; a body that is not JSON is a ParseError
+      // (a RequestError), which the handler below reports with its message.
+      const response: Response<JsonValue> = await got(REPO_URL, {
         timeout: { request: 5000 },
         method: "GET",
+        responseType: "json",
         headers: {
           "User-Agent": `Zettlr/${CUR_VER} (${platformString})`,
           Accept: "application/vnd.github+json",
@@ -437,17 +513,9 @@ export default class UpdateProvider extends ProviderContract {
    *
    * @param {Response} response The response from the server
    */
-  private async _parseResponse(response: Response<string>): Promise<UpdateState> {
-    // Error handling
-    if (response.body.trim() === "") {
-      throw new UpdateError(
-        "ERR_BODY_PARSE_FAILURE",
-        trans("Could not check for updates: Server hasn't sent any data"),
-      );
-    }
-
-    // First we need to parse the JSON data.
-    const releases = JSON.parse(response.body) as ServerAPIResponse[];
+  private async _parseResponse(response: Response<JsonValue>): Promise<UpdateState> {
+    // got returns an empty string for an empty body, which parseReleases refuses.
+    const releases = parseReleases(response.body);
     const state = getUpdateState();
     state.lastCheck = Date.now();
     const parsedResponse = newestRelease(releases, this._config.get("checkForBeta"));

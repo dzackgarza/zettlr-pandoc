@@ -39,8 +39,22 @@ export interface CompletionInfoSpec {
   source?: CompletionSourceName;
   description?: string;
   syntax?: string;
+  /** The TeX that a macro expands to. */
+  expansion?: string;
   insertion?: string;
   notes?: string[];
+}
+
+function appendCodeSection(panel: HTMLElement, heading: string, text: string): void {
+  const label = document.createElement("div");
+  label.className = "zettlr-completion-info-section-label";
+  label.textContent = heading;
+  panel.appendChild(label);
+
+  const code = document.createElement("pre");
+  code.className = "zettlr-completion-info-code";
+  code.textContent = text;
+  panel.appendChild(code);
 }
 
 const SOURCE_ICON: Record<CompletionSourceName, string> = {
@@ -147,16 +161,12 @@ export function completionInfoPanel(spec: CompletionInfoSpec): HTMLElement {
     panel.appendChild(syntax);
   }
 
-  if (spec.insertion !== undefined && spec.insertion !== "") {
-    const label = document.createElement("div");
-    label.className = "zettlr-completion-info-section-label";
-    label.textContent = "Inserts";
-    panel.appendChild(label);
+  if (spec.expansion !== undefined) {
+    appendCodeSection(panel, "Expands to", spec.expansion);
+  }
 
-    const code = document.createElement("pre");
-    code.className = "zettlr-completion-info-code";
-    code.textContent = spec.insertion;
-    panel.appendChild(code);
+  if (spec.insertion !== undefined && spec.insertion !== "") {
+    appendCodeSection(panel, "Inserts", spec.insertion);
   }
 
   if (spec.notes !== undefined) {

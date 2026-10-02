@@ -223,12 +223,7 @@ async function runPandoc(
   };
 
   await new Promise<void>((resolve, reject) => {
-    const pandocProcess = spawn("pandoc", ["--defaults", `"${defaultsFile}"`], {
-      // NOTE: This has to be true, because of reasons unbeknownst to me, Pandoc
-      // is unable to open the defaultsFile if it is not run from within a shell
-      shell: true,
-      cwd,
-    });
+    const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile], { cwd });
 
     pandocProcess.stdout.on("data", (data) => {
       output.stdout.push(String(data));

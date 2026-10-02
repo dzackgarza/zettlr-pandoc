@@ -38,44 +38,6 @@ interface RecordedInvoke {
   message: { command: string; payload?: unknown };
 }
 
-/** The jsdom polyfills CodeMirror views need (per the editor specs). */
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 describe("Configurable navigation shortcuts (review A8)", function () {
   it("registers the Alt-Arrow defaults, with the macOS Ctrl-Arrow variants", function () {
     assert.deepStrictEqual(
@@ -98,7 +60,6 @@ describe("Configurable navigation shortcuts (review A8)", function () {
     let previousIpc: typeof windowWithIpc.ipc;
 
     before(function () {
-      polyfillJsdomForCodeMirror();
       // Provision the window.ipc preload seam the navigation commands
       // invoke; the recording implementation stands at the exact
       // renderer->main boundary the production preload owns.

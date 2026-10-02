@@ -3,6 +3,8 @@
  * Mounts SplitterGroup with an editor and AnnotationsTab loaded with 100 annotations.
  */
 
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./document-collaboration-ipc-double";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { textAnnotationsExtension } from "@common/modules/markdown-editor/plugins/text-annotations";

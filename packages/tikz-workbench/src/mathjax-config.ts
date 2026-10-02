@@ -53,8 +53,9 @@ export function isMathJaxMacro(value: unknown): value is MathJaxMacro {
 }
 
 /**
- * Validates a parsed MathJax macro map (the standard `tex.macros` shape:
- * name → replacement string, or name → [replacement, argCount, optionalDefault?]).
+ * Validates a parsed MathJax macro map. The map has the standard `tex.macros`
+ * shape: each name maps to a replacement string or to the tuple
+ * [replacement, argCount, optionalDefault?].
  * Any malformed entry throws rather than being silently dropped, so a broken
  * macro file fails loudly instead of rendering without the affected macro.
  */

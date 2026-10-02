@@ -17,6 +17,8 @@
  * END HEADER
  */
 
+// The harness must load before provider modules, which import Electron.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
@@ -28,7 +30,6 @@ import LogProvider from "source/app/service-providers/log";
 import RecentDocumentsProvider from "source/app/service-providers/recent-docs";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-// The harness must load before provider modules, which import Electron.
 import { userData } from "./headless-electron-harness.cjs";
 
 const RECENT_FILES_LIMIT = 3;

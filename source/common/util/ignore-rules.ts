@@ -23,7 +23,7 @@ import ignore, { type Ignore } from "ignore";
 export const WORKSPACE_RULES_FILE = ".zettlrignore";
 
 /** The rule sources. One value is immutable; a change makes a new one. */
-export interface IgnoreRuleSources {
+export type IgnoreRuleSources = {
   /** The configuration value `fileManager.ignoreRules`, one gitignore line each. */
   globalRules: readonly string[];
   /** Each open workspace root and the text of its rules file ('' when it has none). */
@@ -33,7 +33,7 @@ export interface IgnoreRuleSources {
    * hides a path from any consumer; the file manager only marks the matches.
    */
   showIgnored: boolean;
-}
+};
 
 /** What the rules say about one path. */
 export interface IgnoreFilter {

@@ -17,6 +17,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import type { SyntaxNode } from "@lezer/common";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { trans } from "source/common/i18n-renderer";
@@ -85,7 +86,11 @@ function citationTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip |
           // Render bibliography into the content dom.
           const options = bibliography[0];
 
-          content.innerHTML = [options.bibstart, ...bibliography[1], options.bibend].join("\n");
+          setSanitizedHTML(
+            content,
+            [options.bibstart, ...bibliography[1], options.bibend].join("\n"),
+            "document",
+          );
 
           // Adjust styling depending on options
           const entries = content.querySelectorAll<HTMLDivElement>(".csl-entry");

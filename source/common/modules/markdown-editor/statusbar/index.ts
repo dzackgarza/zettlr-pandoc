@@ -25,17 +25,13 @@ import { charcountStatus, cursorStatus, inputModeStatus, wordcountStatus } from 
  */
 export interface StatusbarItem {
   /**
-   * The content (can be HTML, if allowHTML is set to true)
+   * The content: text, or text and nodes in display order.
    */
-  content: string;
+  content: string | Array<string | Node>;
   /**
    * A title to be shown on mouseover
    */
   title?: string;
-  /**
-   * If set to true (default: false), content may contain HTML. Use with caution.
-   */
-  allowHtml?: boolean;
   /**
    * An optional handler for when the user clicks on the item. Can, e.g., show
    * a popup menu.
@@ -85,11 +81,9 @@ function createStatusbar(_view: EditorView): Panel {
       elem.innerHTML = "";
       for (const element of elements) {
         const span = document.createElement("span");
-        if (element.allowHtml === true) {
-          span.innerHTML = element.content;
-        } else {
-          span.textContent = element.content;
-        }
+        span.replaceChildren(
+          ...(typeof element.content === "string" ? [element.content] : element.content),
+        );
         span.className = "cm-statusbar-item";
         if (element.onClick !== undefined) {
           span.addEventListener("mousedown", element.onClick);

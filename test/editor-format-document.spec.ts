@@ -33,23 +33,6 @@ import {
 
 const views: EditorView[] = [];
 
-// CodeMirror's EditorView reads requestAnimationFrame off its own window (the
-// element's ownerDocument.defaultView) to schedule a layout measure. The bare
-// jsdom window in test/setup.js exposes no rAF there, and jsdom has no real
-// layout (getClientRects), so a rAF that actually fired the measure would
-// crash. Install an inert rAF: construction succeeds and doc/selection/undo
-// state — which CodeMirror updates synchronously on dispatch — is unaffected.
-const viewWindow = document.defaultView as unknown as {
-  requestAnimationFrame?: (cb: FrameRequestCallback) => number;
-  cancelAnimationFrame?: (id: number) => void;
-};
-if (typeof viewWindow.requestAnimationFrame !== "function") {
-  viewWindow.requestAnimationFrame = () => 1;
-  viewWindow.cancelAnimationFrame = () => {
-    /* inert: no measure was scheduled */
-  };
-}
-
 function createEditor(doc: string, anchor = doc.length): EditorView {
   const state = EditorState.create({ doc, selection: { anchor }, extensions: [history()] });
   const view = new EditorView({ state, parent: document.body });

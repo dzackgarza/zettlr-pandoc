@@ -66,11 +66,11 @@ export default class RecentDocumentsProvider extends ProviderContract {
     this._files = recentFilesSchema.parse(JSON.parse(await readFile(this._storePath, "utf-8")));
   }
 
-  on(evt: string, callback: (...args: any[]) => void): void {
+  on(evt: string, callback: () => void): void {
     this._emitter.on(evt, callback);
   }
 
-  off(evt: string, callback: (...args: any[]) => void): void {
+  off(evt: string, callback: () => void): void {
     this._emitter.off(evt, callback);
   }
 

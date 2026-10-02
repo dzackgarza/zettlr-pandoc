@@ -20,9 +20,10 @@
  *                  makes "a refused proposal leaves no residue" a property of
  *                  the code rather than of the order its cleanup runs in.
  *
- *                  Applying a plan is the caller's whole obligation:
- *                    persist  → replace the review → apply the working text
- *                    → emit the events → answer with the response.
+ *                  Applying a plan is the caller's whole obligation. The
+ *                  caller persists the plan, replaces the review, applies
+ *                  the working text, emits the events, and answers with
+ *                  the response, in that order.
  *
  * END HEADER
  */

@@ -39,43 +39,6 @@ import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 import { type DocumentReferenceSnapshot } from "source/types/common/references";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
 const HALPHEN_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Halphen_Surfaces.md");
@@ -104,9 +67,8 @@ describe("Reference hover tooltips (issue #1 Phase 4)", function () {
 
   before(async function () {
     this.timeout(30000);
-    polyfillJsdomForCodeMirror();
-    // The excerpt upgrade renders math through md2html → mathJaxToHTML, which
-    // requires the same MathJax boot every renderer window performs.
+    // The excerpt upgrade renders math through md2html, which calls
+    // mathJaxToHTML. That requires the same MathJax boot every renderer window performs.
     await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
     // The production preload bridge exists in every renderer window, so the
     // tooltip renders its excerpt through it unconditionally (review B9);

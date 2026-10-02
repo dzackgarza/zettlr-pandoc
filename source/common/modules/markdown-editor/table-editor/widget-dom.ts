@@ -1,4 +1,5 @@
 import { type EditorView } from "@codemirror/view";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { addColAfter, addColBefore } from "./commands/columns";
 import { addRowAfter, addRowBefore } from "./commands/rows";
 import arrowsIcon from "./icons/arrows.svg";
@@ -54,11 +55,11 @@ export function tableTH(): HTMLTableCellElement {
 export function generateColumnControls(view: EditorView): HTMLElement[] {
   const grabHandle = document.createElement("div");
   grabHandle.classList.add("grab-handle", "column");
-  grabHandle.innerHTML = arrowsIcon;
+  setSanitizedHTML(grabHandle, arrowsIcon, "graphic");
 
   const addButtonLeft = document.createElement("div");
   addButtonLeft.classList.add("plus", "left");
-  addButtonLeft.innerHTML = plusIcon;
+  setSanitizedHTML(addButtonLeft, plusIcon, "graphic");
   addButtonLeft.addEventListener("mousedown", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -67,7 +68,7 @@ export function generateColumnControls(view: EditorView): HTMLElement[] {
 
   const addButtonRight = document.createElement("div");
   addButtonRight.classList.add("plus", "right");
-  addButtonRight.innerHTML = plusIcon;
+  setSanitizedHTML(addButtonRight, plusIcon, "graphic");
   addButtonRight.addEventListener("mousedown", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -90,11 +91,11 @@ export function generateColumnControls(view: EditorView): HTMLElement[] {
 export function generateRowControls(view: EditorView): HTMLElement[] {
   const grabHandle = document.createElement("div");
   grabHandle.classList.add("grab-handle", "row");
-  grabHandle.innerHTML = arrowsIcon;
+  setSanitizedHTML(grabHandle, arrowsIcon, "graphic");
 
   const addButtonTop = document.createElement("div");
   addButtonTop.classList.add("plus", "top");
-  addButtonTop.innerHTML = plusIcon;
+  setSanitizedHTML(addButtonTop, plusIcon, "graphic");
   addButtonTop.addEventListener("mousedown", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -103,7 +104,7 @@ export function generateRowControls(view: EditorView): HTMLElement[] {
 
   const addButtonBottom = document.createElement("div");
   addButtonBottom.classList.add("plus", "bottom");
-  addButtonBottom.innerHTML = plusIcon;
+  setSanitizedHTML(addButtonBottom, plusIcon, "graphic");
   addButtonBottom.addEventListener("mousedown", (event) => {
     event.preventDefault();
     event.stopPropagation();

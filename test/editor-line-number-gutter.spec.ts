@@ -20,30 +20,6 @@ import { showLineNumbers } from "source/common/modules/markdown-editor/plugins/l
 describe("line-number gutter sizing", function () {
   let view: EditorView | undefined;
 
-  before(function () {
-    if (typeof globalThis.requestAnimationFrame !== "function") {
-      globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number =>
-        Number(setTimeout(() => callback(Date.now()), 0));
-      globalThis.cancelAnimationFrame = (id: number): void => {
-        clearTimeout(id);
-      };
-    }
-    if (
-      typeof globalThis.window === "object" &&
-      typeof globalThis.window.requestAnimationFrame !== "function"
-    ) {
-      globalThis.window.requestAnimationFrame = globalThis.requestAnimationFrame;
-      globalThis.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-    }
-    if (typeof globalThis.ResizeObserver !== "function") {
-      globalThis.ResizeObserver = class {
-        observe(): void {}
-        unobserve(): void {}
-        disconnect(): void {}
-      };
-    }
-  });
-
   afterEach(function () {
     view?.destroy();
     view = undefined;

@@ -29,7 +29,7 @@ export default class RenameTag extends ZettlrCommand {
    * @param {String} evt The event name
    * @param  {Object} arg An object containing hash of containing and name of new dir.
    */
-  async run(evt: string, arg: any): Promise<boolean> {
+  async run(evt: string, arg: { oldName: string; newName: string }): Promise<boolean> {
     const oldName: string = arg.oldName;
     const newName: string = arg.newName;
 

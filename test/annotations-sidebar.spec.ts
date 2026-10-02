@@ -19,6 +19,9 @@
  * END HEADER
  */
 
+// Must be the first local import: it installs window.ipc as a side effect,
+// before the store below reads window.ipc at its own module top level.
+import "./document-collaboration-ipc-double";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
 import { strict as assert } from "assert";
 import { mkdtempSync } from "fs";
@@ -59,8 +62,6 @@ import {
   SCENE_WORKING_SHA256,
 } from "./annotations-sidebar-scene-fixture";
 import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
-// Must be the first local import: it installs window.ipc as a side effect,
-// before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
 describe("annotation-panel-model", function () {

@@ -14,15 +14,9 @@
  * END HEADER
  */
 
-export interface NodeError extends Error {
-  dest?: string;
-  path?: string;
-  code: string;
-}
-
 // For now, we only account for the very common system errors, see:
 // https://nodejs.org/api/errors.html#common-system-errors
-function mapErrorCode(errorCode: string): string {
+function mapErrorCode(errorCode: string | undefined): string {
   switch (errorCode) {
     case "EACCESS":
       return `${errorCode}: You do not have permission to access this object`;
@@ -50,7 +44,18 @@ function mapErrorCode(errorCode: string): string {
   }
 }
 
-export default function mapFSError(error: NodeError): { what: string; why: string } {
+/**
+ * A Node.js system error from the fs module. Operations with two paths, such as
+ * rename, also carry the destination (https://nodejs.org/api/errors.html#errordest).
+ */
+interface FsSystemError extends NodeJS.ErrnoException {
+  dest?: string;
+}
+
+export default function mapFSError(error: FsSystemError): {
+  what: string;
+  why: string;
+} {
   // This function should display a very specific type of information: Why a
   // certain error occurred. The user is not interested in a callstack or trace
   // but rather in "why didn't Zettlr open that Workspace/root file?"

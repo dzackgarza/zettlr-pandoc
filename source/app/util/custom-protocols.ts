@@ -102,8 +102,8 @@ export default function registerCustomProtocols(logger: LogProvider): void {
           ...headersForFileType(pathName),
         },
       });
-    } catch (err: any) {
-      const msg = `Error loading external file: ${err.message as string}`;
+    } catch (err) {
+      const msg = `Error loading external file: ${err instanceof Error ? err.message : String(err)}`;
       logger.error(msg, err);
       return new Response(msg, { status: 500 });
     }

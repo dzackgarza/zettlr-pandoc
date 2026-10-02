@@ -16,6 +16,9 @@
  * END HEADER
  */
 
+// The harness must load before any provider module: LogProvider imports
+// 'electron' at module scope.
+import "./headless-electron-harness.cjs";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import assert from "assert";
 import { BrowserWindow } from "electron";
@@ -27,8 +30,6 @@ import ReferenceProvider from "source/app/service-providers/references";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor, OtherFileDescriptor } from "source/types/common/fsal";
-// The harness must load before any provider module: LogProvider imports
-// 'electron' at module scope.
 import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");

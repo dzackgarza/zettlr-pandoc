@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { promises as fs } from "fs";
 
 /**
@@ -93,12 +94,22 @@ export async function getFilesystemMetadata(fileOrDirPath: string): Promise<File
   try {
     await fs.access(fileOrDirPath, fs.constants.R_OK);
     metadata.readable = true;
-  } catch (err: any) {}
+  } catch (err) {
+    // A denied access check means "not readable"; other failures are real.
+    if (!hasErrnoCode(err, "EACCES", "EPERM")) {
+      throw err;
+    }
+  }
 
   try {
     await fs.access(fileOrDirPath, fs.constants.W_OK);
     metadata.writeable = true;
-  } catch (err: any) {}
+  } catch (err) {
+    // A denied access check or a read-only filesystem means "not writeable".
+    if (!hasErrnoCode(err, "EACCES", "EPERM", "EROFS")) {
+      throw err;
+    }
+  }
 
   return metadata;
 }

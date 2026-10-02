@@ -239,7 +239,29 @@ interface CSLKernelConfig {
    * @return  {CSLItem}         The resolved CSL Item
    */
   retrieveItem: (itemID: string) => CSLItem;
-  stringCompare?: any; // TODO
+  /**
+   * Optional collation function. When it is set, citeproc-js uses it in place
+   * of its own locale-aware comparison to sort names and titles.
+   *
+   * @param   {string}  a  The first string
+   * @param   {string}  b  The second string
+   *
+   * @return  {number}     Negative, zero or positive, as `localeCompare`
+   */
+  stringCompare?: (a: string, b: string) => number;
+}
+
+/**
+ * An entry of `citation_errors`: a cite that rendered no content
+ * (citeproc-js `CSL.getCitation`, `error_code` 1 = `CSL.ERROR_NO_RENDERED_FORM`).
+ */
+interface CitationError {
+  citationID: string;
+  index: number;
+  noteIndex: number;
+  itemID: string;
+  citationItems_pos: number;
+  error_code: number;
 }
 
 /**
@@ -256,7 +278,7 @@ type ProcessCitationClusterResult = [
    */
   metadata: {
     bibchange: boolean;
-    citation_errors: any[];
+    citation_errors: CitationError[];
   },
   /**
    * Changed item based on the processing.

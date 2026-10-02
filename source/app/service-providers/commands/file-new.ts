@@ -126,9 +126,9 @@ export default class FileNew extends ZettlrCommand {
       const docType = arg.type ?? DocumentType.Markdown;
       const docExtension = getExtensionForDocumentType(docType);
 
-      // No DocumentType was provided, so this could be a generic file.
-      // Check if the file extension is recognized. If it is not, then
-      // append the default DocumentType extension to the filename.
+      // Without a DocumentType, the file can be a generic file. A name
+      // without a recognized extension gets the extension of the default
+      // DocumentType.
       if (
         arg.type === undefined &&
         !hasAnyRecognizedFileExtension(filename, attachmentExtensions)
@@ -154,8 +154,8 @@ export default class FileNew extends ZettlrCommand {
 
       const absPath = path.join(dirpath, filename);
 
-      // Check if there's already a file with this name in the directory
-      // NOTE: There are case-sensitive file systems, but we'll disallow this
+      // NOTE: Case-sensitive file systems permit two names that differ
+      // only in case, but Zettlr disallows them.
       if (await this._app.fsal.pathExists(absPath)) {
         // Ask before overwriting
         if (!(await this._app.windows.shouldOverwriteFile(filename))) {

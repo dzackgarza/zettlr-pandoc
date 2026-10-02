@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { type EditorState, StateField } from "@codemirror/state";
+import { type EditorState, type Range, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { configField } from "../util/configuration";
 
@@ -30,7 +30,7 @@ function renderMutedLines(state: EditorState): DecorationSet {
     return Decoration.none;
   }
 
-  const widgets: any[] = [];
+  const widgets: Array<Range<Decoration>> = [];
   const activeLine = state.doc.lineAt(state.selection.main.head).number;
 
   for (let i = 1; i <= state.doc.lines; i++) {

@@ -46,72 +46,6 @@ import {
 } from "source/common/modules/markdown-editor/util/configuration";
 import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
-function polyfillJsdomForCodeMirror(): void {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    const requestFrame = (callback: FrameRequestCallback): number =>
-      Number(setTimeout(() => callback(Date.now()), 0));
-    const cancelFrame = (id: number): void => {
-      clearTimeout(id);
-    };
-    Object.defineProperties(globalThis, {
-      requestAnimationFrame: { configurable: true, value: requestFrame, writable: true },
-      cancelAnimationFrame: { configurable: true, value: cancelFrame, writable: true },
-    });
-  }
-  if (typeof window === "object" && typeof window.requestAnimationFrame !== "function") {
-    Object.defineProperties(window, {
-      requestAnimationFrame: {
-        configurable: true,
-        value: globalThis.requestAnimationFrame,
-        writable: true,
-      },
-      cancelAnimationFrame: {
-        configurable: true,
-        value: globalThis.cancelAnimationFrame,
-        writable: true,
-      },
-    });
-  }
-  if (typeof globalThis.ResizeObserver !== "function") {
-    class TestResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    Object.defineProperty(globalThis, "ResizeObserver", {
-      configurable: true,
-      value: TestResizeObserver,
-      writable: true,
-    });
-    if (typeof window === "object") {
-      Object.defineProperty(window, "ResizeObserver", {
-        configurable: true,
-        value: TestResizeObserver,
-        writable: true,
-      });
-    }
-  }
-  if (typeof Range !== "undefined" && typeof Range.prototype.getClientRects !== "function") {
-    Object.defineProperties(Range.prototype, {
-      getClientRects: { configurable: true, value: () => [] },
-      getBoundingClientRect: {
-        configurable: true,
-        value: () => ({
-          bottom: 0,
-          height: 0,
-          left: 0,
-          right: 0,
-          top: 0,
-          width: 0,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        }),
-      },
-    });
-  }
-}
-
 const RAW_BLOCK = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
 const FENCE_BODY = "\\documentclass[tikz]{standalone}\\begin{document}x\\end{document}";
 const DOC = `Prose before keeps the caret away.\n\n${RAW_BLOCK}\n\n\`\`\`tikz\n${FENCE_BODY}\n\`\`\`\n\nProse after.\n`;
@@ -182,7 +116,6 @@ describe("TikZ editor widgets (issue #14)", function () {
   let previousIpc: PropertyDescriptor | undefined;
 
   before(function () {
-    polyfillJsdomForCodeMirror();
     previousIpc = Object.getOwnPropertyDescriptor(window, "ipc");
   });
 

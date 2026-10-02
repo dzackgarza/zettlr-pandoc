@@ -27,49 +27,11 @@ import { renderPandoc } from "source/common/modules/markdown-editor/renderers/re
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 describe("Editor presents Pandoc fenced divs semantically", function () {
   const views: EditorView[] = [];
 
   before(async function () {
     this.timeout(30000);
-    polyfillJsdomForCodeMirror();
     await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 

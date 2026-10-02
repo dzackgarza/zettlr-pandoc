@@ -35,7 +35,7 @@ it("requires initialization before conversion", function () {
 
 it("registers updater IPC only after its boot initialization", function () {
   const source = readFileSync(resolve("source/app/service-providers/updates/index.ts"), "utf8");
-  const bootAt = source.indexOf("async boot (): Promise<void>");
+  const bootAt = source.search(/async boot\s*\(\): Promise<void>/);
   // Without this the slice below is the whole file, and the ordering it checks
   // is read off two positions that have nothing to do with boot().
   assert.notEqual(bootAt, -1, "the updater provider must declare boot()");
@@ -80,8 +80,7 @@ describe("Utility#mathJaxToHTML()", function () {
     // \ce exercises mhchem.
     const html = mathJaxToHTML("\\RR + \\qty{x} + \\ce{H2O}", "display");
 
-    const rendered = document.createElement("div");
-    rendered.innerHTML = html;
+    const rendered = new DOMParser().parseFromString(html, "text/html").body;
 
     assert.equal(rendered.querySelector("mjx-container")?.getAttribute("display"), "true");
     assert.match(rendered.textContent ?? "", /ℝ/);

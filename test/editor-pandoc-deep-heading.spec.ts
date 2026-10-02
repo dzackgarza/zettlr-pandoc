@@ -13,31 +13,9 @@ import { renderMath } from "source/common/modules/markdown-editor/renderers/rend
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") w.window.ResizeObserver = w.ResizeObserver;
-  }
-}
-
 describe("Editor renders Pandoc deep headings", function () {
   before(async function () {
     this.timeout(30000);
-    polyfillJsdomForCodeMirror();
     await initializeMathJax(await loadMathJaxMacros("test/fixtures/mathjax-macros.json"));
   });
 

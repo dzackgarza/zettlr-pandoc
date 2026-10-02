@@ -16,6 +16,9 @@
  * END HEADER
  */
 
+// The harness must load before any provider module: the provider graph
+// imports 'electron' at module scope.
+import "./headless-electron-harness.cjs";
 import { DP_EVENTS } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import { mkdirSync, rmSync } from "fs";
@@ -25,8 +28,6 @@ import DocumentManager, {
   type DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
-// The harness must load before any provider module: the provider graph
-// imports 'electron' at module scope.
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 const FIXTURE_ROOT = path.resolve("test", "fixtures", "reference-workspace");

@@ -58,7 +58,7 @@ async function mount(): Promise<void> {
 
   // The seam resolves from the harness-injected response map, keyed exactly
   // as the widget requests render (kind NUL language NUL source).
-  window.ipc = {
+  const ipc = {
     invoke: async (channel: string, message: { command: string; payload: TikzRenderRequest }) => {
       if (channel === "quiver-macros") {
         return { macros: {}, unsupported: [] };
@@ -78,7 +78,8 @@ async function mount(): Promise<void> {
     on: () => () => {},
     send: () => {},
     sendSync: () => undefined,
-  } as any;
+  };
+  Object.defineProperty(window, "ipc", { configurable: true, writable: true, value: ipc });
 
   const state = EditorState.create({
     doc: documentText,

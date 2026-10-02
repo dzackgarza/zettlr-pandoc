@@ -149,7 +149,7 @@ export function computeProjectReferenceStatus(
   const definitionRoot = containingRoot(definitionPath, projectRoots);
 
   if (activeRoot === undefined) {
-    // Standalone active document: any Project-rooted target is foreign.
+    // Standalone active document: every Project-rooted target is foreign.
     return definitionRoot === undefined ? "standalone" : "another-project";
   }
 

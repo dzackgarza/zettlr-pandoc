@@ -186,7 +186,6 @@ module.exports = {
       // makeResults is an array for each maker that has the keys `artifacts`,
       // `packageJSON`, `platform`, and `arch`.
       for (const result of makeResults) {
-        // Get the necessary information from the object
         const { version, productName } = result.packageJSON;
 
         // NOTE: Other makers may produce more than one artifact, but I'll have

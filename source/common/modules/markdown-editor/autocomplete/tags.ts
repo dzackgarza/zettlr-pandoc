@@ -29,7 +29,6 @@ export const tagsUpdateField = StateField.define<Completion[]>({
   update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(tagsUpdate)) {
-        // Convert the entries into completion objects
         return (
           effect.value
             // Remove tags with spaces, as they cannot be applied within documents

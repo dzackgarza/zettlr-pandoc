@@ -53,6 +53,7 @@ import {
   projectStatusDisplayName,
 } from "@common/pandoc-util/project-reference-status";
 import { reportError } from "@common/util/error-reporting";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import {
   type ProjectRootSpec,
@@ -219,7 +220,7 @@ function getPreviewElement(
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
   })
     .then((html) => {
-      excerpt.innerHTML = html;
+      setSanitizedHTML(excerpt, html, "document");
     })
     .catch((err) => reportError("Could not render the reference excerpt", err));
 

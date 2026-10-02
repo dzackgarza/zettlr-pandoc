@@ -45,7 +45,7 @@ export default class TrayProvider extends ProviderContract {
       this._config.set("system.leaveAppRunning", false);
     }
 
-    this._config.on("update", (option: string) => {
+    this._config.on("update", (option?: string) => {
       if (option === "system.leaveAppRunning") {
         // even if the tray should not be shown, since we start in Tray we need to show it anyway
         if (this._config.get("system.leaveAppRunning") === true) {

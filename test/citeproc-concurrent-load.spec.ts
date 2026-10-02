@@ -18,14 +18,15 @@
  * END HEADER
  */
 
+// The harness must load before any provider module: the provider graph
+// imports 'electron' at module scope.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
-// The harness must load before any provider module: the provider graph
-// imports 'electron' at module scope.
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");

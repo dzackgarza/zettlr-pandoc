@@ -17,6 +17,7 @@
  */
 import { reportError } from "@common/util/error-reporting";
 import { v4 as uuid } from "uuid";
+import ACCELERATOR_GLYPHS from "./accelerator-glyphs.json";
 
 interface SharedItemInfo {
   id?: string;
@@ -162,7 +163,6 @@ export default function showPopupMenu(
     }
   }
 
-  // Get the correct rect to use for submenu placement
   let targetRect: Rect = {
     top: 0,
     left: 0,
@@ -439,15 +439,13 @@ function renderMenuItem(item: AnyMenuItem, elementClass?: string): HTMLElement {
     acc = acc.replace("Delete", "Del");
 
     // Replace some common keycodes with their correct symbols
-    acc = acc.replace("Cmd", "⌘");
-    acc = acc.replace("Shift", "⇧");
-    if (process.platform === "darwin") {
-      acc = acc.replace("Alt", "⎇");
-      acc = acc.replace("Option", "⎇");
+    const glyphs =
+      process.platform === "darwin"
+        ? { ...ACCELERATOR_GLYPHS.allPlatforms, ...ACCELERATOR_GLYPHS.darwin }
+        : ACCELERATOR_GLYPHS.allPlatforms;
+    for (const [keyName, glyph] of Object.entries(glyphs)) {
+      acc = acc.replace(keyName, glyph);
     }
-
-    acc = acc.replace("Backspace", "←");
-    acc = acc.replace("Tab", "↹");
 
     // Afterwards, remove all plus signs for macOS. Windows and Linux still
     // use Plus-signs to display accelerators

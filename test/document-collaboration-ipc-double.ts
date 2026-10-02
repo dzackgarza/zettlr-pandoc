@@ -113,11 +113,8 @@ const ipcTransport = {
   sendSync: (channel: string, message?: InvokeMessage) => sendSyncResponder(channel, message),
 };
 
-// jsdom's `window` (installed by test/setup.js) is not the ambient
-// lib.dom Window TypeScript resolves globalThis against in a Node/mocha
-// context, so the property write below needs the same globalThis-as-any
-// step provision-renderer-window-seams.ts uses for the identical reason.
-// The transport object itself stays fully typed above.
-(globalThis as any).window.ipc = ipcTransport;
+// The transport implements the channels this store uses, not every overload
+// of the typed ZettlrIpcInvoke, so it is installed as a property value.
+Object.defineProperty(window, "ipc", { configurable: true, writable: true, value: ipcTransport });
 
 export {};

@@ -33,6 +33,9 @@
  * END HEADER
  */
 
+// Must be the first local import: it installs window.ipc as a side effect,
+// before the store below reads window.ipc at its own module top level.
+import "./document-collaboration-ipc-double";
 import type { TextAnnotation } from "@dts/common/annotation-domain";
 import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
 import { DP_EVENTS } from "@dts/common/documents";
@@ -49,8 +52,6 @@ import {
   DocumentAuthority as SharedDocumentAuthority,
   temporarySidecarDirectory,
 } from "./collaboration-test-authority";
-// Must be the first local import: it installs window.ipc as a side effect,
-// before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
 const DOCUMENT_ID = "doc-multi-pane";

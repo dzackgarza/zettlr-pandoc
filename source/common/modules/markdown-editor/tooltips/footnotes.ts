@@ -18,6 +18,7 @@ import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { configField } from "../util/configuration";
 
 /**
@@ -103,7 +104,7 @@ function footnotesTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip 
         },
       )
         .then((tooltipContent) => {
-          content.innerHTML = tooltipContent;
+          setSanitizedHTML(content, tooltipContent, "document");
         })
         .catch((err) => reportError(err));
 

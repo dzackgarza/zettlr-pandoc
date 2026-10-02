@@ -94,8 +94,6 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): MathWidget | undefined {
-  // Get the node's text contents, determine if this is a displayMode equation,
-  // and then remove the leading and trailing dollars.
   const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   // Don't render if the selection is within the node

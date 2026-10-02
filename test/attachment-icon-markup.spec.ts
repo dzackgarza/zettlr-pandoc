@@ -17,9 +17,13 @@ import assert from "assert";
 import "mocha";
 import { getAttachmentIconMarkup } from "source/win-main/sidebar/attachment-icon-markup";
 
+/** Parse markup the way v-html does, into an inert document instead of the live page. */
+function parseMarkup(markup: string): HTMLElement {
+  return new DOMParser().parseFromString(markup, "text/html").body;
+}
+
 function renderIconMarkup(extension: string): SVGElement {
-  const host = document.createElement("div");
-  host.innerHTML = getAttachmentIconMarkup(extension);
+  const host = parseMarkup(getAttachmentIconMarkup(extension));
   const svg = host.querySelector("svg");
   assert(svg !== null, "attachment icon markup must contain its bundled SVG root");
   return svg;
@@ -39,8 +43,7 @@ describe("attachment icon markup", function () {
   });
 
   it("renders a markup-shaped three-character extension only as text", function () {
-    const host = document.createElement("div");
-    host.innerHTML = getAttachmentIconMarkup(".<i>");
+    const host = parseMarkup(getAttachmentIconMarkup(".<i>"));
     const svg = host.querySelector("svg");
     assert(svg !== null, "attachment icon markup must contain its bundled SVG root");
 

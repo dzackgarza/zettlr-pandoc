@@ -12,43 +12,6 @@ import {
 } from "source/common/modules/markdown-editor/renderers/render-citations";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 
-function codeMirrorDomPolyfills(): void {
-  const globals = globalThis as typeof globalThis & {
-    ResizeObserver?: typeof ResizeObserver;
-  };
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    globalThis.requestAnimationFrame = (callback) =>
-      setTimeout(() => callback(Date.now()), 0) as unknown as number;
-    globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle);
-  }
-  if (typeof window.requestAnimationFrame !== "function") {
-    window.requestAnimationFrame = globalThis.requestAnimationFrame;
-    window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-  }
-  if (typeof globals.ResizeObserver !== "function") {
-    globals.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    window.ResizeObserver = globals.ResizeObserver;
-  }
-  if (typeof Range.prototype.getClientRects !== "function") {
-    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
-    Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 async function nextTurn(): Promise<void> {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -57,10 +20,6 @@ async function nextTurn(): Promise<void> {
 describe("async citation widget rendering", function () {
   const originalIpc = window.ipc;
   let view: EditorView | undefined;
-
-  before(function () {
-    codeMirrorDomPolyfills();
-  });
 
   afterEach(function () {
     view?.destroy();

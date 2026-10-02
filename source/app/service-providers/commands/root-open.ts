@@ -15,11 +15,11 @@
 import { trans } from "@common/i18n-main";
 import { CODE_EXT, MD_EXT } from "@common/util/file-extention-checks";
 import { ignorePath } from "@common/util/ignore-path";
+import isErrnoException from "@common/util/is-errno-exception";
 import { type DirDescriptor } from "@dts/common/fsal";
 import { app } from "electron";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import type { NodeError } from "../windows/map-fs-error";
 import ZettlrCommand from "./zettlr-command";
 
 export default class RootOpen extends ZettlrCommand {
@@ -161,11 +161,15 @@ export default class RootOpen extends ZettlrCommand {
           if (file !== undefined && file.type !== "other") {
             await this._app.documents.openFile(winKey, leafId, file.path, true);
           }
-        } catch (err: any) {
+        } catch (err) {
           // Something went wrong, so remove the path again.
           this._app.config.removePath(absPath);
-          this._app.log.error(`Could not open root ${absPath}: ${err.message as string}`, err);
-          this._app.windows.reportFSError("Could not open new root", err as NodeError);
+          this._app.log.error(`Could not open root ${absPath}`, err);
+          // Only a filesystem error is a state the user can act on.
+          if (!isErrnoException(err)) {
+            throw err;
+          }
+          this._app.windows.reportFSError("Could not open new root", err);
         }
       }
     }

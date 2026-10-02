@@ -29,6 +29,7 @@
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
+import { sanitizedFragment } from "@common/util/sanitize-html";
 import { type SyntaxNodeRef } from "@lezer/common";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
@@ -58,14 +59,13 @@ export { __resetTikzRenderMemoForTests } from "../tikz-render-client";
  * the mount to fall back from.
  */
 function figureNodes(html: string): Node[] {
-  const template = document.createElement("template");
-  template.innerHTML = html;
+  const fragment = sanitizedFragment(html, "graphic");
 
   // An ok result is only issued after the service confirmed the pandoc output
   // carries an <svg>…</svg>; markup without one means service and widget
   // disagree about what a successful render is, which no presentation can
   // repair.
-  if (template.content.querySelector("svg") === null) {
+  if (fragment.querySelector("svg") === null) {
     throw new Error(
       "render-tikz: the render service reported a successful figure whose markup carries no <svg> element. " +
         `Markup received (${html.length} chars): ${html.slice(0, 200)}. ` +
@@ -75,7 +75,7 @@ function figureNodes(html: string): Node[] {
   }
 
   const nodes: Node[] = [];
-  for (const child of Array.from(template.content.childNodes)) {
+  for (const child of Array.from(fragment.childNodes)) {
     if (child instanceof HTMLParagraphElement) {
       nodes.push(...Array.from(child.childNodes));
     } else {

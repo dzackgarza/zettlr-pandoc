@@ -17,6 +17,8 @@
  * END HEADER
  */
 
+// The harness must load before provider modules, which import Electron.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import EventEmitter from "events";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
@@ -29,7 +31,6 @@ import ReferenceProvider from "source/app/service-providers/references";
 import type { ReferenceRenamePreview } from "source/common/pandoc-util/compute-reference-edits";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
-// The harness must load before provider modules, which import Electron.
 import { userData } from "./headless-electron-harness.cjs";
 
 const OLD_KEY = "thm:authority-owned";

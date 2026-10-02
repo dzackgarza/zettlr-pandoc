@@ -24,13 +24,16 @@ import { type EditorView } from "@codemirror/view";
  */
 export const syncAnnotation = Annotation.define<boolean>();
 
+/** The sync marker plus the user event that a synced transaction carries over. */
+type SyncAnnotations = Array<Annotation<boolean> | Annotation<string>>;
+
 export function dispatchFromSubview(
   mainView: EditorView,
 ): (tr: Transaction, subview: EditorView) => void {
   return (tr: Transaction, subview: EditorView) => {
     subview.update([tr]);
     if (tr.annotation(syncAnnotation) === undefined && (tr.docChanged || tr.effects.length > 0)) {
-      const annotations: Annotation<any>[] = [syncAnnotation.of(true)];
+      const annotations: SyncAnnotations = [syncAnnotation.of(true)];
       const userEvent = tr.annotation(Transaction.userEvent);
       if (userEvent !== undefined) {
         annotations.push(Transaction.userEvent.of(userEvent));
@@ -56,7 +59,7 @@ export function dispatchFromSubview(
  */
 export function maybeDispatchToSubview(subview: EditorView, tr: Transaction): void {
   if (tr.annotation(syncAnnotation) === undefined && (tr.docChanged || tr.effects.length > 0)) {
-    const annotations: Annotation<any>[] = [syncAnnotation.of(true)];
+    const annotations: SyncAnnotations = [syncAnnotation.of(true)];
     const userEvent = tr.annotation(Transaction.userEvent);
     if (userEvent !== undefined) {
       annotations.push(Transaction.userEvent.of(userEvent));

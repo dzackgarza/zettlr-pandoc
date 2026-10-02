@@ -141,7 +141,7 @@ export default class DictionaryProvider extends ProviderContract {
     });
 
     // Reload as soon as the config has been updated
-    this._config.on("update", (opt: string) => {
+    this._config.on("update", (opt?: string) => {
       // Reload the dictionaries (if applicable) ...
       this.synchronizeHunspellDictionaries().catch((err) => {
         this._logger.error(
@@ -423,14 +423,14 @@ export default class DictionaryProvider extends ProviderContract {
 
       try {
         aff = await fs.readFile(dictMeta.aff);
-      } catch (err: any) {
+      } catch (err) {
         this._logger.error(`[Dictionary Provider] Could not load affix file for ${dict}`, err);
         continue;
       }
 
       try {
         dic = await fs.readFile(dictMeta.dic);
-      } catch (err: any) {
+      } catch (err) {
         this._logger.error(`[Dictionary Provider] Could not load .dic-file for ${dict}`, err);
         continue;
       }

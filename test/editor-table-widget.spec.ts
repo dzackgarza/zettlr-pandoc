@@ -31,54 +31,6 @@ import {
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
 
-type FrameHandle = number | ReturnType<typeof setTimeout>;
-
-/** The browser surface CodeMirror measures through and jsdom does not carry. */
-interface MeasurableGlobals {
-  requestAnimationFrame?: (callback: (time: number) => void) => FrameHandle;
-  cancelAnimationFrame?: (handle: FrameHandle) => void;
-  ResizeObserver?: unknown;
-  window?: MeasurableGlobals;
-  Range?: { prototype: Partial<Range> };
-}
-
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as MeasurableGlobals;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (handle: FrameHandle) => clearTimeout(handle);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function" && w.Range !== undefined) {
-    w.Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const DOC = `Opening paragraph.
 
 | Name  | Value |
@@ -103,10 +55,6 @@ function nextFrame(): Promise<void> {
 
 describe("Table widgets follow the size of a change", function () {
   const views: EditorView[] = [];
-
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
 
   afterEach(function () {
     for (const view of views.splice(0)) {

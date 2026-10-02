@@ -78,7 +78,7 @@ export default class TargetProvider extends ProviderContract {
    * @param  {Function} callback The callback when the event is emitted.
    * @return {void}              Nothing to return.
    */
-  on(event: string, callback: (...args: any[]) => void): void {
+  on(event: string, callback: (filePath: string) => void): void {
     this._emitter.on(event, callback);
   }
 
@@ -88,7 +88,7 @@ export default class TargetProvider extends ProviderContract {
    * @param  {Function} callback The callback
    * @return {void}              Nothing to return.
    */
-  off(event: string, callback: (...args: any[]) => void): void {
+  off(event: string, callback: (filePath: string) => void): void {
     this._emitter.off(event, callback);
   }
 

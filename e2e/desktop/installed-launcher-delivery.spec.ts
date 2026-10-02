@@ -1,8 +1,9 @@
 // The #52 boundary proof: file arguments must survive the COMPLETE installed
-// launcher chain — desktop entry → zettlr-pandoc-dev → kitty splash →
-// zettlr-pandoc-boot → packaged Electron binary (cold) or
-// zettlr-pandoc-open-in-running (running instance) — and end as a document in
-// the real editor. Every earlier test starts somewhere inside that chain, so
+// launcher chain and end as a document in the real editor. The desktop entry
+// starts zettlr-pandoc-dev, which opens the kitty splash, which runs
+// zettlr-pandoc-boot. The boot script starts the packaged Electron binary when
+// no instance runs (cold), or hands the files to
+// zettlr-pandoc-open-in-running when an instance already runs. Every earlier test starts somewhere inside that chain, so
 // only this spec can catch an argument dropped at an outer link.
 //
 // The chain is exercised exactly as a desktop session runs it: the launcher is

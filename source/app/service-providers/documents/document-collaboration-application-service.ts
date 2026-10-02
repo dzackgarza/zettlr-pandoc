@@ -11,9 +11,8 @@
  *                  its review and its annotations together. Every mutation —
  *                  from the HTTP API, from renderer IPC, from the editor's
  *                  own authority updates — runs here, under one per-document
- *                  lock, in one order:
- *
- *                    read → prepare → PERSIST → commit → emit → broadcast
+ *                  lock, in one order: read, prepare, PERSIST, commit,
+ *                  emit, broadcast.
  *
  *                  The persist step is what the rest of the ordering exists
  *                  for. A sidecar write that fails leaves the committed

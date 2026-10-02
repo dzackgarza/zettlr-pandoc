@@ -11,18 +11,20 @@
  * END HEADER
  */
 
-import type { SortMethod } from "source/types/common/fsal";
+import type { SortMethod, YamlMapping } from "source/types/common/fsal";
 
 export interface RequiredSortingProps {
   type: string;
   name: string;
-  frontmatter?: any;
+  frontmatter?: YamlMapping | null;
   firstHeading?: string | null;
   modtime: number;
   creationtime: number;
 }
 
 type FilenameDisplay = "filename" | "title" | "heading" | "title+heading";
+
+type SortComparator = (a: RequiredSortingProps, b: RequiredSortingProps) => number;
 
 export type GenericSorter = <T extends RequiredSortingProps>(arr: T[], type?: SortMethod) => T[];
 
@@ -34,7 +36,7 @@ export type GenericSorter = <T extends RequiredSortingProps>(arr: T[], type?: So
  * @return  {Function}                             Function compatible with
  *                                                 array.sort()
  */
-function getDateSorter(whichTime: "modtime" | "creationtime"): (a: any, b: any) => number {
+function getDateSorter(whichTime: "modtime" | "creationtime"): SortComparator {
   return function sortDate<T extends RequiredSortingProps>(a: T, b: T): number {
     let aDate = a.modtime;
     let bDate = b.modtime;
@@ -63,16 +65,13 @@ function getDateSorter(whichTime: "modtime" | "creationtime"): (a: any, b: any) 
  * @return  {Function}                          Function compatible with
  *                                              array.sort()
  */
-function getNaturalSorter(
-  fileNameDisplay: FilenameDisplay,
-  appLang: string,
-): (a: any, b: any) => number {
+function getNaturalSorter(fileNameDisplay: FilenameDisplay, appLang: string): SortComparator {
   return function sortNatural<T extends RequiredSortingProps>(a: T, b: T): number {
     let aSort = a.name.toLowerCase();
     let bSort = b.name.toLowerCase();
 
-    const aTitle = a.type === "file" ? typeof a.frontmatter?.title === "string" : false;
-    const bTitle = b.type === "file" ? typeof b.frontmatter?.title === "string" : false;
+    const aTitle = a.type === "file" ? a.frontmatter?.title : undefined;
+    const bTitle = b.type === "file" ? b.frontmatter?.title : undefined;
     const aHeading = a.type === "file" ? a.firstHeading != null : false;
     const bHeading = b.type === "file" ? b.firstHeading != null : false;
 
@@ -90,12 +89,12 @@ function getNaturalSorter(
       bSort = b.firstHeading!;
     }
 
-    if (aTitle && useTitle) {
-      aSort = a.frontmatter.title;
+    if (typeof aTitle === "string" && useTitle) {
+      aSort = aTitle;
     }
 
-    if (bTitle && useTitle) {
-      bSort = b.frontmatter.title;
+    if (typeof bTitle === "string" && useTitle) {
+      bSort = bTitle;
     }
 
     const coll = new Intl.Collator([appLang, "en"], { numeric: true });
@@ -112,13 +111,13 @@ function getNaturalSorter(
  * @return  {number}                            Function compatible with
  *                                              array.sort()
  */
-function getAsciiSorter(fileNameDisplay: FilenameDisplay): (a: any, b: any) => number {
+function getAsciiSorter(fileNameDisplay: FilenameDisplay): SortComparator {
   return function sortAscii<T extends RequiredSortingProps>(a: T, b: T): number {
     let aSort = a.name.toLowerCase();
     let bSort = b.name.toLowerCase();
 
-    const aTitle = a.type === "file" ? typeof a.frontmatter?.title === "string" : false;
-    const bTitle = b.type === "file" ? typeof b.frontmatter?.title === "string" : false;
+    const aTitle = a.type === "file" ? a.frontmatter?.title : undefined;
+    const bTitle = b.type === "file" ? b.frontmatter?.title : undefined;
     const aHeading = a.type === "file" ? a.firstHeading != null : false;
     const bHeading = b.type === "file" ? b.firstHeading != null : false;
 
@@ -136,12 +135,12 @@ function getAsciiSorter(fileNameDisplay: FilenameDisplay): (a: any, b: any) => n
       bSort = b.firstHeading!;
     }
 
-    if (aTitle && useTitle) {
-      aSort = a.frontmatter.title;
+    if (typeof aTitle === "string" && useTitle) {
+      aSort = aTitle;
     }
 
-    if (bTitle && useTitle) {
-      bSort = b.frontmatter.title;
+    if (typeof bTitle === "string" && useTitle) {
+      bSort = bTitle;
     }
 
     // Negative return: a is smaller b (case insensitive)

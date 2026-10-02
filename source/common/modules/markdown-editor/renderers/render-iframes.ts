@@ -54,7 +54,13 @@ function getIframeWrapper(): HTMLDivElement {
 function getPlaceholder(source: string, hostname: string): HTMLDivElement {
   const wrapper = getIframeWrapper();
   const info = document.createElement("p");
-  info.innerHTML = `iFrame elements can contain harmful content. The hostname <strong>${hostname}</strong> is not yet marked as safe. Do you wish to render this iFrame?`;
+  const hostnameElement = document.createElement("strong");
+  hostnameElement.textContent = hostname;
+  info.append(
+    "iFrame elements can contain harmful content. The hostname ",
+    hostnameElement,
+    " is not yet marked as safe. Do you wish to render this iFrame?",
+  );
   const renderAlways = document.createElement("button");
   renderAlways.textContent = `Always allow content from ${hostname}`;
   const renderOnce = document.createElement("button");
@@ -66,14 +72,12 @@ function getPlaceholder(source: string, hostname: string): HTMLDivElement {
 
   renderOnce.onclick = (event) => {
     // Render the iFrame, but only this time
-    const iframe = getIframe(source);
-    wrapper.innerHTML = iframe.outerHTML;
+    wrapper.replaceChildren(getIframe(source));
   };
 
   renderAlways.onclick = (event) => {
     // Render the iFrame and also add the hostname to the whitelist
-    const iframe = getIframe(source);
-    wrapper.innerHTML = iframe.outerHTML;
+    wrapper.replaceChildren(getIframe(source));
 
     const currentWhitelist: string[] = window.config.get("system.iframeWhitelist");
     currentWhitelist.push(hostname);
@@ -98,13 +102,12 @@ class IFrameWidget extends WidgetType {
   toDOM(_view: EditorView): HTMLElement {
     const { hostname } = new URL(this.source);
 
-    // Check if the hostname is part of our whitelist. If so, render it directly
-    // Otherwise, render a placeholder instead.
+    // A host outside the whitelist gets a placeholder, not an iframe.
     const whitelist: string[] = window.config.get("system.iframeWhitelist");
 
     if (whitelist.includes(hostname)) {
       const wrapper = getIframeWrapper();
-      wrapper.innerHTML = getIframe(this.source).outerHTML;
+      wrapper.replaceChildren(getIframe(this.source));
       return wrapper;
     } else {
       return getPlaceholder(this.source, hostname);
@@ -125,8 +128,6 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): IFrameWidget | undefined {
-  // Get the actual link contents, extract title and URL and create a
-  // replacement widget
   const block = state.sliceDoc(node.from, node.to);
   const match = /^<iframe .*?src="(.+?)".*?>.*?<\/iframe>$/i.exec(block);
   if (match === null) {

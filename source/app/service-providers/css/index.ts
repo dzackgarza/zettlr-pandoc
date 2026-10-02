@@ -13,6 +13,7 @@
  */
 
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type LogProvider from "@providers/log";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
@@ -30,7 +31,6 @@ export default class CssProvider extends ProviderContract {
 
     this._emitter = new EventEmitter();
 
-    // Send the Custom CSS Path to whomever requires it
     ipcMain.handle("css-provider", async (event, payload) => {
       const { command } = payload;
       if (command === "get-custom-css-path") {
@@ -51,7 +51,10 @@ export default class CssProvider extends ProviderContract {
     // create an empty one.
     try {
       await fs.lstat(this._filePath);
-    } catch (err: any) {
+    } catch (err) {
+      if (!hasErrnoCode(err, "ENOENT")) {
+        throw err;
+      }
       // Create an empty file with a nice initial comment in it.
       await fs.writeFile(this._filePath, "/* Enter your custom CSS here */\n\n", {
         encoding: "utf8",
@@ -99,8 +102,11 @@ export default class CssProvider extends ProviderContract {
       });
       broadcastIpcMessage("css-provider", { command: "custom-css-updated" });
       return true;
-    } catch (err: any) {
-      this._logger.error(`[CSS Provider] Could not set custom css: ${err.message as string}`, err);
+    } catch (err) {
+      this._logger.error(
+        `[CSS Provider] Could not set custom css: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
       return false;
     }
   }

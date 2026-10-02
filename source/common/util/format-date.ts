@@ -31,8 +31,7 @@ export default function formatDate(
   const isDate = dateObj instanceof Date;
   const dt = isDate ? DateTime.fromJSDate(dateObj) : DateTime.fromMillis(dateObj);
   if (relative) {
-    // Check if there is at least a minute difference between the datetime object
-    // and now. If not, simply output "just now", else the actual relative difference.
+    // A difference of less than one minute shows as "just now".
     if (dt.diff(DateTime.now(), "minutes").toObject().minutes! * -1 < 1) {
       return trans("just now");
     } else {

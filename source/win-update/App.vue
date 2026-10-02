@@ -128,8 +128,13 @@ const lastCheckedMessage = computed(() => {
   if (updateState.value.lastCheck === undefined) {
     return trans("Last checked: %s", trans("never"));
   } else {
-    const dt = DateTime.fromMillis(updateState.value.lastCheck);
-    return trans("Last checked: %s", dt.toRelative());
+    const relative = DateTime.fromMillis(updateState.value.lastCheck).toRelative();
+    if (relative === null) {
+      throw new Error(
+        `The last update check time ${updateState.value.lastCheck} is not a valid date.`,
+      );
+    }
+    return trans("Last checked: %s", relative);
   }
 });
 const disableStartButton = ref(false); // True as soon as the update starts

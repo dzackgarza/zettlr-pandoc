@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import safeAssign from "@common/util/safe-assign";
 import type {
@@ -194,8 +195,10 @@ async function persistSettings(dir: DirDescriptor): Promise<void> {
     if (isFile(settingsFile)) {
       try {
         await fs.unlink(settingsFile);
-      } catch (err: any) {
-        err.message = `Error removing default .ztr-directory: ${err.message as string}`;
+      } catch (err) {
+        if (err instanceof Error) {
+          err.message = `Error removing default .ztr-directory: ${err.message}`;
+        }
         throw err;
       }
     }
@@ -272,7 +275,12 @@ export async function parse(currentPath: string): Promise<DirDescriptor> {
 
   try {
     dir.isGitRepository = (await fs.lstat(path.join(dir.path, ".git"))).isDirectory();
-  } catch (err: any) {}
+  } catch (err) {
+    // A directory without a .git entry is not a repository.
+    if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
+      throw err;
+    }
+  }
 
   // Retrieve the metadata
   try {
@@ -281,8 +289,10 @@ export async function parse(currentPath: string): Promise<DirDescriptor> {
     dir.creationtime = metadata.birthtime;
     await parseSettings(dir);
     await parseQuartoManifest(dir);
-  } catch (err: any) {
-    err.message = `Error reading metadata for directory ${dir.path}!`;
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = `Error reading metadata for directory ${dir.path}!`;
+    }
     // Re-throw so that the caller knows something's afoul
     throw err;
   }

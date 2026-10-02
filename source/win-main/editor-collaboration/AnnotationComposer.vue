@@ -79,7 +79,9 @@ const sendShortcut = explodeAccelerator("CmdOrCtrl+Enter");
 
 const draft = ref("");
 const submission = computed(() => composerSubmission(draft.value));
-const contextLabel = computed(() => trans("Context: %s", props.documentName));
+const contextLabel = computed(() =>
+  props.documentName === undefined ? undefined : trans("Context: %s", props.documentName),
+);
 
 function submit(): void {
   const text = submission.value;

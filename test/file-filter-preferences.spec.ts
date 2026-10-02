@@ -163,7 +163,7 @@ describe("file type filter of the file manager", function () {
     assert.equal(visible(directory), true);
   });
 
-  it("exposes the file types, the ignore rules and the reveal toggle in Preferences → File Manager", function () {
+  it("exposes the file types, the ignore rules and the reveal toggle on the File Manager page of Preferences", function () {
     const models = getFileManagerFields({ fileNameDisplay: "filename" })
       .flatMap((fieldset) => fieldset.fields)
       .flatMap((field) => ("model" in field ? [field.model] : []));

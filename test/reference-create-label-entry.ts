@@ -4,8 +4,8 @@
  * (reference-create-label-probe.mjs). Issue #1, Phase 6 red.
  *
  * The probe delivers the raw fixture documents; this entry runs the REAL
- * extractor over them for the workspace key set. Both production surfaces
- * are resolved through webpack contexts so their ABSENCE is a structured,
+ * extractor over them for the workspace key set. The key-edit prompt is
+ * resolved through a webpack context so its ABSENCE is a structured,
  * reportable state (the Phase 6 red) instead of a bundler crash.
  *
  * Dialog contract exercised here (locked red by
@@ -58,6 +58,7 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { SourceRange } from "@dts/common/references";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
+import CreateReferenceLabelDialog from "source/win-main/CreateReferenceLabelDialog.vue";
 import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
@@ -105,13 +106,8 @@ declare global {
   }
 }
 
-// Resolved through contexts (not static imports) so the bundle builds and
-// reports structured absence while the surfaces do not exist yet.
-const dialogContext = require.context(
-  "../source/win-main/",
-  false,
-  /CreateReferenceLabelDialog\.vue$/,
-);
+// Resolved through a context (not a static import) so the bundle builds and
+// reports structured absence while the prompt does not exist yet.
 const promptContext = require.context(
   "../source/common/modules/markdown-editor/plugins/",
   false,
@@ -125,25 +121,7 @@ window.createLabelProbeMount = async (documents: ProbeDocument[]): Promise<Dialo
     .flatMap((document) => extractReferences(document.path, document.content).definitions)
     .map((definition) => definition.key);
 
-  const dialogKey = dialogContext.keys().find((key) => key.includes("CreateReferenceLabelDialog"));
-  if (dialogKey === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure:
-        "source/win-main/CreateReferenceLabelDialog.vue does not exist yet (issue #1 Phase 6 red)",
-    };
-  }
-
-  const dialogModule = dialogContext(dialogKey) as { default?: unknown };
-  if (dialogModule.default === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure: "CreateReferenceLabelDialog.vue exists but has no default component export",
-    };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  createApp(dialogModule.default as any, {
+  createApp(CreateReferenceLabelDialog, {
     family: "thm",
     proposedSlug: "torelli",
     existingKeys,
@@ -217,8 +195,8 @@ window.keyEditPromptProbeRun = async (
     parent: host,
   });
 
-  // Edit the authored definition id: '#thm:torelli' -> '#thm:torelli-v2',
-  // leaving the selection at the end of the edited token …
+  // Append '-v2' to the authored definition id '#thm:torelli', leaving the
+  // selection at the end of the edited token …
   const token = "#thm:torelli";
   const tokenStart = probeDocument.content.indexOf(token);
   const editAt = tokenStart + token.length;

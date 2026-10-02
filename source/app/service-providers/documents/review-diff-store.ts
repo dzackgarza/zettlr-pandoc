@@ -138,7 +138,8 @@ export function classifyReviewState(invalidated: boolean, unresolvedChunks: numb
 }
 
 /**
- * The composite unresolved patch of a review: reference → working. The one
+ * The composite unresolved patch of a review, from the reference text to the
+ * working text. The one
  * owner of that computation, so the live store and a detached review read
  * from its sidecar cannot answer different diffs for the same two texts.
  */
@@ -490,7 +491,7 @@ export class ReviewDiffStore {
     );
   }
 
-  /** The composite unresolved patch: referenceText → working text. */
+  /** The composite unresolved patch from referenceText to the working text. */
   getReviewDiff(documentId: string, workingText: string): string | undefined {
     const review = this.reviews.get(documentId);
     if (review === undefined) {

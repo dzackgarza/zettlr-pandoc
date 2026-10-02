@@ -1,4 +1,5 @@
 import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { constants as FSConstants, promises as fs } from "fs";
 
 /**
@@ -19,8 +20,12 @@ export async function canOpenFile(filePath: string): Promise<boolean> {
         FSConstants.R_OK | // We need to read it
         FSConstants.W_OK, // And write it
     );
-  } catch (err: any) {
-    return false;
+  } catch (err) {
+    // A missing file or denied access means Zettlr cannot open it.
+    if (hasErrnoCode(err, "ENOENT", "ENOTDIR", "EACCES", "EPERM", "EROFS")) {
+      return false;
+    }
+    throw err;
   }
 
   // Then check if it's actually a file we can handle

@@ -57,7 +57,7 @@ import saveFileDialog from "./dialog/save-dialog";
 import shouldCloseAllDialog from "./dialog/should-close-all";
 import shouldOverwriteFileDialog from "./dialog/should-overwrite-file";
 import shouldReplaceFileDialog from "./dialog/should-replace-file";
-import mapFSError, { type NodeError } from "./map-fs-error";
+import mapFSError from "./map-fs-error";
 import type { WindowPosition } from "./types";
 
 // 'request-files' and 'close-all' carry no command property: each channel
@@ -431,8 +431,8 @@ export default class WindowProvider extends ProviderContract {
         return;
       }
 
-      // Only close this window if it is safe to do so: unsaved changes in it
-      // get the save-or-discard prompt first. askUserToCloseWindow drops the
+      // Only close this window if it is safe to do so: a window with unsaved
+      // changes shows the save-or-discard prompt first. askUserToCloseWindow drops the
       // window itself once answered, so the close it then permits comes back
       // through here with nothing left to ask about.
       if (!this._documents.isClean(key)) {
@@ -980,9 +980,9 @@ export default class WindowProvider extends ProviderContract {
    * Reports an error specific to reading or writing files and directories.
    *
    * @param   {string}  title  A title for the error prompt (e.g. Error opening Workspace)
-   * @param   {any}     error  The error object that should be reported. Should be thrown by fs
+   * @param   {NodeJS.ErrnoException}  error  The error that fs threw
    */
-  reportFSError(title: string, error: NodeError): void {
+  reportFSError(title: string, error: NodeJS.ErrnoException): void {
     const { what, why } = mapFSError(error);
     this.showErrorMessage(title, `There was an error accessing "${what}"`, why);
   }
@@ -1133,7 +1133,7 @@ export default class WindowProvider extends ProviderContract {
    * @param   {string}              [detail]  An optional string to display in the
    *                                          `detail` section of the dialogue.
    *
-   * @return  {Promise<any>}  Returns the message box results
+   * @return  {Promise<Electron.MessageBoxReturnValue>}  Returns the message box results
    */
   async askSaveChanges(detail?: string): Promise<Electron.MessageBoxReturnValue> {
     const firstMainWin = this.getFirstMainWindow();

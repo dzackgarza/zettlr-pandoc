@@ -396,8 +396,8 @@ export function deleteRow(target: EditorView): boolean {
           ];
 
           if (rowIdx < ctx.tableAST.rows.length - 1) {
-            // Check if the user just deleted the header row. In that case, we
-            // need to swap the delim row with the next one.
+            // When the user deletes the header row, the delimiter row must
+            // swap with the next row.
             const nextLine = target.state.doc.line(line.number + 1); // The delimiter would not be in the AST
             if (isPipeTableDelimRow(nextLine.text)) {
               const thirdLine = target.state.doc.line(line.number + 2);

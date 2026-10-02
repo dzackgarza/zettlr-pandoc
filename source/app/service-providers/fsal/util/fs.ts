@@ -11,6 +11,7 @@
  *
  * END HEADER
  */
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { constants as FS_CONSTANTS, promises as fs } from "fs";
 
 /**
@@ -31,7 +32,11 @@ export async function pathExists(
   try {
     await fs.access(absPath, flags);
     return true;
-  } catch (err: any) {
-    return false;
+  } catch (err) {
+    // A missing path or a denied access check answers the question with false.
+    if (hasErrnoCode(err, "ENOENT", "ENOTDIR", "EACCES", "EPERM", "EROFS")) {
+      return false;
+    }
+    throw err;
   }
 }

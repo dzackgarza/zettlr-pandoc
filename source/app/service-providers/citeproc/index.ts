@@ -31,7 +31,7 @@ import ProviderContract, { type IPCMessage } from "../provider-contract";
  * hide that, and force injectors to satisfy members this provider never touches.
  */
 export interface CiteprocConfig {
-  on: (evt: "update", callback: (option: string) => void) => void;
+  on: (evt: "update", callback: (option?: string) => void) => void;
   get: () => { appLang: string; export: { cslLibrary: string; cslStyle: string } };
 }
 
@@ -248,7 +248,7 @@ export default class CiteprocProvider extends ProviderContract {
     };
 
     // Be notified of potential updates
-    this._config.on("update", (option: string) => {
+    this._config.on("update", (option?: string) => {
       this.onConfigUpdate(option);
     });
 
@@ -636,7 +636,7 @@ export default class CiteprocProvider extends ProviderContract {
   /**
    * There has been a config update. In case the main library has changed, reload
    */
-  onConfigUpdate(option: string): void {
+  onConfigUpdate(option?: string): void {
     if (option === "appLang" || option === "export.cslStyle") {
       // We have to reload the engine to reflect the new language or style
       this.loadEngine().catch((err) =>

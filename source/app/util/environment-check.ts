@@ -27,7 +27,7 @@ export default async function environmentCheck(): Promise<void> {
   console.log("[Application] Performing environment check ...");
 
   // Ensure that the Node process trusts both its own bundled certificates
-  // (= the default) as well as any system store certificates when making
+  // (= the default) and the certificates of the system store when making
   // connections.
   const bundled = tls.getCACertificates("bundled");
   const system = tls.getCACertificates("system");
@@ -151,7 +151,10 @@ export default async function environmentCheck(): Promise<void> {
       process.env.GIT_VERSION = version;
     }
   } catch (err) {
-    // No action needed
+    // git is absent or did not report a version; GIT_SUPPORT stays "0".
+    console.log(
+      `[Application] git not found on system: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // Make sure the PATH property exists

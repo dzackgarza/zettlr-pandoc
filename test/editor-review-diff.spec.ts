@@ -34,56 +34,6 @@ import { renderLinks } from "source/common/modules/markdown-editor/renderers/ren
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { rangeInPreviewSuppression } from "source/common/modules/markdown-editor/util/range-in-preview-suppression";
 
-function polyfillJsdomForCodeMirror(): void {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    globalThis.requestAnimationFrame = (callback: FrameRequestCallback): number =>
-      Number(setTimeout(() => callback(Date.now()), 0));
-    globalThis.cancelAnimationFrame = (id: number): void => {
-      clearTimeout(id);
-    };
-  }
-  if (
-    typeof globalThis.window === "object" &&
-    typeof globalThis.window.requestAnimationFrame !== "function"
-  ) {
-    globalThis.window.requestAnimationFrame = globalThis.requestAnimationFrame;
-    globalThis.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-  }
-  if (typeof globalThis.ResizeObserver !== "function") {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    if (typeof globalThis.window === "object") {
-      globalThis.window.ResizeObserver = globalThis.ResizeObserver;
-    }
-  }
-  if (typeof Range.prototype.getClientRects !== "function") {
-    class EmptyDOMRectList extends Array<DOMRect> {
-      item(): DOMRect | null {
-        return null;
-      }
-    }
-    Range.prototype.getClientRects = function (): DOMRectList {
-      return new EmptyDOMRectList();
-    };
-    Range.prototype.getBoundingClientRect = function (): DOMRect {
-      return {
-        x: 0,
-        y: 0,
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-        toJSON: () => ({}),
-      };
-    };
-  }
-}
-
 function replacementSuggestion(
   workingText: string,
   removedText: string,
@@ -107,10 +57,6 @@ function replacementSuggestion(
 
 describe("Editor review-chunk view", function () {
   const views: EditorView[] = [];
-
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
 
   afterEach(function () {
     for (const view of views.splice(0)) {

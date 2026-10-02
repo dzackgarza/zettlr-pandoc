@@ -90,9 +90,9 @@ export default function extractBibtexAttachments(
       }
     }
 
-    // If the entry has not been assigned by now, this means there
-    // are no files attached. -> Set it to false so one can easily
-    // check if (!files[key]), as an array will evaluate to true.
+    // An entry without a value at this point has no attached files. It
+    // gets false, not an empty array, so that `!files[key]` is true
+    // for it: an empty array is truthy.
     if (files[entry.id] === undefined) {
       files[entry.id] = false;
     }

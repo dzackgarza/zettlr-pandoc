@@ -16,6 +16,7 @@ import { type EditorState } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { type SyntaxNodeRef } from "@lezer/common";
 import mermaid, { type MermaidConfig } from "mermaid";
 import { configField } from "../util/configuration";
@@ -77,7 +78,7 @@ class MermaidWidget extends WidgetType {
     mermaid
       .render(id, this.graph)
       .then((result) => {
-        elem.innerHTML = result.svg;
+        setSanitizedHTML(elem, result.svg, "graphic");
       })
       .catch((err: unknown) => onError(err, elem));
 
@@ -95,7 +96,7 @@ class MermaidWidget extends WidgetType {
     mermaid
       .render(id, this.graph)
       .then((result) => {
-        dom.innerHTML = result.svg;
+        setSanitizedHTML(dom, result.svg, "graphic");
       })
       .catch((err: unknown) => onError(err, dom));
 

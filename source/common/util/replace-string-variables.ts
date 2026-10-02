@@ -23,7 +23,6 @@ import { v4 as uuid4 } from "uuid";
  * @return  {string}          The output string, with all %-variables replaced
  */
 export default function replaceStringVariables(text: string, now?: DateTime): string {
-  // Get the current date
   if (now === undefined) {
     now = DateTime.now(); // .setLocale('en-GB')
   }

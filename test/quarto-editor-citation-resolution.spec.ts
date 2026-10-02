@@ -54,51 +54,11 @@ import {
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
-function polyfillJsdomForCodeMirror(): void {
-  const global = globalThis as any;
-  if (typeof global.requestAnimationFrame !== "function") {
-    global.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    global.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (
-    typeof global.window === "object" &&
-    typeof global.window.requestAnimationFrame !== "function"
-  ) {
-    global.window.requestAnimationFrame = global.requestAnimationFrame;
-    global.window.cancelAnimationFrame = global.cancelAnimationFrame;
-  }
-  if (typeof global.ResizeObserver !== "function") {
-    global.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof global.window === "object") {
-      global.window.ResizeObserver = global.ResizeObserver;
-    }
-  }
-  if (typeof global.Range?.prototype.getClientRects !== "function") {
-    global.Range.prototype.getClientRects = () => [];
-    global.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 describe("Quarto editor citation resolution and startup race", function () {
   const ROOT = path.resolve("test", "fixtures", "quarto-book");
   const views: EditorView[] = [];
   let citeproc: CiteprocProvider;
-  const originalCitationCallback = (globalThis as any).window?.getCitationCallback;
+  const originalCitationCallback = window.getCitationCallback;
   let restoreCitationIpc: (() => void) | undefined;
 
   const chapterDescriptor: MDFileDescriptor = {
@@ -131,8 +91,6 @@ describe("Quarto editor citation resolution and startup race", function () {
   };
 
   before(async function () {
-    polyfillJsdomForCodeMirror();
-
     const log = new LogProvider();
     const config: CiteprocConfig = {
       on: () => {},
@@ -147,9 +105,8 @@ describe("Quarto editor citation resolution and startup race", function () {
       path.join(ROOT, "web.bib"),
     ]);
 
-    // Wire the real CiteprocProvider into window.getCitationCallback
-    (globalThis as any).window.getCitationCallback = (database: CitationDatabase) => {
-      return (citations: any[], composite: boolean) => {
+    window.getCitationCallback = (database: CitationDatabase) => {
+      return (citations: CiteItem[], composite: boolean) => {
         return citeproc.getCitation(database, citations, composite);
       };
     };
@@ -161,9 +118,7 @@ describe("Quarto editor citation resolution and startup race", function () {
       await citeproc.shutdown();
     }
     restoreCitationIpc?.();
-    if ((globalThis as any).window) {
-      (globalThis as any).window.getCitationCallback = originalCitationCallback;
-    }
+    window.getCitationCallback = originalCitationCallback;
   });
 
   afterEach(function () {

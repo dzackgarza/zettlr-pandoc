@@ -144,7 +144,7 @@ export function hasDataExt(filePath: string): boolean {
  *
  * @param   {string}   filePath  The file path
  *
- * @return  {boolean}            Whether the filePath has any recognized ext.
+ * @return  {boolean}            Whether the filePath has a recognized ext.
  */
 export function hasAnyRecognizedFileExtension(
   filePath: string,

@@ -81,7 +81,7 @@ export default function extractYamlFrontmatter(markdown: string): ExtractYamlFro
     return ret; // The frontmatter did not end
   }
 
-  // Now we have a frontmatter (if there was any) -> extract!
+  // Now we have a frontmatter (if the file has one) -> extract!
   let frontmatter = "";
   for (let i = start; i <= end; i++) {
     frontmatter += "\n" + lines[i];

@@ -30,7 +30,6 @@ export const filesUpdateField = StateField.define<Completion[]>({
   update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(filesUpdate)) {
-        // Convert the files into completion objects
         return effect.value.map((entry) => {
           return {
             label: entry.displayName,

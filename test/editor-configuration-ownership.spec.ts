@@ -24,32 +24,9 @@ import {
   type EditorConfigOptions,
 } from "source/common/modules/markdown-editor/util/configuration";
 import { reactive, watchEffect } from "vue";
-
-function polyfillJsdomForCodeMirror(): void {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    globalThis.requestAnimationFrame = (callback) =>
-      Number(setTimeout(() => callback(Date.now()), 0));
-    globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle);
-  }
-  if (typeof window.requestAnimationFrame !== "function") {
-    window.requestAnimationFrame = globalThis.requestAnimationFrame;
-    window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
-  }
-  if (typeof globalThis.ResizeObserver !== "function") {
-    globalThis.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    window.ResizeObserver = globalThis.ResizeObserver;
-  }
-}
+import arrowReplacements from "./fixtures/autocorrect-arrow-replacements.json";
 
 describe("MarkdownEditor configuration ownership", function () {
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
-
   const never = new Promise<never>(() => {});
   const authority: DocumentAuthorityAPI = {
     fetchDoc: async () => ({
@@ -74,11 +51,7 @@ describe("MarkdownEditor configuration ownership", function () {
         active: true,
         matchWholeWords: false,
         magicQuotes: { primary: "“…”", secondary: "‘…’" },
-        replacements: [
-          { key: "->", value: "→" },
-          { key: "<-->", value: "↔" },
-          { key: "-->", value: "⟶" },
-        ],
+        replacements: arrowReplacements.map((item) => ({ ...item })),
       },
     });
     const keys = (): string[] => configuration.autocorrect.replacements.map((item) => item.key);

@@ -67,7 +67,7 @@ describe("responsiveness ownership regressions", function () {
       "source/common/modules/markdown-editor/renderers/render-citations.ts",
       "utf8",
     );
-    assert.match(source, /window\.ipc\.invoke\('citeproc-provider'/);
+    assert.match(source, /window\.ipc\.invoke\(["']citeproc-provider["']/);
     assert.doesNotMatch(source, /sendSync\(/);
   });
 });

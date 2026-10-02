@@ -79,7 +79,7 @@ export const handleReplacement: Command = (target: EditorView): boolean => {
 
     // Leave --- and ... lines (YAML frontmatter as well as horizontal rules)
     // We have investigated finding these as protected nodes. However, '---' in
-    // the first line is not parsed as any type.
+    // the first line does not get a syntax node of its own.
     const line = target.state.doc.lineAt(pos);
     if (["---", "..."].includes(line.text)) {
       continue;

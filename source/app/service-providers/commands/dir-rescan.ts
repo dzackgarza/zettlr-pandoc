@@ -25,7 +25,7 @@ export default class DirRescan extends ZettlrCommand {
    * @param {String} evt The event name
    * @param  {Object} arg The path of the descriptor
    */
-  async run(event: string, _arg: any): Promise<void> {
+  async run(event: string, _arg: { path: string }): Promise<void> {
     // DEBUG: DEPRECATED
     throw new Error("rescanForDirectory not re-implemented");
   }

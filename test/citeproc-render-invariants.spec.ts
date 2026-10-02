@@ -6,6 +6,8 @@
  * strings such as [NO_PRINTED_FORM] are never valid renderer output.
  */
 
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";

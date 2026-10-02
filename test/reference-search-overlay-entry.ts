@@ -5,11 +5,7 @@
  *
  * The probe delivers the raw fixture documents; this entry runs the REAL
  * extractor over them, mounts the overlay with the resulting workspace
- * definitions, and records every jump intent the component emits. The
- * component is resolved through a webpack context so that its ABSENCE is a
- * structured, reportable state (the Phase 3b red) instead of a bundler
- * crash: the probe forwards `componentFailure` into the result JSON and the
- * spec fails on assertions.
+ * definitions, and records every jump intent the component emits.
  *
  * Component contract exercised here (locked red by
  * test/reference-search-overlay.spec.ts):
@@ -35,6 +31,7 @@ import type {
   SourceRange,
 } from "@dts/common/references";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
+import ReferenceSearchView from "source/win-main/launcher/ReferenceSearchView.vue";
 import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
@@ -113,14 +110,6 @@ declare global {
   }
 }
 
-// Resolved through a context (not a static import) so the bundle builds and
-// reports structured absence while the component does not exist yet.
-const overlayContext = require.context(
-  "../source/win-main/launcher/",
-  false,
-  /ReferenceSearchView\.vue$/,
-);
-
 const recordedJumpIntents: JumpIntent[] = [];
 /** Every 'open-help' emission of the overlay (review A2, US-06). */
 let recordedOpenHelpCount = 0;
@@ -139,34 +128,14 @@ window.referenceSearchProbeMount = async (
       ? null
       : { key: target.key, documentPath: target.documentPath, range: target.range };
 
-  const overlayKey = overlayContext.keys().find((key) => key.includes("ReferenceSearchView"));
-  if (overlayKey === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure:
-        "source/win-main/launcher/ReferenceSearchView.vue does not exist (issue #1 Phase 3b red)",
-      expectedIntent,
-    };
-  }
-
-  const overlayModule = overlayContext(overlayKey) as { default?: unknown };
-  if (overlayModule.default === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure: "ReferenceSearchView.vue exists but has no default component export",
-      expectedIntent,
-    };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const overlayApp = createApp(overlayModule.default as any, {
+  const overlayApp = createApp(ReferenceSearchView, {
     definitions,
     projectRoots: context?.projectRoots ?? [],
     activeDocumentPath: context?.activeDocumentPath,
     onJump: (intent: JumpIntent) => {
       recordedJumpIntents.push(intent);
-      // Mirror the overlay's OWNER (App.vue): a jump intent closes the
-      // overlay (v-on:jump -> showReferenceSearch = false), so the probe's
+      // Mirror the overlay's OWNER (App.vue): its jump handler sets
+      // showReferenceSearch to false and closes the overlay, so the probe's
       // post-Enter frame shows the real closed state (ledger C4).
       overlayApp.unmount();
     },
@@ -257,29 +226,7 @@ window.referenceSearchProbeMountKeyed = async (
       clusterRaw: occurrence.clusterRaw,
     }));
 
-  const overlayKey = overlayContext
-    .keys()
-    .find((contextKey) => contextKey.includes("ReferenceSearchView"));
-  if (overlayKey === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure:
-        "source/win-main/launcher/ReferenceSearchView.vue does not exist (issue #1 Phase 3b red)",
-      expectedCitingLocations,
-    };
-  }
-
-  const overlayModule = overlayContext(overlayKey) as { default?: unknown };
-  if (overlayModule.default === undefined) {
-    return {
-      componentAvailable: false,
-      componentFailure: "ReferenceSearchView.vue exists but has no default component export",
-      expectedCitingLocations,
-    };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const keyedApp = createApp(overlayModule.default as any, {
+  const keyedApp = createApp(ReferenceSearchView, {
     definitions,
     occurrences,
     initialRequest: { key },

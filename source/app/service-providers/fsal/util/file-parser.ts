@@ -23,26 +23,12 @@ import type {
 import { extractReferencesFromAST } from "@common/pandoc-util/extract-references";
 import { countAll } from "@common/util/counter";
 import { documentTitleMetadataFromAST } from "@common/util/document-title-metadata";
-import type { MDFileDescriptor } from "@dts/common/fsal";
-import { parse as parseYAML } from "yaml";
+import type { MDFileDescriptor, YamlValue } from "@dts/common/fsal";
+import { parse as parseYAML, YAMLError } from "yaml";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../../app-service-container";
 import extractBOM from "./extract-bom";
 import extractFileId from "./extract-file-id";
 import { extractLinefeed } from "./extract-linefeed";
-
-// Here are all supported variables for Pandoc:
-// https://pandoc.org/MANUAL.html#variables
-// Below is a selection that Zettlr may use
-const FRONTMATTER_VARS = [
-  "title",
-  "subtitle",
-  "author",
-  "date",
-  "keywords",
-  "tags",
-  "lang",
-  "bibliography",
-];
 
 /**
  * Parses some Markdown `content` into the properties of the `file` descriptor.
@@ -61,7 +47,6 @@ export default function getMarkdownFileParser(
     file.linefeed = extractLinefeed(content);
     file.id = extractFileId(file.name, content, idREPattern);
 
-    // Parse the file into our AST
     const ast = markdownToAST(content);
 
     const tags = extractASTNodes(ast, "ZettelkastenTag") as ZettelkastenTag[];
@@ -102,20 +87,22 @@ export default function getMarkdownFileParser(
     }
 
     try {
-      const frontmatter = parseYAML(frontmatterNodes[0].source);
-      file.frontmatter = {};
-      const isPrimitive = ["string", "number", "boolean"].includes(typeof frontmatter);
+      // The core schema of `yaml` yields JSON-like values with string keys.
+      const frontmatter: YamlValue | undefined = parseYAML(frontmatterNodes[0].source);
 
-      if (!isPrimitive && !Array.isArray(frontmatter)) {
-        file.frontmatter = frontmatter;
+      if (frontmatter === null || frontmatter === undefined) {
+        // An empty frontmatter carries no title, aliases or tags.
+        file.frontmatter = null;
+        return;
       }
 
-      for (const [key, value] of Object.entries(frontmatter as { [s: string]: unknown })) {
-        // Only keep those values which Zettlr can understand
-        if (FRONTMATTER_VARS.includes(key)) {
-          file.frontmatter[key] = value;
-        }
+      if (typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
+        // A scalar or a list frontmatter carries no title, aliases or tags.
+        file.frontmatter = {};
+        return;
       }
+
+      file.frontmatter = frontmatter;
 
       // Extract the frontmatter title if applicable
       if ("title" in frontmatter && typeof frontmatter.title === "string") {
@@ -127,7 +114,7 @@ export default function getMarkdownFileParser(
 
       // Obsidian's `aliases`: one name or a list of names
       if ("aliases" in frontmatter) {
-        const aliases: unknown[] = Array.isArray(frontmatter.aliases)
+        const aliases: YamlValue[] = Array.isArray(frontmatter.aliases)
           ? frontmatter.aliases
           : [frontmatter.aliases];
         file.aliases = aliases
@@ -140,34 +127,38 @@ export default function getMarkdownFileParser(
       }
 
       for (const prop of ["keywords", "tags"]) {
-        if (frontmatter[prop] != null) {
-          // The user can just write "keywords: something", in which case it won't be
-          // an array, but a simple string (or even a number <.<). I am beginning to
-          // understand why programmers despise the YAML-format.
-          if (!Array.isArray(frontmatter[prop]) && typeof frontmatter[prop] === "string") {
-            const keys = frontmatter[prop].split(",");
-            if (keys.length > 1) {
-              // The user decided to split the tags by comma
-              frontmatter[prop] = keys.map((tag: string) => tag.trim());
-            } else {
-              frontmatter[prop] = [frontmatter[prop]];
-            }
-          } else if (!Array.isArray(frontmatter[prop])) {
-            // It's likely a Number or a Boolean
-            frontmatter[prop] = [String(frontmatter[prop]).toString()];
-          }
-
-          // If the user decides to use just numbers for the keywords (e.g. #1997),
-          // the YAML parser will obviously cast those to numbers, but we don't want
-          // this, so forcefully cast everything to string (see issue #1433).
-          const sanitizedKeywords: string[] = frontmatter[prop].map((tag: any) =>
-            String(tag).toString().toLowerCase(),
-          );
-          file.tags.push(...sanitizedKeywords.filter((each) => !file.tags.includes(each)));
+        const declared = frontmatter[prop];
+        if (declared == null) {
+          continue;
         }
+        // The user can just write "keywords: something", in which case it won't be
+        // an array, but a simple string (or even a number <.<). I am beginning to
+        // understand why programmers despise the YAML-format.
+        let keywords: YamlValue[];
+        if (typeof declared === "string") {
+          const keys = declared.split(",");
+          // The user may have split the tags by comma
+          keywords = keys.length > 1 ? keys.map((tag) => tag.trim()) : [declared];
+        } else if (Array.isArray(declared)) {
+          keywords = declared;
+        } else {
+          // It's likely a Number or a Boolean
+          keywords = [String(declared)];
+        }
+        frontmatter[prop] = keywords;
+
+        // If the user decides to use just numbers for the keywords (e.g. #1997),
+        // the YAML parser will obviously cast those to numbers, but we don't want
+        // this, so forcefully cast everything to string (see issue #1433).
+        const sanitizedKeywords = keywords.map(String).map((tag) => tag.toLowerCase());
+        file.tags.push(...sanitizedKeywords.filter((each) => !file.tags.includes(each)));
       }
-    } catch (err: any) {
-      // The frontmatter was invalid, but it's not of concern for us here
+    } catch (err) {
+      // Invalid YAML leaves the descriptor without frontmatter metadata; every
+      // other failure is a defect in this parser.
+      if (!(err instanceof YAMLError)) {
+        throw err;
+      }
     }
   };
 }

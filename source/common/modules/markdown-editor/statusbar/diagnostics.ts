@@ -52,6 +52,12 @@ export function toggleLintPanel(view: EditorView): boolean {
   return true;
 }
 
+function statusIcon(shape: string): HTMLElement {
+  const icon = document.createElement("cds-icon");
+  icon.setAttribute("shape", shape);
+  return icon;
+}
+
 /**
  * Displays a count of all diagnostics
  *
@@ -64,8 +70,14 @@ export function diagnosticsStatus(state: EditorState, view: EditorView): Statusb
   const { info, warning, error } = countDiagnostics(state);
 
   return {
-    content: `<cds-icon shape="help-info"></cds-icon> ${info} <cds-icon shape="warning-standard"></cds-icon> ${warning} <cds-icon shape="times-circle"></cds-icon> ${error}`,
-    allowHtml: true,
+    content: [
+      statusIcon("help-info"),
+      ` ${info} `,
+      statusIcon("warning-standard"),
+      ` ${warning} `,
+      statusIcon("times-circle"),
+      ` ${error}`,
+    ],
     title: trans("Toggle diagnostics panel"),
     onClick(_event) {
       toggleLintPanel(view);

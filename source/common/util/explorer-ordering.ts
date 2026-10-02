@@ -132,12 +132,11 @@ function documentDisplayValue(descriptor: AnyDescriptor, display: FileNameDispla
     return descriptor.name;
   }
 
-  const hasTitle =
-    typeof descriptor.frontmatter?.title === "string" && descriptor.frontmatter.title.trim() !== "";
+  const title = descriptor.frontmatter?.title;
   const hasHeading = descriptor.firstHeading != null && descriptor.firstHeading.trim() !== "";
 
-  if (display.includes("title") && hasTitle) {
-    return descriptor.frontmatter.title;
+  if (display.includes("title") && typeof title === "string" && title.trim() !== "") {
+    return title;
   }
   if (display.includes("heading") && hasHeading) {
     return descriptor.firstHeading!;

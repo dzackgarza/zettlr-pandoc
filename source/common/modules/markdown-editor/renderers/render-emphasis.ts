@@ -65,7 +65,7 @@ export class SpaceWidget extends WidgetType {
 
   toDOM(_view: EditorView): HTMLElement {
     const elem = document.createElement("span");
-    elem.innerHTML = "&nbsp;".repeat(this.numChars);
+    elem.textContent = " ".repeat(this.numChars);
     elem.classList.add("rendered-space");
     return elem;
   }

@@ -39,43 +39,6 @@ import {
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const DOC = `# Central compactification problem {#sec:central-problem}
 
 The prose paragraph keeps the caret away from every carrier line.
@@ -95,10 +58,6 @@ A closing paragraph.
 
 describe("Pandoc attribute-block rendering (issue #11)", function () {
   const views: EditorView[] = [];
-
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
 
   afterEach(function () {
     for (const view of views.splice(0)) {

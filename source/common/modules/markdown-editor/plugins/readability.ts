@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import type { Range } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -228,7 +229,7 @@ const readabilityAlgorithms: Record<string, (words: string[]) => number> = {
   },
 };
 
-function extractScores(text: string, offset: number, algorithm: string): any[] {
+function extractScores(text: string, offset: number, algorithm: string): Array<Range<Decoration>> {
   // Split at potential sentence-endings
   const textNodes = extractTextnodes(markdownToAST(text));
   const sentences = textNodes
@@ -276,7 +277,7 @@ function readabilityScores(view: EditorView): DecorationSet {
     return Decoration.none;
   }
 
-  let decos: any[] = [];
+  let decos: Array<Range<Decoration>> = [];
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.sliceDoc(from, to);
     decos = decos.concat(extractScores(text, from, readabilityAlgorithm));

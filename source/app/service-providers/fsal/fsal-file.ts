@@ -96,8 +96,10 @@ export async function parse(
     file.modtime = metadata.modtime;
     file.creationtime = metadata.birthtime;
     file.size = metadata.size;
-  } catch (err: any) {
-    err.message = "Error reading file " + filePath;
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = "Error reading file " + filePath;
+    }
     throw err; // Re-throw
   }
 
@@ -142,9 +144,9 @@ export async function parse(
  * Searches the file associated with the file descriptor
  *
  * @param   {MDFileDescriptor}  fileObject  The corresponding file descriptor
- * @param   {string[]}          terms       The (already compiled) search terms
+ * @param   {SearchTerm[]}      terms       The (already compiled) search terms
  *
- * @return  {Promise<any>}                  Resolves with search results
+ * @return  {Promise<SearchResult[]>}       Resolves with search results
  */
 export async function search(
   fileObject: MDFileDescriptor,

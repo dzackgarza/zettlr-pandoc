@@ -28,6 +28,9 @@
  * END HEADER
  */
 
+// The harness must load before any provider module: the provider graph
+// imports 'electron' at module scope.
+import "./headless-electron-harness.cjs";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { strict as assert } from "assert";
@@ -37,8 +40,6 @@ import path from "path";
 import type { CiteprocConfig, CiteprocErrorDisplay } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
-// The harness must load before any provider module: the provider graph
-// imports 'electron' at module scope.
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 /** The style asset the application ships and loads when none is configured. */

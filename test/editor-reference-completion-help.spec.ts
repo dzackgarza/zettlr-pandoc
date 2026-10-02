@@ -39,43 +39,6 @@ import { configField } from "source/common/modules/markdown-editor/util/configur
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { type ReferenceCompletionEntry } from "source/types/common/references";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
 
@@ -101,10 +64,6 @@ describe("Completion help link (review A2)", function () {
   const views: EditorView[] = [];
   /** Every openPandocQuickHelpEffect observed on a created view. */
   const observedHelpRequests: Array<StateEffect<unknown>> = [];
-
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
 
   afterEach(function () {
     observedHelpRequests.splice(0);

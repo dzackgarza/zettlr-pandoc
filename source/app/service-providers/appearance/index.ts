@@ -97,11 +97,11 @@ export default class AppearanceProvider extends ProviderContract {
     });
 
     // Subscribe to configuration updates
-    this._config.on("update", (option: string) => {
+    this._config.on("update", (option?: string) => {
       const { autoDarkMode, darkMode } = this._config.get();
       if (option === "autoDarkMode") {
         this._mode = autoDarkMode;
-      } else if (["autoDarkModeEnd", "autoDarkModeStart"].includes(option)) {
+      } else if (option === "autoDarkModeEnd" || option === "autoDarkModeStart") {
         this.recalculateSchedule();
       } else if (option === "darkMode" && process.platform === "darwin") {
         // Special handling for macOS: On Windows and Linux, setting the config

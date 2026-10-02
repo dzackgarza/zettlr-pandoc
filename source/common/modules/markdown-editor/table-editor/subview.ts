@@ -145,8 +145,8 @@ const ensureBoundariesFilter = EditorState.transactionFilter.of((tr) => {
 
   let newSelection = tr.selection;
   if (tr.selection !== undefined) {
-    // Check if ANY range (not just the main selection) exceeds the cell
-    // boundaries. If so, clamp all ranges to the cell's bounds.
+    // Every range, not only the main selection, must stay inside the cell.
+    // One range outside the cell clamps all ranges to the cell's bounds.
     const anyOutOfBounds = tr.selection.ranges.some(
       (range) => range.from < mappedFrom || range.to > mappedTo,
     );

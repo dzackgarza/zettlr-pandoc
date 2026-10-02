@@ -34,8 +34,10 @@ export async function parse(absPath: string, cache: FSALCache): Promise<OtherFil
     attachment.modtime = metadata.modtime;
     attachment.creationtime = metadata.birthtime;
     attachment.size = metadata.size;
-  } catch (err: any) {
-    err.message = `Error reading file ${absPath};: ${err.message as string}`;
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = `Error reading file ${absPath};: ${err.message}`;
+    }
     throw err; // Rethrow
   }
 

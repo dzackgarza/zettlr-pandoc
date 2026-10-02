@@ -93,7 +93,6 @@ function render(view: EditorView, measurements?: Map<string, number>): RangeSet<
         continue; // There was no indentation on the line
       }
 
-      // Get the position of the first non-formatting, non-whitespace character
       const columnLineTextStart = match[1].length;
 
       // Now that we know we need to indent this line, schedule a measurement so

@@ -33,7 +33,7 @@ import ProviderContract from "../provider-contract";
 /**
  * This interface describes a single tag within the files loaded in here.
  */
-export interface TagRecord {
+export type TagRecord = {
   /**
    * The tag's name, e.g., #todo
    */
@@ -54,13 +54,9 @@ export interface TagRecord {
    * An optional description for thist ag
    */
   desc?: string;
-}
+};
 
-export interface ColoredTag {
-  name: string;
-  color: string;
-  desc: string;
-}
+export type ColoredTag = { name: string; color: string; desc: string };
 
 /**
  * This class manages the colored tags of the app. It reads the tags on each
@@ -112,8 +108,8 @@ export default class TagProvider extends ProviderContract {
       // it took about 1.5ms to collect all tags. So whenever a file is saved
       // here we just emit a tag change event without checking if this actually
       // changed. I think it's okay to do so, but in the future we may need to
-      // add a sanity check before simply emitting this event, especially if we
-      // do something to make the `getAllTags` method take significantly longer.
+      // add a sanity check before simply emitting this event, especially if a
+      // change makes the `getAllTags` method take significantly longer.
       this.getAllTags()
         .then((tags) => broadcastIpcMessage("tag-provider", "tags-updated", tags))
         .catch((err) =>

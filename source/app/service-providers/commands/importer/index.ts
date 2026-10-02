@@ -135,7 +135,7 @@ export default async function makeImport(
       await fs.writeFile(defaultsFile, YAML.stringify(defaults, YAMLOptions), { encoding: "utf8" });
 
       // ... and finally run pandoc, providing the file.
-      const pandocProcess = spawn("pandoc", ["--defaults", `"${defaultsFile}"`], { shell: true });
+      const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile]);
 
       try {
         await new Promise<void>((resolve, reject) => {

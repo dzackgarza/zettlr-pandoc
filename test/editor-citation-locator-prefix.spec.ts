@@ -38,46 +38,6 @@ import {
   settleCitationWidgets,
 } from "./citation-widget-test-helper";
 
-function polyfillJsdomForCodeMirror(): void {
-  const global = globalThis as any;
-  if (typeof global.requestAnimationFrame !== "function") {
-    global.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    global.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (
-    typeof global.window === "object" &&
-    typeof global.window.requestAnimationFrame !== "function"
-  ) {
-    global.window.requestAnimationFrame = global.requestAnimationFrame;
-    global.window.cancelAnimationFrame = global.cancelAnimationFrame;
-  }
-  if (typeof global.ResizeObserver !== "function") {
-    global.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof global.window === "object") {
-      global.window.ResizeObserver = global.ResizeObserver;
-    }
-  }
-  if (typeof global.Range?.prototype.getClientRects !== "function") {
-    global.Range.prototype.getClientRects = () => [];
-    global.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 function parseCitationItem(source: string): CiteItem {
   const state = EditorState.create({ doc: source, extensions: [markdownParser()] });
   const nodes = extractCitationNodes(state);
@@ -93,7 +53,6 @@ describe("Editor preserves citation suffixes beginning with Roman-numeral letter
   let restoreCitationIpc: (() => void) | undefined;
 
   before(function () {
-    polyfillJsdomForCodeMirror();
     restoreCitationIpc = installCitationIpcFromCallback();
   });
 

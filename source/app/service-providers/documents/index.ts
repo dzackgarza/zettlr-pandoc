@@ -173,7 +173,7 @@ const DELAYED_SAVE_TIMEOUT = 5000;
 // Even "immediate" should not save immediately to prevent race conditions on slower systems
 const IMMEDIATE_SAVE_TIMEOUT = 500;
 
-export interface DocumentsUpdateContext {
+export type DocumentsUpdateContext = {
   windowId?: string;
   leafId?: string;
   filePath?: string;
@@ -210,7 +210,7 @@ export interface DocumentsUpdateContext {
     message: string;
     diagnostic: string;
   };
-}
+};
 
 /**
  * Holds all information associated with a document that is currently loaded
@@ -651,7 +651,7 @@ export default class DocumentManager
    */
   public readonly agentEvents = new EventEmitter();
 
-  /** Path → documentId mapping for agent API lookups. */
+  /** Maps a path to its document ID for agent API lookups. */
   private readonly _documentIdByPath: Map<string, string>;
 
   /** The load of each document that is loading now (getDocument). */
@@ -1248,7 +1248,6 @@ export default class DocumentManager
     // Loads in all openFiles
     this._app.log.verbose("Document Manager starting up ...");
 
-    // Check if the data store is initialized
     if (!(await this._config.isInitialized())) {
       this._app.log.info("[Document Manager] Initializing document storage ...");
       const tree = new DocumentTree();
@@ -1845,8 +1844,8 @@ current contents from the editor somewhere else, and restart the application.`,
       throw new Error(`Could not open file ${filePath}: Not an existing file.`);
     }
 
-    // Check if we can, and should, actually open the file in Zettlr. If not, we
-    // need to open it via the shell externally. NOTE: This check is, to varying
+    // A file that Zettlr cannot or must not open goes to the shell, which
+    // opens it externally. NOTE: This check is, to varying
     // degrees, implemented at the sources of opening-requests (read: mostly in
     // the renderers). If you see this comment, and spot a place where we
     // implemented this guard somewhere else, please refactor to simply attempt

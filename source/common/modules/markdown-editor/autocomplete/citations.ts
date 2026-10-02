@@ -34,7 +34,6 @@ export const citekeyUpdateField = StateField.define<CitekeySnapshot>({
   update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(citekeyUpdate)) {
-        // Convert the citationentries into completion objects
         return {
           entries: effect.value.map((entry) => ({
             label: entry.citekey,

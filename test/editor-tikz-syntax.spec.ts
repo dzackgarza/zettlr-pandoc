@@ -11,61 +11,6 @@ import { EditorView } from "@codemirror/view";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 
-function polyfillCodeMirror(): void {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    const requestFrame = (callback: FrameRequestCallback): number =>
-      Number(setTimeout(() => callback(Date.now()), 0));
-    const cancelFrame = (id: number): void => {
-      clearTimeout(id);
-    };
-    Object.defineProperties(globalThis, {
-      requestAnimationFrame: { configurable: true, value: requestFrame, writable: true },
-      cancelAnimationFrame: { configurable: true, value: cancelFrame, writable: true },
-    });
-  }
-  if (typeof window === "object" && typeof window.requestAnimationFrame !== "function") {
-    Object.defineProperties(window, {
-      requestAnimationFrame: {
-        configurable: true,
-        value: globalThis.requestAnimationFrame,
-        writable: true,
-      },
-      cancelAnimationFrame: {
-        configurable: true,
-        value: globalThis.cancelAnimationFrame,
-        writable: true,
-      },
-    });
-  }
-  if (typeof globalThis.ResizeObserver !== "function") {
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as typeof ResizeObserver;
-    if (typeof window === "object") {
-      window.ResizeObserver = globalThis.ResizeObserver;
-    }
-  }
-  if (typeof Range.prototype.getClientRects !== "function") {
-    Range.prototype.getClientRects = () =>
-      Object.assign([], {
-        item: (_index: number): DOMRect | null => null,
-      }) as DOMRectList;
-    Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 function innerNodeName(state: EditorState, source: string, token: string): string {
   const pos = source.indexOf(token);
   assert.ok(pos >= 0, `fixture must contain ${token}`);
@@ -87,8 +32,6 @@ function stateFor(doc: string): EditorState {
 }
 
 describe("TikZ grammar integration", function () {
-  before(polyfillCodeMirror);
-
   it("uses the upstream Lezer TikZ grammar in fenced tikz blocks", function () {
     const doc = "```tikz\n\\draw[thick, blue] (0,0) -- (2,1) node[midway, above] {$f$};\n```";
     const state = stateFor(doc);

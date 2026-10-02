@@ -24,11 +24,11 @@ import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 
 // This is the data exposed publicly
-export interface Stats {
+export type Stats = {
   wordCount: Record<string, number>; // All words for the graph
   charCount: Record<string, number>; // All characters for the graph
   pomodoros: Record<string, number>; // All pomodoros ever completed
-}
+};
 
 /**
  * ZettlrStats works like the ZettlrConfig object, only with a different file.

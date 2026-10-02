@@ -91,7 +91,7 @@ async function saveImageFromClipboard(basePath: string, file: File): Promise<str
  * These handlers hook into the editor and attempt to intercept events that need
  * to be handled in a way different from the standard CodeMirror way.
  */
-export const mdPasteDropHandlers: DOMEventHandlers<any> = {
+export const mdPasteDropHandlers: DOMEventHandlers<void> = {
   paste(event, view) {
     const data = event.clipboardData;
     if (data === null || (data.types.length === 1 && data.types[0] === "text/plain")) {

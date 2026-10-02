@@ -103,7 +103,6 @@ export default class MenuProvider extends ProviderContract {
           return;
         }
 
-        // Send the serialized submenu to the renderer
         const menuItem = appMenu.getMenuItemById(itemID);
         if (menuItem === null) {
           this._logger.error(`[Menu Provider] Could not send app menu ${itemID}: No item found.`);

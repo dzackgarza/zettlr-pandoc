@@ -47,43 +47,6 @@ import {
   type ProjectRootSpec,
 } from "source/types/common/references";
 
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as any;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const PROJECT_A = path.join(FIXTURE_ROOT, "ProjectA");
 const HALPHEN_PATH = path.join(PROJECT_A, "Halphen_Surfaces.md");
@@ -114,7 +77,6 @@ describe("Reference hover Project status (issue #1 Phase 7)", function () {
   const originalCitationCallback = window.getCitationCallback;
 
   before(function () {
-    polyfillJsdomForCodeMirror();
     // The production preload bridge exists in every renderer window, so the
     // tooltip renders its excerpt through it unconditionally (review B9);
     // the harness provisions the same seam with a deterministic renderer

@@ -27,7 +27,6 @@ export const plugin: ExporterPlugin = async function (
     throw new Error("Cannot run default exporter plugin: Wrong profile provided!");
   }
 
-  // Get the correct file extension
   const parsedWriter = parseReaderWriter(options.profile.writer).name;
   const extension = WRITER2EXT[parsedWriter] ?? parsedWriter;
 
@@ -39,7 +38,6 @@ export const plugin: ExporterPlugin = async function (
       : firstName;
   const target = path.join(options.targetDirectory, `${title}.${extension}`);
 
-  // Get the corresponding defaults file
   const defaultKeys = {
     "input-files": sourceFiles,
     "output-file": target,

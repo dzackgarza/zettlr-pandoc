@@ -17,6 +17,7 @@ import { type EditorState, type Extension, StateEffect, StateField } from "@code
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { isSupportedPandocCrossref } from "@common/util/pandoc-quick-reference";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { referenceFamilyOf } from "@dts/common/references";
@@ -143,7 +144,7 @@ function applyRenderedCitation(
   elem.classList.remove("citeproc-pending");
   if (renderedCitation !== undefined) {
     elem.classList.remove("error");
-    elem.innerHTML = renderedCitation;
+    setSanitizedHTML(elem, renderedCitation, "document");
   } else {
     elem.textContent = rawCitation;
     elem.classList.add("error");

@@ -28,9 +28,13 @@ export function getCitationFields(): PreferencesFieldset[] {
           label: trans("How would you like autocomplete to insert your citations?"),
           model: "editor.citeStyle",
           options: {
-            regular: "[@Author2015, p. 123] → (Author 2015, 123)",
-            "in-text": "@Author2015 → Author (2015)",
-            "in-text-suffix": "@Author2015 [p. 123] → Author (2015, 123)",
+            regular: trans("%s renders as %s", "[@Author2015, p. 123]", "(Author 2015, 123)"),
+            "in-text": trans("%s renders as %s", "@Author2015", "Author (2015)"),
+            "in-text-suffix": trans(
+              "%s renders as %s",
+              "@Author2015 [p. 123]",
+              "Author (2015, 123)",
+            ),
           },
         },
         { type: "separator" },

@@ -75,8 +75,10 @@ export async function parse(
     file.modtime = metadata.modtime;
     file.size = metadata.size;
     file.creationtime = metadata.birthtime;
-  } catch (err: any) {
-    err.message = "Error reading file " + filePath;
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = "Error reading file " + filePath;
+    }
     throw err; // Re-throw
   }
 

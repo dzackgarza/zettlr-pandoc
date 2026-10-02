@@ -9,24 +9,6 @@ import {
 } from "source/common/modules/markdown-editor/util/visible-syntax-nodes";
 
 describe("shared visible syntax traversal", function () {
-  before(function () {
-    if (typeof window.requestAnimationFrame !== "function") {
-      Object.defineProperties(window, {
-        requestAnimationFrame: {
-          configurable: true,
-          value: (callback: FrameRequestCallback) =>
-            Number(setTimeout(() => callback(Date.now()), 0)),
-          writable: true,
-        },
-        cancelAnimationFrame: {
-          configurable: true,
-          value: (id: number) => clearTimeout(id),
-          writable: true,
-        },
-      });
-    }
-  });
-
   function createView(doc: string): EditorView {
     const parent = document.createElement("div");
     document.body.appendChild(parent);

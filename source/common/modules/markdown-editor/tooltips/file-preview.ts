@@ -19,6 +19,7 @@ import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import { reportError } from "@common/util/error-reporting";
 import formatDate from "@common/util/format-date";
+import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
@@ -117,7 +118,6 @@ function getPreviewElement(
   md2html(metadata.previewMarkdown, {
     zknLinkFormat,
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-    // Convert the image links to absolute (if necessary)
     onImageSrc(src) {
       const isDataUrl = /^data:[a-zA-Z0-9/;=]+(?:;base64){0,1},.+/.test(src);
       if (isDataUrl) {
@@ -129,15 +129,17 @@ function getPreviewElement(
   })
     .then((html) => {
       // ... and then apply it to the content element.
-      content.innerHTML = html;
+      setSanitizedHTML(content, html, "document");
     })
     .catch((err) => reportError(err));
 
   const meta = document.createElement("div");
   meta.classList.add("metadata");
-  meta.innerHTML = `${trans("Word count")}: ${metadata.wordCount}`;
-  meta.innerHTML += "<br>";
-  meta.innerHTML += `${trans("Modified")}: ${formatDate(metadata.modtime, window.config.get("appLang") as string)}`;
+  meta.append(
+    `${trans("Word count")}: ${metadata.wordCount}`,
+    document.createElement("br"),
+    `${trans("Modified")}: ${formatDate(metadata.modtime, window.config.get("appLang") as string)}`,
+  );
 
   const actions = document.createElement("div");
   actions.classList.add("actions");

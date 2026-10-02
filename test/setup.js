@@ -35,10 +35,32 @@ Module._extensions[".css"] = function () {};
  * Code is essentially taken from https://github.com/enzymejs/enzyme/blob/master/docs/guides/jsdom.md.
  */
 function mockBrowser() {
+  // pretendToBeVisual gives the window jsdom's requestAnimationFrame and
+  // cancelAnimationFrame, which CodeMirror's EditorView calls on its own window.
   const jsdom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost:3000/main_window/index.html",
+    pretendToBeVisual: true,
   });
   const { window } = jsdom;
+
+  // jsdom has no layout engine. It gives Element a zero rectangle and no
+  // client rects (Element-impl.js in jsdom), but it gives Range neither
+  // method, and CodeMirror measures text through Range. Range gets the same
+  // zero geometry as Element.
+  window.Range.prototype.getBoundingClientRect = function () {
+    return new window.DOMRect();
+  };
+  window.Range.prototype.getClientRects = function () {
+    return [];
+  };
+
+  // jsdom implements no ResizeObserver. Without layout no element ever
+  // resizes, so an observer that never reports is the complete behaviour.
+  window.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 
   function copyProps(src, target) {
     Object.defineProperties(target, {
@@ -76,12 +98,6 @@ function mockBrowser() {
 
   global.window = window;
   global.document = window.document;
-  global.requestAnimationFrame = function (callback) {
-    return setTimeout(callback, 0);
-  };
-  global.cancelAnimationFrame = function (id) {
-    clearTimeout(id);
-  };
   copyProps(window, global);
 }
 

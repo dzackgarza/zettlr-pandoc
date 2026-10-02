@@ -83,7 +83,7 @@ function editorCommandItem(
   };
 }
 
-/** View → Command launcher…: the window-level Ctrl+P. */
+/** The "Command launcher…" item of the View menu: the window-level Ctrl+P. */
 export function commandLauncherItem(accelerator: string): MenuItemConstructorOptions {
   return {
     id: "menu.command_launcher",
@@ -95,7 +95,7 @@ export function commandLauncherItem(accelerator: string): MenuItemConstructorOpt
   };
 }
 
-/** View → Go to file…: opens the launcher's existing workspace-file view directly. */
+/** The "Go to file…" item of the View menu: opens the launcher's workspace-file view. */
 export function fileLauncherItem(accelerator: string): MenuItemConstructorOptions {
   return {
     id: "menu.file_launcher",
@@ -107,7 +107,7 @@ export function fileLauncherItem(accelerator: string): MenuItemConstructorOption
   };
 }
 
-/** View → Writing statistics…: the statistics window. */
+/** The "Writing statistics…" item of the View menu: the statistics window. */
 export function statisticsItem(commands: MenuCommands): MenuItemConstructorOptions {
   return {
     id: "menu.statistics",

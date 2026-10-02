@@ -90,7 +90,6 @@ export function resizeCanvasToDisplaySize(canvas: HTMLCanvasElement) {
   const displayWidth = canvas.clientWidth;
   const displayHeight = canvas.clientHeight;
 
-  // Check if the canvas is not the same size.
   const needResize = canvas.width !== displayWidth || canvas.height !== displayHeight;
 
   if (needResize) {

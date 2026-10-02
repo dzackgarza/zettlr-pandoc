@@ -147,6 +147,17 @@ export interface DirDescriptor extends FSMetaInfo {
 }
 
 /**
+ * A value of the YAML core schema, which `yaml.parse` produces: a scalar, a
+ * sequence or a mapping (https://yaml.org/spec/1.2.2/#103-core-schema).
+ */
+export type YamlValue = string | number | boolean | null | YamlValue[] | YamlMapping;
+
+/** A YAML mapping with string keys, such as a parsed frontmatter block. */
+export interface YamlMapping {
+  [key: string]: YamlValue;
+}
+
+/**
  * The FSAL Markdown file descriptor
  */
 export interface MDFileDescriptor extends FSMetaInfo {
@@ -168,7 +179,7 @@ export interface MDFileDescriptor extends FSMetaInfo {
   yamlTitle: string | undefined;
   /** The YAML `aliases`: further names a wikilink may use for this document. */
   aliases: string[];
-  frontmatter: any | null;
+  frontmatter: YamlMapping | null;
   linefeed: string;
   /**
    * The document's saved reference surface (pandoc-crossref and theorem-div

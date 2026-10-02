@@ -26,56 +26,11 @@ import {
 } from "source/common/modules/markdown-editor/autocomplete/phrases";
 import { parsePhraseDictionary } from "source/common/util/phrase-dictionary";
 
-interface BrowserPolyfills {
-  requestAnimationFrame?: (callback: (time: number) => void) => unknown;
-  cancelAnimationFrame?: (id: never) => void;
-  ResizeObserver?: unknown;
-  Range: { prototype: { getClientRects?: () => unknown; getBoundingClientRect?: () => unknown } };
-  window?: BrowserPolyfills;
-}
-
-function polyfillCodeMirror(): void {
-  const target = globalThis as BrowserPolyfills;
-  if (typeof target.requestAnimationFrame !== "function") {
-    target.requestAnimationFrame = (callback) => setTimeout(() => callback(Date.now()), 0);
-    target.cancelAnimationFrame = (id) => clearTimeout(id);
-  }
-  if (target.window !== undefined && typeof target.window.requestAnimationFrame !== "function") {
-    target.window.requestAnimationFrame = target.requestAnimationFrame;
-    target.window.cancelAnimationFrame = target.cancelAnimationFrame;
-  }
-  if (typeof target.ResizeObserver !== "function") {
-    target.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (target.window !== undefined) {
-      target.window.ResizeObserver = target.ResizeObserver;
-    }
-  }
-  if (typeof target.Range.prototype.getClientRects !== "function") {
-    target.Range.prototype.getClientRects = () => [];
-    target.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
-
 describe("phrase completion", function () {
   let directory: string;
   let filename: string;
 
   beforeEach(async function () {
-    polyfillCodeMirror();
     directory = await mkdtemp(path.join(tmpdir(), "phrase-dictionary-test-"));
     filename = path.join(directory, "math.txt");
     await writeFile(

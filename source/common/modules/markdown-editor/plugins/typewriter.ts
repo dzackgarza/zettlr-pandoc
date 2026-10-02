@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { Compartment, EditorState, type StateEffect, StateField } from "@codemirror/state";
+import { Compartment, EditorState, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { configField, configUpdateEffect } from "../util/configuration";
 
@@ -49,7 +49,9 @@ const typewriterThemeCompartment = new Compartment();
 const scrollAndTheme = EditorState.transactionExtender.from(
   configField,
   (config) => (transaction) => {
-    const effects: Array<StateEffect<any>> = [];
+    // Compartment.reconfigure and EditorView.scrollIntoView return the same
+    // CodeMirror effect type.
+    const effects: Array<ReturnType<typeof EditorView.scrollIntoView>> = [];
 
     let typewriterMode = config.typewriterMode;
     let modeChanged = false;

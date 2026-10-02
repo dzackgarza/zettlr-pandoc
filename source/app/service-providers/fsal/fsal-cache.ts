@@ -85,7 +85,7 @@ export default class FSALCache {
    * Sets (potentially overwriting) a cache key.
    *
    * @param  {string}  key    The key to set
-   * @param  {any}     value  Any JSONable data
+   * @param  {MDFileDescriptor|CodeFileDescriptor|OtherFileDescriptor}  value  The descriptor to cache
    *
    * @return {boolean}        True on success, false otherwise.
    */
@@ -133,19 +133,6 @@ export default class FSALCache {
   async has(key: string): Promise<boolean> {
     const shard = await this._loadShard(key);
     return shard.has(key);
-  }
-
-  /**
-   * Returns the value of key and removes the entry from the cache.
-   *
-   * @param  {string} key The key to pluck
-   *
-   * @return {any}        The value for the given key
-   */
-  async pluck(key: string): Promise<any> {
-    let val = JSON.parse(JSON.stringify(this.get(key)));
-    await this.del(key);
-    return val;
   }
 
   /**

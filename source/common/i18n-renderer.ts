@@ -50,16 +50,19 @@ function getTranslation(msgid: string): string {
   }
 }
 
+/** A value that replaces one %s placeholder in a translated string. */
+export type TranslationArgument = string | number;
+
 /**
  * Translates the given message ID
  *
  * @param   {string}  msgid  The message ID to translate
- * @param   {any[]}   args   Provide optional arguments to replace in the
+ * @param   {TranslationArgument[]}  args  Optional values to replace in the
  *                           translation. One argument replaces one %s, in order.
  *
  * @return  {string}         The translated and replaced string.
  */
-export function trans(msgid: string, ...args: any[]): string {
+export function trans(msgid: string, ...args: TranslationArgument[]): string {
   let transString = getTranslation(msgid);
 
   for (const a of args) {

@@ -55,8 +55,6 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): TaskWidget | undefined {
-  // Get the actual link contents, extract title and URL and create a
-  // replacement widget
   const task = state.sliceDoc(node.from, node.to); // Will be either [ ] or [x]
   const isChecked = task !== "[ ]";
 

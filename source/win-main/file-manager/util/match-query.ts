@@ -98,8 +98,6 @@ export default function matchQuery(
           queryMatched = true;
         }
 
-        // Check if 'firstHeading' exists before accessing it
-        // Should we use headings 1 and, if so, does it match?
         if (includeH1 && "firstHeading" in fileDescriptor && fileDescriptor.firstHeading !== null) {
           if (fileDescriptor.firstHeading?.toLowerCase().includes(q)) {
             queryMatched = true;

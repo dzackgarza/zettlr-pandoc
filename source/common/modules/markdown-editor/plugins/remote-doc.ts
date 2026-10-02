@@ -161,8 +161,9 @@ export function hookDocumentAuthority(
           });
           const transaction = receiveUpdates(this.view.state, deserializedUpdates);
           this.view.dispatch(transaction);
-        } catch (err: any) {
-          reportError(`Pulling updates for failed (retrying): ${String(err.message)}`, err);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          reportError(`Pulling updates for failed (retrying): ${message}`, err);
         }
 
         // Whether there was an error or not, schedule another pull

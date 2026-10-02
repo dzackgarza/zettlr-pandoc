@@ -99,16 +99,20 @@ async function compilerTexCommands(): Promise<readonly string[]> {
   return await compilerTexCommandPromise;
 }
 
-function macroInfo(macro: UserMathJaxCommand): string {
+function macroDescription(macro: UserMathJaxCommand): string {
   if (typeof macro.definition === "string") {
-    return `User MathJax macro\n${macro.label} → ${macro.definition}`;
+    return "User MathJax macro";
   }
-  const [replacement, argumentCount, optionalDefault] = macro.definition;
+  const [, argumentCount, optionalDefault] = macro.definition;
   const signature =
     optionalDefault === undefined
       ? `${argumentCount} argument${argumentCount === 1 ? "" : "s"}`
       : `${argumentCount} arguments; optional default: ${optionalDefault}`;
-  return `User MathJax macro · ${signature}\n${macro.label} → ${replacement}`;
+  return `User MathJax macro · ${signature}`;
+}
+
+function macroExpansion(macro: UserMathJaxCommand): string {
+  return typeof macro.definition === "string" ? macro.definition : macro.definition[0];
 }
 
 function macroDetail(macro: UserMathJaxCommand): string {
@@ -379,8 +383,9 @@ async function commandOptions(inTikz: boolean, inTikzCd: boolean): Promise<Compl
               completionInfoPanel({
                 title: macro.label,
                 source: "Macro",
-                description: macroInfo(macro),
+                description: macroDescription(macro),
                 syntax: "Canonical ~/.pandoc MathJax macro",
+                expansion: macroExpansion(macro),
                 insertion: invocation,
               }),
             // User-authored semantics outrank the stock catalogue. A family of

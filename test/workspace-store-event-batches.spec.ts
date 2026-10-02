@@ -15,14 +15,15 @@
  * END HEADER
  */
 
+// Must be the first local import: it installs window.ipc before the stores
+// read it at their module top level.
+import "./document-collaboration-ipc-double";
 import { strict as assert } from "assert";
 import { createPinia, setActivePinia } from "pinia";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import type { AnyDescriptor, DirDescriptor, OtherFileDescriptor } from "source/types/common/fsal";
 import { watchEffect } from "vue";
-// Must be the first local import: it installs window.ipc before the stores
-// read it at their module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
 const ROOT = "/workspace";

@@ -15,6 +15,8 @@
  * END HEADER
  */
 
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import {
   BrowserWindow,

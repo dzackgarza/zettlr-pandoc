@@ -33,6 +33,8 @@
  * END HEADER
  */
 
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./headless-electron-harness.cjs";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
 import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
 import type { CodeFileDescriptor } from "@dts/common/fsal";

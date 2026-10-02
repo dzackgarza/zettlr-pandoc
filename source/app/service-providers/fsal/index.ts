@@ -110,10 +110,7 @@ export {
   getFilesystemMetadata,
 };
 
-export interface FSALEventPayloadUnlink {
-  event: "unlink" | "unlinkDir";
-  path: string;
-}
+export type FSALEventPayloadUnlink = { event: "unlink" | "unlinkDir"; path: string };
 
 export interface FSALEventPayloadChange {
   event: "add" | "addDir" | "change";
@@ -240,7 +237,7 @@ export default class FSAL extends ProviderContract {
     this.ignoreSources = await this.readIgnoreSources();
     this.ignoreFilter = createIgnoreFilter(this.ignoreSources);
 
-    this._config.on("update", (which: string) => {
+    this._config.on("update", (which?: string) => {
       if (
         which === "openPaths" ||
         which === "fileManager.ignoreRules" ||
@@ -542,10 +539,10 @@ export default class FSAL extends ProviderContract {
   private async syncRoots(): Promise<void> {
     let { openFiles, openWorkspaces } = this._config.get().app;
 
-    // Check if any of the open files have gone missing. This is particularly
-    // important on boot to ensure no errors due to missing files are thrown.
-    // Unlike workspaces, we just get rid of the files here. (Workspaces can be
-    // marked as "dead" so that users don't lose them.)
+    // An open file can go missing between two sessions. Removing missing
+    // files here prevents errors on boot. Unlike workspaces, the files are
+    // removed. (Workspaces can be marked as "dead" so that users don't
+    // lose them.)
     const workingOpenFiles: string[] = [];
     for (const file of openFiles) {
       if (await this.isFile(file)) {
@@ -941,7 +938,7 @@ export default class FSAL extends ProviderContract {
    * @param   {MDFileDescriptor}  src          The file to search
    * @param   {SearchTerm[]}      searchTerms  The search terms
    *
-   * @return  {Promise<any>}                   Returns the results
+   * @return  {Promise<SearchResult[]>}        Returns the results
    */
   public async searchFile(
     src: MDFileDescriptor | CodeFileDescriptor,

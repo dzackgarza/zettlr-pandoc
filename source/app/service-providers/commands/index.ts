@@ -96,6 +96,7 @@ import UpdateProjectProperties from "./update-project-properties";
 import UpdateUserDictionary from "./update-user-dictionary";
 import WorkspaceSort from "./ws-sort";
 import type ZettlrCommand from "./zettlr-command";
+import type { CommandWireValue } from "./zettlr-command";
 
 export const commands = [
   DirBindQuartoManifest,
@@ -411,11 +412,11 @@ export default class CommandProvider extends ProviderContract {
    * Runs a command through the application pipeline
    *
    * @param   {string}  command  The command to run
-   * @param   {any}     payload  Any payload, as required depending on the command.
+   * @param   {CommandWireValue}  payload  The payload the command requires
    *
-   * @return  {Promise<any>}     The return from running the command
+   * @return  {Promise<CommandWireValue>}  The return from running the command
    */
-  async run(command: string, payload: unknown): Promise<unknown> {
+  async run(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     // FIRST: Try to run a minimal command for which its own custom function
     // wouldn't make sense.
     if (command === "copy-img-to-clipboard") {

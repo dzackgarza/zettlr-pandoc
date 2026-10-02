@@ -15,6 +15,7 @@
  */
 
 import { reportError } from "@common/util/error-reporting";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { constants as FSConstants, promises as fs } from "fs";
 import writeFileAtomic from "write-file-atomic";
 import { parse as parseYAML, stringify as stringifyYAML } from "yaml";
@@ -105,8 +106,12 @@ export default class PersistentDataContainer<T = any> {
       await fs.access(this._filePath, FSConstants.R_OK | FSConstants.W_OK);
       const contents = await fs.readFile(this._filePath, "utf-8");
       return contents.trim() !== "";
-    } catch (err: any) {
-      return false;
+    } catch (err) {
+      // A missing data file means the store was never initialized.
+      if (hasErrnoCode(err, "ENOENT")) {
+        return false;
+      }
+      throw err;
     }
   }
 
@@ -158,10 +163,11 @@ export default class PersistentDataContainer<T = any> {
       } else {
         this._data = parseYAML(content);
       }
-    } catch (err: any) {
+    } catch (err) {
       throw new Error(
         "Could not retrieve container contents: Either the contents were malformed, or you forgot to init the container. " +
-          String(err.message),
+          (err instanceof Error ? err.message : String(err)),
+        { cause: err },
       );
     }
 

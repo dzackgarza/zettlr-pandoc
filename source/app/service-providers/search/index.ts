@@ -48,14 +48,14 @@ import {
 export type { SearchMatch, SearchQuery } from "./util/search-query";
 
 /** One file's matches, as the view lists them. */
-export interface FileSearchResult {
+export type FileSearchResult = {
   documentPath: string;
   /** The hash of the text the matches were found in; a replace is fenced on it. */
   sourceHash: string;
   /** Whether a replace may address this file: only Markdown documents. */
   replaceable: boolean;
   matches: SearchMatch[];
-}
+};
 
 /**
  * One document's matches to replace: the spans as the search reported them

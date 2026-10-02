@@ -16,6 +16,8 @@
  * END HEADER
  */
 
+// The harness must load before provider modules, which import Electron.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -25,7 +27,6 @@ import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { sha256Text } from "source/common/util/sha256";
 import { bootDocumentManager } from "./documents-provider-seam";
-// The harness must load before provider modules, which import Electron.
 import {
   appListeners,
   appQuitRequests,
