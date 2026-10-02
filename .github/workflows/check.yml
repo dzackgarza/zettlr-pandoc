@@ -36,13 +36,20 @@ jobs:
       - name: Read the TeX Live cache period
         id: texlive-period
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - name: Cache TeX Live
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore TeX Live
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/texlive
           key: texlive-${{ hashFiles('scripts/setup-ci-toolchain.sh') }}-${{ steps.texlive-period.outputs.week }}
+        id: texlive-cache
       - name: Provision real export toolchain
         run: just setup-ci
+      - name: Save TeX Live
+        if: steps.texlive-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/texlive
+          key: ${{ steps.texlive-cache.outputs.cache-primary-key }}
       - name: Install packages
         run: bun ci
       - name: Verify pinned Pandoc parser reference data
