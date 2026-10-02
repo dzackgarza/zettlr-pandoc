@@ -750,13 +750,16 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await preview.waitFor({ state: "detached", timeout: 20_000 });
     const ordinaryFigure = page.locator('.tikz-figure[data-tikz-language="tikz"]');
     await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    await ordinaryFigure.getByRole("button", { name: "Rebuild TikZ figure" }).click();
+    const ordinaryFigureBlock = ordinaryFigure.locator("..");
+    await ordinaryFigureBlock.getByRole("button", { name: "Rebuild TikZ figure" }).click();
     await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
     await preview.waitFor({ state: "detached", timeout: 20_000 });
-    await ordinaryFigure.getByRole("button", { name: "Open visual editor" }).click();
+    await ordinaryFigureBlock.getByRole("button", { name: "Open visual editor" }).click();
     await preview.waitFor({ state: "visible", timeout: 20_000 });
     assert.strictEqual(
-      await preview.getByRole("button", { name: "Visual editor", exact: true }).getAttribute("aria-pressed"),
+      await preview
+        .getByRole("button", { name: "Visual editor", exact: true })
+        .getAttribute("aria-pressed"),
       "true",
       "the inline visual control opens the matching provider",
     );

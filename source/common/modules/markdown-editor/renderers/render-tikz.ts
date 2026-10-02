@@ -20,8 +20,8 @@
  *                  telling the user to install it; a render killed by a signal
  *                  names the signal. Clicking a rendered figure follows the
  *                  editor's ordinary edit-first semantics and reveals its
- *                  source; a separate corner control opens the full-screen
- *                  lightbox with the servable SVG file.
+ *                  source. Overlay controls rebuild the figure or open its
+ *                  visual editor (Quiver for tikzcd).
  *
  * END HEADER
  */
@@ -289,29 +289,29 @@ class TikzWidget extends WidgetType {
         docPath,
         cachePolicy,
       }).then(
-      (result) => {
-        if (version !== renderVersion) return;
-        populate(elem, result, editTitle, editSource);
-      },
-      // Only the IPC round-trip is handled here. A failure to reach the main
-      // process is a render failure the user must see; a failure raised by
-      // populate is a broken service/widget contract and must not be dressed
-      // up as one of the render service's outcomes.
-      (err: unknown) => {
-        if (version !== renderVersion) return;
-        reportError("TikZ inline render IPC failed", err);
-        populate(
-          elem,
-          {
-            ok: false,
-            kind: "pandoc-error",
-            log: err instanceof Error ? err.message : String(err),
-          },
-          editTitle,
-          editSource,
-        );
-      },
-    );
+        (result) => {
+          if (version !== renderVersion) return;
+          populate(elem, result, editTitle, editSource);
+        },
+        // Only the IPC round-trip is handled here. A failure to reach the main
+        // process is a render failure the user must see; a failure raised by
+        // populate is a broken service/widget contract and must not be dressed
+        // up as one of the render service's outcomes.
+        (err: unknown) => {
+          if (version !== renderVersion) return;
+          reportError("TikZ inline render IPC failed", err);
+          populate(
+            elem,
+            {
+              ok: false,
+              kind: "pandoc-error",
+              log: err instanceof Error ? err.message : String(err),
+            },
+            editTitle,
+            editSource,
+          );
+        },
+      );
     };
     render("use");
 
@@ -338,14 +338,14 @@ class TikzWidget extends WidgetType {
       event.preventDefault();
       event.stopPropagation();
       editSource();
-      elem.dispatchEvent(new CustomEvent(OPEN_TIKZ_VISUAL_EDITOR_EVENT, { bubbles: true }));
+      view.dom.dispatchEvent(
+        new CustomEvent(OPEN_TIKZ_VISUAL_EDITOR_EVENT, { bubbles: true, detail: this.language }),
+      );
     });
     actions.append(refresh, visual);
 
-    // Every rendered TikZ figure now has one edit-first activation path:
-    // select its authored source and let the unified RHS preview choose the
-    // appropriate renderer. tikzcd defaults to Quiver there; ordinary TikZ is
-    // locked to the vanilla renderer.
+    // A click on the figure selects its authored source. The overlay buttons
+    // have their own actions and do not enter source editing.
     elem.addEventListener("click", (event) => {
       const target = event.target;
       if (target instanceof Element && target.closest("button, .tikz-error") !== null) {

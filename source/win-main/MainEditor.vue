@@ -102,8 +102,8 @@ import {
   selectNextReviewChunk,
   selectPreviousReviewChunk,
 } from "@common/modules/markdown-editor/plugins/review-chunks";
-import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
 import { OPEN_TIKZ_VISUAL_EDITOR_EVENT } from "@common/modules/markdown-editor/renderers/render-tikz";
+import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import showPopupMenu, {
@@ -409,9 +409,8 @@ const activeEditorView = shallowRef<EditorView | null>(null);
 const tikzRequestedMode = ref<"tikz" | "quiver" | "visual">("tikz");
 
 function openInlineTikzVisualEditor(event: Event): void {
-  const figure = event.target;
-  if (!(figure instanceof HTMLElement)) return;
-  tikzRequestedMode.value = figure.dataset.tikzLanguage === "tikzcd" ? "quiver" : "visual";
+  if (!(event instanceof CustomEvent)) return;
+  tikzRequestedMode.value = event.detail === "tikzcd" ? "quiver" : "visual";
 }
 
 function ownsWindowActiveState(
