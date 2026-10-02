@@ -281,6 +281,10 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   goes into `packages/tikz-workbench`, not into a host.
 - **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
   `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
+- **Inline figure controls:** `render-tikz.ts` places rebuild and visual-editor
+  buttons over each TikZ or tikzcd figure. Rebuild bypasses the compiler cache.
+  The visual button opens tikz-editor for TikZ and Quiver for tikzcd. A click on
+  the figure selects its authored source for direct editing.
 - **Install layout:** `bunfig.toml` pins Bun's hoisted linker. The workspace would
   otherwise select the isolated linker, and webpack/Forge resolve transitive
   dependencies from the hoisted `node_modules`.
