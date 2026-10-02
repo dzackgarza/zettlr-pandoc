@@ -33,23 +33,24 @@ jobs:
       # `just setup-ci` installs Flowmark from its main branch as a uv tool.
       - name: Setup uv
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-      - name: Read the TeX Live cache period
-        id: texlive-period
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
-      - name: Restore TeX Live
+      - name: Restore the CI toolchain
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/texlive
-          key: texlive-${{ hashFiles('scripts/setup-ci-toolchain.sh') }}-${{ steps.texlive-period.outputs.week }}
-        id: texlive-cache
+          path: |
+            ~/texlive
+            ~/ci-downloads
+          key: ci-toolchain-${{ hashFiles('scripts/setup-ci-toolchain.sh', 'scripts/pandoc-reference.json') }}
+        id: toolchain-cache
       - name: Provision real export toolchain
         run: just setup-ci
-      - name: Save TeX Live
-        if: steps.texlive-cache.outputs.cache-hit != 'true'
+      - name: Save the CI toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/texlive
-          key: ${{ steps.texlive-cache.outputs.cache-primary-key }}
+          path: |
+            ~/texlive
+            ~/ci-downloads
+          key: ${{ steps.toolchain-cache.outputs.cache-primary-key }}
       - name: Install packages
         run: bun ci
       - name: Verify pinned Pandoc parser reference data
