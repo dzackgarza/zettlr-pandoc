@@ -406,7 +406,7 @@ export const renderTikzFigures = [
     ".tikz-figure-action": {
       border: "1px solid currentColor",
       borderRadius: "0.3em",
-      background: "var(--bg-primary, Canvas)",
+      background: "Canvas",
       color: "inherit",
       cursor: "pointer",
       font: "inherit",

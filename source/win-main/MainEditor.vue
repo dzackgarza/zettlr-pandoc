@@ -177,6 +177,7 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
+import type { TikzPreviewModeId } from "tikz-workbench/src/preview-modes";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
 import _ from "underscore";
@@ -406,7 +407,7 @@ async function updateTexMacroSources(
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
 const activeEditorView = shallowRef<EditorView | null>(null);
-const tikzRequestedMode = ref<"tikz" | "quiver" | "visual">("tikz");
+const tikzRequestedMode = ref<TikzPreviewModeId>("tikz");
 
 function openInlineTikzVisualEditor(event: Event): void {
   if (!(event instanceof CustomEvent)) return;
