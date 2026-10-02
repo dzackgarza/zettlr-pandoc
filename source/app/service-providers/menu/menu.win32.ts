@@ -665,6 +665,17 @@ export default function getMenu(
           },
         },
         {
+          id: "menu.tab_reopen_closed",
+          label: trans("Reopen Closed Tab"),
+          accelerator: "Ctrl+Shift+T",
+          click: function (_menuitem, focusedWindow) {
+            (focusedWindow as BrowserWindow | undefined)?.webContents.send(
+              "shortcut",
+              "reopen-closed-tab",
+            );
+          },
+        },
+        {
           id: "menu.tabs_close_all",
           label: trans("Close All Tabs"),
           click: function (_menuitem, focusedWindow) {

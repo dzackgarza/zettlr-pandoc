@@ -8,7 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     Closes the last document tab in the assembled app and
- *                  reopens it with the window shortcut.
+ *                  reopens it through the Window menu.
  *
  * END HEADER
  */
@@ -29,7 +29,7 @@ import {
 } from "./support/electron-app";
 
 describe("reopen closed document tab", function () {
-  it("reopens the last closed tab with Ctrl+Shift+T", async function () {
+  it("reopens the last closed tab from the Window menu", async function () {
     const artifactDirectory = path.join(tmpdir(), "zettlr-reopen-tab-e2e-latest");
     const fixture = await createWorkspaceFixture("zettlr-reopen-tab-e2e-", {
       workspaceSource: path.join(REPO_ROOT, "test", "fixtures", "quarto-book"),
@@ -48,7 +48,12 @@ describe("reopen closed document tab", function () {
       await tab.locator(".close").click();
       await tab.waitFor({ state: "detached", timeout: 20_000 });
 
-      await page.keyboard.press("Control+Shift+T");
+      await page.evaluate(() => {
+        window.ipc.send("menu-provider", {
+          command: "click-menu-item",
+          payload: "menu.tab_reopen_closed",
+        });
+      });
       await tab.waitFor({ state: "visible", timeout: 20_000 });
       assert.equal(await tab.evaluate((element) => element.classList.contains("active")), true);
     } finally {

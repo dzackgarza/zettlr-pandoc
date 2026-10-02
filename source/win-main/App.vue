@@ -1020,6 +1020,11 @@ onMounted(() => {
   // main process sends the same names from the application menu; names other
   // components own (save-file, search, …) have no entry here.
   const shortcutHandlers: Partial<Record<ShortcutName, () => void>> = {
+    "reopen-closed-tab": () => {
+      ipcRenderer
+        .invoke("documents-provider", { command: "reopen-closed-tab", payload: { windowId } })
+        .catch((error) => reportError(error));
+    },
     "toggle-annotation-panel": () => {
       configStore.setConfigValue("window.sidebarVisible", !sidebarVisible.value);
     },
