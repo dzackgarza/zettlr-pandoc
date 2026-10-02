@@ -12,49 +12,54 @@
  * END HEADER
  */
 
-import path from 'path'
-import { promises as fs } from 'fs'
-import assert, { AssertionError } from 'assert'
-import isFile from '@common/util/is-file'
-import safeAssign from '@common/util/safe-assign'
-
-import type { DirDescriptor, SortMethod, ProjectSettings, DirectorySettings } from '@dts/common/fsal'
-import { getFilesystemMetadata } from './util/get-fs-metadata'
-import { parseQuartoProject } from 'source/app/util/quarto-project'
-import { resolveRealPath } from 'source/app/util/real-path'
+import { hasErrnoCode } from "@common/util/is-errno-exception";
+import isFile from "@common/util/is-file";
+import safeAssign from "@common/util/safe-assign";
+import type {
+  DirDescriptor,
+  DirectorySettings,
+  ProjectSettings,
+  SortMethod,
+} from "@dts/common/fsal";
+import assert, { AssertionError } from "assert";
+import { promises as fs } from "fs";
+import path from "path";
+import { parseQuartoProject } from "source/app/util/quarto-project";
+import { resolveRealPath } from "source/app/util/real-path";
+import { getFilesystemMetadata } from "./util/get-fs-metadata";
 
 /**
  * Determines what will be written to file (.ztr-directory)
  */
 const SETTINGS_TEMPLATE: DirectorySettings = {
-  sorting: 'name-up',
+  sorting: "name-up",
   explorer: {
-    displayName: 'inherit',
-    sortMetadataKey: 'zettlr-order_',
+    displayName: "inherit",
+    sortMetadataKey: "zettlr-order_",
     foldersFirst: null,
-    projectFilter: 'all'
+    projectFilter: "all",
   },
   project: null, // Default: no project
   icon: null, // Default: no icon
   color: null, // Default: no color
-  quartoManifest: null // Default: a manifest, if any, sits in the directory
-}
+  quartoManifest: null, // Default: a manifest, if any, sits in the directory
+};
 
 /**
  * Used to insert a default project
  */
 const PROJECT_TEMPLATE: ProjectSettings = {
-  manifest: { kind: 'zettlr' },
+  manifest: { kind: "zettlr" },
   // General values that not only pertain to the PDF generation
-  title: 'Untitled', // Default project title is the directory's name
+  title: "Untitled", // Default project title is the directory's name
   profiles: [], // NOTE: Must correspond to the defaults in ProjectProperties.vue
   files: [], // A list of absolute paths to the files to be included, sorted (!)
-  cslStyle: '', // A path to an optional CSL style file.
+  cslStyle: "", // A path to an optional CSL style file.
   templates: {
-    tex: '', // An optional tex template
-    html: '' // An optional HTML template
-  }
-}
+    tex: "", // An optional tex template
+    html: "", // An optional HTML template
+  },
+};
 
 /**
  * The manifest this directory is described by: the one it is bound to, or the
@@ -64,11 +69,11 @@ const PROJECT_TEMPLATE: ProjectSettings = {
  *
  * @return  {string}              The manifest's real path
  */
-function quartoManifestPath (dir: DirDescriptor): string {
-  const manifest = dir.settings.quartoManifest
-  return resolveRealPath(manifest === null
-    ? path.join(dir.path, '_quarto.yml')
-    : path.resolve(dir.path, manifest))
+function quartoManifestPath(dir: DirDescriptor): string {
+  const manifest = dir.settings.quartoManifest;
+  return resolveRealPath(
+    manifest === null ? path.join(dir.path, "_quarto.yml") : path.resolve(dir.path, manifest),
+  );
 }
 
 /**
@@ -81,8 +86,8 @@ function quartoManifestPath (dir: DirDescriptor): string {
  *
  * @return  {string}            The project-relative path
  */
-function projectRelative (dirPath: string, filePath: string): string {
-  return path.relative(dirPath, filePath).split(path.sep).join('/')
+function projectRelative(dirPath: string, filePath: string): string {
+  return path.relative(dirPath, filePath).split(path.sep).join("/");
 }
 
 /**
@@ -96,49 +101,56 @@ function projectRelative (dirPath: string, filePath: string): string {
  *
  * @param   {DirDescriptor}  dir  The directory
  */
-async function parseQuartoManifest (dir: DirDescriptor): Promise<void> {
-  if (dir.settings.project !== null && dir.settings.project.manifest.kind !== 'quarto') {
-    return
+async function parseQuartoManifest(dir: DirDescriptor): Promise<void> {
+  if (dir.settings.project !== null && dir.settings.project.manifest.kind !== "quarto") {
+    return;
   }
 
-  dir.settings.project = null
-  const manifestPath = quartoManifestPath(dir)
+  dir.settings.project = null;
+  const manifestPath = quartoManifestPath(dir);
   if (!isFile(manifestPath)) {
-    return
+    return;
   }
 
-  const quarto = parseQuartoProject(path.dirname(manifestPath), await fs.readFile(manifestPath, 'utf8'))
+  const quarto = parseQuartoProject(
+    path.dirname(manifestPath),
+    await fs.readFile(manifestPath, "utf8"),
+  );
   // The manifest resolves its chapters to real files, which may lie anywhere
   // under this directory. The project names each one the way every reader
   // expects: relative to the directory it belongs to.
-  const root = resolveRealPath(dir.path)
-  const chapter = (filePath: string): string => projectRelative(root, filePath)
+  const root = resolveRealPath(dir.path);
+  const chapter = (filePath: string): string => projectRelative(root, filePath);
   dir.settings.project = {
     ...PROJECT_TEMPLATE,
     title: quarto.title,
     files: quarto.files.map(chapter),
     manifest: {
-      kind: 'quarto',
+      kind: "quarto",
       path: manifestPath,
       bibliographies: quarto.bibliographies,
-      navigation: quarto.navigation.map(item => item.kind === 'chapter'
-        ? { kind: 'chapter', path: chapter(item.path) }
-        : { kind: 'part', title: item.title, chapters: item.chapters.map(chapter) })
-    }
-  }
+      navigation: quarto.navigation.map((item) =>
+        item.kind === "chapter"
+          ? { kind: "chapter", path: chapter(item.path) }
+          : { kind: "part", title: item.title, chapters: item.chapters.map(chapter) },
+      ),
+    },
+  };
 }
 
 /** Re-derives a Quarto Project after its authoritative manifest changed. */
-export async function refreshQuartoProject (dir: DirDescriptor): Promise<void> {
-  if (dir.settings.project?.manifest.kind !== 'quarto' && dir.settings.quartoManifest === null) {
-    throw new Error(`[FSAL Dir] Cannot refresh Quarto project for ${dir.path}: no Quarto project is bound`)
+export async function refreshQuartoProject(dir: DirDescriptor): Promise<void> {
+  if (dir.settings.project?.manifest.kind !== "quarto" && dir.settings.quartoManifest === null) {
+    throw new Error(
+      `[FSAL Dir] Cannot refresh Quarto project for ${dir.path}: no Quarto project is bound`,
+    );
   }
   // A derived Quarto project is explicitly disposable; clear it so the parser
   // cannot mistake it for a user-authored Zettlr project.
-  if (dir.settings.project?.manifest.kind === 'quarto') {
-    dir.settings.project = null
+  if (dir.settings.project?.manifest.kind === "quarto") {
+    dir.settings.project = null;
   }
-  await parseQuartoManifest(dir)
+  await parseQuartoManifest(dir);
 }
 
 /**
@@ -151,10 +163,10 @@ export async function refreshQuartoProject (dir: DirDescriptor): Promise<void> {
  *
  * @return  {DirectorySettings}       The settings to compare and to write
  */
-function authoredSettings (dir: DirDescriptor): DirectorySettings {
-  return dir.settings.project?.manifest.kind === 'quarto'
+function authoredSettings(dir: DirDescriptor): DirectorySettings {
+  return dir.settings.project?.manifest.kind === "quarto"
     ? { ...dir.settings, project: null }
-    : dir.settings
+    : dir.settings;
 }
 
 /**
@@ -166,8 +178,8 @@ function authoredSettings (dir: DirDescriptor): DirectorySettings {
  *
  * @return  {boolean}             Returns true if the settings are the same as default.
  */
-export function hasDefaultSettings (dir: DirDescriptor): boolean {
-  return JSON.stringify(authoredSettings(dir)) === JSON.stringify(SETTINGS_TEMPLATE)
+export function hasDefaultSettings(dir: DirDescriptor): boolean {
+  return JSON.stringify(authoredSettings(dir)) === JSON.stringify(SETTINGS_TEMPLATE);
 }
 
 /**
@@ -175,22 +187,24 @@ export function hasDefaultSettings (dir: DirDescriptor): boolean {
  *
  * @param   {DirDescriptor}  dir  The directory descriptor
  */
-async function persistSettings (dir: DirDescriptor): Promise<void> {
-  const settingsFile = path.join(dir.path, '.ztr-directory')
+async function persistSettings(dir: DirDescriptor): Promise<void> {
+  const settingsFile = path.join(dir.path, ".ztr-directory");
   if (hasDefaultSettings(dir)) {
     // Only persist the settings if they are not default. If they are default,
     // remove a possible .ztr-directory-file
     if (isFile(settingsFile)) {
       try {
-        await fs.unlink(settingsFile)
-      } catch (err: any) {
-        err.message = `Error removing default .ztr-directory: ${err.message as string}`
-        throw err
+        await fs.unlink(settingsFile);
+      } catch (err) {
+        if (err instanceof Error) {
+          err.message = `Error removing default .ztr-directory: ${err.message}`;
+        }
+        throw err;
       }
     }
-    return
+    return;
   }
-  await fs.writeFile(settingsFile, JSON.stringify(authoredSettings(dir)))
+  await fs.writeFile(settingsFile, JSON.stringify(authoredSettings(dir)));
 }
 
 /**
@@ -198,42 +212,42 @@ async function persistSettings (dir: DirDescriptor): Promise<void> {
  *
  * @param   {DirDescriptor}  dir  The directory descriptor.
  */
-async function parseSettings (dir: DirDescriptor): Promise<void> {
-  const configPath = path.join(dir.path, '.ztr-directory')
+async function parseSettings(dir: DirDescriptor): Promise<void> {
+  const configPath = path.join(dir.path, ".ztr-directory");
 
   try {
-    const settingsText = await fs.readFile(configPath, { encoding: 'utf8' })
-    const settings = JSON.parse(settingsText) as typeof SETTINGS_TEMPLATE
+    const settingsText = await fs.readFile(configPath, { encoding: "utf8" });
+    const settings = JSON.parse(settingsText) as typeof SETTINGS_TEMPLATE;
 
-    dir.settings = safeAssign(settings, SETTINGS_TEMPLATE)
+    dir.settings = safeAssign(settings, SETTINGS_TEMPLATE);
 
     if (settings.project !== null) {
       // We have a project, so we need to sanitize the values (in case
       // that there have been changes to the config). We'll just use
       // the code from the config provider.
-      dir.settings.project = safeAssign(settings.project, PROJECT_TEMPLATE)
+      dir.settings.project = safeAssign(settings.project, PROJECT_TEMPLATE);
     }
 
     try {
-      assert.deepStrictEqual(dir.settings, SETTINGS_TEMPLATE)
+      assert.deepStrictEqual(dir.settings, SETTINGS_TEMPLATE);
       // The settings are the default, so no need to write them to file
-      await fs.unlink(configPath)
+      await fs.unlink(configPath);
     } catch (err: unknown) {
       if (err instanceof AssertionError) {
         // Settings are non-default -> do nothing with the file.
       } else {
-        throw err // Something else went wrong
+        throw err; // Something else went wrong
       }
     }
   } catch (err: unknown) {
     // Ignore file-not-found errors
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
-      return
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      return;
     }
 
     // Something went wrong. Unlink the malformed file. Do not throw an error
     // since a malformed settings file should never stop loading a directory.
-    await fs.unlink(configPath)
+    await fs.unlink(configPath);
   }
 }
 
@@ -245,38 +259,45 @@ async function parseSettings (dir: DirDescriptor): Promise<void> {
  *
  * @return  {Promise<DirDescriptor>}           Resolves with the descriptor
  */
-export async function parse (currentPath: string): Promise<DirDescriptor> {
+export async function parse(currentPath: string): Promise<DirDescriptor> {
   // Prepopulate
   const dir: DirDescriptor = {
     path: currentPath,
     name: path.basename(currentPath),
     dir: path.dirname(currentPath),
     size: 0,
-    type: 'directory',
+    type: "directory",
     isGitRepository: false,
     modtime: 0, // You know when something has gone wrong: 01.01.1970
     creationtime: 0,
-    settings: JSON.parse(JSON.stringify(SETTINGS_TEMPLATE))
-  }
+    settings: JSON.parse(JSON.stringify(SETTINGS_TEMPLATE)),
+  };
 
   try {
-    dir.isGitRepository = (await fs.lstat(path.join(dir.path, '.git'))).isDirectory()
-  } catch (err: any) {}
+    dir.isGitRepository = (await fs.lstat(path.join(dir.path, ".git"))).isDirectory();
+  } catch (err) {
+    // A directory without a .git entry is not a repository.
+    if (!hasErrnoCode(err, "ENOENT", "ENOTDIR")) {
+      throw err;
+    }
+  }
 
   // Retrieve the metadata
   try {
-    const metadata = await getFilesystemMetadata(dir.path)
-    dir.modtime = metadata.modtime
-    dir.creationtime = metadata.birthtime
-    await parseSettings(dir)
-    await parseQuartoManifest(dir)
-  } catch (err: any) {
-    err.message = `Error reading metadata for directory ${dir.path}!`
+    const metadata = await getFilesystemMetadata(dir.path);
+    dir.modtime = metadata.modtime;
+    dir.creationtime = metadata.birthtime;
+    await parseSettings(dir);
+    await parseQuartoManifest(dir);
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = `Error reading metadata for directory ${dir.path}!`;
+    }
     // Re-throw so that the caller knows something's afoul
-    throw err
+    throw err;
   }
 
-  return dir
+  return dir;
 }
 
 /**
@@ -287,20 +308,20 @@ export async function parse (currentPath: string): Promise<DirDescriptor> {
  *
  * @return  {DirDescriptor}           The resulting descriptor
  */
-export function getDirNotFoundDescriptor (dirPath: string): DirDescriptor {
+export function getDirNotFoundDescriptor(dirPath: string): DirDescriptor {
   return {
     path: dirPath,
     name: path.basename(dirPath),
     dir: path.dirname(dirPath),
     size: 0,
-    type: 'directory',
+    type: "directory",
     isGitRepository: false,
     modtime: 0, // ¯\_(ツ)_/¯
     creationtime: 0,
     // Settings are expected by some functions
     settings: JSON.parse(JSON.stringify(SETTINGS_TEMPLATE)),
-    dirNotFoundFlag: true
-  }
+    dirNotFoundFlag: true,
+  };
 }
 
 /**
@@ -309,9 +330,12 @@ export function getDirNotFoundDescriptor (dirPath: string): DirDescriptor {
  * @param   {DirDescriptor}  dirObject  The directory descriptor in question.
  * @param   {any}            settings   A settings object to be assigned
  */
-export async function setSetting (dirObject: DirDescriptor, settings: Partial<DirDescriptor['settings']>): Promise<void> {
-  dirObject.settings = safeAssign(settings, dirObject.settings)
-  await persistSettings(dirObject)
+export async function setSetting(
+  dirObject: DirDescriptor,
+  settings: Partial<DirDescriptor["settings"]>,
+): Promise<void> {
+  dirObject.settings = safeAssign(settings, dirObject.settings);
+  await persistSettings(dirObject);
 }
 
 /**
@@ -320,15 +344,15 @@ export async function setSetting (dirObject: DirDescriptor, settings: Partial<Di
  * @param   {DirDescriptor}  dirObject  The directory object
  * @param   {string}         method     The sorting method
  */
-export async function changeSorting (dirObject: DirDescriptor, method?: SortMethod): Promise<void> {
+export async function changeSorting(dirObject: DirDescriptor, method?: SortMethod): Promise<void> {
   // If the caller omits the method, it should remain unchanged
   if (method === undefined) {
-    method = dirObject.settings.sorting
+    method = dirObject.settings.sorting;
   }
 
-  dirObject.settings.sorting = method
+  dirObject.settings.sorting = method;
   // Persist the settings to disk
-  await persistSettings(dirObject)
+  await persistSettings(dirObject);
 }
 
 /**
@@ -337,9 +361,12 @@ export async function changeSorting (dirObject: DirDescriptor, method?: SortMeth
  * @param   {DirDescriptor}  dirObject   The directory descriptor
  * @param   {any}            properties  Initial properties to set
  */
-export async function makeProject (dirObject: DirDescriptor, properties: Partial<ProjectSettings>): Promise<void> {
-  dirObject.settings.project = safeAssign(properties, PROJECT_TEMPLATE)
-  await persistSettings(dirObject)
+export async function makeProject(
+  dirObject: DirDescriptor,
+  properties: Partial<ProjectSettings>,
+): Promise<void> {
+  dirObject.settings.project = safeAssign(properties, PROJECT_TEMPLATE);
+  await persistSettings(dirObject);
 }
 
 /**
@@ -351,14 +378,19 @@ export async function makeProject (dirObject: DirDescriptor, properties: Partial
  *
  * @return {boolean}                     Returns false if no properties changed
  */
-export async function updateProjectProperties (dirObject: DirDescriptor, properties: ProjectSettings): Promise<void> {
+export async function updateProjectProperties(
+  dirObject: DirDescriptor,
+  properties: ProjectSettings,
+): Promise<void> {
   if (dirObject.settings.project === null) {
-    throw new Error(`[FSAL Dir] Attempted to update project settings on dir ${dirObject.path}, but it is not a project!`)
+    throw new Error(
+      `[FSAL Dir] Attempted to update project settings on dir ${dirObject.path}, but it is not a project!`,
+    );
   }
 
-  dirObject.settings.project = safeAssign(properties, dirObject.settings.project)
+  dirObject.settings.project = safeAssign(properties, dirObject.settings.project);
   // Immediately reflect on disk
-  await persistSettings(dirObject)
+  await persistSettings(dirObject);
 }
 
 // Removes a project
@@ -367,17 +399,17 @@ export async function updateProjectProperties (dirObject: DirDescriptor, propert
  *
  * @param   {DirDescriptor}  dirObject  The directory descriptor
  */
-export async function removeProject (dirObject: DirDescriptor): Promise<void> {
-  dirObject.settings.project = null
-  await persistSettings(dirObject)
+export async function removeProject(dirObject: DirDescriptor): Promise<void> {
+  dirObject.settings.project = null;
+  await persistSettings(dirObject);
 }
 
 /**
  * What became of a binding the user asked for.
  */
 export type QuartoManifestBinding =
-  | { kind: 'bound', manifest: string }
-  | { kind: 'rejected', reason: 'not-a-file'|'outside-directory' }
+  | { kind: "bound"; manifest: string }
+  | { kind: "rejected"; reason: "not-a-file" | "outside-directory" };
 
 /**
  * Binds a directory to the Quarto manifest that describes it, and derives the
@@ -390,22 +422,25 @@ export type QuartoManifestBinding =
  *
  * @return  {Promise<QuartoManifestBinding>}  The binding, or why there is none
  */
-export async function bindQuartoManifest (dirObject: DirDescriptor, manifestPath: string): Promise<QuartoManifestBinding> {
-  const manifest = resolveRealPath(path.resolve(dirObject.path, manifestPath))
+export async function bindQuartoManifest(
+  dirObject: DirDescriptor,
+  manifestPath: string,
+): Promise<QuartoManifestBinding> {
+  const manifest = resolveRealPath(path.resolve(dirObject.path, manifestPath));
 
   if (!isFile(manifest)) {
-    return { kind: 'rejected', reason: 'not-a-file' }
+    return { kind: "rejected", reason: "not-a-file" };
   }
 
-  const relative = path.relative(resolveRealPath(dirObject.path), manifest)
-  if (relative.split(path.sep)[0] === '..' || path.isAbsolute(relative)) {
-    return { kind: 'rejected', reason: 'outside-directory' }
+  const relative = path.relative(resolveRealPath(dirObject.path), manifest);
+  if (relative.split(path.sep)[0] === ".." || path.isAbsolute(relative)) {
+    return { kind: "rejected", reason: "outside-directory" };
   }
 
-  dirObject.settings.quartoManifest = relative
-  await persistSettings(dirObject)
-  await parseQuartoManifest(dirObject)
-  return { kind: 'bound', manifest: relative }
+  dirObject.settings.quartoManifest = relative;
+  await persistSettings(dirObject);
+  await parseQuartoManifest(dirObject);
+  return { kind: "bound", manifest: relative };
 }
 
 /**
@@ -414,8 +449,8 @@ export async function bindQuartoManifest (dirObject: DirDescriptor, manifestPath
  *
  * @param   {DirDescriptor}  dirObject  The directory descriptor
  */
-export async function unbindQuartoManifest (dirObject: DirDescriptor): Promise<void> {
-  dirObject.settings.quartoManifest = null
-  await persistSettings(dirObject)
-  await parseQuartoManifest(dirObject)
+export async function unbindQuartoManifest(dirObject: DirDescriptor): Promise<void> {
+  dirObject.settings.quartoManifest = null;
+  await persistSettings(dirObject);
+  await parseQuartoManifest(dirObject);
 }

@@ -15,45 +15,38 @@
  */
 
 import {
-  type Completion,
-  type CompletionSource,
-  type CompletionResult,
   autocompletion,
+  type Completion,
   CompletionContext,
+  type CompletionResult,
+  type CompletionSource,
   completeAnyWord,
-} from '@codemirror/autocomplete'
-import { type Extension } from '@codemirror/state'
-import { codeBlocks } from './code-blocks'
-import { atSymbols } from './at-symbols'
-import { snippets } from './snippets'
-import { files } from './files'
-import { tags } from './tags'
-import { headings } from './headings'
-import { emojis } from './emojis'
-import { texConstructionSource } from './tex-constructions'
-import { texCommandSource } from './tex-commands'
-import { proseDictionarySource } from './prose-dictionary'
+} from "@codemirror/autocomplete";
+import { type Extension } from "@codemirror/state";
+import { atSymbols } from "./at-symbols";
+import { codeBlocks } from "./code-blocks";
 import {
-  phraseCompletionSource,
-  phraseCompletionsField,
-  phraseCompletionsUpdate
-} from './phrases'
-import {
-  texCommandCompletionSource,
-  texMacroSourcesUpdate
-} from './tex'
-import {
+  type CompletionSourceName,
   completionOptionClass,
   renderCompletionIcon,
   renderCompletionSource,
-  withDefaultCompletionInfo,
   withCompletionSource,
-  type CompletionSourceName,
-} from './completion-presentation'
+  withDefaultCompletionInfo,
+} from "./completion-presentation";
+import { emojis } from "./emojis";
+import { files } from "./files";
+import { headings } from "./headings";
+import { phraseCompletionSource, phraseCompletionsField, phraseCompletionsUpdate } from "./phrases";
+import { proseDictionarySource } from "./prose-dictionary";
+import { snippets } from "./snippets";
+import { tags } from "./tags";
+import { texCommandCompletionSource, texMacroSourcesUpdate } from "./tex";
+import { texCommandSource } from "./tex-commands";
+import { texConstructionSource } from "./tex-constructions";
 
 export interface AutocompletePlugin {
   /** Source label shown in the aligned nvim-cmp-style rightmost column. */
-  source?: CompletionSourceName
+  source?: CompletionSourceName;
   /**
    * This function is frequently called and should return true as soon as the
    * plugin detects a string that it can autocomplete.
@@ -64,7 +57,7 @@ export interface AutocompletePlugin {
    *                                    autocompletion does not apply. Otherwise
    *                                    returns a number -> the start pos.
    */
-  applies: (ctx: CompletionContext) => number|false
+  applies: (ctx: CompletionContext) => number | false;
   /**
    * This function is called while an autocompletion is active. It is provided
    * the current query the user has typed and should return a filtered list of
@@ -76,12 +69,12 @@ export interface AutocompletePlugin {
    *
    * @return  {Completion[]}              The list of available completions
    */
-  entries: (ctx: CompletionContext, query: string) => Completion[]
+  entries: (ctx: CompletionContext, query: string) => Completion[];
   /**
    * The state fields this provider reads. The autocomplete extension installs
    * them for every provider; a provider that keeps no state lists none.
    */
-  fields: Extension[]
+  fields: Extension[];
 }
 
 /**
@@ -89,15 +82,11 @@ export interface AutocompletePlugin {
  * absent `Completion.boost` as no rank adjustment of the option's own, so the
  * source adjustment is then the whole boost.
  */
-function adjustedBoost (option: Completion, adjustment: number): number {
-  return option.boost === undefined ? adjustment : option.boost + adjustment
+function adjustedBoost(option: Completion, adjustment: number): number {
+  return option.boost === undefined ? adjustment : option.boost + adjustment;
 }
 
-const forbiddenTokens = [
-  'YAMLFrontmatter',
-  'YAMLFrontmatterStart',
-  'YAMLFrontmatterEnd'
-]
+const forbiddenTokens = ["YAMLFrontmatter", "YAMLFrontmatterStart", "YAMLFrontmatterEnd"];
 
 /**
  * Builds the completion source over an ordered provider list: the shared
@@ -110,50 +99,58 @@ const forbiddenTokens = [
  *
  * @return  {CompletionSource}                 The dispatching source
  */
-export function autocompleteSourceFor (
+export function autocompleteSourceFor(
   plugin: AutocompletePlugin,
-  boost: number = 0
+  boost: number = 0,
 ): CompletionSource {
-  return function (ctx): CompletionResult|null {
+  return function (ctx): CompletionResult | null {
     if (ctx.tokenBefore(forbiddenTokens) !== null) {
-      return null
+      return null;
     }
-    const from = plugin.applies(ctx)
+    const from = plugin.applies(ctx);
     if (from === false) {
-      return null
+      return null;
     }
-    const query = ctx.state.doc.sliceString(from, ctx.pos).toLowerCase()
+    const query = ctx.state.doc.sliceString(from, ctx.pos).toLowerCase();
     return {
       from,
-      options: plugin.entries(ctx, query).map(option => {
-        const sourced = withCompletionSource(option, plugin.source)
-        const enriched = withDefaultCompletionInfo(sourced, sourced.zettlrSource)
+      options: plugin.entries(ctx, query).map((option) => {
+        const sourced = withCompletionSource(option, plugin.source);
+        const enriched = withDefaultCompletionInfo(sourced, sourced.zettlrSource);
         return {
           ...enriched,
-          boost: Math.max(-99, Math.min(99, adjustedBoost(option, boost)))
-        }
-      })
-    }
-  }
+          boost: Math.max(-99, Math.min(99, adjustedBoost(option, boost))),
+        };
+      }),
+    };
+  };
 }
 
 /** CodeMirror's own cached current-buffer word source, labeled and de-prioritized. */
-export const bufferWordSource: CompletionSource = ctx => {
-  const result = completeAnyWord(ctx)
+export const bufferWordSource: CompletionSource = (ctx) => {
+  const result = completeAnyWord(ctx);
   if (result === null || result instanceof Promise) {
-    return result
+    return result;
   }
   return {
     ...result,
-    options: result.options.map(option => ({
-      ...withCompletionSource(option, 'Buffer'),
-      boost: adjustedBoost(option, -20)
-    }))
-  }
-}
+    options: result.options.map((option) => ({
+      ...withCompletionSource(option, "Buffer"),
+      boost: adjustedBoost(option, -20),
+    })),
+  };
+};
 
 // NOTE: Headings has to be checked before tags
-export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [ codeBlocks, atSymbols, files, headings, tags, emojis, snippets ]
+export const AUTOCOMPLETE_PROVIDERS: AutocompletePlugin[] = [
+  codeBlocks,
+  atSymbols,
+  files,
+  headings,
+  tags,
+  emojis,
+  snippets,
+];
 export const AUTOCOMPLETE_SOURCES: CompletionSource[] = [
   autocompleteSourceFor(codeBlocks, 40),
   autocompleteSourceFor(atSymbols, 40),
@@ -168,7 +165,7 @@ export const AUTOCOMPLETE_SOURCES: CompletionSource[] = [
   phraseCompletionSource,
   proseDictionarySource,
   bufferWordSource,
-]
+];
 
 export const autocomplete = [
   autocompletion({
@@ -185,28 +182,28 @@ export const autocomplete = [
     optionClass: completionOptionClass,
     addToOptions: [
       { position: 20, render: renderCompletionIcon },
-      { position: 90, render: renderCompletionSource }
+      { position: 90, render: renderCompletionSource },
     ],
     // Do not include the default keymap. Instead, we re-define it below to
     // avoid a specific decision by CodeMirror to remap the autocomplete toggle
     // on macOS to Alt+\ which, on an Italian keyboard layout, will fail to
     // produce backticks. (See issue #5517)
-    defaultKeymap: false
+    defaultKeymap: false,
   }),
   // Make sure any configuration fields will be inserted into the state so that
   // the plugins can look them up and function correctly. These fields are not
   // required by the main class (MarkdownEditor), hence we do not have to re-
   // export them here. atSymbols carries both the citation field and the
   // references field, so each is registered exactly once through its entry.
-  AUTOCOMPLETE_PROVIDERS.flatMap(provider => provider.fields),
-  phraseCompletionsField
-]
+  AUTOCOMPLETE_PROVIDERS.flatMap((provider) => provider.fields),
+  phraseCompletionsField,
+];
 
+export { referencesUpdate } from "./at-symbols";
 // Lastly, also re-export the effects which the main class (MarkdownEditor)
 // requires in order to provide data for these fields.
-export { citekeyUpdate } from './citations'
-export { referencesUpdate } from './at-symbols'
-export { filesUpdate } from './files'
-export { tagsUpdate } from './tags'
-export { snippetsUpdate } from './snippets'
-export { phraseCompletionsUpdate, texMacroSourcesUpdate }
+export { citekeyUpdate } from "./citations";
+export { filesUpdate } from "./files";
+export { snippetsUpdate } from "./snippets";
+export { tagsUpdate } from "./tags";
+export { phraseCompletionsUpdate, texMacroSourcesUpdate };

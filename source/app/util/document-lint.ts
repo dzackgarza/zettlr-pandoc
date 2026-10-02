@@ -1,11 +1,11 @@
 /** Main-process context producer + Flowmark lint adapter for API/workspace consumers. */
 
+import path from "node:path";
+import { Text } from "@codemirror/state";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
-import { Text } from "@codemirror/state";
-import path from "node:path";
-import { lintMarkdownText } from "./flowmark-lint";
 import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
+import { lintMarkdownText } from "./flowmark-lint";
 import { buildFlowmarkLintContext, type FlowmarkReferenceContext } from "./flowmark-lint-context";
 
 export interface DocumentLintSharedContext {
@@ -100,14 +100,10 @@ export async function lintDocumentText(
   options: DocumentLintDocumentOptions = {},
 ): Promise<DocumentLintOutcome> {
   const diagnostics: DocumentLintDiagnostic[] = [];
-  const flowmarkContext = await buildFlowmarkLintContext(
-    text,
-    documentPath,
-    context,
-    options,
-  );
+  const flowmarkContext = await buildFlowmarkLintContext(text, documentPath, context, options);
 
   const flowmark = await lintMarkdownText(text, {
+    command: "flowmark-lint",
     sourcePath: documentPath,
     context: flowmarkContext,
     timeoutMs: context.flowmarkLintTimeoutMs,
@@ -115,27 +111,31 @@ export async function lintDocumentText(
   const doc = Text.of(text.split("\n"));
   if (flowmark.ok) {
     for (const diagnostic of flowmark.diagnostics) {
-      diagnostics.push(positioned(doc, {
-        from: offsetForLineColumn(doc, diagnostic.line, diagnostic.column),
-        to: offsetForLineColumn(doc, diagnostic.end_line, diagnostic.end_column),
-        severity: diagnostic.severity,
-        message: diagnostic.message,
-        source: "Flowmark",
-        rule: diagnostic.rule,
-        suggestions: diagnostic.suggestions,
-        ...(diagnostic.fix === null ? {} : { fix: diagnostic.fix }),
-        data: diagnostic.data,
-      }));
+      diagnostics.push(
+        positioned(doc, {
+          from: offsetForLineColumn(doc, diagnostic.line, diagnostic.column),
+          to: offsetForLineColumn(doc, diagnostic.end_line, diagnostic.end_column),
+          severity: diagnostic.severity,
+          message: diagnostic.message,
+          source: "Flowmark",
+          rule: diagnostic.rule,
+          suggestions: diagnostic.suggestions,
+          ...(diagnostic.fix === null ? {} : { fix: diagnostic.fix }),
+          data: diagnostic.data,
+        }),
+      );
     }
   } else {
-    diagnostics.push(positioned(doc, {
-      from: 0,
-      to: Math.min(1, text.length),
-      severity: "error",
-      message: `Flowmark could not lint this document: ${flowmark.message}`,
-      source: "Flowmark",
-      rule: flowmark.kind,
-    }));
+    diagnostics.push(
+      positioned(doc, {
+        from: 0,
+        to: Math.min(1, text.length),
+        severity: "error",
+        message: `Flowmark could not lint this document: ${flowmark.message}`,
+        source: "Flowmark",
+        rule: flowmark.kind,
+      }),
+    );
   }
 
   return {

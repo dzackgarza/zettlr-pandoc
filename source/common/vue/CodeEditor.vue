@@ -23,35 +23,46 @@
 
 // import { trans } from '@common/i18n-renderer'
 
-import { drawSelection, dropCursor, EditorView, lineNumbers } from '@codemirror/view'
-import { onMounted, ref, toRef, watch } from 'vue'
-import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
-import { bracketMatching, codeFolding, foldGutter, indentOnInput, indentUnit, StreamLanguage } from '@codemirror/language'
-import { codeSyntaxHighlighter } from '@common/modules/markdown-editor/theme/syntax'
-import { yaml } from '@codemirror/lang-yaml'
-import { lua } from '@codemirror/legacy-modes/mode/lua'
-import { EditorState, type Extension } from '@codemirror/state'
-import { css } from '@codemirror/lang-css'
-import { json } from '@codemirror/lang-json'
-import { lintGutter } from '@codemirror/lint'
-import { externalLinterExtension } from '@common/modules/markdown-editor/diagnostics/external-linter-adapter'
+import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+import { history } from "@codemirror/commands";
+import { css } from "@codemirror/lang-css";
+import { json } from "@codemirror/lang-json";
+import { yaml } from "@codemirror/lang-yaml";
+import {
+  bracketMatching,
+  codeFolding,
+  foldGutter,
+  indentOnInput,
+  indentUnit,
+  StreamLanguage,
+} from "@codemirror/language";
+import { lua } from "@codemirror/legacy-modes/mode/lua";
+import { lintGutter } from "@codemirror/lint";
+import { search } from "@codemirror/search";
+import { EditorState, type Extension } from "@codemirror/state";
+import { drawSelection, dropCursor, EditorView, lineNumbers } from "@codemirror/view";
 import {
   jsonDiagnosticProvider,
-  yamlDiagnosticProvider
-} from '@common/diagnostics/providers/structured-data'
-import { showStatusbarEffect, statusbar } from '@common/modules/markdown-editor/statusbar'
-import { search } from '@codemirror/search'
-import { history } from '@codemirror/commands'
-import { plainLinkHighlighter } from '@common/modules/markdown-utils/plain-link-highlighter'
-import { useConfigStore } from 'source/pinia'
-import { darkMode, darkModeEffect } from '../modules/markdown-editor/theme/dark-mode'
-import { highlightWhitespace, highlightWhitespaceEffect } from '../modules/markdown-editor/plugins/highlight-whitespace'
-import { zettlrKeymap } from '../modules/markdown-editor/keymaps'
-import { type CustomEditorShortcut } from '../modules/markdown-editor/keymaps/shortcuts'
+  yamlDiagnosticProvider,
+} from "@common/diagnostics/providers/structured-data";
+import { externalLinterExtension } from "@common/modules/markdown-editor/diagnostics/external-linter-adapter";
+import { showStatusbarEffect, statusbar } from "@common/modules/markdown-editor/statusbar";
+import { codeSyntaxHighlighter } from "@common/modules/markdown-editor/theme/syntax";
+import { plainLinkHighlighter } from "@common/modules/markdown-utils/plain-link-highlighter";
+import { useConfigStore } from "source/pinia";
+import { onMounted, ref, toRef, watch } from "vue";
+import { zettlrKeymap } from "../modules/markdown-editor/keymaps";
+import { type CustomEditorShortcut } from "../modules/markdown-editor/keymaps/shortcuts";
+import {
+  highlightWhitespace,
+  highlightWhitespaceEffect,
+} from "../modules/markdown-editor/plugins/highlight-whitespace";
+import { darkMode, darkModeEffect } from "../modules/markdown-editor/theme/dark-mode";
+import { defaultDark, defaultLight } from "../modules/markdown-editor/theme/editor";
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-type SupportedLanguage = 'css'|'yaml'|'jsonc'|'lua'
+type SupportedLanguage = "css" | "yaml" | "jsonc" | "lua";
 
 /**
  * We have to define the CodeMirror instance outside of Vue, since the Proxy-
@@ -60,25 +71,25 @@ type SupportedLanguage = 'css'|'yaml'|'jsonc'|'lua'
  *
  * @var {CodeMirror.Editor}
  */
-const cmInstance = new EditorView()
+const cmInstance = new EditorView();
 
 // TODO: This could break if we ever have more than one code editor on the same page
-const wrapperId = ref<string>('code-editor')
+const wrapperId = ref<string>("code-editor");
 
-const cleanFlag = ref<boolean>(true)
+const cleanFlag = ref<boolean>(true);
 
-function getExtensions (mode: SupportedLanguage): Extension[] {
-  const { editor, shortcuts } = configStore.config
+function getExtensions(mode: SupportedLanguage): Extension[] {
+  const { editor, shortcuts } = configStore.config;
 
   const shortcutList = Object.entries(shortcuts.editor)
-    .map(([ name, shortcut ]) => ({ name, shortcut }))
-    .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined)
+    .map(([name, shortcut]) => ({ name, shortcut }))
+    .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined);
 
-  let numSpaces = editor.indentUnit
-  let useTabs = editor.indentWithTabs
+  let numSpaces = editor.indentUnit;
+  let useTabs = editor.indentWithTabs;
 
-  if (mode === 'yaml') {
-    useTabs = false
+  if (mode === "yaml") {
+    useTabs = false;
   }
 
   const extensions = [
@@ -93,9 +104,11 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
     statusbar,
     EditorState.allowMultipleSelections.of(true),
     EditorState.tabSize.of(numSpaces),
-    indentUnit.of(useTabs ? '\t' : ' '.repeat(numSpaces)),
+    indentUnit.of(useTabs ? "\t" : " ".repeat(numSpaces)),
     // Ensure the cursor never completely sticks to the top or bottom of the editor
-    EditorView.scrollMargins.of(_view => { return { top: 30, bottom: 30 } }),
+    EditorView.scrollMargins.of((_view) => {
+      return { top: 30, bottom: 30 };
+    }),
     lintGutter(),
     lineNumbers(),
     closeBrackets(),
@@ -103,33 +116,34 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
     indentOnInput(),
     autocompletion(),
     codeSyntaxHighlighter(), // This comes from the main editor component
-    darkMode({ darkMode: configStore.config.darkMode }),
+    darkMode({
+      darkMode: configStore.config.darkMode,
+      lightThemes: [defaultLight],
+      darkThemes: [defaultDark],
+    }),
     plainLinkHighlighter,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {
         // Tell the main component that the contents have changed
-        cleanFlag.value = false
-        emit('update:modelValue', cmInstance.state.doc.toString())
+        cleanFlag.value = false;
+        emit("update:modelValue", cmInstance.state.doc.toString());
       }
-    })
-  ]
+    }),
+  ];
 
   switch (mode) {
-    case 'yaml':
+    case "yaml":
       return [
         ...extensions,
         yaml(),
         externalLinterExtension({
           provider: yamlDiagnosticProvider,
-          context: () => undefined
-        })
-      ]
-    case 'css':
-      return [
-        ...extensions,
-        css(),
-      ]
-    case 'jsonc':
+          context: () => undefined,
+        }),
+      ];
+    case "css":
+      return [...extensions, css()];
+    case "jsonc":
       return [
         ...extensions,
         json(),
@@ -137,76 +151,73 @@ function getExtensions (mode: SupportedLanguage): Extension[] {
           provider: jsonDiagnosticProvider,
           context: () => ({
             allowComments: true,
-            allowTrailingComma: true
-          })
-        })
-      ]
-    case 'lua':
-      return [
-        ...extensions,
-        StreamLanguage.define(lua)
-      ]
+            allowTrailingComma: true,
+          }),
+        }),
+      ];
+    case "lua":
+      return [...extensions, StreamLanguage.define(lua)];
   }
 }
 
-function setContents (contents: string, mode: SupportedLanguage): void {
+function setContents(contents: string, mode: SupportedLanguage): void {
   const state = EditorState.create({
     doc: contents,
-    extensions: getExtensions(mode)
-  })
+    extensions: getExtensions(mode),
+  });
 
-  cmInstance.setState(state)
+  cmInstance.setState(state);
   // Immediately show the statusbar
-  cmInstance.dispatch({ effects: showStatusbarEffect.of(true) })
+  cmInstance.dispatch({ effects: showStatusbarEffect.of(true) });
 }
 
 interface Props {
-  modelValue: string
-  mode: SupportedLanguage
-  readonly?: boolean
+  modelValue: string;
+  mode: SupportedLanguage;
+  readonly?: boolean;
 }
 
-const props = defineProps<Props>()
+const props = defineProps<Props>();
 
-const emit = defineEmits<(e: 'update:modelValue', newContents: string) => void>()
+const emit = defineEmits<(e: "update:modelValue", newContents: string) => void>();
 
 // Switch the darkMode variable in the editor based on the config
 configStore.$subscribe((_mutation, state) => {
   cmInstance.dispatch({
     effects: [
       darkModeEffect.of({ darkMode: state.config.darkMode }),
-      highlightWhitespaceEffect.of(state.config.editor.showWhitespace)
-    ]
-  })
-})
+      highlightWhitespaceEffect.of(state.config.editor.showWhitespace),
+    ],
+  });
+});
 
-watch(toRef(props, 'modelValue'), () => {
+watch(toRef(props, "modelValue"), () => {
   // Assign new contents, but only if not the same as the current contents
   if (cmInstance.state.doc.toString() !== props.modelValue) {
-    setContents(props.modelValue, props.mode)
+    setContents(props.modelValue, props.mode);
   }
-})
+});
 
 onMounted(() => {
-  const wrapper = document.getElementById(wrapperId.value)
+  const wrapper = document.getElementById(wrapperId.value);
 
   if (wrapper !== null) {
-    wrapper.replaceWith(cmInstance.dom)
+    wrapper.replaceWith(cmInstance.dom);
   }
 
-  setContents(props.modelValue, props.mode)
-})
+  setContents(props.modelValue, props.mode);
+});
 
 // Utility functions for those accessing this module
-function isClean (): boolean {
-  return cleanFlag.value
+function isClean(): boolean {
+  return cleanFlag.value;
 }
 
-function markClean (): void {
-  cleanFlag.value = true
+function markClean(): void {
+  cleanFlag.value = true;
 }
 
-defineExpose({ markClean, isClean })
+defineExpose({ markClean, isClean });
 </script>
 
 <style lang="less">

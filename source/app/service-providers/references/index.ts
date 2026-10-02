@@ -75,35 +75,35 @@
  * END HEADER
  */
 
-import { ipcMain } from 'electron'
-import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import ProviderContract, { type IPCMessage } from '../provider-contract'
-import type LogProvider from '@providers/log'
-import type { FSALEventPayload } from '../fsal'
-import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from '@dts/common/references'
-import { extractReferences, hashDocumentSource } from '@common/pandoc-util/extract-references'
-import { extractPandocCitations, knownPandocCitations } from './pandoc-citations'
 import {
-  previewReferenceRename,
   type CommitRenameOutcome,
+  previewReferenceRename,
   type ReferenceRenamePreview,
-  type UndoRenameOutcome
-} from '@common/pandoc-util/compute-reference-edits'
-import { ReferenceIndex, type WorkspaceReferenceState } from './reference-index'
+  type UndoRenameOutcome,
+} from "@common/pandoc-util/compute-reference-edits";
+import { extractReferences, hashDocumentSource } from "@common/pandoc-util/extract-references";
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import type { WorkspaceReferenceEdit, WorkspaceTextEdit } from "@dts/common/references";
+import type LogProvider from "@providers/log";
+import { ipcMain } from "electron";
+import type { FSALEventPayload } from "../fsal";
+import ProviderContract, { type IPCMessage } from "../provider-contract";
+import { extractPandocCitations, knownPandocCitations } from "./pandoc-citations";
+import { ReferenceIndex, type WorkspaceReferenceState } from "./reference-index";
 import {
   recoverWorkspaceEditJournal,
   runWorkspaceEditTransaction,
-  type WorkspaceEditAuthority
-} from './workspace-edit-transaction'
+  type WorkspaceEditAuthority,
+} from "./workspace-edit-transaction";
 
 /**
  * The one-shot pending workspace undo recorded by an applied commitRename().
  */
 interface PendingUndo {
   /** The inverse edits, expressed in post-commit coordinates */
-  edits: WorkspaceTextEdit[]
+  edits: WorkspaceTextEdit[];
   /** Every fenced documentPath, in the committed edit's fence order */
-  documentPaths: string[]
+  documentPaths: string[];
   /**
    * Expected post-commit sourceHash per documentPath. Closed files fence on
    * the just-written disk content; open buffers fence on the post-commit
@@ -111,7 +111,7 @@ interface PendingUndo {
    * edits (issue #53), so a user edit between commit and undo changes the
    * hash and surfaces as a conflict.
    */
-  expectedSourceHashes: Record<string, string>
+  expectedSourceHashes: Record<string, string>;
 }
 
 /**
@@ -120,13 +120,13 @@ interface PendingUndo {
  * command or payload fails to compile at the call site.
  */
 export type ReferenceProviderIPCContract = {
-  'get-snapshot': {
-    request: { payload?: undefined }
-    response: WorkspaceReferenceState
-  }
-}
+  "get-snapshot": {
+    request: { payload?: undefined };
+    response: WorkspaceReferenceState;
+  };
+};
 
-export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>
+export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>;
 
 /**
  * The slice of the document authority (the documents provider) this provider
@@ -134,24 +134,24 @@ export type ReferenceProviderIPCAPI = IPCMessage<ReferenceProviderIPCContract>
  * buffer's text; this seam returns the CURRENT text of an open markdown
  * document, or undefined when the path is not an open markdown buffer.
  */
-export type ReferenceDocumentAuthority = WorkspaceEditAuthority
+export type ReferenceDocumentAuthority = WorkspaceEditAuthority;
 
 /**
  * The slice of FSAL this provider actually consumes: the 'fsal-events'
  * subscription surface. The real FSAL satisfies it directly, and specs
  * inject a plain EventEmitter — no type escapes anywhere.
  */
-import type { AnyDescriptor } from '@dts/common/fsal'
+import type { AnyDescriptor } from "@dts/common/fsal";
 
 export interface ReferenceFSALEvents {
-  on: (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void) => void
-  off: (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void) => void
-  getAllLoadedDescriptors?: () => Promise<AnyDescriptor[]>
+  on: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => void;
+  off: (evt: "fsal-events", callback: (events: FSALEventPayload[]) => void) => void;
+  getAllLoadedDescriptors?: () => Promise<AnyDescriptor[]>;
 }
 
 /** A scheduled deferred extraction that can be cancelled before it fires. */
 export interface AuthorityReportTask {
-  cancel: () => void
+  cancel: () => void;
 }
 
 /**
@@ -160,16 +160,20 @@ export interface AuthorityReportTask {
  * debounce is proven headlessly without wall-clock waits.
  */
 export interface AuthorityReportScheduler {
-  schedule: (callback: () => void, delayMs: number) => AuthorityReportTask
+  schedule: (callback: () => void, delayMs: number) => AuthorityReportTask;
 }
 
 /** The production scheduler: plain setTimeout/clearTimeout. */
 const setTimeoutScheduler: AuthorityReportScheduler = {
   schedule: (callback, delayMs) => {
-    const handle = setTimeout(callback, delayMs)
-    return { cancel: () => { clearTimeout(handle) } }
-  }
-}
+    const handle = setTimeout(callback, delayMs);
+    return {
+      cancel: () => {
+        clearTimeout(handle);
+      },
+    };
+  },
+};
 
 /**
  * Serves the merged workspace reference view (saved FSAL snapshots overlaid
@@ -177,13 +181,13 @@ const setTimeoutScheduler: AuthorityReportScheduler = {
  * 'reference-provider' ipc channel.
  */
 export default class ReferenceProvider extends ProviderContract {
-  private readonly _index: ReferenceIndex
+  private readonly _index: ReferenceIndex;
   /** The one-shot pending workspace undo, if the last commit applied */
-  private _pendingUndo: PendingUndo|undefined
+  private _pendingUndo: PendingUndo | undefined;
   /** Pending debounced extractions by documentPath */
-  private readonly _pendingReports: Map<string, AuthorityReportTask>
-  private readonly _citationRequests = new Map<string, symbol>()
-  private readonly _citationSources = new Map<string, string>()
+  private readonly _pendingReports: Map<string, AuthorityReportTask>;
+  private readonly _citationRequests = new Map<string, symbol>();
+  private readonly _citationSources = new Map<string, string>();
 
   /**
    * Applies FSAL state transitions to the index: 'add'/'change' events
@@ -192,44 +196,47 @@ export default class ReferenceProvider extends ProviderContract {
    * broadcast announces a batch that changed the merged view.
    */
   private readonly _onFsalEvents = (events: FSALEventPayload[]): void => {
-    let changed = false
+    let changed = false;
     for (const payload of events) {
-      if (payload.event === 'unlink') {
-        changed = this._index.removeSavedSnapshot(payload.path) || changed
-      } else if ((payload.event === 'add' || payload.event === 'change') && payload.descriptor.type === 'file') {
-        changed = this._index.applySavedSnapshot(payload.descriptor.references) || changed
+      if (payload.event === "unlink") {
+        changed = this._index.removeSavedSnapshot(payload.path) || changed;
+      } else if (
+        (payload.event === "add" || payload.event === "change") &&
+        payload.descriptor.type === "file"
+      ) {
+        changed = this._index.applySavedSnapshot(payload.descriptor.references) || changed;
       }
     }
     if (changed) {
-      broadcastIpcMessage('references')
+      broadcastIpcMessage("references");
     }
-  }
+  };
 
-  constructor (
+  constructor(
     private readonly _logger: LogProvider,
     private readonly _fsal: ReferenceFSALEvents,
     private readonly _authority: ReferenceDocumentAuthority,
     private readonly _authorityReportDebounceMs: number,
     /** Application data directory holding the workspace-edit journal */
     private readonly _journalDirectory: string,
-    private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler
+    private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler,
   ) {
-    super()
-    this._index = new ReferenceIndex()
-    this._pendingReports = new Map()
+    super();
+    this._index = new ReferenceIndex();
+    this._pendingReports = new Map();
 
-    ipcMain.handle('reference-provider', (_event, message: ReferenceProviderIPCAPI) => {
-      const { command } = message
+    ipcMain.handle("reference-provider", (_event, message: ReferenceProviderIPCAPI) => {
+      const { command } = message;
 
-      if (command === 'get-snapshot') {
-        return this._index.getSnapshot()
+      if (command === "get-snapshot") {
+        return this._index.getSnapshot();
       }
 
       // Fail loud (issue #5, B20): a command outside the delegation map is
       // a caller bug, never a silently-undefined response. The renderer
       // report channel of the pre-#53 architecture lands here by design.
-      throw new Error(`reference-provider: unknown command ${String(command)}`)
-    })
+      throw new Error(`reference-provider: unknown command ${String(command)}`);
+    });
   }
 
   /**
@@ -245,48 +252,60 @@ export default class ReferenceProvider extends ProviderContract {
    * @param   {string}   filePath   The changed document's path
    * @param   {boolean}  immediate  True for single events (load/move)
    */
-  public reportAuthorityBuffer (filePath: string, immediate: boolean = false): void {
-    this._pendingReports.get(filePath)?.cancel()
-    this._pendingReports.set(filePath, this._scheduler.schedule(() => {
-      this._pendingReports.delete(filePath)
+  public reportAuthorityBuffer(filePath: string, immediate: boolean = false): void {
+    this._pendingReports.get(filePath)?.cancel();
+    this._pendingReports.set(
+      filePath,
+      this._scheduler.schedule(
+        () => {
+          this._pendingReports.delete(filePath);
 
-      const content = this._authority.readMarkdownBufferContent(filePath)
-      if (content === undefined) {
-        // The buffer closed between the change and the debounce firing:
-        // the overlay follows the authority's open set.
-        this.dropAuthorityBuffer(filePath)
-        return
-      }
+          const content = this._authority.readMarkdownBufferContent(filePath);
+          if (content === undefined) {
+            // The buffer closed between the change and the debounce firing:
+            // the overlay follows the authority's open set.
+            this.dropAuthorityBuffer(filePath);
+            return;
+          }
 
-      const snapshot = extractReferences(filePath, content)
-      if (this._citationSources.get(filePath) === snapshot.sourceHash) return
-      this._citationSources.set(filePath, snapshot.sourceHash)
-      const request = Symbol(filePath)
-      this._citationRequests.set(filePath, request)
-      const citations = knownPandocCitations(content)
-      if (citations !== undefined) {
-        this._index.reportLiveBuffer({ ...snapshot, citations })
-        broadcastIpcMessage('references')
-        return
-      }
-      this._index.reportLiveBuffer(snapshot)
-      broadcastIpcMessage('references')
-      const isCurrent = (): boolean => {
-        const current = this._authority.readMarkdownBufferContent(filePath)
-        return this._citationRequests.get(filePath) === request && current !== undefined &&
-          hashDocumentSource(current) === snapshot.sourceHash
-      }
-      void extractPandocCitations(content).then(citations => {
-        if (!isCurrent()) return
-        this._index.reportLiveBuffer({ ...snapshot, citations })
-        broadcastIpcMessage('references')
-      }, (error: Error) => {
-        this._logger.error('[Reference Provider] Pandoc citation extraction failed', error)
-        if (!isCurrent()) return
-        this._index.reportLiveBuffer({ ...snapshot, citationError: error.message })
-        broadcastIpcMessage('references')
-      })
-    }, immediate ? 0 : this._authorityReportDebounceMs))
+          const snapshot = extractReferences(filePath, content);
+          if (this._citationSources.get(filePath) === snapshot.sourceHash) return;
+          this._citationSources.set(filePath, snapshot.sourceHash);
+          const request = Symbol(filePath);
+          this._citationRequests.set(filePath, request);
+          const citations = knownPandocCitations(content);
+          if (citations !== undefined) {
+            this._index.reportLiveBuffer({ ...snapshot, citations });
+            broadcastIpcMessage("references");
+            return;
+          }
+          this._index.reportLiveBuffer(snapshot);
+          broadcastIpcMessage("references");
+          const isCurrent = (): boolean => {
+            const current = this._authority.readMarkdownBufferContent(filePath);
+            return (
+              this._citationRequests.get(filePath) === request &&
+              current !== undefined &&
+              hashDocumentSource(current) === snapshot.sourceHash
+            );
+          };
+          void extractPandocCitations(content).then(
+            (citations) => {
+              if (!isCurrent()) return;
+              this._index.reportLiveBuffer({ ...snapshot, citations });
+              broadcastIpcMessage("references");
+            },
+            (error: Error) => {
+              this._logger.error("[Reference Provider] Pandoc citation extraction failed", error);
+              if (!isCurrent()) return;
+              this._index.reportLiveBuffer({ ...snapshot, citationError: error.message });
+              broadcastIpcMessage("references");
+            },
+          );
+        },
+        immediate ? 0 : this._authorityReportDebounceMs,
+      ),
+    );
   }
 
   /**
@@ -296,13 +315,13 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * @param   {string}  filePath  The closed document's path
    */
-  public dropAuthorityBuffer (filePath: string): void {
-    this._citationRequests.delete(filePath)
-    this._citationSources.delete(filePath)
-    this._pendingReports.get(filePath)?.cancel()
-    this._pendingReports.delete(filePath)
+  public dropAuthorityBuffer(filePath: string): void {
+    this._citationRequests.delete(filePath);
+    this._citationSources.delete(filePath);
+    this._pendingReports.get(filePath)?.cancel();
+    this._pendingReports.delete(filePath);
     if (this._index.dropLiveBuffer(filePath)) {
-      broadcastIpcMessage('references')
+      broadcastIpcMessage("references");
     }
   }
 
@@ -312,27 +331,30 @@ export default class ReferenceProvider extends ProviderContract {
    * transaction a crash interrupted before the app reads a half-written
    * workspace.
    */
-  public async boot (): Promise<void> {
-    this._fsal.on('fsal-events', this._onFsalEvents)
-    if (typeof this._fsal.getAllLoadedDescriptors === 'function') {
+  public async boot(): Promise<void> {
+    this._fsal.on("fsal-events", this._onFsalEvents);
+    if (typeof this._fsal.getAllLoadedDescriptors === "function") {
       try {
-        const descriptors = await this._fsal.getAllLoadedDescriptors()
+        const descriptors = await this._fsal.getAllLoadedDescriptors();
         for (const descriptor of descriptors) {
-          if (descriptor.type === 'file' && descriptor.references !== undefined) {
-            this._index.applySavedSnapshot(descriptor.references)
+          if (descriptor.type === "file" && descriptor.references !== undefined) {
+            this._index.applySavedSnapshot(descriptor.references);
           }
         }
-        broadcastIpcMessage('references')
+        broadcastIpcMessage("references");
       } catch (err: unknown) {
-        this._logger.error('[Reference Provider] Could not load initial descriptors from FSAL', err)
+        this._logger.error(
+          "[Reference Provider] Could not load initial descriptors from FSAL",
+          err,
+        );
       }
     }
-    const restored = await recoverWorkspaceEditJournal(this._journalDirectory)
+    const restored = await recoverWorkspaceEditJournal(this._journalDirectory);
     if (restored.length > 0) {
       this._logger.warning(
         `[Reference Provider] Restored ${restored.length} file(s) from an interrupted workspace edit`,
-        restored
-      )
+        restored,
+      );
     }
   }
 
@@ -342,8 +364,8 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * @return  {WorkspaceReferenceState}  The merged workspace reference state
    */
-  public getSnapshot (): WorkspaceReferenceState {
-    return this._index.getSnapshot()
+  public getSnapshot(): WorkspaceReferenceState {
+    return this._index.getSnapshot();
   }
 
   /**
@@ -357,8 +379,8 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * @return  {ReferenceRenamePreview}          The previewed edit or a typed rejection
    */
-  public previewRename (oldKey: string, newKey: string): ReferenceRenamePreview {
-    return previewReferenceRename(this._index.getSnapshot().snapshots, oldKey, newKey)
+  public previewRename(oldKey: string, newKey: string): ReferenceRenamePreview {
+    return previewReferenceRename(this._index.getSnapshot().snapshots, oldKey, newKey);
   }
 
   /**
@@ -378,37 +400,37 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * @return  {Promise<CommitRenameOutcome>}        The typed commit outcome
    */
-  public async commitRename (edit: WorkspaceReferenceEdit): Promise<CommitRenameOutcome> {
+  public async commitRename(edit: WorkspaceReferenceEdit): Promise<CommitRenameOutcome> {
     const result = await runWorkspaceEditTransaction(this._authority, this._journalDirectory, {
       edits: edit.edits,
-      expectedSourceHashes: edit.expectedSourceHashes
-    })
+      expectedSourceHashes: edit.expectedSourceHashes,
+    });
 
-    if (result.status === 'conflict') {
+    if (result.status === "conflict") {
       return {
-        status: 'conflict',
+        status: "conflict",
         conflict: {
-          status: 'conflict',
+          status: "conflict",
           documentPath: result.documentPath,
           expectedSourceHash: result.expectedSourceHash,
-          actualSourceHash: result.actualSourceHash
-        }
-      }
+          actualSourceHash: result.actualSourceHash,
+        },
+      };
     }
 
     this._pendingUndo = {
       edits: edit.undo,
       documentPaths: Object.keys(edit.expectedSourceHashes),
-      expectedSourceHashes: result.resultingHashes
-    }
+      expectedSourceHashes: result.resultingHashes,
+    };
 
-    broadcastIpcMessage('references')
+    broadcastIpcMessage("references");
 
     return {
-      status: 'applied',
+      status: "applied",
       closedFilesWritten: result.closedFilesWritten,
-      openBuffersUpdated: result.openBuffersUpdated
-    }
+      openBuffersUpdated: result.openBuffersUpdated,
+    };
   }
 
   /**
@@ -423,53 +445,53 @@ export default class ReferenceProvider extends ProviderContract {
    *
    * @return  {Promise<UndoRenameOutcome>}  The typed undo outcome
    */
-  public async undoRename (): Promise<UndoRenameOutcome> {
-    const pending = this._pendingUndo
+  public async undoRename(): Promise<UndoRenameOutcome> {
+    const pending = this._pendingUndo;
     if (pending === undefined) {
-      return { status: 'no-pending-undo' }
+      return { status: "no-pending-undo" };
     }
 
     const result = await runWorkspaceEditTransaction(this._authority, this._journalDirectory, {
       edits: pending.edits,
-      expectedSourceHashes: pending.expectedSourceHashes
-    })
+      expectedSourceHashes: pending.expectedSourceHashes,
+    });
 
-    if (result.status === 'conflict') {
+    if (result.status === "conflict") {
       return {
-        status: 'conflict',
+        status: "conflict",
         conflict: {
-          status: 'conflict',
+          status: "conflict",
           documentPath: result.documentPath,
           expectedSourceHash: result.expectedSourceHash,
-          actualSourceHash: result.actualSourceHash
-        }
-      }
+          actualSourceHash: result.actualSourceHash,
+        },
+      };
     }
 
     // One-shot: the applied undo consumes the record.
-    this._pendingUndo = undefined
+    this._pendingUndo = undefined;
 
-    broadcastIpcMessage('references')
+    broadcastIpcMessage("references");
 
     return {
-      status: 'applied',
+      status: "applied",
       closedFilesWritten: result.closedFilesWritten,
-      openBuffersUpdated: result.openBuffersUpdated
-    }
+      openBuffersUpdated: result.openBuffersUpdated,
+    };
   }
 
   /**
    * Shuts down the service provider, unsubscribing from FSAL events and
    * cancelling every pending debounced report.
    */
-  public async shutdown (): Promise<void> {
-    this._citationRequests.clear()
-    this._citationSources.clear()
-    this._fsal.off('fsal-events', this._onFsalEvents)
+  public async shutdown(): Promise<void> {
+    this._citationRequests.clear();
+    this._citationSources.clear();
+    this._fsal.off("fsal-events", this._onFsalEvents);
     for (const task of this._pendingReports.values()) {
-      task.cancel()
+      task.cancel();
     }
-    this._pendingReports.clear()
-    this._logger.verbose('Reference provider shutting down ...')
+    this._pendingReports.clear();
+    this._logger.verbose("Reference provider shutting down ...");
   }
 }

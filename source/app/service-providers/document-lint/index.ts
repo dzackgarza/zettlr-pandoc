@@ -37,105 +37,108 @@
  * END HEADER
  */
 
-import { createHash } from 'crypto'
-import { readdir, readFile, rename, stat, writeFile } from 'fs/promises'
-import { availableParallelism } from 'os'
-import path from 'path'
-import ProviderContract from '../provider-contract'
-import type LogProvider from '@providers/log'
-import type LongRunningTaskProvider from '@providers/long-running-tasks'
-import type { LongRunningTask } from '@providers/long-running-tasks/task'
-import { trans } from 'source/common/i18n-main'
-import type { FSALEventPayload } from '@providers/fsal'
-import type FSAL from '@providers/fsal'
-import type { ConfigOptions } from '@providers/config/get-config-template'
-import type { WorkspaceReferenceState } from '@providers/references/reference-index'
-import type { DirDescriptor } from '@dts/common/fsal'
-import { sha256Text } from '@common/util/sha256'
-import { hashDocumentSource } from '@common/pandoc-util/extract-references'
-import type { FixAllEdit, FixAllPlan } from '@dts/common/fix-all'
-import { hasMarkdownExt } from '@common/util/file-extention-checks'
+import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import { sha256Text } from "@common/util/sha256";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { FixAllEdit, FixAllPlan } from "@dts/common/fix-all";
+import type { DirDescriptor } from "@dts/common/fsal";
+import type { ConfigOptions } from "@providers/config/get-config-template";
+import type FSAL from "@providers/fsal";
+import type { FSALEventPayload } from "@providers/fsal";
+import type LogProvider from "@providers/log";
+import type LongRunningTaskProvider from "@providers/long-running-tasks";
+import type { LongRunningTask } from "@providers/long-running-tasks/task";
+import type { WorkspaceReferenceState } from "@providers/references/reference-index";
+import { createHash } from "crypto";
+import { readdir, readFile, rename, stat, writeFile } from "fs/promises";
+import { availableParallelism } from "os";
+import path from "path";
+import { trans } from "source/common/i18n-main";
+import { tikzTemplateDependencyHash } from "tikz-workbench/src/tikz-render";
+import { documentLintAuthority } from "../../util/document-bibliographies";
 import {
   createDocumentLintContext,
+  type DocumentLintDiagnostic,
   lintDocumentText,
-  type DocumentLintDiagnostic
-} from '../../util/document-lint'
-import { documentLintAuthority } from '../../util/document-bibliographies'
+} from "../../util/document-lint";
 import {
   FLOWMARK_HOST_VOCABULARY,
+  type FlowmarkReferenceContext,
   flowmarkReferenceContext,
+  type WorkspaceDefinitions,
   wikilinkResolutions,
   workspaceDefinitions,
-  type FlowmarkReferenceContext,
-  type WorkspaceDefinitions
-} from '../../util/flowmark-lint-context'
-import type { WikilinkIndex } from '@common/util/wikilink-resolution'
-import { flowmarkInstallIdentity } from '../../util/flowmark-runtime'
-import { resolveTikzRenderConfig } from '../../util/resolve-tikz-render-config'
-import { tikzTemplateDependencyHash } from 'tikz-workbench/src/tikz-render'
+} from "../../util/flowmark-lint-context";
+import { flowmarkInstallIdentity } from "../../util/flowmark-runtime";
+import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
+import ProviderContract from "../provider-contract";
 
 /** One document's lint result and the key it was computed under. */
 export interface DocumentLintRecord {
   /** sha256 of the linted text: the document revision the diagnostics are for. */
-  revision: string
+  revision: string;
   /** Digest of every other input to the Flowmark run. */
-  inputs: string
+  inputs: string;
   /** ISO 8601 time the Flowmark run finished. */
-  lintedAt: string
-  diagnostics: DocumentLintDiagnostic[]
+  lintedAt: string;
+  diagnostics: DocumentLintDiagnostic[];
   /** False when Flowmark itself failed; such a record is never cached. */
-  complete: boolean
+  complete: boolean;
 }
 
 export interface DocumentLintLookup {
-  record?: DocumentLintRecord
+  record?: DocumentLintRecord;
   /** True when the record's key matches the document's current text and inputs. */
-  current: boolean
+  current: boolean;
 }
 
 /** A document's current text, as the document authority or the disk has it. */
 export interface DocumentLintSource {
-  path: string
-  text: string
+  path: string;
+  text: string;
 }
 
 export interface DocumentLintDependencies {
-  log: LogProvider
+  log: LogProvider;
   config: {
     get: () => {
-      export: { cslLibrary: string }
-      tikz: ConfigOptions['tikz']
-      editor: { lint: { flowmark: ConfigOptions['editor']['lint']['flowmark'] } }
-    }
-  }
+      export: { cslLibrary: string };
+      tikz: ConfigOptions["tikz"];
+      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
+    };
+  };
   /** Open buffers win over the disk. */
-  buffers: { readMarkdownBufferContent: (filePath: string) => string | undefined }
-  references?: { getSnapshot: () => WorkspaceReferenceState }
+  buffers: { readMarkdownBufferContent: (filePath: string) => string | undefined };
+  references?: { getSnapshot: () => WorkspaceReferenceState };
   /** The workspace's wikilink index, which resolves the document's wikilinks. */
-  links?: { index: WikilinkIndex }
-  fsal?: Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor' | 'getAllLoadedDescriptors' | 'on' | 'off'>
+  links?: { index: WikilinkIndex };
+  fsal?: Pick<
+    FSAL,
+    "getDescriptorFor" | "getAnyDirectoryDescriptor" | "getAllLoadedDescriptors" | "on" | "off"
+  >;
   /** Shows the background queue in the status bar. */
-  lrt?: Pick<LongRunningTaskProvider, 'registerTask' | 'settleTask'>
-  homeDirectory: string
-  env: NodeJS.ProcessEnv
-  userDataDirectory: string
+  lrt?: Pick<LongRunningTaskProvider, "registerTask" | "settleTask">;
+  homeDirectory: string;
+  env: NodeJS.ProcessEnv;
+  userDataDirectory: string;
 }
 
 interface CacheFile {
-  entries: Record<string, DocumentLintRecord>
+  entries: Record<string, DocumentLintRecord>;
 }
 
-const CACHE_FILE = 'document-lint-cache.json'
+const CACHE_FILE = "document-lint-cache.json";
 // A change arrives as a burst of file system events; one reconcile follows it.
-const RECONCILE_DEBOUNCE_MS = 1_000
-const PERSIST_DEBOUNCE_MS = 2_000
+const RECONCILE_DEBOUNCE_MS = 1_000;
+const PERSIST_DEBOUNCE_MS = 2_000;
 // Each Flowmark run is one single-threaded Python process.
-const WORKER_COUNT = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)))
+const WORKER_COUNT = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
 // flowmark/config.py searches each directory upward for these names.
-const FLOWMARK_CONFIG_NAMES = [ '.flowmark.toml', 'flowmark.toml', 'pyproject.toml' ]
+const FLOWMARK_CONFIG_NAMES = [".flowmark.toml", "flowmark.toml", "pyproject.toml"];
 
-function digest (value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+function digest(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 /**
@@ -143,41 +146,48 @@ function digest (value: unknown): string {
  * one that overlaps a fix already taken. A skipped fix remains a finding for
  * the next run, as in ESLint's SourceCodeFixer (eslint/lib/linter).
  */
-export function fixEdits (diagnostics: readonly DocumentLintDiagnostic[]): FixAllEdit[] {
-  const edits: FixAllEdit[] = []
-  let cursor = 0
+export function fixEdits(diagnostics: readonly DocumentLintDiagnostic[]): FixAllEdit[] {
+  const edits: FixAllEdit[] = [];
+  let cursor = 0;
   const fixable = diagnostics
-    .filter(diagnostic => diagnostic.fix !== undefined)
-    .sort((a, b) => a.from - b.from || a.to - b.to)
+    .filter((diagnostic) => diagnostic.fix !== undefined)
+    .sort((a, b) => a.from - b.from || a.to - b.to);
   for (const diagnostic of fixable) {
     if (diagnostic.fix === undefined || diagnostic.from < cursor) {
-      continue
+      continue;
     }
-    edits.push({ from: diagnostic.from, to: diagnostic.to, insert: diagnostic.fix.replacement, rule: diagnostic.rule })
-    cursor = diagnostic.to
+    edits.push({
+      from: diagnostic.from,
+      to: diagnostic.to,
+      insert: diagnostic.fix.replacement,
+      rule: diagnostic.rule,
+    });
+    cursor = diagnostic.to;
   }
-  return edits
+  return edits;
 }
 
-function isRecord (value: unknown): value is DocumentLintRecord {
-  if (typeof value !== 'object' || value === null) {
-    return false
+function isRecord(value: unknown): value is DocumentLintRecord {
+  if (typeof value !== "object" || value === null) {
+    return false;
   }
-  const candidate = value as Partial<DocumentLintRecord>
-  return typeof candidate.revision === 'string' &&
-    typeof candidate.inputs === 'string' &&
-    typeof candidate.lintedAt === 'string' &&
+  const candidate = value as Partial<DocumentLintRecord>;
+  return (
+    typeof candidate.revision === "string" &&
+    typeof candidate.inputs === "string" &&
+    typeof candidate.lintedAt === "string" &&
     Array.isArray(candidate.diagnostics) &&
     candidate.complete === true
+  );
 }
 
-type DirectoryReader = Pick<FSAL, 'getDescriptorFor' | 'getAnyDirectoryDescriptor'>
+type DirectoryReader = Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
 
 /** The inputs of a Flowmark run that belong to one document. */
 interface DocumentInputs {
-  bibliographies?: string[]
-  projectRoots?: string[]
-  references?: FlowmarkReferenceContext
+  bibliographies?: string[];
+  projectRoots?: string[];
+  references?: FlowmarkReferenceContext;
 }
 
 /**
@@ -188,17 +198,19 @@ interface DocumentInputs {
  * bytes keeps its hash.
  */
 class ContentHashes {
-  private readonly known = new Map<string, { mtimeMs: number, size: number, hash: string }>()
+  private readonly known = new Map<string, { mtimeMs: number; size: number; hash: string }>();
 
-  async of (filePath: string): Promise<string> {
-    const info = await stat(filePath)
-    const known = this.known.get(filePath)
+  async of(filePath: string): Promise<string> {
+    const info = await stat(filePath);
+    const known = this.known.get(filePath);
     if (known !== undefined && known.mtimeMs === info.mtimeMs && known.size === info.size) {
-      return known.hash
+      return known.hash;
     }
-    const hash = createHash('sha256').update(await readFile(filePath)).digest('hex')
-    this.known.set(filePath, { mtimeMs: info.mtimeMs, size: info.size, hash })
-    return hash
+    const hash = createHash("sha256")
+      .update(await readFile(filePath))
+      .digest("hex");
+    this.known.set(filePath, { mtimeMs: info.mtimeMs, size: info.size, hash });
+    return hash;
   }
 }
 
@@ -207,171 +219,181 @@ class ContentHashes {
  * the first document needs it.
  */
 class LintPass {
-  constructor (private readonly contentHashes: ContentHashes) {}
+  constructor(private readonly contentHashes: ContentHashes) {}
 
-  private readonly stamps = new Map<string, Promise<string>>()
-  private readonly trees = new Map<string, Promise<string[]>>()
-  private readonly directories = new Map<string, Promise<DirDescriptor>>()
-  private tikzHash: string | undefined
-  private definitions: WorkspaceDefinitions | undefined
+  private readonly stamps = new Map<string, Promise<string>>();
+  private readonly trees = new Map<string, Promise<string[]>>();
+  private readonly directories = new Map<string, Promise<DirDescriptor>>();
+  private tikzHash: string | undefined;
+  private definitions: WorkspaceDefinitions | undefined;
 
   /** The file system layer, with one read of each directory descriptor. */
-  directoryReader (fsal: DirectoryReader): DirectoryReader {
+  directoryReader(fsal: DirectoryReader): DirectoryReader {
     return {
-      getDescriptorFor: async (absPath, avoidDiskAccess) => await fsal.getDescriptorFor(absPath, avoidDiskAccess),
-      getAnyDirectoryDescriptor: async absPath => {
-        let pending = this.directories.get(absPath)
+      getDescriptorFor: async (absPath, avoidDiskAccess) =>
+        await fsal.getDescriptorFor(absPath, avoidDiskAccess),
+      getAnyDirectoryDescriptor: async (absPath) => {
+        let pending = this.directories.get(absPath);
         if (pending === undefined) {
-          pending = fsal.getAnyDirectoryDescriptor(absPath)
-          this.directories.set(absPath, pending)
+          pending = fsal.getAnyDirectoryDescriptor(absPath);
+          this.directories.set(absPath, pending);
         }
-        return await pending
-      }
-    }
+        return await pending;
+      },
+    };
   }
 
-  tikzTemplate (templatePath: string): string {
-    this.tikzHash ??= tikzTemplateDependencyHash(templatePath)
-    return this.tikzHash
+  tikzTemplate(templatePath: string): string {
+    this.tikzHash ??= tikzTemplateDependencyHash(templatePath);
+    return this.tikzHash;
   }
 
-  workspaceDefinitions (references: { getSnapshot: () => WorkspaceReferenceState }): WorkspaceDefinitions {
-    this.definitions ??= workspaceDefinitions(references.getSnapshot())
-    return this.definitions
+  workspaceDefinitions(references: {
+    getSnapshot: () => WorkspaceReferenceState;
+  }): WorkspaceDefinitions {
+    this.definitions ??= workspaceDefinitions(references.getSnapshot());
+    return this.definitions;
   }
 
-  async stamp (filePath: string): Promise<string> {
-    let pending = this.stamps.get(filePath)
+  async stamp(filePath: string): Promise<string> {
+    let pending = this.stamps.get(filePath);
     if (pending === undefined) {
       pending = this.contentHashes.of(filePath).then(
-        hash => `${filePath}\0${hash}`,
-        () => `${filePath}\0absent`
-      )
-      this.stamps.set(filePath, pending)
+        (hash) => `${filePath}\0${hash}`,
+        () => `${filePath}\0absent`,
+      );
+      this.stamps.set(filePath, pending);
     }
-    return await pending
+    return await pending;
   }
 
-  async tree (root: string): Promise<string[]> {
-    let pending = this.trees.get(root)
+  async tree(root: string): Promise<string[]> {
+    let pending = this.trees.get(root);
     if (pending === undefined) {
-      pending = this.readTree(root)
-      this.trees.set(root, pending)
+      pending = this.readTree(root);
+      this.trees.set(root, pending);
     }
-    return await pending
+    return await pending;
   }
 
-  private async readTree (root: string): Promise<string[]> {
-    let entries
+  private async readTree(root: string): Promise<string[]> {
+    let entries;
     try {
-      entries = await readdir(root, { recursive: true, withFileTypes: true })
+      entries = await readdir(root, { recursive: true, withFileTypes: true });
     } catch {
-      return [await this.stamp(root)]
+      return [await this.stamp(root)];
     }
     const files = entries
-      .filter(entry => entry.isFile())
-      .map(entry => path.join(entry.parentPath, entry.name))
-      .sort()
-    return await Promise.all(files.map(async file => await this.stamp(file)))
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.join(entry.parentPath, entry.name))
+      .sort();
+    return await Promise.all(files.map(async (file) => await this.stamp(file)));
   }
 
-  async flowmarkConfig (documentPath: string): Promise<string[]> {
-    const candidates: string[] = []
-    let directory = path.dirname(documentPath)
+  async flowmarkConfig(documentPath: string): Promise<string[]> {
+    const candidates: string[] = [];
+    let directory = path.dirname(documentPath);
     for (;;) {
-      candidates.push(...FLOWMARK_CONFIG_NAMES.map(name => path.join(directory, name)))
-      const parent = path.dirname(directory)
+      candidates.push(...FLOWMARK_CONFIG_NAMES.map((name) => path.join(directory, name)));
+      const parent = path.dirname(directory);
       if (parent === directory) {
-        break
+        break;
       }
-      directory = parent
+      directory = parent;
     }
-    const stamps = await Promise.all(candidates.map(async file => await this.stamp(file)))
-    return stamps.filter(stamp => !stamp.endsWith('\0absent'))
+    const stamps = await Promise.all(candidates.map(async (file) => await this.stamp(file)));
+    return stamps.filter((stamp) => !stamp.endsWith("\0absent"));
   }
 }
 
 export default class DocumentLintProvider extends ProviderContract {
-  private readonly entries = new Map<string, DocumentLintRecord>()
-  private readonly contentHashes = new ContentHashes()
+  private readonly entries = new Map<string, DocumentLintRecord>();
+  private readonly contentHashes = new ContentHashes();
   /** Each queued document, with the pass that found it without a current result. */
-  private readonly queue = new Map<string, LintPass>()
-  private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>()
-  private activeWorkers = 0
+  private readonly queue = new Map<string, LintPass>();
+  private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>();
+  private activeWorkers = 0;
   /** The status bar task of the running queue, from its first document until it drains. */
-  private batch: { task: LongRunningTask, total: number, done: number, failed: number } | undefined
-  private flowmarkIdentity: string | undefined
-  private reconcileTimer: NodeJS.Timeout | undefined
-  private persistTimer: NodeJS.Timeout | undefined
-  private booted = false
-  private stopped = false
+  private batch: { task: LongRunningTask; total: number; done: number; failed: number } | undefined;
+  private flowmarkIdentity: string | undefined;
+  private reconcileTimer: NodeJS.Timeout | undefined;
+  private persistTimer: NodeJS.Timeout | undefined;
+  private booted = false;
+  private stopped = false;
 
   private readonly onFsalEvents = (events: FSALEventPayload[]): void => {
     for (const payload of events) {
-      if (payload.event === 'unlink') {
+      if (payload.event === "unlink") {
         if (this.entries.delete(payload.path)) {
-          this.schedulePersist()
+          this.schedulePersist();
         }
-      } else if ((payload.event === 'add' || payload.event === 'change') && hasMarkdownExt(payload.descriptor.path)) {
-        this.scheduleReconcile()
+      } else if (
+        (payload.event === "add" || payload.event === "change") &&
+        hasMarkdownExt(payload.descriptor.path)
+      ) {
+        this.scheduleReconcile();
       }
     }
+  };
+
+  constructor(private readonly deps: DocumentLintDependencies) {
+    super();
   }
 
-  constructor (private readonly deps: DocumentLintDependencies) {
-    super()
+  private get cachePath(): string {
+    return path.join(this.deps.userDataDirectory, CACHE_FILE);
   }
 
-  private get cachePath (): string {
-    return path.join(this.deps.userDataDirectory, CACHE_FILE)
+  async boot(): Promise<void> {
+    await this.loadCache();
+    await this.refreshFlowmarkIdentity();
+    this.deps.fsal?.on("fsal-events", this.onFsalEvents);
+    this.booted = true;
+    this.scheduleReconcile();
   }
 
-  async boot (): Promise<void> {
-    await this.loadCache()
-    await this.refreshFlowmarkIdentity()
-    this.deps.fsal?.on('fsal-events', this.onFsalEvents)
-    this.booted = true
-    this.scheduleReconcile()
-  }
-
-  async shutdown (): Promise<void> {
-    this.stopped = true
-    this.deps.fsal?.off('fsal-events', this.onFsalEvents)
-    clearTimeout(this.reconcileTimer)
-    clearTimeout(this.persistTimer)
-    await this.persist()
+  async shutdown(): Promise<void> {
+    this.stopped = true;
+    this.deps.fsal?.off("fsal-events", this.onFsalEvents);
+    clearTimeout(this.reconcileTimer);
+    clearTimeout(this.persistTimer);
+    await this.persist();
   }
 
   /** Call after the Flowmark install changed: every result it produced is outdated. */
-  async flowmarkUpdated (): Promise<void> {
+  async flowmarkUpdated(): Promise<void> {
     // Before boot there is nothing to invalidate; boot reads the identity.
     if (!this.booted) {
-      return
+      return;
     }
-    await this.refreshFlowmarkIdentity()
-    this.scheduleReconcile()
+    await this.refreshFlowmarkIdentity();
+    this.scheduleReconcile();
   }
 
   /**
    * Lint a document, answering from the cache when its key matches. A
    * document without a path (an unsaved buffer) is linted and not cached.
    */
-  async lint (documentPath: string, text: string): Promise<DocumentLintRecord> {
-    return await this.lintIn(new LintPass(this.contentHashes), documentPath, text)
+  async lint(documentPath: string, text: string): Promise<DocumentLintRecord> {
+    return await this.lintIn(new LintPass(this.contentHashes), documentPath, text);
   }
 
-  private async lintIn (pass: LintPass, documentPath: string, text: string): Promise<DocumentLintRecord> {
-    const document = await this.documentInputs(documentPath, text, pass)
-    if (documentPath === '') {
-      return await this.run(documentPath, text, document, '')
+  private async lintIn(
+    pass: LintPass,
+    documentPath: string,
+    text: string,
+  ): Promise<DocumentLintRecord> {
+    const document = await this.documentInputs(documentPath, text, pass);
+    if (documentPath === "") {
+      return await this.run(documentPath, text, document, "");
     }
-    const revision = sha256Text(text)
-    const inputs = await this.inputsKey(documentPath, text, document, pass)
-    const cached = this.entries.get(documentPath)
+    const revision = sha256Text(text);
+    const inputs = await this.inputsKey(documentPath, text, document, pass);
+    const cached = this.entries.get(documentPath);
     if (cached !== undefined && cached.revision === revision && cached.inputs === inputs) {
-      return cached
+      return cached;
     }
-    return await this.runOnce(documentPath, text, document, revision, inputs)
+    return await this.runOnce(documentPath, text, document, revision, inputs);
   }
 
   /**
@@ -379,185 +401,220 @@ export default class DocumentLintProvider extends ProviderContract {
    * document without a current result is queued for the background linter;
    * nothing here waits for Flowmark.
    */
-  async lookup (sources: DocumentLintSource[]): Promise<DocumentLintLookup[]> {
-    const pass = new LintPass(this.contentHashes)
-    return await Promise.all(sources.map(async source => {
-      const record = this.entries.get(source.path)
-      const current = record !== undefined &&
-        record.revision === sha256Text(source.text) &&
-        record.inputs === await this.inputsKey(
-          source.path,
-          source.text,
-          await this.documentInputs(source.path, source.text, pass),
-          pass
-        )
-      if (!current) {
-        this.enqueue(source.path, pass)
-      }
-      return { record, current }
-    }))
+  async lookup(sources: DocumentLintSource[]): Promise<DocumentLintLookup[]> {
+    const pass = new LintPass(this.contentHashes);
+    return await Promise.all(
+      sources.map(async (source) => {
+        const record = this.entries.get(source.path);
+        const current =
+          record !== undefined &&
+          record.revision === sha256Text(source.text) &&
+          record.inputs ===
+            (await this.inputsKey(
+              source.path,
+              source.text,
+              await this.documentInputs(source.path, source.text, pass),
+              pass,
+            ));
+        if (!current) {
+          this.enqueue(source.path, pass);
+        }
+        return { record, current };
+      }),
+    );
   }
 
-  private async runOnce (
+  private async runOnce(
     documentPath: string,
     text: string,
     document: DocumentInputs,
     revision: string,
-    inputs: string
+    inputs: string,
   ): Promise<DocumentLintRecord> {
-    const flightKey = `${documentPath}\0${revision}\0${inputs}`
-    let pending = this.inFlight.get(flightKey)
+    const flightKey = `${documentPath}\0${revision}\0${inputs}`;
+    let pending = this.inFlight.get(flightKey);
     if (pending === undefined) {
       pending = this.run(documentPath, text, document, inputs).finally(() => {
-        this.inFlight.delete(flightKey)
-      })
-      this.inFlight.set(flightKey, pending)
+        this.inFlight.delete(flightKey);
+      });
+      this.inFlight.set(flightKey, pending);
     }
-    return await pending
+    return await pending;
   }
 
-  private async run (
+  private async run(
     documentPath: string,
     text: string,
     document: DocumentInputs,
-    inputs: string
+    inputs: string,
   ): Promise<DocumentLintRecord> {
-    const config = this.deps.config.get()
+    const config = this.deps.config.get();
     const context = await createDocumentLintContext({
       homeDirectory: this.deps.homeDirectory,
       env: this.deps.env,
       wikilinks: this.deps.links?.index,
       tikzRenderConfig: this.tikzRenderConfig(),
-      flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs
-    })
-    const outcome = await lintDocumentText(text, documentPath, context, document)
+      flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
+    });
+    const outcome = await lintDocumentText(text, documentPath, context, document);
     const record: DocumentLintRecord = {
       revision: sha256Text(text),
       inputs,
       lintedAt: new Date().toISOString(),
       diagnostics: outcome.diagnostics,
-      complete: outcome.complete
-    }
+      complete: outcome.complete,
+    };
     // A Flowmark failure (a timeout, a missing install) is not a result of
     // the document; the next lint must try again.
-    if (outcome.complete && documentPath !== '' && this.flowmarkIdentity !== undefined) {
-      this.entries.set(documentPath, record)
-      this.schedulePersist()
+    if (outcome.complete && documentPath !== "" && this.flowmarkIdentity !== undefined) {
+      this.entries.set(documentPath, record);
+      this.schedulePersist();
     }
-    return record
+    return record;
   }
 
-  private tikzRenderConfig (): ReturnType<typeof resolveTikzRenderConfig> {
-    const config = this.deps.config.get()
+  private tikzRenderConfig(): ReturnType<typeof resolveTikzRenderConfig> {
+    const config = this.deps.config.get();
     return resolveTikzRenderConfig(
       config.tikz.dataDir,
       config.tikz.figuresDir,
       this.deps.homeDirectory,
       this.deps.userDataDirectory,
-      this.deps.env
-    )
+      this.deps.env,
+    );
   }
 
-  private async documentInputs (documentPath: string, text: string, pass: LintPass): Promise<DocumentInputs> {
-    const references = this.deps.references === undefined
-      ? undefined
-      : flowmarkReferenceContext(documentPath, text, pass.workspaceDefinitions(this.deps.references))
-    return { ...await this.authority(documentPath, pass), references }
-  }
-
-  private async authority (
+  private async documentInputs(
     documentPath: string,
-    pass: LintPass
-  ): Promise<{ bibliographies?: string[], projectRoots?: string[] }> {
-    const mainLibrary = this.deps.config.get().export.cslLibrary
-    if (documentPath === '') {
+    text: string,
+    pass: LintPass,
+  ): Promise<DocumentInputs> {
+    const references =
+      this.deps.references === undefined
+        ? undefined
+        : flowmarkReferenceContext(
+            documentPath,
+            text,
+            pass.workspaceDefinitions(this.deps.references),
+          );
+    return { ...(await this.authority(documentPath, pass)), references };
+  }
+
+  private async authority(
+    documentPath: string,
+    pass: LintPass,
+  ): Promise<{ bibliographies?: string[]; projectRoots?: string[] }> {
+    const mainLibrary = this.deps.config.get().export.cslLibrary;
+    if (documentPath === "") {
       // An unsaved buffer cites from the main library, as citeproc renders it.
-      return { bibliographies: mainLibrary === '' ? [] : [mainLibrary] }
+      return { bibliographies: mainLibrary === "" ? [] : [mainLibrary] };
     }
     if (this.deps.fsal === undefined) {
       // Without the file system layer there is no workspace to resolve a
       // bibliography from; Flowmark then reads the document's own metadata.
-      return {}
+      return {};
     }
-    return await documentLintAuthority(pass.directoryReader(this.deps.fsal), mainLibrary, documentPath)
+    return await documentLintAuthority(
+      pass.directoryReader(this.deps.fsal),
+      mainLibrary,
+      documentPath,
+    );
   }
 
-  private async inputsKey (
+  private async inputsKey(
     documentPath: string,
     text: string,
     document: DocumentInputs,
-    pass: LintPass
+    pass: LintPass,
   ): Promise<string> {
-    const macroRoot = path.join(this.deps.homeDirectory, '.pandoc', 'styles', 'macros')
-    const mathJaxMacros = path.join(this.deps.homeDirectory, '.pandoc', 'templates', 'css', 'mathjax-macros.json')
+    const macroRoot = path.join(this.deps.homeDirectory, ".pandoc", "styles", "macros");
+    const mathJaxMacros = path.join(
+      this.deps.homeDirectory,
+      ".pandoc",
+      "templates",
+      "css",
+      "mathjax-macros.json",
+    );
     return digest({
       vocabulary: FLOWMARK_HOST_VOCABULARY,
       flowmark: this.flowmarkIdentity,
-      macros: [ ...await pass.tree(macroRoot), await pass.stamp(mathJaxMacros) ],
+      macros: [...(await pass.tree(macroRoot)), await pass.stamp(mathJaxMacros)],
       tikz: pass.tikzTemplate(this.tikzRenderConfig().templatePath),
       texinputs: this.deps.env.TEXINPUTS ?? null,
       // The revision covers the document's own definitions and references.
       references: document.references === undefined ? null : document.references.resolutions,
-      wikilinks: this.deps.links === undefined ? null : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
-      bibliographies: document.bibliographies === undefined
-        ? null
-        : await Promise.all(document.bibliographies.map(async file => await pass.stamp(file))),
+      wikilinks:
+        this.deps.links === undefined
+          ? null
+          : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
+      bibliographies:
+        document.bibliographies === undefined
+          ? null
+          : await Promise.all(document.bibliographies.map(async (file) => await pass.stamp(file))),
       projectRoots: document.projectRoots === undefined ? null : document.projectRoots,
-      flowmarkConfig: await pass.flowmarkConfig(documentPath)
-    })
+      flowmarkConfig: await pass.flowmarkConfig(documentPath),
+    });
   }
 
-  private async refreshFlowmarkIdentity (): Promise<void> {
+  private async refreshFlowmarkIdentity(): Promise<void> {
     try {
-      this.flowmarkIdentity = await flowmarkInstallIdentity()
+      this.flowmarkIdentity = await flowmarkInstallIdentity();
     } catch (error) {
       // Without an identity no result can be keyed; lints still run and
       // report the Flowmark failure themselves.
-      this.flowmarkIdentity = undefined
-      this.deps.log.error('[Document Lint] Results are not cached: the installed Flowmark is unknown', error)
+      this.flowmarkIdentity = undefined;
+      this.deps.log.error(
+        "[Document Lint] Results are not cached: the installed Flowmark is unknown",
+        error,
+      );
     }
   }
 
-  private scheduleReconcile (): void {
+  private scheduleReconcile(): void {
     if (this.stopped) {
-      return
+      return;
     }
-    clearTimeout(this.reconcileTimer)
+    clearTimeout(this.reconcileTimer);
     this.reconcileTimer = setTimeout(() => {
-      this.reconcile().catch(error => {
-        this.deps.log.error('[Document Lint] Could not reconcile the workspace lint cache', error)
-      })
-    }, RECONCILE_DEBOUNCE_MS)
+      this.reconcile().catch((error) => {
+        this.deps.log.error("[Document Lint] Could not reconcile the workspace lint cache", error);
+      });
+    }, RECONCILE_DEBOUNCE_MS);
   }
 
   /** Queue every workspace Markdown document without a current result. */
-  private async reconcile (): Promise<void> {
+  private async reconcile(): Promise<void> {
     if (this.deps.fsal === undefined || this.flowmarkIdentity === undefined) {
-      return
+      return;
     }
-    const paths = await this.workspaceDocuments()
-    const known = new Set(paths)
+    const paths = await this.workspaceDocuments();
+    const known = new Set(paths);
     for (const entryPath of [...this.entries.keys()]) {
-      if (!known.has(entryPath) && this.deps.buffers.readMarkdownBufferContent(entryPath) === undefined) {
-        this.entries.delete(entryPath)
-        this.schedulePersist()
+      if (
+        !known.has(entryPath) &&
+        this.deps.buffers.readMarkdownBufferContent(entryPath) === undefined
+      ) {
+        this.entries.delete(entryPath);
+        this.schedulePersist();
       }
     }
-    const sources = await Promise.all(paths.map(async documentPath => ({
-      path: documentPath,
-      text: await this.currentText(documentPath)
-    })))
-    await this.lookup(sources)
+    const sources = await Promise.all(
+      paths.map(async (documentPath) => ({
+        path: documentPath,
+        text: await this.currentText(documentPath),
+      })),
+    );
+    await this.lookup(sources);
   }
 
   /** Every Markdown document of the open workspaces. */
-  async workspaceDocuments (): Promise<string[]> {
+  async workspaceDocuments(): Promise<string[]> {
     if (this.deps.fsal === undefined) {
-      throw new Error('[Document Lint] The workspace documents need the FSAL')
+      throw new Error("[Document Lint] The workspace documents need the FSAL");
     }
     return (await this.deps.fsal.getAllLoadedDescriptors())
-      .filter(descriptor => descriptor.type === 'file' && hasMarkdownExt(descriptor.path))
-      .map(descriptor => descriptor.path)
+      .filter((descriptor) => descriptor.type === "file" && hasMarkdownExt(descriptor.path))
+      .map((descriptor) => descriptor.path);
   }
 
   /**
@@ -565,167 +622,187 @@ export default class DocumentLintProvider extends ProviderContract {
    * text. Each document is linted through the cache, WORKER_COUNT at a time,
    * as one long-running task.
    */
-  async planFixes (documentPaths: string[]): Promise<FixAllPlan> {
-    const task = this.deps.lrt?.registerTask(trans('Finding fixes'), 'Flowmark', undefined, false)
-    const plan: FixAllPlan = { documents: [], documentsChecked: documentPaths.length, unlinted: [] }
-    const pass = new LintPass(this.contentHashes)
-    let next = 0
-    let done = 0
+  async planFixes(documentPaths: string[]): Promise<FixAllPlan> {
+    const task = this.deps.lrt?.registerTask(trans("Finding fixes"), "Flowmark", undefined, false);
+    const plan: FixAllPlan = {
+      documents: [],
+      documentsChecked: documentPaths.length,
+      unlinted: [],
+    };
+    const pass = new LintPass(this.contentHashes);
+    let next = 0;
+    let done = 0;
     const worker = async (): Promise<void> => {
       while (next < documentPaths.length) {
-        const documentPath = documentPaths[next]
-        next += 1
-        const text = await this.currentText(documentPath)
-        const record = await this.lintIn(pass, documentPath, text)
+        const documentPath = documentPaths[next];
+        next += 1;
+        const text = await this.currentText(documentPath);
+        const record = await this.lintIn(pass, documentPath, text);
         if (!record.complete) {
-          plan.unlinted.push(documentPath)
+          plan.unlinted.push(documentPath);
         } else {
-          const edits = fixEdits(record.diagnostics)
+          const edits = fixEdits(record.diagnostics);
           if (edits.length > 0) {
-            plan.documents.push({ documentPath, sourceHash: hashDocumentSource(text), edits })
+            plan.documents.push({ documentPath, sourceHash: hashDocumentSource(text), edits });
           }
         }
-        done += 1
+        done += 1;
         task?.update({
-          info: trans('%s of %s documents', done, documentPaths.length),
-          percentage: done / documentPaths.length
-        })
+          info: trans("%s of %s documents", done, documentPaths.length),
+          percentage: done / documentPaths.length,
+        });
       }
-    }
+    };
     try {
-      await Promise.all(Array.from({ length: WORKER_COUNT }, worker))
+      await Promise.all(Array.from({ length: WORKER_COUNT }, worker));
     } catch (error) {
       if (task !== undefined) {
-        this.deps.lrt?.settleTask(task, error instanceof Error ? error : new Error(String(error)))
+        this.deps.lrt?.settleTask(task, error instanceof Error ? error : new Error(String(error)));
       }
-      throw error
+      throw error;
     }
     if (task !== undefined) {
-      this.deps.lrt?.settleTask(task)
+      this.deps.lrt?.settleTask(task);
     }
-    plan.documents.sort((a, b) => a.documentPath.localeCompare(b.documentPath))
-    plan.unlinted.sort()
-    return plan
+    plan.documents.sort((a, b) => a.documentPath.localeCompare(b.documentPath));
+    plan.unlinted.sort();
+    return plan;
   }
 
-  private async currentText (documentPath: string): Promise<string> {
-    return this.deps.buffers.readMarkdownBufferContent(documentPath) ??
-      await readFile(documentPath, 'utf8')
+  private async currentText(documentPath: string): Promise<string> {
+    return (
+      this.deps.buffers.readMarkdownBufferContent(documentPath) ??
+      (await readFile(documentPath, "utf8"))
+    );
   }
 
-  private enqueue (documentPath: string, pass: LintPass): void {
+  private enqueue(documentPath: string, pass: LintPass): void {
     if (this.stopped || this.flowmarkIdentity === undefined) {
-      return
+      return;
     }
     if (!this.queue.has(documentPath)) {
-      this.countQueued()
+      this.countQueued();
     }
     // The newest pass has the newest inputs.
-    this.queue.set(documentPath, pass)
+    this.queue.set(documentPath, pass);
     while (this.activeWorkers < WORKER_COUNT && this.queue.size > 0) {
-      this.activeWorkers += 1
-      void this.work()
+      this.activeWorkers += 1;
+      void this.work();
     }
   }
 
-  private async work (): Promise<void> {
-    for (const [ documentPath, pass ] of this.queue) {
+  private async work(): Promise<void> {
+    for (const [documentPath, pass] of this.queue) {
       if (this.stopped) {
-        break
+        break;
       }
-      this.queue.delete(documentPath)
+      this.queue.delete(documentPath);
       try {
-        await this.lintIn(pass, documentPath, await this.currentText(documentPath))
+        await this.lintIn(pass, documentPath, await this.currentText(documentPath));
       } catch (error) {
-        this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error)
+        this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error);
         if (this.batch !== undefined) {
-          this.batch.failed += 1
+          this.batch.failed += 1;
         }
       }
       if (this.batch !== undefined) {
-        this.batch.done += 1
-        this.showProgress(this.batch)
+        this.batch.done += 1;
+        this.showProgress(this.batch);
       }
     }
-    this.activeWorkers -= 1
+    this.activeWorkers -= 1;
     if (this.activeWorkers === 0 && this.queue.size === 0) {
-      this.settleBatch()
+      this.settleBatch();
     }
   }
 
-  private countQueued (): void {
+  private countQueued(): void {
     if (this.deps.lrt === undefined) {
-      return
+      return;
     }
     if (this.batch === undefined) {
-      const task = this.deps.lrt.registerTask(trans('Linting workspace documents'), undefined, undefined, false)
-      this.batch = { task, total: 0, done: 0, failed: 0 }
+      const task = this.deps.lrt.registerTask(
+        trans("Linting workspace documents"),
+        undefined,
+        undefined,
+        false,
+      );
+      this.batch = { task, total: 0, done: 0, failed: 0 };
     }
-    this.batch.total += 1
-    this.showProgress(this.batch)
+    this.batch.total += 1;
+    this.showProgress(this.batch);
   }
 
-  private showProgress (batch: { task: LongRunningTask, total: number, done: number }): void {
+  private showProgress(batch: { task: LongRunningTask; total: number; done: number }): void {
     batch.task.update({
-      info: trans('%s of %s documents', batch.done, batch.total),
-      percentage: batch.done / batch.total
-    })
+      info: trans("%s of %s documents", batch.done, batch.total),
+      percentage: batch.done / batch.total,
+    });
   }
 
-  private settleBatch (): void {
-    const batch = this.batch
+  private settleBatch(): void {
+    const batch = this.batch;
     if (batch === undefined || this.deps.lrt === undefined) {
-      return
+      return;
     }
-    this.batch = undefined
+    this.batch = undefined;
     this.deps.lrt.settleTask(
       batch.task,
-      batch.failed === 0 ? undefined : new Error(trans('%s documents could not be linted; the log names each one', batch.failed))
-    )
+      batch.failed === 0
+        ? undefined
+        : new Error(
+            trans("%s documents could not be linted; the log names each one", batch.failed),
+          ),
+    );
   }
 
-  private async loadCache (): Promise<void> {
-    let raw: string
+  private async loadCache(): Promise<void> {
+    let raw: string;
     try {
-      raw = await readFile(this.cachePath, 'utf8')
+      raw = await readFile(this.cachePath, "utf8");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return;
       }
-      throw error
+      throw error;
     }
-    let parsed: unknown
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(raw)
+      parsed = JSON.parse(raw);
     } catch (error) {
-      this.deps.log.warning(`[Document Lint] Discarding the unreadable lint cache ${this.cachePath}`, error)
-      return
+      this.deps.log.warning(
+        `[Document Lint] Discarding the unreadable lint cache ${this.cachePath}`,
+        error,
+      );
+      return;
     }
-    const entries = (parsed as Partial<CacheFile> | null)?.entries
-    if (typeof entries !== 'object' || entries === null) {
-      this.deps.log.warning(`[Document Lint] Discarding the malformed lint cache ${this.cachePath}`)
-      return
+    const entries = (parsed as Partial<CacheFile> | null)?.entries;
+    if (typeof entries !== "object" || entries === null) {
+      this.deps.log.warning(
+        `[Document Lint] Discarding the malformed lint cache ${this.cachePath}`,
+      );
+      return;
     }
-    for (const [ documentPath, record ] of Object.entries(entries)) {
+    for (const [documentPath, record] of Object.entries(entries)) {
       if (isRecord(record)) {
-        this.entries.set(documentPath, record)
+        this.entries.set(documentPath, record);
       }
     }
   }
 
-  private schedulePersist (): void {
-    clearTimeout(this.persistTimer)
+  private schedulePersist(): void {
+    clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => {
-      this.persist().catch(error => {
-        this.deps.log.error('[Document Lint] Could not write the lint cache', error)
-      })
-    }, PERSIST_DEBOUNCE_MS)
+      this.persist().catch((error) => {
+        this.deps.log.error("[Document Lint] Could not write the lint cache", error);
+      });
+    }, PERSIST_DEBOUNCE_MS);
   }
 
-  private async persist (): Promise<void> {
-    const file: CacheFile = { entries: Object.fromEntries(this.entries) }
-    const temporary = `${this.cachePath}.tmp`
-    await writeFile(temporary, JSON.stringify(file), 'utf8')
-    await rename(temporary, this.cachePath)
+  private async persist(): Promise<void> {
+    const file: CacheFile = { entries: Object.fromEntries(this.entries) };
+    const temporary = `${this.cachePath}.tmp`;
+    await writeFile(temporary, JSON.stringify(file), "utf8");
+    await rename(temporary, this.cachePath);
   }
 }

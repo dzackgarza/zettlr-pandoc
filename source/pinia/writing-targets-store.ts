@@ -12,32 +12,34 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { defineStore } from 'pinia'
-import type { WritingTarget } from 'source/app/service-providers/targets'
-import { ref } from 'vue'
+import { reportError } from "@common/util/error-reporting";
+import { defineStore } from "pinia";
+import type { WritingTarget } from "source/app/service-providers/targets";
+import { ref } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-export const useWritingTargetsStore = defineStore('writing-targets', () => {
-  const targets = ref<WritingTarget[]>([])
+export const useWritingTargetsStore = defineStore("writing-targets", () => {
+  const targets = ref<WritingTarget[]>([]);
 
   // Listen to subsequent changes
-  ipcRenderer.on('targets-provider', (event, command) => {
-    if (command === 'writing-targets-updated') {
-      ipcRenderer.invoke('targets-provider', { command: 'get-targets' })
+  ipcRenderer.on("targets-provider", (event, command) => {
+    if (command === "writing-targets-updated") {
+      ipcRenderer
+        .invoke("targets-provider", { command: "get-targets" })
         .then((t: WritingTarget[]) => {
-          targets.value = t
+          targets.value = t;
         })
-        .catch(err => reportError(err))
+        .catch((err) => reportError(err));
     }
-  })
+  });
 
-  ipcRenderer.invoke('targets-provider', { command: 'get-targets' })
+  ipcRenderer
+    .invoke("targets-provider", { command: "get-targets" })
     .then((t: WritingTarget[]) => {
-      targets.value = t
+      targets.value = t;
     })
-    .catch(err => reportError(err))
+    .catch((err) => reportError(err));
 
-  return { targets }
-})
+  return { targets };
+});

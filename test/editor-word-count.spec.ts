@@ -13,13 +13,13 @@
  * END HEADER
  */
 
-import { ensureSyntaxTree } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
-import { strict as assert } from 'assert'
-import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { countDocument, countRange } from 'source/common/modules/markdown-editor/util/word-count'
-import { markdownToAST } from 'source/common/modules/markdown-utils'
-import { countAll } from 'source/common/util/counter'
+import { ensureSyntaxTree } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
+import { strict as assert } from "assert";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import { countDocument, countRange } from "source/common/modules/markdown-editor/util/word-count";
+import { markdownToAST } from "source/common/modules/markdown-utils";
+import { countAll } from "source/common/util/counter";
 
 const DOC = `---
 title: "A title"
@@ -49,56 +49,62 @@ Every statement of the theorem has words.
 ## Second heading
 
 The last paragraph.
-`
+`;
 
-function parsed (doc: string): EditorState {
-  const state = EditorState.create({ doc, extensions: [markdownParser()] })
-  assert.ok(ensureSyntaxTree(state, doc.length, 5000) !== null, 'the syntax tree must be fully parsed')
-  return state
+function parsed(doc: string): EditorState {
+  const state = EditorState.create({ doc, extensions: [markdownParser()] });
+  assert.ok(
+    ensureSyntaxTree(state, doc.length, 5000) !== null,
+    "the syntax tree must be fully parsed",
+  );
+  return state;
 }
 
-function afterChange (state: EditorState, from: number, to: number, insert: string): EditorState {
-  const next = state.update({ changes: { from, to, insert } }).state
-  assert.ok(ensureSyntaxTree(next, next.doc.length, 5000) !== null, 'the syntax tree must be fully parsed')
-  return next
+function afterChange(state: EditorState, from: number, to: number, insert: string): EditorState {
+  const next = state.update({ changes: { from, to, insert } }).state;
+  assert.ok(
+    ensureSyntaxTree(next, next.doc.length, 5000) !== null,
+    "the syntax tree must be fully parsed",
+  );
+  return next;
 }
 
-describe('Editor word count', function () {
-  it('counts the words and characters of the document', function () {
-    const state = parsed(DOC)
-    assert.deepEqual(countDocument(state, 'en'), countAll(markdownToAST(DOC), 'en'))
-    assert.ok(countDocument(state, 'en').words > 40)
-  })
+describe("Editor word count", function () {
+  it("counts the words and characters of the document", function () {
+    const state = parsed(DOC);
+    assert.deepEqual(countDocument(state, "en"), countAll(markdownToAST(DOC), "en"));
+    assert.ok(countDocument(state, "en").words > 40);
+  });
 
-  it('counts the document that an edit made', function () {
-    let state = parsed(DOC)
-    countDocument(state, 'en')
+  it("counts the document that an edit made", function () {
+    let state = parsed(DOC);
+    countDocument(state, "en");
 
-    const paragraph = DOC.indexOf('A paragraph')
-    state = afterChange(state, paragraph, paragraph, 'Three new words. ')
-    const item = state.sliceDoc().indexOf('* another item')
-    state = afterChange(state, item, item + '* another item'.length, '* item')
-    state = afterChange(state, state.doc.length, state.doc.length, '\nOne more paragraph.\n')
+    const paragraph = DOC.indexOf("A paragraph");
+    state = afterChange(state, paragraph, paragraph, "Three new words. ");
+    const item = state.sliceDoc().indexOf("* another item");
+    state = afterChange(state, item, item + "* another item".length, "* item");
+    state = afterChange(state, state.doc.length, state.doc.length, "\nOne more paragraph.\n");
 
-    assert.deepEqual(countDocument(state, 'en'), countAll(markdownToAST(state.sliceDoc()), 'en'))
-  })
+    assert.deepEqual(countDocument(state, "en"), countAll(markdownToAST(state.sliceDoc()), "en"));
+  });
 
-  it('counts a selection', function () {
-    const state = parsed(DOC)
+  it("counts a selection", function () {
+    const state = parsed(DOC);
     const ranges: Array<[number, number]> = [
-      [ 0, DOC.length ],
-      [ DOC.indexOf('paragraph'), DOC.indexOf('emphasis') + 3 ],
-      [ DOC.indexOf('with *emphasis*'), DOC.indexOf('strong words') + 6 ],
-      [ DOC.indexOf('# First heading'), DOC.indexOf('## Second heading') ],
-      [ DOC.indexOf('alpha'), DOC.indexOf('two lines') + 3 ],
-      [ DOC.indexOf('The last'), DOC.length ]
-    ]
-    for (const [ from, to ] of ranges) {
+      [0, DOC.length],
+      [DOC.indexOf("paragraph"), DOC.indexOf("emphasis") + 3],
+      [DOC.indexOf("with *emphasis*"), DOC.indexOf("strong words") + 6],
+      [DOC.indexOf("# First heading"), DOC.indexOf("## Second heading")],
+      [DOC.indexOf("alpha"), DOC.indexOf("two lines") + 3],
+      [DOC.indexOf("The last"), DOC.length],
+    ];
+    for (const [from, to] of ranges) {
       assert.deepEqual(
-        countRange(state, 'en', from, to),
-        countAll(markdownToAST(DOC), 'en', from, to),
-        `the counts of ${from}-${to}`
-      )
+        countRange(state, "en", from, to),
+        countAll(markdownToAST(DOC), "en", from, to),
+        `the counts of ${from}-${to}`,
+      );
     }
-  })
-})
+  });
+});

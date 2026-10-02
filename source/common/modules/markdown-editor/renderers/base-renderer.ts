@@ -89,9 +89,11 @@ class LineStyleResetWidget extends WidgetType {
   }
 
   eq(other: LineStyleResetWidget): boolean {
-    return other.sourceLength === this.sourceLength &&
+    return (
+      other.sourceLength === this.sourceLength &&
       other.inner.constructor === this.inner.constructor &&
-      this.inner.eq(other.inner);
+      this.inner.eq(other.inner)
+    );
   }
 
   toDOM(view: EditorView): HTMLElement {

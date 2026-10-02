@@ -3,99 +3,103 @@ import {
   type Completion,
   type CompletionContext,
   type CompletionResult,
-  type CompletionSource
-} from '@codemirror/autocomplete'
+  type CompletionSource,
+} from "@codemirror/autocomplete";
 import {
+  type EditorState,
+  type Extension,
   Facet,
   StateEffect,
   StateField,
-  type EditorState,
-  type Extension
-} from '@codemirror/state'
-import indexJson from '@common/data/texstudio-command-index.json'
+} from "@codemirror/state";
+import indexJson from "@common/data/texstudio-command-index.json";
 import {
   collectTexContext,
+  type TexDocumentKind,
+  type TexMacroSource,
   texCommandMayStartAt,
   texCommandSurface,
-  type TexDocumentKind,
-  type TexMacroSource
-} from '@common/util/tex-context'
+} from "@common/util/tex-context";
 import {
   buildTexCommandAuthority,
   type TexCommandAuthority,
-  type TexstudioCommandIndex
-} from '@common/util/texstudio-command-index'
-import { withCompletionSource } from './completion-presentation'
+  type TexstudioCommandIndex,
+} from "@common/util/texstudio-command-index";
+import { withCompletionSource } from "./completion-presentation";
 
-const texstudioIndex = indexJson as TexstudioCommandIndex
+const texstudioIndex = indexJson as TexstudioCommandIndex;
 
 /**
  * The kind of document the TeX knowledge describes. CodeMirror combines an
  * unprovided facet to its default; that default is `undefined` here, because
  * an editor without texKnowledgeExtensions() has no TeX document kind.
  */
-export const texDocumentKind = Facet.define<TexDocumentKind, TexDocumentKind|undefined>({
-  combine: kinds => kinds.length === 0 ? undefined : kinds[0]
-})
+export const texDocumentKind = Facet.define<TexDocumentKind, TexDocumentKind | undefined>({
+  combine: (kinds) => (kinds.length === 0 ? undefined : kinds[0]),
+});
 
-function documentKind (state: EditorState): TexDocumentKind {
-  const kind = state.facet(texDocumentKind)
+function documentKind(state: EditorState): TexDocumentKind {
+  const kind = state.facet(texDocumentKind);
   if (kind === undefined) {
-    throw new Error('TeX completion ran in an editor without texKnowledgeExtensions(kind); install them in its extension set.')
+    throw new Error(
+      "TeX completion ran in an editor without texKnowledgeExtensions(kind); install them in its extension set.",
+    );
   }
-  return kind
+  return kind;
 }
 
-export const texMacroSourcesUpdate = StateEffect.define<readonly TexMacroSource[]>()
+export const texMacroSourcesUpdate = StateEffect.define<readonly TexMacroSource[]>();
 
 export const texMacroSourcesField = StateField.define<readonly TexMacroSource[]>({
   create: () => [],
-  update (value, transaction) {
+  update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(texMacroSourcesUpdate)) {
-        return effect.value
+        return effect.value;
       }
     }
-    return value
-  }
-})
+    return value;
+  },
+});
 
 interface ResolvedTexKnowledge {
-  authority: TexCommandAuthority
-  userCommands: ReadonlySet<string>
+  authority: TexCommandAuthority;
+  userCommands: ReadonlySet<string>;
 }
 
-function resolveKnowledge (state: EditorState): ResolvedTexKnowledge {
-  const source = state.doc.toString()
+function resolveKnowledge(state: EditorState): ResolvedTexKnowledge {
+  const source = state.doc.toString();
   const declaration = collectTexContext(
     texstudioIndex,
     source,
     documentKind(state),
-    state.field(texMacroSourcesField)
-  )
-  const baseAuthority = buildTexCommandAuthority(
-    texstudioIndex,
-    [ ...declaration.packages, ...declaration.classes ]
-  )
-  const activeCommands = new Set(baseAuthority.activeCommands)
+    state.field(texMacroSourcesField),
+  );
+  const baseAuthority = buildTexCommandAuthority(texstudioIndex, [
+    ...declaration.packages,
+    ...declaration.classes,
+  ]);
+  const activeCommands = new Set(baseAuthority.activeCommands);
   for (const command of declaration.userCommands) {
-    activeCommands.add(command)
+    activeCommands.add(command);
   }
   return {
     authority: {
       activePackages: baseAuthority.activePackages,
       activeCommands,
-      providersByCommand: baseAuthority.providersByCommand
+      providersByCommand: baseAuthority.providersByCommand,
     },
-    userCommands: new Set(declaration.userCommands)
-  }
+    userCommands: new Set(declaration.userCommands),
+  };
 }
 
-function commandVisibleAt (context: CompletionContext, from: number): boolean {
-  const source = context.state.doc.toString()
-  const visible = texCommandSurface(source, documentKind(context.state))
-  return texCommandMayStartAt(source, from) &&
+function commandVisibleAt(context: CompletionContext, from: number): boolean {
+  const source = context.state.doc.toString();
+  const visible = texCommandSurface(source, documentKind(context.state));
+  return (
+    texCommandMayStartAt(source, from) &&
     visible.slice(from, context.pos) === source.slice(from, context.pos)
+  );
 }
 
 /**
@@ -103,75 +107,75 @@ function commandVisibleAt (context: CompletionContext, from: number): boolean {
  * active only because an active package declares it, so the reverse index
  * built from the same TeXstudio index always knows it.
  */
-function activeProviders (
-  command: string,
-  knowledge: ResolvedTexKnowledge
-): readonly string[] {
-  const providers = knowledge.authority.providersByCommand.get(command)
+function activeProviders(command: string, knowledge: ResolvedTexKnowledge): readonly string[] {
+  const providers = knowledge.authority.providersByCommand.get(command);
   if (providers === undefined) {
-    throw new Error(`TeX command ${command} is active, but no TeXstudio provider declares it; activeCommands and providersByCommand must come from the same index.`)
+    throw new Error(
+      `TeX command ${command} is active, but no TeXstudio provider declares it; activeCommands and providersByCommand must come from the same index.`,
+    );
   }
-  return providers.filter(provider => knowledge.authority.activePackages.has(provider))
+  return providers.filter((provider) => knowledge.authority.activePackages.has(provider));
 }
 
-function completionDetail (
-  command: string,
-  knowledge: ResolvedTexKnowledge
-): string {
+function completionDetail(command: string, knowledge: ResolvedTexKnowledge): string {
   if (knowledge.userCommands.has(command)) {
-    return '[user macro]'
+    return "[user macro]";
   }
-  const active = activeProviders(command, knowledge)
-  return active.length === 0 ? '[TeX core]' : '[' + active.slice(0, 3).join(', ') + ']'
+  const active = activeProviders(command, knowledge);
+  return active.length === 0 ? "[TeX core]" : "[" + active.slice(0, 3).join(", ") + "]";
 }
 
-function completionInfo (
-  command: string,
-  knowledge: ResolvedTexKnowledge
-): string {
+function completionInfo(command: string, knowledge: ResolvedTexKnowledge): string {
   if (knowledge.userCommands.has(command)) {
-    return command + '\n\nUser-defined TeX macro active in this document or a declared macro source.'
+    return (
+      command + "\n\nUser-defined TeX macro active in this document or a declared macro source."
+    );
   }
-  const active = activeProviders(command, knowledge)
+  const active = activeProviders(command, knowledge);
   return active.length === 0
-    ? command + '\n\nTeX/LaTeX core command.'
-    : command + '\n\nProvided by active package' + (active.length === 1 ? ': ' : 's: ') + active.join(', ')
+    ? command + "\n\nTeX/LaTeX core command."
+    : command +
+        "\n\nProvided by active package" +
+        (active.length === 1 ? ": " : "s: ") +
+        active.join(", ");
 }
 
 export const texCommandCompletionSource: CompletionSource = (
-  context: CompletionContext
-): CompletionResult|null => {
-  const word = context.matchBefore(/\\[A-Za-z@]*$/u)
+  context: CompletionContext,
+): CompletionResult | null => {
+  const word = context.matchBefore(/\\[A-Za-z@]*$/u);
   if (word === null || !commandVisibleAt(context, word.from)) {
-    return null
+    return null;
   }
   if (!context.explicit && word.to - word.from < 2) {
-    return null
+    return null;
   }
 
-  const knowledge = resolveKnowledge(context.state)
-  const options: Completion[] = [...knowledge.authority.activeCommands].map(command => withCompletionSource({
-    label: command,
-    apply: command,
-    type: 'function',
-    detail: completionDetail(command, knowledge),
-    info: completionInfo(command, knowledge),
-    boost: knowledge.userCommands.has(command) ? 50 : undefined
-  }, knowledge.userCommands.has(command) ? 'Macro' : 'LaTeX'))
+  const knowledge = resolveKnowledge(context.state);
+  const options: Completion[] = [...knowledge.authority.activeCommands].map((command) =>
+    withCompletionSource(
+      {
+        label: command,
+        apply: command,
+        type: "function",
+        detail: completionDetail(command, knowledge),
+        info: completionInfo(command, knowledge),
+        boost: knowledge.userCommands.has(command) ? 50 : undefined,
+      },
+      knowledge.userCommands.has(command) ? "Macro" : "LaTeX",
+    ),
+  );
 
   return {
     from: word.from,
     options,
-    validFor: /^\\[A-Za-z@]*$/u
-  }
-}
+    validFor: /^\\[A-Za-z@]*$/u,
+  };
+};
 
 /** TeX knowledge state shared by Markdown, LaTeX and Pandoc-YAML editors. */
-export function texKnowledgeExtensions (kind: TexDocumentKind): Extension[] {
-  return [
-    texDocumentKind.of(kind),
-    texMacroSourcesField
-  ]
+export function texKnowledgeExtensions(kind: TexDocumentKind): Extension[] {
+  return [texDocumentKind.of(kind), texMacroSourcesField];
 }
 
 /** Standalone completion UI for non-Markdown editors. */
@@ -180,6 +184,6 @@ export const texCommandAutocomplete = autocompletion({
   selectOnOpen: true,
   closeOnBlur: true,
   maxRenderedOptions: 20,
-  override: [ texCommandCompletionSource ],
-  defaultKeymap: false
-})
+  override: [texCommandCompletionSource],
+  defaultKeymap: false,
+});

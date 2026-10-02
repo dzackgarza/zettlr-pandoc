@@ -14,14 +14,14 @@
  * END HEADER
  */
 
-import CSL from 'citeproc'
-import { FSWatcher } from 'chokidar'
-import { app, ipcMain } from 'electron'
-import { promises as fs, readFileSync, constants as FS_CONSTANTS } from 'fs'
-import path from 'path'
-import { trans } from '@common/i18n-main'
-import ProviderContract, { type IPCMessage } from '../provider-contract'
-import type LogProvider from '../log'
+import { trans } from "@common/i18n-main";
+import { FSWatcher } from "chokidar";
+import CSL from "citeproc";
+import { app, ipcMain } from "electron";
+import { constants as FS_CONSTANTS, promises as fs, readFileSync } from "fs";
+import path from "path";
+import type LogProvider from "../log";
+import ProviderContract, { type IPCMessage } from "../provider-contract";
 
 /**
  * The configuration surface this provider consumes: the update signal, and
@@ -31,66 +31,75 @@ import type LogProvider from '../log'
  * hide that, and force injectors to satisfy members this provider never touches.
  */
 export interface CiteprocConfig {
-  on: (evt: 'update', callback: (option: string) => void) => void
-  get: () => { appLang: string, export: { cslLibrary: string, cslStyle: string } }
+  on: (evt: "update", callback: (option?: string) => void) => void;
+  get: () => { appLang: string; export: { cslLibrary: string; cslStyle: string } };
 }
 
 /** The user-facing error surface this provider consumes. */
 export interface CiteprocErrorDisplay {
-  showErrorMessage: (title: string, message: string, contents?: string) => void
+  showErrorMessage: (title: string, message: string, contents?: string) => void;
 }
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { CitationDatabase } from '@dts/common/citeproc'
-import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import { showNativeNotification } from '@common/util/show-notification'
-import { loadDatabase } from './util/database-loader'
-import { parseCslStyleMetadata, supportsNarrativeComposite, type CslCitationFormat } from './util/style-metadata'
+
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import { showNativeNotification } from "@common/util/show-notification";
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { loadDatabase } from "./util/database-loader";
+import {
+  type CslCitationFormat,
+  parseCslStyleMetadata,
+  supportsNarrativeComposite,
+} from "./util/style-metadata";
 
 export interface DatabaseRecord {
-  path: string
+  path: string;
   // We basically have CSL databases (do not contain attachments) or BibTex
   // (contain attachments).
-  type: 'csl'|'bibtex'|'biblatex'
-  cslData: Record<string, CSLItem>
-  bibtexAttachments: Record<string, string[]|false>
+  type: "csl" | "bibtex" | "biblatex";
+  cslData: Record<string, CSLItem>;
+  bibtexAttachments: Record<string, string[] | false>;
 }
 
 export type CiteprocIPCContract = {
-  'get-items': {
-    request: { payload: { database: CitationDatabase } }
-    response: CSLItem[]
-  }
-  'get-citation': {
-    request: { payload: { database: CitationDatabase, citations: CiteItem[], composite: boolean } }
-    response: string|undefined
-  }
-  'get-bibliography': {
-    request: { payload: { database: CitationDatabase, citations: string[] } }
-    response: [BibliographyOptions, string[]]|undefined
-  }
-}
+  "get-items": {
+    request: { payload: { database: CitationDatabase } };
+    response: CSLItem[];
+  };
+  "get-citation": {
+    request: { payload: { database: CitationDatabase; citations: CiteItem[]; composite: boolean } };
+    response: string | undefined;
+  };
+  "get-bibliography": {
+    request: { payload: { database: CitationDatabase; citations: string[] } };
+    response: [BibliographyOptions, string[]] | undefined;
+  };
+};
 
 // get-citation-sync rides ipcMain.on/sendSync, not invoke, so it is not part
 // of the invoke contract above.
 export type CiteprocSyncCitationResponse =
-  | { ok: true, value: string|undefined }
-  | { ok: false, error: string }
+  | { ok: true; value: string | undefined }
+  | { ok: false; error: string };
 
-export type CiteprocProviderIPCAPI = IPCMessage<CiteprocIPCContract>
-  | { command: 'get-citation-sync', payload: { database: CitationDatabase, citations: CiteItem[], composite: boolean } }
+export type CiteprocProviderIPCAPI =
+  | IPCMessage<CiteprocIPCContract>
+  | {
+      command: "get-citation-sync";
+      payload: { database: CitationDatabase; citations: CiteItem[]; composite: boolean };
+    };
 
 // The default style Zettlr ships with
-const DEFAULT_CHICAGO_STYLE = path.join(__dirname, './assets/csl-styles/chicago-author-date.csl')
+const DEFAULT_CHICAGO_STYLE = path.join(__dirname, "./assets/csl-styles/chicago-author-date.csl");
 
 const CITEPROC_EMPTY_SENTINELS = [
-  '[NO_PRINTED_FORM]',
-  '[CSL STYLE ERROR: reference with no printed form.]',
-] as const
+  "[NO_PRINTED_FORM]",
+  "[CSL STYLE ERROR: reference with no printed form.]",
+] as const;
 
 export class CiteprocRenderInvariantError extends Error {
-  constructor (message: string) {
-    super(message)
-    this.name = 'CiteprocRenderInvariantError'
+  constructor(message: string) {
+    super(message);
+    this.name = "CiteprocRenderInvariantError";
   }
 }
 
@@ -104,7 +113,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {string}
    */
-  private mainLibrary: string
+  private mainLibrary: string;
 
   /**
    * This property ensures we do not do double-work if a database should be
@@ -112,7 +121,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {string}
    */
-  private lastSelectedDatabase: string
+  private lastSelectedDatabase: string;
 
   /**
    * Our main citeproc engine. This may be enhanced in the future to hold more
@@ -120,23 +129,23 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {CSL.Engine}
    */
-  private engine: CSL.Engine
+  private engine: CSL.Engine;
 
   /** The exact configured style driving the current engine. */
-  private stylePath = DEFAULT_CHICAGO_STYLE
+  private stylePath = DEFAULT_CHICAGO_STYLE;
 
   /** CSL-declared citation format used to choose semantically valid modes. */
-  private citationFormat: CslCitationFormat|undefined
+  private citationFormat: CslCitationFormat | undefined;
   /**
    * This array contains all available databases, including the main one.
    *
    * @var {DatabaseRecord[]}
    */
-  private readonly databases: Map<string, DatabaseRecord>
+  private readonly databases: Map<string, DatabaseRecord>;
   /** The load that runs for a database. A request for that database waits for it. */
-  private readonly loading = new Map<string, Promise<void>>()
+  private readonly loading = new Map<string, Promise<void>>();
   /** The checks of awaitMainLibraryItem calls. Each runs after every database load. */
-  private readonly loadListeners = new Set<() => void>()
+  private readonly loadListeners = new Set<() => void>();
 
   /**
    * This hashmap contains a mapping of citekeys --> CSLItems for quick access
@@ -144,7 +153,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {Object}
    */
-  private _items: Record<string, CSLItem>
+  private _items: Record<string, CSLItem>;
 
   /**
    * Just like the FSAL, the citeproc provider maintains a watcher for citation
@@ -152,7 +161,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {FSWatcher}
    */
-  private readonly _watcher: FSWatcher
+  private readonly _watcher: FSWatcher;
 
   /**
    * This is the kernel that is being used by the CSL engine to retrieve both
@@ -160,18 +169,18 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @var {CSLKernel}
    */
-  private readonly sys: CSLKernel
+  private readonly sys: CSLKernel;
 
-  constructor (
+  constructor(
     private readonly _logger: LogProvider,
     private readonly _config: CiteprocConfig,
-    private readonly _windows: CiteprocErrorDisplay
+    private readonly _windows: CiteprocErrorDisplay,
   ) {
-    super()
+    super();
 
-    this._items = {}
-    this.lastSelectedDatabase = ''
-    this.mainLibrary = ''
+    this._items = {};
+    this.lastSelectedDatabase = "";
+    this.mainLibrary = "";
 
     // Start the watcher
     this._watcher = new FSWatcher({
@@ -182,134 +191,154 @@ export default class CiteprocProvider extends ProviderContract {
       // Databases can become quite large, so we have to wait for it to finish
       awaitWriteFinish: {
         stabilityThreshold: 1000,
-        pollInterval: 100
-      }
-    })
+        pollInterval: 100,
+      },
+    });
 
-    this._watcher.on('all', (eventName, affectedPath) => {
-      const db = this.databases.get(affectedPath)
+    this._watcher.on("all", (eventName, affectedPath) => {
+      const db = this.databases.get(affectedPath);
 
-      if (db === undefined && eventName === 'change') {
-        this._logger.info(`[Citeproc] Retrying to load ${affectedPath} ...`)
+      if (db === undefined && eventName === "change") {
+        this._logger.info(`[Citeproc] Retrying to load ${affectedPath} ...`);
         // This indicates that the library had been loaded, but threw an error
         // on reload (happens frequently, e.g., with Zotero). In that case,
         // simply load it.
-        this.loadDatabase(affectedPath, false)
-          .catch(err => { this._logger.error(`[Citeproc] Could not reload database ${affectedPath}: ${err instanceof Error ? err.message : 'unknown error'}`, err) })
+        this.loadDatabase(affectedPath, false).catch((err) => {
+          this._logger.error(
+            `[Citeproc] Could not reload database ${affectedPath}: ${err instanceof Error ? err.message : "unknown error"}`,
+            err,
+          );
+        });
       } else if (db === undefined) {
-        this._logger.warning(`[Citeproc] Received an event ${eventName} for path ${affectedPath}: Could not handle.`)
-      } else if (eventName === 'change') {
-        this._logger.info(`[Citeproc] Changes detected for ${affectedPath}. Reloading ...`)
+        this._logger.warning(
+          `[Citeproc] Received an event ${eventName} for path ${affectedPath}: Could not handle.`,
+        );
+      } else if (eventName === "change") {
+        this._logger.info(`[Citeproc] Changes detected for ${affectedPath}. Reloading ...`);
         // NOTE: We have to ask the engine to not unwatch the database.
         // Sometimes, errors may be, and if we unwatch the database on change
         // events, this would lead any error to no more changes being detected.
         // And an error can be as simple as "the program was not finished
         // writing the changes to disk." (looking at you, BetterBibTex :P)
-        this.unloadDatabase(affectedPath, false)
+        this.unloadDatabase(affectedPath, false);
         this.loadDatabase(affectedPath, false)
-          .then(() => broadcastIpcMessage('citeproc-database-updated', affectedPath))
-          .catch(err => { this._logger.error(`[Citeproc Provider] Error while reloading database ${affectedPath}: ${err instanceof Error ? err.message : 'unknown error'}`, err) })
-      } else if (eventName === 'unlink') {
-        this.unloadDatabase(affectedPath)
-        broadcastIpcMessage('citeproc-database-updated', affectedPath)
+          .then(() => broadcastIpcMessage("citeproc-database-updated", affectedPath))
+          .catch((err) => {
+            this._logger.error(
+              `[Citeproc Provider] Error while reloading database ${affectedPath}: ${err instanceof Error ? err.message : "unknown error"}`,
+              err,
+            );
+          });
+      } else if (eventName === "unlink") {
+        this.unloadDatabase(affectedPath);
+        broadcastIpcMessage("citeproc-database-updated", affectedPath);
       }
-    })
+    });
 
-    this.databases = new Map() // Holds all currently loaded databases
+    this.databases = new Map(); // Holds all currently loaded databases
 
     // The sys kernel is required by the citeproc processor
     this.sys = {
       retrieveLocale: (lang: string) => {
-        return this.getLocale(lang)
+        return this.getLocale(lang);
       },
       retrieveItem: (id: string) => {
-        return this._items[id]
-      }
-    }
+        return this._items[id];
+      },
+    };
 
     // Be notified of potential updates
-    this._config.on('update', (option: string) => {
-      this.onConfigUpdate(option)
-    })
+    this._config.on("update", (option?: string) => {
+      this.onConfigUpdate(option);
+    });
 
     /**
      * Listen for events coming from the citation renderer of the MarkdownEditor
      */
-    ipcMain.on('citeproc-provider', (event, message: CiteprocProviderIPCAPI) => {
-      const { command, payload } = message
-      if (command === 'get-citation-sync') {
-        const { database, citations, composite } = payload
+    ipcMain.on("citeproc-provider", (event, message: CiteprocProviderIPCAPI) => {
+      const { command, payload } = message;
+      if (command === "get-citation-sync") {
+        const { database, citations, composite } = payload;
         try {
-          event.returnValue = { ok: true, value: this.getCitation(database, citations, composite) } satisfies CiteprocSyncCitationResponse
+          event.returnValue = {
+            ok: true,
+            value: this.getCitation(database, citations, composite),
+          } satisfies CiteprocSyncCitationResponse;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          this._logger.error(`[Citeproc Provider] Synchronous citation rendering failed: ${message}`, error)
-          event.returnValue = { ok: false, error: message } satisfies CiteprocSyncCitationResponse
+          const message = error instanceof Error ? error.message : String(error);
+          this._logger.error(
+            `[Citeproc Provider] Synchronous citation rendering failed: ${message}`,
+            error,
+          );
+          event.returnValue = { ok: false, error: message } satisfies CiteprocSyncCitationResponse;
         }
       }
-    })
+    });
 
     /**
      * Listen to renderer requests
      */
-    ipcMain.handle('citeproc-provider', async (event, message: CiteprocProviderIPCAPI) => {
-      const { command, payload } = message
-      const { database } = payload
+    ipcMain.handle("citeproc-provider", async (event, message: CiteprocProviderIPCAPI) => {
+      const { command, payload } = message;
+      const { database } = payload;
       // Ensure the database is loaded in any case (will throw a visible error
       // if the database cannot be loaded)
       try {
-        const databases = Array.isArray(database) ? database : [ database ]
+        const databases = Array.isArray(database) ? database : [database];
         for (const databasePath of databases) {
-          await this.loadDatabase(databasePath)
+          await this.loadDatabase(databasePath);
         }
       } catch (err: unknown) {
-        this._logger.error(`[Citeproc Provider] Could not load database ${String(database)}: ${err instanceof Error ? err.message : 'unknown error'}`, err)
+        this._logger.error(
+          `[Citeproc Provider] Could not load database ${String(database)}: ${err instanceof Error ? err.message : "unknown error"}`,
+          err,
+        );
         // Proper early return based on the command
-        return command === 'get-items' ? [] : undefined
+        return command === "get-items" ? [] : undefined;
       }
 
-      if (command === 'get-items') {
-        this.selectDatabase(database)
-        return Object.values(this._items)
-      } else if (command === 'get-citation') {
-        const { citations, composite } = payload
-        return this.getCitation(database, citations, composite)
-      } else if (command === 'get-bibliography') {
-        const { citations } = payload
+      if (command === "get-items") {
+        this.selectDatabase(database);
+        return Object.values(this._items);
+      } else if (command === "get-citation") {
+        const { citations, composite } = payload;
+        return this.getCitation(database, citations, composite);
+      } else if (command === "get-bibliography") {
+        const { citations } = payload;
         // The Payload contains the items the renderer wants to have
-        return this.makeBibliography(database, citations)
+        return this.makeBibliography(database, citations);
       }
-    })
+    });
   } // END constructor
 
-  public hasBibTexAttachments (database: CitationDatabase): boolean {
-    const paths = Array.isArray(database) ? database : [ database ]
-    return paths.some(dbPath => {
-      const db = this.databases.get(dbPath)
-      return db !== undefined && Object.keys(db.bibtexAttachments).length > 0
-    })
+  public hasBibTexAttachments(database: CitationDatabase): boolean {
+    const paths = Array.isArray(database) ? database : [database];
+    return paths.some((dbPath) => {
+      const db = this.databases.get(dbPath);
+      return db !== undefined && Object.keys(db.bibtexAttachments).length > 0;
+    });
   }
 
-  public getBibTexAttachments (database: CitationDatabase, id: string): string[]|false {
-    const paths = Array.isArray(database) ? database : [ database ]
+  public getBibTexAttachments(database: CitationDatabase, id: string): string[] | false {
+    const paths = Array.isArray(database) ? database : [database];
     for (const dbPath of paths) {
-      const attachments = this.databases.get(dbPath)?.bibtexAttachments[id]
+      const attachments = this.databases.get(dbPath)?.bibtexAttachments[id];
       if (attachments !== undefined) {
-        return attachments
+        return attachments;
       }
     }
-    return false
+    return false;
   }
 
   /**
    * Metadata for every loaded bibliography database. Does not expose items;
    * call {@link getItems} for that.
    */
-  public listDatabases (): Array<{ path: string; type: DatabaseRecord['type'] }> {
-    return Array.from(this.databases.values()).map(db => ({
+  public listDatabases(): Array<{ path: string; type: DatabaseRecord["type"] }> {
+    return Array.from(this.databases.values()).map((db) => ({
       path: db.path,
       type: db.type,
-    }))
+    }));
   }
 
   /**
@@ -317,27 +346,27 @@ export default class CiteprocProvider extends ProviderContract {
    * databases taking precedence on duplicate keys — the same semantics as
    * the renderer's IPC `get-items` call.
    */
-  public getItems (database: CitationDatabase): CSLItem[] {
-    this.selectDatabase(database)
-    return Object.values(this._items)
+  public getItems(database: CitationDatabase): CSLItem[] {
+    this.selectDatabase(database);
+    return Object.values(this._items);
   }
 
   /**
    * A single CSL item by cite key, or undefined when the key does not exist
    * in the requested database(s).
    */
-  public getItem (database: CitationDatabase, citeKey: string): CSLItem | undefined {
-    this.selectDatabase(database)
-    return this._items[citeKey]
+  public getItem(database: CitationDatabase, citeKey: string): CSLItem | undefined {
+    this.selectDatabase(database);
+    return this._items[citeKey];
   }
 
   /**
    * Whether the loaded main library contains the cite key. While the watcher
    * reloads the library, it contains no key.
    */
-  public mainLibraryHas (citeKey: string): boolean {
-    const record = this.databases.get(this.mainLibrary)
-    return record !== undefined && citeKey in record.cslData
+  public mainLibraryHas(citeKey: string): boolean {
+    const record = this.databases.get(this.mainLibrary);
+    return record !== undefined && citeKey in record.cslData;
   }
 
   /**
@@ -346,43 +375,43 @@ export default class CiteprocProvider extends ProviderContract {
    * only when Better BibTeX exports the library again and the watcher reloads
    * it.
    */
-  public async awaitMainLibraryItem (citeKey: string, timeoutMs: number): Promise<boolean> {
+  public async awaitMainLibraryItem(citeKey: string, timeoutMs: number): Promise<boolean> {
     if (this.mainLibraryHas(citeKey)) {
-      return true
+      return true;
     }
-    return await new Promise<boolean>(resolve => {
+    return await new Promise<boolean>((resolve) => {
       const check = (): void => {
         if (!this.mainLibraryHas(citeKey)) {
-          return
+          return;
         }
-        clearTimeout(timer)
-        this.loadListeners.delete(check)
-        resolve(true)
-      }
+        clearTimeout(timer);
+        this.loadListeners.delete(check);
+        resolve(true);
+      };
       const timer = setTimeout(() => {
-        this.loadListeners.delete(check)
-        resolve(false)
-      }, timeoutMs)
-      this.loadListeners.add(check)
-    })
+        this.loadListeners.delete(check);
+        resolve(false);
+      }, timeoutMs);
+      this.loadListeners.add(check);
+    });
   }
 
-  public async boot (): Promise<void> {
-    this._logger.verbose('Citeproc provider booting up ...')
-    this.mainLibrary = this._config.get().export.cslLibrary
+  public async boot(): Promise<void> {
+    this._logger.verbose("Citeproc provider booting up ...");
+    this.mainLibrary = this._config.get().export.cslLibrary;
 
-    await this.loadEngine()
+    await this.loadEngine();
 
-    if (this.mainLibrary === '') {
-      return
+    if (this.mainLibrary === "") {
+      return;
     }
 
     try {
-      await this.loadDatabase(this.mainLibrary)
+      await this.loadDatabase(this.mainLibrary);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'unknown error'
-      this._logger.error(`[Citeproc Provider] Could not load main library: ${msg}`, err)
-      this._windows.showErrorMessage(trans('The citation database could not be loaded'), msg, msg)
+      const msg = err instanceof Error ? err.message : "unknown error";
+      this._logger.error(`[Citeproc Provider] Could not load main library: ${msg}`, err);
+      this._windows.showErrorMessage(trans("The citation database could not be loaded"), msg, msg);
     }
   }
 
@@ -393,22 +422,22 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @param  {string[]}  dbPaths  The absolute paths to the libraries
    */
-  public async synchronizeDatabases (dbPaths: string[]): Promise<void> {
+  public async synchronizeDatabases(dbPaths: string[]): Promise<void> {
     // First load databases that are not yet available
     for (const dbPath of dbPaths) {
       if (!this.databases.has(dbPath)) {
-        await this.loadDatabase(dbPath)
-        broadcastIpcMessage('citeproc-database-updated', dbPath)
+        await this.loadDatabase(dbPath);
+        broadcastIpcMessage("citeproc-database-updated", dbPath);
       }
     }
     // Second unload databases no longer required
     for (const dbPath of this.databases.keys()) {
       if (dbPath === this.mainLibrary) {
-        continue // Do not unload the (fallback) main database
+        continue; // Do not unload the (fallback) main database
       }
       if (!dbPaths.includes(dbPath)) {
-        this.unloadDatabase(dbPath)
-        broadcastIpcMessage('citeproc-database-updated', dbPath)
+        this.unloadDatabase(dbPath);
+        broadcastIpcMessage("citeproc-database-updated", dbPath);
       }
     }
   }
@@ -419,26 +448,26 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return {CSL.Engine} The instantiated engine
    */
-  private async loadEngine (): Promise<void> {
+  private async loadEngine(): Promise<void> {
     // `export.cslStyle` is the application's only citation-style setting, so
     // the editor renders in it too, not just the exporter. An unreadable path
     // is a misconfiguration the user must see, not something to paper over
     // with the bundled style.
-    const configuredStyle = this._config.get().export.cslStyle
-    this.stylePath = configuredStyle === '' ? DEFAULT_CHICAGO_STYLE : configuredStyle
-    this._logger.info(`[Citeproc Provider] Loading CSL style at ${this.stylePath} ...`)
-    const style = await fs.readFile(this.stylePath, 'utf-8')
-    this.citationFormat = parseCslStyleMetadata(style).citationFormat
+    const configuredStyle = this._config.get().export.cslStyle;
+    this.stylePath = configuredStyle === "" ? DEFAULT_CHICAGO_STYLE : configuredStyle;
+    this._logger.info(`[Citeproc Provider] Loading CSL style at ${this.stylePath} ...`);
+    const style = await fs.readFile(this.stylePath, "utf-8");
+    this.citationFormat = parseCslStyleMetadata(style).citationFormat;
 
     // The last parameter enforces usage of the language we provide
-    this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true)
+    this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true);
     // ATTENTION: This is a development extension we're using to auto-wrap
     // links and DOIs in a-tags so that the user can click them in the
     // bibliography. Remove if it becomes unstable and implement manually.
-    this.engine.opt.development_extensions.wrap_url_and_doi = true
+    this.engine.opt.development_extensions.wrap_url_and_doi = true;
     // Empty citeproc output is an invariant failure. Without this option,
     // citeproc-js literally returns '[NO_PRINTED_FORM]' as if it were content.
-    this.engine.opt.development_extensions.throw_on_empty = true
+    this.engine.opt.development_extensions.throw_on_empty = true;
   }
 
   /**
@@ -448,32 +477,33 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return  {Promise<DatabaseRecord>}                Resolves with the DatabaseRecord
    */
-  private async loadDatabase (databasePath: string, watch = true): Promise<void> {
+  private async loadDatabase(databasePath: string, watch = true): Promise<void> {
     if (databasePath === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
-      this._logger.verbose('[Citeproc Provider] Could not load main database: No main database available.')
-      return
+      this._logger.verbose(
+        "[Citeproc Provider] Could not load main database: No main database available.",
+      );
+      return;
     } else if (databasePath === CITEPROC_MAIN_DB) {
-      databasePath = this.mainLibrary
+      databasePath = this.mainLibrary;
     }
 
     if (this.databases.has(databasePath)) {
-      return // No need to load the database again
+      return; // No need to load the database again
     }
 
-    const running = this.loading.get(databasePath)
+    const running = this.loading.get(databasePath);
     if (running !== undefined) {
-      await running
-      return
+      await running;
+      return;
     }
 
-    const load = this.readDatabase(databasePath, watch)
-      .finally(() => {
-        if (this.loading.get(databasePath) === load) {
-          this.loading.delete(databasePath)
-        }
-      })
-    this.loading.set(databasePath, load)
-    await load
+    const load = this.readDatabase(databasePath, watch).finally(() => {
+      if (this.loading.get(databasePath) === load) {
+        this.loading.delete(databasePath);
+      }
+    });
+    this.loading.set(databasePath, load);
+    await load;
   }
 
   /**
@@ -482,26 +512,26 @@ export default class CiteprocProvider extends ProviderContract {
    * @param   {string}   databasePath  The path to load the database from
    * @param   {boolean}  watch         Whether to watch the file for changes
    */
-  private async readDatabase (databasePath: string, watch: boolean): Promise<void> {
+  private async readDatabase(databasePath: string, watch: boolean): Promise<void> {
     try {
-      await fs.access(databasePath, FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK)
+      await fs.access(databasePath, FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK);
     } catch {
-      throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`)
+      throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`);
     }
 
     // The file access above took a turn of the event loop, so the load that
     // called this function is registered.
-    const load = this.loading.get(databasePath)
+    const load = this.loading.get(databasePath);
     const record = await loadDatabase(
       databasePath,
       this._logger,
-      path.join(app.getPath('userData'), 'citeproc-cache')
-    )
-    const current = this.loading.get(databasePath)
+      path.join(app.getPath("userData"), "citeproc-cache"),
+    );
+    const current = this.loading.get(databasePath);
     if (current !== load) {
       // The file changed during the read: the later load has its data.
-      await current
-      return
+      await current;
+      return;
     }
 
     // Label styles print `citation-label`, and citeproc invents one from the
@@ -511,22 +541,22 @@ export default class CiteprocProvider extends ProviderContract {
     // in-memory record: the parse cache on disk keeps holding exactly what the
     // file says, and citeproc sees the same item object on every retrieval,
     // which its cluster-wide disambiguation requires.
-    for (const [ id, item ] of Object.entries(record.cslData)) {
-      if (item['citation-label'] === undefined) {
-        item['citation-label'] = id
+    for (const [id, item] of Object.entries(record.cslData)) {
+      if (item["citation-label"] === undefined) {
+        item["citation-label"] = id;
       }
     }
 
     // Add the database to the list of available databases
-    this.databases.set(databasePath, record)
+    this.databases.set(databasePath, record);
 
     // Now that the database has been successfully loaded, watch it for changes.
     if (watch) {
-      this._watcher.add(databasePath)
+      this._watcher.add(databasePath);
     }
-    broadcastIpcMessage('citeproc-database-updated', databasePath)
+    broadcastIpcMessage("citeproc-database-updated", databasePath);
     for (const check of [...this.loadListeners]) {
-      check()
+      check();
     }
   }
 
@@ -535,18 +565,18 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @param   {string}  dbPath  The database file path
    */
-  private unloadDatabase (dbPath: string, unwatch = true): void {
+  private unloadDatabase(dbPath: string, unwatch = true): void {
     // A load that runs reads the file as it was: its result is not the database.
-    this.loading.delete(dbPath)
+    this.loading.delete(dbPath);
     if (this.databases.has(dbPath)) {
-      this._logger.info(`[Citeproc Provider] Unloading database ${dbPath}`)
+      this._logger.info(`[Citeproc Provider] Unloading database ${dbPath}`);
 
       if (unwatch) {
-        this._watcher.unwatch(dbPath)
+        this._watcher.unwatch(dbPath);
       }
 
-      this.databases.delete(dbPath)
-      broadcastIpcMessage('citeproc-database-updated', dbPath)
+      this.databases.delete(dbPath);
+      broadcastIpcMessage("citeproc-database-updated", dbPath);
     }
   }
 
@@ -555,81 +585,86 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @param   {string}  dbPath  The database to select
    */
-  private selectDatabase (database: CitationDatabase): void {
-    const requestedPaths = Array.isArray(database) ? database : [ database ]
+  private selectDatabase(database: CitationDatabase): void {
+    const requestedPaths = Array.isArray(database) ? database : [database];
     // The sentinel names the globally configured library, and `export.cslLibrary`
     // is optional: it contributes that library when one is configured and loaded,
     // and contributes nothing otherwise. An empty selection selects no items --
     // the same state as a library holding nothing -- rather than an error.
     const paths = requestedPaths
-      .filter(databasePath => databasePath !== CITEPROC_MAIN_DB || this.hasMainLibrary())
-      .map(databasePath => databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath)
-    const identity = paths.join('\u0000')
-    const items: Record<string, CSLItem> = {}
+      .filter((databasePath) => databasePath !== CITEPROC_MAIN_DB || this.hasMainLibrary())
+      .map((databasePath) => (databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath));
+    const identity = paths.join("\u0000");
+    const items: Record<string, CSLItem> = {};
 
     for (const databasePath of paths) {
-      const record = this.databases.get(databasePath)
+      const record = this.databases.get(databasePath);
       if (record === undefined) {
-        throw new Error(`Could not select database ${databasePath}: Not loaded.`)
+        throw new Error(`Could not select database ${databasePath}: Not loaded.`);
       }
 
-      for (const [ citekey, item ] of Object.entries(record.cslData)) {
+      for (const [citekey, item] of Object.entries(record.cslData)) {
         if (!(citekey in items)) {
-          items[citekey] = item
+          items[citekey] = item;
         }
       }
     }
 
     if (this.lastSelectedDatabase !== identity) {
-      this._logger.verbose(`[Citeproc Provider] Selecting database ${paths.join(', ')}...`)
+      this._logger.verbose(`[Citeproc Provider] Selecting database ${paths.join(", ")}...`);
     }
 
-    this._items = items
+    this._items = items;
 
     // Remove the items from the registry
-    this.engine.updateItems([])
-    this.lastSelectedDatabase = identity
+    this.engine.updateItems([]);
+    this.lastSelectedDatabase = identity;
   }
 
   /**
    * Shuts down the service provider
    */
-  async shutdown (): Promise<void> {
-    this._logger.verbose('Citeproc provider shutting down ...')
+  async shutdown(): Promise<void> {
+    this._logger.verbose("Citeproc provider shutting down ...");
     // We MUST under all circumstances properly call the close() function on
     // every chokidar process we utilize. Otherwise, the fsevents dylib will
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
-    await this._watcher.close()
+    await this._watcher.close();
   }
 
   /**
    * There has been a config update. In case the main library has changed, reload
    */
-  onConfigUpdate (option: string): void {
-    if (option === 'appLang' || option === 'export.cslStyle') {
+  onConfigUpdate(option?: string): void {
+    if (option === "appLang" || option === "export.cslStyle") {
       // We have to reload the engine to reflect the new language or style
-      this.loadEngine().catch(err => this._logger.error(`[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : 'unknown error'}`, err))
-    } else if (option === 'export.cslLibrary') {
+      this.loadEngine().catch((err) =>
+        this._logger.error(
+          `[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : "unknown error"}`,
+          err,
+        ),
+      );
+    } else if (option === "export.cslLibrary") {
       // Determine if we have to reload
-      const newValue = this._config.get().export.cslLibrary
+      const newValue = this._config.get().export.cslLibrary;
 
       if (newValue !== this.mainLibrary) {
-        showNativeNotification(trans('Changes to the library file detected. Reloading …'))
-        this.unloadDatabase(this.mainLibrary)
-        broadcastIpcMessage('citeproc-database-updated', CITEPROC_MAIN_DB)
-        this.mainLibrary = newValue
-        if (this.mainLibrary.trim() === '') {
-          return // The user removed the csl library
+        showNativeNotification(trans("Changes to the library file detected. Reloading …"));
+        this.unloadDatabase(this.mainLibrary);
+        broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB);
+        this.mainLibrary = newValue;
+        if (this.mainLibrary.trim() === "") {
+          return; // The user removed the csl library
         }
 
         this.loadDatabase(this.mainLibrary)
-          .then(() => broadcastIpcMessage('citeproc-database-updated', CITEPROC_MAIN_DB))
-          .catch(err => {
-            const msg = err instanceof Error ? err.message : 'unknown error'
-            this._logger.error(`[Citeproc Provider] Could not reload main library: ${msg}`, err)
-            this._windows.showErrorMessage(trans('The citation database could not be loaded'), msg)
-          })
+          .then(() => broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB))
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : "unknown error";
+            this._logger.error(`[Citeproc Provider] Could not reload main library: ${msg}`, err);
+            this._windows.showErrorMessage(trans("The citation database could not be loaded"), msg);
+          });
       }
     }
   }
@@ -641,31 +676,31 @@ export default class CiteprocProvider extends ProviderContract {
    * @param   {string}          lang  The language to be loaded.
    * @return  {string|boolean}        Either the contents of the XML file, or false.
    */
-  private getLocale (lang: string): string|false {
+  private getLocale(lang: string): string | false {
     // Takes a lang in the format xx-XX and has to return the corresponding XML
     // file. Let's do just that!
 
-    if (lang === 'us') {
+    if (lang === "us") {
       // From the docs: "The function _must_ return a value for the us locale."
       // See https://citeproc-js.readthedocs.io/en/latest/running.html#retrievelocale
-      lang = 'en-US'
+      lang = "en-US";
     }
 
     const candidatePaths = [
       path.join(__dirname, `./assets/csl-locales/locales-${lang}.xml`),
-      path.resolve(process.cwd(), `static/csl-locales/locales-${lang}.xml`)
-    ]
+      path.resolve(process.cwd(), `static/csl-locales/locales-${lang}.xml`),
+    ];
     for (const localePath of candidatePaths) {
       try {
-        const content = readFileSync(localePath, { encoding: 'utf8' })
-        this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`)
-        return content
+        const content = readFileSync(localePath, { encoding: "utf8" });
+        this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`);
+        return content;
       } catch {
         // Try next candidate path
       }
     }
     // File not found -> Let the engine fall back to a default.
-    return false
+    return false;
   }
 
   /**
@@ -681,66 +716,82 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return {string|undefined}             The rendered string
    */
-  getCitation (database: CitationDatabase, citations: CiteItem[], composite: boolean = false): string|undefined {
+  getCitation(
+    database: CitationDatabase,
+    citations: CiteItem[],
+    composite: boolean = false,
+  ): string | undefined {
     if (citations.length === 0) {
-      return undefined // Nothing to render
+      return undefined; // Nothing to render
     }
 
-    if (typeof database === 'string' && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
-      return undefined
+    if (typeof database === "string" && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+      return undefined;
     }
 
     // Make sure we have the correct database loaded. Missing citekeys are an
     // ordinary unresolved-citation state; a citeproc render failure is not.
-    this.selectDatabase(database)
-    const citekeys = citations.map(c => c.id)
+    this.selectDatabase(database);
+    const citekeys = citations.map((c) => c.id);
     if (!this.ensureCitekeysExist(citekeys)) {
-      this._logger.verbose(`[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(', ')}: At least one key does not exist in database ${database}`)
-      return undefined
+      this._logger.verbose(
+        `[CiteprocProvider] Cannot render citation with citekeys ${citekeys.join(", ")}: At least one key does not exist in database ${database}`,
+      );
+      return undefined;
     }
 
-    this.engine.updateItems(citekeys)
-    const useComposite = composite && citations.length === 1 && supportsNarrativeComposite(this.citationFormat)
-    const mode: EngineCitation['properties']['mode'] = useComposite ? 'composite' : undefined
+    this.engine.updateItems(citekeys);
+    const useComposite =
+      composite && citations.length === 1 && supportsNarrativeComposite(this.citationFormat);
+    const mode: EngineCitation["properties"]["mode"] = useComposite ? "composite" : undefined;
     const citation: EngineCitation = {
-      citationItems: citations.map(item => ({ ...item })),
+      citationItems: citations.map((item) => ({ ...item })),
       properties: { noteIndex: 0, mode },
-    }
+    };
 
     try {
-      const rendered = this.engine.previewCitationCluster(citation, [], [], 'html')
-      return this.assertPrintableCitation(rendered, citekeys, composite, mode)
+      const rendered = this.engine.previewCitationCluster(citation, [], [], "html");
+      return this.assertPrintableCitation(rendered, citekeys, composite, mode);
     } catch (error) {
-      const contextual = this.renderInvariantError('citation', citekeys, error)
-      this._logger.error(contextual.message, error)
-      throw contextual
+      const contextual = this.renderInvariantError("citation", citekeys, error);
+      this._logger.error(contextual.message, error);
+      throw contextual;
     }
   }
 
-  private assertPrintableCitation (
+  private assertPrintableCitation(
     rendered: string,
     citekeys: string[],
     requestedComposite: boolean,
-    mode: EngineCitation['properties']['mode']
+    mode: EngineCitation["properties"]["mode"],
   ): string {
-    if (rendered.trim() === '' || CITEPROC_EMPTY_SENTINELS.some(sentinel => rendered.includes(sentinel))) {
+    if (
+      rendered.trim() === "" ||
+      CITEPROC_EMPTY_SENTINELS.some((sentinel) => rendered.includes(sentinel))
+    ) {
       throw this.renderInvariantError(
-        'citation',
+        "citation",
         citekeys,
-        new Error(`citeproc returned non-printable output ${JSON.stringify(rendered)} (requestedComposite=${requestedComposite}, engine mode=${String(mode)})`)
-      )
+        new Error(
+          `citeproc returned non-printable output ${JSON.stringify(rendered)} (requestedComposite=${requestedComposite}, engine mode=${String(mode)})`,
+        ),
+      );
     }
-    return rendered
+    return rendered;
   }
 
-  private renderInvariantError (kind: 'citation'|'bibliography', citekeys: string[], cause: unknown): CiteprocRenderInvariantError {
+  private renderInvariantError(
+    kind: "citation" | "bibliography",
+    citekeys: string[],
+    cause: unknown,
+  ): CiteprocRenderInvariantError {
     if (cause instanceof CiteprocRenderInvariantError) {
-      return cause
+      return cause;
     }
-    const causeText = cause instanceof Error ? cause.message : String(cause)
+    const causeText = cause instanceof Error ? cause.message : String(cause);
     return new CiteprocRenderInvariantError(
-      `Could not render ${kind} for [${citekeys.join(', ')}] with style ${JSON.stringify(this.stylePath)}: ${causeText}`
-    )
+      `Could not render ${kind} for [${citekeys.join(", ")}] with style ${JSON.stringify(this.stylePath)}: ${causeText}`,
+    );
   }
 
   /**
@@ -752,36 +803,44 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return {[BibliographyOptions, string[]]|undefined} A CSL object containing the bibliography.
    */
-  makeBibliography (database: CitationDatabase, citekeys: string[]): [BibliographyOptions, string[]]|undefined {
+  makeBibliography(
+    database: CitationDatabase,
+    citekeys: string[],
+  ): [BibliographyOptions, string[]] | undefined {
     if (citekeys.length === 0) {
-      return undefined
+      return undefined;
     }
 
-    if (typeof database === 'string' && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
-      return undefined
+    if (typeof database === "string" && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+      return undefined;
     }
 
-    this.selectDatabase(database)
-    const sanitizedCitekeys = this.filterNonExistingCitekeys(citekeys)
+    this.selectDatabase(database);
+    const sanitizedCitekeys = this.filterNonExistingCitekeys(citekeys);
     if (sanitizedCitekeys.length === 0) {
-      return undefined
+      return undefined;
     }
-    this.engine.updateItems(sanitizedCitekeys)
+    this.engine.updateItems(sanitizedCitekeys);
     try {
-      const bibliography = this.engine.makeBibliography()
+      const bibliography = this.engine.makeBibliography();
       if (bibliography === undefined || bibliography[1].length === 0) {
-        throw new Error('citeproc returned no bibliography entries')
+        throw new Error("citeproc returned no bibliography entries");
       }
       for (const entry of bibliography[1]) {
-        if (entry.trim() === '' || CITEPROC_EMPTY_SENTINELS.some(sentinel => entry.includes(sentinel))) {
-          throw new Error(`citeproc returned non-printable bibliography entry ${JSON.stringify(entry)}`)
+        if (
+          entry.trim() === "" ||
+          CITEPROC_EMPTY_SENTINELS.some((sentinel) => entry.includes(sentinel))
+        ) {
+          throw new Error(
+            `citeproc returned non-printable bibliography entry ${JSON.stringify(entry)}`,
+          );
         }
       }
-      return bibliography
+      return bibliography;
     } catch (error) {
-      const contextual = this.renderInvariantError('bibliography', sanitizedCitekeys, error)
-      this._logger.error(contextual.message, error)
-      throw contextual
+      const contextual = this.renderInvariantError("bibliography", sanitizedCitekeys, error);
+      this._logger.error(contextual.message, error);
+      throw contextual;
     }
   }
 
@@ -790,8 +849,8 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return  {boolean} True if there is
    */
-  hasMainLibrary (): boolean {
-    return this.mainLibrary !== '' && this.databases.has(this.mainLibrary)
+  hasMainLibrary(): boolean {
+    return this.mainLibrary !== "" && this.databases.has(this.mainLibrary);
   }
 
   /**
@@ -805,14 +864,14 @@ export default class CiteprocProvider extends ProviderContract {
    * @return  {boolean}             Returns false if one or more citekeys don't
    *                                exist in the selected database.
    */
-  private ensureCitekeysExist (citekeys: string[]): boolean {
+  private ensureCitekeysExist(citekeys: string[]): boolean {
     for (const key of citekeys) {
       if (!(key in this._items)) {
-        return false
+        return false;
       }
     }
 
-    return true
+    return true;
   }
 
   /**
@@ -824,7 +883,7 @@ export default class CiteprocProvider extends ProviderContract {
    *
    * @return  {string[]}              The list of keys that exist in the database
    */
-  private filterNonExistingCitekeys (citekeys: string[]): string[] {
-    return citekeys.filter(key => key in this._items)
+  private filterNonExistingCitekeys(citekeys: string[]): string[] {
+    return citekeys.filter((key) => key in this._items);
   }
 }

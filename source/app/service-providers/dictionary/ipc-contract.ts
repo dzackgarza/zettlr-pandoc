@@ -19,7 +19,7 @@
  * Renderer listeners annotate their payload with this type.
  */
 export interface DictionaryProviderBroadcast {
-  command: 'invalidate-dict'|'prose-completions-updated'
+  command: "invalidate-dict" | "prose-completions-updated";
 }
 
 /**
@@ -30,40 +30,40 @@ export interface DictionaryProviderBroadcast {
  * the main process.
  */
 export type DictionaryProviderIPCContract = {
-  'check': {
-    request: { terms: string[] }
-    response: boolean[]
-  }
-  'suggest': {
-    request: { terms: string[] }
-    response: string[][]
-  }
-  'add': {
-    request: { terms: string[] }
-    response: boolean[]
-  }
-  'get-user-dictionary': {
-    request: { payload?: undefined }
-    response: string[]
-  }
-  'set-user-dictionary': {
-    request: { payload: string[] }
-    response: undefined
-  }
-  'open-dictionary-folder': {
-    request: { payload?: undefined }
-    response: undefined
-  }
-  'get-prose-completions': {
-    request: { payload?: undefined }
-    response: string[]
-  }
-  'add-prose-completion': {
-    request: { payload: { entry: string } }
-    response: { added: boolean, filePath: string }
-  }
-  'open-prose-completion-file': {
-    request: { payload?: undefined }
-    response: string
-  }
-}
+  check: {
+    request: { terms: string[] };
+    response: boolean[];
+  };
+  suggest: {
+    request: { terms: string[] };
+    response: string[][];
+  };
+  add: {
+    request: { terms: string[] };
+    response: boolean[];
+  };
+  "get-user-dictionary": {
+    request: { payload?: undefined };
+    response: string[];
+  };
+  "set-user-dictionary": {
+    request: { payload: string[] };
+    response: undefined;
+  };
+  "open-dictionary-folder": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
+  "get-prose-completions": {
+    request: { payload?: undefined };
+    response: string[];
+  };
+  "add-prose-completion": {
+    request: { payload: { entry: string } };
+    response: { added: boolean; filePath: string };
+  };
+  "open-prose-completion-file": {
+    request: { payload?: undefined };
+    response: string;
+  };
+};

@@ -11,9 +11,8 @@
  *                  its review and its annotations together. Every mutation —
  *                  from the HTTP API, from renderer IPC, from the editor's
  *                  own authority updates — runs here, under one per-document
- *                  lock, in one order:
- *
- *                    read → prepare → PERSIST → commit → emit → broadcast
+ *                  lock, in one order: read, prepare, PERSIST, commit,
+ *                  emit, broadcast.
  *
  *                  The persist step is what the rest of the ordering exists
  *                  for. A sidecar write that fails leaves the committed
@@ -44,37 +43,27 @@
  * END HEADER
  */
 
-import { Mutex } from "async-mutex";
 import type { ChangeSet, Text } from "@codemirror/state";
+import { sha256Text } from "@common/util/sha256";
 import type {
   AgentErrorCode,
   AgentEvent,
   AgentEventType,
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
-import type { SerializedUpdate } from "@dts/common/documents";
-import type { ActiveReviewState } from "@dts/common/review-domain";
 import type {
   AnnotationActor,
   AnnotationMessage,
   AnnotationSet,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
-import {
-  proposalRequestFingerprint,
-  collaborationSidecar,
-  normalizeText,
-  ReviewDiffStore,
-  reviewFromSidecar,
-  type ReviewBearingSidecar,
-  type ReviewStatus,
-  type ReviewDiffStore as ReviewDiffStoreType,
-} from "./review-diff-store";
-import { sha256Text } from "@common/util/sha256";
-import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
-import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
+import type { SerializedUpdate } from "@dts/common/documents";
+import type { ActiveReviewState } from "@dts/common/review-domain";
+import { Mutex } from "async-mutex";
 import { AnnotationDomainValidationError } from "./annotation-domain-validation";
 import {
+  type AnnotationMutationPlan,
+  type AnnotationTransitionError,
   emptyAnnotationSet,
   prepareAnnotationCreation,
   prepareAnnotationDeletion,
@@ -85,12 +74,31 @@ import {
   prepareAnnotationReattachment,
   prepareAnnotationReopen,
   prepareAnnotationResolution,
-  type AnnotationMutationPlan,
-  type AnnotationTransitionError,
 } from "./annotation-transitions";
+import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
+import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
 import {
-  isTransitionError,
+  collaborationSidecar,
+  normalizeText,
+  proposalRequestFingerprint,
+  type ReviewBearingSidecar,
+  ReviewDiffStore,
+  type ReviewDiffStore as ReviewDiffStoreType,
+  type ReviewStatus,
+  reviewFromSidecar,
+} from "./review-diff-store";
+import {
+  type AcceptAllChunksResponse,
+  type AddReviewCommentResponse,
+  type ChunkCommentResponse,
+  type ChunkDecision,
+  type ChunkDecisionResponse,
+  type ClaimInput,
+  type ClearReviewResponse,
+  type DiscardReviewResponse,
   freezeReview,
+  INVALIDATED_REVIEW_MESSAGE,
+  isTransitionError,
   prepareAcceptAll,
   prepareChunkComment,
   prepareChunkDecision,
@@ -100,19 +108,10 @@ import {
   prepareRetraction,
   prepareReviewComment,
   prepareWorkingTextEdit,
-  type AcceptAllChunksResponse,
-  type AddReviewCommentResponse,
-  type ChunkCommentResponse,
-  type ChunkDecision,
-  type ChunkDecisionResponse,
-  type ClaimInput,
-  type ClearReviewResponse,
-  INVALIDATED_REVIEW_MESSAGE,
   RETURNED_REVIEW_COMMENT,
   type ReapplyReviewResponse,
-  type DiscardReviewResponse,
-  type ReviewMutationPlan,
   type RetractProposalResponse,
+  type ReviewMutationPlan,
 } from "./review-transitions";
 
 // ============================================================================
@@ -165,10 +164,7 @@ export interface CollaborationDocumentAuthority {
    */
   readSavedDiskSha256: (documentId: string) => string | undefined;
 
-  prepareWorkingTextReplacement: (
-    documentId: string,
-    nextText: string,
-  ) => PreparedDocumentMutation;
+  prepareWorkingTextReplacement: (documentId: string, nextText: string) => PreparedDocumentMutation;
 
   commitWorkingTextReplacement: (prepared: PreparedDocumentMutation) => void;
 
@@ -281,7 +277,12 @@ export interface ReviewRecoveryInput {
 /** A review found for a recovery action, with the text around it. */
 type RecoverableReview =
   | { attached: true; review: ActiveReviewState; diskText: string; workingText: string }
-  | { attached: false; review: ActiveReviewState; diskText: string; sidecar: CollaborationSidecarData };
+  | {
+      attached: false;
+      review: ActiveReviewState;
+      diskText: string;
+      sidecar: CollaborationSidecarData;
+    };
 
 /**
  * What a document got back when it opened. `workingText` is present only
@@ -429,9 +430,7 @@ export class CollaborationApplicationService {
 
   public getStatus(documentId: string): ReviewStatus | undefined {
     const workingText = this.deps.authority.readWorkingText(documentId);
-    return workingText === undefined
-      ? undefined
-      : this.reviews.getStatus(documentId, workingText);
+    return workingText === undefined ? undefined : this.reviews.getStatus(documentId, workingText);
   }
 
   public getReview(documentId: string): ActiveReviewState | undefined {
@@ -491,9 +490,7 @@ export class CollaborationApplicationService {
     if (active !== undefined) {
       const attached = this.attachedReviewQuery(active);
       if (attached === undefined) {
-        throw new Error(
-          `Review ${reviewId} is attached to a document that is not open`,
-        );
+        throw new Error(`Review ${reviewId} is attached to a document that is not open`);
       }
       return attached;
     }
@@ -507,9 +504,7 @@ export class CollaborationApplicationService {
     for (const review of this.reviews.listReviews()) {
       const attached = this.attachedReviewQuery(review);
       if (attached === undefined) {
-        throw new Error(
-          `Review ${review.reviewId} is attached to a document that is not open`,
-        );
+        throw new Error(`Review ${review.reviewId} is attached to a document that is not open`);
       }
       queries.push(attached);
     }
@@ -618,8 +613,12 @@ export class CollaborationApplicationService {
       throw new Error(`Document ${documentId} has collaboration state but is not open`);
     }
     const documentPath = review?.documentPath ?? annotationState!.documentPath;
-    const unresolvedChunks =
-      review === undefined ? 0 : this.reviews.getStatus(documentId, workingText)?.unresolvedChunks ?? 0;
+    const status =
+      review === undefined ? undefined : this.reviews.getStatus(documentId, workingText);
+    if (review !== undefined && status === undefined) {
+      throw new Error(`Review ${review.reviewId} of document ${documentId} has no status`);
+    }
+    const unresolvedChunks = status === undefined ? 0 : status.unresolvedChunks;
     const keepsAnnotations = (annotationState?.annotations.items.length ?? 0) > 0;
     const survivesSave = unresolvedChunks > 0 || keepsAnnotations;
     if (survivesSave) {
@@ -629,8 +628,7 @@ export class CollaborationApplicationService {
           workingText,
           review,
           pendingSave: {
-            beforeDiskSha256:
-              review?.diskFenceSha256 ?? annotationState!.diskFenceSha256,
+            beforeDiskSha256: review?.diskFenceSha256 ?? annotationState!.diskFenceSha256,
             afterDiskSha256: savedSha256,
           },
         }),
@@ -663,7 +661,9 @@ export class CollaborationApplicationService {
       throw new Error(`Review ${preparation.reviewId} changed during save`);
     }
     const annotations = this.getAnnotations(preparation.documentId);
-    const reviewSurvives = preparation.survivesSave && review !== undefined &&
+    const reviewSurvives =
+      preparation.survivesSave &&
+      review !== undefined &&
       this.reviews.getStatus(preparation.documentId, preparation.workingText)!.unresolvedChunks > 0;
     const fenced =
       review === undefined || !reviewSurvives
@@ -693,10 +693,7 @@ export class CollaborationApplicationService {
     }
 
     this.reviews.removeReview(preparation.documentId);
-    this.deps.authority.broadcastReviewCleared(
-      preparation.documentId,
-      review.reviewId,
-    );
+    this.deps.authority.broadcastReviewCleared(preparation.documentId, review.reviewId);
     this.deps.emit("review.completed", {
       reviewId: review.reviewId,
       documentId: preparation.documentId,
@@ -772,9 +769,7 @@ export class CollaborationApplicationService {
     diskText: string,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
-    const persisted = review === undefined
-      ? undefined
-      : await this.sidecars.read(documentPath);
+    const persisted = review === undefined ? undefined : await this.sidecars.read(documentPath);
     const normalizedDisk = normalizeText(diskText);
     const preserveSavedReview =
       review !== undefined &&
@@ -899,14 +894,13 @@ export class CollaborationApplicationService {
     // on the buffer: the buffer is the file. If the two disagree, the
     // anchors were measured against text nobody is looking at, and there is
     // no change set to carry them across the difference.
-    const annotations = hasOutstandingReview || sidecar.workingText === normalizedDisk
-      ? sidecar.annotations
-      : prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
-          ?.nextAnnotations ?? sidecar.annotations;
+    const annotations =
+      hasOutstandingReview || sidecar.workingText === normalizedDisk
+        ? sidecar.annotations
+        : (prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
+            ?.nextAnnotations ?? sidecar.annotations);
 
-    const review = hasOutstandingReview
-      ? reviewFromSidecar(documentId, sidecar)
-      : undefined;
+    const review = hasOutstandingReview ? reviewFromSidecar(documentId, sidecar) : undefined;
     const workingText = hasOutstandingReview ? sidecar.workingText : normalizedDisk;
 
     // A file that already says exactly this is left alone; the orphaning
@@ -959,9 +953,10 @@ export class CollaborationApplicationService {
       sidecar.annotations;
     // A review with nothing proposed has nothing to recover, and ends here
     // exactly as it does on a reopen without drift.
-    const review = sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
-      ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
-      : undefined;
+    const review =
+      sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
+        ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
+        : undefined;
     await this.sidecars.write(
       collaborationSidecar({
         documentPath,
@@ -1019,10 +1014,7 @@ export class CollaborationApplicationService {
    * authority keeps its own transactions (editor updates, save, detach,
    * reattach) in its own module — it does not keep its own lock.
    */
-  public withDocumentLock<T>(
-    documentId: string,
-    run: () => Promise<T>,
-  ): Promise<T> {
+  public withDocumentLock<T>(documentId: string, run: () => Promise<T>): Promise<T> {
     return this.lockFor(documentId).runExclusive(run);
   }
 
@@ -1098,10 +1090,7 @@ export class CollaborationApplicationService {
       this.deps.emit(draft.event, draft.payload);
     }
     if (broadcast === "cleared") {
-      this.deps.authority.broadcastReviewCleared(
-        context.documentId,
-        context.review.reviewId,
-      );
+      this.deps.authority.broadcastReviewCleared(context.documentId, context.review.reviewId);
     } else if (plan.nextReview !== undefined) {
       this.deps.authority.broadcastCollaborationState(context.documentId);
     }
@@ -1165,7 +1154,8 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message: "The document changed after this decision was prepared. Reload the review and try again.",
+        message:
+          "The document changed after this decision was prepared. Reload the review and try again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1179,9 +1169,7 @@ export class CollaborationApplicationService {
    * is returned, so a crash cannot leave a review that answers proposals
    * against a file that moved underneath it.
    */
-  private async checkDiskFence(
-    context: MutationContext,
-  ): Promise<{ ok: true } | ReviewFailure> {
+  private async checkDiskFence(context: MutationContext): Promise<{ ok: true } | ReviewFailure> {
     if (context.review.invalidated) {
       return { ok: false, code: "REVIEW_INVALIDATED", message: INVALIDATED_REVIEW_MESSAGE };
     }
@@ -1197,10 +1185,7 @@ export class CollaborationApplicationService {
     if (sha256Text(normalizeText(diskText)) === context.review.diskFenceSha256) {
       return { ok: true };
     }
-    return await this.commitInvalidation(
-      context,
-      INVALIDATED_REVIEW_MESSAGE,
-    );
+    return await this.commitInvalidation(context, INVALIDATED_REVIEW_MESSAGE);
   }
 
   /**
@@ -1232,10 +1217,7 @@ export class CollaborationApplicationService {
       reviewId: invalidated.reviewId,
       documentId: context.documentId,
     });
-    this.deps.authority.broadcastReviewCleared(
-      context.documentId,
-      invalidated.reviewId,
-    );
+    this.deps.authority.broadcastReviewCleared(context.documentId, invalidated.reviewId);
     return { ok: false, code: "REVIEW_INVALIDATED", message };
   }
 
@@ -1437,11 +1419,16 @@ export class CollaborationApplicationService {
       });
     }
     this.deps.authority.commitWorkingTextReplacement(prepared);
-    for (const draft of [
-      ...plan.events,
-      ...(mapped?.events ?? []),
-      ...(linkage?.events ?? []),
-    ]) {
+    // A document without annotations maps and links nothing, so those steps
+    // are absent and contribute no events.
+    const events = [...plan.events];
+    if (mapped !== undefined) {
+      events.push(...mapped.events);
+    }
+    if (linkage !== undefined) {
+      events.push(...linkage.events);
+    }
+    for (const draft of events) {
       this.deps.emit(draft.event, draft.payload);
     }
     this.deps.authority.broadcastCollaborationState(input.documentId);
@@ -1479,9 +1466,7 @@ export class CollaborationApplicationService {
           if (plan.code === "CHUNK_NOT_FOUND") {
             // The caller used an id that is not outstanding. Re-broadcast so
             // every pane redraws from current state.
-            this.deps.warn(
-              `Chunk decision refused for ${context.documentPath}: ${plan.message}`,
-            );
+            this.deps.warn(`Chunk decision refused for ${context.documentPath}: ${plan.message}`);
             this.deps.authority.broadcastCollaborationState(context.documentId);
           }
           return { ok: false, code: plan.code, message: plan.message };
@@ -1575,7 +1560,11 @@ export class CollaborationApplicationService {
 
     return await this.withDocumentLock(input.documentId, async () => {
       const sidecar = await this.sidecars.read(input.documentPath);
-      if (sidecar?.review === null || sidecar === undefined || sidecar.review.reviewId !== input.reviewId) {
+      if (
+        sidecar?.review === null ||
+        sidecar === undefined ||
+        sidecar.review.reviewId !== input.reviewId
+      ) {
         return { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
       }
 
@@ -1601,18 +1590,23 @@ export class CollaborationApplicationService {
       }
       if (sha256Text(normalizeText(diskText)) !== review.diskFenceSha256) {
         try {
-          await this.sidecars.write(collaborationSidecar({
-            documentPath: sidecar.documentPath,
-            workingText: sidecar.workingText,
-            diskFenceSha256: sidecar.diskFenceSha256,
-            review: freezeReview(review, sidecar.workingText),
-            annotations: sidecar.annotations,
-            pendingSave: sidecar.pendingSave,
-          }));
+          await this.sidecars.write(
+            collaborationSidecar({
+              documentPath: sidecar.documentPath,
+              workingText: sidecar.workingText,
+              diskFenceSha256: sidecar.diskFenceSha256,
+              review: freezeReview(review, sidecar.workingText),
+              annotations: sidecar.annotations,
+              pendingSave: sidecar.pendingSave,
+            }),
+          );
         } catch (error) {
           return persistenceFailure("the drift invalidation", error);
         }
-        this.deps.emit("review.invalidated", { reviewId: review.reviewId, documentId: input.documentId });
+        this.deps.emit("review.invalidated", {
+          reviewId: review.reviewId,
+          documentId: input.documentId,
+        });
         return { ok: false, code: "REVIEW_INVALIDATED", message: INVALIDATED_REVIEW_MESSAGE };
       }
 
@@ -1626,14 +1620,16 @@ export class CollaborationApplicationService {
       }
 
       try {
-        await this.sidecars.write(collaborationSidecar({
-          documentPath: sidecar.documentPath,
-          workingText: plan.nextWorkingText,
-          diskFenceSha256: sidecar.diskFenceSha256,
-          review: plan.nextReview,
-          annotations: sidecar.annotations,
-          pendingSave: sidecar.pendingSave,
-        }));
+        await this.sidecars.write(
+          collaborationSidecar({
+            documentPath: sidecar.documentPath,
+            workingText: plan.nextWorkingText,
+            diskFenceSha256: sidecar.diskFenceSha256,
+            review: plan.nextReview,
+            annotations: sidecar.annotations,
+            pendingSave: sidecar.pendingSave,
+          }),
+        );
       } catch (error) {
         return persistenceFailure("the workspace review acceptance", error);
       }
@@ -1669,18 +1665,23 @@ export class CollaborationApplicationService {
       if (attached) {
         const annotationState = this.annotationStates.get(input.documentId);
         try {
-          await this.sidecars.write(this.sidecarFor(input.documentId, {
-            documentPath: input.documentPath,
-            workingText: currentText,
-            review: nextReview,
-            diskFenceSha256: diskSha256,
-          }));
+          await this.sidecars.write(
+            this.sidecarFor(input.documentId, {
+              documentPath: input.documentPath,
+              workingText: currentText,
+              review: nextReview,
+              diskFenceSha256: diskSha256,
+            }),
+          );
         } catch (error) {
           return persistenceFailure("the review reapply", error);
         }
         this.reviews.replaceReview(input.documentId, nextReview);
         if (annotationState !== undefined) {
-          this.commitAnnotations(input.documentId, { ...annotationState, diskFenceSha256: diskSha256 });
+          this.commitAnnotations(input.documentId, {
+            ...annotationState,
+            diskFenceSha256: diskSha256,
+          });
         }
         for (const draft of plan.events) {
           this.deps.emit(draft.event, draft.payload);
@@ -1693,17 +1694,20 @@ export class CollaborationApplicationService {
       // the file on disk says something else, no change set carries them
       // across, and they are orphaned exactly as on a drifted reopen.
       const { sidecar } = located;
-      const annotationPlan = sidecar.workingText === diskText
-        ? undefined
-        : prepareAnnotationOrphaning(sidecar.annotations, "external-drift");
+      const annotationPlan =
+        sidecar.workingText === diskText
+          ? undefined
+          : prepareAnnotationOrphaning(sidecar.annotations, "external-drift");
       try {
-        await this.sidecars.write(collaborationSidecar({
-          documentPath: input.documentPath,
-          workingText: diskText,
-          diskFenceSha256: diskSha256,
-          review: nextReview,
-          annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
-        }));
+        await this.sidecars.write(
+          collaborationSidecar({
+            documentPath: input.documentPath,
+            workingText: diskText,
+            diskFenceSha256: diskSha256,
+            review: nextReview,
+            annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
+          }),
+        );
       } catch (error) {
         return persistenceFailure("the review reapply", error);
       }
@@ -1735,25 +1739,30 @@ export class CollaborationApplicationService {
         };
       }
       try {
-        await this.sidecars.write(located.attached
-          ? this.sidecarFor(input.documentId, {
-              documentPath: input.documentPath,
-              workingText: located.workingText,
-              review: undefined,
-              diskFenceSha256: sha256Text(located.diskText),
-            })
-          : collaborationSidecar({
-              documentPath: input.documentPath,
-              workingText: located.sidecar.workingText,
-              diskFenceSha256: located.sidecar.diskFenceSha256,
-              review: undefined,
-              annotations: located.sidecar.annotations,
-              pendingSave: located.sidecar.pendingSave,
-            }));
+        await this.sidecars.write(
+          located.attached
+            ? this.sidecarFor(input.documentId, {
+                documentPath: input.documentPath,
+                workingText: located.workingText,
+                review: undefined,
+                diskFenceSha256: sha256Text(located.diskText),
+              })
+            : collaborationSidecar({
+                documentPath: input.documentPath,
+                workingText: located.sidecar.workingText,
+                diskFenceSha256: located.sidecar.diskFenceSha256,
+                review: undefined,
+                annotations: located.sidecar.annotations,
+                pendingSave: located.sidecar.pendingSave,
+              }),
+        );
       } catch (error) {
         return persistenceFailure("the review discard", error);
       }
-      this.deps.emit("review.discarded", { reviewId: review.reviewId, documentId: input.documentId });
+      this.deps.emit("review.discarded", {
+        reviewId: review.reviewId,
+        documentId: input.documentId,
+      });
       if (located.attached) {
         this.reviews.removeReview(input.documentId);
         this.deps.authority.broadcastReviewCleared(input.documentId, review.reviewId);
@@ -1783,24 +1792,30 @@ export class CollaborationApplicationService {
         };
       }
       const workingText = located.attached ? located.workingText : located.sidecar.workingText;
-      const plan = prepareReviewComment({ review: located.review, workingText, text: RETURNED_REVIEW_COMMENT });
+      const plan = prepareReviewComment({
+        review: located.review,
+        workingText,
+        text: RETURNED_REVIEW_COMMENT,
+      });
       const nextReview = plan.nextReview!;
       try {
-        await this.sidecars.write(located.attached
-          ? this.sidecarFor(input.documentId, {
-              documentPath: input.documentPath,
-              workingText,
-              review: nextReview,
-              diskFenceSha256: nextReview.diskFenceSha256,
-            })
-          : collaborationSidecar({
-              documentPath: input.documentPath,
-              workingText,
-              diskFenceSha256: located.sidecar.diskFenceSha256,
-              review: nextReview,
-              annotations: located.sidecar.annotations,
-              pendingSave: located.sidecar.pendingSave,
-            }));
+        await this.sidecars.write(
+          located.attached
+            ? this.sidecarFor(input.documentId, {
+                documentPath: input.documentPath,
+                workingText,
+                review: nextReview,
+                diskFenceSha256: nextReview.diskFenceSha256,
+              })
+            : collaborationSidecar({
+                documentPath: input.documentPath,
+                workingText,
+                diskFenceSha256: located.sidecar.diskFenceSha256,
+                review: nextReview,
+                annotations: located.sidecar.annotations,
+                pendingSave: located.sidecar.pendingSave,
+              }),
+        );
       } catch (error) {
         return persistenceFailure("the review return", error);
       }
@@ -1823,13 +1838,23 @@ export class CollaborationApplicationService {
   private async locateRecoverableReview(
     input: ReviewRecoveryInput,
   ): Promise<RecoverableReview | ReviewFailure> {
-    const notFound: ReviewFailure = { ok: false, code: "REVIEW_NOT_FOUND", message: "Review not found." };
+    const notFound: ReviewFailure = {
+      ok: false,
+      code: "REVIEW_NOT_FOUND",
+      message: "Review not found.",
+    };
     const active = this.reviews.findReviewByReviewId(input.reviewId);
     const sidecar = active === undefined ? await this.sidecars.read(input.documentPath) : undefined;
-    const review = active ?? (
-      sidecar?.review?.reviewId === input.reviewId ? reviewFromSidecar(input.documentId, sidecar) : undefined
-    );
-    if (review === undefined || review.documentId !== input.documentId || review.documentPath !== input.documentPath) {
+    const review =
+      active ??
+      (sidecar?.review?.reviewId === input.reviewId
+        ? reviewFromSidecar(input.documentId, sidecar)
+        : undefined);
+    if (
+      review === undefined ||
+      review.documentId !== input.documentId ||
+      review.documentPath !== input.documentPath
+    ) {
       return notFound;
     }
     if (review.generation !== input.expectedReviewGeneration) {
@@ -1876,8 +1901,7 @@ export class CollaborationApplicationService {
       }
       return await this.commitReviewMutation(
         context,
-        () =>
-          prepareClear({ review: context.review, workingText: context.workingText }),
+        () => prepareClear({ review: context.review, workingText: context.workingText }),
         "cleared",
       );
     });
@@ -1912,16 +1936,13 @@ export class CollaborationApplicationService {
     packetId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<
-    | RetractProposalResponse
-    | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
+    RetractProposalResponse | (ReviewFailure & { reviewId: string; canClearUnresolved: boolean })
   > {
     // Reviews and their packets are few; a scan is cheaper to keep correct
     // than an index every mutation must remember to maintain.
     const owner = this.reviews
       .listReviews()
-      .find((candidate) =>
-        candidate.packets.some((packet) => packet.packetId === packetId),
-      );
+      .find((candidate) => candidate.packets.some((packet) => packet.packetId === packetId));
     if (owner === undefined) {
       return {
         ok: false,

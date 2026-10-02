@@ -130,127 +130,133 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Compartment, StateEffect } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
-import { md2html } from '@common/modules/markdown-utils'
-import { mapAnnotationThroughChanges } from '@common/util/annotation-anchors'
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { AnnotationAnchor, TextAnnotation } from '@dts/common/annotation-domain'
-import type { AnnotationFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
+import { Compartment, StateEffect } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import { md2html } from "@common/modules/markdown-utils";
+import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
+import { reportError } from "@common/util/error-reporting";
+import type { AnnotationAnchor, TextAnnotation } from "@dts/common/annotation-domain";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-const MAX_INSTRUCTION_LENGTH = 500
+const MAX_INSTRUCTION_LENGTH = 500;
 
 const props = defineProps<{
   /** The live CodeMirror view the selection was taken from. */
-  editorView: EditorView
+  editorView: EditorView;
   /** The document the annotation belongs to. */
-  documentPath: string
-  from: number
-  to: number
-  quotedText: string
+  documentPath: string;
+  from: number;
+  to: number;
+  quotedText: string;
   /** The session's current annotationGeneration, fenced against on Save. */
-  annotationGeneration: number
-}>()
+  annotationGeneration: number;
+}>();
 
 const emit = defineEmits<{
-  (e: 'saved', annotation: TextAnnotation): void
-  (e: 'close'): void
-}>()
+  (e: "saved", annotation: TextAnnotation): void;
+  (e: "close"): void;
+}>();
 
-const instruction = ref<string>('')
-const instructionInput = ref<HTMLTextAreaElement|null>(null)
-const saving = ref<boolean>(false)
-const refusalMessage = ref<string|null>(null)
-const excerptHtml = ref<string>('')
+const instruction = ref<string>("");
+const instructionInput = ref<HTMLTextAreaElement | null>(null);
+const saving = ref<boolean>(false);
+const refusalMessage = ref<string | null>(null);
+const excerptHtml = ref<string>("");
 
 const draftAnchor = ref<AnnotationAnchor>({
-  state: 'range',
+  state: "range",
   from: props.from,
   to: props.to,
-  quotedText: props.quotedText
-})
+  quotedText: props.quotedText,
+});
 
 const canSave = computed<boolean>(() => {
-  return draftAnchor.value.state === 'range' &&
-    instruction.value.trim() !== '' &&
-    !saving.value
-})
+  return draftAnchor.value.state === "range" && instruction.value.trim() !== "" && !saving.value;
+});
 
 // The one live EditorView.updateListener this component owns for its
 // lifetime, appended at runtime (StateEffect.appendConfig) and removed on
 // unmount (compartment.reconfigure([])) — it never edits the editor's own
 // extension set or the annotation decoration plugin.
-const draftTrackerCompartment = new Compartment()
+const draftTrackerCompartment = new Compartment();
 
-function cancel (): void {
-  emit('close')
+function cancel(): void {
+  emit("close");
 }
 
-async function save (): Promise<void> {
-  if (!canSave.value || draftAnchor.value.state !== 'range') {
-    return
+async function save(): Promise<void> {
+  if (!canSave.value || draftAnchor.value.state !== "range") {
+    return;
   }
-  const anchor = draftAnchor.value
-  saving.value = true
-  refusalMessage.value = null
-  const result = await window.ipc.invoke('documents:create-annotation', {
-    path: props.documentPath,
-    from: anchor.from,
-    to: anchor.to,
-    instruction: instruction.value.trim(),
-    expectedAnnotationGeneration: props.annotationGeneration
-  }).finally(() => { saving.value = false })
+  const anchor = draftAnchor.value;
+  saving.value = true;
+  refusalMessage.value = null;
+  const result = await window.ipc
+    .invoke("documents:create-annotation", {
+      path: props.documentPath,
+      from: anchor.from,
+      to: anchor.to,
+      instruction: instruction.value.trim(),
+      expectedAnnotationGeneration: props.annotationGeneration,
+    })
+    .finally(() => {
+      saving.value = false;
+    });
 
-  const failure = result as TextAnnotation | AnnotationFailure
-  if ('ok' in failure && failure.ok === false) {
-    refusalMessage.value = failure.message
-    return
+  const failure = result as TextAnnotation | AnnotationFailure;
+  if ("ok" in failure && failure.ok === false) {
+    refusalMessage.value = failure.message;
+    return;
   }
-  emit('saved', failure as TextAnnotation)
+  emit("saved", failure as TextAnnotation);
 }
 
-function handleInstructionKeydown (event: KeyboardEvent): void {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
-    save().catch(err => reportError('Could not save the annotation', err))
+function handleInstructionKeydown(event: KeyboardEvent): void {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    save().catch((err) => reportError("Could not save the annotation", err));
   }
 }
 
-function handleDialogKeydown (event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    cancel()
+function handleDialogKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    cancel();
   }
 }
 
 onMounted(() => {
   props.editorView.dispatch({
     effects: StateEffect.appendConfig.of(
-      draftTrackerCompartment.of(EditorView.updateListener.of(update => {
-        if (!update.docChanged) {
-          return
-        }
-        draftAnchor.value = mapAnnotationThroughChanges(draftAnchor.value, update.changes).anchor
-      }))
-    )
-  })
+      draftTrackerCompartment.of(
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) {
+            return;
+          }
+          draftAnchor.value = mapAnnotationThroughChanges(draftAnchor.value, update.changes).anchor;
+        }),
+      ),
+    ),
+  });
 
   md2html(props.quotedText, {
-    zknLinkFormat: 'link|title',
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB)
+    zknLinkFormat: "link|title",
+    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
   })
-    .then(html => { excerptHtml.value = html })
-    .catch(err => reportError('Could not render the annotation excerpt', err))
+    .then((html) => {
+      excerptHtml.value = html;
+    })
+    .catch((err) => reportError("Could not render the annotation excerpt", err));
 
-  instructionInput.value?.focus()
-})
+  instructionInput.value?.focus();
+});
 
 onBeforeUnmount(() => {
-  props.editorView.dispatch({ effects: draftTrackerCompartment.reconfigure([]) })
-})
+  props.editorView.dispatch({ effects: draftTrackerCompartment.reconfigure([]) });
+});
 </script>
 
 <style lang="less">

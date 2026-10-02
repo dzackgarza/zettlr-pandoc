@@ -25,16 +25,16 @@
  * END HEADER
  */
 
-import type { EditorView } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
-import { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import type { EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import { type AnyMenuItem } from "@common/modules/window-register/application-menu-helper";
 
 /**
  * The command's identity: what a caller checks to know the command fired,
  * as opposed to the menu item's translated label, which a locale change
  * could alter without touching the command's actual identity.
  */
-export const ANNOTATE_SELECTION_EVENT = 'zettlr-annotate-selection'
+export const ANNOTATE_SELECTION_EVENT = "zettlr-annotate-selection";
 
 /**
  * Resolves the "Annotate for AI…" menu item at the view's CURRENT
@@ -43,25 +43,27 @@ export const ANNOTATE_SELECTION_EVENT = 'zettlr-annotate-selection'
  * non-empty one — a context click with no selection must never offer this
  * command (M6 structural gate, question 4).
  */
-export function resolveAnnotateSelectionMenuItem (view: EditorView): AnyMenuItem | null {
-  const selection = view.state.selection.main
+export function resolveAnnotateSelectionMenuItem(view: EditorView): AnyMenuItem | null {
+  const selection = view.state.selection.main;
   if (selection.from === selection.to) {
-    return null
+    return null;
   }
   return {
-    label: trans('Annotate for AI…'),
-    type: 'normal',
-    action () {
+    label: trans("Annotate for AI…"),
+    type: "normal",
+    action() {
       // The element's OWN realm's CustomEvent, not the ambient global one:
       // under jsdom (test/setup.js copies window onto global but a native
       // Node CustomEvent shadows jsdom's own), dispatching an event built
       // from the wrong realm's constructor throws. Production's single
       // window realm makes this the same constructor either way.
-      const ownerWindow = view.dom.ownerDocument.defaultView ?? window
-      view.dom.dispatchEvent(new ownerWindow.CustomEvent(ANNOTATE_SELECTION_EVENT, {
-        bubbles: true,
-        detail: { from: selection.from, to: selection.to }
-      }))
-    }
-  }
+      const ownerWindow = view.dom.ownerDocument.defaultView ?? window;
+      view.dom.dispatchEvent(
+        new ownerWindow.CustomEvent(ANNOTATE_SELECTION_EVENT, {
+          bubbles: true,
+          detail: { from: selection.from, to: selection.to },
+        }),
+      );
+    },
+  };
 }

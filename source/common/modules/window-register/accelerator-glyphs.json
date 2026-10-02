@@ -1,0 +1,12 @@
+{
+  "allPlatforms": {
+    "Cmd": "⌘",
+    "Shift": "⇧",
+    "Backspace": "←",
+    "Tab": "↹"
+  },
+  "darwin": {
+    "Alt": "⎇",
+    "Option": "⎇"
+  }
+}

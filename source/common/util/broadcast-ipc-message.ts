@@ -14,19 +14,22 @@
  * END HEADER
  */
 
-import { BrowserWindow } from 'electron'
+import type { Cloneable, IpcArgument } from "@dts/common/ipc";
+import { BrowserWindow } from "electron";
 
 /**
  * Broadcasts an IPC message to all open windows
  *
  * @param   {string}  channel  The channel to broadcast on
- * @param   {any[]}   args     Any amount of arguments to be passed to the call
+ * @param   {Array}   args     The arguments of the message; IPC must be able to carry each
  */
-export default function broadcastIPCMessage (channel: string, ...args: any[]): void {
-  const allWindows = BrowserWindow.getAllWindows()
+export default function broadcastIPCMessage<A extends readonly IpcArgument[]>(
+  channel: string,
+  ...args: A & Cloneable<A>
+): void {
+  const allWindows = BrowserWindow.getAllWindows();
 
   for (const window of allWindows) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    window.webContents.send(channel, ...args)
+    window.webContents.send(channel, ...args);
   }
 }

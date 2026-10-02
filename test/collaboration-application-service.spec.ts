@@ -17,15 +17,17 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-import { createPatch } from "diff";
 import { sha256Text } from "@common/util/sha256";
-import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
+import { strict as assert } from "assert";
+import { createPatch } from "diff";
+import { mkdirSync, writeFileSync } from "fs";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
-import { harness as sharedHarness, type Harness } from "./collaboration-test-authority";
+import { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
+import {
+  type Harness,
+  harness as sharedHarness,
+  temporarySidecarDirectory,
+} from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-service";
 const DOCUMENT_PATH = "/tmp/review-service-note.md";
@@ -71,13 +73,10 @@ describe("CollaborationApplicationService", function () {
     assert.equal(sidecar?.workingText, proposed);
     assert.equal(sidecar?.review?.packets.length, 1);
 
-    const decided = await service.acceptAllChunks(
-      submitted.reviewId,
-      {
-        expectedReviewGeneration: submitted.reviewGeneration,
-        expectedWorkingSha256: sha256Text(proposed),
-      },
-    );
+    const decided = await service.acceptAllChunks(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(proposed),
+    });
     assert.equal(decided.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), proposed);
     assert.equal(service.reviewStore.getStatus(DOCUMENT_ID, proposed)?.unresolvedChunks, 0);
@@ -195,7 +194,11 @@ describe("CollaborationApplicationService", function () {
     }
 
     await service.detachCollaboration(DOCUMENT_ID);
-    assert.equal(service.getReview(DOCUMENT_ID), undefined, "the review must be detached from memory");
+    assert.equal(
+      service.getReview(DOCUMENT_ID),
+      undefined,
+      "the review must be detached from memory",
+    );
 
     const accepted = await service.acceptAllWorkspaceChunks({
       documentId: DOCUMENT_ID,
@@ -213,26 +216,35 @@ describe("CollaborationApplicationService", function () {
     }
     assert.equal(accepted.acceptedChunks, 1);
     assert.equal(accepted.unresolvedChunks, 0);
-    assert.equal(service.getReview(DOCUMENT_ID), undefined, "detached acceptance must not attach the review");
+    assert.equal(
+      service.getReview(DOCUMENT_ID),
+      undefined,
+      "detached acceptance must not attach the review",
+    );
     const persisted = await service.readSidecar(DOCUMENT_PATH);
     assert.ok(persisted?.review !== null && persisted?.review !== undefined);
     assert.equal(
-      persisted.review.suggestions.filter(suggestion => suggestion.state === "proposed").length,
+      persisted.review.suggestions.filter((suggestion) => suggestion.state === "proposed").length,
       0,
     );
   });
 
   describe("an invalidated review", function () {
-    const baseline = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
-    const proposed = "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\nTHETA\n";
-    const firstOnly = "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
+    const baseline =
+      "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
+    const proposed =
+      "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\nTHETA\n";
+    const firstOnly =
+      "ALPHA\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta\n";
     const claims = [
       { patch: makePatch(baseline, firstOnly), description: "capitalize the first word" },
       { patch: makePatch(firstOnly, proposed), description: "capitalize the last word" },
     ];
 
     /** A review with two suggestions, closed, whose file then changed on disk. */
-    async function detachedThenDrifted(diskText: string): Promise<Harness & { reviewId: string; generation: number }> {
+    async function detachedThenDrifted(
+      diskText: string,
+    ): Promise<Harness & { reviewId: string; generation: number }> {
       const opened = harness({ diskText: baseline });
       const submitted = await opened.service.submitProposal({
         documentId: DOCUMENT_ID,
@@ -250,17 +262,26 @@ describe("CollaborationApplicationService", function () {
     }
 
     /** Accept all on the closed file, which finds the drift and freezes the review. */
-    async function invalidatedByAcceptAll(diskText: string): Promise<Harness & { reviewId: string; generation: number }> {
+    async function invalidatedByAcceptAll(
+      diskText: string,
+    ): Promise<Harness & { reviewId: string; generation: number }> {
       const drifted = await detachedThenDrifted(diskText);
       const accepted = await drifted.service.acceptAllWorkspaceChunks({
         ...target(drifted.reviewId),
-        precondition: { expectedReviewGeneration: drifted.generation, expectedWorkingSha256: sha256Text(proposed) },
+        precondition: {
+          expectedReviewGeneration: drifted.generation,
+          expectedWorkingSha256: sha256Text(proposed),
+        },
       });
       assert.equal(!accepted.ok && accepted.code, "REVIEW_INVALIDATED");
       return drifted;
     }
 
-    function target(reviewId: string): { documentId: string; documentPath: string; reviewId: string } {
+    function target(reviewId: string): {
+      documentId: string;
+      documentPath: string;
+      reviewId: string;
+    } {
       return { documentId: DOCUMENT_ID, documentPath: DOCUMENT_PATH, reviewId };
     }
 
@@ -269,14 +290,22 @@ describe("CollaborationApplicationService", function () {
 
       const persisted = await service.readSidecar(DOCUMENT_PATH);
       assert.equal(persisted?.review?.invalidated, true);
-      assert.equal(persisted?.review?.invalidated === true && persisted.review.frozenText, proposed);
-      assert.equal(persisted?.review?.suggestions.filter(suggestion => suggestion.state === "proposed").length, 2);
+      assert.equal(
+        persisted?.review?.invalidated === true && persisted.review.frozenText,
+        proposed,
+      );
+      assert.equal(
+        persisted?.review?.suggestions.filter((suggestion) => suggestion.state === "proposed")
+          .length,
+        2,
+      );
       assert.equal(authority.currentDiskText(), proposed);
-      assert.ok(emitted.some(event => event.event === "review.invalidated"));
+      assert.ok(emitted.some((event) => event.event === "review.invalidated"));
     });
 
     it("stays frozen when its drifted file opens again, and the buffer is the file", async function () {
-      const drifted = "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta and more\n";
+      const drifted =
+        "alpha\nbeta\ngamma\ndelta\nepsilon\nzeta\neta\niota\nkappa\nlambda\nmu\ntheta and more\n";
       const { service, authority, reviewId } = await detachedThenDrifted(drifted);
       authority.reopen();
       authority.reloadFromDisk();
@@ -294,7 +323,10 @@ describe("CollaborationApplicationService", function () {
     it("reapplies onto a closed file that carries every suggestion, and then accepts", async function () {
       const { service, reviewId, generation } = await invalidatedByAcceptAll(proposed);
 
-      const reapplied = await service.reapplyReview({ ...target(reviewId), expectedReviewGeneration: generation });
+      const reapplied = await service.reapplyReview({
+        ...target(reviewId),
+        expectedReviewGeneration: generation,
+      });
 
       assert.ok(reapplied.ok);
       assert.deepEqual(reapplied.withdrawnChunkIds, []);
@@ -305,7 +337,10 @@ describe("CollaborationApplicationService", function () {
 
       const accepted = await service.acceptAllWorkspaceChunks({
         ...target(reviewId),
-        precondition: { expectedReviewGeneration: reapplied.reviewGeneration, expectedWorkingSha256: sha256Text(proposed) },
+        precondition: {
+          expectedReviewGeneration: reapplied.reviewGeneration,
+          expectedWorkingSha256: sha256Text(proposed),
+        },
       });
       assert.ok(accepted.ok);
       assert.equal(accepted.acceptedChunks, 2);
@@ -314,16 +349,23 @@ describe("CollaborationApplicationService", function () {
     it("withdraws on reapply each suggestion whose text the current file lacks", async function () {
       const { service, reviewId, generation } = await invalidatedByAcceptAll(firstOnly);
 
-      const reapplied = await service.reapplyReview({ ...target(reviewId), expectedReviewGeneration: generation });
+      const reapplied = await service.reapplyReview({
+        ...target(reviewId),
+        expectedReviewGeneration: generation,
+      });
 
       assert.ok(reapplied.ok);
       assert.equal(reapplied.unresolvedChunks, 1);
       assert.equal(reapplied.withdrawnChunkIds.length, 1);
       const persisted = await service.readSidecar(DOCUMENT_PATH);
       assert.equal(persisted?.workingText, firstOnly);
-      const live = persisted?.review?.suggestions.filter(suggestion => suggestion.state === "proposed") ?? [];
+      const live =
+        persisted?.review?.suggestions.filter((suggestion) => suggestion.state === "proposed") ??
+        [];
       assert.deepEqual(
-        live.map(suggestion => firstOnly.slice(suggestion.anchors[0].from, suggestion.anchors[0].to)),
+        live.map((suggestion) =>
+          firstOnly.slice(suggestion.anchors[0].from, suggestion.anchors[0].to),
+        ),
         ["ALPHA"],
       );
     });
@@ -357,27 +399,34 @@ describe("CollaborationApplicationService", function () {
     });
 
     it("is removed by an explicit discard, which leaves the file as it is", async function () {
-      const { service, authority, emitted, reviewId, generation } = await invalidatedByAcceptAll(proposed);
+      const { service, authority, emitted, reviewId, generation } =
+        await invalidatedByAcceptAll(proposed);
 
-      const discarded = await service.discardInvalidatedReview({ ...target(reviewId), expectedReviewGeneration: generation });
+      const discarded = await service.discardInvalidatedReview({
+        ...target(reviewId),
+        expectedReviewGeneration: generation,
+      });
 
       assert.ok(discarded.ok);
       assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
       assert.equal(authority.currentDiskText(), proposed);
-      assert.ok(emitted.some(event => event.event === "review.discarded"));
+      assert.ok(emitted.some((event) => event.event === "review.discarded"));
     });
 
     it("goes back to its agent as a review comment, and stays frozen", async function () {
       const { service, emitted, reviewId, generation } = await invalidatedByAcceptAll(proposed);
 
-      const returned = await service.returnInvalidatedReview({ ...target(reviewId), expectedReviewGeneration: generation });
+      const returned = await service.returnInvalidatedReview({
+        ...target(reviewId),
+        expectedReviewGeneration: generation,
+      });
 
       assert.ok(returned.ok);
       const persisted = await service.readSidecar(DOCUMENT_PATH);
       assert.equal(persisted?.review?.invalidated, true);
       assert.equal(persisted?.review?.comments.length, 1);
       assert.equal(persisted?.review?.generation, returned.reviewGeneration);
-      assert.ok(emitted.some(event => event.event === "review.commented"));
+      assert.ok(emitted.some((event) => event.event === "review.commented"));
     });
 
     it("refuses reapply and discard on a review that is still current", async function () {
@@ -390,7 +439,10 @@ describe("CollaborationApplicationService", function () {
         expectedReviewGeneration: 0,
       });
       assert.ok(submitted.ok);
-      const input = { ...target(submitted.reviewId), expectedReviewGeneration: submitted.reviewGeneration };
+      const input = {
+        ...target(submitted.reviewId),
+        expectedReviewGeneration: submitted.reviewGeneration,
+      };
 
       const reapplied = await service.reapplyReview(input);
       const discarded = await service.discardInvalidatedReview(input);
@@ -579,15 +631,10 @@ describe("CollaborationApplicationService", function () {
 
     const restartedReview = restarted.getReview(DOCUMENT_ID);
     assert.ok(restartedReview !== undefined);
-    const accepted = await restarted.decideChunk(
-      submitted.reviewId,
-      second.chunkId,
-      "accept",
-      {
-        expectedReviewGeneration: restartedReview.generation,
-        expectedWorkingSha256: sha256Text(edited),
-      },
-    );
+    const accepted = await restarted.decideChunk(submitted.reviewId, second.chunkId, "accept", {
+      expectedReviewGeneration: restartedReview.generation,
+      expectedWorkingSha256: sha256Text(edited),
+    });
     assert.equal(accepted.ok, true);
     if (!accepted.ok) {
       return;
@@ -603,15 +650,10 @@ describe("CollaborationApplicationService", function () {
       "accepting one suggestion must leave the other unresolved",
     );
 
-    const rejected = await restarted.decideChunk(
-      submitted.reviewId,
-      first.chunkId,
-      "reject",
-      {
-        expectedReviewGeneration: accepted.reviewGeneration,
-        expectedWorkingSha256: sha256Text(edited),
-      },
-    );
+    const rejected = await restarted.decideChunk(submitted.reviewId, first.chunkId, "reject", {
+      expectedReviewGeneration: accepted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(edited),
+    });
     assert.equal(rejected.ok, true);
     assert.equal(authority.readWorkingText(DOCUMENT_ID), "oneowner middle TWO\n");
   });
@@ -641,7 +683,7 @@ describe("CollaborationApplicationService", function () {
 
   it("fails reattachment when persisted state is version 3 (#68)", async function () {
     const baseline = "alpha\n";
-    const sidecarDirectory = mkdtempSync(join(tmpdir(), "zettlr-review-service-"));
+    const sidecarDirectory = temporarySidecarDirectory("zettlr-review-service-");
     mkdirSync(sidecarDirectory, { recursive: true });
     writeFileSync(
       collaborationSidecarFilePath(sidecarDirectory, DOCUMENT_PATH),
@@ -729,7 +771,10 @@ describe("CollaborationApplicationService", function () {
 
     const save = await service.prepareSave(DOCUMENT_ID, sha256Text(proposed));
     assert.ok(save !== undefined);
-    assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave?.afterDiskSha256, sha256Text(proposed));
+    assert.equal(
+      (await service.readSidecar(DOCUMENT_PATH))?.pendingSave?.afterDiskSha256,
+      sha256Text(proposed),
+    );
     await service.completeSave(save!, sha256Text(proposed));
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.pendingSave, undefined);
 

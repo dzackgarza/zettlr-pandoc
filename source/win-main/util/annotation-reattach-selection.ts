@@ -20,11 +20,11 @@
  * END HEADER
  */
 
-import type { EditorView } from '@codemirror/view'
+import type { EditorView } from "@codemirror/view";
 
 export type ReattachSelection =
-  | { ok: true, from: number, to: number }
-  | { ok: false, reason: 'empty-selection' }
+  | { ok: true; from: number; to: number }
+  | { ok: false; reason: "empty-selection" };
 
 /**
  * The owner's current selection in `view`, as a Reattach replacement range
@@ -32,10 +32,10 @@ export type ReattachSelection =
  * I6 forbids a background guess, and a collapsed cursor is not a range the
  * owner picked.
  */
-export function resolveReattachSelection (view: EditorView): ReattachSelection {
-  const { from, to } = view.state.selection.main
+export function resolveReattachSelection(view: EditorView): ReattachSelection {
+  const { from, to } = view.state.selection.main;
   if (from === to) {
-    return { ok: false, reason: 'empty-selection' }
+    return { ok: false, reason: "empty-selection" };
   }
-  return { ok: true, from, to }
+  return { ok: true, from, to };
 }

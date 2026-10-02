@@ -1,4 +1,4 @@
-'use strict'
+"use strict";
 
 // The Electron application every visual capture drives. Playwright's
 // _electron.launch() attaches to THIS binary — the same Electron the app
@@ -11,11 +11,11 @@
 // page target only once it has navigated, so a BrowserWindow that has loaded
 // nothing never reaches firstWindow().
 
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow } = require("electron");
 
-const userData = process.env.VISUAL_SCENE_USER_DATA
+const userData = process.env.VISUAL_SCENE_USER_DATA;
 if (userData !== undefined) {
-  app.setPath('userData', userData)
+  app.setPath("userData", userData);
 }
 
 app.whenReady().then(async () => {
@@ -25,7 +25,7 @@ app.whenReady().then(async () => {
     show: false,
     // Offscreen rendering keeps the framebuffer — and so every screenshot's
     // dimensions — independent of the X server the capture runs against.
-    webPreferences: { offscreen: true }
-  })
-  await window.loadURL('about:blank')
-})
+    webPreferences: { offscreen: true },
+  });
+  await window.loadURL("about:blank");
+});

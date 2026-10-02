@@ -14,14 +14,20 @@ if (url === undefined || documentPath === undefined) {
   throw new Error("usage: node test/tikz-standalone-drive.mjs <url> <file.tikz> <outputDirectory>");
 }
 
-const scene = await openScene({ width: 1400, height: 900, args: ["--ozone-platform=x11", "--disable-gpu"] });
+const scene = await openScene({
+  width: 1400,
+  height: 900,
+  args: ["--ozone-platform=x11", "--disable-gpu"],
+});
 // The page's own account of a failed step: console output, uncaught errors
 // and failed requests, printed with the page text when a step throws.
 const pageLog = [];
 scene.page.on("console", (message) => pageLog.push(`console.${message.type()}: ${message.text()}`));
 scene.page.on("pageerror", (error) => pageLog.push(`pageerror: ${error.stack}`));
 scene.page.on("requestfailed", (request) =>
-  pageLog.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`),
+  pageLog.push(
+    `requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`,
+  ),
 );
 scene.page.on("response", (response) => {
   if (response.status() >= 400) pageLog.push(`response ${response.status()}: ${response.url()}`);
@@ -32,7 +38,9 @@ try {
 
   const figure = page.locator(".tikz-live-preview-figure");
   await figure.waitFor({ timeout: 60_000 });
-  await page.locator(".tikz-live-preview-figure .viewer-canvas img").waitFor({ state: "visible", timeout: 60_000 });
+  await page
+    .locator(".tikz-live-preview-figure .viewer-canvas img")
+    .waitFor({ state: "visible", timeout: 60_000 });
   const figureSource = await page.locator(".tikz-figure-viewer-source").getAttribute("src");
   const figureSvg = decodeURIComponent(figureSource.slice(figureSource.indexOf(",") + 1));
   await scene.capture("01-compiled-preview");
@@ -45,7 +53,10 @@ try {
   );
   const editorFrame = page.frameLocator('iframe[title="TikZ visual editor"]');
   await editorFrame.getByTestId("app-menubar").waitFor();
-  await editorFrame.getByText(/^Computing/u).first().waitFor({ state: "hidden", timeout: 60_000 });
+  await editorFrame
+    .getByText(/^Computing/u)
+    .first()
+    .waitFor({ state: "hidden", timeout: 60_000 });
   const visualStatus = await page.locator(".tikz-live-preview-status").textContent();
   await scene.capture("02-visual-editor");
   const sourcePaneVisibleInVisualMode = await page.locator(".tikz-source-editor").isVisible();
@@ -57,7 +68,9 @@ try {
   await page.keyboard.type(appended);
   const dirtyStatus = await page.locator(".tikz-standalone-status").textContent();
   await page.keyboard.press("Control+s");
-  await page.waitForFunction(() => document.querySelector(".tikz-standalone-status")?.textContent === "Saved");
+  await page.waitForFunction(
+    () => document.querySelector(".tikz-standalone-status")?.textContent === "Saved",
+  );
   const savedFile = await readFile(documentPath, "utf8");
   await scene.capture("03-saved");
 

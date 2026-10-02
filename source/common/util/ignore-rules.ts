@@ -17,52 +17,52 @@
  * END HEADER
  */
 
-import ignore, { type Ignore } from 'ignore'
+import ignore, { type Ignore } from "ignore";
 
 /** The rules file at a workspace root. Its rules add to the global ones. */
-export const WORKSPACE_RULES_FILE = '.zettlrignore'
+export const WORKSPACE_RULES_FILE = ".zettlrignore";
 
 /** The rule sources. One value is immutable; a change makes a new one. */
-export interface IgnoreRuleSources {
+export type IgnoreRuleSources = {
   /** The configuration value `fileManager.ignoreRules`, one gitignore line each. */
-  globalRules: readonly string[]
+  globalRules: readonly string[];
   /** Each open workspace root and the text of its rules file ('' when it has none). */
-  workspaceRules: ReadonlyMap<string, string>
+  workspaceRules: ReadonlyMap<string, string>;
   /**
    * The configuration value `fileManager.showIgnored`. While it is true no rule
    * hides a path from any consumer; the file manager only marks the matches.
    */
-  showIgnored: boolean
-}
+  showIgnored: boolean;
+};
 
 /** What the rules say about one path. */
 export interface IgnoreFilter {
   /** True when a rule matches the path, whatever the reveal toggle says. */
-  matches: (absPath: string, isDirectory: boolean) => boolean
+  matches: (absPath: string, isDirectory: boolean) => boolean;
   /** True when the app must not list the path: a rule matches and the reveal toggle is off. */
-  hides: (absPath: string, isDirectory: boolean) => boolean
+  hides: (absPath: string, isDirectory: boolean) => boolean;
 }
 
 /**
  * The workspace root whose rules judge a path: the innermost root that
  * contains it. A root does not contain itself.
  */
-export function judgingRoot (roots: Iterable<string>, absPath: string): string|undefined {
+export function judgingRoot(roots: Iterable<string>, absPath: string): string | undefined {
   return [...roots]
     .sort((a, b) => b.length - a.length)
-    .find(root => absPath.startsWith(`${root}/`))
+    .find((root) => absPath.startsWith(`${root}/`));
 }
 
 /**
  * The rules file text of one workspace root. The map holds every open root,
  * with '' for a root without a rules file, so a missing root is a defect.
  */
-export function rulesTextOf (texts: ReadonlyMap<string, string>, root: string): string {
-  const text = texts.get(root)
+export function rulesTextOf(texts: ReadonlyMap<string, string>, root: string): string {
+  const text = texts.get(root);
   if (text === undefined) {
-    throw new Error(`No ignore rules are known for ${root}: Not an open workspace`)
+    throw new Error(`No ignore rules are known for ${root}: Not an open workspace`);
   }
-  return text
+  return text;
 }
 
 /**
@@ -70,34 +70,34 @@ export function rulesTextOf (texts: ReadonlyMap<string, string>, root: string): 
  * rules and then the rules file of its judging root. No rule hides a root in
  * its own tree, and a path outside every root is never matched.
  */
-export function createIgnoreFilter (sources: IgnoreRuleSources): IgnoreFilter {
-  const roots = [...sources.workspaceRules.keys()]
-  const matchers = new Map<string, Ignore>()
+export function createIgnoreFilter(sources: IgnoreRuleSources): IgnoreFilter {
+  const roots = [...sources.workspaceRules.keys()];
+  const matchers = new Map<string, Ignore>();
 
   const matcherOf = (root: string): Ignore => {
-    let matcher = matchers.get(root)
+    let matcher = matchers.get(root);
     if (matcher === undefined) {
       matcher = ignore({ ignorecase: false })
         .add(sources.globalRules)
-        .add(rulesTextOf(sources.workspaceRules, root))
-      matchers.set(root, matcher)
+        .add(rulesTextOf(sources.workspaceRules, root));
+      matchers.set(root, matcher);
     }
-    return matcher
-  }
+    return matcher;
+  };
 
   const matches = (absPath: string, isDirectory: boolean): boolean => {
-    const root = judgingRoot(roots, absPath)
+    const root = judgingRoot(roots, absPath);
     if (root === undefined) {
-      return false
+      return false;
     }
-    const relative = absPath.slice(root.length + 1)
-    return matcherOf(root).ignores(isDirectory ? `${relative}/` : relative)
-  }
+    const relative = absPath.slice(root.length + 1);
+    return matcherOf(root).ignores(isDirectory ? `${relative}/` : relative);
+  };
 
   return {
     matches,
-    hides: (absPath, isDirectory) => !sources.showIgnored && matches(absPath, isDirectory)
-  }
+    hides: (absPath, isDirectory) => !sources.showIgnored && matches(absPath, isDirectory),
+  };
 }
 
 /**
@@ -105,41 +105,48 @@ export function createIgnoreFilter (sources: IgnoreRuleSources): IgnoreFilter {
  * gitignore(5): a backslash quotes `\`, `*`, `?`, `[` and `]`, a `#` or `!`
  * at the start of a line, and a trailing space.
  */
-function escapeLiteral (text: string): string {
+function escapeLiteral(text: string): string {
   return text
-    .replace(/[\\*?[\]]/g, '\\$&')
-    .replace(/^[#!]/, '\\$&')
-    .replace(/ $/, '\\ ')
+    .replace(/[\\*?[\]]/g, "\\$&")
+    .replace(/^[#!]/, "\\$&")
+    .replace(/ $/, "\\ ");
 }
 
 /** The path below `root`, written as the literal start of an anchored rule. */
-function anchoredLiteral (root: string, absPath: string): string {
+function anchoredLiteral(root: string, absPath: string): string {
   if (!absPath.startsWith(`${root}/`)) {
-    throw new Error(`Cannot write a rule for ${absPath}: it is not inside ${root}`)
+    throw new Error(`Cannot write a rule for ${absPath}: it is not inside ${root}`);
   }
-  return '/' + absPath.slice(root.length + 1).split('/').map(escapeLiteral).join('/')
+  return (
+    "/" +
+    absPath
+      .slice(root.length + 1)
+      .split("/")
+      .map(escapeLiteral)
+      .join("/")
+  );
 }
 
 /** The rule that matches every file, or every folder, with this name. */
-export function ruleForName (name: string, isDirectory: boolean): string {
-  return escapeLiteral(name) + (isDirectory ? '/' : '')
+export function ruleForName(name: string, isDirectory: boolean): string {
+  return escapeLiteral(name) + (isDirectory ? "/" : "");
 }
 
 /** The rule that matches this one path of the workspace `root`. */
-export function ruleForPath (root: string, absPath: string, isDirectory: boolean): string {
-  return anchoredLiteral(root, absPath) + (isDirectory ? '/' : '')
+export function ruleForPath(root: string, absPath: string, isDirectory: boolean): string {
+  return anchoredLiteral(root, absPath) + (isDirectory ? "/" : "");
 }
 
-function linesOf (text: string): string[] {
-  const lines = text.split('\n')
-  if (lines[lines.length - 1] === '') {
-    lines.pop()
+function linesOf(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
   }
-  return lines
+  return lines;
 }
 
-function textOf (lines: string[]): string {
-  return lines.length === 0 ? '' : lines.join('\n') + '\n'
+function textOf(lines: string[]): string {
+  return lines.length === 0 ? "" : lines.join("\n") + "\n";
 }
 
 /**
@@ -151,29 +158,32 @@ function textOf (lines: string[]): string {
  * @throws when the path stays hidden because a folder above it is hidden;
  *         gitignore cannot list a path again below a hidden folder.
  */
-export function setPathIgnored (
+export function setPathIgnored(
   text: string,
   globalRules: readonly string[],
   root: string,
   absPath: string,
   isDirectory: boolean,
-  ignored: boolean
+  ignored: boolean,
 ): string {
-  const rule = ruleForPath(root, absPath, isDirectory)
-  const negation = `!${rule}`
+  const rule = ruleForPath(root, absPath, isDirectory);
+  const negation = `!${rule}`;
   const isIgnored = (lines: string[]): boolean => {
-    const workspaceRules = new Map([[ root, textOf(lines) ]])
-    return createIgnoreFilter({ globalRules, workspaceRules, showIgnored: false }).matches(absPath, isDirectory)
-  }
+    const workspaceRules = new Map([[root, textOf(lines)]]);
+    return createIgnoreFilter({ globalRules, workspaceRules, showIgnored: false }).matches(
+      absPath,
+      isDirectory,
+    );
+  };
 
-  const lines = linesOf(text).filter(line => line !== (ignored ? negation : rule))
+  const lines = linesOf(text).filter((line) => line !== (ignored ? negation : rule));
   if (isIgnored(lines) !== ignored) {
-    lines.push(ignored ? rule : negation)
+    lines.push(ignored ? rule : negation);
   }
   if (isIgnored(lines) !== ignored) {
-    throw new Error(`Cannot show ${absPath}: a folder above it is hidden`)
+    throw new Error(`Cannot show ${absPath}: a folder above it is hidden`);
   }
-  return textOf(lines)
+  return textOf(lines);
 }
 
 /**
@@ -182,8 +192,8 @@ export function setPathIgnored (
  * '/sub/…' for a path below it.
  */
 interface PathRule {
-  negated: boolean
-  rest: string
+  negated: boolean;
+  rest: string;
 }
 
 /**
@@ -191,37 +201,40 @@ interface PathRule {
  * path below it and the lines that stay. `replace` gives the line that takes
  * the place of such a rule, or undefined to take the rule out.
  */
-function mapPathRules (
+function mapPathRules(
   text: string,
   root: string,
   absPath: string,
-  replace: (rule: PathRule) => string|undefined
+  replace: (rule: PathRule) => string | undefined,
 ): string {
-  const literal = anchoredLiteral(root, absPath)
-  const lines: string[] = []
+  const literal = anchoredLiteral(root, absPath);
+  const lines: string[] = [];
   for (const line of linesOf(text)) {
-    const negated = line.startsWith('!')
-    const body = negated ? line.slice(1) : line
-    const rest = body.slice(literal.length)
-    if (!body.startsWith(literal) || (rest !== '' && !rest.startsWith('/'))) {
-      lines.push(line)
-      continue
+    const negated = line.startsWith("!");
+    const body = negated ? line.slice(1) : line;
+    const rest = body.slice(literal.length);
+    if (!body.startsWith(literal) || (rest !== "" && !rest.startsWith("/"))) {
+      lines.push(line);
+      continue;
     }
-    const replacement = replace({ negated, rest })
+    const replacement = replace({ negated, rest });
     if (replacement !== undefined) {
-      lines.push(replacement)
+      lines.push(replacement);
     }
   }
-  return textOf(lines)
+  return textOf(lines);
 }
 
-function pathRuleLine (root: string, absPath: string, rule: PathRule): string {
-  return (rule.negated ? '!' : '') + anchoredLiteral(root, absPath) + rule.rest
+function pathRuleLine(root: string, absPath: string, rule: PathRule): string {
+  return (rule.negated ? "!" : "") + anchoredLiteral(root, absPath) + rule.rest;
 }
 
 /** The rules files whose text differs from the one in `texts`. */
-function changedTexts (texts: ReadonlyMap<string, string>, next: Map<string, string>): Map<string, string> {
-  return new Map([...next].filter(([ root, text ]) => text !== texts.get(root)))
+function changedTexts(
+  texts: ReadonlyMap<string, string>,
+  next: Map<string, string>,
+): Map<string, string> {
+  return new Map([...next].filter(([root, text]) => text !== texts.get(root)));
 }
 
 /**
@@ -233,32 +246,35 @@ function changedTexts (texts: ReadonlyMap<string, string>, next: Map<string, str
  *
  * @return  The new text of each rules file that changes
  */
-export function movePathRules (
+export function movePathRules(
   texts: ReadonlyMap<string, string>,
   oldPath: string,
-  newPath: string
+  newPath: string,
 ): Map<string, string> {
-  const oldRoot = judgingRoot(texts.keys(), oldPath)
-  const newRoot = judgingRoot(texts.keys(), newPath)
+  const oldRoot = judgingRoot(texts.keys(), oldPath);
+  const newRoot = judgingRoot(texts.keys(), newPath);
   if (oldRoot === undefined) {
-    return new Map()
+    return new Map();
   }
 
-  const moved: string[] = []
-  const next = new Map<string, string>()
-  next.set(oldRoot, mapPathRules(rulesTextOf(texts, oldRoot), oldRoot, oldPath, rule => {
-    if (newRoot === oldRoot) {
-      return pathRuleLine(oldRoot, newPath, rule)
-    }
-    if (newRoot !== undefined) {
-      moved.push(pathRuleLine(newRoot, newPath, rule))
-    }
-    return undefined
-  }))
+  const moved: string[] = [];
+  const next = new Map<string, string>();
+  next.set(
+    oldRoot,
+    mapPathRules(rulesTextOf(texts, oldRoot), oldRoot, oldPath, (rule) => {
+      if (newRoot === oldRoot) {
+        return pathRuleLine(oldRoot, newPath, rule);
+      }
+      if (newRoot !== undefined) {
+        moved.push(pathRuleLine(newRoot, newPath, rule));
+      }
+      return undefined;
+    }),
+  );
   if (newRoot !== undefined && moved.length > 0) {
-    next.set(newRoot, textOf([ ...linesOf(rulesTextOf(texts, newRoot)), ...moved ]))
+    next.set(newRoot, textOf([...linesOf(rulesTextOf(texts, newRoot)), ...moved]));
   }
-  return changedTexts(texts, next)
+  return changedTexts(texts, next);
 }
 
 /**
@@ -266,11 +282,14 @@ export function movePathRules (
  *
  * @return  The new text of each rules file that changes
  */
-export function removePathRules (texts: ReadonlyMap<string, string>, absPath: string): Map<string, string> {
-  const root = judgingRoot(texts.keys(), absPath)
+export function removePathRules(
+  texts: ReadonlyMap<string, string>,
+  absPath: string,
+): Map<string, string> {
+  const root = judgingRoot(texts.keys(), absPath);
   if (root === undefined) {
-    return new Map()
+    return new Map();
   }
-  const text = mapPathRules(rulesTextOf(texts, root), root, absPath, () => undefined)
-  return changedTexts(texts, new Map([[ root, text ]]))
+  const text = mapPathRules(rulesTextOf(texts, root), root, absPath, () => undefined);
+  return changedTexts(texts, new Map([[root, text]]));
 }

@@ -40,21 +40,18 @@ import {
   lineNumbers,
   type ViewUpdate,
 } from "@codemirror/view";
+import {
+  jsonDiagnosticProvider,
+  yamlDiagnosticProvider,
+} from "@common/diagnostics/providers/structured-data";
 import { emacs } from "@replit/codemirror-emacs";
 import { autocomplete } from "./autocomplete";
 import { snippetsUpdateField } from "./autocomplete/snippets";
-import {
-  texCommandAutocomplete,
-  texKnowledgeExtensions,
-} from "./autocomplete/tex";
+import { texCommandAutocomplete, texKnowledgeExtensions } from "./autocomplete/tex";
 import { markdownFolding } from "./code-folding/markdown";
 import { externalLinterExtension } from "./diagnostics/external-linter-adapter";
 import { markdownDiagnosticExtensions } from "./diagnostics/markdown-diagnostic-plugins";
 import { zettlrKeymap } from "./keymaps";
-import {
-  jsonDiagnosticProvider,
-  yamlDiagnosticProvider
-} from "@common/diagnostics/providers/structured-data";
 import markdownParser from "./parser/markdown-parser";
 import { backgroundLayers } from "./plugins/code-background";
 import { defaultContextMenu } from "./plugins/default-context-menu";
@@ -82,8 +79,8 @@ import { tocField } from "./plugins/toc-field";
 import { typewriter } from "./plugins/typewriter";
 import { vimPlugin } from "./plugins/vim-mode";
 import { softwrapVisualIndent } from "./plugins/visual-indent";
-import { workspaceReferencesField } from "./plugins/workspace-references-field";
 import { wikilinkOpener, wikilinkResolutionsField } from "./plugins/wikilink-resolutions-field";
+import { workspaceReferencesField } from "./plugins/workspace-references-field";
 import { quickTexField } from "./quicktex";
 import { renderers } from "./renderers";
 import { headingGutter } from "./renderers/render-headings";
@@ -352,7 +349,7 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // Some statistics we need for Markdown documents
     countPlugin,
     countField,
-    typewriter,
+    typewriter(options.initialConfig.typewriterMode),
     distractionFree,
     tocField,
     projectInfoField,
@@ -424,7 +421,7 @@ export function getYAMLExtensions(options: CoreExtensionOptions): Extension[] {
     texCommandAutocomplete,
     externalLinterExtension({
       provider: yamlDiagnosticProvider,
-      context: () => undefined
+      context: () => undefined,
     }),
   ];
 }
@@ -446,8 +443,8 @@ export function getJSONExtensions(options: CoreExtensionOptions): Extension[] {
       provider: jsonDiagnosticProvider,
       context: () => ({
         allowComments: false,
-        allowTrailingComma: false
-      })
-    })
+        allowTrailingComma: false,
+      }),
+    }),
   ];
 }

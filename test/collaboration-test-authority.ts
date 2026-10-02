@@ -18,19 +18,19 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import { ChangeSet, Text } from "@codemirror/state";
+import serializeChangeSet from "@common/util/serialize-change-set";
+import { sha256Text } from "@common/util/sha256";
 import type { AgentEventType } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
-import { sha256Text } from "@common/util/sha256";
-import serializeChangeSet from "@common/util/serialize-change-set";
+import { strict as assert } from "assert";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
-  CollaborationApplicationService,
   type AgentEventPayload,
   type AnnotationFailure,
+  CollaborationApplicationService,
   type CollaborationDocumentAuthority,
   type PreparedDocumentMutation,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
@@ -102,10 +102,7 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     return documentId === this.documentId ? sha256Text(this.diskText) : undefined;
   }
 
-  prepareWorkingTextReplacement(
-    documentId: string,
-    nextText: string,
-  ): PreparedDocumentMutation {
+  prepareWorkingTextReplacement(documentId: string, nextText: string): PreparedDocumentMutation {
     assert.equal(documentId, this.documentId);
     const currentText = this.text.toString();
     if (currentText === nextText) {
@@ -123,8 +120,7 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     while (
       suffix < currentText.length - prefix &&
       suffix < nextText.length - prefix &&
-      currentText[currentText.length - suffix - 1] ===
-        nextText[nextText.length - suffix - 1]
+      currentText[currentText.length - suffix - 1] === nextText[nextText.length - suffix - 1]
     ) {
       suffix += 1;
     }
@@ -212,6 +208,22 @@ export interface Harness {
   warnings: string[];
 }
 
+const temporaryDirectories: string[] = [];
+
+// A root hook: it runs once, after every spec of the run.
+after(function () {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** A fresh sidecar directory that the run removes when it ends. */
+export function temporarySidecarDirectory(prefix: string): string {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
 export interface HarnessOptions {
   /** Which document this authority answers for — required, never guessed. */
   documentId: string;
@@ -242,7 +254,7 @@ export function harness(options: HarnessOptions): Harness {
   const authority = new DocumentAuthority(diskText, documentId, documentPath);
   const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
   const warnings: string[] = [];
-  const directory = sidecarDirectory ?? mkdtempSync(join(tmpdir(), tmpPrefix));
+  const directory = sidecarDirectory ?? temporarySidecarDirectory(tmpPrefix);
   return {
     authority,
     sidecarDirectory: directory,

@@ -211,156 +211,209 @@
  * END HEADER
  */
 
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { DateTime } from 'luxon'
-import { trans } from '@common/i18n-renderer'
-import IrisIndicator from '@common/vue/IrisIndicator.vue'
-import NotificationCenter from './NotificationCenter.vue'
-import RingProgress from '@common/vue/window/toolbar-controls/RingProgress.vue'
-import localiseNumber from '@common/util/localise-number'
-import { hasMarkdownExt } from '@common/util/file-extention-checks'
-import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
-import { navigationMenuItems } from '@common/modules/markdown-editor/plugins/project-info-field'
-import { useConfigStore, useDocumentTreeStore, useLRTStore, useWindowStateStore } from 'source/pinia'
-import { TaskStatus } from 'source/pinia/lrt-store'
-import { languageToolMenuItems, magicQuotesMenuItems, magicQuotesPairFor } from './statusbar-menus'
+import { trans } from "@common/i18n-renderer";
+import { navigationMenuItems } from "@common/modules/markdown-editor/plugins/project-info-field";
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "@common/modules/window-register/application-menu-helper";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import localiseNumber from "@common/util/localise-number";
+import IrisIndicator from "@common/vue/IrisIndicator.vue";
+import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
+import { DateTime } from "luxon";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useLRTStore,
+  useWindowStateStore,
+} from "source/pinia";
+import { TaskStatus } from "source/pinia/lrt-store";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import NotificationCenter from "./NotificationCenter.vue";
+import { languageToolMenuItems, magicQuotesMenuItems, magicQuotesPairFor } from "./statusbar-menus";
 
 const props = defineProps<{
   /** The Pomodoro phase's progress, 0 to 1. */
-  pomodoroRatio: number
-  pomodoroColour: string
-  updateAvailable: boolean
-}>()
+  pomodoroRatio: number;
+  pomodoroColour: string;
+  updateAvailable: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'pomodoro'): void
-  (e: 'tasks'): void
-  (e: 'update'): void
-  (e: 'toggle-readability'): void
-  (e: 'toggle-lint-panel'): void
-  (e: 'set-language-tool-language', language: string): void
-  (e: 'open-file', path: string): void
-}>()
+  (e: "pomodoro"): void;
+  (e: "tasks"): void;
+  (e: "update"): void;
+  (e: "toggle-readability"): void;
+  (e: "toggle-lint-panel"): void;
+  (e: "set-language-tool-language", language: string): void;
+  (e: "open-file", path: string): void;
+}>();
 
-const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const lrtStore = useLRTStore()
-const windowStateStore = useWindowStateStore()
+const configStore = useConfigStore();
+const documentTreeStore = useDocumentTreeStore();
+const lrtStore = useLRTStore();
+const windowStateStore = useWindowStateStore();
 
-const pomodoroLabel = trans('Pomodoro timer')
-const updateLabel = trans('Update available')
-const diagnosticsTitle = trans('Show or hide diagnostics')
-const renderingModeTitle = trans('Toggle Markdown preview')
+const pomodoroLabel = trans("Pomodoro timer");
+const updateLabel = trans("Update available");
+const diagnosticsTitle = trans("Show or hide diagnostics");
+const renderingModeTitle = trans("Toggle Markdown preview");
 
-const info = computed(() => windowStateStore.activeDocumentInfo)
-const activePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
-const isMarkdown = computed(() => activePath.value !== undefined && hasMarkdownExt(activePath.value))
+const info = computed(() => windowStateStore.activeDocumentInfo);
+const activePath = computed(() => documentTreeStore.lastLeafActiveFile?.path);
+const isMarkdown = computed(
+  () => activePath.value !== undefined && hasMarkdownExt(activePath.value),
+);
 
-const countChars = computed(() => configStore.config.editor.countChars)
-const inputMode = computed(() => configStore.config.editor.inputMode)
-const magicQuotes = computed(() => configStore.config.editor.autoCorrect.magicQuotes)
-const renderingMode = computed(() => configStore.config.display.renderingMode)
+const countChars = computed(() => configStore.config.editor.countChars);
+const inputMode = computed(() => configStore.config.editor.inputMode);
+const magicQuotes = computed(() => configStore.config.editor.autoCorrect.magicQuotes);
+const renderingMode = computed(() => configStore.config.display.renderingMode);
 
-const projectTitle = computed(() => info.value?.project === undefined ? '' : trans('This file is part of project "%s"', info.value.project.name))
+const projectTitle = computed(() =>
+  info.value?.project === undefined
+    ? ""
+    : trans('This file is part of project "%s"', info.value.project.name),
+);
 const projectCountLabel = computed(() => {
-  const project = info.value?.project
+  const project = info.value?.project;
   if (project === undefined) {
-    return ''
+    return "";
   }
   return countChars.value
-    ? trans('%s characters', localiseNumber(project.charCount))
-    : trans('%s words', localiseNumber(project.wordCount))
-})
-const renderingModeLabel = computed(() => renderingMode.value === 'preview' ? trans('Preview') : trans('Raw'))
-const readabilityTitle = computed(() => trans('Readability mode (%s)', configStore.config.editor.readabilityAlgorithm))
-const cursorLabel = computed(() => info.value === undefined ? '' : `Ln ${info.value.cursor.line}, Col ${info.value.cursor.ch}`)
-const wordsLabel = computed(() => info.value === undefined ? '' : trans('%s words', localiseNumber(info.value.words)))
-const charsLabel = computed(() => info.value === undefined ? '' : trans('%s characters', localiseNumber(info.value.chars)))
-const inputModeLabel = computed(() => 'Mode: ' + (inputMode.value === 'vim' ? 'Vim' : 'Emacs'))
+    ? trans("%s characters", localiseNumber(project.charCount))
+    : trans("%s words", localiseNumber(project.wordCount));
+});
+const renderingModeLabel = computed(() =>
+  renderingMode.value === "preview" ? trans("Preview") : trans("Raw"),
+);
+const readabilityTitle = computed(() =>
+  trans("Readability mode (%s)", configStore.config.editor.readabilityAlgorithm),
+);
+const cursorLabel = computed(() =>
+  info.value === undefined ? "" : `Ln ${info.value.cursor.line}, Col ${info.value.cursor.ch}`,
+);
+const wordsLabel = computed(() =>
+  info.value === undefined ? "" : trans("%s words", localiseNumber(info.value.words)),
+);
+const charsLabel = computed(() =>
+  info.value === undefined ? "" : trans("%s characters", localiseNumber(info.value.chars)),
+);
+const inputModeLabel = computed(() => "Mode: " + (inputMode.value === "vim" ? "Vim" : "Emacs"));
 const languageToolLanguage = computed(() => {
-  const status = info.value?.languageTool
-  if (status === undefined || status.state !== 'idle') {
-    return ''
+  const status = info.value?.languageTool;
+  if (status === undefined || status.state !== "idle") {
+    return "";
   }
-  const flag = resolveFlag(status.language)
-  return flag === status.language ? `(${status.language})` : flag
-})
+  const flag = resolveFlag(status.language);
+  return flag === status.language ? `(${status.language})` : flag;
+});
 const languageToolTitle = computed(() => {
-  const status = info.value?.languageTool
-  return status === undefined || status.state !== 'idle' ? '' : resolveName(status.language)
-})
+  const status = info.value?.languageTool;
+  return status === undefined || status.state !== "idle" ? "" : resolveName(status.language);
+});
 
-const tasks = computed(() => lrtStore.tasks)
+const tasks = computed(() => lrtStore.tasks);
 
-function taskCount (status: TaskStatus): number {
-  return tasks.value.filter(task => task.status === status).length
+function taskCount(status: TaskStatus): number {
+  return tasks.value.filter((task) => task.status === status).length;
 }
 
 // Newest first: the task the user most likely just started.
-const runningTasks = computed(() => tasks.value
-  .filter(task => task.status === TaskStatus.ongoing)
-  .toSorted((a, b) => b.startTime.localeCompare(a.startTime)))
+const runningTasks = computed(() =>
+  tasks.value
+    .filter((task) => task.status === TaskStatus.ongoing)
+    .toSorted((a, b) => b.startTime.localeCompare(a.startTime)),
+);
 
 // The elapsed time ticks once a second while a task runs.
-const now = ref(DateTime.now())
-let clock: ReturnType<typeof setInterval> | undefined
-watch(() => runningTasks.value.length > 0, running => {
-  clearInterval(clock)
-  clock = undefined
-  if (running) {
-    now.value = DateTime.now()
-    clock = setInterval(() => { now.value = DateTime.now() }, 1000)
-  }
-}, { immediate: true })
-onBeforeUnmount(() => { clearInterval(clock) })
+const now = ref(DateTime.now());
+let clock: ReturnType<typeof setInterval> | undefined;
+watch(
+  () => runningTasks.value.length > 0,
+  (running) => {
+    clearInterval(clock);
+    clock = undefined;
+    if (running) {
+      now.value = DateTime.now();
+      clock = setInterval(() => {
+        now.value = DateTime.now();
+      }, 1000);
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  clearInterval(clock);
+});
 
 const runningLabel = computed(() => {
-  const [ newest, ...others ] = runningTasks.value
+  const [newest, ...others] = runningTasks.value;
   if (newest === undefined) {
-    return ''
+    return "";
   }
-  const seconds = Math.max(0, Math.floor(now.value.diff(DateTime.fromISO(newest.startTime)).as('seconds')))
-  const label = `${newest.title} (${seconds}s)`
-  return others.length === 0 ? label : `${label} · ${trans('%s more', others.length)}`
-})
-const runningTitle = computed(() => runningTasks.value
-  .map(task => task.info === undefined ? task.title : `${task.title}: ${task.info}`)
-  .join('\n'))
+  const seconds = Math.max(
+    0,
+    Math.floor(now.value.diff(DateTime.fromISO(newest.startTime)).as("seconds")),
+  );
+  const label = `${newest.title} (${seconds}s)`;
+  return others.length === 0 ? label : `${label} · ${trans("%s more", others.length)}`;
+});
+const runningTitle = computed(() =>
+  runningTasks.value
+    .map((task) => (task.info === undefined ? task.title : `${task.title}: ${task.info}`))
+    .join("\n"),
+);
 
-function toggleRenderingMode (): void {
-  configStore.setConfigValue('display.renderingMode', renderingMode.value === 'preview' ? 'raw' : 'preview')
+function toggleRenderingMode(): void {
+  configStore.setConfigValue(
+    "display.renderingMode",
+    renderingMode.value === "preview" ? "raw" : "preview",
+  );
 }
 
-function openProjectMenu (event: MouseEvent): void {
-  const project = info.value?.project
+function openProjectMenu(event: MouseEvent): void {
+  const project = info.value?.project;
   if (project === undefined) {
-    return
+    return;
   }
   const items: AnyMenuItem[] = [
-    { id: 'none', label: project.name, type: 'normal', enabled: false },
-    ...navigationMenuItems(project.navigation)
-  ]
-  showPopupMenu({ x: event.clientX, y: event.clientY }, items, clickedId => { emit('open-file', clickedId) })
+    { id: "none", label: project.name, type: "normal", enabled: false },
+    ...navigationMenuItems(project.navigation),
+  ];
+  showPopupMenu({ x: event.clientX, y: event.clientY }, items, (clickedId) => {
+    emit("open-file", clickedId);
+  });
 }
 
-function openMagicQuotesMenu (event: MouseEvent): void {
+function openMagicQuotesMenu(event: MouseEvent): void {
   // Stopped here so the document's context-menu handler does not close it again.
-  event.stopPropagation()
-  showPopupMenu({ x: event.clientX, y: event.clientY }, magicQuotesMenuItems(magicQuotes.value), clickedId => {
-    const pair = magicQuotesPairFor(clickedId)
-    configStore.setConfigValue('editor.autoCorrect.magicQuotes.primary', pair.primary)
-    configStore.setConfigValue('editor.autoCorrect.magicQuotes.secondary', pair.secondary)
-  })
+  event.stopPropagation();
+  showPopupMenu(
+    { x: event.clientX, y: event.clientY },
+    magicQuotesMenuItems(magicQuotes.value),
+    (clickedId) => {
+      const pair = magicQuotesPairFor(clickedId);
+      configStore.setConfigValue("editor.autoCorrect.magicQuotes.primary", pair.primary);
+      configStore.setConfigValue("editor.autoCorrect.magicQuotes.secondary", pair.secondary);
+    },
+  );
 }
 
-function openLanguageToolMenu (event: MouseEvent): void {
-  const status = info.value?.languageTool
-  if (status === undefined || status.state !== 'idle') {
-    return
+function openLanguageToolMenu(event: MouseEvent): void {
+  const status = info.value?.languageTool;
+  if (status === undefined || status.state !== "idle") {
+    return;
   }
-  event.stopPropagation()
-  const items = languageToolMenuItems(status.supportedLanguages, status.overrideLanguage, configStore.config.appLang)
-  showPopupMenu({ x: event.clientX, y: event.clientY }, items, clickedId => { emit('set-language-tool-language', clickedId) })
+  event.stopPropagation();
+  const items = languageToolMenuItems(
+    status.supportedLanguages,
+    status.overrideLanguage,
+    configStore.config.appLang,
+  );
+  showPopupMenu({ x: event.clientX, y: event.clientY }, items, (clickedId) => {
+    emit("set-language-tool-language", clickedId);
+  });
 }
 </script>
 

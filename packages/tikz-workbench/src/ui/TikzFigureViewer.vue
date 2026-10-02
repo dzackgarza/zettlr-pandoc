@@ -30,54 +30,56 @@
  * END HEADER
  */
 
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import Viewer from 'viewerjs'
-import 'viewerjs/dist/viewer.css'
-import type { TikzWorkbenchTheme } from '../host'
+import Viewer from "viewerjs";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import "viewerjs/dist/viewer.css";
+import type { TikzWorkbenchTheme } from "../host";
 
-const props = withDefaults(defineProps<{
-  src: string
-  theme: TikzWorkbenchTheme
-  showFullscreenButton?: boolean
-}>(), {
-  showFullscreenButton: true
-})
+const props = withDefaults(
+  defineProps<{
+    src: string;
+    theme: TikzWorkbenchTheme;
+    showFullscreenButton?: boolean;
+  }>(),
+  {
+    showFullscreenButton: true,
+  },
+);
 
-
-const imageElement = ref<HTMLImageElement|null>(null)
-const sourceUri = ref(props.src)
-let viewer: Viewer|null = null
-let fitAnimationFrame: number|null = null
-let hasInitialFit = false
-let sourceRevision = 0
+const imageElement = ref<HTMLImageElement | null>(null);
+const sourceUri = ref(props.src);
+let viewer: Viewer | null = null;
+let fitAnimationFrame: number | null = null;
+let hasInitialFit = false;
+let sourceRevision = 0;
 const VIEWER_TRANSITIONS: Viewer.TransitionOptions = {
   view: false,
   zoom: false,
   move: false,
-}
+};
 
 interface ViewerTransformSnapshot {
-  ratio: number
-  centerOffsetX: number
-  centerOffsetY: number
+  ratio: number;
+  centerOffsetX: number;
+  centerOffsetY: number;
 }
 
-let pendingTransformRestore: ViewerTransformSnapshot|null = null
+let pendingTransformRestore: ViewerTransformSnapshot | null = null;
 
-async function waitForSourceImage (image: HTMLImageElement): Promise<void> {
+async function waitForSourceImage(image: HTMLImageElement): Promise<void> {
   if (image.complete && image.naturalWidth > 0) {
-    return
+    return;
   }
 
-  await new Promise<void>(resolve => {
+  await new Promise<void>((resolve) => {
     const finish = (): void => {
-      image.removeEventListener('load', finish)
-      image.removeEventListener('error', finish)
-      resolve()
-    }
-    image.addEventListener('load', finish, { once: true })
-    image.addEventListener('error', finish, { once: true })
-  })
+      image.removeEventListener("load", finish);
+      image.removeEventListener("error", finish);
+      resolve();
+    };
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+  });
 }
 
 // Viewer.js intentionally refuses to enlarge an image past its natural raster
@@ -87,129 +89,126 @@ async function waitForSourceImage (image: HTMLImageElement): Promise<void> {
 // make the diagram comfortably inspectable. We therefore keep Viewer.js in
 // charge of the transform and ask its public zoomTo() API for a contain fit that
 // may exceed 1:1.
-const FIT_COVERAGE = 0.88
+const FIT_COVERAGE = 0.88;
 
-function fitToAvailableSpace (): void {
-  const source = imageElement.value
+function fitToAvailableSpace(): void {
+  const source = imageElement.value;
   if (viewer === null || source === null) {
-    return
+    return;
   }
 
-  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
-  const canvas = viewerElement?.querySelector('.viewer-canvas')
-  const image = canvas?.querySelector('img')
+  const viewerElement = source.parentElement?.querySelector(".tikz-workbench-viewerjs");
+  const canvas = viewerElement?.querySelector(".viewer-canvas");
+  const image = canvas?.querySelector("img");
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
-    return
+    return;
   }
 
-  const canvasRect = canvas.getBoundingClientRect()
-  const footer = viewerElement?.querySelector('.viewer-footer')
-  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0
-  const naturalWidth = image.naturalWidth
-  const naturalHeight = image.naturalHeight
-  const availableWidth = canvasRect.width
-  const availableHeight = Math.max(0, canvasRect.height - footerHeight)
+  const canvasRect = canvas.getBoundingClientRect();
+  const footer = viewerElement?.querySelector(".viewer-footer");
+  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0;
+  const naturalWidth = image.naturalWidth;
+  const naturalHeight = image.naturalHeight;
+  const availableWidth = canvasRect.width;
+  const availableHeight = Math.max(0, canvasRect.height - footerHeight);
 
-  if (
-    naturalWidth <= 0 || naturalHeight <= 0 ||
-    availableWidth <= 0 || availableHeight <= 0
-  ) {
-    return
+  if (naturalWidth <= 0 || naturalHeight <= 0 || availableWidth <= 0 || availableHeight <= 0) {
+    return;
   }
 
-  const ratio = Math.min(
-    availableWidth / naturalWidth,
-    availableHeight / naturalHeight
-  ) * FIT_COVERAGE
+  const ratio =
+    Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight) * FIT_COVERAGE;
 
   if (Number.isFinite(ratio) && ratio > 0) {
-    viewer.zoomTo(ratio, false)
-    hasInitialFit = true
+    viewer.zoomTo(ratio, false);
+    hasInitialFit = true;
   }
 }
 
-function currentViewerTransform (): ViewerTransformSnapshot|null {
-  const source = imageElement.value
+function currentViewerTransform(): ViewerTransformSnapshot | null {
+  const source = imageElement.value;
   if (source === null) {
-    return null
+    return null;
   }
 
-  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
-  const canvas = viewerElement?.querySelector('.viewer-canvas')
-  const image = canvas?.querySelector('img')
+  const viewerElement = source.parentElement?.querySelector(".tikz-workbench-viewerjs");
+  const canvas = viewerElement?.querySelector(".viewer-canvas");
+  const image = canvas?.querySelector("img");
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
-    return null
+    return null;
   }
 
-  const width = Number.parseFloat(image.style.width)
-  const x = Number.parseFloat(image.style.marginLeft)
-  const y = Number.parseFloat(image.style.marginTop)
-  const height = Number.parseFloat(image.style.height)
+  const width = Number.parseFloat(image.style.width);
+  const x = Number.parseFloat(image.style.marginLeft);
+  const y = Number.parseFloat(image.style.marginTop);
+  const height = Number.parseFloat(image.style.height);
   if (
-    !Number.isFinite(width) || !Number.isFinite(height) ||
-    !Number.isFinite(x) || !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
     image.naturalWidth <= 0
   ) {
-    return null
+    return null;
   }
 
-  const canvasRect = canvas.getBoundingClientRect()
-  const footer = viewerElement?.querySelector('.viewer-footer')
-  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0
-  const contentHeight = Math.max(0, canvasRect.height - footerHeight)
+  const canvasRect = canvas.getBoundingClientRect();
+  const footer = viewerElement?.querySelector(".viewer-footer");
+  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0;
+  const contentHeight = Math.max(0, canvasRect.height - footerHeight);
 
   return {
     ratio: width / image.naturalWidth,
     centerOffsetX: x + width / 2 - canvasRect.width / 2,
     centerOffsetY: y + height / 2 - contentHeight / 2,
-  }
+  };
 }
 
-function restoreViewerTransform (snapshot: ViewerTransformSnapshot): void {
-  const source = imageElement.value
+function restoreViewerTransform(snapshot: ViewerTransformSnapshot): void {
+  const source = imageElement.value;
   if (viewer === null || source === null) {
-    return
+    return;
   }
 
-  const viewerElement = source.parentElement?.querySelector('.tikz-workbench-viewerjs')
-  const canvas = viewerElement?.querySelector('.viewer-canvas')
-  const image = canvas?.querySelector('img')
+  const viewerElement = source.parentElement?.querySelector(".tikz-workbench-viewerjs");
+  const canvas = viewerElement?.querySelector(".viewer-canvas");
+  const image = canvas?.querySelector("img");
   if (!(canvas instanceof HTMLElement) || !(image instanceof HTMLImageElement)) {
-    return
+    return;
   }
 
-  const canvasRect = canvas.getBoundingClientRect()
-  const footer = viewerElement?.querySelector('.viewer-footer')
-  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0
-  const contentHeight = Math.max(0, canvasRect.height - footerHeight)
-  const width = image.naturalWidth * snapshot.ratio
-  const height = image.naturalHeight * snapshot.ratio
-  const x = canvasRect.width / 2 + snapshot.centerOffsetX - width / 2
-  const y = contentHeight / 2 + snapshot.centerOffsetY - height / 2
+  const canvasRect = canvas.getBoundingClientRect();
+  const footer = viewerElement?.querySelector(".viewer-footer");
+  const footerHeight = footer instanceof HTMLElement ? footer.getBoundingClientRect().height : 0;
+  const contentHeight = Math.max(0, canvasRect.height - footerHeight);
+  const width = image.naturalWidth * snapshot.ratio;
+  const height = image.naturalHeight * snapshot.ratio;
+  const x = canvasRect.width / 2 + snapshot.centerOffsetX - width / 2;
+  const y = contentHeight / 2 + snapshot.centerOffsetY - height / 2;
 
   // These are Viewer.js' own public transform APIs. The wrapper preserves only
   // the user's current view while the SVG source changes; Viewer.js continues
   // to own all zoom/pan mechanics and gesture state.
-  viewer.zoomTo(snapshot.ratio, false)
-  viewer.moveTo(x, y)
+  viewer.zoomTo(snapshot.ratio, false);
+  viewer.moveTo(x, y);
 }
 
-function scheduleFit (): void {
+function scheduleFit(): void {
   if (fitAnimationFrame !== null) {
-    cancelAnimationFrame(fitAnimationFrame)
+    cancelAnimationFrame(fitAnimationFrame);
   }
   fitAnimationFrame = requestAnimationFrame(() => {
     // Viewer.js recalculates its inline/full container dimensions in the same
     // frame as the mode transition. One further frame guarantees zoomTo() sees
     // the settled canvas rather than the previous mode's geometry.
     fitAnimationFrame = requestAnimationFrame(() => {
-      fitAnimationFrame = null
-      fitToAvailableSpace()
-    })
-  })
+      fitAnimationFrame = null;
+      fitToAvailableSpace();
+    });
+  });
 }
 
-defineExpose({ fit: fitToAvailableSpace })
+defineExpose({ fit: fitToAvailableSpace });
 
 const toolbar: Viewer.ToolbarOptions = {
   zoomIn: true,
@@ -217,7 +216,11 @@ const toolbar: Viewer.ToolbarOptions = {
   oneToOne: true,
   // "Reset" means return to the useful contain fit for vector diagrams. 1:1
   // remains available separately through Viewer.js' own oneToOne control.
-  reset: { click: () => { scheduleFit() } },
+  reset: {
+    click: () => {
+      scheduleFit();
+    },
+  },
   prev: false,
   play: false,
   next: false,
@@ -225,12 +228,12 @@ const toolbar: Viewer.ToolbarOptions = {
   rotateRight: false,
   flipHorizontal: false,
   flipVertical: false,
-}
+};
 
 onMounted(() => {
-  const image = imageElement.value
+  const image = imageElement.value;
   if (image === null) {
-    throw new Error('TikzFigureViewer mounted without its source image element')
+    throw new Error("TikzFigureViewer mounted without its source image element");
   }
 
   viewer = new Viewer(image, {
@@ -260,73 +263,73 @@ onMounted(() => {
     zoomOnTouch: true,
     zoomOnWheel: true,
     initialCoverage: 0.9,
-    className: 'tikz-workbench-viewerjs',
+    className: "tikz-workbench-viewerjs",
     // This is a live vector preview, so transitions between intermediate
     // geometries are visual noise. Viewer.js still owns every transform and
     // gesture, but applies view/zoom/move immediately.
     transition: VIEWER_TRANSITIONS,
     viewed: () => {
       if (pendingTransformRestore !== null) {
-        const snapshot = pendingTransformRestore
-        pendingTransformRestore = null
-        restoreViewerTransform(snapshot)
-        return
+        const snapshot = pendingTransformRestore;
+        pendingTransformRestore = null;
+        restoreViewerTransform(snapshot);
+        return;
       }
       if (!hasInitialFit) {
-        scheduleFit()
+        scheduleFit();
       }
     },
     ready: () => {
-      scheduleFit()
+      scheduleFit();
     },
-  })
-})
+  });
+});
 
 watch(
   () => props.src,
-  async newSource => {
-    const revision = ++sourceRevision
-    const image = imageElement.value
+  async (newSource) => {
+    const revision = ++sourceRevision;
+    const image = imageElement.value;
     if (viewer === null || image === null) {
-      sourceUri.value = newSource
-      return
+      sourceUri.value = newSource;
+      return;
     }
 
     // Capture the current visual transform BEFORE replacing the source. This
     // is what makes editing stable: compile success changes image content, not
     // the user's viewport into it.
     if (pendingTransformRestore === null && hasInitialFit) {
-      pendingTransformRestore = currentViewerTransform()
+      pendingTransformRestore = currentViewerTransform();
     }
     if (pendingTransformRestore === null) {
       // No stable viewport exists yet, so the replacement should perform the
       // one ordinary initial fit rather than preserving Viewer.js' temporary
       // natural-size layout.
-      hasInitialFit = false
+      hasInitialFit = false;
     }
-    sourceUri.value = newSource
-    await nextTick()
+    sourceUri.value = newSource;
+    await nextTick();
     // Keep Viewer.js' existing canvas on screen while the replacement SVG is
     // loaded invisibly by its source element. Updating only after that load
     // avoids a blank/natural-size frame between compile success and transform
     // restoration. A newer render supersedes this one without disturbing the
     // still-visible viewer.
-    await waitForSourceImage(image)
+    await waitForSourceImage(image);
     if (revision !== sourceRevision || viewer === null) {
-      return
+      return;
     }
-    viewer.update()
-  }
-)
+    viewer.update();
+  },
+);
 
 onBeforeUnmount(() => {
   if (fitAnimationFrame !== null) {
-    cancelAnimationFrame(fitAnimationFrame)
-    fitAnimationFrame = null
+    cancelAnimationFrame(fitAnimationFrame);
+    fitAnimationFrame = null;
   }
-  viewer?.destroy()
-  viewer = null
-})
+  viewer?.destroy();
+  viewer = null;
+});
 </script>
 
 <style scoped lang="less">

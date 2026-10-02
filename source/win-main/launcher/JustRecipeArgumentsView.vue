@@ -35,58 +35,60 @@
 </template>
 
 <script setup lang="ts">
-import { reportError } from '@common/util/error-reporting'
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import type { JustRecipeRow } from './launcher-rows'
-import { parseJustArguments } from './just-arguments'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { computed, nextTick, onMounted, ref } from "vue";
+import { parseJustArguments } from "./just-arguments";
+import type { JustRecipeRow } from "./launcher-rows";
 
 const props = defineProps<{
-  recipe: JustRecipeRow
-  query: string
-}>()
+  recipe: JustRecipeRow;
+  query: string;
+}>();
 
 const emit = defineEmits<{
-  (e: 'update:query', query: string): void
-  (e: 'run', args: string[]): void
-  (e: 'back'): void
-  (e: 'close'): void
-}>()
+  (e: "update:query", query: string): void;
+  (e: "run", args: string[]): void;
+  (e: "back"): void;
+  (e: "close"): void;
+}>();
 
-const input = ref<HTMLInputElement|null>(null)
-const error = ref('')
+const input = ref<HTMLInputElement | null>(null);
+const error = ref("");
 
-const breadcrumb = computed(() => [
-  trans('Justfile commands'),
-  props.recipe.repoLabel,
-  props.recipe.name
-].join(' › '))
+const breadcrumb = computed(() =>
+  [trans("Justfile commands"), props.recipe.repoLabel, props.recipe.name].join(" › "),
+);
 
-const signature = computed(() => `just ${props.recipe.label}`)
-const placeholder = computed(() => trans('Arguments for %s…', props.recipe.name))
+const signature = computed(() => `just ${props.recipe.label}`);
+const placeholder = computed(() => trans("Arguments for %s…", props.recipe.name));
 
 onMounted(() => {
-  nextTick().then(() => { input.value?.focus() }).catch(err => reportError(err))
-})
+  nextTick()
+    .then(() => {
+      input.value?.focus();
+    })
+    .catch((err) => reportError(err));
+});
 
-function onInput (event: Event): void {
+function onInput(event: Event): void {
   if (event.target instanceof HTMLInputElement) {
-    error.value = ''
-    emit('update:query', event.target.value)
+    error.value = "";
+    emit("update:query", event.target.value);
   }
 }
 
-function onBackspace (): void {
-  if (props.query === '') {
-    emit('back')
+function onBackspace(): void {
+  if (props.query === "") {
+    emit("back");
   }
 }
 
-function submit (): void {
+function submit(): void {
   try {
-    emit('run', parseJustArguments(props.query))
+    emit("run", parseJustArguments(props.query));
   } catch (err: unknown) {
-    error.value = err instanceof Error ? err.message : String(err)
+    error.value = err instanceof Error ? err.message : String(err);
   }
 }
 </script>

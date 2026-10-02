@@ -1,11 +1,11 @@
-import { scanPandocAttributeList, type PandocAttributeToken } from '@lezer/markdown'
+import { type PandocAttributeToken, scanPandocAttributeList } from "@lezer/markdown";
 
 /**
  * A scanned token that sets the element identifier: `#id` or `id=…`.
  */
 export type PandocIdentifierToken =
-  Extract<PandocAttributeToken, { kind: 'id' }> |
-  (Extract<PandocAttributeToken, { kind: 'key-value' }> & { key: 'id' })
+  | Extract<PandocAttributeToken, { kind: "id" }>
+  | (Extract<PandocAttributeToken, { kind: "key-value" }> & { key: "id" });
 
 /**
  * Represents a parsed Pandoc LinkAttributes string (e.g., `{width=50%}`).
@@ -14,16 +14,16 @@ export interface ParsedPandocAttributes {
   /**
    * The ID, if present (`#id`)
    */
-  id?: string
+  id?: string;
   /**
    * Any classes found in the string (e.g., `.class`)
    */
-  classes?: string[]
+  classes?: string[];
   /**
    * Any additional properties. NOTE: This parser does not, unlike Pandoc's
    * parser, distinguish between HTML5 properties and custom-properties.
    */
-  properties?: Record<string, string>
+  properties?: Record<string, string>;
 }
 
 /**
@@ -31,32 +31,32 @@ export interface ParsedPandocAttributes {
  *
  * @param attributes
  */
-export function formatPandocAttributes (attributes: ParsedPandocAttributes): string {
-  const parts: string[] = []
+export function formatPandocAttributes(attributes: ParsedPandocAttributes): string {
+  const parts: string[] = [];
 
   if (attributes.id !== undefined) {
-    parts.push('#' + attributes.id)
+    parts.push("#" + attributes.id);
   }
 
   if (attributes.classes !== undefined) {
-    parts.push(attributes.classes.map(v => '.' + v).join(' '))
+    parts.push(attributes.classes.map((v) => "." + v).join(" "));
   }
 
   if (attributes.properties !== undefined) {
     const properties = Object.entries(attributes.properties)
-      .map(([ key, value ]) => {
+      .map(([key, value]) => {
         if (value !== undefined) {
-          return (`${key}="${value}"`)
+          return `${key}="${value}"`;
         }
 
-        return key
+        return key;
       })
-      .join(' ')
+      .join(" ");
 
-    parts.push(properties)
+    parts.push(properties);
   }
 
-  return parts.join(' ')
+  return parts.join(" ");
 }
 
 /**
@@ -67,15 +67,15 @@ export function formatPandocAttributes (attributes: ParsedPandocAttributes): str
  *
  * @return  {ParsedPandocAttributes}  The parsed string
  */
-export function parsePandocAttributes (attrString: string): ParsedPandocAttributes {
-  const trimmed = attrString.trim()
-  const source = trimmed.startsWith('{') ? trimmed : `{${trimmed}}`
-  const scanned = scanPandocAttributeList(source)
-  if (scanned.status !== 'match' || scanned.value.to !== source.length) {
-    return {}
+export function parsePandocAttributes(attrString: string): ParsedPandocAttributes {
+  const trimmed = attrString.trim();
+  const source = trimmed.startsWith("{") ? trimmed : `{${trimmed}}`;
+  const scanned = scanPandocAttributeList(source);
+  if (scanned.status !== "match" || scanned.value.to !== source.length) {
+    return {};
   }
 
-  return pandocAttributesFromTokens(scanned.value.tokens)
+  return pandocAttributesFromTokens(scanned.value.tokens);
 }
 
 /**
@@ -86,8 +86,31 @@ export function parsePandocAttributes (attrString: string): ParsedPandocAttribut
  *
  * @return  {boolean}                      True for `#id` and `id=…`
  */
-export function isPandocIdentifierToken (token: PandocAttributeToken): token is PandocIdentifierToken {
-  return token.kind === 'id' || (token.kind === 'key-value' && token.key === 'id')
+export function isPandocIdentifierToken(
+  token: PandocAttributeToken,
+): token is PandocIdentifierToken {
+  return token.kind === "id" || (token.kind === "key-value" && token.key === "id");
+}
+
+/**
+ * The classes of one attribute list in source order: `.class` and special
+ * tokens, and each word of a `class="…"` value. A list without classes has
+ * none.
+ *
+ * @param   {PandocAttributeToken[]}  tokens  The tokens of one attribute list
+ *
+ * @return  {string[]}                        The classes
+ */
+export function pandocClassesFromTokens(tokens: readonly PandocAttributeToken[]): string[] {
+  const classes: string[] = [];
+  for (const token of tokens) {
+    if (token.kind === "class" || token.kind === "special") {
+      classes.push(token.value);
+    } else if (token.kind === "key-value" && token.key === "class") {
+      classes.push(...token.value.split(/\s+/).filter(Boolean));
+    }
+  }
+  return classes;
 }
 
 /**
@@ -98,31 +121,33 @@ export function isPandocIdentifierToken (token: PandocAttributeToken): token is 
  *
  * @return  {ParsedPandocAttributes}          The parsed attributes
  */
-export function pandocAttributesFromTokens (tokens: readonly PandocAttributeToken[]): ParsedPandocAttributes {
-  const parsed: ParsedPandocAttributes = {}
+export function pandocAttributesFromTokens(
+  tokens: readonly PandocAttributeToken[],
+): ParsedPandocAttributes {
+  const parsed: ParsedPandocAttributes = {};
+  const classes = pandocClassesFromTokens(tokens);
+  if (classes.length > 0) {
+    parsed.classes = classes;
+  }
   for (const token of tokens) {
     if (isPandocIdentifierToken(token)) {
-      parsed.id = token.value
-      continue
+      parsed.id = token.value;
+      continue;
     }
-    if (token.kind === 'class' || token.kind === 'special') {
-      parsed.classes ??= []
-      parsed.classes.push(token.value)
-      continue
+    if (token.kind === "class" || token.kind === "special") {
+      continue;
     }
 
-    const key = token.key
-    let value = token.value
-    if (key === 'class') {
-      parsed.classes ??= []
-      parsed.classes.push(...value.split(/\s+/).filter(Boolean))
-      continue
+    const key = token.key;
+    let value = token.value;
+    if (key === "class") {
+      continue;
     }
-    if ((key.toLowerCase() === 'width' || key.toLowerCase() === 'height') && /^\d+$/.test(value)) {
-      value += 'px'
+    if ((key.toLowerCase() === "width" || key.toLowerCase() === "height") && /^\d+$/.test(value)) {
+      value += "px";
     }
-    parsed.properties ??= {}
-    parsed.properties[key] = value
+    parsed.properties ??= {};
+    parsed.properties[key] = value;
   }
-  return parsed
+  return parsed;
 }

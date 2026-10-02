@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import type { EditorSelection } from '@codemirror/state'
+import type { EditorSelection } from "@codemirror/state";
 
 /**
  * Checks if any of the selections within the given EditorState has overlap with
@@ -29,15 +29,15 @@ import type { EditorSelection } from '@codemirror/state'
  *
  * @return  {boolean}                             True if any selection overlaps
  */
-export function rangeInSelection (
+export function rangeInSelection(
   selection: EditorSelection,
   rangeFrom: number,
   rangeTo: number,
-  includeAdjacent: boolean = false
+  includeAdjacent: boolean = false,
 ): boolean {
   if (includeAdjacent) {
-    return selection.ranges.some(range => range.to >= rangeFrom && range.from <= rangeTo)
+    return selection.ranges.some((range) => range.to >= rangeFrom && range.from <= rangeTo);
   } else {
-    return selection.ranges.some(range => range.to > rangeFrom && range.from < rangeTo)
+    return selection.ranges.some((range) => range.to > rangeFrom && range.from < rangeTo);
   }
 }

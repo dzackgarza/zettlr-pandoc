@@ -1,6 +1,9 @@
-import type { AnyDescriptor, DirDescriptor } from 'source/types/common/fsal'
+import type { AnyDescriptor, DirDescriptor } from "source/types/common/fsal";
 
-export type DirectoryChildrenSorter = (directory: DirDescriptor, children: AnyDescriptor[]) => AnyDescriptor[]
+export type DirectoryChildrenSorter = (
+  directory: DirDescriptor,
+  children: AnyDescriptor[],
+) => AnyDescriptor[];
 
 /**
  * Utility function that recursively sorts the various contained directories
@@ -12,19 +15,19 @@ export type DirectoryChildrenSorter = (directory: DirDescriptor, children: AnyDe
  *
  * @return  {AnyDescriptor[]}                    The sorted list of descriptors.
  */
-export function retrieveChildrenAndSort (
+export function retrieveChildrenAndSort(
   descriptor: AnyDescriptor,
   allDescriptors: AnyDescriptor[],
-  sorter: DirectoryChildrenSorter
+  sorter: DirectoryChildrenSorter,
 ): AnyDescriptor[] {
-  if (descriptor.type !== 'directory') {
-    return [descriptor]
+  if (descriptor.type !== "directory") {
+    return [descriptor];
   }
 
-  const directDescendants = allDescriptors.filter(d => d.dir === descriptor.path)
-  const sortedDescendants = sorter(descriptor, directDescendants)
+  const directDescendants = allDescriptors.filter((d) => d.dir === descriptor.path);
+  const sortedDescendants = sorter(descriptor, directDescendants);
   return [
     descriptor,
-    ...sortedDescendants.flatMap(d => retrieveChildrenAndSort(d, allDescriptors, sorter))
-  ]
+    ...sortedDescendants.flatMap((d) => retrieveChildrenAndSort(d, allDescriptors, sorter)),
+  ];
 }

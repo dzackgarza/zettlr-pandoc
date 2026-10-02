@@ -1,88 +1,110 @@
-import path from 'path'
-import { promises as fs } from 'fs'
-import type { AnyDescriptor } from '@dts/common/fsal'
-import { ignorePath } from 'source/common/util/ignore-path'
-import type { IgnoreFilter } from 'source/common/util/ignore-rules'
+import type { AnyDescriptor } from "@dts/common/fsal";
+import { promises as fs } from "fs";
+import path from "path";
+import { ignorePath } from "source/common/util/ignore-path";
+import type { IgnoreFilter } from "source/common/util/ignore-rules";
 
 interface DirectoryReadLogger {
-  error: (message: string, error?: unknown) => void
+  error: (message: string, error?: unknown) => void;
 }
 
 /** What a listing leaves out beside the built-in ignored names. */
 export interface ListingRules {
-  ignoreDotFiles: boolean
-  ignoreFilter: IgnoreFilter
+  ignoreDotFiles: boolean;
+  ignoreFilter: IgnoreFilter;
 }
 
 interface DirectoryChild {
-  path: string
-  isDirectory: boolean
+  path: string;
+  isDirectory: boolean;
 }
 
 /** A path that enters or leaves the listing when the ignore rules change. */
 export interface VisibilityChange extends DirectoryChild {
-  visible: boolean
+  visible: boolean;
 }
 
 /**
  * The files and folders of a directory that the ignore rules then judge: no
  * symbolic link, no built-in ignored name, no dot file when asked.
  */
-async function candidateChildren (directoryPath: string, ignoreDotFiles: boolean): Promise<DirectoryChild[]> {
-  const children = await fs.readdir(directoryPath, { withFileTypes: true })
+async function candidateChildren(
+  directoryPath: string,
+  ignoreDotFiles: boolean,
+): Promise<DirectoryChild[]> {
+  const children = await fs.readdir(directoryPath, { withFileTypes: true });
   return children
-    .filter(dirent => !ignorePath(dirent.name, ignoreDotFiles) && (dirent.isFile() || dirent.isDirectory()))
-    .map(dirent => ({ path: path.join(directoryPath, dirent.name), isDirectory: dirent.isDirectory() }))
+    .filter(
+      (dirent) =>
+        !ignorePath(dirent.name, ignoreDotFiles) && (dirent.isFile() || dirent.isDirectory()),
+    )
+    .map((dirent) => ({
+      path: path.join(directoryPath, dirent.name),
+      isDirectory: dirent.isDirectory(),
+    }));
 }
 
-async function listedChildren (directoryPath: string, rules: ListingRules): Promise<DirectoryChild[]> {
-  const children = await candidateChildren(directoryPath, rules.ignoreDotFiles)
-  return children.filter(child => !rules.ignoreFilter.hides(child.path, child.isDirectory))
+async function listedChildren(
+  directoryPath: string,
+  rules: ListingRules,
+): Promise<DirectoryChild[]> {
+  const children = await candidateChildren(directoryPath, rules.ignoreDotFiles);
+  return children.filter((child) => !rules.ignoreFilter.hides(child.path, child.isDirectory));
 }
 
-export async function readDirectoryFromDisk (
+export async function readDirectoryFromDisk(
   absPath: string,
   rules: ListingRules,
   isDeadWorkspace: boolean,
   getDescriptor: (absPath: string) => Promise<AnyDescriptor>,
-  logger: DirectoryReadLogger
+  logger: DirectoryReadLogger,
 ): Promise<AnyDescriptor[]> {
   if (isDeadWorkspace) {
-    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
+    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`);
   }
 
-  let isDirectory: boolean
+  let isDirectory: boolean;
   try {
-    isDirectory = (await fs.lstat(absPath)).isDirectory()
+    isDirectory = (await fs.lstat(absPath)).isDirectory();
   } catch (err: unknown) {
-    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined
-    if (code === 'ENOENT') {
-      return []
+    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+    if (code === "ENOENT") {
+      return [];
     }
-    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
+    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`);
   }
 
   if (!isDirectory) {
-    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`)
+    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`);
   }
 
   try {
-    const children = await listedChildren(absPath, rules)
+    const children = await listedChildren(absPath, rules);
 
     const results = await Promise.allSettled(
-      children.map(async child => await getDescriptor(child.path)
-        .catch(err => logger.error(`[FSAL] Error while reading directory ${absPath}: Could not read child ${path.relative(absPath, child.path)}`, err)))
-    )
+      children.map(
+        async (child) =>
+          await getDescriptor(child.path).catch((err) =>
+            logger.error(
+              `[FSAL] Error while reading directory ${absPath}: Could not read child ${path.relative(absPath, child.path)}`,
+              err,
+            ),
+          ),
+      ),
+    );
 
     return results
-      .filter((result): result is PromiseFulfilledResult<AnyDescriptor> => result.status === 'fulfilled' && result.value !== undefined)
-      .map(result => result.value)
+      .filter(
+        (result): result is PromiseFulfilledResult<AnyDescriptor> =>
+          result.status === "fulfilled" && result.value !== undefined,
+      )
+      .map((result) => result.value);
   } catch (err: unknown) {
     if (err instanceof Error) {
-      logger.error(`[FSAL] Could not read directory: ${absPath}`, err)
+      logger.error(`[FSAL] Could not read directory: ${absPath}`, err);
     }
 
-    return []
+    return [];
   }
 }
 
@@ -91,25 +113,31 @@ export async function readDirectoryFromDisk (
  * itself, then each listed file and folder. A directory that cannot be read
  * contributes nothing.
  */
-export async function readDirectoryRecursivelyFromDisk (
+export async function readDirectoryRecursivelyFromDisk(
   directoryPath: string,
   rules: ListingRules,
-  logger: DirectoryReadLogger
+  logger: DirectoryReadLogger,
 ): Promise<string[]> {
   try {
-    const children = await listedChildren(directoryPath, rules)
-    const contents = await Promise.all(children.map(async child => {
-      return child.isDirectory ? await readDirectoryRecursivelyFromDisk(child.path, rules, logger) : [child.path]
-    }))
-    return [ directoryPath, ...contents.flat() ]
+    const children = await listedChildren(directoryPath, rules);
+    const contents = await Promise.all(
+      children.map(async (child) => {
+        return child.isDirectory
+          ? await readDirectoryRecursivelyFromDisk(child.path, rules, logger)
+          : [child.path];
+      }),
+    );
+    return [directoryPath, ...contents.flat()];
   } catch (err: unknown) {
-    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined
-    if (code === 'EACCES' || code === 'EPERM') {
-      logger.error(`[FSAL] Could not read directory ${directoryPath}: Could not read/access the directory (code: ${code})`)
+    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+    if (code === "EACCES" || code === "EPERM") {
+      logger.error(
+        `[FSAL] Could not read directory ${directoryPath}: Could not read/access the directory (code: ${code})`,
+      );
     } else if (err instanceof Error) {
-      logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err)
+      logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err);
     }
-    return []
+    return [];
   }
 }
 
@@ -122,44 +150,44 @@ export async function readDirectoryRecursivelyFromDisk (
  * The walk stops at each path in `otherRoots`: another open workspace lists
  * that folder and its content whatever this workspace's rules say.
  */
-export async function visibilityChanges (
+export async function visibilityChanges(
   directoryPath: string,
   ignoreDotFiles: boolean,
   otherRoots: ReadonlySet<string>,
   before: IgnoreFilter,
   after: IgnoreFilter,
-  logger: DirectoryReadLogger
+  logger: DirectoryReadLogger,
 ): Promise<VisibilityChange[]> {
-  let children: DirectoryChild[]
+  let children: DirectoryChild[];
   try {
-    children = await candidateChildren(directoryPath, ignoreDotFiles)
+    children = await candidateChildren(directoryPath, ignoreDotFiles);
   } catch (err: unknown) {
-    logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err)
-    return []
+    logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err);
+    return [];
   }
 
-  const changes: VisibilityChange[] = []
+  const changes: VisibilityChange[] = [];
   for (const child of children) {
     if (otherRoots.has(child.path)) {
-      continue
+      continue;
     }
 
-    const wasVisible = !before.hides(child.path, child.isDirectory)
-    const isVisible = !after.hides(child.path, child.isDirectory)
+    const wasVisible = !before.hides(child.path, child.isDirectory);
+    const isVisible = !after.hides(child.path, child.isDirectory);
     if (!wasVisible && !isVisible) {
-      continue
+      continue;
     }
 
     const below = child.isDirectory
       ? await visibilityChanges(child.path, ignoreDotFiles, otherRoots, before, after, logger)
-      : []
+      : [];
     if (wasVisible === isVisible) {
-      changes.push(...below)
+      changes.push(...below);
     } else if (isVisible) {
-      changes.push({ ...child, visible: true }, ...below)
+      changes.push({ ...child, visible: true }, ...below);
     } else {
-      changes.push(...below, { ...child, visible: false })
+      changes.push(...below, { ...child, visible: false });
     }
   }
-  return changes
+  return changes;
 }

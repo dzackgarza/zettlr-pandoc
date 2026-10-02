@@ -12,10 +12,12 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { type EditorView } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
-import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import { type EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "@common/modules/window-register/application-menu-helper";
+import { reportError } from "@common/util/error-reporting";
 
 /**
  * Displays a context menu at the given coordinates, for the given equation.
@@ -24,16 +26,20 @@ import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register
  * @param   {string}                    equation  The equation in question
  * @param   {{ x: number, y: number }}  coords    The position
  */
-export function equationMenu (view: EditorView, equation: string, coords: { x: number, y: number }): void {
+export function equationMenu(
+  view: EditorView,
+  equation: string,
+  coords: { x: number; y: number },
+): void {
   const tpl: AnyMenuItem[] = [
     {
-      label: trans('Copy equation code'),
-      type: 'normal',
-      action () {
-        navigator.clipboard.writeText(equation).catch(err => reportError(err))
-      }
-    }
-  ]
+      label: trans("Copy equation code"),
+      type: "normal",
+      action() {
+        navigator.clipboard.writeText(equation).catch((err) => reportError(err));
+      },
+    },
+  ];
 
-  showPopupMenu(coords, tpl)
+  showPopupMenu(coords, tpl);
 }

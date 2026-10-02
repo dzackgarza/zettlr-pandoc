@@ -12,14 +12,13 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import App from './App.vue'
-
-import windowRegister from '@common/modules/window-register'
+import windowRegister from "@common/modules/window-register";
+import { reportError } from "@common/util/error-reporting";
+import { createPinia } from "pinia";
+import { createApp } from "vue";
+import App from "./App.vue";
 
 windowRegister()
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-  .then(() => createApp(App).use(createPinia()).mount('#app'))
-  .catch(e => reportError(e))
+  .then(() => createApp(App).use(createPinia()).mount("#app"))
+  .catch((e) => reportError(e));

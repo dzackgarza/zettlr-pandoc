@@ -13,8 +13,8 @@
  * END HEADER
  */
 
-import { type EditorView } from '@codemirror/view'
-import { selectRenderedSourceRange } from './reveal-rendered-source'
+import { type EditorView } from "@codemirror/view";
+import { selectRenderedSourceRange } from "./reveal-rendered-source";
 
 /**
  * A helper function that returns a click-callback that selects the exact source
@@ -26,21 +26,26 @@ import { selectRenderedSourceRange } from './reveal-rendered-source'
  *
  * @return  {Function}           A callback compatible with mouse events
  */
-export default function clickAndSelect (view: EditorView): (event: MouseEvent) => void {
+export default function clickAndSelect(view: EditorView): (event: MouseEvent) => void {
   return function (event: MouseEvent) {
-    const { target } = event
+    const { target } = event;
     if (!(target instanceof Element)) {
-      return
+      return;
     }
 
-    const sourceOwner = target.closest<HTMLElement>('[data-preview-source-length]')
+    const sourceOwner = target.closest<HTMLElement>("[data-preview-source-length]");
     if (sourceOwner === null) {
-      return
+      return;
     }
 
     // The widget holds the length of its source, not its position: the view
     // knows where the widget is now, after every edit before it.
-    const from = view.posAtDOM(sourceOwner)
-    selectRenderedSourceRange(view, event, from, from + Number(sourceOwner.dataset.previewSourceLength))
-  }
+    const from = view.posAtDOM(sourceOwner);
+    selectRenderedSourceRange(
+      view,
+      event,
+      from,
+      from + Number(sourceOwner.dataset.previewSourceLength),
+    );
+  };
 }

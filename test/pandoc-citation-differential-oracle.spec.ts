@@ -84,7 +84,7 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
     assert.equal(
       lezerItems.length,
       pandocItems.length,
-      `Item count mismatch for "${markdown}": Lezer found ${lezerItems.length} items (${lezerItems.map((i) => i.id).join(", ")}), Pandoc found ${pandocItems.length} items (${pandocItems.map((i) => i.citationId).join(", ")})`
+      `Item count mismatch for "${markdown}": Lezer found ${lezerItems.length} items (${lezerItems.map((i) => i.id).join(", ")}), Pandoc found ${pandocItems.length} items (${pandocItems.map((i) => i.citationId).join(", ")})`,
     );
 
     for (let i = 0; i < pandocItems.length; i++) {
@@ -94,7 +94,7 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
       assert.equal(
         lItem.id,
         pItem.citationId,
-        `Citekey mismatch at index ${i} for "${markdown}": expected "${pItem.citationId}", got "${lItem.id}"`
+        `Citekey mismatch at index ${i} for "${markdown}": expected "${pItem.citationId}", got "${lItem.id}"`,
       );
 
       // Verify citation modes
@@ -102,7 +102,7 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
         assert.equal(
           lItem["suppress-author"],
           true,
-          `Expected suppress-author to be true for key "${lItem.id}" in "${markdown}"`
+          `Expected suppress-author to be true for key "${lItem.id}" in "${markdown}"`,
         );
       }
     }

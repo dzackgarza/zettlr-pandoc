@@ -1,29 +1,27 @@
 import type {
   ExternalLinter,
-  ExternalLinterRunResponse
-} from '@common/diagnostics/external-linter'
+  ExternalLinterRunResponse,
+} from "@common/diagnostics/external-linter";
 
 export function ipcExternalLinter<
-Context extends Record<string, unknown> = Record<string, unknown>,
-Metadata = Record<string, unknown>
-> (id: string): ExternalLinter<Context, Metadata> {
+  Context extends Record<string, unknown> = Record<string, unknown>,
+  Metadata = Record<string, unknown>,
+>(id: string): ExternalLinter<Context, Metadata> {
   return {
     id,
-    async run ({ text, context }) {
-      const result: ExternalLinterRunResponse = await window.ipc.invoke('application', {
-        command: 'run-external-linter',
+    async run({ text, context }) {
+      const result: ExternalLinterRunResponse = await window.ipc.invoke("application", {
+        command: "run-external-linter",
         payload: {
           id,
           text,
-          context
-        }
-      })
+          context,
+        },
+      });
       return {
         diagnostics: result.diagnostics,
-        ...(result.metadata === undefined
-          ? {}
-          : { metadata: result.metadata as Metadata })
-      }
-    }
-  }
+        ...(result.metadata === undefined ? {} : { metadata: result.metadata as Metadata }),
+      };
+    },
+  };
 }

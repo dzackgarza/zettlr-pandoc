@@ -16,7 +16,7 @@
  * END HEADER
  */
 
-import type { Fieldset } from '@common/vue/form/FormBuilder.vue'
-import type { PreferencesGroups } from './_preferences-groups'
+import type { Fieldset } from "@common/vue/form/FormBuilder.vue";
+import type { PreferencesGroups } from "./_preferences-groups";
 
-export type PreferencesFieldset = Fieldset & { group: PreferencesGroups }
+export type PreferencesFieldset = Fieldset & { group: PreferencesGroups };

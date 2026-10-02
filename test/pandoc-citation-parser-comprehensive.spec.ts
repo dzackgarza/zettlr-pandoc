@@ -36,7 +36,11 @@ function parseCitations(source: string): Citation[] {
 
 function parseSingle(source: string): Citation {
   const citations = parseCitations(source);
-  assert.equal(citations.length, 1, `Expected exactly 1 citation in "${source}", got ${citations.length}`);
+  assert.equal(
+    citations.length,
+    1,
+    `Expected exactly 1 citation in "${source}", got ${citations.length}`,
+  );
   return citations[0];
 }
 
@@ -115,7 +119,9 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("parses parenthesized citations in prose", function () {
-      const cit = parseSingle("As established in foundational work ([see @Lurie2009]), categories form an infinity-topos.");
+      const cit = parseSingle(
+        "As established in foundational work ([see @Lurie2009]), categories form an infinity-topos.",
+      );
       assert.equal(cit.items[0].id, "Lurie2009");
       assert.equal(cit.items[0].prefix, "see ");
     });
@@ -210,7 +216,9 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("parses multi-key clusters with individual prefixes and locators", function () {
-      const cit = parseSingle("[see @Lurie2009, p. 12; compare @Joyal2002, chap. 3; also @Simpson2012]");
+      const cit = parseSingle(
+        "[see @Lurie2009, p. 12; compare @Joyal2002, chap. 3; also @Simpson2012]",
+      );
       assert.equal(cit.items.length, 3);
       assert.equal(cit.items[0].id, "Lurie2009");
       assert.equal(cit.items[0].prefix, "see ");
@@ -235,7 +243,8 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("parses large 10-item cluster with mixed prefixes, locators, and suppress-author", function () {
-      const source = "[@a; @b, p. 1; -@c, chap. 2; @d; see @e, sec. 4; @f; @g, vol. 2; -@h; @i, pp. 10-12; compare @j]";
+      const source =
+        "[@a; @b, p. 1; -@c, chap. 2; @d; see @e, sec. 4; @f; @g, vol. 2; -@h; @i, pp. 10-12; compare @j]";
       const cit = parseSingle(source);
       assert.equal(cit.items.length, 10);
       assert.equal(cit.items[0].id, "a");
@@ -386,7 +395,8 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("parses citations inside unordered and ordered List items", function () {
-      const source = "- Key idea: see [@Lurie2009, chap. 1]\n1. Subsequent step follows @Joyal2002.";
+      const source =
+        "- Key idea: see [@Lurie2009, chap. 1]\n1. Subsequent step follows @Joyal2002.";
       const citations = parseCitations(source);
       assert.equal(citations.length, 2);
       assert.equal(citations[0].items[0].id, "Lurie2009");
@@ -422,14 +432,7 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("does NOT parse plain bracketed text without @ as citations", function () {
-      const nonCitations = [
-        "[1]",
-        "[a-z]",
-        "[see above]",
-        "[important note]",
-        "[]",
-        "[   ]",
-      ];
+      const nonCitations = ["[1]", "[a-z]", "[see above]", "[important note]", "[]", "[   ]"];
       for (const text of nonCitations) {
         const citations = parseCitations(text);
         assert.equal(citations.length, 0, `Should not parse "${text}" as citation`);
@@ -437,11 +440,7 @@ describe("Comprehensive Pandoc Citation Parser Regression Suite", function () {
     });
 
     it("does NOT parse lone at-signs or invalid characters", function () {
-      const nonCitations = [
-        "@",
-        "@ ",
-        "Meeting at @ 3pm",
-      ];
+      const nonCitations = ["@", "@ ", "Meeting at @ 3pm"];
       for (const text of nonCitations) {
         const citations = parseCitations(text);
         assert.equal(citations.length, 0, `Should not parse "${text}" as citation`);

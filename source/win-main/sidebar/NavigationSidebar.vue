@@ -79,99 +79,113 @@
  * END HEADER
  */
 
-import { computed, nextTick, ref } from 'vue'
-import FileManager from '../file-manager/FileManager.vue'
-import SearchView from './SearchView.vue'
-import QuartoBookOutline from '../file-manager/QuartoBookOutline.vue'
-import ToCTab from './ToCTab.vue'
-import ReferencesTab from './ReferencesTab.vue'
-import RelatedFilesTab from './RelatedFilesTab.vue'
-import ViewContainer from './ViewContainer.vue'
-import { sidebarSection, sidebarView, type RevealTarget } from './sidebar-views'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import type { SidebarSectionId } from '@dts/common/sidebar-views'
-import type { ProjectNavigationItem } from '@dts/common/fsal'
+import type { ProjectNavigationItem } from "@dts/common/fsal";
+import type { SidebarSectionId } from "@dts/common/sidebar-views";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import { computed, nextTick, ref } from "vue";
+import FileManager from "../file-manager/FileManager.vue";
+import QuartoBookOutline from "../file-manager/QuartoBookOutline.vue";
+import ReferencesTab from "./ReferencesTab.vue";
+import RelatedFilesTab from "./RelatedFilesTab.vue";
+import SearchView from "./SearchView.vue";
+import { type RevealTarget, sidebarSection, sidebarView } from "./sidebar-views";
+import ToCTab from "./ToCTab.vue";
+import ViewContainer from "./ViewContainer.vue";
 
-const props = defineProps<{ windowId: string }>()
+const props = defineProps<{ windowId: string }>();
 
 const emit = defineEmits<{
   /** A jump into a named document (the tree, the book). */
-  (e: 'jump-to-line', target: { filePath: string, line: number }): void
+  (e: "jump-to-line", target: { filePath: string; line: number }): void;
   /** A global-search hit: document, line, and whether to open a new tab. */
-  (e: 'jtl', filePath: string, lineNumber: number, newTab: boolean): void
+  (e: "jtl", filePath: string, lineNumber: number, newTab: boolean): void;
   /** A jump within the active document (the outline). */
-  (e: 'jump-to-active-line', line: number): void
-  (e: 'move-section', data: { from: number, to: number }): void
-}>()
+  (e: "jump-to-active-line", line: number): void;
+  (e: "move-section", data: { from: number; to: number }): void;
+}>();
 
-const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
+const configStore = useConfigStore();
+const documentTreeStore = useDocumentTreeStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
 
 interface GlobalSearchHandle {
-  focusQueryInput: () => void
-  startSearch: (overrideQuery?: string) => void
+  focusQueryInput: () => void;
+  startSearch: (overrideQuery?: string) => void;
 }
 interface ViewContainerHandle {
-  setCollapsed: (id: SidebarSectionId, collapsed: boolean) => void
+  setCollapsed: (id: SidebarSectionId, collapsed: boolean) => void;
 }
 
-const globalSearch = ref<GlobalSearchHandle | null>(null)
-const explorerContainer = ref<ViewContainerHandle | null>(null)
-const referencesContainer = ref<ViewContainerHandle | null>(null)
+const globalSearch = ref<GlobalSearchHandle | null>(null);
+const explorerContainer = ref<ViewContainerHandle | null>(null);
+const referencesContainer = ref<ViewContainerHandle | null>(null);
 
-const view = computed(() => sidebarView(configStore.config.ui.sidebarView))
+const view = computed(() => sidebarView(configStore.config.ui.sidebarView));
 
-const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path)
+const activeFilePath = computed(() => documentTreeStore.lastLeafActiveFile?.path);
 
 /** The Quarto project whose root contains the active document, if any. */
-const book = computed<{ path: string, navigation: ProjectNavigationItem[] } | undefined>(() => {
-  const activePath = activeFilePath.value
+const book = computed<{ path: string; navigation: ProjectNavigationItem[] } | undefined>(() => {
+  const activePath = activeFilePath.value;
   if (activePath === undefined) {
-    return undefined
+    return undefined;
   }
   for (const rootDescriptor of workspaceStore.rootDescriptors) {
-    if (rootDescriptor.type !== 'directory' || rootDescriptor.settings.project?.manifest.kind !== 'quarto') {
-      continue
+    if (
+      rootDescriptor.type !== "directory" ||
+      rootDescriptor.settings.project?.manifest.kind !== "quarto"
+    ) {
+      continue;
     }
     if (activePath.startsWith(rootDescriptor.path)) {
-      return { path: rootDescriptor.path, navigation: rootDescriptor.settings.project.manifest.navigation }
+      return {
+        path: rootDescriptor.path,
+        navigation: rootDescriptor.settings.project.manifest.navigation,
+      };
     }
   }
-  return undefined
-})
+  return undefined;
+});
 
 /** The Explorer's sections; Book only while a Quarto root holds the active file. */
-const explorerSections = computed(() => sidebarView('explorer').sections
-  .filter(id => id !== 'book' || book.value !== undefined)
-  .map(sidebarSection))
+const explorerSections = computed(() =>
+  sidebarView("explorer")
+    .sections.filter((id) => id !== "book" || book.value !== undefined)
+    .map(sidebarSection),
+);
 
-const referencesSections = computed(() => sidebarView('references').sections.map(sidebarSection))
+const referencesSections = computed(() => sidebarView("references").sections.map(sidebarSection));
 
 const explorerCounts = computed<Partial<Record<SidebarSectionId, number>>>(() => {
-  const toc = windowStateStore.tableOfContents
-  return toc === undefined ? {} : { outline: toc.length }
-})
+  const toc = windowStateStore.tableOfContents;
+  return toc === undefined ? {} : { outline: toc.length };
+});
 
 /** Opens the drawer on the target's view, expands its section, and puts the focus where asked. */
-async function reveal (target: RevealTarget): Promise<void> {
-  configStore.setConfigValue('ui.sidebarView', target.view)
-  configStore.setConfigValue('window.fileManagerVisible', true)
-  await nextTick()
+async function reveal(target: RevealTarget): Promise<void> {
+  configStore.setConfigValue("ui.sidebarView", target.view);
+  configStore.setConfigValue("window.fileManagerVisible", true);
+  await nextTick();
   if (target.section !== undefined) {
-    const container = target.view === 'explorer' ? explorerContainer.value : referencesContainer.value
+    const container =
+      target.view === "explorer" ? explorerContainer.value : referencesContainer.value;
     if (container === null) {
       throw new Error(
         `The ${target.view} view holds no section container after the drawer was revealed, so ` +
-        `its ${target.section} section cannot be expanded. The container comes from the ref on ` +
-        'ViewContainer in this template; a view that carries sections has to render one.'
-      )
+          `its ${target.section} section cannot be expanded. The container comes from the ref on ` +
+          "ViewContainer in this template; a view that carries sections has to render one.",
+      );
     }
-    container.setCollapsed(target.section, false)
+    container.setCollapsed(target.section, false);
   }
-  if (target.focus === 'search-query') {
-    (await searchView()).focusQueryInput()
+  if (target.focus === "search-query") {
+    (await searchView()).focusQueryInput();
   }
 }
 
@@ -182,29 +196,29 @@ async function reveal (target: RevealTarget): Promise<void> {
  * arrives is not a search that found nothing: the gesture is dropped, and
  * the person who asked for it is told nothing.
  */
-async function searchView (): Promise<GlobalSearchHandle> {
+async function searchView(): Promise<GlobalSearchHandle> {
   for (let attempt = 0; attempt < 5 && globalSearch.value === null; attempt++) {
-    await nextTick()
+    await nextTick();
   }
-  const handle = globalSearch.value
+  const handle = globalSearch.value;
   if (handle === null) {
     throw new Error(
-      'The Search view did not mount within five ticks of the drawer being revealed: ' +
-      `ui.sidebarView is ${configStore.config.ui.sidebarView} and window.fileManagerVisible is ` +
-      `${String(configStore.config.window.fileManagerVisible)}. The handle is the SearchView ref ` +
-      'in this component; fix what the reveal writes, or what this template renders for it.'
-    )
+      "The Search view did not mount within five ticks of the drawer being revealed: " +
+        `ui.sidebarView is ${configStore.config.ui.sidebarView} and window.fileManagerVisible is ` +
+        `${String(configStore.config.window.fileManagerVisible)}. The handle is the SearchView ref ` +
+        "in this component; fix what the reveal writes, or what this template renders for it.",
+    );
   }
-  return handle
+  return handle;
 }
 
 /** Reveals the Search view and runs a search for the given terms. */
-async function startSearch (terms: string): Promise<void> {
-  await reveal({ view: 'search', focus: 'none' })
-  await (await searchView()).startSearch(terms)
+async function startSearch(terms: string): Promise<void> {
+  await reveal({ view: "search", focus: "none" });
+  await (await searchView()).startSearch(terms);
 }
 
-defineExpose({ reveal, startSearch })
+defineExpose({ reveal, startSearch });
 </script>
 
 <style lang="less">

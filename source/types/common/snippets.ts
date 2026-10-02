@@ -6,28 +6,28 @@
  */
 export interface UserSnippet {
   /** Human-readable object key from the `.code-snippets` file. */
-  name: string
+  name: string;
   /** One or more standard snippet prefixes. */
-  prefixes: string[]
+  prefixes: string[];
   /** TextMate/VS Code snippet body, with multiline arrays joined by newlines. */
-  body: string
+  body: string;
   /** Optional description shown in completion UI. */
-  description?: string
+  description?: string;
   /** VS Code language-id scopes; empty means global. */
-  scopes: string[]
+  scopes: string[];
   /** Optional VS Code file-pattern scopes. */
-  include: string[]
-  exclude: string[]
+  include: string[];
+  exclude: string[];
   /** Source `.code-snippets` filename for diagnostics/UI only. */
-  sourceFile: string
+  sourceFile: string;
 }
 
 export interface SnippetFileDiagnostic {
-  sourceFile: string
-  message: string
+  sourceFile: string;
+  message: string;
 }
 
 export interface SnippetCatalogue {
-  snippets: UserSnippet[]
-  diagnostics: SnippetFileDiagnostic[]
+  snippets: UserSnippet[];
+  diagnostics: SnippetFileDiagnostic[];
 }

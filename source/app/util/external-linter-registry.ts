@@ -2,80 +2,83 @@ import type {
   ExternalDiagnostic,
   ExternalDiagnosticAction,
   ExternalLinterRunRequest,
-  ExternalLinterRunResponse
-} from '@common/diagnostics/external-linter'
-import type { AppServiceContainer } from 'source/app/app-service-container'
+  ExternalLinterRunResponse,
+} from "@common/diagnostics/external-linter";
+import type { AppServiceContainer } from "source/app/app-service-container";
 import {
   externalLinterPluginPath,
   flowmarkToolPython,
-  runFlowmarkProcess
-} from './flowmark-runtime'
+  runFlowmarkProcess,
+} from "./flowmark-runtime";
 
 export interface ExternalLinterBackend {
-  id: string
+  id: string;
   run: (
     app: AppServiceContainer,
-    request: ExternalLinterRunRequest
-  ) => Promise<ExternalLinterRunResponse>
+    request: ExternalLinterRunRequest,
+  ) => Promise<ExternalLinterRunResponse>;
 }
 
-function strings (value: unknown): string[] {
+function strings(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
-async function runFlowmarkBackend (
+async function runFlowmarkBackend(
   app: AppServiceContainer,
-  request: ExternalLinterRunRequest
+  request: ExternalLinterRunRequest,
 ): Promise<ExternalLinterRunResponse> {
-  const sourcePath = typeof request.context?.sourcePath === 'string'
-    ? request.context.sourcePath
-    : ''
-  const { diagnostics } = await app.documentLint.lint(sourcePath, request.text)
+  const sourcePath =
+    typeof request.context?.sourcePath === "string" ? request.context.sourcePath : "";
+  const { diagnostics } = await app.documentLint.lint(sourcePath, request.text);
   return {
-    diagnostics: diagnostics.map((diagnostic): ExternalDiagnostic => ({
-      from: diagnostic.from,
-      to: diagnostic.to,
-      severity: diagnostic.severity,
-      message: diagnostic.message,
-      source: diagnostic.source + ' (' + diagnostic.rule + ')',
-      data: diagnostic.data,
-      actions: diagnostic.suggestions?.map((suggestion): ExternalDiagnosticAction => ({
-        kind: 'replace',
-        name: suggestion.title,
-        replacement: suggestion.replacement
-      }))
-    }))
-  }
+    diagnostics: diagnostics.map(
+      (diagnostic): ExternalDiagnostic => ({
+        from: diagnostic.from,
+        to: diagnostic.to,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        source: diagnostic.source + " (" + diagnostic.rule + ")",
+        data: diagnostic.data,
+        actions: diagnostic.suggestions?.map(
+          (suggestion): ExternalDiagnosticAction => ({
+            kind: "replace",
+            name: suggestion.title,
+            replacement: suggestion.replacement,
+          }),
+        ),
+      }),
+    ),
+  };
 }
 
-function externalLinterResponse (raw: string): ExternalLinterRunResponse {
-  const parsed: unknown = JSON.parse(raw)
-  if (typeof parsed !== 'object' || parsed === null) {
-    throw new Error('External linter returned a non-object payload.')
+function externalLinterResponse(raw: string): ExternalLinterRunResponse {
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("External linter returned a non-object payload.");
   }
-  const candidate = parsed as Partial<ExternalLinterRunResponse>
+  const candidate = parsed as Partial<ExternalLinterRunResponse>;
   if (!Array.isArray(candidate.diagnostics)) {
-    throw new Error('External linter returned no diagnostics array.')
+    throw new Error("External linter returned no diagnostics array.");
   }
   return {
     diagnostics: candidate.diagnostics,
-    ...(candidate.metadata === undefined ? {} : { metadata: candidate.metadata })
-  }
+    ...(candidate.metadata === undefined ? {} : { metadata: candidate.metadata }),
+  };
 }
 
-async function runLanguageToolBackend (
+async function runLanguageToolBackend(
   app: AppServiceContainer,
-  request: ExternalLinterRunRequest
+  request: ExternalLinterRunRequest,
 ): Promise<ExternalLinterRunResponse> {
-  const config = app.config.getConfig().editor.lint.languageTool
+  const config = app.config.getConfig().editor.lint.languageTool;
   const disabledRules = [
     ...new Set([
-      ...config.ignoredRules.map(rule => rule.id),
-      ...strings(request.context?.disabledRules)
-    ])
-  ]
+      ...config.ignoredRules.map((rule) => rule.id),
+      ...strings(request.context?.disabledRules),
+    ]),
+  ];
   const context: Record<string, unknown> = {
     ...request.context,
     active: config.active,
@@ -86,65 +89,63 @@ async function runLanguageToolBackend (
     customServer: config.customServer,
     username: config.username,
     apiKey: config.apiKey,
-    disabledRules
-  }
+    disabledRules,
+  };
   const outcome = await runFlowmarkProcess({
     command: await flowmarkToolPython(),
-    argv: [ externalLinterPluginPath('language_tool.py') ],
+    argv: [externalLinterPluginPath("language_tool.py")],
     input: JSON.stringify({ text: request.text, context }),
     env: process.env,
-    timeoutMs: 60_000
-  })
+    timeoutMs: 60_000,
+  });
   if (!outcome.ok) {
     return {
       diagnostics: [],
-      metadata: { lastError: outcome.message }
-    }
+      metadata: { lastError: outcome.message },
+    };
   }
   try {
-    return externalLinterResponse(outcome.stdout)
+    return externalLinterResponse(outcome.stdout);
   } catch (error) {
     return {
       diagnostics: [],
       metadata: {
-        lastError: error instanceof Error ? error.message : String(error)
-      }
-    }
+        lastError: error instanceof Error ? error.message : String(error),
+      },
+    };
   }
 }
 
-const BACKENDS = new Map<string, ExternalLinterBackend>()
+const BACKENDS = new Map<string, ExternalLinterBackend>();
 
-export function registerExternalLinterBackend (
-  backend: ExternalLinterBackend
-): void {
+export function registerExternalLinterBackend(backend: ExternalLinterBackend): void {
   if (BACKENDS.has(backend.id)) {
-    throw new Error('External linter already registered: ' + backend.id)
+    throw new Error("External linter already registered: " + backend.id);
   }
-  BACKENDS.set(backend.id, backend)
+  BACKENDS.set(backend.id, backend);
 }
 
 registerExternalLinterBackend({
-  id: 'flowmark',
-  run: runFlowmarkBackend
-})
+  id: "flowmark",
+  run: runFlowmarkBackend,
+});
 
 registerExternalLinterBackend({
-  id: 'language-tool',
-  run: runLanguageToolBackend
-})
+  id: "language-tool",
+  run: runLanguageToolBackend,
+});
 
-export function registeredExternalLinters (): string[] {
-  return [...BACKENDS.keys()].sort()
+export function registeredExternalLinters(): string[] {
+  return [...BACKENDS.keys()].sort();
 }
 
-export async function runExternalLinter (
+export async function runExternalLinter(
   app: AppServiceContainer,
-  request: ExternalLinterRunRequest
+  request: ExternalLinterRunRequest,
 ): Promise<ExternalLinterRunResponse> {
-  const backend = BACKENDS.get(request.id)
+  const backend = BACKENDS.get(request.id);
   if (backend === undefined) {
-    throw new Error('Unknown external linter: ' + request.id)
+    throw new Error("Unknown external linter: " + request.id);
   }
-  return await backend.run(app, request)
+  return await backend.run(app, request);
 }

@@ -15,7 +15,7 @@
  * END HEADER
  */
 
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, realpathSync } from "fs";
 
 /**
  * Resolves a path to the file it names. A path that names nothing yet — a
@@ -25,6 +25,6 @@ import { existsSync, realpathSync } from 'fs'
  *
  * @return  {string}                The real path, or the given path
  */
-export function resolveRealPath (absolutePath: string): string {
-  return existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath
+export function resolveRealPath(absolutePath: string): string {
+  return existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath;
 }

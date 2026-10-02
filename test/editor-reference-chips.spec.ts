@@ -25,368 +25,451 @@
  * END HEADER
  */
 
-import { strict as assert } from 'assert'
-import { readFileSync } from 'fs'
-import path from 'path'
-import CSL from 'citeproc'
-import { forceParsing } from '@codemirror/language'
-import { EditorState, type Extension } from '@codemirror/state'
-import { type Decoration, EditorView } from '@codemirror/view'
-import markdownParser from 'source/common/modules/markdown-editor/parser/markdown-parser'
-import { __resetCitationRenderMemoForTests, renderCitations } from 'source/common/modules/markdown-editor/renderers/render-citations'
-import { renderReferenceChips } from 'source/common/modules/markdown-editor/renderers/render-reference-chips'
+import { forceParsing } from "@codemirror/language";
+import { EditorState, type Extension } from "@codemirror/state";
+import { type Decoration, EditorView } from "@codemirror/view";
+import { strict as assert } from "assert";
+import CSL from "citeproc";
+import { readFileSync } from "fs";
+import path from "path";
+import { extractPandocCitations } from "source/app/service-providers/references/pandoc-citations";
+import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
+  type EditorWorkspaceReferences,
   referencePresentationField,
   workspaceReferencesField,
   workspaceReferencesUpdate,
-  type EditorWorkspaceReferences
-} from 'source/common/modules/markdown-editor/plugins/workspace-references-field'
-import { configField } from 'source/common/modules/markdown-editor/util/configuration'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import { resolveWorkspace } from 'source/common/pandoc-util/resolve-references'
-import { type DocumentReferenceSnapshot } from 'source/types/common/references'
-import { extractPandocCitations } from 'source/app/service-providers/references/pandoc-citations'
-import { installCitationIpcFromCallback, settleCitationWidgets } from './citation-widget-test-helper'
+} from "source/common/modules/markdown-editor/plugins/workspace-references-field";
+import {
+  __resetCitationRenderMemoForTests,
+  renderCitations,
+} from "source/common/modules/markdown-editor/renderers/render-citations";
+import { renderReferenceChips } from "source/common/modules/markdown-editor/renderers/render-reference-chips";
+import { configField } from "source/common/modules/markdown-editor/util/configuration";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";
+import { type DocumentReferenceSnapshot } from "source/types/common/references";
+import {
+  installCitationIpcFromCallback,
+  settleCitationWidgets,
+} from "./citation-widget-test-helper";
 
 const BIBLIOGRAPHY = new Map<string, CSLItem>([
-  ['Ols04', { id: 'Ols04', type: 'article-journal', author: [{ family: 'Olsson' }], issued: { 'date-parts': [[2004]] } }],
-  ['BHPV04', { id: 'BHPV04', type: 'book', author: [{ family: 'Barth' }], issued: { 'date-parts': [[2004]] } }],
-  ['Kod63', { id: 'Kod63', type: 'article-journal', author: [{ family: 'Kodaira' }], issued: { 'date-parts': [[1963]] } }]
-])
+  [
+    "Ols04",
+    {
+      id: "Ols04",
+      type: "article-journal",
+      author: [{ family: "Olsson" }],
+      issued: { "date-parts": [[2004]] },
+    },
+  ],
+  [
+    "BHPV04",
+    {
+      id: "BHPV04",
+      type: "book",
+      author: [{ family: "Barth" }],
+      issued: { "date-parts": [[2004]] },
+    },
+  ],
+  [
+    "Kod63",
+    {
+      id: "Kod63",
+      type: "article-journal",
+      author: [{ family: "Kodaira" }],
+      issued: { "date-parts": [[1963]] },
+    },
+  ],
+]);
 
-function polyfillJsdomForCodeMirror (): void {
-  const w = globalThis as any
-  if (typeof w.requestAnimationFrame !== 'function') {
-    w.requestAnimationFrame = (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 0)
-    w.cancelAnimationFrame = (id: any) => clearTimeout(id)
-  }
-  if (typeof w.window === 'object' && typeof w.window.requestAnimationFrame !== 'function') {
-    w.window.requestAnimationFrame = w.requestAnimationFrame
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame
-  }
-  if (typeof w.ResizeObserver !== 'function') {
-    w.ResizeObserver = class { observe () {} unobserve () {} disconnect () {} }
-    if (typeof w.window === 'object') {
-      w.window.ResizeObserver = w.ResizeObserver
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== 'function') {
-    w.Range.prototype.getClientRects = () => []
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    })
-  }
-}
-
-const FIXTURE_ROOT = path.join('test', 'fixtures', 'reference-workspace')
+const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 
 /** The fixture subset whose keys are all unique: every key resolves. */
 const RESOLVED_FILES = [
-  path.join('ProjectA', 'Theorems.md'),
-  path.join('ProjectA', 'Coble_Lattice_Table.md'),
-  'Standalone_Notes.md',
-]
+  path.join("ProjectA", "Theorems.md"),
+  path.join("ProjectA", "Coble_Lattice_Table.md"),
+  "Standalone_Notes.md",
+];
 
 /** The complete fixture workspace: thm:torelli duplicates across projects. */
 const FULL_FILES = [
-  path.join('ProjectA', 'Theorems.md'),
-  path.join('ProjectA', 'Coble_Lattice_Table.md'),
-  path.join('ProjectA', 'Halphen_Surfaces.md'),
-  'Standalone_Notes.md',
-  path.join('ProjectB', 'Other_Paper.md'),
-]
+  path.join("ProjectA", "Theorems.md"),
+  path.join("ProjectA", "Coble_Lattice_Table.md"),
+  path.join("ProjectA", "Halphen_Surfaces.md"),
+  "Standalone_Notes.md",
+  path.join("ProjectB", "Other_Paper.md"),
+];
 
-function fixtureSnapshots (files: string[]): DocumentReferenceSnapshot[] {
-  return files.map(relativePath => {
-    const documentPath = path.join(FIXTURE_ROOT, relativePath)
-    return extractReferences(documentPath, readFileSync(documentPath, 'utf-8'))
-  })
+function fixtureSnapshots(files: string[]): DocumentReferenceSnapshot[] {
+  return files.map((relativePath) => {
+    const documentPath = path.join(FIXTURE_ROOT, relativePath);
+    return extractReferences(documentPath, readFileSync(documentPath, "utf-8"));
+  });
 }
 
 /**
  * Builds the typed editor payload for a crafted in-test document resolved
  * against the given fixture files.
  */
-function payloadFor (doc: string, files: string[]): EditorWorkspaceReferences {
-  const snapshot = extractReferences('crafted-editor-buffer.md', doc)
-  const workspace = fixtureSnapshots(files).concat([snapshot])
+function payloadFor(doc: string, files: string[]): EditorWorkspaceReferences {
+  const snapshot = extractReferences("crafted-editor-buffer.md", doc);
+  const workspace = fixtureSnapshots(files).concat([snapshot]);
   return {
     snapshot,
-    workspaceOccurrences: workspace.flatMap(s => s.occurrences),
+    workspaceOccurrences: workspace.flatMap((s) => s.occurrences),
     resolutions: resolveWorkspace(workspace),
-    projectRoots: [{
-      rootPath: path.join(FIXTURE_ROOT, 'ProjectA'),
-      files: [ 'Theorems.md', 'Coble_Lattice_Table.md', 'Halphen_Surfaces.md' ]
-    }]
-  }
+    projectRoots: [
+      {
+        rootPath: path.join(FIXTURE_ROOT, "ProjectA"),
+        files: ["Theorems.md", "Coble_Lattice_Table.md", "Halphen_Surfaces.md"],
+      },
+    ],
+  };
 }
 
 /** Today's citation rendering, exactly as production configures it. */
-const CURRENT_SET: () => Extension[] = () => [ markdownParser(), configField, renderCitations ]
+const CURRENT_SET: () => Extension[] = () => [markdownParser(), configField, renderCitations];
 /** The Phase-4 set: the citations renderer plus the chips renderer. */
-const NEW_SET: () => Extension[] = () => [ markdownParser(), configField, renderCitations, renderReferenceChips, workspaceReferencesField ]
+const NEW_SET: () => Extension[] = () => [
+  markdownParser(),
+  configField,
+  renderCitations,
+  renderReferenceChips,
+  workspaceReferencesField,
+];
 
-describe('Reference chips (issue #1 Phase 4)', function () {
-  const views: EditorView[] = []
-  const originalCitationCallback = window.getCitationCallback
-  let restoreCitationIpc: (() => void)|undefined
+describe("Reference chips (issue #1 Phase 4)", function () {
+  const views: EditorView[] = [];
+  const originalCitationCallback = window.getCitationCallback;
+  let restoreCitationIpc: (() => void) | undefined;
 
   before(function () {
-    polyfillJsdomForCodeMirror()
-    restoreCitationIpc = installCitationIpcFromCallback()
-  })
+    restoreCitationIpc = installCitationIpcFromCallback();
+  });
 
   beforeEach(function () {
-    __resetCitationRenderMemoForTests()
-    const engine = new CSL.Engine({
-      retrieveItem: id => {
-        const item = BIBLIOGRAPHY.get(id)
-        if (item === undefined) throw new Error(`Missing bibliography fixture ${id}`)
-        return item
+    __resetCitationRenderMemoForTests();
+    const engine = new CSL.Engine(
+      {
+        retrieveItem: (id) => {
+          const item = BIBLIOGRAPHY.get(id);
+          if (item === undefined) throw new Error(`Missing bibliography fixture ${id}`);
+          return item;
+        },
+        retrieveLocale: () => readFileSync("static/csl-locales/locales-en-US.xml", "utf8"),
       },
-      retrieveLocale: () => readFileSync('static/csl-locales/locales-en-US.xml', 'utf8')
-    }, readFileSync('static/csl-styles/chicago-author-date.csl', 'utf8'), 'en-US', true)
+      readFileSync("static/csl-styles/chicago-author-date.csl", "utf8"),
+      "en-US",
+      true,
+    );
     window.getCitationCallback = () => (citationItems, composite) => {
-      const mode: EngineCitation['properties']['mode'] = composite ? 'composite' : undefined
-      const citation: EngineCitation = { citationItems, properties: { noteIndex: 0, mode } }
-      return engine.previewCitationCluster(citation, [], [], 'html')
-    }
-  })
+      const mode: EngineCitation["properties"]["mode"] = composite ? "composite" : undefined;
+      const citation: EngineCitation = { citationItems, properties: { noteIndex: 0, mode } };
+      return engine.previewCitationCluster(citation, [], [], "html");
+    };
+  });
 
   after(function () {
-    restoreCitationIpc?.()
-    window.getCitationCallback = originalCitationCallback
-  })
+    restoreCitationIpc?.();
+    window.getCitationCallback = originalCitationCallback;
+  });
 
   afterEach(function () {
     for (const view of views.splice(0)) {
-      view.destroy()
+      view.destroy();
     }
-    document.body.replaceChildren()
-  })
+    document.body.replaceChildren();
+  });
 
-  function createEditor (extensions: Extension[], doc: string, payload?: EditorWorkspaceReferences): EditorView {
+  function createEditor(
+    extensions: Extension[],
+    doc: string,
+    payload?: EditorWorkspaceReferences,
+  ): EditorView {
     const state = EditorState.create({
       doc,
       selection: { anchor: doc.length },
       extensions,
-    })
-    const view = new EditorView({ state, parent: document.body })
-    assert.ok(forceParsing(view, doc.length, 5000), 'the syntax tree must be fully parsed before asserting')
+    });
+    const view = new EditorView({ state, parent: document.body });
+    assert.ok(
+      forceParsing(view, doc.length, 5000),
+      "the syntax tree must be fully parsed before asserting",
+    );
     if (payload !== undefined) {
-      view.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
+      view.dispatch({ effects: workspaceReferencesUpdate.of(payload) });
     }
-    views.push(view)
-    return view
+    views.push(view);
+    return view;
   }
 
-  function chips (view: EditorView): HTMLElement[] {
-    return [ ...view.dom.querySelectorAll<HTMLElement>('.reference-chip') ]
+  function chips(view: EditorView): HTMLElement[] {
+    return [...view.dom.querySelectorAll<HTMLElement>(".reference-chip")];
   }
 
-  describe('resolved occurrences render as independent compact chips', function () {
-    it('renders an untitled occurrence with the same principled local numbering as titled references', function () {
-      const doc = 'The form @eq:intersection-form computes every square.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+  describe("resolved occurrences render as independent compact chips", function () {
+    it("renders an untitled occurrence with the same principled local numbering as titled references", function () {
+      const doc = "The form @eq:intersection-form computes every square.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
 
-      const rendered = chips(view)
-      assert.strictEqual(rendered.length, 1, 'the single resolved occurrence must render exactly one chip')
-      assert.strictEqual(rendered[0].dataset.referenceKey, 'eq:intersection-form')
-      assert.strictEqual(rendered[0].dataset.referenceFamily, 'eq')
-      assert.strictEqual(rendered[0].textContent, 'Equation 1.2.1')
-      assert.ok(!view.contentDOM.textContent.includes('@eq:intersection-form'), 'the authored token must be replaced by the chip')
-    })
+      const rendered = chips(view);
+      assert.strictEqual(
+        rendered.length,
+        1,
+        "the single resolved occurrence must render exactly one chip",
+      );
+      assert.strictEqual(rendered[0].dataset.referenceKey, "eq:intersection-form");
+      assert.strictEqual(rendered[0].dataset.referenceFamily, "eq");
+      assert.strictEqual(rendered[0].textContent, "Equation 1.2.1");
+      assert.ok(
+        !view.contentDOM.textContent.includes("@eq:intersection-form"),
+        "the authored token must be replaced by the chip",
+      );
+    });
 
-    it('renders a titled theorem occurrence as a compact editor-local number instead of inlining its title', function () {
-      const doc = 'By @thm:torelli the two surfaces agree.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+    it("renders a titled theorem occurrence as a compact editor-local number instead of inlining its title", function () {
+      const doc = "By @thm:torelli the two surfaces agree.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
 
-      const rendered = chips(view)
-      assert.strictEqual(rendered.length, 1)
-      assert.strictEqual(rendered[0].dataset.referenceKey, 'thm:torelli')
-      assert.strictEqual(rendered[0].dataset.referenceFamily, 'thm')
-      assert.strictEqual(rendered[0].textContent, 'Theorem 1.1.1')
-      assert.ok(!rendered[0].textContent?.includes('Torelli for Enriques'), 'the potentially long title belongs in hover/detail surfaces, not inline prose')
-    })
+      const rendered = chips(view);
+      assert.strictEqual(rendered.length, 1);
+      assert.strictEqual(rendered[0].dataset.referenceKey, "thm:torelli");
+      assert.strictEqual(rendered[0].dataset.referenceFamily, "thm");
+      assert.strictEqual(rendered[0].textContent, "Theorem 1.1.1");
+      assert.ok(
+        !rendered[0].textContent?.includes("Torelli for Enriques"),
+        "the potentially long title belongs in hover/detail surfaces, not inline prose",
+      );
+    });
 
-    it('preserves authored prefixes and punctuation around independent chips in a cluster', function () {
-      const doc = 'Recall [see @tbl:coble-lattices; @eq:intersection-form] for the invariants.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+    it("preserves authored prefixes and punctuation around independent chips in a cluster", function () {
+      const doc = "Recall [see @tbl:coble-lattices; @eq:intersection-form] for the invariants.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
 
-      const rendered = chips(view)
-      assert.strictEqual(rendered.length, 2, 'each resolved reference in the cluster must render its own chip')
+      const rendered = chips(view);
+      assert.strictEqual(
+        rendered.length,
+        2,
+        "each resolved reference in the cluster must render its own chip",
+      );
       assert.deepStrictEqual(
-        rendered.map(chip => [ chip.dataset.referenceKey, chip.textContent ]),
+        rendered.map((chip) => [chip.dataset.referenceKey, chip.textContent]),
         [
-          [ 'tbl:coble-lattices', 'Table 1.2.1' ],
-          [ 'eq:intersection-form', 'Equation 1.2.1' ],
-        ]
-      )
+          ["tbl:coble-lattices", "Table 1.2.1"],
+          ["eq:intersection-form", "Equation 1.2.1"],
+        ],
+      );
 
-      const cluster = view.dom.querySelector<HTMLElement>('.reference-chip-cluster')
-      assert.ok(cluster !== null, 'the cluster renders as one widget wrapping its chips')
+      const cluster = view.dom.querySelector<HTMLElement>(".reference-chip-cluster");
+      assert.ok(cluster !== null, "the cluster renders as one widget wrapping its chips");
       assert.strictEqual(
         cluster.textContent,
-        'see Table 1.2.1; Equation 1.2.1',
-        'the authored prefix and separator punctuation must be preserved verbatim around the chips'
-      )
-    })
+        "see Table 1.2.1; Equation 1.2.1",
+        "the authored prefix and separator punctuation must be preserved verbatim around the chips",
+      );
+    });
 
-    it('preserves authored locators and suffixes after the chip', function () {
-      const doc = 'See [@eq:intersection-form, p. 3] for the squares.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+    it("preserves authored locators and suffixes after the chip", function () {
+      const doc = "See [@eq:intersection-form, p. 3] for the squares.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
 
-      const cluster = view.dom.querySelector<HTMLElement>('.reference-chip-cluster')
-      assert.ok(cluster !== null, 'the bracketed cluster renders as one widget')
-      assert.strictEqual(cluster.textContent, 'Equation 1.2.1, p. 3')
-      assert.strictEqual(chips(view).length, 1)
-    })
+      const cluster = view.dom.querySelector<HTMLElement>(".reference-chip-cluster");
+      assert.ok(cluster !== null, "the bracketed cluster renders as one widget");
+      assert.strictEqual(cluster.textContent, "Equation 1.2.1, p. 3");
+      assert.strictEqual(chips(view).length, 1);
+    });
 
-    it('takes over the supported-family cluster from render-citations', function () {
+    it("takes over the supported-family cluster from render-citations", function () {
       // Today render-citations renders this via its textual crossref branch
       // as 'fig. root-diagram'. Under the NEW set the chips renderer owns it.
-      const doc = 'See [@fig:root-diagram] for the roots.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
+      const doc = "See [@fig:root-diagram] for the roots.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
 
-      const rendered = chips(view)
-      assert.strictEqual(rendered.length, 1)
-      assert.strictEqual(rendered[0].dataset.referenceKey, 'fig:root-diagram')
-      assert.strictEqual(rendered[0].textContent, 'Figure 1.2.1')
-      assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'a supported-family cluster must not render through the citation widget anymore')
-    })
-  })
+      const rendered = chips(view);
+      assert.strictEqual(rendered.length, 1);
+      assert.strictEqual(rendered[0].dataset.referenceKey, "fig:root-diagram");
+      assert.strictEqual(rendered[0].textContent, "Figure 1.2.1");
+      assert.strictEqual(
+        view.dom.querySelectorAll(".citeproc-citation").length,
+        0,
+        "a supported-family cluster must not render through the citation widget anymore",
+      );
+    });
+  });
 
-  describe('unresolved occurrences stay raw', function () {
-    it('renders no chip for a missing key and keeps the authored source', function () {
-      const doc = 'The picture in @fig:nonexistent-diagram is unfinished.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, FULL_FILES))
+  describe("unresolved occurrences stay raw", function () {
+    it("renders no chip for a missing key and keeps the authored source", function () {
+      const doc = "The picture in @fig:nonexistent-diagram is unfinished.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, FULL_FILES));
 
-      assert.strictEqual(chips(view).length, 0, 'a missing reference must not render a chip')
-      assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'a missing supported-family key must not render through the citation widget')
-      assert.ok(view.contentDOM.textContent.includes('@fig:nonexistent-diagram'), 'the authored source must stay raw (diagnostics own missing references)')
-    })
+      assert.strictEqual(chips(view).length, 0, "a missing reference must not render a chip");
+      assert.strictEqual(
+        view.dom.querySelectorAll(".citeproc-citation").length,
+        0,
+        "a missing supported-family key must not render through the citation widget",
+      );
+      assert.ok(
+        view.contentDOM.textContent.includes("@fig:nonexistent-diagram"),
+        "the authored source must stay raw (diagnostics own missing references)",
+      );
+    });
 
-    it('renders no chip for a duplicate key and never selects one definition silently', function () {
+    it("renders no chip for a duplicate key and never selects one definition silently", function () {
       // thm:torelli is defined in both ProjectA/Theorems.md and
       // ProjectB/Other_Paper.md in the full fixture workspace.
-      const doc = 'The argument in @thm:torelli fails in characteristic two.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, FULL_FILES))
+      const doc = "The argument in @thm:torelli fails in characteristic two.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, FULL_FILES));
 
-      assert.strictEqual(chips(view).length, 0, 'a duplicate reference must not render a chip')
-      assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'an unresolved supported-family key must not render through the citation widget')
-      assert.ok(view.contentDOM.textContent.includes('@thm:torelli'), 'the authored source must stay raw (diagnostics own duplicates)')
-    })
-  })
+      assert.strictEqual(chips(view).length, 0, "a duplicate reference must not render a chip");
+      assert.strictEqual(
+        view.dom.querySelectorAll(".citeproc-citation").length,
+        0,
+        "an unresolved supported-family key must not render through the citation widget",
+      );
+      assert.ok(
+        view.contentDOM.textContent.includes("@thm:torelli"),
+        "the authored source must stay raw (diagnostics own duplicates)",
+      );
+    });
+  });
 
-  describe('a transaction draws again only the chips that it changes', function () {
-    const doc = 'By @thm:torelli and @eq:intersection-form the squares agree.\n\nA paragraph without a reference follows here.\n'
+  describe("a transaction draws again only the chips that it changes", function () {
+    const doc =
+      "By @thm:torelli and @eq:intersection-form the squares agree.\n\nA paragraph without a reference follows here.\n";
 
     /** The decoration objects of the editor, in the order of their sources and positions. */
-    function decorations (view: EditorView): Decoration[] {
-      const found: Decoration[] = []
+    function decorations(view: EditorView): Decoration[] {
+      const found: Decoration[] = [];
       for (const source of view.state.facet(EditorView.decorations)) {
-        const set = typeof source === 'function' ? source(view) : source
-        const cursor = set.iter()
+        const set = typeof source === "function" ? source(view) : source;
+        const cursor = set.iter();
         while (cursor.value !== null) {
-          found.push(cursor.value)
-          cursor.next()
+          found.push(cursor.value);
+          cursor.next();
         }
       }
-      return found
+      return found;
     }
 
-    function assertSameObjects (after: Decoration[], before: Decoration[]): void {
-      assert.strictEqual(after.length, before.length)
-      for (const [ index, decoration ] of after.entries()) {
-        assert.ok(decoration === before[index], `decoration ${index} must be the object that the editor drew before`)
+    function assertSameObjects(after: Decoration[], before: Decoration[]): void {
+      assert.strictEqual(after.length, before.length);
+      for (const [index, decoration] of after.entries()) {
+        assert.ok(
+          decoration === before[index],
+          `decoration ${index} must be the object that the editor drew before`,
+        );
       }
     }
 
-    it('keeps each chip when the caret moves through text', function () {
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
-      const before = decorations(view)
-      assert.strictEqual(chips(view).length, 2)
-      assert.ok(before.length >= 2, 'each chip is a decoration')
+    it("keeps each chip when the caret moves through text", function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
+      const before = decorations(view);
+      assert.strictEqual(chips(view).length, 2);
+      assert.ok(before.length >= 2, "each chip is a decoration");
 
-      const start = doc.indexOf('A paragraph')
+      const start = doc.indexOf("A paragraph");
       for (let step = 0; step < 8; step++) {
-        view.dispatch({ selection: { anchor: start + step } })
+        view.dispatch({ selection: { anchor: start + step } });
       }
-      assertSameObjects(decorations(view), before)
-    })
+      assertSameObjects(decorations(view), before);
+    });
 
-    it('keeps each chip and the presentation for a reference view with the same content', function () {
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
-      const before = decorations(view)
-      const presentation = view.state.field(referencePresentationField)
-      assert.strictEqual(presentation.displayNumbers.get('thm:torelli'), '1.1.1')
+    it("keeps each chip and the presentation for a reference view with the same content", function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
+      const before = decorations(view);
+      const presentation = view.state.field(referencePresentationField);
+      assert.strictEqual(presentation.displayNumbers.get("thm:torelli"), "1.1.1");
 
-      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, RESOLVED_FILES)) })
-      assert.ok(view.state.field(referencePresentationField) === presentation, 'the same content keeps the presentation object')
-      assertSameObjects(decorations(view), before)
-    })
-
-    it('shows the source of a reference that a new view makes a duplicate, and keeps the other chip', function () {
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
-      assert.deepStrictEqual(chips(view).map(chip => chip.dataset.referenceKey), [ 'thm:torelli', 'eq:intersection-form' ])
-
-      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, FULL_FILES)) })
-      assert.deepStrictEqual(chips(view).map(chip => chip.dataset.referenceKey), ['eq:intersection-form'])
-      assert.ok(view.contentDOM.textContent.includes('@thm:torelli'), 'the duplicate reference shows its source')
-    })
-  })
-
-  describe('mixed bibliography/reference clusters', function () {
-    it('stays raw under the new extension set', function () {
-      const doc = 'Combine [@thm:torelli; @Ols04, Lem. 7.1] for the argument.'
-      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES))
-
-      assert.strictEqual(chips(view).length, 0, 'no chip may render inside a mixed cluster')
-      assert.strictEqual(view.dom.querySelectorAll('.citeproc-citation').length, 0, 'the mixed cluster must not render through the citation widget')
+      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, RESOLVED_FILES)) });
       assert.ok(
-        view.contentDOM.textContent.includes('[@thm:torelli; @Ols04, Lem. 7.1]'),
-        'the authored mixed cluster must stay raw (the advisory is a Flowmark diagnostic)'
-      )
-    })
-  })
+        view.state.field(referencePresentationField) === presentation,
+        "the same content keeps the presentation object",
+      );
+      assertSameObjects(decorations(view), before);
+    });
 
-  describe('bibliography byte-parity (MUST hold in every phase)', function () {
+    it("shows the source of a reference that a new view makes a duplicate, and keeps the other chip", function () {
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
+      assert.deepStrictEqual(
+        chips(view).map((chip) => chip.dataset.referenceKey),
+        ["thm:torelli", "eq:intersection-form"],
+      );
+
+      view.dispatch({ effects: workspaceReferencesUpdate.of(payloadFor(doc, FULL_FILES)) });
+      assert.deepStrictEqual(
+        chips(view).map((chip) => chip.dataset.referenceKey),
+        ["eq:intersection-form"],
+      );
+      assert.ok(
+        view.contentDOM.textContent.includes("@thm:torelli"),
+        "the duplicate reference shows its source",
+      );
+    });
+  });
+
+  describe("mixed bibliography/reference clusters", function () {
+    it("stays raw under the new extension set", function () {
+      const doc = "Combine [@thm:torelli; @Ols04, Lem. 7.1] for the argument.";
+      const view = createEditor(NEW_SET(), doc, payloadFor(doc, RESOLVED_FILES));
+
+      assert.strictEqual(chips(view).length, 0, "no chip may render inside a mixed cluster");
+      assert.strictEqual(
+        view.dom.querySelectorAll(".citeproc-citation").length,
+        0,
+        "the mixed cluster must not render through the citation widget",
+      );
+      assert.ok(
+        view.contentDOM.textContent.includes("[@thm:torelli; @Ols04, Lem. 7.1]"),
+        "the authored mixed cluster must stay raw (the advisory is a Flowmark diagnostic)",
+      );
+    });
+  });
+
+  describe("bibliography byte-parity (MUST hold in every phase)", function () {
     const bibliographyDocs = [
-      'By [@Ols04, Lem. 7.1], some result follows.',
-      'See [see @Ols04; @BHPV04] for the surface classification.',
-      '@Kod63 says something important about elliptic surfaces.',
-      'Smith argues this [-@Kod63] at length.',
-    ]
+      "By [@Ols04, Lem. 7.1], some result follows.",
+      "See [see @Ols04; @BHPV04] for the surface classification.",
+      "@Kod63 says something important about elliptic surfaces.",
+      "Smith argues this [-@Kod63] at length.",
+    ];
 
     for (const doc of bibliographyDocs) {
       it(`produces byte-identical citation DOM for ${JSON.stringify(doc)}`, async function () {
-        const currentView = createEditor(CURRENT_SET(), doc)
-        const payload = payloadFor(doc, FULL_FILES)
-        const combinedView = createEditor(NEW_SET(), doc, payload)
-        assert.equal(combinedView.contentDOM.textContent, doc)
-        payload.snapshot.citations = await extractPandocCitations(doc)
-        combinedView.dispatch({ effects: workspaceReferencesUpdate.of(payload) })
-        await Promise.all([ settleCitationWidgets(currentView.dom), settleCitationWidgets(combinedView.dom) ])
+        const currentView = createEditor(CURRENT_SET(), doc);
+        const payload = payloadFor(doc, FULL_FILES);
+        const combinedView = createEditor(NEW_SET(), doc, payload);
+        assert.equal(combinedView.contentDOM.textContent, doc);
+        payload.snapshot.citations = await extractPandocCitations(doc);
+        combinedView.dispatch({ effects: workspaceReferencesUpdate.of(payload) });
+        await Promise.all([
+          settleCitationWidgets(currentView.dom),
+          settleCitationWidgets(combinedView.dom),
+        ]);
 
-        const currentWidgets = [ ...currentView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]
-        const combinedWidgets = [ ...combinedView.dom.querySelectorAll<HTMLElement>('.citeproc-citation') ]
+        const currentWidgets = [
+          ...currentView.dom.querySelectorAll<HTMLElement>(".citeproc-citation"),
+        ];
+        const combinedWidgets = [
+          ...combinedView.dom.querySelectorAll<HTMLElement>(".citeproc-citation"),
+        ];
 
-        assert.ok(currentWidgets.length >= 1, 'the parity fixture must actually render a citation widget today')
+        assert.ok(
+          currentWidgets.length >= 1,
+          "the parity fixture must actually render a citation widget today",
+        );
         assert.deepStrictEqual(
-          combinedWidgets.map(widget => widget.outerHTML),
-          currentWidgets.map(widget => widget.outerHTML)
-        )
-        assert.strictEqual(combinedView.contentDOM.textContent, currentView.contentDOM.textContent)
-        assert.strictEqual(chips(combinedView).length, 0, 'bibliography clusters must never render chips')
-      })
+          combinedWidgets.map((widget) => widget.outerHTML),
+          currentWidgets.map((widget) => widget.outerHTML),
+        );
+        assert.strictEqual(combinedView.contentDOM.textContent, currentView.contentDOM.textContent);
+        assert.strictEqual(
+          chips(combinedView).length,
+          0,
+          "bibliography clusters must never render chips",
+        );
+      });
     }
-  })
-})
+  });
+});

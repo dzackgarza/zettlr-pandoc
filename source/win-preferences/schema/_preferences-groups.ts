@@ -16,4 +16,4 @@
 // Kept as the schema-local import path for existing callers; the identity is
 // shared because the main window's command launcher can deep-link into this
 // separate renderer process.
-export { PreferencesGroups } from '@dts/common/preferences'
+export { PreferencesGroups } from "@dts/common/preferences";

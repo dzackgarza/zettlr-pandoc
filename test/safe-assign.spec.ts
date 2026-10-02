@@ -1,9 +1,8 @@
-/* eslint-disable no-undef */
 /**
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        localiseNumber tester
+ * Contains:        safeAssign tester
  * CVM-Role:        TESTING
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
@@ -13,116 +12,77 @@
  * END HEADER
  */
 
-import safeAssign from '../source/common/util/safe-assign'
-import { deepStrictEqual } from 'assert'
+import { deepStrictEqual } from "assert";
+import safeAssign from "../source/common/util/safe-assign";
 
-const inputs = [
-  // First an input that is completely valid with regard to the reference.
-  {
+interface NestedSettings {
+  a: boolean | null;
+  b: { c: string[]; d: number };
+}
+
+interface WindowSettings {
+  fullScreen: boolean;
+  someOtherVar: string;
+}
+
+interface OptionalSetting {
+  a: string | undefined;
+}
+
+function nestedReference(): NestedSettings {
+  return { a: false, b: { c: [], d: -1 } };
+}
+
+function assertMerges<A extends object>(
+  title: string,
+  input: Partial<A>,
+  reference: A,
+  expected: A,
+): void {
+  it(title, function () {
+    deepStrictEqual(safeAssign(input, reference), expected);
+  });
+}
+
+describe("Utility#safeAssign()", function () {
+  assertMerges<NestedSettings>(
+    "keeps every value of an input that is valid against the reference",
+    { a: null, b: { c: ["one", "two", "three"], d: 1000 } },
+    nestedReference(),
+    { a: null, b: { c: ["one", "two", "three"], d: 1000 } },
+  );
+
+  const withUnexpectedField = {
     a: null,
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    }
-  },
-  // Second an input that has a prop more than the reference object
-  {
-    a: null,
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    },
-    unexpectedField: 'some value'
-  },
-  // Third an input that has one prop less than the reference object
-  {
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    }
-  },
+    b: { c: ["one", "two", "three"], d: 1000 },
+    unexpectedField: "some value",
+  };
+  assertMerges<NestedSettings>(
+    "drops a property that the reference does not have",
+    withUnexpectedField,
+    nestedReference(),
+    { a: null, b: { c: ["one", "two", "three"], d: 1000 } },
+  );
+
+  assertMerges<NestedSettings>(
+    "takes a missing property from the reference",
+    { b: { c: ["one", "two", "three"], d: 1000 } },
+    nestedReference(),
+    { a: false, b: { c: ["one", "two", "three"], d: 1000 } },
+  );
+
   // Based on a true story, as safeAssign apparently doesn't overwrite values
-  {
-    fullScreen: true
-  },
-  // A safeAssign will use values even if the reference has an undefined value
-  {
-    a: 'foo'
-  }
-]
-const referenceObjects = [
-  // Reference one
-  {
-    a: false,
-    b: {
-      c: [],
-      d: -1
-    }
-  },
-  // Reference two
-  {
-    a: false,
-    b: {
-      c: [],
-      d: -1
-    }
-  },
-  // Reference three
-  {
-    a: false,
-    b: {
-      c: [],
-      d: -1
-    }
-  },
-  {
-    fullScreen: false,
-    someOtherVar: 'Hello World'
-  },
-  {
-    a: undefined
-  }
-]
-const expectedOutputs = [
-  // Expected output one
-  {
-    a: null,
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    }
-  },
-  // Expected output two
-  {
-    a: null,
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    }
-  },
-  // Expected output three
-  {
-    a: false, // This prop is taken from the reference
-    b: {
-      c: [ 'one', 'two', 'three' ],
-      d: 1000
-    }
-  },
-  // Expected output four
-  {
-    fullScreen: true,
-    someOtherVar: 'Hello World'
-  },
-  // Expected output file
-  {
-    a: 'foo'
-  }
-]
+  assertMerges<WindowSettings>(
+    "overwrites a reference value with the input value",
+    { fullScreen: true },
+    { fullScreen: false, someOtherVar: "Hello World" },
+    { fullScreen: true, someOtherVar: "Hello World" },
+  );
 
-describe('Utility#safeAssign()', function () {
-  for (let i = 0; i < inputs.length; i++) {
-    it('should return a properly merged object', function () {
-      deepStrictEqual(safeAssign(inputs[i] as any, referenceObjects[i]), expectedOutputs[i])
-    })
-  }
-})
+  assertMerges<OptionalSetting>(
+    "uses an input value where the reference value is undefined",
+    { a: "foo" },
+    { a: undefined },
+    { a: "foo" },
+  );
+});

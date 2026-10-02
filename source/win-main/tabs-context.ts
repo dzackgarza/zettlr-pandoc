@@ -12,17 +12,22 @@
  * END HEADER
  */
 
-import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "@common/modules/window-register/application-menu-helper";
 
-export function displayTabbarContext (event: MouseEvent, callback: (clickedID: string) => void): void {
+export function displayTabbarContext(
+  event: MouseEvent,
+  callback: (clickedID: string) => void,
+): void {
   const items: AnyMenuItem[] = [
     {
-      label: 'Close leaf',
-      id: 'close-leaf',
-      type: 'normal'
-    }
-  ]
+      label: "Close leaf",
+      id: "close-leaf",
+      type: "normal",
+    },
+  ];
 
-  const point = { x: event.clientX, y: event.clientY }
-  showPopupMenu(point, items, callback)
+  const point = { x: event.clientX, y: event.clientY };
+  showPopupMenu(point, items, callback);
 }

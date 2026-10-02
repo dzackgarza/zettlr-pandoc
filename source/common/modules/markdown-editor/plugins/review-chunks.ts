@@ -23,29 +23,29 @@
  * END HEADER
  */
 
-import { Facet, StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state'
 import {
-  Decoration,
-  type DecorationSet,
-  EditorView,
-  keymap,
-  WidgetType
-} from '@codemirror/view'
-import type { ReviewSuggestionView } from '@dts/common/review-diff'
-import { mapSuggestionThroughChanges } from '@common/util/review-suggestion-anchors'
+  type EditorState,
+  type Extension,
+  Facet,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
+import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
+import type { ReviewSuggestionView } from "@dts/common/review-diff";
 
 export interface ReviewChunksConfig {
-  suggestions: ReviewSuggestionView[]
+  suggestions: ReviewSuggestionView[];
 }
 
-const reviewChunksConfig = Facet.define<ReviewChunksConfig>()
+const reviewChunksConfig = Facet.define<ReviewChunksConfig>();
 
-function requireReviewChunksConfig (state: EditorState): ReviewChunksConfig {
-  const configs = state.facet(reviewChunksConfig)
+function requireReviewChunksConfig(state: EditorState): ReviewChunksConfig {
+  const configs = state.facet(reviewChunksConfig);
   if (configs.length !== 1) {
-    throw new Error(`review chunks require exactly one configuration, received ${configs.length}`)
+    throw new Error(`review chunks require exactly one configuration, received ${configs.length}`);
   }
-  return configs[0]
+  return configs[0];
 }
 
 /**
@@ -53,52 +53,52 @@ function requireReviewChunksConfig (state: EditorState): ReviewChunksConfig {
  * arrived whose working text differs from this buffer, so the chunks shown
  * are the last synced ones, mapped locally, until the buffer catches up.
  */
-export const markReviewChunksStale = StateEffect.define<null>()
+export const markReviewChunksStale = StateEffect.define<null>();
 
 export interface ReviewChunksFieldValue {
-  readonly suggestions: ReviewSuggestionView[]
-  readonly decorations: DecorationSet
+  readonly suggestions: ReviewSuggestionView[];
+  readonly decorations: DecorationSet;
   /** True while the chunks are exactly the provider's latest broadcast. */
-  readonly synced: boolean
+  readonly synced: boolean;
 }
 
 const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
   create: buildFieldValue,
-  update (value, tr) {
+  update(value, tr) {
     if (tr.startState.facet(reviewChunksConfig) !== tr.state.facet(reviewChunksConfig)) {
-      return buildFieldValue(tr.state)
+      return buildFieldValue(tr.state);
     }
     if (tr.docChanged) {
-      const suggestions = value.suggestions.flatMap(suggestion => {
-        const mapped = mapSuggestionThroughChanges(suggestion, tr.changes)
+      const suggestions = value.suggestions.flatMap((suggestion) => {
+        const mapped = mapSuggestionThroughChanges(suggestion, tr.changes);
         return mapped.destroyed
           ? []
-          : [{ ...suggestion, anchors: mapped.anchors, seam: mapped.seam }]
-      })
-      return { ...buildFieldValue(tr.state, suggestions), synced: false }
+          : [{ ...suggestion, anchors: mapped.anchors, seam: mapped.seam }];
+      });
+      return { ...buildFieldValue(tr.state, suggestions), synced: false };
     }
-    if (value.synced && tr.effects.some(effect => effect.is(markReviewChunksStale))) {
-      return { ...value, synced: false }
+    if (value.synced && tr.effects.some((effect) => effect.is(markReviewChunksStale))) {
+      return { ...value, synced: false };
     }
-    return value
+    return value;
   },
-  provide: field => EditorView.decorations.from(field, value => value.decorations)
-})
+  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+});
 
 /**
  * The current proposed suggestions, or null when no review is active in
  * this state. Live-preview suppression reads this to leave chunk-carrying
  * ranges un-rendered.
  */
-export function getReviewChunks (state: EditorState): ReviewSuggestionView[]|null {
-  const value = state.field(reviewChunksField, false)
-  return value === undefined ? null : value.suggestions
+export function getReviewChunks(state: EditorState): ReviewSuggestionView[] | null {
+  const value = state.field(reviewChunksField, false);
+  return value === undefined ? null : value.suggestions;
 }
 
 /** The whole review field, or undefined when no review is installed. Its
  *  identity changes exactly when the chunks or their sync state do. */
-export function getReviewChunksState (state: EditorState): ReviewChunksFieldValue|undefined {
-  return state.field(reviewChunksField, false)
+export function getReviewChunksState(state: EditorState): ReviewChunksFieldValue | undefined {
+  return state.field(reviewChunksField, false);
 }
 
 /**
@@ -106,27 +106,27 @@ export function getReviewChunksState (state: EditorState): ReviewChunksFieldValu
  * range. Renderers that replace source wholesale (notably the table widget)
  * use this to surface review state that ordinary mark decorations would hide.
  */
-export function reviewSuggestionsInRange (
+export function reviewSuggestionsInRange(
   state: EditorState,
   from: number,
-  to: number
+  to: number,
 ): ReviewSuggestionView[] {
-  const suggestions = getReviewChunks(state)
+  const suggestions = getReviewChunks(state);
   if (suggestions === null) {
-    return []
+    return [];
   }
-  return suggestions.filter(suggestion => {
+  return suggestions.filter((suggestion) => {
     if (suggestion.seam >= from && suggestion.seam <= to) {
-      return true
+      return true;
     }
-    return suggestion.anchors.some(anchor => anchor.from < to && anchor.to > from)
-  })
+    return suggestion.anchors.some((anchor) => anchor.from < to && anchor.to > from);
+  });
 }
 
 /** The anchor position of a suggestion, or document end. */
-function suggestionAnchor (state: EditorState, suggestion: ReviewSuggestionView): number {
-  const position = Math.min(suggestion.anchors[0]?.from ?? suggestion.seam, state.doc.length)
-  return state.doc.lineAt(position).from
+function suggestionAnchor(state: EditorState, suggestion: ReviewSuggestionView): number {
+  const position = Math.min(suggestion.anchors[0]?.from ?? suggestion.seam, state.doc.length);
+  return state.doc.lineAt(position).from;
 }
 
 /**
@@ -134,56 +134,71 @@ function suggestionAnchor (state: EditorState, suggestion: ReviewSuggestionView)
  * the line carrying the strikethrough for a pure deletion. A span that ends
  * on a newline stops on the line that newline closes.
  */
-export function suggestionLastLineEnd (state: EditorState, suggestion: ReviewSuggestionView): number {
-  const last = suggestion.anchors.at(-1)
-  const position = last === undefined
-    ? suggestion.seam
-    : last.to > last.from ? last.to - 1 : last.from
-  return state.doc.lineAt(Math.min(position, state.doc.length)).to
+export function suggestionLastLineEnd(
+  state: EditorState,
+  suggestion: ReviewSuggestionView,
+): number {
+  const last = suggestion.anchors.at(-1);
+  const position =
+    last === undefined ? suggestion.seam : last.to > last.from ? last.to - 1 : last.from;
+  return state.doc.lineAt(Math.min(position, state.doc.length)).to;
 }
 
-function selectReviewChunk (view: EditorView, direction: 1|-1): boolean {
-  const value = view.state.field(reviewChunksField, false)
+function selectReviewChunk(view: EditorView, direction: 1 | -1): boolean {
+  const value = view.state.field(reviewChunksField, false);
   if (value === undefined || value.suggestions.length === 0) {
-    return false
+    return false;
   }
-  const doc = view.state.doc
-  const headLine = doc.lineAt(view.state.selection.main.head).number
-  const suggestions = value.suggestions
-  const target = direction === 1
-    ? suggestions.find(suggestion => doc.lineAt(suggestionAnchor(view.state, suggestion)).number > headLine) ?? suggestions[0]
-    : [...suggestions].reverse().find(suggestion => doc.lineAt(suggestionAnchor(view.state, suggestion)).number < headLine) ?? suggestions[suggestions.length - 1]
-  const anchor = suggestionAnchor(view.state, target)
+  const doc = view.state.doc;
+  const headLine = doc.lineAt(view.state.selection.main.head).number;
+  const suggestions = value.suggestions;
+  const target =
+    direction === 1
+      ? (suggestions.find(
+          (suggestion) => doc.lineAt(suggestionAnchor(view.state, suggestion)).number > headLine,
+        ) ?? suggestions[0])
+      : ([...suggestions]
+          .reverse()
+          .find(
+            (suggestion) => doc.lineAt(suggestionAnchor(view.state, suggestion)).number < headLine,
+          ) ?? suggestions[suggestions.length - 1]);
+  const anchor = suggestionAnchor(view.state, target);
   view.dispatch({
     selection: { anchor },
-    effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
-    userEvent: 'select'
-  })
-  return true
+    effects: EditorView.scrollIntoView(anchor, { y: "center" }),
+    userEvent: "select",
+  });
+  return true;
 }
 
 /** Move the cursor to the next review chunk, wrapping past the last one. */
-export function selectNextReviewChunk (view: EditorView): boolean {
-  return selectReviewChunk(view, 1)
+export function selectNextReviewChunk(view: EditorView): boolean {
+  return selectReviewChunk(view, 1);
 }
 
 /** Move the cursor to the previous review chunk, wrapping past the first. */
-export function selectPreviousReviewChunk (view: EditorView): boolean {
-  return selectReviewChunk(view, -1)
+export function selectPreviousReviewChunk(view: EditorView): boolean {
+  return selectReviewChunk(view, -1);
 }
 
 /** The working-side stretch a suggestion covers: its seam and its anchors. */
-function suggestionExtent (suggestion: ReviewSuggestionView): { from: number, to: number } {
-  const ends = [suggestion.seam, ...suggestion.anchors.flatMap(anchor => [anchor.from, anchor.to])]
-  return { from: Math.min(...ends), to: Math.max(...ends) }
+function suggestionExtent(suggestion: ReviewSuggestionView): { from: number; to: number } {
+  const ends = [
+    suggestion.seam,
+    ...suggestion.anchors.flatMap((anchor) => [anchor.from, anchor.to]),
+  ];
+  return { from: Math.min(...ends), to: Math.max(...ends) };
 }
 
 /** One suggestion written as CriticMarkup, followed by its justification. */
-function criticMarkup (removed: string, inserted: string, description: string): string {
-  const change = removed === ''
-    ? `{++${inserted}++}`
-    : inserted === '' ? `{--${removed}--}` : `{~~${removed}~>${inserted}~~}`
-  return `${change}{>>${description}<<}`
+function criticMarkup(removed: string, inserted: string, description: string): string {
+  const change =
+    removed === ""
+      ? `{++${inserted}++}`
+      : inserted === ""
+        ? `{--${removed}--}`
+        : `{~~${removed}~>${inserted}~~}`;
+  return `${change}{>>${description}<<}`;
 }
 
 /**
@@ -195,47 +210,51 @@ function criticMarkup (removed: string, inserted: string, description: string): 
  * removed text, which is a widget, would otherwise never reach the
  * clipboard.
  */
-export function reviewSelectionAsCriticMarkup (state: EditorState): string|null {
-  const suggestions = getReviewChunks(state)
-  const { from, to } = state.selection.main
+export function reviewSelectionAsCriticMarkup(state: EditorState): string | null {
+  const suggestions = getReviewChunks(state);
+  const { from, to } = state.selection.main;
   if (suggestions === null || from === to) {
-    return null
+    return null;
   }
   const touched = suggestions
-    .map(suggestion => ({ suggestion, extent: suggestionExtent(suggestion) }))
+    .map((suggestion) => ({ suggestion, extent: suggestionExtent(suggestion) }))
     .filter(({ extent }) => extent.from <= to && extent.to >= from)
-    .sort((left, right) => left.extent.from - right.extent.from)
+    .sort((left, right) => left.extent.from - right.extent.from);
   if (touched.length === 0) {
-    return null
+    return null;
   }
-  let text = ''
-  let cursor = Math.min(from, touched[0].extent.from)
+  let text = "";
+  let cursor = Math.min(from, touched[0].extent.from);
   for (const { suggestion, extent } of touched) {
-    text += state.sliceDoc(cursor, extent.from)
-    text += criticMarkup(suggestion.removedText, state.sliceDoc(extent.from, extent.to), suggestion.description)
-    cursor = extent.to
+    text += state.sliceDoc(cursor, extent.from);
+    text += criticMarkup(
+      suggestion.removedText,
+      state.sliceDoc(extent.from, extent.to),
+      suggestion.description,
+    );
+    cursor = extent.to;
   }
-  return text + state.sliceDoc(cursor, Math.max(to, cursor))
+  return text + state.sliceDoc(cursor, Math.max(to, cursor));
 }
 
 const reviewCopyHandler = EditorView.domEventHandlers({
-  copy (event, view) {
-    const text = reviewSelectionAsCriticMarkup(view.state)
+  copy(event, view) {
+    const text = reviewSelectionAsCriticMarkup(view.state);
     if (text === null || event.clipboardData === null) {
-      return false
+      return false;
     }
-    event.clipboardData.setData('text/plain', text)
-    event.preventDefault()
-    return true
-  }
-})
+    event.clipboardData.setData("text/plain", text);
+    event.preventDefault();
+    return true;
+  },
+});
 
 const reviewChunkKeymap = keymap.of([
-  { key: 'F8', run: selectNextReviewChunk },
-  { key: 'Shift-F8', run: selectPreviousReviewChunk }
-])
+  { key: "F8", run: selectNextReviewChunk },
+  { key: "Shift-F8", run: selectPreviousReviewChunk },
+]);
 
-export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] {
+export function reviewChunksExtension(config: ReviewChunksConfig): Extension[] {
   return [
     reviewChunksConfig.of(config),
     reviewChunksField,
@@ -243,53 +262,57 @@ export function reviewChunksExtension (config: ReviewChunksConfig): Extension[] 
     // attribute so CodeMirror itself maintains it. Added by hand via
     // classList it was silently wiped whenever CodeMirror re-synced the
     // element's class attribute (a resize re-measure, a focus change).
-    EditorView.editorAttributes.of({ class: 'review-diff-active' }),
+    EditorView.editorAttributes.of({ class: "review-diff-active" }),
     reviewChunkKeymap,
     reviewCopyHandler,
-    reviewChunksTheme
-  ]
+    reviewChunksTheme,
+  ];
 }
 
-function buildFieldValue (
+function buildFieldValue(
   state: EditorState,
-  projectedSuggestions?: ReviewSuggestionView[]
+  projectedSuggestions?: ReviewSuggestionView[],
 ): ReviewChunksFieldValue {
-  const config = requireReviewChunksConfig(state)
-  const doc = state.doc
-  const suggestions = projectedSuggestions ?? config.suggestions
+  const config = requireReviewChunksConfig(state);
+  const doc = state.doc;
+  const suggestions = projectedSuggestions ?? config.suggestions;
   if (suggestions.length === 0) {
-    return { suggestions, decorations: Decoration.none, synced: true }
+    return { suggestions, decorations: Decoration.none, synced: true };
   }
 
-  const ranges: Array<ReturnType<Decoration['range']>> = []
+  const ranges: Array<ReturnType<Decoration["range"]>> = [];
   for (const suggestion of suggestions) {
     // The deleted spans, struck through in the document flow. A negative
     // side keeps a deleted span before an inserted one starting at the same
     // position, so a replacement reads old-then-new, like tracked changes.
-    if (suggestion.removedText !== '') {
+    if (suggestion.removedText !== "") {
       ranges.push(
         Decoration.widget({
           widget: new DeletedSpanWidget(suggestion.suggestionId, suggestion.removedText),
-          side: -1
-        }).range(Math.min(suggestion.seam, doc.length))
-      )
+          side: -1,
+        }).range(Math.min(suggestion.seam, doc.length)),
+      );
     }
 
     for (const span of suggestion.anchors) {
-      const lastPosition = span.to > span.from ? span.to - 1 : span.from
-      for (let line = doc.lineAt(span.from).number; line <= doc.lineAt(lastPosition).number; line++) {
-        ranges.push(changedLine.range(doc.line(line).from))
+      const lastPosition = span.to > span.from ? span.to - 1 : span.from;
+      for (
+        let line = doc.lineAt(span.from).number;
+        line <= doc.lineAt(lastPosition).number;
+        line++
+      ) {
+        ranges.push(changedLine.range(doc.line(line).from));
       }
       if (span.to > span.from) {
-        ranges.push(changedText.range(span.from, span.to))
+        ranges.push(changedText.range(span.from, span.to));
       }
     }
   }
-  return { suggestions, decorations: Decoration.set(ranges, true), synced: true }
+  return { suggestions, decorations: Decoration.set(ranges, true), synced: true };
 }
 
-const changedLine = Decoration.line({ class: 'cm-changedLine' })
-const changedText = Decoration.mark({ class: 'cm-changedText' })
+const changedLine = Decoration.line({ class: "cm-changedLine" });
+const changedText = Decoration.mark({ class: "cm-changedText" });
 
 /**
  * One deleted span, struck through inline at the working-side position the
@@ -297,42 +320,42 @@ const changedText = Decoration.mark({ class: 'cm-changedText' })
  * take out; the decision on it sits in the chunk's control block.
  */
 class DeletedSpanWidget extends WidgetType {
-  constructor (
+  constructor(
     private readonly chunkId: string,
-    private readonly deletedText: string
+    private readonly deletedText: string,
   ) {
-    super()
+    super();
   }
 
-  eq (other: DeletedSpanWidget): boolean {
-    return other.chunkId === this.chunkId && other.deletedText === this.deletedText
+  eq(other: DeletedSpanWidget): boolean {
+    return other.chunkId === this.chunkId && other.deletedText === this.deletedText;
   }
 
-  toDOM (): HTMLElement {
-    const del = document.createElement('del')
-    del.className = 'cm-deletedText'
-    del.textContent = this.deletedText
-    return del
+  toDOM(): HTMLElement {
+    const del = document.createElement("del");
+    del.className = "cm-deletedText";
+    del.textContent = this.deletedText;
+    return del;
   }
 
-  ignoreEvent (): boolean {
-    return true
+  ignoreEvent(): boolean {
+    return true;
   }
 }
 
 const reviewChunksTheme = EditorView.baseTheme({
-  '.cm-changedLine': {
-    backgroundColor: 'var(--zettlr-editor-review-region-bg)'
+  ".cm-changedLine": {
+    backgroundColor: "var(--zettlr-editor-review-region-bg)",
   },
-  '.cm-changedText': {
-    backgroundColor: 'var(--zettlr-editor-review-insert-mark-bg)',
-    borderRadius: '2px'
+  ".cm-changedText": {
+    backgroundColor: "var(--zettlr-editor-review-insert-mark-bg)",
+    borderRadius: "2px",
   },
-  '.cm-deletedText': {
-    backgroundColor: 'var(--zettlr-editor-review-delete-bg)',
-    textDecoration: 'line-through',
-    textDecorationThickness: '2px',
-    textDecorationColor: 'var(--zettlr-editor-review-delete-accent)',
-    whiteSpace: 'pre-wrap'
-  }
-})
+  ".cm-deletedText": {
+    backgroundColor: "var(--zettlr-editor-review-delete-bg)",
+    textDecoration: "line-through",
+    textDecorationThickness: "2px",
+    textDecorationColor: "var(--zettlr-editor-review-delete-accent)",
+    whiteSpace: "pre-wrap",
+  },
+});

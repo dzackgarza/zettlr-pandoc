@@ -39,7 +39,14 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -75,7 +82,14 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -98,12 +112,13 @@ describe("main-process document lint", function () {
     const { diagnostics } = await lintDocumentText(markdown, path.join(root, "math.md"), context);
     const structuralFailures = diagnostics
       .map((diagnostic) => diagnostic.rule)
-      .filter((rule) =>
-        rule === "pandoc/parse-error" ||
-        rule === "math/unclosed-group" ||
-        rule === "math/unmatched-group-close" ||
-        rule === "math/unclosed-left" ||
-        rule === "math/unmatched-right",
+      .filter(
+        (rule) =>
+          rule === "pandoc/parse-error" ||
+          rule === "math/unclosed-group" ||
+          rule === "math/unmatched-group-close" ||
+          rule === "math/unclosed-left" ||
+          rule === "math/unmatched-right",
       );
     assert.deepEqual(structuralFailures, []);
   });
@@ -115,15 +130,35 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
-        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
+        templatePath: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+          "templates",
+          "standalone-tikz.tex",
+        ),
         cacheDir,
         env: process.env,
       },
     });
     const markdown = "Let $sin x = 0$.\n";
 
-    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "operator.md"), context);
+    const { diagnostics } = await lintDocumentText(
+      markdown,
+      path.join(root, "operator.md"),
+      context,
+    );
     const operator = diagnostics.find((diagnostic) => diagnostic.rule === "math/bare-operator");
     assert.ok(operator !== undefined);
     assert.equal(markdown.slice(operator.from, operator.to), "sin");
@@ -137,8 +172,24 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
-        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
+        templatePath: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+          "templates",
+          "standalone-tikz.tex",
+        ),
         cacheDir,
         env: process.env,
       },
@@ -150,7 +201,12 @@ describe("main-process document lint", function () {
     assert.ok(operator !== undefined);
     assert.equal(markdown.slice(operator.from, operator.to), "cos");
     assert.deepEqual(
-      { line: operator.line, column: operator.column, endLine: operator.endLine, endColumn: operator.endColumn },
+      {
+        line: operator.line,
+        column: operator.column,
+        endLine: operator.endLine,
+        endColumn: operator.endColumn,
+      },
       { line: 5, column: 13, endLine: 5, endColumn: 16 },
     );
   });
@@ -162,8 +218,24 @@ describe("main-process document lint", function () {
       env: process.env,
       flowmarkLintTimeoutMs: 60_000,
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
-        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
+        templatePath: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+          "templates",
+          "standalone-tikz.tex",
+        ),
         cacheDir,
         env: process.env,
       },
@@ -176,9 +248,14 @@ describe("main-process document lint", function () {
     );
     const markdown = "Following @FS86 and @FS87.\n";
 
-    const { diagnostics } = await lintDocumentText(markdown, path.join(root, "chapter.md"), context, {
-      bibliographies: [bibliography],
-    });
+    const { diagnostics } = await lintDocumentText(
+      markdown,
+      path.join(root, "chapter.md"),
+      context,
+      {
+        bibliographies: [bibliography],
+      },
+    );
     const missing = diagnostics
       .filter((diagnostic) => diagnostic.rule === "citation/missing-bibliography-entry")
       .map((diagnostic) => markdown.slice(diagnostic.from, diagnostic.to));
@@ -206,24 +283,52 @@ describe("main-process document lint", function () {
         document("b/moduli.md"),
       ]),
       tikzRenderConfig: {
-        tikzAssetDir: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data"),
-        templatePath: path.join(repositoryRoot, "packages", "tikz-workbench", "test", "fixtures", "tikz-data", "templates", "standalone-tikz.tex"),
+        tikzAssetDir: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+        ),
+        templatePath: path.join(
+          repositoryRoot,
+          "packages",
+          "tikz-workbench",
+          "test",
+          "fixtures",
+          "tikz-data",
+          "templates",
+          "standalone-tikz.tex",
+        ),
         cacheDir,
         env: process.env,
       },
     });
-    const markdown = "See [[../programs/cusp-chain.md#Main result|the chain]], [[moduli]], [[nowhere]] and [[cusp-chain]].\n";
+    const markdown =
+      "See [[../programs/cusp-chain.md#Main result|the chain]], [[moduli]], [[nowhere]] and [[cusp-chain]].\n";
 
-    const { diagnostics } = await lintDocumentText(markdown, path.join(workspace, "chapters", "doc.md"), context);
+    const { diagnostics } = await lintDocumentText(
+      markdown,
+      path.join(workspace, "chapters", "doc.md"),
+      context,
+    );
     const wikilinks = diagnostics
-      .filter((diagnostic) => diagnostic.rule.endsWith("wikilink") || diagnostic.rule.endsWith("wikilink-target"))
+      .filter(
+        (diagnostic) =>
+          diagnostic.rule.endsWith("wikilink") || diagnostic.rule.endsWith("wikilink-target"),
+      )
       .map((diagnostic) => ({
         rule: diagnostic.rule,
         source: markdown.slice(diagnostic.from, diagnostic.to),
         fixes: diagnostic.suggestions?.map((suggestion) => suggestion.replacement),
       }));
     assert.deepEqual(wikilinks, [
-      { rule: "link/relative-wikilink", source: "../programs/cusp-chain.md", fixes: ["cusp-chain"] },
+      {
+        rule: "link/relative-wikilink",
+        source: "../programs/cusp-chain.md",
+        fixes: ["cusp-chain"],
+      },
       { rule: "link/ambiguous-wikilink", source: "moduli", fixes: ["a/moduli", "b/moduli"] },
       { rule: "link/missing-wikilink-target", source: "nowhere", fixes: [] },
     ]);

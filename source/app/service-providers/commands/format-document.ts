@@ -17,33 +17,42 @@
  * END HEADER
  */
 
-import path from 'path'
-import ZettlrCommand from './zettlr-command'
-import { formatMarkdownText, type FlowmarkResult } from '../../util/flowmark-format'
-import { type AppServiceContainer } from '../../app-service-container'
-import { trans } from 'source/common/i18n-main'
+import path from "path";
+import { trans } from "source/common/i18n-main";
+import { type AppServiceContainer } from "../../app-service-container";
+import { type FlowmarkResult, formatMarkdownText } from "../../util/flowmark-format";
+import ZettlrCommand from "./zettlr-command";
 
 export interface FormatDocumentRequest {
-  text: string
+  text: string;
   /** The document the text belongs to. */
-  path: string
+  path: string;
 }
 
 export default class FormatDocument extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'format-document')
+  constructor(app: AppServiceContainer) {
+    super(app, "format-document");
   }
 
-  async run (evt: string, arg: FormatDocumentRequest): Promise<FlowmarkResult> {
-    const task = this._app.lrt.registerTask(trans('Formatting "%s"', path.basename(arg.path)), 'Flowmark', undefined, false)
-    let result: FlowmarkResult
+  async run(evt: string, arg: FormatDocumentRequest): Promise<FlowmarkResult> {
+    const task = this._app.lrt.registerTask(
+      trans('Formatting "%s"', path.basename(arg.path)),
+      "Flowmark",
+      undefined,
+      false,
+    );
+    let result: FlowmarkResult;
     try {
-      result = await formatMarkdownText(arg.text, { env: process.env })
+      result = await formatMarkdownText(
+        arg.text,
+        this._app.config.get().editor.formatTimeoutMs,
+        process.env,
+      );
     } catch (error) {
-      this._app.lrt.settleTask(task, error instanceof Error ? error : new Error(String(error)))
-      throw error
+      this._app.lrt.settleTask(task, error instanceof Error ? error : new Error(String(error)));
+      throw error;
     }
-    this._app.lrt.settleTask(task, result.ok ? undefined : new Error(result.message))
-    return result
+    this._app.lrt.settleTask(task, result.ok ? undefined : new Error(result.message));
+    return result;
   }
 }

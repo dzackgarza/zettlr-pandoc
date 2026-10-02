@@ -63,7 +63,9 @@ describe("persistent editor tabs", function () {
       { maxBuffer: 16 * 1024 * 1024 },
     );
 
-    report = JSON.parse(await readFile(path.join(outputDirectory, "report.json"), "utf8")) as ProbeReport;
+    report = JSON.parse(
+      await readFile(path.join(outputDirectory, "report.json"), "utf8"),
+    ) as ProbeReport;
   });
 
   after(async function () {

@@ -29,7 +29,7 @@ A \\arrow[r] & B \\thisMacroDoesNotExist
 \\end{tikzcd}
 
 The trailing paragraph keeps the caret away from the figures.
-`
+`;
 
 /**
  * Textbook-scale visual audit corpus. These scenes intentionally mirror common
@@ -66,7 +66,7 @@ L-shaped fibre sequence fragment:
 & E \\arrow[d] \\\\
 F \\arrow[r] & B
 \\end{tikzcd}
-`
+`;
 
 export const TEXTBOOK_MEDIUM_SCENE_DOC = `# Textbook TikZ scale — medium diagrams
 
@@ -90,7 +90,7 @@ A_1 \\arrow[r] \\arrow[d] & A_2 \\arrow[r] \\arrow[d] & A_3 \\arrow[d] \\\\
 B_1 \\arrow[r] \\arrow[d] & B_2 \\arrow[r] \\arrow[d] & B_3 \\arrow[d] \\\\
 C_1 \\arrow[r] & C_2 \\arrow[r] & C_3
 \\end{tikzcd}
-`
+`;
 
 export const TEXTBOOK_WIDE_SCENE_DOC = `# Textbook TikZ scale — wide diagrams
 
@@ -115,4 +115,4 @@ E_2^{0,2} & E_2^{1,2} & E_2^{2,2} & E_2^{3,2} & E_2^{4,2} & E_2^{5,2} & E_2^{6,2
 E_2^{0,1} \\arrow[rru] & E_2^{1,1} \\arrow[rru] & E_2^{2,1} \\arrow[rru] & E_2^{3,1} \\arrow[rru] & E_2^{4,1} \\arrow[rru] & E_2^{5,1} \\arrow[rru] & E_2^{6,1} \\arrow[rru] & E_2^{7,1} \\arrow[rru] & E_2^{8,1} \\arrow[rru] & E_2^{9,1} & E_2^{10,1} & E_2^{11,1} \\\\
 E_2^{0,0} & E_2^{1,0} & E_2^{2,0} & E_2^{3,0} & E_2^{4,0} & E_2^{5,0} & E_2^{6,0} & E_2^{7,0} & E_2^{8,0} & E_2^{9,0} & E_2^{10,0} & E_2^{11,0}
 \\end{tikzcd}
-`
+`;

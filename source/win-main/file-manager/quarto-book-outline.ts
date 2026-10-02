@@ -1,49 +1,49 @@
-import type { ProjectNavigationItem } from '@dts/common/fsal'
-import { resolvePath } from '@common/util/renderer-path-polyfill'
+import { resolvePath } from "@common/util/renderer-path-polyfill";
+import type { ProjectNavigationItem } from "@dts/common/fsal";
 
 export interface QuartoBookChapter {
-  path: string
-  title: string
-  position: number
+  path: string;
+  title: string;
+  position: number;
 }
 
 export type QuartoBookOutlineItem =
-  | ({ kind: 'chapter' } & QuartoBookChapter)
-  | { kind: 'part', title: string, chapters: QuartoBookChapter[] }
+  | ({ kind: "chapter" } & QuartoBookChapter)
+  | { kind: "part"; title: string; chapters: QuartoBookChapter[] };
 
 export interface QuartoBookOutline {
-  items: QuartoBookOutlineItem[]
-  orderedPaths: string[]
+  items: QuartoBookOutlineItem[];
+  orderedPaths: string[];
 }
 
-export function buildQuartoBookOutline (
+export function buildQuartoBookOutline(
   rootPath: string,
   navigation: ProjectNavigationItem[],
-  titleForPath: (filePath: string) => string
+  titleForPath: (filePath: string) => string,
 ): QuartoBookOutline {
-  let position = 0
+  let position = 0;
   const chapter = (relativePath: string): QuartoBookChapter => {
-    const filePath = resolvePath(rootPath, relativePath)
-    position += 1
-    return { path: filePath, title: titleForPath(filePath), position }
-  }
+    const filePath = resolvePath(rootPath, relativePath);
+    position += 1;
+    return { path: filePath, title: titleForPath(filePath), position };
+  };
 
-  const items: QuartoBookOutlineItem[] = navigation.map(item => {
-    if (item.kind === 'chapter') {
-      return { kind: 'chapter', ...chapter(item.path) }
+  const items: QuartoBookOutlineItem[] = navigation.map((item) => {
+    if (item.kind === "chapter") {
+      return { kind: "chapter", ...chapter(item.path) };
     }
 
     return {
-      kind: 'part',
+      kind: "part",
       title: item.title,
-      chapters: item.chapters.map(chapter)
-    }
-  })
+      chapters: item.chapters.map(chapter),
+    };
+  });
 
   return {
     items,
-    orderedPaths: items.flatMap(item => item.kind === 'chapter'
-      ? [ item.path ]
-      : item.chapters.map(entry => entry.path))
-  }
+    orderedPaths: items.flatMap((item) =>
+      item.kind === "chapter" ? [item.path] : item.chapters.map((entry) => entry.path),
+    ),
+  };
 }
