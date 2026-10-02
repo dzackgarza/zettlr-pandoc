@@ -29,7 +29,6 @@ import {
   assertCleanExit,
   attach,
   createWorkspaceFixture,
-  delay,
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
@@ -69,21 +68,6 @@ async function clickMenuItem(page: Page, id: string): Promise<void> {
   await page.evaluate((itemId) => {
     window.ipc.send("menu-provider", { command: "click-menu-item", payload: itemId });
   }, id);
-}
-
-async function waitUntil(
-  probe: () => Promise<boolean>,
-  what: string,
-  timeoutMs = 20_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await probe()) {
-      return;
-    }
-    await delay(150);
-  }
-  throw new Error(`Timed out waiting for ${what}`);
 }
 
 async function pressedIcons(page: Page): Promise<string[]> {
@@ -214,8 +198,11 @@ describe("the sidebar views", function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
-    const chapters = activePage.locator(`${SECTION("book")} .quarto-book-outline button.chapter`);
-    await waitUntil(async () => (await chapters.count()) === 4, "the four chapters of the book");
+    await activePage.waitForFunction(
+      (selector) => document.querySelectorAll(selector).length === 4,
+      `${SECTION("book")} .quarto-book-outline button.chapter`,
+      { timeout: 20_000 },
+    );
     assert.equal(
       await activePage.locator(`${SECTION("book")} .book-sections`).count(),
       0,
@@ -230,15 +217,13 @@ describe("the sidebar views", function () {
       .allTextContents();
     assert.equal(headings.length, 1, "forms.md has one heading");
     assert.match(headings[0], /Forms/);
-    await waitUntil(async () => {
-      const collapsed = section(await readConfig(activePage), "ui").sidebarCollapsedSections;
-      return (
-        Array.isArray(collapsed) &&
-        !collapsed.includes("book") &&
-        !collapsed.includes("outline") &&
-        collapsed.includes("relatedFiles")
-      );
-    }, "the collapsed set to persist");
+    await activePage.waitForFunction(() => {
+      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
+        ui: { sidebarCollapsedSections: string[] };
+      };
+      const collapsed = config.ui.sidebarCollapsedSections;
+      return !collapsed.includes("book") && !collapsed.includes("outline") && collapsed.includes("relatedFiles");
+    }, undefined, { timeout: 20_000 });
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage
       .locator(`${SECTION("book")}[data-state="closed"]`)
@@ -256,10 +241,12 @@ describe("the sidebar views", function () {
       "the Explorer left the drawer",
     );
     assert.deepEqual(await pressedIcons(activePage), ["search"]);
-    await waitUntil(
-      async () => section(await readConfig(activePage), "ui").sidebarView === "search",
-      "the view to persist",
-    );
+    await activePage.waitForFunction(() => {
+      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
+        ui: { sidebarView: string };
+      };
+      return config.ui.sidebarView === "search";
+    }, undefined, { timeout: 20_000 });
     screenshots.set("search-view.png", await activePage.screenshot());
 
     await shutdown(browser, appProcess);
@@ -284,10 +271,12 @@ describe("the sidebar views", function () {
       [],
       "no icon is pressed while the drawer is closed",
     );
-    await waitUntil(
-      async () => section(await readConfig(relaunched), "window").fileManagerVisible === false,
-      "the drawer state to persist",
-    );
+    await relaunched.waitForFunction(() => {
+      const config = window.ipc.sendSync("config-provider", { command: "get-config" }) as {
+        window: { fileManagerVisible: boolean };
+      };
+      return config.window.fileManagerVisible === false;
+    }, undefined, { timeout: 20_000 });
     screenshots.set("drawer-closed.png", await relaunched.screenshot());
     await relaunched.locator(ICON("explorer")).click();
     await relaunched.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
@@ -299,14 +288,14 @@ describe("the sidebar views", function () {
     await clickMenuItem(activePage, "menu.find_dir");
     await activePage.locator(VIEW("search")).waitFor({ timeout: 10_000 });
     const queryInput = activePage.locator(`${VIEW("search")} #search-view input`).first();
-    await waitUntil(
-      async () => await queryInput.evaluate((element) => element === document.activeElement),
-      "the query input to take the focus",
+    await activePage.waitForFunction(
+      (selector) => document.activeElement?.matches(selector) === true,
+      `${VIEW("search")} #search-view input`,
+      { timeout: 20_000 },
     );
     await queryInput.fill("lattice");
     await queryInput.press("Enter");
-    const results = activePage.locator(`${VIEW("search")} .file-match`);
-    await waitUntil(async () => (await results.count()) >= 1, "search results");
+    await activePage.locator(`${VIEW("search")} .file-match`).first().waitFor({ timeout: 20_000 });
     screenshots.set("search-results.png", await activePage.screenshot());
   });
 
@@ -335,7 +324,11 @@ describe("the sidebar views", function () {
       "citations open, related files collapsed below",
     );
     const entries = activePage.locator(`${SECTION("citations")} #references-list .csl-entry`);
-    await waitUntil(async () => (await entries.count()) === 1, "the one citation of index.md");
+    await activePage.waitForFunction(
+      (selector) => document.querySelectorAll(selector).length === 1,
+      `${SECTION("citations")} #references-list .csl-entry`,
+      { timeout: 20_000 },
+    );
     assert.match(await entries.first().innerText(), /Mac Lane/);
     await activePage.locator(SECTION_HEADER("relatedFiles")).click();
     await activePage
