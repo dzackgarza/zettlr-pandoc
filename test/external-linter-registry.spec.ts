@@ -53,6 +53,7 @@ describe("external linter registry", function () {
       },
     });
 
+    assert.equal(result.metadata?.lastError, undefined);
     const grammar = result.diagnostics.find(
       (diagnostic) => diagnostic.data?.ruleId === "MD_BASEFORM",
     );
