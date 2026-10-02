@@ -51,7 +51,10 @@ describe("central ~/.pandoc MathJax projection", function () {
 
   it("fails loudly when the central generated projection is absent", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-macros-missing-"));
-    await assert.rejects(loadCanonicalMathJaxMacros(home), /Can't find the generated MathJax macro file/);
+    await assert.rejects(
+      loadCanonicalMathJaxMacros(home),
+      /Can't find the generated MathJax macro file/,
+    );
   });
 });
 

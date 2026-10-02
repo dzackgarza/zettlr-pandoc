@@ -6,16 +6,16 @@ import {
   THEOREM_CLASS_TO_PREFIX,
   THEOREM_FAMILY_METADATA,
 } from "@common/util/pandoc-quick-reference";
+import { type WikilinkIndex, wikilinkTargetsIn } from "@common/util/wikilink-resolution";
 import {
-  REFERENCE_FAMILIES,
   type DocumentReferenceSnapshot,
+  REFERENCE_FAMILIES,
   type ReferenceDefinition,
   type ReferenceOccurrence,
 } from "@dts/common/references";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
-import { wikilinkTargetsIn, type WikilinkIndex } from "@common/util/wikilink-resolution";
-import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
 import { renderTikz, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
+import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
 
 export interface FlowmarkLintContextSource {
   homeDirectory: string;
@@ -64,7 +64,9 @@ export interface WorkspaceDefinitions {
   snapshots: ReadonlyMap<string, DocumentReferenceSnapshot>;
 }
 
-export function workspaceDefinitions(referenceState: WorkspaceReferenceState): WorkspaceDefinitions {
+export function workspaceDefinitions(
+  referenceState: WorkspaceReferenceState,
+): WorkspaceDefinitions {
   const sites = new Map<string, string[]>();
   const snapshots = new Map<string, DocumentReferenceSnapshot>();
   for (const snapshot of referenceState.snapshots) {
@@ -89,9 +91,8 @@ export function flowmarkReferenceContext(
   // The workspace snapshot of the document is the extraction of its text
   // when the two hashes agree; any other text is extracted here.
   const known = workspace.snapshots.get(documentPath);
-  const { sourceHash, definitions, occurrences } = known?.sourceHash === hashDocumentSource(text)
-    ? known
-    : extractReferences(documentPath, text);
+  const { sourceHash, definitions, occurrences } =
+    known?.sourceHash === hashDocumentSource(text) ? known : extractReferences(documentPath, text);
   const ownSites = new Map<string, string[]>();
   for (const definition of definitions) {
     const sites = ownSites.get(definition.key);
@@ -108,7 +109,9 @@ export function flowmarkReferenceContext(
     const workspaceSites = workspace.sites.get(key);
     const own = ownSites.get(key);
     const sites = [
-      ...(workspaceSites === undefined ? [] : workspaceSites.filter((site) => site !== documentPath)),
+      ...(workspaceSites === undefined
+        ? []
+        : workspaceSites.filter((site) => site !== documentPath)),
       ...(own === undefined ? [] : own),
     ].sort();
     if (sites.length === 0) {
@@ -120,7 +123,9 @@ export function flowmarkReferenceContext(
     return { status: "duplicate", definitions: sites.map((site) => ({ documentPath: site })) };
   };
   const keys = new Set([...ownSites.keys(), ...occurrences.map((occurrence) => occurrence.key)]);
-  const resolved = new Map([...keys].map((key): [string, FlowmarkResolution] => [key, resolve(key)]));
+  const resolved = new Map(
+    [...keys].map((key): [string, FlowmarkResolution] => [key, resolve(key)]),
+  );
   if ([...resolved.values()].some((resolution) => resolution.status === "missing")) {
     for (const key of workspace.sites.keys()) {
       const resolution = resolved.get(key) ?? resolve(key);
@@ -130,7 +135,9 @@ export function flowmarkReferenceContext(
     }
   }
   // Sorted keys: the same data has one serialization, and one digest.
-  const resolutions = Object.fromEntries([...resolved].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  const resolutions = Object.fromEntries(
+    [...resolved].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
   return { snapshot: { documentPath, sourceHash, definitions, occurrences }, resolutions };
 }
 
@@ -149,16 +156,24 @@ export function wikilinkResolutions(
   documentPath: string,
   index: WikilinkIndex,
 ): Record<string, FlowmarkWikilinkResolution> {
-  return Object.fromEntries(wikilinkTargetsIn(text).map((target): [string, FlowmarkWikilinkResolution] => {
-    const resolution = index.resolve(target, documentPath);
-    if (resolution.status !== "ambiguous") {
-      return [target, resolution];
-    }
-    return [target, {
-      status: "ambiguous",
-      candidates: resolution.candidates.map((path) => ({ path, canonical: index.canonical(path) })),
-    }];
-  }));
+  return Object.fromEntries(
+    wikilinkTargetsIn(text).map((target): [string, FlowmarkWikilinkResolution] => {
+      const resolution = index.resolve(target, documentPath);
+      if (resolution.status !== "ambiguous") {
+        return [target, resolution];
+      }
+      return [
+        target,
+        {
+          status: "ambiguous",
+          candidates: resolution.candidates.map((path) => ({
+            path,
+            canonical: index.canonical(path),
+          })),
+        },
+      ];
+    }),
+  );
 }
 
 /**

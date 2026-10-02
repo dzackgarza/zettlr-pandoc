@@ -76,35 +76,39 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { computed, onBeforeMount, ref } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import { menuProviderMessageSchema, type SerializedMenuItem } from '@dts/common/serialized-menu'
-import type { ProjectRootSpec, ReferenceDefinition, ReferenceOccurrence } from '@dts/common/references'
-import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import { useConfigStore, useDocumentTreeStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import { invokeReferenceProviderRecoverably } from '../util/recoverable-reference-errors'
-import getDocumentTitle from '../util/get-document-title'
-import { pathBasename, relativePath } from '@common/util/renderer-path-polyfill'
-import type { RecentFiles } from 'source/app/service-providers/recent-docs'
-import { SUPPORTED_READERS } from '@common/pandoc-util/pandoc-maps'
-import { parseReaderWriter } from 'source/common/pandoc-util/parse-reader-writer'
-import type { PandocProfileMetadata, ValidPandocProfile } from '@providers/assets'
-import type { ReferenceJumpIntent } from '../component-contracts'
-import type { JustRepositoryCommands, RunJustRecipeRequest } from '@dts/common/justfile-commands'
-import showToast from '@common/util/show-toast'
-import { buildPreferenceIndex } from 'source/win-preferences/schema'
-import MenuCommandsView from './MenuCommandsView.vue'
-import ReferenceSearchView from './ReferenceSearchView.vue'
-import JustRecipeArgumentsView from './JustRecipeArgumentsView.vue'
+import { trans } from "@common/i18n-renderer";
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
+import type {
+  ProjectRootSpec,
+  ReferenceDefinition,
+  ReferenceOccurrence,
+} from "@dts/common/references";
+import { menuProviderMessageSchema, type SerializedMenuItem } from "@dts/common/serialized-menu";
+import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
+import type { RecentFiles } from "source/app/service-providers/recent-docs";
+import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
+import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import { buildPreferenceIndex } from "source/win-preferences/schema";
+import { computed, onBeforeMount, ref } from "vue";
+import type { ReferenceJumpIntent } from "../component-contracts";
+import getDocumentTitle from "../util/get-document-title";
+import { invokeReferenceProviderRecoverably } from "../util/recoverable-reference-errors";
+import JustRecipeArgumentsView from "./JustRecipeArgumentsView.vue";
 import {
   allMenuLeafRows,
   breadcrumbOf,
-  justRecipeLabel,
-  menuGroupRows,
-  rankRows,
   type DynamicGroupId,
   type DynamicGroupRow,
   type ExportCommandRow,
@@ -113,473 +117,508 @@ import {
   type FileRow,
   type HeadingRow,
   type JustRecipeRow,
+  justRecipeLabel,
+  type LauncherRow,
+  menuGroupRows,
   type PreferenceRow,
-  type LauncherRow
-} from './launcher-rows'
+  rankRows,
+} from "./launcher-rows";
 import {
   CLOSED_LAUNCHER,
   closeLauncher,
   drillInto,
+  type LauncherState,
+  type LauncherView,
   openLauncherAt,
   popLevel,
   setQuery,
-  type LauncherState,
-  type LauncherView
-} from './launcher-state'
+} from "./launcher-state";
+import MenuCommandsView from "./MenuCommandsView.vue";
+import ReferenceSearchView from "./ReferenceSearchView.vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const emit = defineEmits<{
-  (e: 'open-file', path: string): void
-  (e: 'jump-to-line', line: number): void
-  (e: 'jump', intent: ReferenceJumpIntent): void
-  (e: 'open-help'): void
-  (e: 'export', request: ExportRequest): void
-}>()
+  (e: "open-file", path: string): void;
+  (e: "jump-to-line", line: number): void;
+  (e: "jump", intent: ReferenceJumpIntent): void;
+  (e: "open-help"): void;
+  (e: "export", request: ExportRequest): void;
+}>();
 
-const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
+const configStore = useConfigStore();
+const documentTreeStore = useDocumentTreeStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
 
-const dialogLabel = trans('Command launcher')
+const dialogLabel = trans("Command launcher");
 
-const state = ref<LauncherState>(CLOSED_LAUNCHER)
+const state = ref<LauncherState>(CLOSED_LAUNCHER);
 
 // The serialised application menu, parsed once at the IPC boundary and
 // refreshed whenever the provider rebuilds the menu.
-const menu = ref<SerializedMenuItem[]>([])
+const menu = ref<SerializedMenuItem[]>([]);
 
 onBeforeMount(() => {
-  ipcRenderer.on('menu-provider', (_event, payload: unknown) => {
-    const message = menuProviderMessageSchema.parse(payload)
-    if (message.command === 'application-menu') {
-      menu.value = message.payload
+  ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
+    const message = menuProviderMessageSchema.parse(payload);
+    if (message.command === "application-menu") {
+      menu.value = message.payload;
     }
-  })
-  ipcRenderer.send('menu-provider', { command: 'get-application-menu' })
-})
+  });
+  ipcRenderer.send("menu-provider", { command: "get-application-menu" });
+});
 
 const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
-  { kind: 'dynamic-group', id: 'go-to-file', label: trans('Go to file') },
-  { kind: 'dynamic-group', id: 'recent-opened', label: trans('Recently opened files') },
-  { kind: 'dynamic-group', id: 'recent-edited', label: trans('Recently edited files') },
-  { kind: 'dynamic-group', id: 'go-to-heading', label: trans('Go to heading') },
-  { kind: 'dynamic-group', id: 'search-references', label: trans('Search references') },
-  { kind: 'dynamic-group', id: 'preferences', label: trans('Preferences') },
-  { kind: 'dynamic-group', id: 'export', label: trans('Export as…') }
-]
+  { kind: "dynamic-group", id: "go-to-file", label: trans("Go to file") },
+  { kind: "dynamic-group", id: "recent-opened", label: trans("Recently opened files") },
+  { kind: "dynamic-group", id: "recent-edited", label: trans("Recently edited files") },
+  { kind: "dynamic-group", id: "go-to-heading", label: trans("Go to heading") },
+  { kind: "dynamic-group", id: "search-references", label: trans("Search references") },
+  { kind: "dynamic-group", id: "preferences", label: trans("Preferences") },
+  { kind: "dynamic-group", id: "export", label: trans("Export as…") },
+];
 
-const justRepositories = ref<JustRepositoryCommands[]>([])
+const justRepositories = ref<JustRepositoryCommands[]>([]);
 
 /** The base groups, with the Justfile group before Export when a workspace has recipes. */
 const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
   if (justRepositories.value.length === 0) {
-    return BASE_DYNAMIC_GROUPS
+    return BASE_DYNAMIC_GROUPS;
   }
-  const exportAt = BASE_DYNAMIC_GROUPS.findIndex(row => row.id === 'export')
+  const exportAt = BASE_DYNAMIC_GROUPS.findIndex((row) => row.id === "export");
   return [
     ...BASE_DYNAMIC_GROUPS.slice(0, exportAt),
-    { kind: 'dynamic-group', id: 'justfile', label: trans('Justfile commands') },
-    ...BASE_DYNAMIC_GROUPS.slice(exportAt)
-  ]
-})
+    { kind: "dynamic-group", id: "justfile", label: trans("Justfile commands") },
+    ...BASE_DYNAMIC_GROUPS.slice(exportAt),
+  ];
+});
 
 // The recent files view's data: both lists, newest first, fetched when the
 // view opens; the provider keeps them across restarts.
-const recentFiles = ref<RecentFiles>({ opened: [], edited: [] })
+const recentFiles = ref<RecentFiles>({ opened: [], edited: [] });
 
-async function loadRecentFiles (): Promise<boolean> {
-  recentFiles.value = await ipcRenderer.invoke('application', { command: 'list-recent-files' })
-  return true
+async function loadRecentFiles(): Promise<boolean> {
+  recentFiles.value = await ipcRenderer.invoke("application", { command: "list-recent-files" });
+  return true;
 }
 
 /** Git-root Just recipes visible from the currently open workspace roots. */
-async function loadJustfileCommands (): Promise<boolean> {
+async function loadJustfileCommands(): Promise<boolean> {
   try {
-    justRepositories.value = await ipcRenderer.invoke('application', {
-      command: 'list-justfile-commands',
-      payload: [ ...configStore.config.app.openWorkspaces ]
-    })
+    justRepositories.value = await ipcRenderer.invoke("application", {
+      command: "list-justfile-commands",
+      payload: [...configStore.config.app.openWorkspaces],
+    });
   } catch (err: unknown) {
-    justRepositories.value = []
-    reportError('[CommandLauncher] Could not discover Justfile commands', err)
+    justRepositories.value = [];
+    reportError("[CommandLauncher] Could not discover Justfile commands", err);
   }
-  return true
+  return true;
 }
 
 // The export view's data: the profiles the assets provider can run, fetched
 // when the view opens; the custom commands come from the config.
-const exportProfiles = ref<ValidPandocProfile[]>([])
+const exportProfiles = ref<ValidPandocProfile[]>([]);
 
 /** Loads the export profiles Zettlr can run on its own documents. */
-async function loadExportProfiles (): Promise<boolean> {
-  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke('assets-provider', { command: 'list-export-profiles' })
+async function loadExportProfiles(): Promise<boolean> {
+  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke("assets-provider", {
+    command: "list-export-profiles",
+  });
   exportProfiles.value = listed
     .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
-    .filter(profile => SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name))
-  return true
+    .filter((profile) => SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name));
+  return true;
 }
 
 /** The profile's name without its extension, and the writer it runs. */
-function exportProfileLabel (profile: ValidPandocProfile): string {
-  return `${profile.name.substring(0, profile.name.lastIndexOf('.'))} (${profile.writer})`
+function exportProfileLabel(profile: ValidPandocProfile): string {
+  return `${profile.name.substring(0, profile.name.lastIndexOf("."))} (${profile.writer})`;
 }
 
 /** The last profile exported for the active document, else the last used anywhere. */
 const rememberedExportProfile = computed<string>(() => {
-  const activePath = documentTreeStore.lastLeafActiveFile?.path
-  const entry = configStore.config.export.selectedProfiles.find(item => item.filePath === activePath)
-  return entry === undefined ? configStore.config.export.lastUsedProfile : entry.profile
-})
+  const activePath = documentTreeStore.lastLeafActiveFile?.path;
+  const entry = configStore.config.export.selectedProfiles.find(
+    (item) => item.filePath === activePath,
+  );
+  return entry === undefined ? configStore.config.export.lastUsedProfile : entry.profile;
+});
 
 /** The export rows, the remembered profile first so Enter re-exports. */
 const exportRows = computed<LauncherRow[]>(() => {
-  const commandLabel = trans('command')
-  const profileRows: ExportProfileRow[] = exportProfiles.value.map(profile => ({
-    kind: 'export-profile',
+  const commandLabel = trans("command");
+  const profileRows: ExportProfileRow[] = exportProfiles.value.map((profile) => ({
+    kind: "export-profile",
     profile,
-    label: exportProfileLabel(profile)
-  }))
-  const commandRows: ExportCommandRow[] = configStore.config.export.customCommands.map(command => ({
-    kind: 'export-command',
-    displayName: command.displayName,
-    command: command.command,
-    label: `${command.displayName} (${commandLabel})`
-  }))
-  const rows: LauncherRow[] = [ ...profileRows, ...commandRows ]
-  const remembered = rememberedExportProfile.value
-  const first = rows.findIndex(row => (row.kind === 'export-profile' ? row.profile.name : row.kind === 'export-command' ? row.command : '') === remembered)
+    label: exportProfileLabel(profile),
+  }));
+  const commandRows: ExportCommandRow[] = configStore.config.export.customCommands.map(
+    (command) => ({
+      kind: "export-command",
+      displayName: command.displayName,
+      command: command.command,
+      label: `${command.displayName} (${commandLabel})`,
+    }),
+  );
+  const rows: LauncherRow[] = [...profileRows, ...commandRows];
+  const remembered = rememberedExportProfile.value;
+  const first = rows.findIndex(
+    (row) =>
+      (row.kind === "export-profile"
+        ? row.profile.name
+        : row.kind === "export-command"
+          ? row.command
+          : "") === remembered,
+  );
   if (first <= 0) {
-    return rows
+    return rows;
   }
-  return [ rows[first], ...rows.slice(0, first), ...rows.slice(first + 1) ]
-})
+  return [rows[first], ...rows.slice(0, first), ...rows.slice(first + 1)];
+});
 
 /** How many per-document profile choices the config keeps. */
-const rememberedProfilesLimit = 50
+const rememberedProfilesLimit = 50;
 
 /** Remembers the profile chosen for the active document, for the next export. */
-function rememberExportProfile (profile: string): void {
-  const filePath = documentTreeStore.lastLeafActiveFile?.path
+function rememberExportProfile(profile: string): void {
+  const filePath = documentTreeStore.lastLeafActiveFile?.path;
   if (filePath === undefined) {
-    return
+    return;
   }
   const previous = configStore.config.export.selectedProfiles
-    .filter(item => item.filePath !== filePath)
-    .slice(-(rememberedProfilesLimit - 1))
-  configStore.setConfigValue('export.selectedProfiles', [ ...previous, { filePath, profile } ])
-  configStore.setConfigValue('export.lastUsedProfile', profile)
+    .filter((item) => item.filePath !== filePath)
+    .slice(-(rememberedProfilesLimit - 1));
+  configStore.setConfigValue("export.selectedProfiles", [...previous, { filePath, profile }]);
+  configStore.setConfigValue("export.lastUsedProfile", profile);
 }
 
 /**
  * A document as a row: its title when the workspace knows it, else its file
  * name; and its directory relative to the root that holds it.
  */
-function fileRowFor (filePath: string): FileRow {
-  const descriptor = workspaceStore.descriptorMap.get(filePath)
-  const label = descriptor !== undefined && (descriptor.type === 'file' || descriptor.type === 'code')
-    ? getDocumentTitle(descriptor)
-    : pathBasename(filePath)
-  const root = workspaceStore.rootDescriptors.map(root => root.path).find(rootPath => filePath.startsWith(rootPath))
-  const relative = root === undefined ? filePath : relativePath(root, filePath)
-  const directory = relative.split('/').slice(0, -1).filter(segment => segment !== '')
-  return { kind: 'file', path: filePath, label, breadcrumb: directory }
+function fileRowFor(filePath: string): FileRow {
+  const descriptor = workspaceStore.descriptorMap.get(filePath);
+  const label =
+    descriptor !== undefined && (descriptor.type === "file" || descriptor.type === "code")
+      ? getDocumentTitle(descriptor)
+      : pathBasename(filePath);
+  const root = workspaceStore.rootDescriptors
+    .map((root) => root.path)
+    .find((rootPath) => filePath.startsWith(rootPath));
+  const relative = root === undefined ? filePath : relativePath(root, filePath);
+  const directory = relative
+    .split("/")
+    .slice(0, -1)
+    .filter((segment) => segment !== "");
+  return { kind: "file", path: filePath, label, breadcrumb: directory };
 }
 
 /** Every workspace document as a row. */
 const fileRows = computed<FileRow[]>(() => {
-  const rows: FileRow[] = []
+  const rows: FileRow[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'file' || descriptor.type === 'code') {
-      rows.push(fileRowFor(descriptor.path))
+    if (descriptor.type === "file" || descriptor.type === "code") {
+      rows.push(fileRowFor(descriptor.path));
     }
   }
-  return rows
-})
+  return rows;
+});
 
 /** The recently opened files, newest first; the empty query keeps that order. */
-const recentOpenedRows = computed<FileRow[]>(() => recentFiles.value.opened.map(fileRowFor))
+const recentOpenedRows = computed<FileRow[]>(() => recentFiles.value.opened.map(fileRowFor));
 
 /** The recently edited files, newest save first. */
-const recentEditedRows = computed<FileRow[]>(() => recentFiles.value.edited.map(fileRowFor))
+const recentEditedRows = computed<FileRow[]>(() => recentFiles.value.edited.map(fileRowFor));
 
 /** The active document's headings, in document order. */
 const headingRows = computed<HeadingRow[]>(() => {
-  const toc = windowStateStore.tableOfContents
+  const toc = windowStateStore.tableOfContents;
   if (toc === undefined) {
-    return []
+    return [];
   }
-  return toc.map(entry => ({ kind: 'heading', line: entry.line, level: entry.level, label: entry.text }))
-})
+  return toc.map((entry) => ({
+    kind: "heading",
+    line: entry.line,
+    level: entry.level,
+    label: entry.text,
+  }));
+});
 
 /** Public root recipes, with repository/group breadcrumbs when applicable. */
 const justRecipeRows = computed<JustRecipeRow[]>(() => {
-  const multipleRepositories = justRepositories.value.length > 1
-  return justRepositories.value.flatMap(repository => repository.recipes.map(recipe => ({
-    kind: 'just-recipe',
-    repoRoot: repository.repoRoot,
-    repoLabel: repository.repoLabel,
-    name: recipe.name,
-    doc: recipe.doc,
-    group: recipe.group,
-    parameters: recipe.parameters,
-    label: justRecipeLabel(recipe),
-    breadcrumb: [
-      ...(multipleRepositories ? [ repository.repoLabel ] : []),
-      ...(recipe.group === null ? [] : [ recipe.group ])
-    ]
-  })))
-})
+  const multipleRepositories = justRepositories.value.length > 1;
+  return justRepositories.value.flatMap((repository) =>
+    repository.recipes.map((recipe) => ({
+      kind: "just-recipe",
+      repoRoot: repository.repoRoot,
+      repoLabel: repository.repoLabel,
+      name: recipe.name,
+      doc: recipe.doc,
+      group: recipe.group,
+      parameters: recipe.parameters,
+      label: justRecipeLabel(recipe),
+      breadcrumb: [
+        ...(multipleRepositories ? [repository.repoLabel] : []),
+        ...(recipe.group === null ? [] : [recipe.group]),
+      ],
+    })),
+  );
+});
 
 /** Every Preferences card and labeled control, derived from the real schemas. */
-const preferenceRows = computed<PreferenceRow[]>(() => buildPreferenceIndex(configStore.config).map(entry => ({
-  kind: 'preference',
-  group: entry.group,
-  fieldsetTitle: entry.fieldsetTitle ?? entry.label,
-  model: entry.model,
-  label: entry.label,
-  breadcrumb: [
-    entry.groupLabel,
-    ...(entry.label === entry.fieldsetTitle ? [] : [ entry.fieldsetTitle ?? entry.label ])
-  ],
-  aliases: entry.aliases
-})))
+const preferenceRows = computed<PreferenceRow[]>(() =>
+  buildPreferenceIndex(configStore.config).map((entry) => ({
+    kind: "preference",
+    group: entry.group,
+    fieldsetTitle: entry.fieldsetTitle ?? entry.label,
+    model: entry.model,
+    label: entry.label,
+    breadcrumb: [
+      entry.groupLabel,
+      ...(entry.label === entry.fieldsetTitle ? [] : [entry.fieldsetTitle ?? entry.label]),
+    ],
+    aliases: entry.aliases,
+  })),
+);
 
 /** Each dynamic group's rows, by the group that lists them. */
 const dynamicGroupRows = {
-  'go-to-file': fileRows,
-  'recent-opened': recentOpenedRows,
-  'recent-edited': recentEditedRows,
-  'go-to-heading': headingRows,
+  "go-to-file": fileRows,
+  "recent-opened": recentOpenedRows,
+  "recent-edited": recentEditedRows,
+  "go-to-heading": headingRows,
   preferences: preferenceRows,
   justfile: justRecipeRows,
-  export: exportRows
-} as const
+  export: exportRows,
+} as const;
 
 /** The rows of the current view before the query ranks them. */
-function viewRows (view: LauncherView, query: string): LauncherRow[] {
+function viewRows(view: LauncherView, query: string): LauncherRow[] {
   switch (view.kind) {
-    case 'root': {
-      const groups = menuGroupRows(menu.value, [])
-      const indexedRows = query === ''
-        ? []
-        : [ ...allMenuLeafRows(menu.value), ...preferenceRows.value ]
-      return [ ...groups, ...dynamicGroups.value, ...indexedRows ]
+    case "root": {
+      const groups = menuGroupRows(menu.value, []);
+      const indexedRows =
+        query === "" ? [] : [...allMenuLeafRows(menu.value), ...preferenceRows.value];
+      return [...groups, ...dynamicGroups.value, ...indexedRows];
     }
-    case 'menu-group':
-      return menuGroupRows(menu.value, view.path)
-    case 'dynamic-group':
-      return dynamicGroupRows[view.id].value
-    case 'references':
-      return []
-    case 'just-arguments':
-      return []
+    case "menu-group":
+      return menuGroupRows(menu.value, view.path);
+    case "dynamic-group":
+      return dynamicGroupRows[view.id].value;
+    case "references":
+      return [];
+    case "just-arguments":
+      return [];
   }
 }
 
 /** The data a dynamic group fetches before it opens; the others read stores. */
 const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>>> = {
-  'recent-opened': loadRecentFiles,
-  'recent-edited': loadRecentFiles,
-  'search-references': loadReferences,
+  "recent-opened": loadRecentFiles,
+  "recent-edited": loadRecentFiles,
+  "search-references": loadReferences,
   justfile: loadJustfileCommands,
-  export: loadExportProfiles
-}
+  export: loadExportProfiles,
+};
 
 /** The view a dynamic group row drills into. */
-function dynamicGroupView (id: DynamicGroupId): LauncherView {
-  return id === 'search-references'
-    ? { kind: 'references', request: null }
-    : { kind: 'dynamic-group', id }
+function dynamicGroupView(id: DynamicGroupId): LauncherView {
+  return id === "search-references"
+    ? { kind: "references", request: null }
+    : { kind: "dynamic-group", id };
 }
 
 const rows = computed<LauncherRow[]>(() => {
   if (!state.value.open) {
-    return []
+    return [];
   }
-  return rankRows(viewRows(state.value.view, state.value.query), state.value.query)
-})
+  return rankRows(viewRows(state.value.view, state.value.query), state.value.query);
+});
 
 const breadcrumb = computed<readonly string[]>(() => {
   if (!state.value.open) {
-    return []
+    return [];
   }
-  const view = state.value.view
-  if (view.kind === 'menu-group') {
-    return breadcrumbOf(menu.value, view.path)
+  const view = state.value.view;
+  if (view.kind === "menu-group") {
+    return breadcrumbOf(menu.value, view.path);
   }
-  if (view.kind === 'dynamic-group') {
-    const group = dynamicGroups.value.find(row => row.id === view.id)
-    return group === undefined ? [] : [ group.label ]
+  if (view.kind === "dynamic-group") {
+    const group = dynamicGroups.value.find((row) => row.id === view.id);
+    return group === undefined ? [] : [group.label];
   }
-  return []
-})
+  return [];
+});
 
 // The references view's data: fetched from the reference provider when the
 // view opens, the same snapshot the editor's badges read (issues #53, #46).
-const referenceDefinitions = ref<ReferenceDefinition[]>([])
-const referenceOccurrences = ref<ReferenceOccurrence[]>([])
-const referenceProjectRoots = ref<ProjectRootSpec[]>([])
-const referenceActiveDocumentPath = ref<string | undefined>(undefined)
+const referenceDefinitions = ref<ReferenceDefinition[]>([]);
+const referenceOccurrences = ref<ReferenceOccurrence[]>([]);
+const referenceProjectRoots = ref<ProjectRootSpec[]>([]);
+const referenceActiveDocumentPath = ref<string | undefined>(undefined);
 
 /**
  * Every Project root visible in the workspace, projected to the pure
  * ProjectRootSpec shape the ranking consumes.
  */
-function collectProjectRoots (): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = []
+function collectProjectRoots(): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
-      roots.push({ rootPath: descriptor.path, files: [...descriptor.settings.project.files] })
+    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
+      roots.push({ rootPath: descriptor.path, files: [...descriptor.settings.project.files] });
     }
   }
-  return roots
+  return roots;
 }
 
 /** Loads the workspace reference snapshot; a failed fetch surfaces its own toast and returns false. */
-async function loadReferences (): Promise<boolean> {
+async function loadReferences(): Promise<boolean> {
   const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
-  )
-  if (outcome.status === 'failed') {
-    return false
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
+  );
+  if (outcome.status === "failed") {
+    return false;
   }
-  referenceDefinitions.value = outcome.value.snapshots.flatMap(snapshot => snapshot.definitions)
-  referenceOccurrences.value = outcome.value.snapshots.flatMap(snapshot => snapshot.occurrences)
-  referenceProjectRoots.value = collectProjectRoots()
-  referenceActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path
-  return true
+  referenceDefinitions.value = outcome.value.snapshots.flatMap((snapshot) => snapshot.definitions);
+  referenceOccurrences.value = outcome.value.snapshots.flatMap((snapshot) => snapshot.occurrences);
+  referenceProjectRoots.value = collectProjectRoots();
+  referenceActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path;
+  return true;
 }
 
 /** Opens the launcher on a view: the root, a dynamic group, or the references search for a relayed request. */
-async function open (view: LauncherView): Promise<void> {
-  if (view.kind === 'root') {
-    await loadJustfileCommands()
+async function open(view: LauncherView): Promise<void> {
+  if (view.kind === "root") {
+    await loadJustfileCommands();
   }
-  if (view.kind === 'references' && !(await loadReferences())) {
-    return
+  if (view.kind === "references" && !(await loadReferences())) {
+    return;
   }
-  if (view.kind === 'dynamic-group') {
-    const load = dynamicGroupLoaders[view.id]
+  if (view.kind === "dynamic-group") {
+    const load = dynamicGroupLoaders[view.id];
     if (load !== undefined && !(await load())) {
-      return
+      return;
     }
   }
-  state.value = openLauncherAt(view)
+  state.value = openLauncherAt(view);
 }
 
-function close (): void {
-  state.value = closeLauncher()
+function close(): void {
+  state.value = closeLauncher();
 }
 
-function back (): void {
-  state.value = popLevel(state.value)
+function back(): void {
+  state.value = popLevel(state.value);
 }
 
-function setLauncherQuery (query: string): void {
-  state.value = setQuery(state.value, query)
+function setLauncherQuery(query: string): void {
+  state.value = setQuery(state.value, query);
 }
 
-function onOpenChange (open: boolean): void {
+function onOpenChange(open: boolean): void {
   if (!open) {
-    close()
+    close();
   }
 }
 
 /** Drills into a group row or executes a leaf row. */
-async function run (row: LauncherRow): Promise<void> {
+async function run(row: LauncherRow): Promise<void> {
   switch (row.kind) {
-    case 'menu-group':
-      state.value = drillInto(state.value, { kind: 'menu-group', path: row.path })
-      return
-    case 'dynamic-group': {
-      const load = dynamicGroupLoaders[row.id]
+    case "menu-group":
+      state.value = drillInto(state.value, { kind: "menu-group", path: row.path });
+      return;
+    case "dynamic-group": {
+      const load = dynamicGroupLoaders[row.id];
       if (load !== undefined && !(await load())) {
-        return
+        return;
       }
-      state.value = drillInto(state.value, dynamicGroupView(row.id))
-      return
+      state.value = drillInto(state.value, dynamicGroupView(row.id));
+      return;
     }
-    case 'menu-leaf':
-      close()
-      ipcRenderer.send('menu-provider', { command: 'click-menu-item', payload: row.id })
-      return
-    case 'file':
-      close()
-      emit('open-file', row.path)
-      return
-    case 'heading':
-      close()
-      emit('jump-to-line', row.line)
-      return
-    case 'export-profile':
-      rememberExportProfile(row.profile.name)
-      close()
-      emit('export', { kind: 'profile', profile: row.profile })
-      return
-    case 'export-command':
-      close()
-      emit('export', { kind: 'command', displayName: row.displayName, command: row.command })
-      return
-    case 'just-recipe':
+    case "menu-leaf":
+      close();
+      ipcRenderer.send("menu-provider", { command: "click-menu-item", payload: row.id });
+      return;
+    case "file":
+      close();
+      emit("open-file", row.path);
+      return;
+    case "heading":
+      close();
+      emit("jump-to-line", row.line);
+      return;
+    case "export-profile":
+      rememberExportProfile(row.profile.name);
+      close();
+      emit("export", { kind: "profile", profile: row.profile });
+      return;
+    case "export-command":
+      close();
+      emit("export", { kind: "command", displayName: row.displayName, command: row.command });
+      return;
+    case "just-recipe":
       if (row.parameters.length === 0) {
-        await runJustRecipe(row, [])
-        return
+        await runJustRecipe(row, []);
+        return;
       }
-      state.value = drillInto(state.value, { kind: 'just-arguments', recipe: row })
-      return
-    case 'preference':
-      close()
-      await ipcRenderer.invoke('application', {
-        command: 'open-preferences',
+      state.value = drillInto(state.value, { kind: "just-arguments", recipe: row });
+      return;
+    case "preference":
+      close();
+      await ipcRenderer.invoke("application", {
+        command: "open-preferences",
         payload: {
           group: row.group,
           fieldsetTitle: row.fieldsetTitle,
-          model: row.model
-        }
-      })
-      return
+          model: row.model,
+        },
+      });
+      return;
   }
 }
 
 /** Launches the selected recipe in a detached kitty terminal at its Git root. */
-async function runJustRecipe (recipe: JustRecipeRow, args: string[]): Promise<void> {
-  close()
+async function runJustRecipe(recipe: JustRecipeRow, args: string[]): Promise<void> {
+  close();
   try {
-    const error = await ipcRenderer.invoke('application', {
-      command: 'run-just-recipe',
+    const error = await ipcRenderer.invoke("application", {
+      command: "run-just-recipe",
       payload: {
         repoRoot: recipe.repoRoot,
         recipe: recipe.name,
-        args
-      } satisfies RunJustRecipeRequest
-    })
-    if (error !== '') {
-      showToast(trans('Could not launch Just recipe %s: %s', recipe.name, error), 'error')
+        args,
+      } satisfies RunJustRecipeRequest,
+    });
+    if (error !== "") {
+      showToast(trans("Could not launch Just recipe %s: %s", recipe.name, error), "error");
     }
   } catch (err: unknown) {
-    showToast(trans(
-      'Could not launch Just recipe %s: %s',
-      recipe.name,
-      err instanceof Error ? err.message : String(err)
-    ), 'error')
+    showToast(
+      trans(
+        "Could not launch Just recipe %s: %s",
+        recipe.name,
+        err instanceof Error ? err.message : String(err),
+      ),
+      "error",
+    );
   }
 }
 
-function onReferenceJump (intent: ReferenceJumpIntent): void {
-  close()
-  emit('jump', intent)
+function onReferenceJump(intent: ReferenceJumpIntent): void {
+  close();
+  emit("jump", intent);
 }
 
-function onOpenHelp (): void {
-  close()
-  emit('open-help')
+function onOpenHelp(): void {
+  close();
+  emit("open-help");
 }
 
-defineExpose({ open, close })
+defineExpose({ open, close });
 </script>
 
 <style lang="less">

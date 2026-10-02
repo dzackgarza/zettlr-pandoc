@@ -32,7 +32,6 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetTikzRenderMemoForTests,
@@ -45,72 +44,7 @@ import {
   type EditorConfiguration,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
-
-function polyfillJsdomForCodeMirror(): void {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    const requestFrame = (callback: FrameRequestCallback): number =>
-      Number(setTimeout(() => callback(Date.now()), 0));
-    const cancelFrame = (id: number): void => {
-      clearTimeout(id);
-    };
-    Object.defineProperties(globalThis, {
-      requestAnimationFrame: { configurable: true, value: requestFrame, writable: true },
-      cancelAnimationFrame: { configurable: true, value: cancelFrame, writable: true },
-    });
-  }
-  if (typeof window === "object" && typeof window.requestAnimationFrame !== "function") {
-    Object.defineProperties(window, {
-      requestAnimationFrame: {
-        configurable: true,
-        value: globalThis.requestAnimationFrame,
-        writable: true,
-      },
-      cancelAnimationFrame: {
-        configurable: true,
-        value: globalThis.cancelAnimationFrame,
-        writable: true,
-      },
-    });
-  }
-  if (typeof globalThis.ResizeObserver !== "function") {
-    class TestResizeObserver {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    Object.defineProperty(globalThis, "ResizeObserver", {
-      configurable: true,
-      value: TestResizeObserver,
-      writable: true,
-    });
-    if (typeof window === "object") {
-      Object.defineProperty(window, "ResizeObserver", {
-        configurable: true,
-        value: TestResizeObserver,
-        writable: true,
-      });
-    }
-  }
-  if (typeof Range !== "undefined" && typeof Range.prototype.getClientRects !== "function") {
-    Object.defineProperties(Range.prototype, {
-      getClientRects: { configurable: true, value: () => [] },
-      getBoundingClientRect: {
-        configurable: true,
-        value: () => ({
-          bottom: 0,
-          height: 0,
-          left: 0,
-          right: 0,
-          top: 0,
-          width: 0,
-          x: 0,
-          y: 0,
-          toJSON: () => ({}),
-        }),
-      },
-    });
-  }
-}
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 const RAW_BLOCK = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
 const FENCE_BODY = "\\documentclass[tikz]{standalone}\\begin{document}x\\end{document}";
@@ -182,7 +116,6 @@ describe("TikZ editor widgets (issue #14)", function () {
   let previousIpc: PropertyDescriptor | undefined;
 
   before(function () {
-    polyfillJsdomForCodeMirror();
     previousIpc = Object.getOwnPropertyDescriptor(window, "ipc");
   });
 
@@ -637,7 +570,8 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.ok(text.includes("Package metadata 0"), "the start of the log is available");
     assert.ok(text.includes("Package metadata 59"), "the end of the log is available");
     assert.ok(
-      view.dom.querySelector<HTMLButtonElement>(".tikz-error button")?.textContent === "Copy diagnostics",
+      view.dom.querySelector<HTMLButtonElement>(".tikz-error button")?.textContent ===
+        "Copy diagnostics",
       "the complete log has a copy action",
     );
     assert.ok(
@@ -687,11 +621,16 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.equal(view.state.selection.main.from, selectionBefore.from);
     assert.equal(view.state.selection.main.to, selectionBefore.to);
     assert.equal(getComputedStyle(box).userSelect, "text");
-    const edit = Array.from(box.querySelectorAll("button")).find((button) => button.textContent === "Edit source");
+    const edit = Array.from(box.querySelectorAll("button")).find(
+      (button) => button.textContent === "Edit source",
+    );
     assert.ok(edit, "failed figures expose their authored source");
     edit.click();
     assert.ok(view.state.selection.main.to > view.state.selection.main.from);
-    assert.match(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to), /\\begin\{tikzcd\}/u);
+    assert.match(
+      view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to),
+      /\\begin\{tikzcd\}/u,
+    );
   });
 
   it("names the missing tools when the toolchain is absent", async function () {

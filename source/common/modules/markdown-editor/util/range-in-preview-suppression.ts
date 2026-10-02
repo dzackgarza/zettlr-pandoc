@@ -12,10 +12,10 @@
  * END HEADER
  */
 
-import type { EditorState } from '@codemirror/state'
-import type { ViewUpdate } from '@codemirror/view'
-import { getReviewChunks } from '../plugins/review-chunks'
-import { rangeInSelection } from './range-in-selection'
+import type { EditorState } from "@codemirror/state";
+import type { ViewUpdate } from "@codemirror/view";
+import { getReviewChunks } from "../plugins/review-chunks";
+import { rangeInSelection } from "./range-in-selection";
 
 /**
  * Returns true when a normal live-preview renderer must leave a source range
@@ -39,8 +39,8 @@ import { rangeInSelection } from './range-in-selection'
  * widgets stay rendered over newly active chunks (hiding their controls), and
  * ranges stay raw after a review clears.
  */
-export function reviewSuppressionChanged (update: ViewUpdate): boolean {
-  return getReviewChunks(update.startState) !== getReviewChunks(update.state)
+export function reviewSuppressionChanged(update: ViewUpdate): boolean {
+  return getReviewChunks(update.startState) !== getReviewChunks(update.state);
 }
 
 /**
@@ -48,37 +48,39 @@ export function reviewSuppressionChanged (update: ViewUpdate): boolean {
  * renderer that keeps its decorations between transactions computes again the
  * decorations that touch these ranges.
  */
-export function previewSuppressionRanges (state: EditorState): Array<{ from: number, to: number }> {
-  const ranges: Array<{ from: number, to: number }> = [...state.selection.ranges]
-  const suggestions = getReviewChunks(state)
+export function previewSuppressionRanges(state: EditorState): Array<{ from: number; to: number }> {
+  const ranges: Array<{ from: number; to: number }> = [...state.selection.ranges];
+  const suggestions = getReviewChunks(state);
   if (suggestions === null) {
-    return ranges
+    return ranges;
   }
   for (const suggestion of suggestions) {
-    const ownedSpans = suggestion.anchors.filter(anchor => anchor.to > anchor.from)
+    const ownedSpans = suggestion.anchors.filter((anchor) => anchor.to > anchor.from);
     if (ownedSpans.length === 0) {
-      const seam = suggestion.anchors[0]?.from ?? suggestion.seam
-      ranges.push({ from: seam, to: seam })
+      const seam = suggestion.anchors[0]?.from ?? suggestion.seam;
+      ranges.push({ from: seam, to: seam });
     } else {
-      ranges.push(...ownedSpans)
+      ranges.push(...ownedSpans);
     }
   }
-  return ranges
+  return ranges;
 }
 
 /** Whether previewSuppressionRanges can differ between two states of one document. */
-export function previewSuppressionChanged (before: EditorState, after: EditorState): boolean {
-  return before.selection !== after.selection || getReviewChunks(before) !== getReviewChunks(after)
+export function previewSuppressionChanged(before: EditorState, after: EditorState): boolean {
+  return before.selection !== after.selection || getReviewChunks(before) !== getReviewChunks(after);
 }
 
-export function rangeInPreviewSuppression (
+export function rangeInPreviewSuppression(
   state: EditorState,
   rangeFrom: number,
   rangeTo: number,
-  includeAdjacent: boolean = false
+  includeAdjacent: boolean = false,
 ): boolean {
-  return rangeInSelection(state.selection, rangeFrom, rangeTo, includeAdjacent) ||
+  return (
+    rangeInSelection(state.selection, rangeFrom, rangeTo, includeAdjacent) ||
     rangeCarriesReviewChunk(state, rangeFrom, rangeTo)
+  );
 }
 
 /**
@@ -90,21 +92,17 @@ export function rangeInPreviewSuppression (
  * A pure deletion is empty in B and its widget sits at a single point; only
  * that special case uses point containment.
  */
-function rangeCarriesReviewChunk (
-  state: EditorState,
-  rangeFrom: number,
-  rangeTo: number
-): boolean {
-  const chunks = getReviewChunks(state)
+function rangeCarriesReviewChunk(state: EditorState, rangeFrom: number, rangeTo: number): boolean {
+  const chunks = getReviewChunks(state);
   if (chunks === null) {
-    return false
+    return false;
   }
-  return chunks.some(suggestion => {
-    const ownedSpans = suggestion.anchors.filter(anchor => anchor.to > anchor.from)
+  return chunks.some((suggestion) => {
+    const ownedSpans = suggestion.anchors.filter((anchor) => anchor.to > anchor.from);
     if (ownedSpans.length === 0) {
-      const seam = suggestion.anchors[0]?.from ?? suggestion.seam
-      return rangeFrom <= seam && seam < rangeTo
+      const seam = suggestion.anchors[0]?.from ?? suggestion.seam;
+      return rangeFrom <= seam && seam < rangeTo;
     }
-    return ownedSpans.some(anchor => anchor.from < rangeTo && rangeFrom < anchor.to)
-  })
+    return ownedSpans.some((anchor) => anchor.from < rangeTo && rangeFrom < anchor.to);
+  });
 }

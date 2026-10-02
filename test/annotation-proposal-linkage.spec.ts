@@ -28,17 +28,13 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { chmodSync } from "fs";
-import { createPatch } from "diff";
-import type { TextAnnotation } from "@dts/common/annotation-domain";
 import { sha256Text } from "@common/util/sha256";
+import type { TextAnnotation } from "@dts/common/annotation-domain";
+import { strict as assert } from "assert";
+import { createPatch } from "diff";
+import { chmodSync } from "fs";
 import type { CollaborationApplicationService } from "source/app/service-providers/documents/document-collaboration-application-service";
-import {
-  committed,
-  harness as sharedHarness,
-  type Harness,
-} from "./collaboration-test-authority";
+import { committed, type Harness, harness as sharedHarness } from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-linked";
 const DOCUMENT_PATH = "/tmp/annotation-linkage-note.md";
@@ -250,10 +246,9 @@ describe("cross-section proposal linkage", function () {
     const moved = service.getAnnotations(DOCUMENT_ID).items[0].anchor;
     assert.notDeepEqual(moved, originalAnchor);
     assert.equal(
-      authority.readWorkingText(DOCUMENT_ID)!.slice(
-        (moved as { from: number }).from,
-        (moved as { to: number }).to,
-      ),
+      authority
+        .readWorkingText(DOCUMENT_ID)!
+        .slice((moved as { from: number }).from, (moved as { to: number }).to),
       "lazy dog",
     );
 
@@ -272,10 +267,7 @@ describe("cross-section proposal linkage", function () {
     assert.deepEqual(persisted?.annotations, service.getAnnotations(DOCUMENT_ID));
     // The link is a ledger entry, not a consequence of the text: rejecting
     // the proposal does not unsay that it was made.
-    assert.equal(
-      persisted?.annotations.items[0].proposalActions[0].packetId,
-      submitted.packetId,
-    );
+    assert.equal(persisted?.annotations.items[0].proposalActions[0].packetId, submitted.packetId);
   });
 
   it("treats a replayed request id with different linkage as a different request", async function () {
@@ -324,9 +316,6 @@ describe("cross-section proposal linkage", function () {
     assert.equal(replay.ok, true);
     assert.equal(replay.ok ? replay.packetId : undefined, submitted.packetId);
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.review?.packets.length, 1);
-    assert.deepEqual(
-      service.getAnnotations(DOCUMENT_ID).items[0].proposalActions,
-      [],
-    );
+    assert.deepEqual(service.getAnnotations(DOCUMENT_ID).items[0].proposalActions, []);
   });
 });

@@ -23,15 +23,16 @@
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import { sha256Text } from "@common/util/sha256";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
   AddAnnotationMessageRequest,
   AgentApiOperations,
   AgentApiResponseBody,
   AgentError,
   AgentErrorCode,
-  DocumentSummary,
   AgentErrorResponse,
   AgentEvent,
+  DocumentSummary,
   FigureCreateRequest,
   FigureWriteRequest,
   LintDiagnostic,
@@ -49,10 +50,12 @@ import type {
   SubmitProposalRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
+import type DocumentLintProvider from "@providers/document-lint";
+import type { DocumentLintRecord } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
 import type {
   AnnotationFailure,
@@ -95,8 +98,6 @@ import {
   searchCentralFigures,
   writeCentralFigure,
 } from "../../util/central-figures-store";
-import type { DocumentLintRecord } from "@providers/document-lint";
-import type DocumentLintProvider from "@providers/document-lint";
 import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import AgentDocumentQueries, {
@@ -104,7 +105,6 @@ import AgentDocumentQueries, {
   SearchPatternError,
   SearchTimeoutError,
 } from "./document-queries";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
 import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
@@ -442,7 +442,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     this._zoteroRoutes = Object.entries(definition.paths ?? {})
       .filter(([, methods]) =>
         Object.values(methods ?? {}).some(
-          (operation) => typeof operation === "object" && "tags" in operation && operation.tags?.includes(ZOTERO_TAG) === true,
+          (operation) =>
+            typeof operation === "object" &&
+            "tags" in operation &&
+            operation.tags?.includes(ZOTERO_TAG) === true,
         ),
       )
       .map(([route]) => route);
@@ -480,7 +483,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     // the listener binds, so the first request does not pay for it.
     await this._api.init();
     const operations = this._api.getOperations();
-    const isZotero = (operation: Operation): boolean => operation.tags?.includes(ZOTERO_TAG) === true;
+    const isZotero = (operation: Operation): boolean =>
+      operation.tags?.includes(ZOTERO_TAG) === true;
     this._mcp = new AgentMcpEndpoint(
       operations.filter((operation) => !isZotero(operation)),
       { name: "zettlr-pandoc", version: this._protocolVersion },
@@ -687,7 +691,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     if (url.pathname === "/mcp" || url.pathname === "/zotero/mcp") {
       const endpoint = url.pathname === "/mcp" ? this._mcp : this._zoteroMcp;
       const address = this._server?.address();
-      if (endpoint === undefined || address === undefined || address === null || typeof address === "string") {
+      if (
+        endpoint === undefined ||
+        address === undefined ||
+        address === null ||
+        typeof address === "string"
+      ) {
         throw new Error("Agent API received an MCP request before boot finished");
       }
       await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`);
@@ -818,11 +827,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleSearchWorkspace(res, c.request.query),
-      listWorkspaces: (
-        c: OperationContext<"listWorkspaces">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      listWorkspaces: (c: OperationContext<"listWorkspaces">, _req, res: http.ServerResponse) => {
         if (c.request.query.workspaceId) {
           return this.handleListWorkspaceDocuments(
             res,
@@ -846,21 +851,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       },
       focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
         this.handleFocusDocument(res, c.request.params.documentId),
-      searchDocument: (
-        c: OperationContext<"searchDocument">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
-      submitProposal: (
-        c: OperationContext<"submitProposal">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
-      submitReview: (
-        c: OperationContext<"submitReview">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleReviewSubmission(res, c.request.requestBody),
+      searchDocument: (c: OperationContext<"searchDocument">, _req, res: http.ServerResponse) =>
+        this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
+      submitProposal: (c: OperationContext<"submitProposal">, _req, res: http.ServerResponse) =>
+        this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+      submitReview: (c: OperationContext<"submitReview">, _req, res: http.ServerResponse) =>
+        this.handleReviewSubmission(res, c.request.requestBody),
 
       listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) => {
         if (c.request.query.documentId) {
@@ -903,42 +899,27 @@ export default class AgentHTTPProvider extends ProviderContract {
           }
         }
       },
-      addReviewComment: (
-        c: OperationContext<"addReviewComment">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
+      addReviewComment: (c: OperationContext<"addReviewComment">, _req, res: http.ServerResponse) =>
         this.handleAddReviewComment(
           res,
           c.request.params.reviewId,
           c.request.requestBody.text,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      reapplyReview: (
-        c: OperationContext<"reapplyReview">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
+      reapplyReview: (c: OperationContext<"reapplyReview">, _req, res: http.ServerResponse) =>
         this.handleReapplyReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      discardReview: (
-        c: OperationContext<"discardReview">,
-        _req,
-        res: http.ServerResponse,
-      ) =>
+      discardReview: (c: OperationContext<"discardReview">, _req, res: http.ServerResponse) =>
         this.handleDiscardReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      retractProposal: (
-        c: OperationContext<"retractProposal">,
-        _req,
-        res: http.ServerResponse,
-      ) => this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
+      retractProposal: (c: OperationContext<"retractProposal">, _req, res: http.ServerResponse) =>
+        this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
       waitForReviewEvents: (
         c: OperationContext<"waitForReviewEvents">,
         _req,
@@ -958,11 +939,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListCitationItems(res, c.request.query.database);
       },
-      renderCitations: (
-        c: OperationContext<"renderCitations">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      renderCitations: (c: OperationContext<"renderCitations">, _req, res: http.ServerResponse) => {
         const body = c.request.requestBody;
         if (body.mode === "bibliography") {
           if (body.citekeys === undefined) {
@@ -1028,11 +1005,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListFigures(res);
       },
-      saveFigure: (
-        c: OperationContext<"saveFigure">,
-        _req,
-        res: http.ServerResponse,
-      ) => {
+      saveFigure: (c: OperationContext<"saveFigure">, _req, res: http.ServerResponse) => {
         if (c.request.requestBody.action === "create") {
           return this.handleCreateFigure(res, {
             path: c.request.requestBody.path,
@@ -1048,8 +1021,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         c: DefaultedOperationContext<"lintDocuments", "scope" | "minimumSeverity">,
         _req,
         res: http.ServerResponse,
-      ) =>
-        this.handleLintDocuments(res, c.request.query),
+      ) => this.handleLintDocuments(res, c.request.query),
 
       searchZoteroItems: async (
         c: DefaultedOperationContext<"searchZoteroItems", "limit">,
@@ -1128,7 +1100,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleListDocuments(res: http.ServerResponse): Promise<void> {
     const documents = await this._queries.listDocuments();
     this.sendJson(res, 200, {
-      documents: await Promise.all(documents.map(async (summary) => await this.withCrossReferences(summary))),
+      documents: await Promise.all(
+        documents.map(async (summary) => await this.withCrossReferences(summary)),
+      ),
     });
   }
 
@@ -1426,7 +1400,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       throw error;
     }
     if (result === "OUTSIDE_WORKSPACE") {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document is outside configured workspace scope");
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
       return;
     }
     if (result === undefined) {
@@ -1488,7 +1467,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     focus?: boolean,
   ): Promise<void> {
     const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
-    const descriptionCollision = findClaimDescriptionCollision(proposal.claims, similarityThreshold);
+    const descriptionCollision = findClaimDescriptionCollision(
+      proposal.claims,
+      similarityThreshold,
+    );
     if (descriptionCollision !== undefined) {
       const { firstIndex, secondIndex, similarity } = descriptionCollision;
       const similarityPercent = Math.round(similarity * 100);
@@ -1773,7 +1755,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const { sidecar } = query;
       this.sendJson(res, 200, {
         reviewId: sidecar.review.reviewId,
-        patch: reviewPatch(sidecar.review.suggestions, suggestionText(sidecar.review, sidecar.workingText)),
+        patch: reviewPatch(
+          sidecar.review.suggestions,
+          suggestionText(sidecar.review, sidecar.workingText),
+        ),
         generation: sidecar.review.generation,
       });
       return;
@@ -1854,7 +1839,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     reviewId: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
-    const result = await this._documents.discardInvalidatedReview(reviewId, expectedReviewGeneration);
+    const result = await this._documents.discardInvalidatedReview(
+      reviewId,
+      expectedReviewGeneration,
+    );
     if (!result.ok) {
       this.sendError(
         res,
@@ -2060,11 +2048,7 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private handleGetCitationItem(
-    res: http.ServerResponse,
-    citeKey: string,
-    database: string,
-  ): void {
+  private handleGetCitationItem(res: http.ServerResponse, citeKey: string, database: string): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2098,7 +2082,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
-      this.sendError(res, 404, "CITATION_DATABASE_NOT_LOADED", "No main citation library is configured.");
+      this.sendError(
+        res,
+        404,
+        "CITATION_DATABASE_NOT_LOADED",
+        "No main citation library is configured.",
+      );
       return;
     }
     try {
@@ -2496,7 +2485,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         });
       } else {
         const records = await Promise.all(
-          sources.map(async (source) => await this._app.documentLint.lint(source.path, source.text)),
+          sources.map(
+            async (source) => await this._app.documentLint.lint(source.path, source.text),
+          ),
         );
         records.forEach((record, index) => {
           documents.push(result(targets[index], record, true));

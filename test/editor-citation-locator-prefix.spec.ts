@@ -33,47 +33,10 @@ import {
   configField,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
-import { installCitationIpcFromCallback, settleCitationWidgets } from "./citation-widget-test-helper";
-
-function polyfillJsdomForCodeMirror(): void {
-  const global = globalThis as any;
-  if (typeof global.requestAnimationFrame !== "function") {
-    global.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    global.cancelAnimationFrame = (id: any) => clearTimeout(id);
-  }
-  if (
-    typeof global.window === "object" &&
-    typeof global.window.requestAnimationFrame !== "function"
-  ) {
-    global.window.requestAnimationFrame = global.requestAnimationFrame;
-    global.window.cancelAnimationFrame = global.cancelAnimationFrame;
-  }
-  if (typeof global.ResizeObserver !== "function") {
-    global.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof global.window === "object") {
-      global.window.ResizeObserver = global.ResizeObserver;
-    }
-  }
-  if (typeof global.Range?.prototype.getClientRects !== "function") {
-    global.Range.prototype.getClientRects = () => [];
-    global.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
+import {
+  installCitationIpcFromCallback,
+  settleCitationWidgets,
+} from "./citation-widget-test-helper";
 
 function parseCitationItem(source: string): CiteItem {
   const state = EditorState.create({ doc: source, extensions: [markdownParser()] });
@@ -87,10 +50,9 @@ function parseCitationItem(source: string): CiteItem {
 describe("Editor preserves citation suffixes beginning with Roman-numeral letters", function () {
   const views: EditorView[] = [];
   const originalCitationCallback = window.getCitationCallback;
-  let restoreCitationIpc: (() => void)|undefined;
+  let restoreCitationIpc: (() => void) | undefined;
 
   before(function () {
-    polyfillJsdomForCodeMirror();
     restoreCitationIpc = installCitationIpcFromCallback();
   });
 

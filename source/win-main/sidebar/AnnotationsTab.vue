@@ -141,168 +141,210 @@
  * END HEADER
  */
 
-import { computed, reactive, ref, watch } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import { reportError } from '@common/util/error-reporting'
-import showToast from '@common/util/show-toast'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import type { SourceRange } from '@dts/common/references'
-import type { ReviewFailure } from 'source/app/service-providers/documents/document-collaboration-application-service'
-import AnnotationHeader from './annotations/AnnotationHeader.vue'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import type { SourceRange } from "@dts/common/references";
+import type { ReviewFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
+import { useDocumentCollaborationStore } from "source/pinia";
+import { computed, reactive, ref, watch } from "vue";
+import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
+  type AnnotationCardView,
   buildSuggestionNavigatorRows,
   describeAcceptFailures,
   filterCards,
-  type AnnotationCardView,
-  type SuggestionNavigatorView
-} from './annotations/annotation-panel-model'
-import { useDocumentCollaborationStore } from 'source/pinia'
+  type SuggestionNavigatorView,
+} from "./annotations/annotation-panel-model";
 
 interface WorkspaceAnnotationGroup {
-  documentPath: string
-  documentName: string
-  annotations: AnnotationCardView[]
-  suggestions: SuggestionNavigatorView[]
+  documentPath: string;
+  documentName: string;
+  annotations: AnnotationCardView[];
+  suggestions: SuggestionNavigatorView[];
   /** The review is frozen: see ReviewDiffSession.frozenText. */
-  frozen: boolean
+  frozen: boolean;
 }
 
 const props = defineProps<{
-  workspacePaths: string[]
-}>()
+  workspacePaths: string[];
+}>();
 
 const emit = defineEmits<{
-  (e: 'navigate', target: { documentPath: string, range?: SourceRange, annotationId?: string }): void
-  (e: 'close'): void
-}>()
+  (
+    e: "navigate",
+    target: { documentPath: string; range?: SourceRange; annotationId?: string },
+  ): void;
+  (e: "close"): void;
+}>();
 
-const collaborationStore = useDocumentCollaborationStore()
-const filterQuery = ref('')
-const globalAcceptBusy = ref(false)
-const acceptingDocuments = reactive(new Set<string>())
-const recoveringDocuments = reactive(new Set<string>())
+const collaborationStore = useDocumentCollaborationStore();
+const filterQuery = ref("");
+const globalAcceptBusy = ref(false);
+const acceptingDocuments = reactive(new Set<string>());
+const recoveringDocuments = reactive(new Set<string>());
 
-watch(() => props.workspacePaths, paths => {
-  collaborationStore.refreshWorkspaceSessions(paths)
-    .catch(err => reportError('[AnnotationsTab] Could not load workspace collaboration state', err))
-}, { immediate: true })
+watch(
+  () => props.workspacePaths,
+  (paths) => {
+    collaborationStore
+      .refreshWorkspaceSessions(paths)
+      .catch((err) =>
+        reportError("[AnnotationsTab] Could not load workspace collaboration state", err),
+      );
+  },
+  { immediate: true },
+);
 
-const normalizedFilter = computed(() => filterQuery.value.trim().toLowerCase())
+const normalizedFilter = computed(() => filterQuery.value.trim().toLowerCase());
 
-const groups = computed<WorkspaceAnnotationGroup[]>(() => collaborationStore.workspaceSessions
-  .map(session => {
-    const annotations = filterCards(
-      collaborationStore.getCards(session.documentPath)
-        .filter(card => card.annotation.state === 'open'),
-      filterQuery.value
-    )
-    const suggestions = (session.review === undefined ? [] : buildSuggestionNavigatorRows(session.review))
-      .filter(card => normalizedFilter.value.length === 0 ||
-        card.description.toLowerCase().includes(normalizedFilter.value))
-    return {
-      documentPath: session.documentPath,
-      documentName: pathBasename(session.documentPath),
-      annotations,
-      suggestions,
-      frozen: session.review?.frozenText !== undefined
-    }
-  })
-  .filter(group => group.annotations.length > 0 || group.suggestions.length > 0)
-  .sort((left, right) => left.documentName.localeCompare(right.documentName) ||
-    left.documentPath.localeCompare(right.documentPath)))
+const groups = computed<WorkspaceAnnotationGroup[]>(() =>
+  collaborationStore.workspaceSessions
+    .map((session) => {
+      const annotations = filterCards(
+        collaborationStore
+          .getCards(session.documentPath)
+          .filter((card) => card.annotation.state === "open"),
+        filterQuery.value,
+      );
+      const suggestions = (
+        session.review === undefined ? [] : buildSuggestionNavigatorRows(session.review)
+      ).filter(
+        (card) =>
+          normalizedFilter.value.length === 0 ||
+          card.description.toLowerCase().includes(normalizedFilter.value),
+      );
+      return {
+        documentPath: session.documentPath,
+        documentName: pathBasename(session.documentPath),
+        annotations,
+        suggestions,
+        frozen: session.review?.frozenText !== undefined,
+      };
+    })
+    .filter((group) => group.annotations.length > 0 || group.suggestions.length > 0)
+    .sort(
+      (left, right) =>
+        left.documentName.localeCompare(right.documentName) ||
+        left.documentPath.localeCompare(right.documentPath),
+    ),
+);
 
-const outstandingSuggestionCount = computed(() => collaborationStore.workspaceSessions
-  .reduce((count, session) => count +
-    (session.review === undefined || session.review.frozenText !== undefined ? 0 : session.review.suggestions.length), 0))
+const outstandingSuggestionCount = computed(() =>
+  collaborationStore.workspaceSessions.reduce(
+    (count, session) =>
+      count +
+      (session.review === undefined || session.review.frozenText !== undefined
+        ? 0
+        : session.review.suggestions.length),
+    0,
+  ),
+);
 
-function annotationRange (card: AnnotationCardView): SourceRange | undefined {
-  const anchor = card.annotation.anchor
-  if (anchor.state === 'range') {
-    return { from: anchor.from, to: anchor.to }
+function annotationRange(card: AnnotationCardView): SourceRange | undefined {
+  const anchor = card.annotation.anchor;
+  if (anchor.state === "range") {
+    return { from: anchor.from, to: anchor.to };
   }
-  if (anchor.state === 'point') {
-    return { from: anchor.at, to: anchor.at }
+  if (anchor.state === "point") {
+    return { from: anchor.at, to: anchor.at };
   }
-  return undefined
+  return undefined;
 }
 
-function navigate (documentPath: string, range?: SourceRange): void {
-  emit('navigate', { documentPath, range })
+function navigate(documentPath: string, range?: SourceRange): void {
+  emit("navigate", { documentPath, range });
 }
 
-function navigateAnnotation (documentPath: string, card: AnnotationCardView): void {
-  emit('navigate', { documentPath, range: annotationRange(card), annotationId: card.annotation.annotationId })
+function navigateAnnotation(documentPath: string, card: AnnotationCardView): void {
+  emit("navigate", {
+    documentPath,
+    range: annotationRange(card),
+    annotationId: card.annotation.annotationId,
+  });
 }
 
 /** Shows which documents an Accept all could not accept, and why. */
-function reportAcceptFailures (failures: Array<{ path: string, result: ReviewFailure }>): void {
-  const heading = failures.length === 1
-    ? trans('Could not accept all changes in 1 document.')
-    : trans('Could not accept all changes in %s documents.', String(failures.length))
-  showToast(`${heading}\n${describeAcceptFailures(failures)}`, 'error')
+function reportAcceptFailures(failures: Array<{ path: string; result: ReviewFailure }>): void {
+  const heading =
+    failures.length === 1
+      ? trans("Could not accept all changes in 1 document.")
+      : trans("Could not accept all changes in %s documents.", String(failures.length));
+  showToast(`${heading}\n${describeAcceptFailures(failures)}`, "error");
 }
 
-async function acceptAllDocument (documentPath: string): Promise<void> {
+async function acceptAllDocument(documentPath: string): Promise<void> {
   if (acceptingDocuments.has(documentPath)) {
-    return
+    return;
   }
-  acceptingDocuments.add(documentPath)
+  acceptingDocuments.add(documentPath);
   try {
-    const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath)
+    const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath);
     if (!result.ok) {
-      reportAcceptFailures([{ path: documentPath, result }])
+      reportAcceptFailures([{ path: documentPath, result }]);
     }
   } catch (err) {
-    reportError('[AnnotationsTab] Could not accept document review', err)
+    reportError("[AnnotationsTab] Could not accept document review", err);
   } finally {
-    acceptingDocuments.delete(documentPath)
+    acceptingDocuments.delete(documentPath);
   }
 }
 
 /** Reapply, return or discard the frozen review of one document. */
-async function recover (documentPath: string, action: 'reapply' | 'return' | 'discard'): Promise<void> {
+async function recover(
+  documentPath: string,
+  action: "reapply" | "return" | "discard",
+): Promise<void> {
   if (recoveringDocuments.has(documentPath)) {
-    return
+    return;
   }
-  recoveringDocuments.add(documentPath)
+  recoveringDocuments.add(documentPath);
   try {
-    if (action === 'reapply') {
-      const result = await collaborationStore.reapplyReview(documentPath)
+    if (action === "reapply") {
+      const result = await collaborationStore.reapplyReview(documentPath);
       if (!result.ok) {
-        showToast(`${pathBasename(documentPath)}: ${result.message}`, 'error')
+        showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
       } else if (result.withdrawnChunkIds.length > 0) {
-        showToast(trans('%s suggestions no longer match the text and were withdrawn.', String(result.withdrawnChunkIds.length)), 'info')
+        showToast(
+          trans(
+            "%s suggestions no longer match the text and were withdrawn.",
+            String(result.withdrawnChunkIds.length),
+          ),
+          "info",
+        );
       }
-      return
+      return;
     }
-    const result = action === 'return'
-      ? await collaborationStore.returnReview(documentPath)
-      : await collaborationStore.discardReview(documentPath)
+    const result =
+      action === "return"
+        ? await collaborationStore.returnReview(documentPath)
+        : await collaborationStore.discardReview(documentPath);
     if (!result.ok) {
-      showToast(`${pathBasename(documentPath)}: ${result.message}`, 'error')
+      showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
     }
   } catch (err) {
-    reportError('[AnnotationsTab] Could not recover the review', err)
+    reportError("[AnnotationsTab] Could not recover the review", err);
   } finally {
-    recoveringDocuments.delete(documentPath)
+    recoveringDocuments.delete(documentPath);
   }
 }
 
-async function acceptAllWorkspace (): Promise<void> {
+async function acceptAllWorkspace(): Promise<void> {
   if (globalAcceptBusy.value) {
-    return
+    return;
   }
-  globalAcceptBusy.value = true
+  globalAcceptBusy.value = true;
   try {
-    const results = await collaborationStore.acceptAllWorkspaceReviews()
-    const failures = results.flatMap(({ path, result }) => result.ok ? [] : [{ path, result }])
+    const results = await collaborationStore.acceptAllWorkspaceReviews();
+    const failures = results.flatMap(({ path, result }) => (result.ok ? [] : [{ path, result }]));
     if (failures.length > 0) {
-      reportAcceptFailures(failures)
+      reportAcceptFailures(failures);
     }
   } catch (err) {
-    reportError('[AnnotationsTab] Could not accept workspace reviews', err)
+    reportError("[AnnotationsTab] Could not accept workspace reviews", err);
   } finally {
-    globalAcceptBusy.value = false
+    globalAcceptBusy.value = false;
   }
 }
 </script>

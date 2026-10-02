@@ -19,39 +19,43 @@
  * END HEADER
  */
 
-import type LogProvider from '../log'
-import type ProviderContract from '../provider-contract'
-import { ipcMain } from 'electron'
-import type { IPCMessage } from '../provider-contract'
+import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import type { WorkspaceTextEdit } from "@dts/common/references";
+import { ipcMain } from "electron";
+import path from "path";
+import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import vm from "vm";
+import type { ConfigOptions } from "../config/get-config-template";
+import type DocumentManager from "../documents";
+import type FSAL from "../fsal";
+import type LogProvider from "../log";
+import type ProviderContract from "../provider-contract";
+import type { IPCMessage } from "../provider-contract";
+import {
+  runWorkspaceEditTransaction,
+  saveUpdatedBuffers,
+  type WorkspaceEditAuthority,
+} from "../references/workspace-edit-transaction";
+import { compilePathFilter } from "./util/search-globs";
 import {
   compileQuery,
   expandReplacement,
   matchDocument,
   type SearchMatch,
-  type SearchQuery
-} from './util/search-query'
-import { compilePathFilter } from './util/search-globs'
-import type FSAL from '../fsal'
-import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import type { ConfigOptions } from '../config/get-config-template'
-import type DocumentManager from '../documents'
-import path from 'path'
-import vm from 'vm'
-import { hashDocumentSource } from '@common/pandoc-util/extract-references'
-import type { WorkspaceTextEdit } from '@dts/common/references'
-import { runWorkspaceEditTransaction, saveUpdatedBuffers, type WorkspaceEditAuthority } from '../references/workspace-edit-transaction'
+  type SearchQuery,
+} from "./util/search-query";
 
-export type { SearchMatch, SearchQuery } from './util/search-query'
+export type { SearchMatch, SearchQuery } from "./util/search-query";
 
 /** One file's matches, as the view lists them. */
-export interface FileSearchResult {
-  documentPath: string
+export type FileSearchResult = {
+  documentPath: string;
   /** The hash of the text the matches were found in; a replace is fenced on it. */
-  sourceHash: string
+  sourceHash: string;
   /** Whether a replace may address this file: only Markdown documents. */
-  replaceable: boolean
-  matches: SearchMatch[]
-}
+  replaceable: boolean;
+  matches: SearchMatch[];
+};
 
 /**
  * One document's matches to replace: the spans as the search reported them
@@ -59,43 +63,43 @@ export interface FileSearchResult {
  * on — a document that changed since the search is refused, not guessed at.
  */
 export interface ReplaceTarget {
-  documentPath: string
-  sourceHash: string
-  ranges: Array<{ from: number, to: number }>
+  documentPath: string;
+  sourceHash: string;
+  ranges: Array<{ from: number; to: number }>;
 }
 
 /** A search run to completion for the agent API. */
 export type WorkspaceSearchOutcome =
-  | { status: 'ok', results: FileSearchResult[], matchCount: number, truncated: boolean }
-  | { status: 'invalid-query', message: string }
-  | { status: 'timeout', documentPath: string }
+  | { status: "ok"; results: FileSearchResult[]; matchCount: number; truncated: boolean }
+  | { status: "invalid-query"; message: string }
+  | { status: "timeout"; documentPath: string };
 
 export type ReplaceOutcome =
-  | { status: 'applied', documentsChanged: string[], matchesReplaced: number }
-  | { status: 'conflict', documentPath: string }
+  | { status: "applied"; documentsChanged: string[]; matchesReplaced: number }
+  | { status: "conflict"; documentPath: string };
 
-export type UndoReplaceOutcome = ReplaceOutcome | { status: 'nothing-to-undo' }
+export type UndoReplaceOutcome = ReplaceOutcome | { status: "nothing-to-undo" };
 
 export type SearchProviderIPCContract = {
-  'start-full-text-search': {
-    request: { payload: { query: SearchQuery } }
-    response: number
-  }
-  'cancel-search': {
-    request: { payload?: undefined }
-    response: undefined
-  }
-  'replace-in-files': {
-    request: { payload: { targets: ReplaceTarget[], replacement: string, preserveCase: boolean } }
-    response: ReplaceOutcome
-  }
-  'undo-last-replace': {
-    request: { payload?: undefined }
-    response: UndoReplaceOutcome
-  }
-}
+  "start-full-text-search": {
+    request: { payload: { query: SearchQuery } };
+    response: number;
+  };
+  "cancel-search": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
+  "replace-in-files": {
+    request: { payload: { targets: ReplaceTarget[]; replacement: string; preserveCase: boolean } };
+    response: ReplaceOutcome;
+  };
+  "undo-last-replace": {
+    request: { payload?: undefined };
+    response: UndoReplaceOutcome;
+  };
+};
 
-export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
+export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>;
 
 /**
  * The messages this provider broadcasts on the 'search-provider' channel
@@ -109,95 +113,109 @@ export type SearchProviderIPCAPI = IPCMessage<SearchProviderIPCContract>
  * that found nothing.
  */
 export type SearchFailure =
-  | { kind: 'invalid-query', message: string }
-  | { kind: 'unreadable-file', documentPath: string, message: string }
+  | { kind: "invalid-query"; message: string }
+  | { kind: "unreadable-file"; documentPath: string; message: string };
 
 export type SearchProviderBroadcast =
-  | { type: 'search-end', generation: number }
-  | { type: 'search-result', generation: number, result: FileSearchResult, progress: number }
-  | { type: 'search-progress', generation: number, progress: number }
-  | { type: 'search-failed', generation: number, failure: SearchFailure }
+  | { type: "search-end"; generation: number }
+  | { type: "search-result"; generation: number; result: FileSearchResult; progress: number }
+  | { type: "search-progress"; generation: number; progress: number }
+  | { type: "search-failed"; generation: number; failure: SearchFailure };
 
 export class SearchProvider implements ProviderContract {
   /** How many files this search will read, for the progress it reports. */
-  private sumFilesToSearch: number
+  private sumFilesToSearch: number;
   /** The absolute paths still to read. */
-  private fileSearchQueue: string[]
+  private fileSearchQueue: string[];
   /** The search running now, or undefined between searches. */
-  private currentSearch: { pattern: RegExp, generation: number }|undefined
+  private currentSearch: { pattern: RegExp; generation: number } | undefined;
   /**
    * Every search gets a number, and a result carrying a stale one is
    * dropped: a query typed one character at a time starts a search per
    * character, and the one still arriving from two characters ago must not
    * reach the view.
    */
-  private searchGeneration: number
+  private searchGeneration: number;
   /** The query the last search ran with; a replace expands against its pattern. */
-  private lastPattern: RegExp|undefined
+  private lastPattern: RegExp | undefined;
   /**
    * The inverse of the last applied replace, fenced on the texts it
    * produced; consumed by one undo.
    */
-  private pendingUndo: { edits: WorkspaceTextEdit[], expectedSourceHashes: Record<string, string> }|undefined
+  private pendingUndo:
+    | { edits: WorkspaceTextEdit[]; expectedSourceHashes: Record<string, string> }
+    | undefined;
 
-  constructor (
+  constructor(
     private readonly _logger: LogProvider,
-    private readonly _fsal: Pick<FSAL, 'readDirectoryRecursively' | 'isFile' | 'getDescriptorForAnySupportedFile' | 'loadAnySupportedFile'>,
-    private readonly _config: { get: () => { app: Pick<ConfigOptions['app'], 'openWorkspaces' | 'openFiles'> } },
+    private readonly _fsal: Pick<
+      FSAL,
+      | "readDirectoryRecursively"
+      | "isFile"
+      | "getDescriptorForAnySupportedFile"
+      | "loadAnySupportedFile"
+    >,
+    private readonly _config: {
+      get: () => { app: Pick<ConfigOptions["app"], "openWorkspaces" | "openFiles"> };
+    },
     /** The document authority: open Markdown buffers are searched and replaced through it. */
-    private readonly _documents: WorkspaceEditAuthority & Pick<DocumentManager, 'saveFile'>,
+    private readonly _documents: WorkspaceEditAuthority & Pick<DocumentManager, "saveFile">,
     /** Where the workspace-edit transaction keeps its journal. */
-    private readonly _journalDirectory: string
+    private readonly _journalDirectory: string,
   ) {
-    this.currentSearch = undefined
-    this.fileSearchQueue = []
-    this.sumFilesToSearch = 0
-    this.searchGeneration = 0
-    this.lastPattern = undefined
-    this.pendingUndo = undefined
+    this.currentSearch = undefined;
+    this.fileSearchQueue = [];
+    this.sumFilesToSearch = 0;
+    this.searchGeneration = 0;
+    this.lastPattern = undefined;
+    this.pendingUndo = undefined;
 
-    ipcMain.handle('search-provider', async (_event, message: SearchProviderIPCAPI) => {
-      const { command, payload } = message
+    ipcMain.handle("search-provider", async (_event, message: SearchProviderIPCAPI) => {
+      const { command, payload } = message;
 
-      if (command === 'start-full-text-search') {
-        return await this.startSearch(payload.query)
-      } else if (command === 'cancel-search') {
-        this.cancelSearch()
-        this.searchGeneration++
-        broadcastIPCMessage('search-provider', {
-          type: 'search-end',
-          generation: this.searchGeneration
-        } satisfies SearchProviderBroadcast)
-      } else if (command === 'replace-in-files') {
-        return await this.replaceInFiles(payload.targets, payload.replacement, payload.preserveCase)
-      } else if (command === 'undo-last-replace') {
-        return await this.undoLastReplace()
+      if (command === "start-full-text-search") {
+        return await this.startSearch(payload.query);
+      } else if (command === "cancel-search") {
+        this.cancelSearch();
+        this.searchGeneration++;
+        broadcastIPCMessage("search-provider", {
+          type: "search-end",
+          generation: this.searchGeneration,
+        } satisfies SearchProviderBroadcast);
+      } else if (command === "replace-in-files") {
+        return await this.replaceInFiles(
+          payload.targets,
+          payload.replacement,
+          payload.preserveCase,
+        );
+      } else if (command === "undo-last-replace") {
+        return await this.undoLastReplace();
       }
-    })
+    });
   }
 
-  async boot (): Promise<void> {}
+  async boot(): Promise<void> {}
 
-  async shutdown (): Promise<void> {}
+  async shutdown(): Promise<void> {}
 
   /**
    * The text a search sees and a replace changes: the authority's buffer for
    * an open Markdown document, the file on disk otherwise.
    */
-  private async readSource (absPath: string): Promise<string> {
-    const buffer = this._documents.readMarkdownBufferContent(absPath)
+  private async readSource(absPath: string): Promise<string> {
+    const buffer = this._documents.readMarkdownBufferContent(absPath);
     if (buffer !== undefined) {
-      return buffer
+      return buffer;
     }
-    return await this._fsal.loadAnySupportedFile(absPath)
+    return await this._fsal.loadAnySupportedFile(absPath);
   }
 
-  private cancelSearch (): void {
+  private cancelSearch(): void {
     // Letting the running read finish and dropping the queue is enough: the
     // generation on the next start is what silences anything still in flight.
-    this.currentSearch = undefined
-    this.fileSearchQueue = []
-    this.sumFilesToSearch = 0
+    this.currentSearch = undefined;
+    this.fileSearchQueue = [];
+    this.sumFilesToSearch = 0;
   }
 
   /**
@@ -209,34 +227,37 @@ export class SearchProvider implements ProviderContract {
    *
    * @return  {Promise<number>}     How many files will be read
    */
-  private async startSearch (query: SearchQuery): Promise<number> {
-    this.cancelSearch()
-    const generation = ++this.searchGeneration
-    const compiled = compileQuery(query)
-    if (compiled.status === 'empty') {
-      broadcastIPCMessage('search-provider', { type: 'search-end', generation } satisfies SearchProviderBroadcast)
-      return 0
-    }
-    if (compiled.status === 'invalid-regex') {
-      broadcastIPCMessage('search-provider', {
-        type: 'search-failed',
+  private async startSearch(query: SearchQuery): Promise<number> {
+    this.cancelSearch();
+    const generation = ++this.searchGeneration;
+    const compiled = compileQuery(query);
+    if (compiled.status === "empty") {
+      broadcastIPCMessage("search-provider", {
+        type: "search-end",
         generation,
-        failure: { kind: 'invalid-query', message: compiled.message }
-      } satisfies SearchProviderBroadcast)
-      return 0
+      } satisfies SearchProviderBroadcast);
+      return 0;
+    }
+    if (compiled.status === "invalid-regex") {
+      broadcastIPCMessage("search-provider", {
+        type: "search-failed",
+        generation,
+        failure: { kind: "invalid-query", message: compiled.message },
+      } satisfies SearchProviderBroadcast);
+      return 0;
     }
 
-    const queue = await this.filesToSearch(query, () => generation === this.searchGeneration)
+    const queue = await this.filesToSearch(query, () => generation === this.searchGeneration);
     if (queue === undefined) {
-      return 0 // A newer request took ownership while this one enumerated the workspaces.
+      return 0; // A newer request took ownership while this one enumerated the workspaces.
     }
-    this.fileSearchQueue = queue
-    this.currentSearch = { pattern: compiled.pattern, generation }
-    this.lastPattern = compiled.pattern
-    this.sumFilesToSearch = this.fileSearchQueue.length
+    this.fileSearchQueue = queue;
+    this.currentSearch = { pattern: compiled.pattern, generation };
+    this.lastPattern = compiled.pattern;
+    this.sumFilesToSearch = this.fileSearchQueue.length;
 
-    this.searchNextFile()
-    return this.sumFilesToSearch
+    this.searchNextFile();
+    return this.sumFilesToSearch;
   }
 
   /**
@@ -247,59 +268,63 @@ export class SearchProvider implements ProviderContract {
    * the app and a catastrophic regular expression would otherwise stall the
    * main process. The search stops at maxMatches matches and says so.
    */
-  public async searchWorkspace (query: SearchQuery, maxMatches: number, fileDeadlineMs: number): Promise<WorkspaceSearchOutcome> {
-    const compiled = compileQuery(query)
-    if (compiled.status === 'empty') {
-      return { status: 'invalid-query', message: 'The search text is empty' }
+  public async searchWorkspace(
+    query: SearchQuery,
+    maxMatches: number,
+    fileDeadlineMs: number,
+  ): Promise<WorkspaceSearchOutcome> {
+    const compiled = compileQuery(query);
+    if (compiled.status === "empty") {
+      return { status: "invalid-query", message: "The search text is empty" };
     }
-    if (compiled.status === 'invalid-regex') {
-      return { status: 'invalid-query', message: compiled.message }
+    if (compiled.status === "invalid-regex") {
+      return { status: "invalid-query", message: compiled.message };
     }
 
-    const queue = await this.filesToSearch(query, () => true)
+    const queue = await this.filesToSearch(query, () => true);
     if (queue === undefined) {
-      throw new Error('[Search Provider] A workspace search without a generation was superseded')
+      throw new Error("[Search Provider] A workspace search without a generation was superseded");
     }
-    const results: FileSearchResult[] = []
-    let matchCount = 0
+    const results: FileSearchResult[] = [];
+    let matchCount = 0;
     for (const absPath of queue) {
-      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath)
-      if (descriptor.type === 'other') {
-        continue
+      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath);
+      if (descriptor.type === "other") {
+        continue;
       }
-      const source = await this.readSource(absPath)
-      let matches: SearchMatch[]
+      const source = await this.readSource(absPath);
+      let matches: SearchMatch[];
       try {
         // The same watchdog the single-document agent search runs under:
         // Node interrupts the script, and the regular expression inside it,
         // once the timeout passes.
         matches = vm.runInNewContext(
-          'matchDocument(source, pattern)',
+          "matchDocument(source, pattern)",
           { matchDocument, source, pattern: compiled.pattern },
-          { timeout: fileDeadlineMs }
-        ) as SearchMatch[]
+          { timeout: fileDeadlineMs },
+        ) as SearchMatch[];
       } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') {
-          return { status: 'timeout', documentPath: absPath }
+        if ((err as NodeJS.ErrnoException).code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
+          return { status: "timeout", documentPath: absPath };
         }
-        throw err
+        throw err;
       }
       if (matches.length === 0) {
-        continue
+        continue;
       }
-      const kept = matches.slice(0, maxMatches - matchCount)
+      const kept = matches.slice(0, maxMatches - matchCount);
       results.push({
         documentPath: absPath,
         sourceHash: hashDocumentSource(source),
-        replaceable: descriptor.type === 'file',
-        matches: kept
-      })
-      matchCount += kept.length
+        replaceable: descriptor.type === "file",
+        matches: kept,
+      });
+      matchCount += kept.length;
       if (kept.length < matches.length) {
-        return { status: 'ok', results, matchCount, truncated: true }
+        return { status: "ok", results, matchCount, truncated: true };
       }
     }
-    return { status: 'ok', results, matchCount, truncated: false }
+    return { status: "ok", results, matchCount, truncated: false };
   }
 
   /**
@@ -308,29 +333,34 @@ export class SearchProvider implements ProviderContract {
    * the query's globs. Undefined when isCurrent reports that a newer search
    * took over while the workspaces were walked.
    */
-  private async filesToSearch (query: SearchQuery, isCurrent: () => boolean): Promise<string[]|undefined> {
-    const { openWorkspaces, openFiles } = this._config.get().app
-    const roots = [...openWorkspaces]
-    const candidates = (await Promise.all(roots.map(async root => await this._fsal.readDirectoryRecursively(root)))).flat()
+  private async filesToSearch(
+    query: SearchQuery,
+    isCurrent: () => boolean,
+  ): Promise<string[] | undefined> {
+    const { openWorkspaces, openFiles } = this._config.get().app;
+    const roots = [...openWorkspaces];
+    const candidates = (
+      await Promise.all(roots.map(async (root) => await this._fsal.readDirectoryRecursively(root)))
+    ).flat();
     if (!isCurrent()) {
-      return undefined
+      return undefined;
     }
-    const includesPath = compilePathFilter(query.include, query.exclude)
-    const queue: string[] = []
+    const includesPath = compilePathFilter(query.include, query.exclude);
+    const queue: string[] = [];
 
     for (const candidate of candidates.concat(openFiles)) {
       if (!includesPath(this.relativePath(candidate, roots))) {
-        continue
+        continue;
       }
-      const candidateIsFile = await this._fsal.isFile(candidate)
+      const candidateIsFile = await this._fsal.isFile(candidate);
       if (!isCurrent()) {
-        return undefined
+        return undefined;
       }
       if (candidateIsFile && !queue.includes(candidate)) {
-        queue.push(candidate)
+        queue.push(candidate);
       }
     }
-    return queue
+    return queue;
   }
 
   /**
@@ -338,79 +368,101 @@ export class SearchProvider implements ProviderContract {
    * holds the file, so `foundations/*.md` means what it says. A file outside
    * every root is matched by its own name.
    */
-  private relativePath (absPath: string, roots: string[]): string {
-    const root = roots.find(candidate => absPath.startsWith(`${candidate}${path.sep}`))
-    const relative = root === undefined ? path.basename(absPath) : path.relative(root, absPath)
-    return relative.split(path.sep).join('/')
+  private relativePath(absPath: string, roots: string[]): string {
+    const root = roots.find((candidate) => absPath.startsWith(`${candidate}${path.sep}`));
+    const relative = root === undefined ? path.basename(absPath) : path.relative(root, absPath);
+    return relative.split(path.sep).join("/");
   }
 
   /** Reads the next file in the queue, reports it, and moves on. */
-  private searchNextFile (): void {
-    const search = this.currentSearch
-    const nextFile = this.fileSearchQueue.shift()
+  private searchNextFile(): void {
+    const search = this.currentSearch;
+    const nextFile = this.fileSearchQueue.shift();
     if (search === undefined) {
       // Nothing is running: the queue was cancelled between two files.
-      broadcastIPCMessage('search-provider', { type: 'search-end', generation: this.searchGeneration } satisfies SearchProviderBroadcast)
-      return
+      broadcastIPCMessage("search-provider", {
+        type: "search-end",
+        generation: this.searchGeneration,
+      } satisfies SearchProviderBroadcast);
+      return;
     }
     if (nextFile === undefined) {
-      this.currentSearch = undefined
-      broadcastIPCMessage('search-provider', { type: 'search-end', generation: search.generation } satisfies SearchProviderBroadcast)
-      return
+      this.currentSearch = undefined;
+      broadcastIPCMessage("search-provider", {
+        type: "search-end",
+        generation: search.generation,
+      } satisfies SearchProviderBroadcast);
+      return;
     }
 
     this.searchFile(nextFile, search.pattern)
-      .then(result => {
+      .then((result) => {
         if (this.currentSearch?.generation !== search.generation) {
-          return // A newer search started; this belongs to the old query.
+          return; // A newer search started; this belongs to the old query.
         }
-        const progress = (this.sumFilesToSearch - this.fileSearchQueue.length) / this.sumFilesToSearch
+        const progress =
+          (this.sumFilesToSearch - this.fileSearchQueue.length) / this.sumFilesToSearch;
         if (result === undefined) {
-          broadcastIPCMessage('search-provider', { type: 'search-progress', generation: search.generation, progress } satisfies SearchProviderBroadcast)
+          broadcastIPCMessage("search-provider", {
+            type: "search-progress",
+            generation: search.generation,
+            progress,
+          } satisfies SearchProviderBroadcast);
         } else {
-          broadcastIPCMessage('search-provider', { type: 'search-result', generation: search.generation, result, progress } satisfies SearchProviderBroadcast)
+          broadcastIPCMessage("search-provider", {
+            type: "search-result",
+            generation: search.generation,
+            result,
+            progress,
+          } satisfies SearchProviderBroadcast);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         if (this.currentSearch?.generation !== search.generation) {
-          return // A newer search started; this belongs to the old query.
+          return; // A newer search started; this belongs to the old query.
         }
         // A file that was queued and then could not be read means the result
         // list no longer describes the workspace. Stop, and say which file:
         // carrying on would report a count over the files that happened to
         // be readable.
-        this._logger.error(`[Search Provider] Could not search file ${nextFile}: ${String(err)}`, err)
-        this.cancelSearch()
-        broadcastIPCMessage('search-provider', {
-          type: 'search-failed',
+        this._logger.error(
+          `[Search Provider] Could not search file ${nextFile}: ${String(err)}`,
+          err,
+        );
+        this.cancelSearch();
+        broadcastIPCMessage("search-provider", {
+          type: "search-failed",
           generation: search.generation,
-          failure: { kind: 'unreadable-file', documentPath: nextFile, message: String(err) }
-        } satisfies SearchProviderBroadcast)
+          failure: { kind: "unreadable-file", documentPath: nextFile, message: String(err) },
+        } satisfies SearchProviderBroadcast);
       })
       .finally(() => {
-        this.searchNextFile()
-      })
+        this.searchNextFile();
+      });
   }
 
   /** One file's matches, or undefined when it has none. */
-  private async searchFile (absPath: string, pattern: RegExp): Promise<FileSearchResult|undefined> {
-    const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath)
-    if (descriptor.type === 'other') {
-      return undefined
+  private async searchFile(
+    absPath: string,
+    pattern: RegExp,
+  ): Promise<FileSearchResult | undefined> {
+    const descriptor = await this._fsal.getDescriptorForAnySupportedFile(absPath);
+    if (descriptor.type === "other") {
+      return undefined;
     }
 
-    const source = await this.readSource(absPath)
-    const matches = matchDocument(source, pattern)
+    const source = await this.readSource(absPath);
+    const matches = matchDocument(source, pattern);
     if (matches.length === 0) {
-      return undefined
+      return undefined;
     }
 
     return {
       documentPath: absPath,
       sourceHash: hashDocumentSource(source),
-      replaceable: descriptor.type === 'file',
-      matches
-    }
+      replaceable: descriptor.type === "file",
+      matches,
+    };
   }
 
   /**
@@ -420,72 +472,91 @@ export class SearchProvider implements ProviderContract {
    * and the inverse is kept for one undo. Only Markdown documents are
    * replaced in: an open code document is outside the authority's contract.
    */
-  private async replaceInFiles (targets: ReplaceTarget[], replacement: string, preserveCase: boolean): Promise<ReplaceOutcome> {
-    const pattern = this.lastPattern
+  private async replaceInFiles(
+    targets: ReplaceTarget[],
+    replacement: string,
+    preserveCase: boolean,
+  ): Promise<ReplaceOutcome> {
+    const pattern = this.lastPattern;
     if (pattern === undefined) {
-      throw new Error('[Search Provider] Cannot replace before a search has run')
+      throw new Error("[Search Provider] Cannot replace before a search has run");
     }
 
-    const edits: WorkspaceTextEdit[] = []
-    const inverse: WorkspaceTextEdit[] = []
-    const expectedSourceHashes: Record<string, string> = {}
+    const edits: WorkspaceTextEdit[] = [];
+    const inverse: WorkspaceTextEdit[] = [];
+    const expectedSourceHashes: Record<string, string> = {};
     for (const target of targets) {
-      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(target.documentPath)
-      if (descriptor.type !== 'file') {
-        throw new Error(`[Search Provider] Replace addresses ${target.documentPath}, which is not a Markdown document`)
+      const descriptor = await this._fsal.getDescriptorForAnySupportedFile(target.documentPath);
+      if (descriptor.type !== "file") {
+        throw new Error(
+          `[Search Provider] Replace addresses ${target.documentPath}, which is not a Markdown document`,
+        );
       }
-      const source = await this.readSource(target.documentPath)
+      const source = await this.readSource(target.documentPath);
       if (hashDocumentSource(source) !== target.sourceHash) {
-        return { status: 'conflict', documentPath: target.documentPath }
+        return { status: "conflict", documentPath: target.documentPath };
       }
 
       // Each edit is expressed in the source's own offsets; the inverse has
       // to be expressed in the offsets the replace produces, so it carries
       // the length the replacements ahead of it added or took away.
-      let shift = 0
+      let shift = 0;
       for (const range of [...target.ranges].sort((a, b) => a.from - b.from)) {
-        const matched = source.slice(range.from, range.to)
-        const insert = expandReplacement(matched, pattern, replacement, preserveCase)
-        edits.push({ documentPath: target.documentPath, range, insert })
+        const matched = source.slice(range.from, range.to);
+        const insert = expandReplacement(matched, pattern, replacement, preserveCase);
+        edits.push({ documentPath: target.documentPath, range, insert });
         inverse.push({
           documentPath: target.documentPath,
           range: { from: range.from + shift, to: range.from + shift + insert.length },
-          insert: matched
-        })
-        shift += insert.length - (range.to - range.from)
+          insert: matched,
+        });
+        shift += insert.length - (range.to - range.from);
       }
-      expectedSourceHashes[target.documentPath] = target.sourceHash
+      expectedSourceHashes[target.documentPath] = target.sourceHash;
     }
 
-    const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, { edits, expectedSourceHashes })
-    if (result.status === 'conflict') {
-      return { status: 'conflict', documentPath: result.documentPath }
+    const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, {
+      edits,
+      expectedSourceHashes,
+    });
+    if (result.status === "conflict") {
+      return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(async documentPath => await this._documents.saveFile(documentPath), result.openBuffersUpdated)
-    this.pendingUndo = { edits: inverse, expectedSourceHashes: result.resultingHashes }
+    await saveUpdatedBuffers(
+      async (documentPath) => await this._documents.saveFile(documentPath),
+      result.openBuffersUpdated,
+    );
+    this.pendingUndo = { edits: inverse, expectedSourceHashes: result.resultingHashes };
     return {
-      status: 'applied',
-      documentsChanged: [ ...result.openBuffersUpdated, ...result.closedFilesWritten ],
-      matchesReplaced: edits.length
-    }
+      status: "applied",
+      documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
+      matchesReplaced: edits.length,
+    };
   }
 
   /** Applies the last replace's inverse through the same transaction, once. */
-  private async undoLastReplace (): Promise<UndoReplaceOutcome> {
-    const pending = this.pendingUndo
+  private async undoLastReplace(): Promise<UndoReplaceOutcome> {
+    const pending = this.pendingUndo;
     if (pending === undefined) {
-      return { status: 'nothing-to-undo' }
+      return { status: "nothing-to-undo" };
     }
-    const result = await runWorkspaceEditTransaction(this._documents, this._journalDirectory, pending)
-    if (result.status === 'conflict') {
-      return { status: 'conflict', documentPath: result.documentPath }
+    const result = await runWorkspaceEditTransaction(
+      this._documents,
+      this._journalDirectory,
+      pending,
+    );
+    if (result.status === "conflict") {
+      return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(async documentPath => await this._documents.saveFile(documentPath), result.openBuffersUpdated)
-    this.pendingUndo = undefined
+    await saveUpdatedBuffers(
+      async (documentPath) => await this._documents.saveFile(documentPath),
+      result.openBuffersUpdated,
+    );
+    this.pendingUndo = undefined;
     return {
-      status: 'applied',
-      documentsChanged: [ ...result.openBuffersUpdated, ...result.closedFilesWritten ],
-      matchesReplaced: pending.edits.length
-    }
+      status: "applied",
+      documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
+      matchesReplaced: pending.edits.length,
+    };
   }
 }

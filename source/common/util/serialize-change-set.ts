@@ -19,26 +19,26 @@
  * END HEADER
  */
 
-import type { ChangeSet } from '@codemirror/state'
-import type { SerializedChanges } from '@dts/common/documents'
+import type { ChangeSet } from "@codemirror/state";
+import type { SerializedChanges } from "@dts/common/documents";
 
 /**
  * A ChangeSet's JSON form is an array whose entries are either a number (a
  * retained length) or an array of numbers and strings (a replacement).
  */
-function isSerializedChanges (value: unknown): value is SerializedChanges {
+function isSerializedChanges(value: unknown): value is SerializedChanges {
   if (!Array.isArray(value)) {
-    return false
+    return false;
   }
-  return value.every(section => {
-    if (typeof section === 'number') {
-      return true
+  return value.every((section) => {
+    if (typeof section === "number") {
+      return true;
     }
     if (!Array.isArray(section)) {
-      return false
+      return false;
     }
-    return section.every(part => typeof part === 'number' || typeof part === 'string')
-  })
+    return section.every((part) => typeof part === "number" || typeof part === "string");
+  });
 }
 
 /**
@@ -54,15 +54,15 @@ function isSerializedChanges (value: unknown): value is SerializedChanges {
  *
  * @return  {SerializedChanges}           The validated JSON form
  */
-export default function serializeChangeSet (changes: ChangeSet): SerializedChanges {
-  const json: unknown = changes.toJSON()
+export default function serializeChangeSet(changes: ChangeSet): SerializedChanges {
+  const json: unknown = changes.toJSON();
   if (!isSerializedChanges(json)) {
     throw new Error(
-      'ChangeSet.toJSON() returned a shape SerializedChanges does not describe. ' +
-      'The @codemirror/state serialization format has changed; update ' +
-      'SerializedChanges and isSerializedChanges together. Received: ' +
-      JSON.stringify(json)
-    )
+      "ChangeSet.toJSON() returned a shape SerializedChanges does not describe. " +
+        "The @codemirror/state serialization format has changed; update " +
+        "SerializedChanges and isSerializedChanges together. Received: " +
+        JSON.stringify(json),
+    );
   }
-  return json
+  return json;
 }

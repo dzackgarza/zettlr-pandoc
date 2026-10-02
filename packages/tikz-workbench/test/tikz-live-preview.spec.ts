@@ -16,13 +16,13 @@
  */
 
 import { strict as assert } from "assert";
-import type { TikzRenderRequest, TikzRenderResult } from "../src/tikz-render";
 import {
   TikzLivePreviewController,
   type TikzLivePreviewState,
   type TikzLivePreviewTarget,
 } from "../src/live-preview";
 import { contiguousSourceLineRanges } from "../src/source-block";
+import type { TikzRenderRequest, TikzRenderResult } from "../src/tikz-render";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
 

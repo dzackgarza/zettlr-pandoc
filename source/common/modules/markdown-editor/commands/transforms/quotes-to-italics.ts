@@ -11,9 +11,9 @@
  *
  * END HEADER
  */
-import type { EditorConfiguration } from '../../util/configuration'
-import { delimit } from './support/delimit'
-import { transformSelectedText } from './transform-selected-text'
+import type { EditorConfiguration } from "../../util/configuration";
+import { delimit } from "./support/delimit";
+import { transformSelectedText } from "./transform-selected-text";
 
 /**
  * Return a function that'll return a '`StateCommand` that converts quoted
@@ -31,27 +31,26 @@ import { transformSelectedText } from './transform-selected-text'
  * @return  {StateCommand}     A `StateCommand` that converts quoted
  *                             delimiters to italic delimiters.
  */
-export const quotesToItalics =
-  (italics: EditorConfiguration['italicFormatting']) => {
-    const delimitByQuotes = delimit('"')
+export const quotesToItalics = (italics: EditorConfiguration["italicFormatting"]) => {
+  const delimitByQuotes = delimit('"');
 
-    return transformSelectedText((text) => {
-      const chunks = delimitByQuotes(text)
+  return transformSelectedText((text) => {
+    const chunks = delimitByQuotes(text);
 
-      return chunks.reduce((changedText, chunk) => {
-        switch (chunk.kind) {
-          case 'not-delimited-text': {
-            return changedText + chunk.text
-          }
-
-          case 'delimited-text': {
-            return changedText + italics + chunk.text + italics
-          }
-
-          default: {
-            return ((_: never) => changedText)(chunk)
-          }
+    return chunks.reduce((changedText, chunk) => {
+      switch (chunk.kind) {
+        case "not-delimited-text": {
+          return changedText + chunk.text;
         }
-      }, '')
-    })
-  }
+
+        case "delimited-text": {
+          return changedText + italics + chunk.text + italics;
+        }
+
+        default: {
+          return ((_: never) => changedText)(chunk);
+        }
+      }
+    }, "");
+  });
+};

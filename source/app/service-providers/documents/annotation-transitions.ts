@@ -35,15 +35,15 @@
  * END HEADER
  */
 
-import { randomUUID } from "crypto";
 import type { ChangeDesc } from "@codemirror/state";
+import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
 import type {
   AnnotationActor,
   AnnotationMessage,
   AnnotationSet,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
-import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
+import { randomUUID } from "crypto";
 import { annotationSetValidationIssue } from "./annotation-domain-validation";
 import type { AgentEventDraft } from "./review-transitions";
 
@@ -114,10 +114,7 @@ function checkGeneration(
 }
 
 /** Lifecycle is the owner's. This is invariant I3, in one place. */
-function checkOwner(
-  actor: AnnotationActor,
-  verb: string,
-): AnnotationTransitionError | undefined {
+function checkOwner(actor: AnnotationActor, verb: string): AnnotationTransitionError | undefined {
   return actor === "owner"
     ? undefined
     : {
@@ -152,9 +149,7 @@ function validatedPlan<Response>(
   events: AgentEventDraft[],
 ): AnnotationMutationPlan<Response> | AnnotationTransitionError {
   const issue = annotationSetValidationIssue(nextAnnotations);
-  return issue === undefined
-    ? { nextAnnotations, response, events }
-    : invalid(issue.message);
+  return issue === undefined ? { nextAnnotations, response, events } : invalid(issue.message);
 }
 
 /** A target the owner can actually have selected. */
@@ -277,8 +272,7 @@ export function prepareAnnotationMessage(input: {
       return invalid("An agent message needs a clientRequestId so a retry can be recognised.");
     }
     const replayed = located.messages.find(
-      (message) =>
-        message.author === "agent" && message.clientRequestId === input.clientRequestId,
+      (message) => message.author === "agent" && message.clientRequestId === input.clientRequestId,
     );
     if (replayed !== undefined) {
       return validatedPlan(input.annotations, replayed, []);

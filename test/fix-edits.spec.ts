@@ -23,7 +23,11 @@ function diagnostic(from: number, to: number, replacement?: string): DocumentLin
 
 describe("Fix All edits of one pass", function () {
   it("takes every fix in source order and leaves suggestions without a fix", function () {
-    const edits = fixEdits([diagnostic(10, 13, "\\cos"), diagnostic(20, 24), diagnostic(1, 4, "\\sin")]);
+    const edits = fixEdits([
+      diagnostic(10, 13, "\\cos"),
+      diagnostic(20, 24),
+      diagnostic(1, 4, "\\sin"),
+    ]);
     assert.deepEqual(
       edits.map((edit) => [edit.from, edit.to, edit.insert]),
       [
@@ -34,7 +38,11 @@ describe("Fix All edits of one pass", function () {
   });
 
   it("skips a fix that overlaps one already taken", function () {
-    const edits = fixEdits([diagnostic(0, 8, "whole"), diagnostic(4, 6, "inner"), diagnostic(8, 9, "next")]);
+    const edits = fixEdits([
+      diagnostic(0, 8, "whole"),
+      diagnostic(4, 6, "inner"),
+      diagnostic(8, 9, "next"),
+    ]);
     assert.deepEqual(
       edits.map((edit) => edit.insert),
       ["whole", "next"],

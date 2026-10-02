@@ -11,39 +11,46 @@
  *
  * END HEADER
  */
-import { EditorView } from '@codemirror/view'
-import { type ThemeVars, defaultVarsDark, defaultVarsLight } from '../editor'
+import { EditorView } from "@codemirror/view";
+import { defaultVarsDark, defaultVarsLight, type ThemeVars } from "../editor";
 
-const primaryColor = '#dc2d2d'
+const primaryColor = "#dc2d2d";
 
-const selectionLight = '#fbceb1'
-const selectionDark = '#a32323b3'
+const selectionLight = "#fbceb1";
+const selectionDark = "#a32323b3";
 
-const fontFamily = '-apple-system, BlinkMacSystemFont, "Avenir Next", Avenir, "Helvetica Neue", Helvetica, Ubuntu, Roboto, Noto, "Segoe UI", Arial, sans-serif'
-const codeFont = 'Inconsolata, monospace'
+const fontFamily =
+  '-apple-system, BlinkMacSystemFont, "Avenir Next", Avenir, "Helvetica Neue", Helvetica, Ubuntu, Roboto, Noto, "Segoe UI", Arial, sans-serif';
+const codeFont = "Inconsolata, monospace";
 
 export const karlMarxStadtVarsLight: ThemeVars = {
   ...defaultVarsLight,
-  '--zettlr-editor-primary-color': primaryColor,
-  '--zettlr-editor-secondary-color': primaryColor,
-  '--zettlr-editor-selection-color': selectionLight,
-  '--zettlr-editor-font': fontFamily,
-  '--zettlr-editor-code-font': codeFont,
-}
+  "--zettlr-editor-primary-color": primaryColor,
+  "--zettlr-editor-secondary-color": primaryColor,
+  "--zettlr-editor-selection-color": selectionLight,
+  "--zettlr-editor-font": fontFamily,
+  "--zettlr-editor-code-font": codeFont,
+};
 
 export const karlMarxStadtVarsDark: ThemeVars = {
   ...defaultVarsDark,
-  '--zettlr-editor-primary-color': primaryColor,
-  '--zettlr-editor-secondary-color': primaryColor,
-  '--zettlr-editor-selection-color': selectionDark,
-  '--zettlr-editor-font': fontFamily,
-  '--zettlr-editor-code-font': codeFont,
-}
+  "--zettlr-editor-primary-color": primaryColor,
+  "--zettlr-editor-secondary-color": primaryColor,
+  "--zettlr-editor-selection-color": selectionDark,
+  "--zettlr-editor-font": fontFamily,
+  "--zettlr-editor-code-font": codeFont,
+};
 
-export const themeKarlMarxStadtLight = EditorView.theme({
-  '&': karlMarxStadtVarsLight
-}, { dark: false })
+export const themeKarlMarxStadtLight = EditorView.theme(
+  {
+    "&": karlMarxStadtVarsLight,
+  },
+  { dark: false },
+);
 
-export const themeKarlMarxStadtDark = EditorView.theme({
-  '&': karlMarxStadtVarsDark
-}, { dark: true })
+export const themeKarlMarxStadtDark = EditorView.theme(
+  {
+    "&": karlMarxStadtVarsDark,
+  },
+  { dark: true },
+);

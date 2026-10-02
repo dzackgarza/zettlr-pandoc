@@ -81,97 +81,121 @@
  * END HEADER
  */
 
-import { AccordionRoot, SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import { computed, onMounted, ref } from 'vue'
-import SidebarSection from './SidebarSection.vue'
-import { collapsedSectionIds, expandedSectionIds, type SidebarSectionDefinition } from './sidebar-views'
-import { useConfigStore } from 'source/pinia'
-import { isSidebarSectionId, type SidebarSectionId } from '@dts/common/sidebar-views'
+import { isSidebarSectionId, type SidebarSectionId } from "@dts/common/sidebar-views";
+import { AccordionRoot, SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
+import { useConfigStore } from "source/pinia";
+import { computed, onMounted, ref } from "vue";
+import SidebarSection from "./SidebarSection.vue";
+import {
+  collapsedSectionIds,
+  expandedSectionIds,
+  type SidebarSectionDefinition,
+} from "./sidebar-views";
 
 const props = defineProps<{
-  sections: readonly SidebarSectionDefinition[]
+  sections: readonly SidebarSectionDefinition[];
   /** Counts shown in section headers, by section. */
-  counts?: Partial<Record<SidebarSectionId, number>>
-}>()
+  counts?: Partial<Record<SidebarSectionId, number>>;
+}>();
 
-const configStore = useConfigStore()
+const configStore = useConfigStore();
 
-interface AccordionRootHandle { $el: HTMLElement }
-const root = ref<AccordionRootHandle | null>(null)
+interface AccordionRootHandle {
+  $el: HTMLElement;
+}
+const root = ref<AccordionRootHandle | null>(null);
 
-const expanded = computed<SidebarSectionId[]>(() => expandedSectionIds(configStore.config.ui.sidebarCollapsedSections))
+const expanded = computed<SidebarSectionId[]>(() =>
+  expandedSectionIds(configStore.config.ui.sidebarCollapsedSections),
+);
 
-function isExpanded (id: SidebarSectionId): boolean {
-  return expanded.value.includes(id)
+function isExpanded(id: SidebarSectionId): boolean {
+  return expanded.value.includes(id);
 }
 
-const anyExpanded = computed(() => props.sections.some(section => isExpanded(section.id)))
+const anyExpanded = computed(() => props.sections.some((section) => isExpanded(section.id)));
 
-function persistExpanded (value: string | string[] | undefined): void {
-  const ids = Array.isArray(value) ? value.filter(isSidebarSectionId) : []
+function persistExpanded(value: string | string[] | undefined): void {
+  const ids = Array.isArray(value) ? value.filter(isSidebarSectionId) : [];
   // The accordion reports only this view's sections; the others keep their state.
-  const others = configStore.config.ui.sidebarCollapsedSections.filter(id => !props.sections.some(section => section.id === id))
-  const own = collapsedSectionIds(ids).filter(id => props.sections.some(section => section.id === id))
-  configStore.setConfigValue('ui.sidebarCollapsedSections', [ ...others, ...own ])
+  const others = configStore.config.ui.sidebarCollapsedSections.filter(
+    (id) => !props.sections.some((section) => section.id === id),
+  );
+  const own = collapsedSectionIds(ids).filter((id) =>
+    props.sections.some((section) => section.id === id),
+  );
+  configStore.setConfigValue("ui.sidebarCollapsedSections", [...others, ...own]);
 }
 
-function setCollapsed (id: SidebarSectionId, collapsed: boolean): void {
-  const current = configStore.config.ui.sidebarCollapsedSections
+function setCollapsed(id: SidebarSectionId, collapsed: boolean): void {
+  const current = configStore.config.ui.sidebarCollapsedSections;
   if (current.includes(id) === collapsed) {
-    return
+    return;
   }
-  const next = collapsed ? [ ...current, id ] : current.filter(entry => entry !== id)
-  configStore.setConfigValue('ui.sidebarCollapsedSections', next)
+  const next = collapsed ? [...current, id] : current.filter((entry) => entry !== id);
+  configStore.setConfigValue("ui.sidebarCollapsedSections", next);
 }
 
 // The splitter reports a panel's collapse and expand on its initial layout
 // and on programmatic resizes too; only a drag on a handle is the user
 // collapsing or expanding a section through the splitter.
-const dragging = ref(false)
+const dragging = ref(false);
 
-function onPanelDragged (id: SidebarSectionId, collapsed: boolean): void {
+function onPanelDragged(id: SidebarSectionId, collapsed: boolean): void {
   if (!dragging.value) {
-    return
+    return;
   }
-  setCollapsed(id, collapsed)
+  setCollapsed(id, collapsed);
 }
 
 /** The one-header height a collapsed section takes, from the chrome tokens. */
-const headerHeight = ref(28)
+const headerHeight = ref(28);
 
 /** An expanded section keeps at least this share of the drawer. */
-const EXPANDED_MINIMUM_PERCENT = 8
+const EXPANDED_MINIMUM_PERCENT = 8;
 
 interface PanelConstraints {
-  sizeUnit: 'px' | '%'
-  collapsedSize: number
-  minSize: number
-  defaultSize: number | undefined
+  sizeUnit: "px" | "%";
+  collapsedSize: number;
+  minSize: number;
+  defaultSize: number | undefined;
 }
 
 /**
  * The splitter constraints of a section's panel: fixed at the header height
  * while collapsed, an equal share of the remaining drawer while expanded.
  */
-function panelConstraints (expanded: boolean): PanelConstraints {
+function panelConstraints(expanded: boolean): PanelConstraints {
   if (expanded) {
-    return { sizeUnit: '%', collapsedSize: 0, minSize: EXPANDED_MINIMUM_PERCENT, defaultSize: undefined }
+    return {
+      sizeUnit: "%",
+      collapsedSize: 0,
+      minSize: EXPANDED_MINIMUM_PERCENT,
+      defaultSize: undefined,
+    };
   }
-  return { sizeUnit: 'px', collapsedSize: headerHeight.value, minSize: headerHeight.value, defaultSize: headerHeight.value }
+  return {
+    sizeUnit: "px",
+    collapsedSize: headerHeight.value,
+    minSize: headerHeight.value,
+    defaultSize: headerHeight.value,
+  };
 }
 
 onMounted(() => {
-  const element = root.value?.$el
+  const element = root.value?.$el;
   if (element === undefined) {
-    return
+    return;
   }
-  const declared = Number.parseFloat(getComputedStyle(element).getPropertyValue('--chrome-section-height'))
+  const declared = Number.parseFloat(
+    getComputedStyle(element).getPropertyValue("--chrome-section-height"),
+  );
   if (Number.isFinite(declared) && declared > 0) {
-    headerHeight.value = declared
+    headerHeight.value = declared;
   }
-})
+});
 
-defineExpose({ setCollapsed })
+defineExpose({ setCollapsed });
 </script>
 
 <style lang="less">

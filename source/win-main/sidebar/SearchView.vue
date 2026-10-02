@@ -328,11 +328,9 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { RecycleScroller } from 'vue-virtual-scroller'
-import { trans } from '@common/i18n-renderer'
-import { useWindowStateStore } from 'source/pinia'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -341,10 +339,8 @@ import {
   AlertDialogOverlay,
   AlertDialogPortal,
   AlertDialogRoot,
-  AlertDialogTitle
-} from 'reka-ui'
-import { pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
-import { compileQuery, expandReplacement } from 'source/app/service-providers/search/util/search-query'
+  AlertDialogTitle,
+} from "reka-ui";
 import type {
   FileSearchResult,
   ReplaceTarget,
@@ -352,128 +348,156 @@ import type {
   SearchMatch,
   SearchProviderBroadcast,
   SearchProviderIPCAPI,
-  SearchQuery
-} from 'source/app/service-providers/search'
+  SearchQuery,
+} from "source/app/service-providers/search";
+import {
+  compileQuery,
+  expandReplacement,
+} from "source/app/service-providers/search/util/search-query";
+import { useWindowStateStore } from "source/pinia";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { RecycleScroller } from "vue-virtual-scroller";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 /** How long the query rests before the search runs, as VS Code debounces it. */
-const SEARCH_DEBOUNCE_MS = 200
-const SEARCH_RESULT_ROW_HEIGHT = 22
+const SEARCH_DEBOUNCE_MS = 200;
+const SEARCH_RESULT_ROW_HEIGHT = 22;
 
 const MATCH_OPTIONS = [
-  { id: 'match-case', field: 'matchCase', glyph: 'Aa', label: 'Match Case' },
-  { id: 'whole-word', field: 'wholeWord', glyph: 'ab', label: 'Match Whole Word' },
-  { id: 'regex', field: 'regex', glyph: '.*', label: 'Use Regular Expression' }
-] as const satisfies ReadonlyArray<{ id: string, field: 'matchCase'|'wholeWord'|'regex', glyph: string, label: string }>
+  { id: "match-case", field: "matchCase", glyph: "Aa", label: "Match Case" },
+  { id: "whole-word", field: "wholeWord", glyph: "ab", label: "Match Whole Word" },
+  { id: "regex", field: "regex", glyph: ".*", label: "Use Regular Expression" },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  field: "matchCase" | "wholeWord" | "regex";
+  glyph: string;
+  label: string;
+}>;
 
-const emit = defineEmits<(e: 'jtl', filePath: string, lineNumber: number, openInNewTab: boolean) => void>()
+const emit =
+  defineEmits<(e: "jtl", filePath: string, lineNumber: number, openInNewTab: boolean) => void>();
 
-const windowStateStore = useWindowStateStore()
+const windowStateStore = useWindowStateStore();
 
-const query = reactive<SearchQuery>({ text: '', matchCase: false, wholeWord: false, regex: false, include: '', exclude: '' })
-const replacement = ref('')
-const preserveCase = ref(false)
-const replaceShown = ref(false)
-const detailsShown = ref(false)
-const queryInput = ref<HTMLInputElement|null>(null)
+const query = reactive<SearchQuery>({
+  text: "",
+  matchCase: false,
+  wholeWord: false,
+  regex: false,
+  include: "",
+  exclude: "",
+});
+const replacement = ref("");
+const preserveCase = ref(false);
+const replaceShown = ref(false);
+const detailsShown = ref(false);
+const queryInput = ref<HTMLInputElement | null>(null);
 
-const searching = ref(false)
-const progress = ref(0)
-const searchError = ref<string|undefined>(undefined)
-const undoAvailable = ref(false)
+const searching = ref(false);
+const progress = ref(0);
+const searchError = ref<string | undefined>(undefined);
+const undoAvailable = ref(false);
 /** Whether a search has run at all: an untouched view says nothing. */
-const searched = ref(false)
+const searched = ref(false);
 
 /** The rows the owner dismissed: a file path, or a path and a match offset. */
-const dismissedFiles = reactive(new Set<string>())
-const dismissedMatches = reactive(new Set<string>())
-const collapsed = reactive(new Set<string>())
+const dismissedFiles = reactive(new Set<string>());
+const dismissedMatches = reactive(new Set<string>());
+const collapsed = reactive(new Set<string>());
 
-const matchKey = (documentPath: string, match: SearchMatch): string => `${documentPath}:${match.range.from}`
+const matchKey = (documentPath: string, match: SearchMatch): string =>
+  `${documentPath}:${match.range.from}`;
 
 /** What the results hold after the dismissals are taken out. */
 const visibleFiles = computed<FileSearchResult[]>(() => {
   return windowStateStore.searchResults
-    .filter(file => !dismissedFiles.has(file.documentPath))
-    .map(file => ({ ...file, matches: file.matches.filter(match => !dismissedMatches.has(matchKey(file.documentPath, match))) }))
-    .filter(file => file.matches.length > 0)
-})
+    .filter((file) => !dismissedFiles.has(file.documentPath))
+    .map((file) => ({
+      ...file,
+      matches: file.matches.filter(
+        (match) => !dismissedMatches.has(matchKey(file.documentPath, match)),
+      ),
+    }))
+    .filter((file) => file.matches.length > 0);
+});
 
 type SearchResultRow =
-  | { kind: 'file', key: string, file: FileSearchResult }
-  | { kind: 'match', key: string, file: FileSearchResult, match: SearchMatch }
+  | { kind: "file"; key: string; file: FileSearchResult }
+  | { kind: "match"; key: string; file: FileSearchResult; match: SearchMatch };
 
 const visibleRows = computed<SearchResultRow[]>(() => {
-  const rows: SearchResultRow[] = []
+  const rows: SearchResultRow[] = [];
   for (const file of visibleFiles.value) {
-    rows.push({ kind: 'file', key: `file:${file.documentPath}`, file })
+    rows.push({ kind: "file", key: `file:${file.documentPath}`, file });
     if (collapsed.has(file.documentPath)) {
-      continue
+      continue;
     }
     for (const match of file.matches) {
       rows.push({
-        kind: 'match',
+        kind: "match",
         key: `match:${file.documentPath}:${match.range.from}`,
         file,
-        match
-      })
+        match,
+      });
     }
   }
-  return rows
-})
+  return rows;
+});
 
-const matchCount = computed(() => visibleFiles.value.reduce((sum, file) => sum + file.matches.length, 0))
-const replaceableFiles = computed(() => visibleFiles.value.filter(file => file.replaceable))
-const showsReplacement = computed(() => replaceShown.value && replacement.value !== '')
+const matchCount = computed(() =>
+  visibleFiles.value.reduce((sum, file) => sum + file.matches.length, 0),
+);
+const replaceableFiles = computed(() => visibleFiles.value.filter((file) => file.replaceable));
+const showsReplacement = computed(() => replaceShown.value && replacement.value !== "");
 
 const message = computed<string>(() => {
   if (searchError.value !== undefined) {
-    return searchError.value
+    return searchError.value;
   }
-  if (searching.value || !searched.value || query.text.trim() === '') {
-    return ''
+  if (searching.value || !searched.value || query.text.trim() === "") {
+    return "";
   }
   if (matchCount.value === 0) {
-    return trans('No results found.')
+    return trans("No results found.");
   }
-  return resultsPhrase(matchCount.value, visibleFiles.value.length)
-})
+  return resultsPhrase(matchCount.value, visibleFiles.value.length);
+});
 
 const replaceAllQuestion = computed(() => {
-  const matches = replaceableFiles.value.reduce((sum, file) => sum + file.matches.length, 0)
-  const files = replaceableFiles.value.length
-  return replacement.value === ''
-    ? trans('Replace %s with nothing?', occurrencesPhrase(matches, files))
-    : trans('Replace %s with "%s"?', occurrencesPhrase(matches, files), replacement.value)
-})
+  const matches = replaceableFiles.value.reduce((sum, file) => sum + file.matches.length, 0);
+  const files = replaceableFiles.value.length;
+  return replacement.value === ""
+    ? trans("Replace %s with nothing?", occurrencesPhrase(matches, files))
+    : trans('Replace %s with "%s"?', occurrencesPhrase(matches, files), replacement.value);
+});
 
 /** "3 results in 2 files", down to "1 result in 1 file". */
-function resultsPhrase (matches: number, files: number): string {
+function resultsPhrase(matches: number, files: number): string {
   if (matches === 1 && files === 1) {
-    return trans('1 result in 1 file')
+    return trans("1 result in 1 file");
   }
   return files === 1
-    ? trans('%s results in 1 file', String(matches))
-    : trans('%s results in %s files', String(matches), String(files))
+    ? trans("%s results in 1 file", String(matches))
+    : trans("%s results in %s files", String(matches), String(files));
 }
 
 /** The same count, as the confirmation asks it. */
-function occurrencesPhrase (matches: number, files: number): string {
+function occurrencesPhrase(matches: number, files: number): string {
   if (matches === 1 && files === 1) {
-    return trans('1 occurrence across 1 file')
+    return trans("1 occurrence across 1 file");
   }
   return files === 1
-    ? trans('%s occurrences across 1 file', String(matches))
-    : trans('%s occurrences across %s files', String(matches), String(files))
+    ? trans("%s occurrences across 1 file", String(matches))
+    : trans("%s occurrences across %s files", String(matches), String(files));
 }
 
-function fileName (documentPath: string): string {
-  return pathBasename(documentPath)
+function fileName(documentPath: string): string {
+  return pathBasename(documentPath);
 }
 
-function fileDirectory (documentPath: string): string {
-  return pathBasename(pathDirname(documentPath))
+function fileDirectory(documentPath: string): string {
+  return pathBasename(pathDirname(documentPath));
 }
 
 /**
@@ -481,193 +505,223 @@ function fileDirectory (documentPath: string): string {
  * applies the replace, so a query with capture groups or a preserved case
  * previews what it will actually do rather than the text as typed.
  */
-function replacementFor (match: SearchMatch): string {
-  const compiled = compileQuery({ ...query })
-  if (compiled.status !== 'ready') {
-    return replacement.value
+function replacementFor(match: SearchMatch): string {
+  const compiled = compileQuery({ ...query });
+  if (compiled.status !== "ready") {
+    return replacement.value;
   }
-  return expandReplacement(match.preview.inside, compiled.pattern, replacement.value, preserveCase.value)
+  return expandReplacement(
+    match.preview.inside,
+    compiled.pattern,
+    replacement.value,
+    preserveCase.value,
+  );
 }
 
-function toggleCollapsed (documentPath: string): void {
+function toggleCollapsed(documentPath: string): void {
   if (collapsed.has(documentPath)) {
-    collapsed.delete(documentPath)
+    collapsed.delete(documentPath);
   } else {
-    collapsed.add(documentPath)
+    collapsed.add(documentPath);
   }
 }
 
-function collapseAll (): void {
+function collapseAll(): void {
   for (const file of visibleFiles.value) {
-    collapsed.add(file.documentPath)
+    collapsed.add(file.documentPath);
   }
 }
 
-function dismissFile (documentPath: string): void {
-  dismissedFiles.add(documentPath)
+function dismissFile(documentPath: string): void {
+  dismissedFiles.add(documentPath);
 }
 
-function dismissMatch (documentPath: string, match: SearchMatch): void {
-  dismissedMatches.add(matchKey(documentPath, match))
+function dismissMatch(documentPath: string, match: SearchMatch): void {
+  dismissedMatches.add(matchKey(documentPath, match));
 }
 
-let debounce: ReturnType<typeof setTimeout>|undefined
+let debounce: ReturnType<typeof setTimeout> | undefined;
 
 /** Runs the query as it stands, dropping what the last one found. */
-function runSearch (): void {
+function runSearch(): void {
   // A search from Enter or an action is this gesture's search: the one the
   // typing was about to start is not also wanted.
-  clearTimeout(debounce)
-  windowStateStore.clearSearchResults()
-  dismissedFiles.clear()
-  dismissedMatches.clear()
-  collapsed.clear()
-  searchError.value = undefined
-  progress.value = 0
+  clearTimeout(debounce);
+  windowStateStore.clearSearchResults();
+  dismissedFiles.clear();
+  dismissedMatches.clear();
+  collapsed.clear();
+  searchError.value = undefined;
+  progress.value = 0;
 
-  if (query.text.trim() === '') {
-    searching.value = false
-    searched.value = false
-    return
+  if (query.text.trim() === "") {
+    searching.value = false;
+    searched.value = false;
+    return;
   }
 
-  searched.value = true
-  searching.value = true
-  ipcRenderer.invoke('search-provider', {
-    command: 'start-full-text-search',
-    payload: { query: { ...query } }
-  } satisfies SearchProviderIPCAPI)
-    .catch(err => { reportFailure('search', err) })
+  searched.value = true;
+  searching.value = true;
+  ipcRenderer
+    .invoke("search-provider", {
+      command: "start-full-text-search",
+      payload: { query: { ...query } },
+    } satisfies SearchProviderIPCAPI)
+    .catch((err) => {
+      reportFailure("search", err);
+    });
 }
 
-function clearSearch (): void {
-  query.text = ''
-  runSearch()
+function clearSearch(): void {
+  query.text = "";
+  runSearch();
 }
 
 watch(query, () => {
-  clearTimeout(debounce)
-  debounce = setTimeout(() => { runSearch() }, SEARCH_DEBOUNCE_MS)
-})
+  clearTimeout(debounce);
+  debounce = setTimeout(() => {
+    runSearch();
+  }, SEARCH_DEBOUNCE_MS);
+});
 
 onUnmounted(() => {
-  clearTimeout(debounce)
-  stopListening()
-})
+  clearTimeout(debounce);
+  stopListening();
+});
 
 // The view opens because someone means to search: the query takes the
 // focus as it appears, the way the reference implementation does.
-onMounted(() => { focusQueryInput() })
+onMounted(() => {
+  focusQueryInput();
+});
 
 /**
  * The newest search this view has heard from. A query typed one character
  * at a time starts a search per character, and a result from the one before
  * last must not join the list the newest is filling.
  */
-let seenGeneration = 0
+let seenGeneration = 0;
 
 // The drawer creates this view every time the owner comes back to it, so
 // the listener has to go when the view does: a second copy would add every
 // result to the list twice.
-const stopListening = ipcRenderer.on('search-provider', (event, message: SearchProviderBroadcast) => {
-  if (message.generation < seenGeneration) {
-    return
-  }
-  if (message.generation > seenGeneration) {
-    seenGeneration = message.generation
-    windowStateStore.clearSearchResults()
-  }
-  switch (message.type) {
-    case 'search-result':
-      progress.value = message.progress
-      windowStateStore.addSearchResult(message.result)
-      return
-    case 'search-progress':
-      progress.value = message.progress
-      return
-    case 'search-failed':
-      windowStateStore.flushSearchResults()
-      searching.value = false
-      progress.value = 1
-      searchError.value = failureMessage(message.failure)
-      return
-    case 'search-end':
-      windowStateStore.flushSearchResults()
-      searching.value = false
-      progress.value = 1
-  }
-})
+const stopListening = ipcRenderer.on(
+  "search-provider",
+  (event, message: SearchProviderBroadcast) => {
+    if (message.generation < seenGeneration) {
+      return;
+    }
+    if (message.generation > seenGeneration) {
+      seenGeneration = message.generation;
+      windowStateStore.clearSearchResults();
+    }
+    switch (message.type) {
+      case "search-result":
+        progress.value = message.progress;
+        windowStateStore.addSearchResult(message.result);
+        return;
+      case "search-progress":
+        progress.value = message.progress;
+        return;
+      case "search-failed":
+        windowStateStore.flushSearchResults();
+        searching.value = false;
+        progress.value = 1;
+        searchError.value = failureMessage(message.failure);
+        return;
+      case "search-end":
+        windowStateStore.flushSearchResults();
+        searching.value = false;
+        progress.value = 1;
+    }
+  },
+);
 
 /** What the view reads out in place of a count it cannot honestly give. */
-function failureMessage (failure: SearchFailure): string {
-  return failure.kind === 'invalid-query'
-    ? trans('Not a regular expression: %s', failure.message)
-    : trans('%s could not be read; the search stopped.', pathBasename(failure.documentPath))
+function failureMessage(failure: SearchFailure): string {
+  return failure.kind === "invalid-query"
+    ? trans("Not a regular expression: %s", failure.message)
+    : trans("%s could not be read; the search stopped.", pathBasename(failure.documentPath));
 }
 
 /** One file's replace target, or one match's. */
-function targetFor (file: FileSearchResult, matches: SearchMatch[]): ReplaceTarget {
+function targetFor(file: FileSearchResult, matches: SearchMatch[]): ReplaceTarget {
   return {
     documentPath: file.documentPath,
     sourceHash: file.sourceHash,
     // Plain objects: the store's reactive proxies cannot cross the IPC boundary.
-    ranges: matches.map(match => ({ from: match.range.from, to: match.range.to }))
-  }
+    ranges: matches.map((match) => ({ from: match.range.from, to: match.range.to })),
+  };
 }
 
-function runReplace (targets: ReplaceTarget[]): void {
+function runReplace(targets: ReplaceTarget[]): void {
   if (targets.length === 0) {
-    return
+    return;
   }
-  searchError.value = undefined
-  ipcRenderer.invoke('search-provider', {
-    command: 'replace-in-files',
-    payload: { targets, replacement: replacement.value, preserveCase: preserveCase.value }
-  } satisfies SearchProviderIPCAPI)
-    .then(outcome => {
-      if (outcome.status === 'conflict') {
-        searchError.value = trans('%s changed since the search; nothing was replaced. Search again.', pathBasename(outcome.documentPath))
-        return
+  searchError.value = undefined;
+  ipcRenderer
+    .invoke("search-provider", {
+      command: "replace-in-files",
+      payload: { targets, replacement: replacement.value, preserveCase: preserveCase.value },
+    } satisfies SearchProviderIPCAPI)
+    .then((outcome) => {
+      if (outcome.status === "conflict") {
+        searchError.value = trans(
+          "%s changed since the search; nothing was replaced. Search again.",
+          pathBasename(outcome.documentPath),
+        );
+        return;
       }
-      undoAvailable.value = true
-      runSearch()
+      undoAvailable.value = true;
+      runSearch();
     })
-    .catch(err => { reportFailure('replace', err) })
+    .catch((err) => {
+      reportFailure("replace", err);
+    });
 }
 
-function askToReplaceAll (): void {
+function askToReplaceAll(): void {
   if (replaceableFiles.value.length > 0) {
-    confirmingReplaceAll.value = true
+    confirmingReplaceAll.value = true;
   }
 }
 
-const confirmingReplaceAll = ref(false)
+const confirmingReplaceAll = ref(false);
 
-function replaceAll (): void {
-  runReplace(replaceableFiles.value.map(file => targetFor(file, file.matches)))
+function replaceAll(): void {
+  runReplace(replaceableFiles.value.map((file) => targetFor(file, file.matches)));
 }
 
-function replaceFile (file: FileSearchResult): void {
-  runReplace([ targetFor(file, file.matches) ])
+function replaceFile(file: FileSearchResult): void {
+  runReplace([targetFor(file, file.matches)]);
 }
 
-function replaceMatch (file: FileSearchResult, match: SearchMatch): void {
-  runReplace([ targetFor(file, [ match ]) ])
+function replaceMatch(file: FileSearchResult, match: SearchMatch): void {
+  runReplace([targetFor(file, [match])]);
 }
 
 /** Applies the provider's one-shot inverse of the last replace, then searches again. */
-function undoReplace (): void {
-  searchError.value = undefined
-  ipcRenderer.invoke('search-provider', { command: 'undo-last-replace', payload: undefined } satisfies SearchProviderIPCAPI)
-    .then(outcome => {
-      if (outcome.status === 'conflict') {
-        searchError.value = trans('%s changed since the replace; nothing was undone.', pathBasename(outcome.documentPath))
-        return
+function undoReplace(): void {
+  searchError.value = undefined;
+  ipcRenderer
+    .invoke("search-provider", {
+      command: "undo-last-replace",
+      payload: undefined,
+    } satisfies SearchProviderIPCAPI)
+    .then((outcome) => {
+      if (outcome.status === "conflict") {
+        searchError.value = trans(
+          "%s changed since the replace; nothing was undone.",
+          pathBasename(outcome.documentPath),
+        );
+        return;
       }
-      undoAvailable.value = false
-      runSearch()
+      undoAvailable.value = false;
+      runSearch();
     })
-    .catch(err => { reportFailure('replace', err) })
+    .catch((err) => {
+      reportFailure("replace", err);
+    });
 }
 
 /**
@@ -676,35 +730,40 @@ function undoReplace (): void {
  * — naming the operation that failed and carrying the provider's own
  * reason, not a generic one.
  */
-function reportFailure (operation: 'search'|'replace', err: unknown): void {
-  searching.value = false
-  const reason = err instanceof Error ? err.message : String(err)
-  searchError.value = operation === 'search'
-    ? trans('Search failed: %s', reason)
-    : trans('Replace failed: %s', reason)
-  reportError('[SearchView] The search provider could not be reached', err)
+function reportFailure(operation: "search" | "replace", err: unknown): void {
+  searching.value = false;
+  const reason = err instanceof Error ? err.message : String(err);
+  searchError.value =
+    operation === "search"
+      ? trans("Search failed: %s", reason)
+      : trans("Replace failed: %s", reason);
+  reportError("[SearchView] The search provider could not be reached", err);
 }
 
 /**
  * The launcher and the Search-all-files menu item reveal this view and
  * focus it in the same breath, so the input may not be in the document yet.
  */
-function focusQueryInput (): void {
+function focusQueryInput(): void {
   nextTick()
-    .then(() => { queryInput.value?.focus() })
-    .catch(err => { reportError('[SearchView] Could not focus the query', err) })
+    .then(() => {
+      queryInput.value?.focus();
+    })
+    .catch((err) => {
+      reportError("[SearchView] Could not focus the query", err);
+    });
 }
 
 /** The launcher's "Search all files" arrives here with its terms. */
-function startSearch (overrideQuery?: string): void {
+function startSearch(overrideQuery?: string): void {
   if (overrideQuery !== undefined) {
-    query.text = overrideQuery
+    query.text = overrideQuery;
   }
-  focusQueryInput()
-  runSearch()
+  focusQueryInput();
+  runSearch();
 }
 
-defineExpose({ focusQueryInput, startSearch })
+defineExpose({ focusQueryInput, startSearch });
 </script>
 
 <style lang="less">

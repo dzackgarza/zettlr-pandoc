@@ -33,25 +33,26 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the store below reads window.ipc at its own module top level.
-import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
-import { createPinia, setActivePinia } from "pinia";
-import { computed } from "vue";
-import { DP_EVENTS } from "@dts/common/documents";
+import "./document-collaboration-ipc-double";
+import type { TextAnnotation } from "@dts/common/annotation-domain";
 import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
-import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
+import { DP_EVENTS } from "@dts/common/documents";
+import { strict as assert } from "assert";
+import { createPinia, setActivePinia } from "pinia";
 import {
-  CollaborationApplicationService,
   type AnnotationFailure,
+  CollaborationApplicationService,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { collaborationSessionFor } from "source/app/service-providers/documents/review-diff-store";
+import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
+import { computed } from "vue";
 import {
   DocumentAuthority as SharedDocumentAuthority,
   temporarySidecarDirectory,
 } from "./collaboration-test-authority";
-import type { TextAnnotation } from "@dts/common/annotation-domain";
+import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
 const DOCUMENT_ID = "doc-multi-pane";
 const DOCUMENT_PATH = "/tmp/multi-pane-note.md";
@@ -175,7 +176,10 @@ describe("useDocumentCollaborationStore", function () {
     );
     assert.deepEqual(pane1.value, initialSession);
     assert.deepEqual(pane2.value, initialSession);
-    assert.deepEqual(panel.value.map((a) => a.annotationId), [created.annotationId]);
+    assert.deepEqual(
+      panel.value.map((a) => a.annotationId),
+      [created.annotationId],
+    );
 
     // ONE mutation: an agent replies to the annotation's thread.
     await service.addAnnotationMessage({
@@ -244,10 +248,16 @@ describe("useDocumentCollaborationStore", function () {
     await store.ensureSession(DOCUMENT_PATH);
     const shown = store.sessionsByDocumentPath[DOCUMENT_PATH];
     const cards = store.getCards(DOCUMENT_PATH);
-    assert.deepEqual(cards.map((card) => card.annotation.annotationId), [created.annotationId]);
+    assert.deepEqual(
+      cards.map((card) => card.annotation.annotationId),
+      [created.annotationId],
+    );
 
     await store.refreshWorkspaceSessions([DOCUMENT_PATH]);
-    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"), 1);
+    assert.equal(
+      documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"),
+      1,
+    );
     assert.equal(store.sessionsByDocumentPath[DOCUMENT_PATH], shown);
     assert.equal(store.getCards(DOCUMENT_PATH), cards);
 

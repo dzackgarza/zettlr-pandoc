@@ -1,5 +1,10 @@
 import { strict as assert } from "node:assert";
-import { type ChildProcessWithoutNullStreams, type ExecFileException, execFile, spawn } from "node:child_process";
+import {
+  type ChildProcessWithoutNullStreams,
+  type ExecFileException,
+  execFile,
+  spawn,
+} from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -56,15 +61,30 @@ describe("standalone TikZ workbench", function () {
     documentPath = path.join(directory, "figure.tikz");
     await writeFile(documentPath, SOURCE, "utf8");
     const root = process.cwd();
-    server = spawn("bun", ["run", path.join(root, "packages/tikz-workbench/standalone/server.ts"), documentPath]);
+    server = spawn("bun", [
+      "run",
+      path.join(root, "packages/tikz-workbench/standalone/server.ts"),
+      documentPath,
+    ]);
     const url = await serverUrl(server);
     let serverOutput = "";
-    server.stdout.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
-    server.stderr.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
+    server.stdout.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
+    server.stderr.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
     try {
       const { stdout } = await execFileAsync(
         "xvfb-run",
-        ["-a", "node", path.join(root, "test/tikz-standalone-drive.mjs"), url, documentPath, directory],
+        [
+          "-a",
+          "node",
+          path.join(root, "test/tikz-standalone-drive.mjs"),
+          url,
+          documentPath,
+          directory,
+        ],
         { maxBuffer: 16 * 1024 * 1024 },
       );
       report = JSON.parse(stdout) as StandaloneReport;

@@ -43,5 +43,5 @@ export const TIKZ_CONTROL_WORDS = [
   "\\tikzstyle",
   "\\tiny",
   "\\useasboundingbox",
-  "\\usetikzlibrary"
-] as const
+  "\\usetikzlibrary",
+] as const;

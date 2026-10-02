@@ -62,39 +62,40 @@
  *
  * END HEADER
  */
-import { trans } from 'source/common/i18n-renderer'
-import { computed, ref } from 'vue'
-import { keyName, base } from 'w3c-keyname'
-import ShortcutDisplay from '../../ShortcutDisplay.vue'
-import ButtonControl from './ButtonControl.vue'
-import ZtrAdmonition from '../../ZtrAdmonition.vue'
-import { explodeShortcut, type ExplodedShortcut } from '@common/util/shortcuts'
 
-const model = defineModel<string>({ required: true })
+import { type ExplodedShortcut, explodeShortcut } from "@common/util/shortcuts";
+import { trans } from "source/common/i18n-renderer";
+import { computed, ref } from "vue";
+import { base, keyName } from "w3c-keyname";
+import ShortcutDisplay from "../../ShortcutDisplay.vue";
+import ZtrAdmonition from "../../ZtrAdmonition.vue";
+import ButtonControl from "./ButtonControl.vue";
 
-const isCurrentlyRecording = ref(false)
+const model = defineModel<string>({ required: true });
+
+const isCurrentlyRecording = ref(false);
 
 const props = defineProps<{
-  name?: string
-  label?: string
-  defaultShortcut?: string
-  conflicts?: string[]
-  reset?: boolean|string
-}>()
+  name?: string;
+  label?: string;
+  defaultShortcut?: string;
+  conflicts?: string[];
+  reset?: boolean | string;
+}>();
 
 const placeholderLabel = computed(() => {
-  const text = props.defaultShortcut === undefined ? trans('unassigned') : ''
-  const message = trans('Default: %s', text)
-  return message
-})
+  const text = props.defaultShortcut === undefined ? trans("unassigned") : "";
+  const message = trans("Default: %s", text);
+  return message;
+});
 
-const recordingLabel = trans('Recording…')
-const resetLabel = trans('Reset')
+const recordingLabel = trans("Recording…");
+const resetLabel = trans("Reset");
 
 const conflictsWarning = computed(() => {
-  const conflicts = props.conflicts ?? []
-  return trans('This shortcut conflicts with: %s', conflicts.join(', '))
-})
+  const conflicts = props.conflicts ?? [];
+  return trans("This shortcut conflicts with: %s", conflicts.join(", "));
+});
 
 // This is the "exploded" shortcut, so that we can display it
 const newShortcut = ref<ExplodedShortcut>({
@@ -102,98 +103,95 @@ const newShortcut = ref<ExplodedShortcut>({
   shiftKey: false,
   modKey: false,
   ctrlKey: false,
-  key: ''
-})
+  key: "",
+});
 
 const isNewShortcutEmpty = computed(() => {
-  const e = newShortcut.value
-  return !e.altKey && !e.ctrlKey && !e.modKey && !e.shiftKey && !e.key
-})
+  const e = newShortcut.value;
+  return !e.altKey && !e.ctrlKey && !e.modKey && !e.shiftKey && !e.key;
+});
 
-function resetShortcut () {
-  model.value = ''
+function resetShortcut() {
+  model.value = "";
 }
 
-function startRecording () {
-  isCurrentlyRecording.value = true
-  const e = newShortcut.value
-  e.altKey = false
-  e.ctrlKey = false
-  e.modKey = false
-  e.shiftKey = false
-  e.key = ''
+function startRecording() {
+  isCurrentlyRecording.value = true;
+  const e = newShortcut.value;
+  e.altKey = false;
+  e.ctrlKey = false;
+  e.modKey = false;
+  e.shiftKey = false;
+  e.key = "";
 }
 
-function stopRecording (event: KeyboardEvent|FocusEvent) {
-  isCurrentlyRecording.value = false
-  const e = newShortcut.value
-  e.altKey = false
-  e.ctrlKey = false
-  e.modKey = false
-  e.shiftKey = false
-  e.key = ''
+function stopRecording(event: KeyboardEvent | FocusEvent) {
+  isCurrentlyRecording.value = false;
+  const e = newShortcut.value;
+  e.altKey = false;
+  e.ctrlKey = false;
+  e.modKey = false;
+  e.shiftKey = false;
+  e.key = "";
 
   if (event !== undefined && event.target !== null && event.target instanceof HTMLElement) {
-    event.target.blur()
+    event.target.blur();
   }
 }
 
-function handleKeydown (event: KeyboardEvent): void {
-  if (event.key === 'Unidentified') {
-    return
+function handleKeydown(event: KeyboardEvent): void {
+  if (event.key === "Unidentified") {
+    return;
   }
 
-  const isNonTerminalKey = [ 'Alt', 'Shift', 'Meta', 'Control', 'Dead' ].includes(event.key)
+  const isNonTerminalKey = ["Alt", "Shift", "Meta", "Control", "Dead"].includes(event.key);
 
   // On both macOS and Linux, the key might be different from what is registered
   // as the `event.key` due to their layer-2 key associations, which allow users
   // to type, e.g., µ, ∂, or … without the use of weird tricks.
-  const isLayer3 = event.altKey && process.platform !== 'win32'
+  const isLayer3 = event.altKey && process.platform !== "win32";
 
-  const key = isNonTerminalKey
-    ? ''
-    : isLayer3 ? base[event.keyCode] : keyName(event)
-
+  const key = isNonTerminalKey ? "" : isLayer3 ? base[event.keyCode] : keyName(event);
 
   // The order of these is determined by `normalizeKeyName` in
   // https://github.com/codemirror/view/blob/main/src/keymap.ts
-  newShortcut.value.altKey = event.altKey
-  newShortcut.value.shiftKey = event.shiftKey
-  newShortcut.value.modKey = event.metaKey
-  newShortcut.value.ctrlKey = event.ctrlKey
-  newShortcut.value.key = key
+  newShortcut.value.altKey = event.altKey;
+  newShortcut.value.shiftKey = event.shiftKey;
+  newShortcut.value.modKey = event.metaKey;
+  newShortcut.value.ctrlKey = event.ctrlKey;
+  newShortcut.value.key = key;
 
   // If the user presses `Cmd+Shift+a`, the key will be A, but we want a.
   if (event.shiftKey && key !== key.toLowerCase()) {
-    newShortcut.value.key = key.toLowerCase()
+    newShortcut.value.key = key.toLowerCase();
   }
 
   // The first non-terminal key is our sign that the recording can be stopped.
   if (!isNonTerminalKey) {
-    isCurrentlyRecording.value = false
-    model.value = implodeShortcut(newShortcut.value)
-    console.log('Finished shortcut:', implodeShortcut(newShortcut.value))
-    stopRecording(event)
+    isCurrentlyRecording.value = false;
+    model.value = implodeShortcut(newShortcut.value);
+    console.log("Finished shortcut:", implodeShortcut(newShortcut.value));
+    stopRecording(event);
   }
 }
 
-function implodeShortcut (shortcut: ExplodedShortcut): string {
-  let returnVal = shortcut.key
+function implodeShortcut(shortcut: ExplodedShortcut): string {
+  let returnVal = shortcut.key;
 
   if (shortcut.altKey) {
-    returnVal = `Alt-${returnVal}`
+    returnVal = `Alt-${returnVal}`;
   }
   if (shortcut.shiftKey) {
-    returnVal = `Shift-${returnVal}`
+    returnVal = `Shift-${returnVal}`;
   }
   if (shortcut.modKey) {
-    returnVal = `Mod-${returnVal}`
+    returnVal = `Mod-${returnVal}`;
   }
   if (shortcut.ctrlKey) {
-    returnVal = `Ctrl-${returnVal}`
+    returnVal = `Ctrl-${returnVal}`;
   }
 
-  return returnVal
+  return returnVal;
 }
 </script>
 

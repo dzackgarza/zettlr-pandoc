@@ -28,12 +28,14 @@
  * END HEADER
  */
 
-import { strict as assert } from "assert";
-import { chmodSync } from "fs";
-import { createPatch } from "diff";
-import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { sha256Text } from "@common/util/sha256";
+import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
+import { strict as assert } from "assert";
+import { createPatch } from "diff";
+import { chmodSync } from "fs";
 import {
+  type AnnotationMutationPlan,
+  type AnnotationTransitionError,
   emptyAnnotationSet,
   prepareAnnotationCreation,
   prepareAnnotationDeletion,
@@ -41,8 +43,6 @@ import {
   prepareAnnotationReattachment,
   prepareAnnotationReopen,
   prepareAnnotationResolution,
-  type AnnotationMutationPlan,
-  type AnnotationTransitionError,
 } from "source/app/service-providers/documents/annotation-transitions";
 import type {
   AnnotationFailure,
@@ -50,9 +50,9 @@ import type {
 } from "source/app/service-providers/documents/document-collaboration-application-service";
 import {
   committed,
+  type Harness,
   harness as sharedHarness,
   reopened as sharedReopened,
-  type Harness,
 } from "./collaboration-test-authority";
 
 const DOCUMENT_ID = "doc-annotated";
@@ -648,12 +648,7 @@ describe("the annotation transaction boundary", function () {
     const { service, authority } = harness();
     const annotation = await createOne(service);
     const edit = authority.ownerEdit({ from: 0, to: 0, insert: "Once upon a time. " });
-    await service.applyWorkingTextEdit(
-      DOCUMENT_ID,
-      edit.nextText,
-      edit.changes,
-      edit.commit,
-    );
+    await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
 
     const moved = service.getAnnotations(DOCUMENT_ID).items[0];
     assert.equal(moved.annotationId, annotation.annotationId);

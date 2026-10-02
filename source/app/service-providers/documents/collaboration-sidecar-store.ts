@@ -40,23 +40,23 @@
  * END HEADER
  */
 
+import { sha256Text } from "@common/util/sha256";
 import Ajv from "ajv";
 import { promises as fs } from "fs";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
-import { sha256Text } from "@common/util/sha256";
+import { assertValidAnnotationSet } from "./annotation-domain-validation";
 import {
+  type CollaborationSidecarData,
   CollaborationSidecarSchema,
+  type EarlyCollaborationSidecarV5Data,
   EarlyCollaborationSidecarV5Schema,
-  ReviewSidecarV4Schema,
   liftEarlyV5Sidecar,
   migrateV4ToV5Sidecar,
-  type CollaborationSidecarData,
-  type EarlyCollaborationSidecarV5Data,
   type PersistedReviewState,
   type ReviewSidecarV4Data,
+  ReviewSidecarV4Schema,
 } from "./collaboration-sidecar-schema";
-import { assertValidAnnotationSet } from "./annotation-domain-validation";
 
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
@@ -76,13 +76,12 @@ function isMissingFile(error: unknown): boolean {
 const validateCollaborationSidecar = new Ajv({ allErrors: true }).compile<CollaborationSidecarData>(
   CollaborationSidecarSchema,
 );
-const validateEarlyCollaborationSidecarV5 = new Ajv({ allErrors: true }).compile<EarlyCollaborationSidecarV5Data>(
-  EarlyCollaborationSidecarV5Schema,
-);
+const validateEarlyCollaborationSidecarV5 = new Ajv({
+  allErrors: true,
+}).compile<EarlyCollaborationSidecarV5Data>(EarlyCollaborationSidecarV5Schema);
 const validateLegacyReviewSidecar = new Ajv({ allErrors: true }).compile<ReviewSidecarV4Data>(
   ReviewSidecarV4Schema,
 );
-
 
 /**
  * The rules a persisted review must satisfy, one function per rule. Each
@@ -136,9 +135,10 @@ function assertSuggestionCoordinates(
   if (suggestion.seam < 0 || suggestion.seam > length) {
     throw invalid("an invalid seam");
   }
-  const restorationPoints = suggestion.restorations.map(
-    (restoration) => ({ from: restoration.at, to: restoration.at }),
-  );
+  const restorationPoints = suggestion.restorations.map((restoration) => ({
+    from: restoration.at,
+    to: restoration.at,
+  }));
   if (!isOrderedWithin(restorationPoints, length)) {
     throw invalid("an invalid restoration");
   }
@@ -159,9 +159,13 @@ function isCoherentInsertion(
   suggestion: PersistedReviewState["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return shape.owned.length > 0 && shape.seams.length === 0 &&
+  return (
+    shape.owned.length > 0 &&
+    shape.seams.length === 0 &&
     shape.owned[0].from === suggestion.seam &&
-    suggestion.restorations.length === 0 && suggestion.removedText === "";
+    suggestion.restorations.length === 0 &&
+    suggestion.removedText === ""
+  );
 }
 
 /** Owns no text, and restores what stood where it sits. */
@@ -169,8 +173,12 @@ function isCoherentDeletion(
   suggestion: PersistedReviewState["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return shape.owned.length === 0 && shape.seams.length > 0 &&
-    shape.seams[0].from === suggestion.seam && shape.restores;
+  return (
+    shape.owned.length === 0 &&
+    shape.seams.length > 0 &&
+    shape.seams[0].from === suggestion.seam &&
+    shape.restores
+  );
 }
 
 /**
@@ -182,8 +190,7 @@ function isCoherentSubstitution(
   suggestion: PersistedReviewState["suggestions"][number],
   shape: AnchorShape,
 ): boolean {
-  return shape.owned.length > 0 &&
-    suggestion.anchors[0].from === suggestion.seam && shape.restores;
+  return shape.owned.length > 0 && suggestion.anchors[0].from === suggestion.seam && shape.restores;
 }
 
 /** The three shapes a change comes in, and nothing else. */
@@ -212,7 +219,9 @@ function assertSuggestionIntegrity(
   const suggestionIds = new Set<string>();
   for (const suggestion of review.suggestions) {
     const fault = (what: string): Error =>
-      new Error(`Collaboration sidecar ${target} suggestion ${suggestion.suggestionId} has ${what}`);
+      new Error(
+        `Collaboration sidecar ${target} suggestion ${suggestion.suggestionId} has ${what}`,
+      );
     if (suggestionIds.has(suggestion.suggestionId)) {
       throw new Error(
         `Collaboration sidecar ${target} has duplicate suggestion id ${suggestion.suggestionId}`,
@@ -246,9 +255,11 @@ function assertSuggestionIntegrity(
 function assertDisjointAnchors(review: PersistedReviewState, target: string): void {
   const anchors = review.suggestions
     .filter((suggestion) => suggestion.state === "proposed")
-    .flatMap((suggestion) => suggestion.anchors
-      .filter((anchor) => anchor.from < anchor.to)
-      .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })))
+    .flatMap((suggestion) =>
+      suggestion.anchors
+        .filter((anchor) => anchor.from < anchor.to)
+        .map((anchor) => ({ ...anchor, suggestionId: suggestion.suggestionId })),
+    )
     .sort((left, right) => left.from - right.from || left.to - right.to);
   for (let index = 1; index < anchors.length; index += 1) {
     const previous = anchors[index - 1];
@@ -425,10 +436,12 @@ export class CollaborationSidecarStore {
       throw error;
     }
     return await Promise.all(
-      names.filter((name) => name.endsWith(".json")).map(async (name) => {
-        const target = path.join(this.directory, name);
-        return await this.parseAndMigrate(await fs.readFile(target, "utf8"), target);
-      }),
+      names
+        .filter((name) => name.endsWith(".json"))
+        .map(async (name) => {
+          const target = path.join(this.directory, name);
+          return await this.parseAndMigrate(await fs.readFile(target, "utf8"), target);
+        }),
     );
   }
 }

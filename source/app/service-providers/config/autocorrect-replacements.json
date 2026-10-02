@@ -1,0 +1,194 @@
+[
+  {
+    "key": "-->",
+    "value": "→"
+  },
+  {
+    "key": "–>",
+    "value": "→"
+  },
+  {
+    "key": "<--",
+    "value": "←"
+  },
+  {
+    "key": "<->",
+    "value": "↔"
+  },
+  {
+    "key": "<-->",
+    "value": "↔"
+  },
+  {
+    "key": "==>",
+    "value": "⇒"
+  },
+  {
+    "key": "<==",
+    "value": "⇐"
+  },
+  {
+    "key": "<=>",
+    "value": "⇔"
+  },
+  {
+    "key": "<==>",
+    "value": "⇔"
+  },
+  {
+    "key": "!=",
+    "value": "≠"
+  },
+  {
+    "key": "<>",
+    "value": "≠"
+  },
+  {
+    "key": "+-",
+    "value": "±"
+  },
+  {
+    "key": ":time:",
+    "value": "×"
+  },
+  {
+    "key": ":division:",
+    "value": "÷"
+  },
+  {
+    "key": "<=",
+    "value": "≤"
+  },
+  {
+    "key": ">=",
+    "value": "≥"
+  },
+  {
+    "key": "1/2",
+    "value": "½"
+  },
+  {
+    "key": "1/3",
+    "value": "⅓"
+  },
+  {
+    "key": "2/3",
+    "value": "⅔"
+  },
+  {
+    "key": "1/4",
+    "value": "¼"
+  },
+  {
+    "key": "3/4",
+    "value": "¾"
+  },
+  {
+    "key": "1/8",
+    "value": "⅛"
+  },
+  {
+    "key": "3/8",
+    "value": "⅜"
+  },
+  {
+    "key": "5/8",
+    "value": "⅝"
+  },
+  {
+    "key": "7/8",
+    "value": "⅞"
+  },
+  {
+    "key": "mm2",
+    "value": "mm²"
+  },
+  {
+    "key": "cm2",
+    "value": "cm²"
+  },
+  {
+    "key": "m2",
+    "value": "m²"
+  },
+  {
+    "key": "km2",
+    "value": "km²"
+  },
+  {
+    "key": "mm3",
+    "value": "mm³"
+  },
+  {
+    "key": "cm3",
+    "value": "cm³"
+  },
+  {
+    "key": "ccm",
+    "value": "cm³"
+  },
+  {
+    "key": "m3",
+    "value": "m³"
+  },
+  {
+    "key": "km3",
+    "value": "km³"
+  },
+  {
+    "key": ":sup2:",
+    "value": "²"
+  },
+  {
+    "key": ":sup3:",
+    "value": "³"
+  },
+  {
+    "key": ":deg:",
+    "value": "°"
+  },
+  {
+    "key": ":eur",
+    "value": "€"
+  },
+  {
+    "key": ":gbp",
+    "value": "£"
+  },
+  {
+    "key": ":yen",
+    "value": "¥"
+  },
+  {
+    "key": ":cent",
+    "value": "¢"
+  },
+  {
+    "key": ":inr:",
+    "value": "₹"
+  },
+  {
+    "key": "(c)",
+    "value": "©"
+  },
+  {
+    "key": "(tm)",
+    "value": "™"
+  },
+  {
+    "key": "(r)",
+    "value": "®"
+  },
+  {
+    "key": "...",
+    "value": "…"
+  },
+  {
+    "key": "--",
+    "value": "–"
+  },
+  {
+    "key": "---",
+    "value": "—"
+  }
+]

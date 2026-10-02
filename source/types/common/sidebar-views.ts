@@ -16,18 +16,24 @@
  * END HEADER
  */
 
-export const SIDEBAR_VIEW_IDS = [ 'explorer', 'search', 'references' ] as const
+export const SIDEBAR_VIEW_IDS = ["explorer", "search", "references"] as const;
 
-export type SidebarViewId = typeof SIDEBAR_VIEW_IDS[number]
+export type SidebarViewId = (typeof SIDEBAR_VIEW_IDS)[number];
 
-export function isSidebarViewId (value: string): value is SidebarViewId {
-  return SIDEBAR_VIEW_IDS.some(id => id === value)
+export function isSidebarViewId(value: string): value is SidebarViewId {
+  return SIDEBAR_VIEW_IDS.some((id) => id === value);
 }
 
-export const SIDEBAR_SECTION_IDS = [ 'files', 'outline', 'book', 'citations', 'relatedFiles' ] as const
+export const SIDEBAR_SECTION_IDS = [
+  "files",
+  "outline",
+  "book",
+  "citations",
+  "relatedFiles",
+] as const;
 
-export type SidebarSectionId = typeof SIDEBAR_SECTION_IDS[number]
+export type SidebarSectionId = (typeof SIDEBAR_SECTION_IDS)[number];
 
-export function isSidebarSectionId (value: string): value is SidebarSectionId {
-  return SIDEBAR_SECTION_IDS.some(id => id === value)
+export function isSidebarSectionId(value: string): value is SidebarSectionId {
+  return SIDEBAR_SECTION_IDS.some((id) => id === value);
 }

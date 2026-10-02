@@ -691,15 +691,29 @@ describe("TikZ render service (issue #14)", function () {
     this.timeout(120000);
     if (!toolchainPresent) this.skip();
     const source = uncachedTikzcd("\\concurrentUndefinedCommand");
-    const request = { source, kind: "raw" as const, language: "tikzcd" as const, docPath: NO_DOC_PATH };
-    const options = { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env };
-    const results = await Promise.all(Array.from({ length: 4 }, () => renderTikz(request, options)));
+    const request = {
+      source,
+      kind: "raw" as const,
+      language: "tikzcd" as const,
+      docPath: NO_DOC_PATH,
+    };
+    const options = {
+      tikzAssetDir: TIKZ_ASSET_DIR,
+      templatePath: TIKZ_TEMPLATE,
+      cacheDir,
+      env: process.env,
+    };
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => renderTikz(request, options)),
+    );
     for (const result of results) {
       assert.equal(result.ok, false);
       assert.equal(result.kind, "compile-error");
       if (!result.ok && result.kind === "compile-error") {
         assert.match(result.log, /Undefined control sequence/u);
-        assert.ok(result.errors.some((error) => error.sourceLine.includes("\\concurrentUndefinedCommand")));
+        assert.ok(
+          result.errors.some((error) => error.sourceLine.includes("\\concurrentUndefinedCommand")),
+        );
       }
     }
   });

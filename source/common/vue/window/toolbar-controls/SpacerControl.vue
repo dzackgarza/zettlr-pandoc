@@ -25,13 +25,13 @@
  */
 
 export interface ToolbarSpacerControl {
-  type: 'spacer'
-  size: '5x'|'3x'|'1x'
+  type: "spacer";
+  size: "5x" | "3x" | "1x";
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
-const props = defineProps<{ control: ToolbarSpacerControl }>()
+const props = defineProps<{ control: ToolbarSpacerControl }>();
 </script>
 
 <style lang="less">

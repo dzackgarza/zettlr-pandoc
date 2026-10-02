@@ -15,54 +15,54 @@
  * END HEADER
  */
 
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { DynamicGroupId, GroupPath, JustRecipeRow } from './launcher-rows'
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import type { DynamicGroupId, GroupPath, JustRecipeRow } from "./launcher-rows";
 
 export type LauncherView =
-  | { kind: 'root' }
-  | { kind: 'menu-group', path: GroupPath }
-  | { kind: 'dynamic-group', id: Exclude<DynamicGroupId, 'search-references'> }
-  | { kind: 'references', request: ReferenceSearchRequest }
-  | { kind: 'just-arguments', recipe: JustRecipeRow }
+  | { kind: "root" }
+  | { kind: "menu-group"; path: GroupPath }
+  | { kind: "dynamic-group"; id: Exclude<DynamicGroupId, "search-references"> }
+  | { kind: "references"; request: ReferenceSearchRequest }
+  | { kind: "just-arguments"; recipe: JustRecipeRow };
 
 export type LauncherState =
   | { open: false }
-  | { open: true, view: LauncherView, query: string, stack: readonly LauncherView[] }
+  | { open: true; view: LauncherView; query: string; stack: readonly LauncherView[] };
 
-export const CLOSED_LAUNCHER: LauncherState = { open: false }
+export const CLOSED_LAUNCHER: LauncherState = { open: false };
 
 /** Opens the launcher on a view with an empty query and nothing to go back to. */
-export function openLauncherAt (view: LauncherView): LauncherState {
-  return { open: true, view, query: '', stack: [] }
+export function openLauncherAt(view: LauncherView): LauncherState {
+  return { open: true, view, query: "", stack: [] };
 }
 
 /** Drills from the current view into a deeper one; Backspace on an empty query comes back. */
-export function drillInto (state: LauncherState, view: LauncherView): LauncherState {
+export function drillInto(state: LauncherState, view: LauncherView): LauncherState {
   if (!state.open) {
-    return openLauncherAt(view)
+    return openLauncherAt(view);
   }
-  return { open: true, view, query: '', stack: [ ...state.stack, state.view ] }
+  return { open: true, view, query: "", stack: [...state.stack, state.view] };
 }
 
 /** One level up; at the top there is nothing above, so the launcher closes. */
-export function popLevel (state: LauncherState): LauncherState {
+export function popLevel(state: LauncherState): LauncherState {
   if (!state.open) {
-    return state
+    return state;
   }
-  const parent = state.stack[state.stack.length - 1]
+  const parent = state.stack[state.stack.length - 1];
   if (parent === undefined) {
-    return CLOSED_LAUNCHER
+    return CLOSED_LAUNCHER;
   }
-  return { open: true, view: parent, query: '', stack: state.stack.slice(0, -1) }
+  return { open: true, view: parent, query: "", stack: state.stack.slice(0, -1) };
 }
 
-export function setQuery (state: LauncherState, query: string): LauncherState {
+export function setQuery(state: LauncherState, query: string): LauncherState {
   if (!state.open) {
-    return state
+    return state;
   }
-  return { ...state, query }
+  return { ...state, query };
 }
 
-export function closeLauncher (): LauncherState {
-  return CLOSED_LAUNCHER
+export function closeLauncher(): LauncherState {
+  return CLOSED_LAUNCHER;
 }

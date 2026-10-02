@@ -11,7 +11,7 @@
  *
  * END HEADER
  */
-import { transformSelectedText } from './transform-selected-text'
+import { transformSelectedText } from "./transform-selected-text";
 
 /**
  * Strip duplicate spaces from selected text.
@@ -27,5 +27,5 @@ import { transformSelectedText } from './transform-selected-text'
  * @return  {string}        The text with all duplicate spaces stripped.
  */
 export const stripDuplicateSpaces = transformSelectedText((text) => {
-  return text.replaceAll(/ {2,}/g, ' ')
-})
+  return text.replaceAll(/ {2,}/g, " ");
+});

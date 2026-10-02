@@ -30,14 +30,13 @@
  * END HEADER
  */
 
-import { strict as assert } from 'node:assert'
-import { type ChildProcess } from 'node:child_process'
-import { execFile } from 'node:child_process'
-import { readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { promisify } from 'node:util'
-import { type Browser, type Locator, type Page } from 'playwright'
+import { strict as assert } from "node:assert";
+import { type ChildProcess, execFile } from "node:child_process";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { type Browser, type Locator, type Page } from "playwright";
 import {
   assertCleanExit,
   attach,
@@ -48,89 +47,98 @@ import {
   preserveArtifacts,
   REPO_ROOT,
   requireInitialized,
-  shutdown
-} from './support/electron-app'
+  shutdown,
+} from "./support/electron-app";
 
-const ARTIFACT_DIRECTORY = path.join(tmpdir(), 'zettlr-command-launcher-e2e-latest')
+const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-command-launcher-e2e-latest");
 
-const LAUNCHER = '[data-command-launcher]'
-const LAUNCHER_INPUT = `${LAUNCHER} [data-command-launcher-input]`
-const HIGHLIGHTED_ROW = `${LAUNCHER} [data-launcher-row][data-highlighted]`
-const NAVIGATION_SIDEBAR = '#navigation-sidebar'
-const FILTER_INPUT = '#navigation-sidebar .chrome-filter-input'
-const LAUNCHER_MENU_ITEM = 'menu.command_launcher'
-const execFileAsync = promisify(execFile)
+const LAUNCHER = "[data-command-launcher]";
+const LAUNCHER_INPUT = `${LAUNCHER} [data-command-launcher-input]`;
+const HIGHLIGHTED_ROW = `${LAUNCHER} [data-launcher-row][data-highlighted]`;
+const NAVIGATION_SIDEBAR = "#navigation-sidebar";
+const FILTER_INPUT = "#navigation-sidebar .chrome-filter-input";
+const LAUNCHER_MENU_ITEM = "menu.command_launcher";
+const execFileAsync = promisify(execFile);
 
 interface SerializedMenuNode {
-  id?: string
-  label?: string
-  type?: string
-  accelerator?: string | null
-  submenu?: SerializedMenuNode[]
+  id?: string;
+  label?: string;
+  type?: string;
+  accelerator?: string | null;
+  submenu?: SerializedMenuNode[];
 }
 
 /** The application menu as the menu provider serialises it for this window. */
-async function readApplicationMenu (page: Page): Promise<SerializedMenuNode[]> {
-  return await page.evaluate(async () => await new Promise<SerializedMenuNode[]>(resolve => {
-    window.ipc.on('menu-provider', (_event: unknown, message: { command: string, payload: SerializedMenuNode[] }) => {
-      if (message.command === 'application-menu') {
-        resolve(message.payload)
-      }
-    })
-    window.ipc.send('menu-provider', { command: 'get-application-menu' })
-  }))
+async function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
+  return await page.evaluate(
+    async () =>
+      await new Promise<SerializedMenuNode[]>((resolve) => {
+        window.ipc.on(
+          "menu-provider",
+          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
+            if (message.command === "application-menu") {
+              resolve(message.payload);
+            }
+          },
+        );
+        window.ipc.send("menu-provider", { command: "get-application-menu" });
+      }),
+  );
 }
 
-function findMenuNode (nodes: SerializedMenuNode[], id: string): SerializedMenuNode | undefined {
+function findMenuNode(nodes: SerializedMenuNode[], id: string): SerializedMenuNode | undefined {
   for (const node of nodes) {
     if (node.id === id) {
-      return node
+      return node;
     }
-    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id)
+    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id);
     if (nested !== undefined) {
-      return nested
+      return nested;
     }
   }
-  return undefined
+  return undefined;
 }
 
 /** Opens the launcher the way the accelerator would: by clicking its menu item. */
-async function openLauncherFromMenu (page: Page): Promise<void> {
-  await page.evaluate(id => {
-    window.ipc.send('menu-provider', { command: 'click-menu-item', payload: id })
-  }, LAUNCHER_MENU_ITEM)
-  await page.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
+async function openLauncherFromMenu(page: Page): Promise<void> {
+  await page.evaluate((id) => {
+    window.ipc.send("menu-provider", { command: "click-menu-item", payload: id });
+  }, LAUNCHER_MENU_ITEM);
+  await page.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function findPreferencesPage (browser: Browser, timeoutMs = 20_000): Promise<Page> {
-  const deadline = Date.now() + timeoutMs
+async function findPreferencesPage(browser: Browser, timeoutMs = 20_000): Promise<Page> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const page = browser.contexts()
-      .flatMap(context => context.pages())
-      .find(candidate => candidate.url().includes('/preferences/'))
+    const page = browser
+      .contexts()
+      .flatMap((context) => context.pages())
+      .find((candidate) => candidate.url().includes("/preferences/"));
     if (page !== undefined) {
-      return page
+      return page;
     }
-    await delay(100)
+    await delay(100);
   }
-  throw new Error('Preferences window did not open')
+  throw new Error("Preferences window did not open");
 }
 
-async function readConfig (page: Page): Promise<{ fileManagerVisible: boolean }> {
+async function readConfig(page: Page): Promise<{ fileManagerVisible: boolean }> {
   return await page.evaluate(() => {
-    const config: unknown = window.ipc.sendSync('config-provider', { command: 'get-config' })
-    if (typeof config !== 'object' || config === null || !('window' in config)) {
-      throw new Error('The config provider returned no window section')
+    const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
+    if (typeof config !== "object" || config === null || !("window" in config)) {
+      throw new Error("The config provider returned no window section");
     }
-    const windowSection: unknown = config.window
+    const windowSection: unknown = config.window;
     if (
-      typeof windowSection !== 'object' || windowSection === null ||
-      !('fileManagerVisible' in windowSection) || typeof windowSection.fileManagerVisible !== 'boolean'
+      typeof windowSection !== "object" ||
+      windowSection === null ||
+      !("fileManagerVisible" in windowSection) ||
+      typeof windowSection.fileManagerVisible !== "boolean"
     ) {
-      throw new Error('The config provider returned no window.fileManagerVisible boolean')
+      throw new Error("The config provider returned no window.fileManagerVisible boolean");
     }
-    return { fileManagerVisible: windowSection.fileManagerVisible }
-  })
+    return { fileManagerVisible: windowSection.fileManagerVisible };
+  });
 }
 
 /**
@@ -138,338 +146,438 @@ async function readConfig (page: Page): Promise<{ fileManagerVisible: boolean }>
  * mounted and hides the inactive ones, so the active document is the one
  * visible `.cm-content`, not the first in document order.
  */
-function activeEditor (page: Page): Locator {
-  return page.locator('.cm-content').filter({ visible: true })
+function activeEditor(page: Page): Locator {
+  return page.locator(".cm-content").filter({ visible: true });
 }
 
-async function readEditorDocument (page: Page): Promise<string> {
-  return await activeEditor(page).evaluate(content => {
-    const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } } }).cmTile
-    const text = tile?.root?.view?.state?.doc?.toString()
+async function readEditorDocument(page: Page): Promise<string> {
+  return await activeEditor(page).evaluate((content) => {
+    const tile = (
+      content as HTMLElement & {
+        cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } };
+      }
+    ).cmTile;
+    const text = tile?.root?.view?.state?.doc?.toString();
     if (text === undefined) {
-      throw new Error('Could not read the active CodeMirror document state')
+      throw new Error("Could not read the active CodeMirror document state");
     }
-    return text
-  })
+    return text;
+  });
 }
 
-async function readCursorLine (page: Page): Promise<number> {
-  return await activeEditor(page).evaluate(content => {
-    const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { state?: { doc: { lineAt(pos: number): { number: number } }, selection: { main: { head: number } } } } } } }).cmTile
-    const state = tile?.root?.view?.state
+async function readCursorLine(page: Page): Promise<number> {
+  return await activeEditor(page).evaluate((content) => {
+    const tile = (
+      content as HTMLElement & {
+        cmTile?: {
+          root?: {
+            view?: {
+              state?: {
+                doc: { lineAt(pos: number): { number: number } };
+                selection: { main: { head: number } };
+              };
+            };
+          };
+        };
+      }
+    ).cmTile;
+    const state = tile?.root?.view?.state;
     if (state === undefined) {
-      throw new Error('Could not read the active CodeMirror selection')
+      throw new Error("Could not read the active CodeMirror selection");
     }
-    return state.doc.lineAt(state.selection.main.head).number
-  })
+    return state.doc.lineAt(state.selection.main.head).number;
+  });
 }
 
 /** Places the editor cursor at an offset and focuses the editor. */
-async function placeCursor (page: Page, offset: number): Promise<void> {
+async function placeCursor(page: Page, offset: number): Promise<void> {
   await activeEditor(page).evaluate((content, anchor) => {
-    const tile = (content as HTMLElement & { cmTile?: { root?: { view?: { dispatch(spec: { selection: { anchor: number } }): void, focus(): void } } } }).cmTile
-    const view = tile?.root?.view
+    const tile = (
+      content as HTMLElement & {
+        cmTile?: {
+          root?: {
+            view?: { dispatch(spec: { selection: { anchor: number } }): void; focus(): void };
+          };
+        };
+      }
+    ).cmTile;
+    const view = tile?.root?.view;
     if (view === undefined) {
-      throw new Error('Could not reach the active CodeMirror view')
+      throw new Error("Could not reach the active CodeMirror view");
     }
-    view.dispatch({ selection: { anchor } })
-    view.focus()
-  }, offset)
+    view.dispatch({ selection: { anchor } });
+    view.focus();
+  }, offset);
 }
 
 /** Puts the focus outside the editor, in the sidebar's filter input. */
-async function focusOutsideEditor (page: Page): Promise<void> {
-  await page.locator(FILTER_INPUT).focus({ timeout: 30_000 })
+async function focusOutsideEditor(page: Page): Promise<void> {
+  await page.locator(FILTER_INPUT).focus({ timeout: 30_000 });
 }
 
-async function typeAndWaitForHighlight (page: Page, query: string, label: string): Promise<void> {
-  await page.locator(LAUNCHER_INPUT).fill(query)
-  await page.locator(HIGHLIGHTED_ROW, { hasText: label }).waitFor({ timeout: 10_000 })
+async function typeAndWaitForHighlight(page: Page, query: string, label: string): Promise<void> {
+  await page.locator(LAUNCHER_INPUT).fill(query);
+  await page.locator(HIGHLIGHTED_ROW, { hasText: label }).waitFor({ timeout: 10_000 });
 }
 
-async function waitUntil (probe: () => Promise<boolean>, what: string, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
+async function waitUntil(
+  probe: () => Promise<boolean>,
+  what: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await probe()) {
-      return
+      return;
     }
-    await delay(150)
+    await delay(150);
   }
-  throw new Error(`Timed out waiting for ${what}`)
+  throw new Error(`Timed out waiting for ${what}`);
 }
 
-describe('the Ctrl+P command launcher', function () {
-  let appProcess: ChildProcess | undefined
-  let browser: Browser | undefined
-  let fixtureRoot: string | undefined
-  let page: Page | undefined
-  let getOutput: () => string = () => ''
-  const rendererEvents: string[] = []
-  const screenshots = new Map<string, Buffer>()
+describe("the Ctrl+P command launcher", function () {
+  let appProcess: ChildProcess | undefined;
+  let browser: Browser | undefined;
+  let fixtureRoot: string | undefined;
+  let page: Page | undefined;
+  let getOutput: () => string = () => "";
+  const rendererEvents: string[] = [];
+  const screenshots = new Map<string, Buffer>();
 
   before(async function () {
-    const fixture = await createWorkspaceFixture('zettlr-command-launcher-e2e-', {
-      workspaceSource: path.join(REPO_ROOT, 'test', 'fixtures', 'quarto-book'),
-      activeDocument: 'index.md',
+    const fixture = await createWorkspaceFixture("zettlr-command-launcher-e2e-", {
+      workspaceSource: path.join(REPO_ROOT, "test", "fixtures", "quarto-book"),
+      activeDocument: "index.md",
       config: {
         darkMode: false,
-        window: { fileManagerVisible: true, sidebarVisible: true }
-      }
-    })
-    fixtureRoot = fixture.root
-    const workspaceRoot = path.join(fixture.root, 'workspace')
-    await execFileAsync('git', [ 'init', '-q', workspaceRoot ])
-    await writeFile(path.join(workspaceRoot, 'justfile'), [
-      '# Run a parameterless fixture check',
-      "[group('checks')]",
-      'fixture-check:',
-      '  @echo fixture-check',
-      '',
-      '# Run a fixture check with one argument',
-      'fixture-with-arg name:',
-      '  @echo {{name}}',
-      '',
-      '[private]',
-      'fixture-hidden:',
-      '  @true',
-      ''
-    ].join('\n'))
-    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout())
-    appProcess = app.appProcess
-    browser = app.browser
-    getOutput = app.getOutput
-    page = await findEditorPage(browser, this.timeout())
-    await hideDevServerOverlay(page)
-    await page.locator('.cm-content').waitFor({ state: 'visible', timeout: this.timeout() })
-    await page.locator(FILTER_INPUT).waitFor({ state: 'visible', timeout: 60_000 })
-  })
+        window: { fileManagerVisible: true, sidebarVisible: true },
+      },
+    });
+    fixtureRoot = fixture.root;
+    const workspaceRoot = path.join(fixture.root, "workspace");
+    await execFileAsync("git", ["init", "-q", workspaceRoot]);
+    await writeFile(
+      path.join(workspaceRoot, "justfile"),
+      [
+        "# Run a parameterless fixture check",
+        "[group('checks')]",
+        "fixture-check:",
+        "  @echo fixture-check",
+        "",
+        "# Run a fixture check with one argument",
+        "fixture-with-arg name:",
+        "  @echo {{name}}",
+        "",
+        "[private]",
+        "fixture-hidden:",
+        "  @true",
+        "",
+      ].join("\n"),
+    );
+    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    appProcess = app.appProcess;
+    browser = app.browser;
+    getOutput = app.getOutput;
+    page = await findEditorPage(browser, this.timeout());
+    await hideDevServerOverlay(page);
+    await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
+    await page.locator(FILTER_INPUT).waitFor({ state: "visible", timeout: 60_000 });
+  });
 
   after(async function () {
-    await shutdown(browser, appProcess)
-    await preserveArtifacts(ARTIFACT_DIRECTORY, fixtureRoot, getOutput(), rendererEvents, screenshots)
+    await shutdown(browser, appProcess);
+    await preserveArtifacts(
+      ARTIFACT_DIRECTORY,
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
     if (fixtureRoot !== undefined) {
-      await rm(fixtureRoot, { recursive: true, force: true })
+      await rm(fixtureRoot, { recursive: true, force: true });
     }
-    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`)
-    assertCleanExit(getOutput())
-  })
+    console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
+    assertCleanExit(getOutput());
+  });
 
-  it('carries Ctrl+P on a View menu item that opens the launcher from file-tree focus', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const menu = await readApplicationMenu(activePage)
-    const viewMenu = findMenuNode(menu, 'view-menu')
-    assert.ok(viewMenu?.submenu !== undefined, 'the View menu must be serialised')
-    const item = findMenuNode(viewMenu.submenu, LAUNCHER_MENU_ITEM)
-    assert.ok(item !== undefined, 'the View menu must carry the command launcher item')
-    assert.equal(item.accelerator, 'Ctrl+P', 'the launcher item must own Ctrl+P')
-    const fileItem = findMenuNode(viewMenu.submenu, 'menu.file_launcher')
-    assert.ok(fileItem !== undefined, 'the View menu must carry the quick-file item')
-    assert.equal(fileItem.accelerator, 'Ctrl+Shift+P', 'the quick-file item must own Ctrl+Shift+P')
+  it("carries Ctrl+P on a View menu item that opens the launcher from file-tree focus", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const menu = await readApplicationMenu(activePage);
+    const viewMenu = findMenuNode(menu, "view-menu");
+    assert.ok(viewMenu?.submenu !== undefined, "the View menu must be serialised");
+    const item = findMenuNode(viewMenu.submenu, LAUNCHER_MENU_ITEM);
+    assert.ok(item !== undefined, "the View menu must carry the command launcher item");
+    assert.equal(item.accelerator, "Ctrl+P", "the launcher item must own Ctrl+P");
+    const fileItem = findMenuNode(viewMenu.submenu, "menu.file_launcher");
+    assert.ok(fileItem !== undefined, "the View menu must carry the quick-file item");
+    assert.equal(fileItem.accelerator, "Ctrl+Shift+P", "the quick-file item must own Ctrl+Shift+P");
 
-    await focusOutsideEditor(activePage)
-    await openLauncherFromMenu(activePage)
-    assert.equal(await activePage.locator(LAUNCHER).count(), 1, 'exactly one launcher opens')
-    screenshots.set('launcher-root.png', await activePage.screenshot())
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    assert.equal(await activePage.locator(LAUNCHER).count(), 1, "exactly one launcher opens");
+    screenshots.set("launcher-root.png", await activePage.screenshot());
 
-    await activePage.keyboard.press('Escape')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
-    const focusReturned = await activePage.locator(FILTER_INPUT).evaluate(element => element === document.activeElement)
-    assert.ok(focusReturned, 'Escape must return the focus to the filter input that had it')
-  })
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+    const focusReturned = await activePage
+      .locator(FILTER_INPUT)
+      .evaluate((element) => element === document.activeElement);
+    assert.ok(focusReturned, "Escape must return the focus to the filter input that had it");
+  });
 
-  it('exposes the three desktop file actions through the File menu and Ctrl+P search', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const menu = await readApplicationMenu(activePage)
-    const fileMenu = findMenuNode(menu, 'file-menu')
-    assert.ok(fileMenu?.submenu !== undefined, 'the File menu must be serialised')
+  it("exposes the three desktop file actions through the File menu and Ctrl+P search", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const menu = await readApplicationMenu(activePage);
+    const fileMenu = findMenuNode(menu, "file-menu");
+    assert.ok(fileMenu?.submenu !== undefined, "the File menu must be serialised");
     const expected = [
-      [ 'menu.open_terminal_here', 'Open terminal here' ],
-      [ 'menu.open_file_externally', 'Open file in external editor' ],
-      [ 'menu.open_file_browser_here', 'Open file browser here' ]
-    ] as const
-    for (const [ id, label ] of expected) {
-      const item = findMenuNode(fileMenu.submenu, id)
-      assert.equal(item?.label, label, `${id} must be a File-menu command`)
+      ["menu.open_terminal_here", "Open terminal here"],
+      ["menu.open_file_externally", "Open file in external editor"],
+      ["menu.open_file_browser_here", "Open file browser here"],
+    ] as const;
+    for (const [id, label] of expected) {
+      const item = findMenuNode(fileMenu.submenu, id);
+      assert.equal(item?.label, label, `${id} must be a File-menu command`);
 
-      await focusOutsideEditor(activePage)
-      await openLauncherFromMenu(activePage)
-      await typeAndWaitForHighlight(activePage, label.toLowerCase(), label)
-      await activePage.keyboard.press('Escape')
-      await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+      await focusOutsideEditor(activePage);
+      await openLauncherFromMenu(activePage);
+      await typeAndWaitForHighlight(activePage, label.toLowerCase(), label);
+      await activePage.keyboard.press("Escape");
+      await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
     }
-  })
+  });
 
-  it('indexes menu breadcrumbs and deep-links the real Preferences schema', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const activeBrowser = requireInitialized(browser, 'The browser must be initialized')
+  it("indexes menu breadcrumbs and deep-links the real Preferences schema", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const activeBrowser = requireInitialized(browser, "The browser must be initialized");
 
     // Parent-menu labels are search terms, not merely decoration. This is a
     // command from File whose visible leaf does not itself contain "File".
-    await focusOutsideEditor(activePage)
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'file rename', 'Rename file')
-    await activePage.keyboard.press('Escape')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "file rename", "Rename file");
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
 
     // Preferences is a browsable first-class source. The catalogue is derived
     // from the actual form schemas, so representative settings across unrelated
     // sections must all be present rather than a small hand-authored shortlist.
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'preferences', 'Preferences')
-    await activePage.keyboard.press('Enter')
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "preferences", "Preferences");
+    await activePage.keyboard.press("Enter");
     for (const model of [
-      'darkModeEditor',
-      'editor.fontSize',
-      'editor.lint.languageTool.active',
-      'zkn.idGen',
-      'export.cslStyle',
-      'files.dotFiles.showInFilemanager',
-      'shortcuts.ui.next-tab'
+      "darkModeEditor",
+      "editor.fontSize",
+      "editor.lint.languageTool.active",
+      "zkn.idGen",
+      "export.cslStyle",
+      "files.dotFiles.showInFilemanager",
+      "shortcuts.ui.next-tab",
     ]) {
       assert.ok(
-        await activePage.locator(`${LAUNCHER} [data-preference-model="${model}"]`).count() > 0,
-        `Preferences index must expose ${model}`
-      )
+        (await activePage.locator(`${LAUNCHER} [data-preference-model="${model}"]`).count()) > 0,
+        `Preferences index must expose ${model}`,
+      );
     }
-    await activePage.keyboard.press('Escape')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
 
     // Search aliases include the schema path, label, model name and option
     // labels. Selecting a result opens the separate Preferences renderer at
     // the actual control, not just the generic Preferences window.
-    await openLauncherFromMenu(activePage)
-    await activePage.locator(LAUNCHER_INPUT).fill('preferences editor font size')
-    const fontSizeRow = activePage.locator(`${LAUNCHER} [data-preference-model="editor.fontSize"][data-highlighted]`)
-    await fontSizeRow.waitFor({ timeout: 10_000 })
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    await openLauncherFromMenu(activePage);
+    await activePage.locator(LAUNCHER_INPUT).fill("preferences editor font size");
+    const fontSizeRow = activePage.locator(
+      `${LAUNCHER} [data-preference-model="editor.fontSize"][data-highlighted]`,
+    );
+    await fontSizeRow.waitFor({ timeout: 10_000 });
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
 
-    const preferencesPage = await findPreferencesPage(activeBrowser)
-    const fontSize = preferencesPage.locator('[id="field-input-editor.fontSize"]')
-    await fontSize.waitFor({ state: 'visible', timeout: 20_000 })
+    const preferencesPage = await findPreferencesPage(activeBrowser);
+    const fontSize = preferencesPage.locator('[id="field-input-editor.fontSize"]');
+    await fontSize.waitFor({ state: "visible", timeout: 20_000 });
     await preferencesPage.waitForFunction(() => {
-      const input = document.getElementById('field-input-editor.fontSize')
-      return input !== null && document.activeElement === input
-    })
-    assert.match(await preferencesPage.locator('body').innerText(), /Editor/)
-    await preferencesPage.close()
-  })
+      const input = document.getElementById("field-input-editor.fontSize");
+      return input !== null && document.activeElement === input;
+    });
+    assert.match(await preferencesPage.locator("body").innerText(), /Editor/);
+    await preferencesPage.close();
+  });
 
-  it('discovers the workspace Git root and browses its public Justfile recipes', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await focusOutsideEditor(activePage)
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'justfile', 'Justfile commands')
-    await activePage.keyboard.press('Enter')
+  it("discovers the workspace Git root and browses its public Justfile recipes", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "justfile", "Justfile commands");
+    await activePage.keyboard.press("Enter");
 
-    await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-check"]`).waitFor({ timeout: 10_000 })
+    await activePage
+      .locator(`${LAUNCHER} [data-just-recipe="fixture-check"]`)
+      .waitFor({ timeout: 10_000 });
     assert.equal(
       await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-hidden"]`).count(),
       0,
-      'private Just recipes must not be exposed'
-    )
+      "private Just recipes must not be exposed",
+    );
 
-    await activePage.locator(LAUNCHER_INPUT).fill('fixture-with-arg')
-    await activePage.locator(`${LAUNCHER} [data-just-recipe="fixture-with-arg"][data-highlighted]`).waitFor({ timeout: 10_000 })
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(`${LAUNCHER} [data-just-recipe-arguments]`).waitFor({ timeout: 10_000 })
-    await activePage.locator(LAUNCHER_INPUT).fill('"two words"')
-    await activePage.keyboard.press('Escape')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
-  })
+    await activePage.locator(LAUNCHER_INPUT).fill("fixture-with-arg");
+    await activePage
+      .locator(`${LAUNCHER} [data-just-recipe="fixture-with-arg"][data-highlighted]`)
+      .waitFor({ timeout: 10_000 });
+    await activePage.keyboard.press("Enter");
+    await activePage
+      .locator(`${LAUNCHER} [data-just-recipe-arguments]`)
+      .waitFor({ timeout: 10_000 });
+    await activePage.locator(LAUNCHER_INPUT).fill('"two words"');
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+  });
 
-  it('toggles the sidebar off and on through a typed command', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    await focusOutsideEditor(activePage)
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'sidebar', 'Toggle Sidebar')
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: 'hidden', timeout: 10_000 })
-    await waitUntil(async () => !(await readConfig(activePage)).fileManagerVisible, 'window.fileManagerVisible to become false')
+  it("toggles the sidebar off and on through a typed command", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "sidebar", "Toggle Sidebar");
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: "hidden", timeout: 10_000 });
+    await waitUntil(
+      async () => !(await readConfig(activePage)).fileManagerVisible,
+      "window.fileManagerVisible to become false",
+    );
 
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'sidebar', 'Toggle Sidebar')
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: 'attached', timeout: 10_000 })
-    await waitUntil(async () => (await readConfig(activePage)).fileManagerVisible, 'window.fileManagerVisible to become true')
-  })
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "sidebar", "Toggle Sidebar");
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(NAVIGATION_SIDEBAR).waitFor({ state: "attached", timeout: 10_000 });
+    await waitUntil(
+      async () => (await readConfig(activePage)).fileManagerVisible,
+      "window.fileManagerVisible to become true",
+    );
+  });
 
-  it('inserts a footnote at the cursor through the Insert submenu, opened with the real Ctrl+P from the editor', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const before = await readEditorDocument(activePage)
-    const cursor = before.indexOf('\n') // the end of the first line, `# Lattice Notes`
-    assert.ok(cursor > 0, 'the fixture document must have a first line')
-    await placeCursor(activePage, cursor)
+  it("inserts a footnote at the cursor through the Insert submenu, opened with the real Ctrl+P from the editor", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const before = await readEditorDocument(activePage);
+    const cursor = before.indexOf("\n"); // the end of the first line, `# Lattice Notes`
+    assert.ok(cursor > 0, "the fixture document must have a first line");
+    await placeCursor(activePage, cursor);
 
-    await activePage.keyboard.press('Control+p')
-    await activePage.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
-    assert.equal(await activePage.locator(LAUNCHER).count(), 1, 'the editor binding opens exactly one launcher')
+    await activePage.keyboard.press("Control+p");
+    await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal(
+      await activePage.locator(LAUNCHER).count(),
+      1,
+      "the editor binding opens exactly one launcher",
+    );
 
-    await typeAndWaitForHighlight(activePage, 'insert', 'Insert')
-    await activePage.keyboard.press('Enter')
-    await typeAndWaitForHighlight(activePage, 'foot', 'Footnote')
-    screenshots.set('launcher-insert-footnote.png', await activePage.screenshot())
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
+    await typeAndWaitForHighlight(activePage, "insert", "Insert");
+    await activePage.keyboard.press("Enter");
+    await typeAndWaitForHighlight(activePage, "foot", "Footnote");
+    screenshots.set("launcher-insert-footnote.png", await activePage.screenshot());
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
 
-    await waitUntil(async () => (await readEditorDocument(activePage)).slice(cursor, cursor + 4) === '[^1]', 'the footnote marker at the cursor')
-    const after = await readEditorDocument(activePage)
-    assert.equal(after.slice(0, cursor), before.slice(0, cursor), 'the text before the cursor is untouched')
+    await waitUntil(
+      async () => (await readEditorDocument(activePage)).slice(cursor, cursor + 4) === "[^1]",
+      "the footnote marker at the cursor",
+    );
+    const after = await readEditorDocument(activePage);
+    assert.equal(
+      after.slice(0, cursor),
+      before.slice(0, cursor),
+      "the text before the cursor is untouched",
+    );
 
     // Save the edited fixture document so the app can shut down without a
     // native "unsaved changes" prompt the harness cannot answer.
-    const indexPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'index.md')
-    await activePage.evaluate(async pathInPage => await window.ipc.invoke('documents:save-file', { path: pathInPage }), indexPath)
-    const saved = await readFile(indexPath, 'utf8')
-    assert.equal(saved.slice(cursor, cursor + 4), '[^1]', 'the saved document carries the footnote marker')
-  })
-
-  it('jumps to a definition in another document through the Search references command', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const formsPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'foundations', 'forms.md')
-    const formsText = await readFile(formsPath, 'utf8')
-
-    await focusOutsideEditor(activePage)
-    await openLauncherFromMenu(activePage)
-    await typeAndWaitForHighlight(activePage, 'references', 'Search references')
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(`${LAUNCHER} [data-search-mode="definitions"]`).waitFor({ timeout: 10_000 })
-    await activePage.locator(LAUNCHER_INPUT).fill('sec-forms')
-    await activePage.locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-reference-key="sec-forms"]`).waitFor({ timeout: 10_000 })
-    screenshots.set('launcher-references.png', await activePage.screenshot())
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
-
-    await waitUntil(async () => (await readEditorDocument(activePage)) === formsText, 'the defining document to become active')
-    const definitionLine = formsText.slice(0, formsText.indexOf('{#sec-forms}')).split('\n').length
-    await waitUntil(async () => (await readCursorLine(activePage)) === definitionLine, `the cursor on line ${definitionLine}`)
-  })
-
-  it('opens the quick-file navigator directly with Ctrl+Shift+P and switches documents', async function () {
-    const activePage = requireInitialized(page, 'The editor page must be initialized')
-    const indexPath = path.join(requireInitialized(fixtureRoot, 'fixture'), 'workspace', 'index.md')
-    const indexText = await readFile(indexPath, 'utf8')
-
-    await activeEditor(activePage).focus()
-    await activePage.keyboard.press('Control+Shift+P')
-    await activePage.locator(LAUNCHER_INPUT).waitFor({ state: 'visible', timeout: 10_000 })
+    const indexPath = path.join(
+      requireInitialized(fixtureRoot, "fixture"),
+      "workspace",
+      "index.md",
+    );
+    await activePage.evaluate(
+      async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+      indexPath,
+    );
+    const saved = await readFile(indexPath, "utf8");
     assert.equal(
-      await activePage.locator(`${LAUNCHER} [data-row-kind="file"]`).count() > 0,
+      saved.slice(cursor, cursor + 4),
+      "[^1]",
+      "the saved document carries the footnote marker",
+    );
+  });
+
+  it("jumps to a definition in another document through the Search references command", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const formsPath = path.join(
+      requireInitialized(fixtureRoot, "fixture"),
+      "workspace",
+      "foundations",
+      "forms.md",
+    );
+    const formsText = await readFile(formsPath, "utf8");
+
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "references", "Search references");
+    await activePage.keyboard.press("Enter");
+    await activePage
+      .locator(`${LAUNCHER} [data-search-mode="definitions"]`)
+      .waitFor({ timeout: 10_000 });
+    await activePage.locator(LAUNCHER_INPUT).fill("sec-forms");
+    await activePage
+      .locator(`${LAUNCHER} [data-launcher-row][data-highlighted][data-reference-key="sec-forms"]`)
+      .waitFor({ timeout: 10_000 });
+    screenshots.set("launcher-references.png", await activePage.screenshot());
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+
+    await waitUntil(
+      async () => (await readEditorDocument(activePage)) === formsText,
+      "the defining document to become active",
+    );
+    const definitionLine = formsText.slice(0, formsText.indexOf("{#sec-forms}")).split("\n").length;
+    await waitUntil(
+      async () => (await readCursorLine(activePage)) === definitionLine,
+      `the cursor on line ${definitionLine}`,
+    );
+  });
+
+  it("opens the quick-file navigator directly with Ctrl+Shift+P and switches documents", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const indexPath = path.join(
+      requireInitialized(fixtureRoot, "fixture"),
+      "workspace",
+      "index.md",
+    );
+    const indexText = await readFile(indexPath, "utf8");
+
+    await activeEditor(activePage).focus();
+    await activePage.keyboard.press("Control+Shift+P");
+    await activePage.locator(LAUNCHER_INPUT).waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal(
+      (await activePage.locator(`${LAUNCHER} [data-row-kind="file"]`).count()) > 0,
       true,
-      'Ctrl+Shift+P must open directly on the file rows rather than the launcher root'
-    )
+      "Ctrl+Shift+P must open directly on the file rows rather than the launcher root",
+    );
     assert.equal(
       await activePage.locator(`${LAUNCHER} [data-row-kind="menu-group"]`).count(),
       0,
-      'the quick-file view must not show command-menu groups'
-    )
+      "the quick-file view must not show command-menu groups",
+    );
 
-    await activePage.locator(LAUNCHER_INPUT).fill('index')
-    await activePage.locator(
-      `${LAUNCHER} [data-row-kind="file"][data-file-path="${indexPath}"][data-highlighted]`
-    ).waitFor({ timeout: 10_000 })
-    await activePage.keyboard.press('Enter')
-    await activePage.locator(LAUNCHER).waitFor({ state: 'detached', timeout: 10_000 })
-    await waitUntil(async () => (await readEditorDocument(activePage)) === indexText, 'Ctrl+Shift+P to open index.md')
-  })
-})
+    await activePage.locator(LAUNCHER_INPUT).fill("index");
+    await activePage
+      .locator(
+        `${LAUNCHER} [data-row-kind="file"][data-file-path="${indexPath}"][data-highlighted]`,
+      )
+      .waitFor({ timeout: 10_000 });
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+    await waitUntil(
+      async () => (await readEditorDocument(activePage)) === indexText,
+      "Ctrl+Shift+P to open index.md",
+    );
+  });
+});

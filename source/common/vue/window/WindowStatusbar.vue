@@ -38,27 +38,27 @@
  */
 
 // Regular form button, but a static text display
-import ButtonControl from '../form/elements/ButtonControl.vue'
+import ButtonControl from "../form/elements/ButtonControl.vue";
 
 interface StatusbarButton {
-  type: 'button'
-  id: string
-  label?: string
-  icon?: string
-  name?: string
-  disabled?: boolean
-  buttonClass?: 'primary'
+  type: "button";
+  id: string;
+  label?: string;
+  icon?: string;
+  name?: string;
+  disabled?: boolean;
+  buttonClass?: "primary";
 }
 
 interface StatusbarText {
-  type: 'text'
-  label: string
+  type: "text";
+  label: string;
 }
 
-export type StatusbarControl = StatusbarButton|StatusbarText
+export type StatusbarControl = StatusbarButton | StatusbarText;
 
-const props = defineProps<{ controls: StatusbarControl[] }>()
-const emit = defineEmits<(e: 'click', value: string) => void>()
+const props = defineProps<{ controls: StatusbarControl[] }>();
+const emit = defineEmits<(e: "click", value: string) => void>();
 </script>
 
 <style lang="less">

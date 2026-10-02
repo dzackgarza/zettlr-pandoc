@@ -57,7 +57,10 @@ describe("document lint cache", function () {
       if (lookup.current) {
         return lookup;
       }
-      assert.ok(Date.now() < deadline, "the background linter did not bring the document up to date");
+      assert.ok(
+        Date.now() < deadline,
+        "the background linter did not bring the document up to date",
+      );
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
@@ -147,7 +150,9 @@ describe("document lint cache", function () {
     const fresh = await currentLookup(provider, edited);
     assert.notEqual(fresh.record?.lintedAt, linted.lintedAt);
     assert.ok(
-      fresh.record?.diagnostics.every((diagnostic) => diagnostic.rule !== "document/authorial-residue"),
+      fresh.record?.diagnostics.every(
+        (diagnostic) => diagnostic.rule !== "document/authorial-residue",
+      ),
     );
   });
 

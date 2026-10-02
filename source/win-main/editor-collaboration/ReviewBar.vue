@@ -80,34 +80,36 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { computed, ref } from 'vue'
+import { trans } from "@common/i18n-renderer";
+import { computed, ref } from "vue";
 
 const props = defineProps<{
-  pendingCount: number
-  busy: boolean
-}>()
+  pendingCount: number;
+  busy: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'accept-all'): void
-  (e: 'clear'): void
-  (e: 'comment', text: string): void
-  (e: 'step', direction: 1 | -1): void
-}>()
+  (e: "accept-all"): void;
+  (e: "clear"): void;
+  (e: "comment", text: string): void;
+  (e: "step", direction: 1 | -1): void;
+}>();
 
-const reviewComment = ref('')
+const reviewComment = ref("");
 
-const pendingLabel = computed(() => props.pendingCount === 1
-  ? trans('1 change pending')
-  : trans('%s changes pending', String(props.pendingCount)))
+const pendingLabel = computed(() =>
+  props.pendingCount === 1
+    ? trans("1 change pending")
+    : trans("%s changes pending", String(props.pendingCount)),
+);
 
-function submitReviewComment (): void {
-  const text = reviewComment.value.trim()
+function submitReviewComment(): void {
+  const text = reviewComment.value.trim();
   if (text.length === 0) {
-    return
+    return;
   }
-  emit('comment', text)
-  reviewComment.value = ''
+  emit("comment", text);
+  reviewComment.value = "";
 }
 </script>
 

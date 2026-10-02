@@ -22,6 +22,8 @@
  * END HEADER
  */
 
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./provision-renderer-window-seams";
 import { strict as assert } from "assert";
 import "./provision-renderer-window-seams";
 import { type Completion, CompletionContext } from "@codemirror/autocomplete";
@@ -56,59 +58,6 @@ import {
   type ReferenceCompletionEntry,
   referenceFamilyDisplayName,
 } from "source/types/common/references";
-
-/**
- * The slice of the jsdom global surface the CodeMirror polyfills touch. The
- * member types are chosen so typeof globalThis is directly comparable to
- * this interface: the single type assertion below is compiler-checked
- * against the real global surface instead of laundered through unknown.
- * ResizeObserver is unknown because the polyfill only checks its existence
- * before installing a no-op class.
- */
-interface CodeMirrorPolyfillTarget {
-  requestAnimationFrame?: (callback: (time: number) => void) => unknown;
-  cancelAnimationFrame?: (id: never) => void;
-  ResizeObserver?: unknown;
-  Range: { prototype: { getClientRects?: () => unknown; getBoundingClientRect?: () => unknown } };
-  window?: CodeMirrorPolyfillTarget;
-}
-
-function polyfillJsdomForCodeMirror(): void {
-  const w = globalThis as CodeMirrorPolyfillTarget;
-  if (typeof w.requestAnimationFrame !== "function") {
-    w.requestAnimationFrame = (callback: (time: number) => void) =>
-      setTimeout(() => callback(Date.now()), 0);
-    w.cancelAnimationFrame = (id) => clearTimeout(id);
-  }
-  if (typeof w.window === "object" && typeof w.window.requestAnimationFrame !== "function") {
-    w.window.requestAnimationFrame = w.requestAnimationFrame;
-    w.window.cancelAnimationFrame = w.cancelAnimationFrame;
-  }
-  if (typeof w.ResizeObserver !== "function") {
-    w.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    if (typeof w.window === "object") {
-      w.window.ResizeObserver = w.ResizeObserver;
-    }
-  }
-  if (typeof w.Range?.prototype.getClientRects !== "function") {
-    w.Range.prototype.getClientRects = () => [];
-    w.Range.prototype.getBoundingClientRect = () => ({
-      bottom: 0,
-      height: 0,
-      left: 0,
-      right: 0,
-      top: 0,
-      width: 0,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-  }
-}
 
 /** A representative bibliography database, as MainEditor.vue would push it. */
 const CITATION_DB = [
@@ -176,10 +125,6 @@ interface CompletionSurface {
 
 describe("Combined @-symbol completion surface (issue #1 Phase 3)", function () {
   const views: EditorView[] = [];
-
-  before(function () {
-    polyfillJsdomForCodeMirror();
-  });
 
   afterEach(function () {
     for (const view of views.splice(0)) {

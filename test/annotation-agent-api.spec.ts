@@ -18,16 +18,13 @@
  * END HEADER
  */
 
-import { userData } from "./headless-electron-harness.cjs";
-import Ajv2020 from "ajv/dist/2020";
-import { parse as parseYaml } from "yaml";
-import type {
-  AddAnnotationMessageResponse,
-  AnnotationListResponse,
-  AnnotationResponse,
-  SubmitProposalResponse,
-} from "@dts/common/agent-api";
+// Installs process-wide test doubles; it must load before the modules that read them.
+import "./headless-electron-harness.cjs";
+import { sha256Text } from "@common/util/sha256";
+import { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type { AgentApiComponents } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import {
@@ -45,10 +42,10 @@ import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
-import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
-import { WikilinkIndex } from "@common/util/wikilink-resolution";
-import { sha256Text } from "@common/util/sha256";
+import { SearchProvider } from "source/app/service-providers/search";
+import { parse as parseYaml } from "yaml";
+import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
 // Schema conformance — validates every response against the OpenAPI document
@@ -67,15 +64,19 @@ for (const [name, schema] of Object.entries(openApiDocument.components.schemas))
   ajv.addSchema(schema as object, `#/components/schemas/${name}`);
 }
 
-function assertMatchesSchema(body: unknown, schemaName: string): void {
-  const validate = ajv.getSchema(`#/components/schemas/${schemaName}`);
-  assert.ok(validate !== undefined, `openapi.yaml declares no schema ${schemaName}`);
-  if (validate(body) !== true) {
-    assert.fail(
-      `Response does not conform to ${schemaName}: ${ajv.errorsText(validate.errors)}\n` +
-        JSON.stringify(body, null, 2),
-    );
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type AgentApiSchemas = AgentApiComponents["schemas"];
+
+/** Parse a response body and prove that it conforms to the named OpenAPI schema. */
+function parseAs<N extends keyof AgentApiSchemas & string>(
+  body: string,
+  schemaName: N,
+): AgentApiSchemas[N] {
+  const value: JsonValue = JSON.parse(body);
+  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
+    return value;
   }
+  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
 }
 
 /** Line/column computed independently of the server's own offsetToLineColumn. */
@@ -323,8 +324,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
 
     const listed = await httpRequest("GET", "/v1/annotations");
     assert.equal(listed.status, 200);
-    const parsed = JSON.parse(listed.body) as AnnotationListResponse;
-    assertMatchesSchema(parsed, "AnnotationListResponse");
+    const parsed = parseAs(listed.body, "AnnotationListResponse");
     assert.equal(parsed.annotations.length, 1);
     const [annotation] = parsed.annotations;
     assert.equal(annotation.annotationId, created.annotationId);
@@ -355,8 +355,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
 
     const response = await httpRequest("GET", `/v1/annotations?documentId=${documentId}`);
     assert.equal(response.status, 200);
-    const parsed = JSON.parse(response.body) as AnnotationListResponse;
-    assertMatchesSchema(parsed, "AnnotationListResponse");
+    const parsed = parseAs(response.body, "AnnotationListResponse");
     const [annotation] = parsed.annotations;
     const expectedStart = referenceLineColumn(content, from);
     const expectedEnd = referenceLineColumn(content, to);
@@ -377,12 +376,12 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     await provider.createAnnotation(docB, "owner", 0, 8, "About B.", 0);
 
     const onlyA = await httpRequest("GET", `/v1/annotations?documentId=${docA}`);
-    const parsedA = JSON.parse(onlyA.body) as AnnotationListResponse;
+    const parsedA = parseAs(onlyA.body, "AnnotationListResponse");
     assert.equal(parsedA.annotations.length, 1);
     assert.equal(parsedA.annotations[0].documentId, docA);
 
     const across = await httpRequest("GET", "/v1/annotations");
-    const parsedAcross = JSON.parse(across.body) as AnnotationListResponse;
+    const parsedAcross = parseAs(across.body, "AnnotationListResponse");
     assert.equal(parsedAcross.annotations.length, 2);
   });
 
@@ -394,15 +393,13 @@ describe("Annotation Agent API (/v1/annotations)", function () {
 
     const found = await httpRequest("GET", `/v1/annotations/${created.annotationId}`);
     assert.equal(found.status, 200);
-    const parsed = JSON.parse(found.body) as AnnotationResponse;
-    assertMatchesSchema(parsed, "AnnotationResponse");
+    const parsed = parseAs(found.body, "AnnotationResponse");
     assert.equal(parsed.annotationId, created.annotationId);
 
     const missing = await httpRequest("GET", "/v1/annotations/does-not-exist");
     assert.equal(missing.status, 404);
-    const error = JSON.parse(missing.body) as { error: { code: string } };
+    const error = parseAs(missing.body, "AgentErrorResponse");
     assert.equal(error.error.code, "ANNOTATION_NOT_FOUND");
-    assertMatchesSchema(JSON.parse(missing.body), "AgentErrorResponse");
   });
 
   it("filters GET /v1/annotations by state", async function () {
@@ -413,14 +410,16 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     const resolved = await provider.resolveAnnotation(documentId, created.annotationId, "owner", 1);
     assert.ok("annotationId" in resolved);
 
-    const openList = JSON.parse(
+    const openList = parseAs(
       (await httpRequest("GET", "/v1/annotations?state=open")).body,
-    ) as AnnotationListResponse;
+      "AnnotationListResponse",
+    );
     assert.equal(openList.annotations.length, 0);
 
-    const resolvedList = JSON.parse(
+    const resolvedList = parseAs(
       (await httpRequest("GET", "/v1/annotations?state=resolved")).body,
-    ) as AnnotationListResponse;
+      "AnnotationListResponse",
+    );
     assert.equal(resolvedList.annotations.length, 1);
     assert.equal(resolvedList.annotations[0].state, "resolved");
   });
@@ -442,8 +441,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: 1,
     });
     assert.equal(first.status, 200);
-    const firstParsed = JSON.parse(first.body) as AddAnnotationMessageResponse;
-    assertMatchesSchema(firstParsed, "AddAnnotationMessageResponse");
+    const firstParsed = parseAs(first.body, "AddAnnotationMessageResponse");
     assert.equal(firstParsed.message.author, "agent");
     const firstMessageId = firstParsed.message.messageId;
 
@@ -457,13 +455,14 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: 999,
     });
     assert.equal(replay.status, 200);
-    const replayParsed = JSON.parse(replay.body) as AddAnnotationMessageResponse;
+    const replayParsed = parseAs(replay.body, "AddAnnotationMessageResponse");
     assert.equal(replayParsed.message.messageId, firstMessageId);
     assert.equal(replayParsed.message.text, "Here is my first analysis.");
 
-    const afterReplay = JSON.parse(
+    const afterReplay = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     // Owner's opening message + exactly one agent reply, despite two POSTs.
     assert.equal(afterReplay.messages.length, 2);
     assert.equal(afterReplay.messages.filter((m) => m.author === "agent").length, 1);
@@ -475,9 +474,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: afterReplay.annotationGeneration,
     });
     assert.equal(second.status, 200);
-    const afterSecond = JSON.parse(
+    const afterSecond = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     assert.equal(afterSecond.messages.length, 3);
     assert.equal(afterSecond.messages.filter((m) => m.author === "agent").length, 2);
   });
@@ -495,13 +495,13 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: 999,
     });
     assert.equal(stale.status, 409);
-    const error = JSON.parse(stale.body) as { error: { code: string } };
+    const error = parseAs(stale.body, "AgentErrorResponse");
     assert.equal(error.error.code, "ANNOTATION_GENERATION_MISMATCH");
-    assertMatchesSchema(JSON.parse(stale.body), "AgentErrorResponse");
 
-    const after = JSON.parse(
+    const after = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     assert.equal(after.messages.length, 1, "the refused attempt must not have posted anything");
   });
 
@@ -517,7 +517,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: 1,
     });
     assert.equal(result.status, 400);
-    const error = JSON.parse(result.body) as { error: { code: string } };
+    const error = parseAs(result.body, "AgentErrorResponse");
     assert.equal(error.error.code, "INVALID_PARAMS");
   });
 
@@ -528,7 +528,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       expectedAnnotationGeneration: 0,
     });
     assert.equal(result.status, 404);
-    const error = JSON.parse(result.body) as { error: { code: string } };
+    const error = parseAs(result.body, "AgentErrorResponse");
     assert.equal(error.error.code, "ANNOTATION_NOT_FOUND");
   });
 
@@ -596,14 +596,19 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     // backing the live HTTP server, with real sidecar persistence wired in.
     // Re-reading over real HTTP proves none of the four attempts left a
     // mark: the annotation is still open, at its original target.
-    const after = JSON.parse(
+    const after = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     assert.equal(after.state, "open");
     assert.equal(after.target.state, "range");
     assert.equal(after.target.from, 0);
     assert.equal(after.target.to, 20);
-    assert.equal(after.annotationGeneration, 1, "no refused attempt may have advanced the generation");
+    assert.equal(
+      after.annotationGeneration,
+      1,
+      "no refused attempt may have advanced the generation",
+    );
   });
 
   // ==========================================================================
@@ -642,16 +647,17 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       ],
     });
     assert.equal(submitted.status, 200);
-    const result = JSON.parse(submitted.body) as SubmitProposalResponse;
+    const result = parseAs(submitted.body, "SubmitProposalResponse");
     assert.equal(result.packetIds.length, 1);
     const [packetId] = result.packetIds;
 
     // Prove the link landed by reading it back, not by trusting the POST
     // response: the annotation itself now carries a proposalAction for
     // exactly this packet and review.
-    const annotation = JSON.parse(
+    const annotation = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     assert.equal(annotation.proposalActions.length, 1);
     assert.equal(annotation.proposalActions[0].packetId, packetId);
     assert.equal(annotation.proposalActions[0].reviewId, result.reviewId);
@@ -690,23 +696,26 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       ],
     });
     assert.equal(submitted.status, 409);
-    const error = JSON.parse(submitted.body) as { error: { code: string } };
+    const error = parseAs(submitted.body, "AgentErrorResponse");
     assert.equal(error.error.code, "ANNOTATION_RESOLVED");
 
     // Nothing committed: the document text is unchanged, no review exists,
     // and the annotation carries no proposalAction (M3's guarantee — the
     // linked proposal commits with the annotation change or not at all).
-    const document = JSON.parse((await httpRequest("GET", `/v1/documents/${documentId}`)).body) as {
-      review?: unknown;
-    };
+    const document = parseAs(
+      (await httpRequest("GET", `/v1/documents/${documentId}`)).body,
+      "DocumentSummary",
+    );
     assert.equal(document.review, undefined);
-    const content = JSON.parse(
+    const content = parseAs(
       (await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`)).body,
-    ) as { content: string };
+      "ReadDocumentResponse",
+    );
     assert.equal(content.content.trimEnd(), original.trimEnd());
-    const annotation = JSON.parse(
+    const annotation = parseAs(
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
-    ) as AnnotationResponse;
+      "AnnotationResponse",
+    );
     assert.equal(annotation.proposalActions.length, 0);
     assert.equal(annotation.state, "resolved");
   });

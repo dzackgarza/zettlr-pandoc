@@ -14,96 +14,96 @@
  * END HEADER
  */
 
-import { readFileSync, statSync, writeFileSync } from 'fs'
-import path from 'path'
-import DocumentManager from 'source/app/service-providers/documents'
-import LogProvider from 'source/app/service-providers/log'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
-import type { AppServiceContainer } from 'source/app/app-service-container'
-import type { MDFileDescriptor } from 'source/types/common/fsal'
+import { readFileSync, statSync, writeFileSync } from "fs";
+import path from "path";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import DocumentManager from "source/app/service-providers/documents";
+import LogProvider from "source/app/service-providers/log";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import type { MDFileDescriptor } from "source/types/common/fsal";
 
-function descriptorFor (filePath: string): MDFileDescriptor {
-  const content = readFileSync(filePath, 'utf-8')
-  const stat = statSync(filePath)
+function descriptorFor(filePath: string): MDFileDescriptor {
+  const content = readFileSync(filePath, "utf-8");
+  const stat = statSync(filePath);
   return {
     dir: path.dirname(filePath),
     path: filePath,
     name: path.basename(filePath),
     ext: path.extname(filePath),
     size: stat.size,
-    id: '',
+    id: "",
     tags: [],
     links: [],
     citekeys: [],
-    bom: '',
-    type: 'file',
+    bom: "",
+    type: "file",
     wordCount: 0,
     charCount: content.length,
     modtime: stat.mtimeMs,
     creationtime: stat.birthtimeMs,
-    linefeed: '\n',
+    linefeed: "\n",
     firstHeading: null,
     yamlTitle: undefined,
     aliases: [],
     frontmatter: null,
-    references: extractReferences(filePath, content)
-  }
+    references: extractReferences(filePath, content),
+  };
 }
 
 /** A booted DocumentManager whose only workspace is `root`. */
-export async function bootDocumentManager (root: string): Promise<DocumentManager> {
+export async function bootDocumentManager(root: string): Promise<DocumentManager> {
   const watcher = {
     on: () => {},
     getWatched: () => ({}),
     watchPath: (_filePath: string) => {},
     unwatchPath: (_filePath: string) => {},
-    shutdown: async () => {}
-  }
+    shutdown: async () => {},
+  };
   const appSeam = {
     log: new LogProvider(),
     config: {
       get: () => ({
         app: { openFiles: [], openWorkspaces: [root] },
-        editor: { autoSave: 'off' as const },
+        editor: { autoSave: "off" as const },
         system: { avoidNewTabs: false },
-        appLang: 'en-US',
+        appLang: "en-US",
         files: {
-          images: { openWith: 'zettlr' as const },
-          pdf: { openWith: 'zettlr' as const }
+          images: { openWith: "zettlr" as const },
+          pdf: { openWith: "zettlr" as const },
         },
-        alwaysReloadFiles: false
+        alwaysReloadFiles: false,
       }),
       addPath: (_filePath: string) => false,
-      set: (_key: string, _value: unknown) => {}
+      set: (_key: string, _value: unknown) => {},
     },
     fsal: {
       getWatchdog: () => watcher,
       getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
-      loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, 'utf-8'),
+      loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       testAccess: async (_filePath: string) => true,
       writeTextFile: async (filePath: string, content: string) => {
-        writeFileSync(filePath, content, 'utf-8')
-      }
+        writeFileSync(filePath, content, "utf-8");
+      },
     },
     citeproc: {
-      synchronizeDatabases: async (_libraries: string[]) => {}
+      synchronizeDatabases: async (_libraries: string[]) => {},
     },
     recentDocs: {
       add: (_filePath: string) => {},
-      markEdited: (_filePath: string) => {}
+      markEdited: (_filePath: string) => {},
     },
     stats: {
-      updateCounts: (_words: number, _characters: number) => {}
+      updateCounts: (_words: number, _characters: number) => {},
     },
     references: {
       reportAuthorityBuffer: (_filePath: string) => {},
-      dropAuthorityBuffer: (_filePath: string) => {}
-    }
-  }
+      dropAuthorityBuffer: (_filePath: string) => {},
+    },
+  };
 
-  const provider = new DocumentManager(appSeam as unknown as AppServiceContainer)
-  await provider.boot()
-  return provider
+  const provider = new DocumentManager(appSeam as unknown as AppServiceContainer);
+  await provider.boot();
+  return provider;
 }

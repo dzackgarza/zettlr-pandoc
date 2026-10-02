@@ -34,23 +34,23 @@
  * END HEADER
  */
 
-import RingProgress from './RingProgress.vue'
+import RingProgress from "./RingProgress.vue";
 
 export interface RingProgressButtonControl {
-  type: 'ring'
-  id?: string
-  progressPercent: number
-  trackColour?: string
-  label?: string
+  type: "ring";
+  id?: string;
+  progressPercent: number;
+  trackColour?: string;
+  label?: string;
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
 const props = defineProps<{
-  control: RingProgressButtonControl
-}>()
+  control: RingProgressButtonControl;
+}>();
 
-const emit = defineEmits<(e: 'click') => void>()
+const emit = defineEmits<(e: "click") => void>();
 </script>
 
 <style lang="css" scoped>

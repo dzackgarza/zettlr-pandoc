@@ -13,25 +13,15 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
+import { reportError } from "@common/util/error-reporting";
+import errorToString from "@common/util/error-to-string";
+import { getCLIArgument, handleExitArguments } from "@providers/cli-provider";
 import { app, dialog } from "electron";
 import path from "path";
+import { getAppServiceContainer, isAppServiceContainerReady } from "./app/app-service-container";
 import { bootApplication, shutdownApplication } from "./app/lifecycle";
-
 // Helper function to extract files to open from process.argv
 import extractFilesFromArgv from "./app/util/extract-files-from-argv";
-import {
-  DATA_DIR,
-  DISABLE_HARDWARE_ACCELERATION,
-  OPEN_IN_RUNNING_INSTANCE,
-  getCLIArgument,
-  handleExitArguments,
-} from "@providers/cli-provider";
-import {
-  getAppServiceContainer,
-  isAppServiceContainerReady,
-} from "./app/app-service-container";
-import errorToString from "@common/util/error-to-string";
 
 function logUnhandledProcessError(message: string): void {
   if (isAppServiceContainerReady()) {
@@ -42,18 +32,16 @@ function logUnhandledProcessError(message: string): void {
 }
 
 process.on("uncaughtExceptionMonitor", (error, origin) => {
-  logUnhandledProcessError(
-    `[Application] Uncaught exception (${origin})\n${errorToString(error)}`,
-  );
+  logUnhandledProcessError(`[Application] Uncaught exception (${origin})\n${errorToString(error)}`);
 });
 
 handleExitArguments();
 
 // Setting custom data dir for user configuration files.
 // Full path or relative path is OK. '~' does not work as expected.
-let dataDir = getCLIArgument(DATA_DIR);
+let dataDir = getCLIArgument("data-dir");
 
-if (typeof dataDir === "string") {
+if (dataDir !== undefined) {
   // a path to a custom config dir is provided
   if (!path.isAbsolute(dataDir)) {
     if (app.isPackaged) {
@@ -66,9 +54,7 @@ if (typeof dataDir === "string") {
   }
 
   if (isAppServiceContainerReady()) {
-    getAppServiceContainer().log.info(
-      `[Application] Using custom data dir: ${dataDir}`,
-    );
+    getAppServiceContainer().log.info(`[Application] Using custom data dir: ${dataDir}`);
   }
   app.setPath("userData", dataDir);
   app.setAppLogsPath(path.join(dataDir, "logs"));
@@ -81,9 +67,7 @@ if (!app.requestSingleInstanceLock()) {
   if (!app.isPackaged) {
     // I always forget to close my system install before starting the
     // development app, so let's just add a small reminder to myself.
-    console.log(
-      "There is another instance of Zettlr running. Did you forget to close that one?",
-    );
+    console.log("There is another instance of Zettlr running. Did you forget to close that one?");
   }
   app.exit(0);
 }
@@ -93,10 +77,8 @@ if (!app.requestSingleInstanceLock()) {
 // instance must not silently become that instance: it was started to add a tab
 // to a live window, and booting a whole second app instead is the wrong outcome
 // nobody asked for. Say so and stop.
-if (getCLIArgument(OPEN_IN_RUNNING_INSTANCE) === true) {
-  reportError(
-    "No running Zettlr instance accepted the arguments; nothing was opened.",
-  );
+if (getCLIArgument("open-in-running-instance")) {
+  reportError("No running Zettlr instance accepted the arguments; nothing was opened.");
   app.exit(1);
 }
 
@@ -111,7 +93,7 @@ if (process.platform === "win32") {
 // On systems with virtual GPUs (i.e. VMs), it might be necessary to disable
 // hardware acceleration. If the corresponding flag is set, we do so.
 // See for more info https://github.com/Zettlr/Zettlr/issues/2127
-if (getCLIArgument(DISABLE_HARDWARE_ACCELERATION) === true) {
+if (getCLIArgument("disable-hardware-acceleration")) {
   app.disableHardwareAcceleration();
 }
 
@@ -164,10 +146,7 @@ app
         // of a start: a fatal error dialog carries the same class.
         console.log("[Application] Boot complete.");
         getAppServiceContainer()
-          .commands.run(
-            "roots-add",
-            filesBeforeOpen.concat(extractFilesFromArgv(process.argv)),
-          )
+          .commands.run("roots-add", filesBeforeOpen.concat(extractFilesFromArgv(process.argv)))
           .catch((err) => reportError(err));
       })
       .catch((err) => {
@@ -205,14 +184,9 @@ app.on("second-instance", (event, argv, _cwd) => {
   serviceContainer.windows.showAnyWindow();
 
   // In case the user wants to open a file/folder with this running instance
-  serviceContainer.commands
-    ?.run("roots-add", extractFilesFromArgv(argv))
-    .catch((err) => {
-      serviceContainer.log.error(
-        "[Application] Error while handling second-instance arguments",
-        err,
-      );
-    });
+  serviceContainer.commands?.run("roots-add", extractFilesFromArgv(argv)).catch((err) => {
+    serviceContainer.log.error("[Application] Error while handling second-instance arguments", err);
+  });
 });
 
 /**
@@ -226,10 +200,7 @@ app.on("open-file", (e, filePath) => {
     serviceContainer.log.info(`[Application] Opening file ${filePath}.`);
     serviceContainer.windows.showAnyWindow();
     serviceContainer.commands.run("roots-add", [filePath]).catch((err) => {
-      serviceContainer.log.error(
-        "[Application] Error while adding new roots",
-        err,
-      );
+      serviceContainer.log.error("[Application] Error while adding new roots", err);
     });
   } else {
     // The Zettlr object has yet to be created -> cache it
@@ -291,7 +262,5 @@ app.on("activate", function () {
  * a Promise is rejected somewhere.
  */
 process.on("unhandledRejection", (err: unknown) => {
-  logUnhandledProcessError(
-    `[Application] Unhandled rejection received\n${errorToString(err)}`,
-  );
+  logUnhandledProcessError(`[Application] Unhandled rejection received\n${errorToString(err)}`);
 });

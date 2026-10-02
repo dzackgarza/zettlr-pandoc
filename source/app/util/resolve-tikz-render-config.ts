@@ -1,6 +1,10 @@
 import path from "path";
+import {
+  resolveTikzDataDir,
+  resolveTikzTemplatePath,
+  type TikzRenderConfig,
+} from "tikz-workbench/src/tikz-render";
 import { resolveCentralFiguresDirectory } from "./central-figures-store";
-import { resolveTikzDataDir, resolveTikzTemplatePath, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
 
 export function resolveTikzRenderConfig(
   configuredDataDir: string,

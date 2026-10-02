@@ -15,39 +15,46 @@
  * END HEADER
  */
 
-import { type AppServiceContainer } from '../../app-service-container'
+import { type AppServiceContainer } from "../../app-service-container";
+
+/**
+ * A payload or result as it crosses the dispatch seam of
+ * `CommandProvider.run()`, which receives untyped IPC payloads. Each command
+ * declares the precise shape it accepts and returns in its own `run()`.
+ */
+export type CommandWireValue = unknown;
 
 export default abstract class ZettlrCommand {
-  protected readonly _app: AppServiceContainer
-  protected readonly _bind: string[]
+  protected readonly _app: AppServiceContainer;
+  protected readonly _bind: string[];
 
   /**
    * Derived classes must implement this method which will be called upon request.
    *
    * @param   {string}        evt  Accepts any one of the events declared in _bind
-   * @param   {any<any>}      arg  Any arguments that are required for the command
+   * @param   {CommandWireValue}           arg  The payload the command requires
    *
-   * @return  {Promise<any>}       The run method must run asynchronously.
+   * @return  {Promise<CommandWireValue>}       The run method must run asynchronously.
    */
-  abstract run (evt: string, arg: any): Promise<any>
+  abstract run(evt: string, arg: CommandWireValue): Promise<CommandWireValue>;
 
-  constructor (app: AppServiceContainer, bindEvent: string|string[]) {
+  constructor(app: AppServiceContainer, bindEvent: string | string[]) {
     // The app is the api entry point for all things we can do.
-    this._app = app
+    this._app = app;
 
     // The bind event is the event that is sent from the renderer
     if (!Array.isArray(bindEvent)) {
-      bindEvent = [bindEvent]
+      bindEvent = [bindEvent];
     }
-    this._bind = bindEvent
+    this._bind = bindEvent;
   }
 
   /**
    * Returns the event name this thing binds to
    * @return {String} The event name
    */
-  getEvents (): string[] {
-    return this._bind.map(event => event)
+  getEvents(): string[] {
+    return this._bind.map((event) => event);
   }
 
   /**
@@ -55,7 +62,7 @@ export default abstract class ZettlrCommand {
    * @param  {String} evt The event name.
    * @return {Boolean}     True or false, depending on the bind events.
    */
-  respondsTo (evt: string): boolean {
-    return this._bind.includes(evt)
+  respondsTo(evt: string): boolean {
+    return this._bind.includes(evt);
   }
 }

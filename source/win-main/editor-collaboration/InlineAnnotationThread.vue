@@ -142,12 +142,8 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { computed, ref } from 'vue'
-import type { DateTime } from 'luxon'
-import AnnotationThread from './AnnotationThread.vue'
-import AnnotationComposer from './AnnotationComposer.vue'
-import ProposalActionCard from './ProposalActionCard.vue'
+import { trans } from "@common/i18n-renderer";
+import type { DateTime } from "luxon";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -156,32 +152,43 @@ import {
   AlertDialogOverlay,
   AlertDialogPortal,
   AlertDialogRoot,
-  AlertDialogTitle
-} from 'reka-ui'
-import { deriveActionRow, type AnnotationCardView } from '../sidebar/annotations/annotation-panel-model'
+  AlertDialogTitle,
+} from "reka-ui";
+import { computed, ref } from "vue";
+import {
+  type AnnotationCardView,
+  deriveActionRow,
+} from "../sidebar/annotations/annotation-panel-model";
+import AnnotationComposer from "./AnnotationComposer.vue";
+import AnnotationThread from "./AnnotationThread.vue";
+import ProposalActionCard from "./ProposalActionCard.vue";
 
 const props = defineProps<{
-  card: AnnotationCardView
-  now: DateTime
+  card: AnnotationCardView;
+  now: DateTime;
   /** The document's review is frozen, so its chunks are not in the editor. */
-  reviewFrozen: boolean
-}>()
+  reviewFrozen: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'close'): void
-  (e: 'reply', text: string): void
-  (e: 'show-proposal'): void
-  (e: 'begin-reattach'): void
-  (e: 'resolve-toggle'): void
-  (e: 'delete'): void
-}>()
+  (e: "close"): void;
+  (e: "reply", text: string): void;
+  (e: "show-proposal"): void;
+  (e: "begin-reattach"): void;
+  (e: "resolve-toggle"): void;
+  (e: "delete"): void;
+}>();
 
 /** Whether the delete confirmation is up. */
-const confirmingDelete = ref(false)
+const confirmingDelete = ref(false);
 
-const actionRow = computed(() => deriveActionRow(props.card.annotation))
-const lifecycleLabel = computed(() => props.card.annotation.state === 'resolved' ? trans('Resolved') : trans('Open'))
-const resolveLabel = computed(() => actionRow.value.resolveLabel === 'Reopen' ? trans('Reopen') : trans('Resolve'))
+const actionRow = computed(() => deriveActionRow(props.card.annotation));
+const lifecycleLabel = computed(() =>
+  props.card.annotation.state === "resolved" ? trans("Resolved") : trans("Open"),
+);
+const resolveLabel = computed(() =>
+  actionRow.value.resolveLabel === "Reopen" ? trans("Reopen") : trans("Resolve"),
+);
 </script>
 
 <style lang="less">

@@ -13,238 +13,266 @@
  * END HEADER
  */
 
-import path from 'path'
-import EventEmitter from 'events'
-import * as FSALFile from './fsal-file'
-import * as FSALCodeFile from './fsal-code-file'
-import * as FSALDir from './fsal-directory'
-import * as FSALAttachment from './fsal-attachment'
-import FSALWatchdog from './fsal-watchdog'
-import FSALCache from './fsal-cache'
+import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
 import type {
+  AnyDescriptor,
+  CodeFileDescriptor,
   DirDescriptor,
   MDFileDescriptor,
-  CodeFileDescriptor,
   OtherFileDescriptor,
-  SortMethod,
   ProjectSettings,
-  AnyDescriptor
-} from '@dts/common/fsal'
-import type { SearchResult, SearchTerm } from '@dts/common/search'
-import ProviderContract from '@providers/provider-contract'
-import { app, ipcMain } from 'electron'
-import type LogProvider from '@providers/log'
-import { hasMarkdownExt, hasCodeExt } from '@common/util/file-extention-checks'
-import getMarkdownFileParser from './util/file-parser'
-import type ConfigProvider from '@providers/config'
-import { promises as fs, constants as FS_CONSTANTS, type Stats } from 'fs'
-import { safeDelete } from './util/safe-delete'
-import { type FilesystemMetadata, getFilesystemMetadata } from './util/get-fs-metadata'
-import broadcastIPCMessage from 'source/common/util/broadcast-ipc-message'
-import type { EventName } from 'chokidar/handler.js'
-import type LongRunningTaskProvider from '../long-running-tasks'
-import { trans } from 'source/common/i18n-main'
+  SortMethod,
+} from "@dts/common/fsal";
+import type { SearchResult, SearchTerm } from "@dts/common/search";
+import type ConfigProvider from "@providers/config";
+import type LogProvider from "@providers/log";
+import ProviderContract from "@providers/provider-contract";
+import type { EventName } from "chokidar/handler.js";
+import { app, ipcMain } from "electron";
+import EventEmitter from "events";
+import { constants as FS_CONSTANTS, promises as fs, type Stats } from "fs";
+import path from "path";
+import { trans } from "source/common/i18n-main";
+import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
 import {
-  readDirectoryFromDisk,
-  readDirectoryRecursivelyFromDisk,
-  visibilityChanges,
-  type ListingRules
-} from './util/read-directory'
-import {
-  WORKSPACE_RULES_FILE,
   createIgnoreFilter,
+  type IgnoreFilter,
+  type IgnoreRuleSources,
   judgingRoot,
   movePathRules,
   removePathRules,
   rulesTextOf,
   setPathIgnored,
-  type IgnoreFilter,
-  type IgnoreRuleSources
-} from 'source/common/util/ignore-rules'
-import _ from 'underscore'
+  WORKSPACE_RULES_FILE,
+} from "source/common/util/ignore-rules";
+import _ from "underscore";
+import type LongRunningTaskProvider from "../long-running-tasks";
+import * as FSALAttachment from "./fsal-attachment";
+import FSALCache from "./fsal-cache";
+import * as FSALCodeFile from "./fsal-code-file";
+import * as FSALDir from "./fsal-directory";
+import * as FSALFile from "./fsal-file";
+import FSALWatchdog from "./fsal-watchdog";
+import getMarkdownFileParser from "./util/file-parser";
+import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
+import {
+  type ListingRules,
+  readDirectoryFromDisk,
+  readDirectoryRecursivelyFromDisk,
+  visibilityChanges,
+} from "./util/read-directory";
+import { safeDelete } from "./util/safe-delete";
 
 /**
  * The time in which the FSAL collects events for one publication. A burst of
  * watcher events (a render into the workspace, a branch switch) reaches each
  * consumer as one batch.
  */
-const EVENT_BATCH_MS = 50
+const EVENT_BATCH_MS = 50;
 
 /** Reads the rules file of a workspace root. A root without one has no rules. */
-async function readRulesFile (root: string): Promise<string> {
+async function readRulesFile(root: string): Promise<string> {
   try {
-    return await fs.readFile(path.join(root, WORKSPACE_RULES_FILE), 'utf-8')
+    return await fs.readFile(path.join(root, WORKSPACE_RULES_FILE), "utf-8");
   } catch (err: unknown) {
-    if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return ''
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return "";
     }
-    throw err
+    throw err;
   }
 }
 
 /** Writes the rules file of a workspace root. A root without rules has no file. */
-async function writeRulesFile (root: string, text: string): Promise<void> {
-  const rulesFile = path.join(root, WORKSPACE_RULES_FILE)
-  if (text === '') {
-    await fs.rm(rulesFile, { force: true })
+async function writeRulesFile(root: string, text: string): Promise<void> {
+  const rulesFile = path.join(root, WORKSPACE_RULES_FILE);
+  if (text === "") {
+    await fs.rm(rulesFile, { force: true });
   } else {
-    await fs.writeFile(rulesFile, text, 'utf-8')
+    await fs.writeFile(rulesFile, text, "utf-8");
   }
 }
 
-function sameIgnoreSources (a: IgnoreRuleSources, b: IgnoreRuleSources): boolean {
-  return a.showIgnored === b.showIgnored &&
+function sameIgnoreSources(a: IgnoreRuleSources, b: IgnoreRuleSources): boolean {
+  return (
+    a.showIgnored === b.showIgnored &&
     _.isEqual(a.globalRules, b.globalRules) &&
     _.isEqual([...a.workspaceRules], [...b.workspaceRules])
+  );
 }
 
 // Re-export all interfaces necessary for other parts of the code (Document Manager)
 export {
-  FSALFile,
+  type FilesystemMetadata,
+  FSALAttachment,
   FSALCodeFile,
   FSALDir,
-  FSALAttachment,
-  type FilesystemMetadata,
-  getFilesystemMetadata
-}
+  FSALFile,
+  getFilesystemMetadata,
+};
 
-export interface FSALEventPayloadUnlink {
-  event: 'unlink'|'unlinkDir'
-  path: string
-}
+export type FSALEventPayloadUnlink = { event: "unlink" | "unlinkDir"; path: string };
 
 export interface FSALEventPayloadChange {
-  event: 'add'|'addDir'|'change'
-  descriptor: AnyDescriptor
+  event: "add" | "addDir" | "change";
+  descriptor: AnyDescriptor;
 }
 
-export type FSALEventPayload = FSALEventPayloadChange|FSALEventPayloadUnlink
+export type FSALEventPayload = FSALEventPayloadChange | FSALEventPayloadUnlink;
 
 export default class FSAL extends ProviderContract {
-  private readonly _cache: FSALCache
-  private readonly _emitter: EventEmitter
-  private readonly watchers: Map<string, FSALWatchdog>
-  private readonly deadWorkspaces: Set<string>
+  private readonly _cache: FSALCache;
+  private readonly _emitter: EventEmitter;
+  private readonly watchers: Map<string, FSALWatchdog>;
+  private readonly deadWorkspaces: Set<string>;
   /** The events that wait for the next publication, in the order they happened */
-  private readonly pendingEvents: FSALEventPayload[] = []
-  private readonly publishPendingEvents = _.throttle(() => {
-    const events = this.pendingEvents.splice(0)
-    this._emitter.emit('fsal-events', events)
-    broadcastIPCMessage('fsal-events', events)
-  }, EVENT_BATCH_MS, { leading: false })
+  private readonly pendingEvents: FSALEventPayload[] = [];
+  private readonly publishPendingEvents = _.throttle(
+    () => {
+      const events = this.pendingEvents.splice(0);
+      this._emitter.emit("fsal-events", events);
+      broadcastIPCMessage("fsal-events", events);
+    },
+    EVENT_BATCH_MS,
+    { leading: false },
+  );
 
   /**
    * The ignore rules the FSAL lists with, and the filter made from them. Both
    * are replaced together and never changed in place.
    */
-  private ignoreSources: IgnoreRuleSources = { globalRules: [], workspaceRules: new Map(), showIgnored: false }
-  private ignoreFilter: IgnoreFilter = createIgnoreFilter(this.ignoreSources)
+  private ignoreSources: IgnoreRuleSources = {
+    globalRules: [],
+    workspaceRules: new Map(),
+    showIgnored: false,
+  };
+  private ignoreFilter: IgnoreFilter = createIgnoreFilter(this.ignoreSources);
   /** The last queued change of the ignore rules. Changes run one after the other. */
-  private ignoreUpdate: Promise<void> = Promise.resolve()
+  private ignoreUpdate: Promise<void> = Promise.resolve();
 
-  constructor (
+  constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
-    private readonly _lrt: LongRunningTaskProvider
+    private readonly _lrt: LongRunningTaskProvider,
   ) {
-    super()
+    super();
 
-    const cachedir = app.getPath('userData')
-    this._cache = new FSALCache(this._logger, path.join(cachedir, 'fsal/cache'))
-    this._emitter = new EventEmitter()
-    this.watchers = new Map()
-    this.deadWorkspaces = new Set()
+    const cachedir = app.getPath("userData");
+    this._cache = new FSALCache(this._logger, path.join(cachedir, "fsal/cache"));
+    this._emitter = new EventEmitter();
+    this.watchers = new Map();
+    this.deadWorkspaces = new Set();
 
-    ipcMain.handle('fsal', async (event, { command, payload }) => {
-      if (command === 'read-path-recursively' && typeof payload === 'string') {
+    ipcMain.handle("fsal", async (event, { command, payload }) => {
+      if (command === "read-path-recursively" && typeof payload === "string") {
         if (await this.isFile(payload)) {
-          return [payload]
+          return [payload];
         } else if (await this.isDir(payload)) {
-          return await this.readDirectoryRecursively(payload)
+          return await this.readDirectoryRecursively(payload);
         } else {
-          return []
+          return [];
         }
-      } else if (command === 'read-directory' && typeof payload === 'string') {
-        return await this.readDirectory(payload)
-      } else if (command === 'get-descriptor' && (typeof payload === 'string' || Array.isArray(payload) && payload.every(p => typeof p === 'string'))) {
+      } else if (command === "read-directory" && typeof payload === "string") {
+        return await this.readDirectory(payload);
+      } else if (
+        command === "get-descriptor" &&
+        (typeof payload === "string" ||
+          (Array.isArray(payload) && payload.every((p) => typeof p === "string")))
+      ) {
         if (Array.isArray(payload)) {
-          const descriptors: AnyDescriptor[] = []
+          const descriptors: AnyDescriptor[] = [];
           for (const absPath of payload) {
             // Check every path for existence to ensure an array lookup does not
             // fail.
-            if (await this.isFile(absPath) || await this.isDir(absPath)) {
-              descriptors.push(await this.getDescriptorFor(absPath))
+            if ((await this.isFile(absPath)) || (await this.isDir(absPath))) {
+              descriptors.push(await this.getDescriptorFor(absPath));
             } else {
-              this._logger.error(`[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`)
+              this._logger.error(
+                `[FSAL] Could not provide descriptor for requested path ${absPath}: Neither file nor directory.`,
+              );
             }
           }
-          return descriptors
+          return descriptors;
         } else {
-          return await this.getDescriptorFor(payload)
+          return await this.getDescriptorFor(payload);
         }
-      } else if (command === 'get-ignore-rules') {
-        return this.ignoreSources
-      } else if (command === 'set-workspace-ignore-rules' && typeof payload?.root === 'string' && typeof payload.text === 'string') {
-        await this.setWorkspaceIgnoreRules(payload.root, payload.text)
-      } else if (command === 'set-path-ignored' && typeof payload?.path === 'string' && typeof payload.isDirectory === 'boolean' && typeof payload.ignored === 'boolean') {
-        await this.setPathIgnored(payload.path, payload.isDirectory, payload.ignored)
+      } else if (command === "get-ignore-rules") {
+        return this.ignoreSources;
+      } else if (
+        command === "set-workspace-ignore-rules" &&
+        typeof payload?.root === "string" &&
+        typeof payload.text === "string"
+      ) {
+        await this.setWorkspaceIgnoreRules(payload.root, payload.text);
+      } else if (
+        command === "set-path-ignored" &&
+        typeof payload?.path === "string" &&
+        typeof payload.isDirectory === "boolean" &&
+        typeof payload.ignored === "boolean"
+      ) {
+        await this.setPathIgnored(payload.path, payload.isDirectory, payload.ignored);
       }
-    })
+    });
   } // END constructor
 
-  async boot (): Promise<void> {
-    this._logger.verbose('FSAL booting up ...')
+  async boot(): Promise<void> {
+    this._logger.verbose("FSAL booting up ...");
 
     // Immediately determine if the cache needs to be cleared
-    const shouldClearCache = process.argv.includes('--clear-cache')
+    const shouldClearCache = process.argv.includes("--clear-cache");
     if (this._config.newVersionDetected() || shouldClearCache) {
-      this._logger.info('Clearing the FSAL cache ...')
+      this._logger.info("Clearing the FSAL cache ...");
       try {
-        await this._cache.clearCache()
-        this._logger.info('FSAL cache cleared.')
+        await this._cache.clearCache();
+        this._logger.info("FSAL cache cleared.");
       } catch (err: unknown) {
         if (err instanceof Error) {
-          this._logger.error(`FSAL Cache could not be cleared: ${String(err.message)}`, err)
+          this._logger.error(`FSAL Cache could not be cleared: ${String(err.message)}`, err);
         }
       }
     }
 
     // No reindexing here. Since we're booting, and reindexing takes some time,
     // we def this to the application container which can show a splash screen.
-    await this.syncRoots()
-    this.ignoreSources = await this.readIgnoreSources()
-    this.ignoreFilter = createIgnoreFilter(this.ignoreSources)
+    await this.syncRoots();
+    this.ignoreSources = await this.readIgnoreSources();
+    this.ignoreFilter = createIgnoreFilter(this.ignoreSources);
 
-    this._config.on('update', (which: string) => {
-      if (which === 'openPaths' || which === 'fileManager.ignoreRules' || which === 'fileManager.showIgnored') {
-        this.refreshIgnoreRules()
+    this._config.on("update", (which?: string) => {
+      if (
+        which === "openPaths" ||
+        which === "fileManager.ignoreRules" ||
+        which === "fileManager.showIgnored"
+      ) {
+        this.refreshIgnoreRules();
       }
 
-      if (which === 'openPaths' || which === 'files.dotFiles.showInFilemanager') {
+      if (which === "openPaths" || which === "files.dotFiles.showInFilemanager") {
         this.syncRoots()
           .then(() => {
             // Always reindex all files after config updates later on.
-            this.reindexFiles().catch(err => this._logger.error(`[FSAL] Could not reindex files: ${err.message}`, err))
+            this.reindexFiles().catch((err) =>
+              this._logger.error(`[FSAL] Could not reindex files: ${err.message}`, err),
+            );
           })
-          .catch(err => {
-            this._logger.error(`[FSAL] Could not synchronize paths: ${err.message as string}`, err)
-          })
+          .catch((err) => {
+            this._logger.error(`[FSAL] Could not synchronize paths: ${err.message as string}`, err);
+          });
       }
-    })
+    });
   }
 
   // Enable global event listening to updates of the config
-  on (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
-    this._emitter.on(evt, callback)
+  on(evt: "fsal-events", callback: (events: FSALEventPayload[]) => void): void {
+    this._emitter.on(evt, callback);
   }
 
-  once (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
-    this._emitter.once(evt, callback)
+  once(evt: "fsal-events", callback: (events: FSALEventPayload[]) => void): void {
+    this._emitter.once(evt, callback);
   }
 
   // Also do the same for the removal of listeners
-  off (evt: 'fsal-events', callback: (events: FSALEventPayload[]) => void): void {
-    this._emitter.off(evt, callback)
+  off(evt: "fsal-events", callback: (events: FSALEventPayload[]) => void): void {
+    this._emitter.off(evt, callback);
   }
 
   /**
@@ -253,9 +281,9 @@ export default class FSAL extends ProviderContract {
    *
    * @param   {FSALEventPayload}  payload  The event
    */
-  private publishEvent (payload: FSALEventPayload): void {
-    this.pendingEvents.push(payload)
-    this.publishPendingEvents()
+  private publishEvent(payload: FSALEventPayload): void {
+    this.pendingEvents.push(payload);
+    this.publishPendingEvents();
   }
 
   /**
@@ -264,105 +292,127 @@ export default class FSAL extends ProviderContract {
    * @param   {EventName}  event    The event name
    * @param   {string}     absPath  The absolute path for this event
    */
-  private emitChokidarEvent (event: EventName, absPath: string, stats?: Stats): void {
-    if (event === 'all' || event === 'raw') {
-      return this._logger.error('[FSAL] Cannot emit events "all" or "raw" -- wrong chokidar setup!')
+  private emitChokidarEvent(event: EventName, absPath: string, stats?: Stats): void {
+    if (event === "all" || event === "raw") {
+      return this._logger.error(
+        '[FSAL] Cannot emit events "all" or "raw" -- wrong chokidar setup!',
+      );
     }
 
-    if (event === 'ready') {
-      return this._logger.verbose('[FSAL] Ignoring ready event.')
+    if (event === "ready") {
+      return this._logger.verbose("[FSAL] Ignoring ready event.");
     }
 
-    if (event === 'error') {
-      return this._logger.error(`[FSAL] Chokidar reported an error for path "${absPath}"`)
+    if (event === "error") {
+      return this._logger.error(`[FSAL] Chokidar reported an error for path "${absPath}"`);
     }
 
     if (stats?.isSymbolicLink() === true) {
-      return this._logger.error(`[FSAL] Ignoring event "${event}" for path "${absPath}" because it is a symbolic link.`)
+      return this._logger.error(
+        `[FSAL] Ignoring event "${event}" for path "${absPath}" because it is a symbolic link.`,
+      );
     }
 
     // Regardless of the event, it will invalidate that particular cache entry.
-    this._cache.del(absPath)
-      .catch(err => this._logger.error(`[FSAL Cache] Failed to delete key: ${absPath}`, err))
+    this._cache
+      .del(absPath)
+      .catch((err) => this._logger.error(`[FSAL Cache] Failed to delete key: ${absPath}`, err));
 
-    if (path.basename(absPath) === WORKSPACE_RULES_FILE && this.ignoreSources.workspaceRules.has(path.dirname(absPath))) {
-      this.refreshIgnoreRules()
+    if (
+      path.basename(absPath) === WORKSPACE_RULES_FILE &&
+      this.ignoreSources.workspaceRules.has(path.dirname(absPath))
+    ) {
+      this.refreshIgnoreRules();
     }
 
     // A path that the ignore rules hide is not listed, so its events stay
     // here. The event name says whether an unlinked path was a directory.
-    if (!this.isListed(absPath, event === 'addDir' || event === 'unlinkDir')) {
-      return
+    if (!this.isListed(absPath, event === "addDir" || event === "unlinkDir")) {
+      return;
     }
 
     // In unlink-events, there won't be a descriptor.
-    if (event === 'unlink' || event === 'unlinkDir') {
-      this.publishEvent({ event, path: absPath })
-      return
+    if (event === "unlink" || event === "unlinkDir") {
+      this.publishEvent({ event, path: absPath });
+      return;
     }
 
     // But in any other case (change & add), we should be able to get one.
     this.getDescriptorFor(absPath, false)
-      .then(descriptor => {
+      .then((descriptor) => {
         // A `change` can name a directory, and the rules can change while the
         // descriptor loads, so the descriptor decides.
-        if (this.isListed(descriptor.path, descriptor.type === 'directory')) {
-          this.publishEvent({ event, descriptor })
+        if (this.isListed(descriptor.path, descriptor.type === "directory")) {
+          this.publishEvent({ event, descriptor });
         }
       })
-      .catch(err => {
-        this._logger.error(`[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`, err)
-      })
+      .catch((err) => {
+        this._logger.error(
+          `[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`,
+          err,
+        );
+      });
   }
 
   /**
    * Whether the app lists a path: an open workspace root is listed, and any
    * other path is listed unless the ignore rules hide it.
    */
-  private isListed (absPath: string, isDirectory: boolean): boolean {
-    return this.ignoreSources.workspaceRules.has(absPath) || !this.ignoreFilter.hides(absPath, isDirectory)
+  private isListed(absPath: string, isDirectory: boolean): boolean {
+    return (
+      this.ignoreSources.workspaceRules.has(absPath) ||
+      !this.ignoreFilter.hides(absPath, isDirectory)
+    );
   }
 
-  private listingRules (): ListingRules {
+  private listingRules(): ListingRules {
     return {
       ignoreDotFiles: !this._config.get().files.dotFiles.showInFilemanager,
-      ignoreFilter: this.ignoreFilter
-    }
+      ignoreFilter: this.ignoreFilter,
+    };
   }
 
   /**
    * Reads the ignore rules from their sources: the configuration and the rules
    * file of each open workspace.
    */
-  private async readIgnoreSources (): Promise<IgnoreRuleSources> {
-    const { app: { openWorkspaces }, fileManager } = this._config.get()
-    const workspaceRules = new Map<string, string>()
+  private async readIgnoreSources(): Promise<IgnoreRuleSources> {
+    const {
+      app: { openWorkspaces },
+      fileManager,
+    } = this._config.get();
+    const workspaceRules = new Map<string, string>();
     for (const root of openWorkspaces) {
-      workspaceRules.set(root, await readRulesFile(root))
+      workspaceRules.set(root, await readRulesFile(root));
     }
     return {
       globalRules: [...fileManager.ignoreRules],
       workspaceRules,
-      showIgnored: fileManager.showIgnored
-    }
+      showIgnored: fileManager.showIgnored,
+    };
   }
 
   /**
    * Runs a change of the ignore rules after the changes queued before it. A
    * change reads the rules, so two at once could apply the older reading last.
    */
-  private async queueIgnoreUpdate (update: () => Promise<void>): Promise<void> {
-    const run = async (): Promise<void> => { await update() }
-    this.ignoreUpdate = this.ignoreUpdate.then(run, run)
-    await this.ignoreUpdate
+  private async queueIgnoreUpdate(update: () => Promise<void>): Promise<void> {
+    const run = async (): Promise<void> => {
+      await update();
+    };
+    this.ignoreUpdate = this.ignoreUpdate.then(run, run);
+    await this.ignoreUpdate;
   }
 
   /**
    * Reads the ignore rules again after one of their sources changed.
    */
-  private refreshIgnoreRules (): void {
-    this.queueIgnoreUpdate(async () => { await this.applyIgnoreSources(await this.readIgnoreSources()) })
-      .catch(err => this._logger.error(`[FSAL] Could not read the ignore rules: ${String(err.message)}`, err))
+  private refreshIgnoreRules(): void {
+    this.queueIgnoreUpdate(async () => {
+      await this.applyIgnoreSources(await this.readIgnoreSources());
+    }).catch((err) =>
+      this._logger.error(`[FSAL] Could not read the ignore rules: ${String(err.message)}`, err),
+    );
   }
 
   /**
@@ -371,34 +421,47 @@ export default class FSAL extends ProviderContract {
    * the rules now hide, an `add` for each path they now show. No consumer has
    * to know that a rule, not the disk, changed.
    */
-  private async applyIgnoreSources (sources: IgnoreRuleSources): Promise<void> {
+  private async applyIgnoreSources(sources: IgnoreRuleSources): Promise<void> {
     if (sameIgnoreSources(this.ignoreSources, sources)) {
-      return
+      return;
     }
 
-    const before = this.ignoreFilter
-    this.ignoreSources = sources
-    this.ignoreFilter = createIgnoreFilter(sources)
-    broadcastIPCMessage('fsal-ignore-rules', sources)
+    const before = this.ignoreFilter;
+    this.ignoreSources = sources;
+    this.ignoreFilter = createIgnoreFilter(sources);
+    broadcastIPCMessage("fsal-ignore-rules", sources);
 
-    const { ignoreDotFiles, ignoreFilter } = this.listingRules()
-    const roots = new Set(sources.workspaceRules.keys())
+    const { ignoreDotFiles, ignoreFilter } = this.listingRules();
+    const roots = new Set(sources.workspaceRules.keys());
     for (const root of roots) {
       if (this.deadWorkspaces.has(root)) {
-        continue
+        continue;
       }
 
-      for (const change of await visibilityChanges(root, ignoreDotFiles, roots, before, ignoreFilter, this._logger)) {
+      for (const change of await visibilityChanges(
+        root,
+        ignoreDotFiles,
+        roots,
+        before,
+        ignoreFilter,
+        this._logger,
+      )) {
         if (!change.visible) {
-          this.publishEvent({ event: change.isDirectory ? 'unlinkDir' : 'unlink', path: change.path })
-          continue
+          this.publishEvent({
+            event: change.isDirectory ? "unlinkDir" : "unlink",
+            path: change.path,
+          });
+          continue;
         }
 
         try {
-          const descriptor = await this.getDescriptorFor(change.path)
-          this.publishEvent({ event: change.isDirectory ? 'addDir' : 'add', descriptor })
+          const descriptor = await this.getDescriptorFor(change.path);
+          this.publishEvent({ event: change.isDirectory ? "addDir" : "add", descriptor });
         } catch (err: unknown) {
-          this._logger.error(`[FSAL] Could not list ${change.path} after an ignore rule change`, err)
+          this._logger.error(
+            `[FSAL] Could not list ${change.path} after an ignore rule change`,
+            err,
+          );
         }
       }
     }
@@ -409,24 +472,26 @@ export default class FSAL extends ProviderContract {
    * the rules file of each open workspace and returns the new text of each
    * file that changes.
    */
-  private async editRulesFiles (edit: (sources: IgnoreRuleSources) => Map<string, string>): Promise<void> {
+  private async editRulesFiles(
+    edit: (sources: IgnoreRuleSources) => Map<string, string>,
+  ): Promise<void> {
     await this.queueIgnoreUpdate(async () => {
-      const sources = await this.readIgnoreSources()
-      for (const [ root, text ] of edit(sources)) {
+      const sources = await this.readIgnoreSources();
+      for (const [root, text] of edit(sources)) {
         if (!sources.workspaceRules.has(root)) {
-          throw new Error(`[FSAL] Cannot write ignore rules for ${root}: Not an open workspace`)
+          throw new Error(`[FSAL] Cannot write ignore rules for ${root}: Not an open workspace`);
         }
-        await writeRulesFile(root, text)
+        await writeRulesFile(root, text);
       }
-      await this.applyIgnoreSources(await this.readIgnoreSources())
-    })
+      await this.applyIgnoreSources(await this.readIgnoreSources());
+    });
   }
 
   /**
    * Returns the ignore rules the FSAL lists with.
    */
-  public getIgnoreRuleSources (): IgnoreRuleSources {
-    return this.ignoreSources
+  public getIgnoreRuleSources(): IgnoreRuleSources {
+    return this.ignoreSources;
   }
 
   /**
@@ -435,8 +500,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  root  The workspace root
    * @param  {string}  text  The new rules, one gitignore line each
    */
-  public async setWorkspaceIgnoreRules (root: string, text: string): Promise<void> {
-    await this.editRulesFiles(() => new Map([[ root, text ]]))
+  public async setWorkspaceIgnoreRules(root: string, text: string): Promise<void> {
+    await this.editRulesFiles(() => new Map([[root, text]]));
   }
 
   /**
@@ -447,15 +512,23 @@ export default class FSAL extends ProviderContract {
    * @param  {boolean}  isDirectory  Whether it is a folder
    * @param  {boolean}  ignored      True to hide it, false to show it again
    */
-  public async setPathIgnored (absPath: string, isDirectory: boolean, ignored: boolean): Promise<void> {
+  public async setPathIgnored(
+    absPath: string,
+    isDirectory: boolean,
+    ignored: boolean,
+  ): Promise<void> {
     await this.editRulesFiles(({ globalRules, workspaceRules }) => {
-      const root = judgingRoot(workspaceRules.keys(), absPath)
+      const root = judgingRoot(workspaceRules.keys(), absPath);
       if (root === undefined) {
-        throw new Error(`[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`)
+        throw new Error(
+          `[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`,
+        );
       }
-      const text = rulesTextOf(workspaceRules, root)
-      return new Map([[ root, setPathIgnored(text, globalRules, root, absPath, isDirectory, ignored) ]])
-    })
+      const text = rulesTextOf(workspaceRules, root);
+      return new Map([
+        [root, setPathIgnored(text, globalRules, root, absPath, isDirectory, ignored)],
+      ]);
+    });
   }
 
   /**
@@ -463,63 +536,65 @@ export default class FSAL extends ProviderContract {
    * This ensures that every path is always watched and events are properly
    * emitted.
    */
-  private async syncRoots (): Promise<void> {
-    let { openFiles, openWorkspaces } = this._config.get().app
+  private async syncRoots(): Promise<void> {
+    let { openFiles, openWorkspaces } = this._config.get().app;
 
-    // Check if any of the open files have gone missing. This is particularly
-    // important on boot to ensure no errors due to missing files are thrown.
-    // Unlike workspaces, we just get rid of the files here. (Workspaces can be
-    // marked as "dead" so that users don't lose them.)
-    const workingOpenFiles: string[] = []
+    // An open file can go missing between two sessions. Removing missing
+    // files here prevents errors on boot. Unlike workspaces, the files are
+    // removed. (Workspaces can be marked as "dead" so that users don't
+    // lose them.)
+    const workingOpenFiles: string[] = [];
     for (const file of openFiles) {
       if (await this.isFile(file)) {
-        workingOpenFiles.push(file)
+        workingOpenFiles.push(file);
       }
     }
 
     if (workingOpenFiles.length < openFiles.length) {
-      const deadCount = openFiles.length - workingOpenFiles.length
-      const deadFiles = [...(new Set(openFiles)).difference(new Set(workingOpenFiles))]
-      this._logger.warning(`[FSAL] Discovered ${deadCount} dead standalone files while synchronizing root paths: ${deadFiles.join(', ')}`)
-      this._config.set('app.openFiles', workingOpenFiles)
-      openFiles = workingOpenFiles
+      const deadCount = openFiles.length - workingOpenFiles.length;
+      const deadFiles = [...new Set(openFiles).difference(new Set(workingOpenFiles))];
+      this._logger.warning(
+        `[FSAL] Discovered ${deadCount} dead standalone files while synchronizing root paths: ${deadFiles.join(", ")}`,
+      );
+      this._config.set("app.openFiles", workingOpenFiles);
+      openFiles = workingOpenFiles;
     }
 
-    const allRoots = openFiles.concat(openWorkspaces)
+    const allRoots = openFiles.concat(openWorkspaces);
 
     for (const rootPath of allRoots) {
       if (this.watchers.has(rootPath)) {
-        continue // This path has already been loaded
+        continue; // This path has already been loaded
       }
 
       try {
-        const descriptor = await this.getDescriptorFor(rootPath, false)
+        const descriptor = await this.getDescriptorFor(rootPath, false);
         if (descriptor === undefined) {
           // Mount a "dummy" workspace indicating an unlinked root
-          this._logger.error(`Could not load root ${rootPath}. Mounting dummy...`)
+          this._logger.error(`Could not load root ${rootPath}. Mounting dummy...`);
           // TODO
         } else {
           // Start watching the root path.
-          const watcher = new FSALWatchdog(this._logger, this._config)
-          watcher.on('change', (event, absPath, stats) => {
-            this.emitChokidarEvent(event, absPath, stats)
-          })
-          watcher.watchPath(rootPath)
-          this.watchers.set(rootPath, watcher)
-          this.deadWorkspaces.delete(rootPath)
+          const watcher = new FSALWatchdog(this._logger, this._config);
+          watcher.on("change", (event, absPath, stats) => {
+            this.emitChokidarEvent(event, absPath, stats);
+          });
+          watcher.watchPath(rootPath);
+          this.watchers.set(rootPath, watcher);
+          this.deadWorkspaces.delete(rootPath);
         }
       } catch (err: unknown) {
-        this._logger.error(`Could not load root ${rootPath}.`, err)
-        this.deadWorkspaces.add(rootPath)
+        this._logger.error(`Could not load root ${rootPath}.`, err);
+        this.deadWorkspaces.add(rootPath);
       }
     }
 
     // Before finishing up, unwatch all roots that are no longer part of the
     // config
-    for (const [ rootPath, watcher ] of this.watchers) {
+    for (const [rootPath, watcher] of this.watchers) {
       if (!allRoots.includes(rootPath)) {
-        await watcher.shutdown()
-        this.watchers.delete(rootPath)
+        await watcher.shutdown();
+        this.watchers.delete(rootPath);
       }
     }
   }
@@ -528,77 +603,84 @@ export default class FSAL extends ProviderContract {
    * This function ensures that all files anywhere within the loaded paths are
    * properly indexed in the cache for fast access.
    */
-  public async reindexFiles (onFile?: (absPath: string, percent: number) => void): Promise<void> {
-    let currentPercent = 0
+  public async reindexFiles(onFile?: (absPath: string, percent: number) => void): Promise<void> {
+    let currentPercent = 0;
 
     // Start a timer to measure how long the roots take to load.
-    let start = performance.now()
+    let start = performance.now();
 
     // Register a LRT. NOTE: We only do that if "onFile" is not defined, because
     // this function is called also from within the lifecycle when the FSAL
     // cache is cleared on startup.
-    const task = onFile === undefined ? this._lrt.registerTask(trans('Indexing files'), trans('Discovering paths to index…')) : undefined
+    const task =
+      onFile === undefined
+        ? this._lrt.registerTask(trans("Indexing files"), trans("Discovering paths to index…"))
+        : undefined;
 
-    const { openFiles, openWorkspaces } = this._config.get().app
-    const pathsToIndex: string[] = []
+    const { openFiles, openWorkspaces } = this._config.get().app;
+    const pathsToIndex: string[] = [];
     for (const file of openFiles) {
-      if (!await this.isFile(file)) {
-        this._logger.warning(`[FSAL] Could not re-index standalone file ${file}: File not found.`)
-        continue
+      if (!(await this.isFile(file))) {
+        this._logger.warning(`[FSAL] Could not re-index standalone file ${file}: File not found.`);
+        continue;
       }
 
-      pathsToIndex.push(file)
+      pathsToIndex.push(file);
     }
 
     for (const workspace of openWorkspaces) {
       if (this.deadWorkspaces.has(workspace)) {
-        this._logger.info(`[FSAL] Not re-indexing workspace ${workspace}: Marked as dead`)
-        continue
+        this._logger.info(`[FSAL] Not re-indexing workspace ${workspace}: Marked as dead`);
+        continue;
       }
 
-      if (!await this.isDir(workspace)) {
-        this._logger.warning(`[FSAL] Could not re-index workspace ${workspace}: Folder not found.`)
-        continue
+      if (!(await this.isDir(workspace))) {
+        this._logger.warning(`[FSAL] Could not re-index workspace ${workspace}: Folder not found.`);
+        continue;
       }
 
-      const allPaths = await this.readDirectoryRecursively(workspace)
-      pathsToIndex.push(...allPaths)
+      const allPaths = await this.readDirectoryRecursively(workspace);
+      pathsToIndex.push(...allPaths);
     }
 
-    const pathDiscoveryDuration = performance.now() - start
+    const pathDiscoveryDuration = performance.now() - start;
     if (pathDiscoveryDuration < 1000) {
-      this._logger.info(`[FSAL] Discovered paths in ${Math.round(pathDiscoveryDuration)}ms`)
+      this._logger.info(`[FSAL] Discovered paths in ${Math.round(pathDiscoveryDuration)}ms`);
     } else {
-      this._logger.info(`[FSAL] Discovered paths in ${Math.floor(pathDiscoveryDuration / 1000 * 100) / 100}s`)
+      this._logger.info(
+        `[FSAL] Discovered paths in ${Math.floor((pathDiscoveryDuration / 1000) * 100) / 100}s`,
+      );
     }
-    start = performance.now()
-    task?.update({ info: trans('Indexing %s paths…', pathsToIndex.length), percentage: 0 })
+    start = performance.now();
+    task?.update({ info: trans("Indexing %s paths…", pathsToIndex.length), percentage: 0 });
 
     // Round the increment to 4 digits after the period.
-    const roundToDigits = 4
-    const factor = 10 ** roundToDigits
-    const increment = Math.round(100 / pathsToIndex.length * factor) / factor
+    const roundToDigits = 4;
+    const factor = 10 ** roundToDigits;
+    const increment = Math.round((100 / pathsToIndex.length) * factor) / factor;
 
     for (const absPath of pathsToIndex) {
-      currentPercent += increment
-      task?.update({ percentage: currentPercent / 100 })
+      currentPercent += increment;
+      task?.update({ percentage: currentPercent / 100 });
       if (onFile !== undefined) {
-        onFile(absPath, currentPercent)
+        onFile(absPath, currentPercent);
       }
 
       // Requesting the descriptor will, behind the scenes, check for cache hits
       // and automatically recache if necessary.
-      await this.getDescriptorFor(absPath)
+      await this.getDescriptorFor(absPath);
     }
 
-    task?.update({ info: trans('Indexing complete.') })
-    task?.endTask('success')
+    task?.update({ info: trans("Indexing complete.") });
+    task?.endTask("success");
 
-    const reindexDuration = performance.now() - start
+    const reindexDuration = performance.now() - start;
     if (reindexDuration < 1000) {
-      this._logger.info(`[FSAL] Re-indexed workspaces in ${Math.round(reindexDuration)}ms`)
+      this._logger.info(`[FSAL] Re-indexed workspaces in ${Math.round(reindexDuration)}ms`);
     } else {
-      this._logger.info(`[FSAL] Re-indexed workspaces in ${Math.floor(reindexDuration / 1000 * 100) / 100}s`)
+      this._logger.info(
+        `[FSAL] Re-indexed workspaces in ${Math.floor((reindexDuration / 1000) * 100) / 100}s`,
+      );
     }
   }
 
@@ -608,50 +690,52 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<AnyDescriptor>[]}  The descriptors
    */
-  public async getAllLoadedDescriptors (): Promise<AnyDescriptor[]> {
-    const { openFiles, openWorkspaces } = this._config.get().app
-    const allDescriptors: AnyDescriptor[] = []
+  public async getAllLoadedDescriptors(): Promise<AnyDescriptor[]> {
+    const { openFiles, openWorkspaces } = this._config.get().app;
+    const allDescriptors: AnyDescriptor[] = [];
 
     const reportError = (message: string, err: unknown) => {
       if (err instanceof Error) {
-        this._logger.error(`[FSAL] ${message}: ${err.message}`, err)
+        this._logger.error(`[FSAL] ${message}: ${err.message}`, err);
       } else {
-        this._logger.error(`[FSAL] ${message}`, err)
+        this._logger.error(`[FSAL] ${message}`, err);
       }
-    }
+    };
 
     for (const file of openFiles) {
       try {
-        const descriptor = await this.getDescriptorFor(file)
-        allDescriptors.push(descriptor)
+        const descriptor = await this.getDescriptorFor(file);
+        allDescriptors.push(descriptor);
       } catch (err: unknown) {
-        reportError(`Could not load descriptor for root file ${file}`, err)
+        reportError(`Could not load descriptor for root file ${file}`, err);
       }
     }
 
     for (const workspace of openWorkspaces) {
       if (this.deadWorkspaces.has(workspace)) {
-        this._logger.info(`[FSAL] Not trying to load descriptors from workspace ${workspace}: Marked as dead`)
-        allDescriptors.push(this.loadDummyDirectoryDescriptor(workspace))
-        continue
+        this._logger.info(
+          `[FSAL] Not trying to load descriptors from workspace ${workspace}: Marked as dead`,
+        );
+        allDescriptors.push(this.loadDummyDirectoryDescriptor(workspace));
+        continue;
       }
 
       try {
-        const allPaths = await this.readDirectoryRecursively(workspace)
+        const allPaths = await this.readDirectoryRecursively(workspace);
         for (const child of allPaths) {
           try {
-            const descriptor = await this.getDescriptorFor(child)
-            allDescriptors.push(descriptor)
+            const descriptor = await this.getDescriptorFor(child);
+            allDescriptors.push(descriptor);
           } catch (err: unknown) {
-            reportError(`Could not load descriptor for file ${child}`, err)
+            reportError(`Could not load descriptor for file ${child}`, err);
           }
         }
       } catch (err: unknown) {
-        reportError(`Could not read workspace ${workspace}`, err)
+        reportError(`Could not read workspace ${workspace}`, err);
       }
     }
 
-    return allDescriptors
+    return allDescriptors;
   }
 
   /**
@@ -662,10 +746,10 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {FSALWatchdog}     A new watchdog
    */
-  public watchPath (p: string): FSALWatchdog {
-    const watcher = this.getWatchdog()
-    watcher.watchPath(p)
-    return watcher
+  public watchPath(p: string): FSALWatchdog {
+    const watcher = this.getWatchdog();
+    watcher.watchPath(p);
+    return watcher;
   }
 
   /**
@@ -676,8 +760,8 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {FSALWatchdog}  A new watchdog
    */
-  public getWatchdog (): FSALWatchdog {
-    return new FSALWatchdog(this._logger, this._config)
+  public getWatchdog(): FSALWatchdog {
+    return new FSALWatchdog(this._logger, this._config);
   }
 
   /**
@@ -685,10 +769,10 @@ export default class FSAL extends ProviderContract {
    *
    * @returns {boolean} Whether or not the shutdown was successful
    */
-  public async shutdown (): Promise<void> {
-    this._logger.verbose('FSAL shutting down ...')
-    this.publishPendingEvents.cancel()
-    await this._cache.persist()
+  public async shutdown(): Promise<void> {
+    this._logger.verbose("FSAL shutting down ...");
+    this.publishPendingEvents.cancel();
+    await this._cache.persist();
   }
 
   /**
@@ -700,8 +784,8 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {DirDescriptor}           The descriptor
    */
-  public loadDummyDirectoryDescriptor (dirPath: string): DirDescriptor {
-    return FSALDir.getDirNotFoundDescriptor(dirPath)
+  public loadDummyDirectoryDescriptor(dirPath: string): DirDescriptor {
+    return FSALDir.getDirNotFoundDescriptor(dirPath);
   }
 
   /**
@@ -710,8 +794,8 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Function}  A parser that can be passed to FSAL functions involving files
    */
-  public getMarkdownFileParser (): (file: MDFileDescriptor, content: string) => void {
-    return getMarkdownFileParser(this._config.get().zkn.idRE)
+  public getMarkdownFileParser(): (file: MDFileDescriptor, content: string) => void {
+    return getMarkdownFileParser(this._config.get().zkn.idRE);
   }
 
   /**
@@ -720,8 +804,8 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}     src      The directory
    * @param   {SortMethod}        sorting  The sort method.
    */
-  public async changeSorting (src: DirDescriptor, sorting?: SortMethod): Promise<void> {
-    await FSALDir.changeSorting(src, sorting)
+  public async changeSorting(src: DirDescriptor, sorting?: SortMethod): Promise<void> {
+    await FSALDir.changeSorting(src, sorting);
   }
 
   /**
@@ -732,8 +816,8 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<string>}            Resolves with UTF-8 encoded content.
    */
-  public async readTextFile (filePath: string): Promise<string> {
-    return await fs.readFile(filePath, 'utf-8')
+  public async readTextFile(filePath: string): Promise<string> {
+    return await fs.readFile(filePath, "utf-8");
   }
 
   /**
@@ -743,10 +827,10 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  filePath  The file to write
    * @param  {string}  contents  The file contents to put in the file.
    */
-  public async writeTextFile (filePath: string, contents: string): Promise<void> {
+  public async writeTextFile(filePath: string, contents: string): Promise<void> {
     // In case this file was cached, remove the cached data again.
-    await this._cache.del(filePath)
-    await fs.writeFile(filePath, contents, 'utf-8')
+    await this._cache.del(filePath);
+    await fs.writeFile(filePath, contents, "utf-8");
   }
 
   /**
@@ -756,12 +840,15 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<boolean>}  Returns true if the file fulfills the criteria.
    */
-  public async testAccess (absPath: string, flags: number = FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK): Promise<boolean> {
+  public async testAccess(
+    absPath: string,
+    flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
+  ): Promise<boolean> {
     try {
-      await fs.access(absPath, flags)
-      return true
+      await fs.access(absPath, flags);
+      return true;
     } catch (err) {
-      return false
+      return false;
     }
   }
 
@@ -772,12 +859,12 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns true, if absPath is a dir
    */
-  public async isDir (absPath: string): Promise<boolean> {
+  public async isDir(absPath: string): Promise<boolean> {
     try {
-      const stat = await fs.lstat(absPath)
-      return stat.isDirectory()
+      const stat = await fs.lstat(absPath);
+      return stat.isDirectory();
     } catch (err: unknown) {
-      return false
+      return false;
     }
   }
 
@@ -788,12 +875,12 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Returns true, if absPath is a file
    */
-  public async isFile (absPath: string): Promise<boolean> {
+  public async isFile(absPath: string): Promise<boolean> {
     try {
-      const stat = await fs.lstat(absPath)
-      return stat.isFile()
+      const stat = await fs.lstat(absPath);
+      return stat.isFile();
     } catch (err: unknown) {
-      return false
+      return false;
     }
   }
 
@@ -804,8 +891,8 @@ export default class FSAL extends ProviderContract {
    * @param  {{ name: string, content: string, type: 'code'|'file' }}  options  Options
    * @deprecated  Use `writeTextFile` instead
    */
-  public async createFile (filePath: string, content: string): Promise<void> {
-    return await this.writeTextFile(filePath, content)
+  public async createFile(filePath: string, content: string): Promise<void> {
+    return await this.writeTextFile(filePath, content);
   }
 
   /**
@@ -814,8 +901,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  sourceFile  The source file
    * @param  {string}  targetFile  The target path
    */
-  public async copyFile (sourceFile: string, targetFile: string): Promise<void> {
-    return await fs.copyFile(sourceFile, targetFile)
+  public async copyFile(sourceFile: string, targetFile: string): Promise<void> {
+    return await fs.copyFile(sourceFile, targetFile);
   }
 
   /**
@@ -825,8 +912,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}            newName  The new name for the file
    * @deprecated
    */
-  public async renameFile (oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath)
+  public async renameFile(oldPath: string, newPath: string): Promise<void> {
+    return await this.rename(oldPath, newPath);
   }
 
   /**
@@ -834,14 +921,14 @@ export default class FSAL extends ProviderContract {
    *
    * @param   {MDFileDescriptor}  src   The source file
    */
-  public async removeFile (filePath: string): Promise<void> {
-    const { deleteOnFail } = this._config.get().system
+  public async removeFile(filePath: string): Promise<void> {
+    const { deleteOnFail } = this._config.get().system;
     // NOTE: This function may be called after a file or folder has been deleted. In that
     // case the function only needs to remove the file or folder from the list of children
     // to avoid safeDelete throwing an error as the file or folder does no longer exist.
     if (await this.pathExists(filePath)) {
-      await safeDelete(filePath, deleteOnFail, this._logger)
-      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, filePath))
+      await safeDelete(filePath, deleteOnFail, this._logger);
+      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, filePath));
     }
   }
 
@@ -851,14 +938,18 @@ export default class FSAL extends ProviderContract {
    * @param   {MDFileDescriptor}  src          The file to search
    * @param   {SearchTerm[]}      searchTerms  The search terms
    *
-   * @return  {Promise<any>}                   Returns the results
+   * @return  {Promise<SearchResult[]>}        Returns the results
    */
-  public async searchFile (src: MDFileDescriptor|CodeFileDescriptor, searchTerms: SearchTerm[]): Promise<SearchResult[]> { // TODO: Implement search results type
+  public async searchFile(
+    src: MDFileDescriptor | CodeFileDescriptor,
+    searchTerms: SearchTerm[],
+  ): Promise<SearchResult[]> {
+    // TODO: Implement search results type
     // Searches a file and returns the result
-    if (src.type === 'file') {
-      return await FSALFile.search(src, searchTerms)
+    if (src.type === "file") {
+      return await FSALFile.search(src, searchTerms);
     } else {
-      return await FSALCodeFile.search(src, searchTerms)
+      return await FSALCodeFile.search(src, searchTerms);
     }
   }
 
@@ -870,8 +961,8 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<string[]>}           The files in the directory.
    */
-  public async readdir (dirPath: string): Promise<string[]> {
-    return await fs.readdir(dirPath, 'utf-8')
+  public async readdir(dirPath: string): Promise<string[]> {
+    return await fs.readdir(dirPath, "utf-8");
   }
 
   /**
@@ -880,8 +971,11 @@ export default class FSAL extends ProviderContract {
    * @param  {DirDescriptor}                       src       The target directory
    * @param  {Partial<DirDescriptor['settings']>}  settings  The settings to apply
    */
-  public async setDirectorySetting (src: DirDescriptor, settings: Partial<DirDescriptor['settings']>): Promise<void> {
-    await FSALDir.setSetting(src, settings)
+  public async setDirectorySetting(
+    src: DirDescriptor,
+    settings: Partial<DirDescriptor["settings"]>,
+  ): Promise<void> {
+    await FSALDir.setSetting(src, settings);
   }
 
   /**
@@ -893,8 +987,11 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
    */
-  public async bindQuartoManifest (src: DirDescriptor, manifestPath: string): Promise<FSALDir.QuartoManifestBinding> {
-    return await FSALDir.bindQuartoManifest(src, manifestPath)
+  public async bindQuartoManifest(
+    src: DirDescriptor,
+    manifestPath: string,
+  ): Promise<FSALDir.QuartoManifestBinding> {
+    return await FSALDir.bindQuartoManifest(src, manifestPath);
   }
 
   /**
@@ -902,8 +999,8 @@ export default class FSAL extends ProviderContract {
    *
    * @param   {DirDescriptor}  src  The directory
    */
-  public async unbindQuartoManifest (src: DirDescriptor): Promise<void> {
-    await FSALDir.unbindQuartoManifest(src)
+  public async unbindQuartoManifest(src: DirDescriptor): Promise<void> {
+    await FSALDir.unbindQuartoManifest(src);
   }
 
   /**
@@ -912,9 +1009,9 @@ export default class FSAL extends ProviderContract {
    * edit as a change to the manifest file only, never to the directory whose
    * book it describes, so without this event no window sees the new book.
    */
-  public async refreshQuartoProject (src: DirDescriptor): Promise<void> {
-    await FSALDir.refreshQuartoProject(src)
-    this.publishEvent({ event: 'change', descriptor: src })
+  public async refreshQuartoProject(src: DirDescriptor): Promise<void> {
+    await FSALDir.refreshQuartoProject(src);
+    this.publishEvent({ event: "change", descriptor: src });
   }
 
   /**
@@ -923,8 +1020,11 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}             src           The directory
    * @param   {Partial<ProjectSettings>}  initialProps  Any initial settings
    */
-  public async createProject (src: DirDescriptor, initialProps: Partial<ProjectSettings>): Promise<void> {
-    await FSALDir.makeProject(src, initialProps)
+  public async createProject(
+    src: DirDescriptor,
+    initialProps: Partial<ProjectSettings>,
+  ): Promise<void> {
+    await FSALDir.makeProject(src, initialProps);
   }
 
   /**
@@ -933,12 +1033,12 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}    src      The project dir
    * @param   {ProjectSettings}  options  New options
    */
-  public async updateProject (src: DirDescriptor, options: ProjectSettings): Promise<void> {
+  public async updateProject(src: DirDescriptor, options: ProjectSettings): Promise<void> {
     if (JSON.stringify(src.settings.project) === JSON.stringify(options)) {
-      return
+      return;
     }
     // Updates the project properties on a directory.
-    await FSALDir.updateProjectProperties(src, options)
+    await FSALDir.updateProjectProperties(src, options);
   }
 
   /**
@@ -946,8 +1046,8 @@ export default class FSAL extends ProviderContract {
    *
    * @param   {DirDescriptor}  src  The target directory
    */
-  public async removeProject (src: DirDescriptor): Promise<void> {
-    await FSALDir.removeProject(src)
+  public async removeProject(src: DirDescriptor): Promise<void> {
+    await FSALDir.removeProject(src);
   }
 
   /**
@@ -956,8 +1056,8 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}  src      Where to create the dir
    * @param   {string}         newName  How to name it
    */
-  public async createDir (dirPath: string): Promise<void> {
-    await fs.mkdir(dirPath)
+  public async createDir(dirPath: string): Promise<void> {
+    await fs.mkdir(dirPath);
   }
 
   /**
@@ -967,8 +1067,8 @@ export default class FSAL extends ProviderContract {
    * @param   {string}         newName  The new name for the dir
    * @deprecated
    */
-  public async renameDir (oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath)
+  public async renameDir(oldPath: string, newPath: string): Promise<void> {
+    return await this.rename(oldPath, newPath);
   }
 
   /**
@@ -976,11 +1076,11 @@ export default class FSAL extends ProviderContract {
    *
    * @param   {DirDescriptor}  src  The dir to remove
    */
-  public async removeDir (dirPath: string): Promise<void> {
-    const deleteOnFail: boolean = this._config.get('system.deleteOnFail')
+  public async removeDir(dirPath: string): Promise<void> {
+    const deleteOnFail: boolean = this._config.get("system.deleteOnFail");
     if (await this.pathExists(dirPath)) {
-      await safeDelete(dirPath, deleteOnFail, this._logger)
-      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, dirPath))
+      await safeDelete(dirPath, deleteOnFail, this._logger);
+      await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, dirPath));
     }
   }
 
@@ -990,11 +1090,13 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  oldPath  The current path of the object
    * @param  {string}  newPath  The wanted new path
    */
-  public async rename (oldPath: string, newPath: string): Promise<void> {
-    await fs.rename(oldPath, newPath)
+  public async rename(oldPath: string, newPath: string): Promise<void> {
+    await fs.rename(oldPath, newPath);
     // A rule that names the old path keeps its meaning: a hidden folder stays
     // hidden under its new name.
-    await this.editRulesFiles(({ workspaceRules }) => movePathRules(workspaceRules, oldPath, newPath))
+    await this.editRulesFiles(({ workspaceRules }) =>
+      movePathRules(workspaceRules, oldPath, newPath),
+    );
   }
 
   /**
@@ -1004,8 +1106,8 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}        target  Where to move it
    * @deprecated
    */
-  public async move (oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath)
+  public async move(oldPath: string, newPath: string): Promise<void> {
+    return await this.rename(oldPath, newPath);
   }
 
   /**
@@ -1021,15 +1123,15 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<string>}           Resolves with a string
    */
-  public async loadAnySupportedFile (absPath: string): Promise<string> {
-    const descriptor = await this.getDescriptorForAnySupportedFile(absPath)
+  public async loadAnySupportedFile(absPath: string): Promise<string> {
+    const descriptor = await this.getDescriptorForAnySupportedFile(absPath);
 
-    if (descriptor.type === 'file') {
-      return await FSALFile.load(descriptor)
-    } else if (descriptor.type === 'code') {
-      return await FSALCodeFile.load(descriptor)
+    if (descriptor.type === "file") {
+      return await FSALFile.load(descriptor);
+    } else if (descriptor.type === "code") {
+      return await FSALCodeFile.load(descriptor);
     } else {
-      throw new Error(`[FSAL] Cannot load file ${absPath}: Unsupported`)
+      throw new Error(`[FSAL] Cannot load file ${absPath}: Unsupported`);
     }
   }
 
@@ -1046,23 +1148,24 @@ export default class FSAL extends ProviderContract {
    *
    * @throws if the path is not a file
    */
-  public async getDescriptorForAnySupportedFile (absPath: string): Promise<MDFileDescriptor|CodeFileDescriptor|OtherFileDescriptor> {
+  public async getDescriptorForAnySupportedFile(
+    absPath: string,
+  ): Promise<MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor> {
     if (await this.isFile(absPath)) {
       if (hasMarkdownExt(absPath)) {
-        return await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser())
+        return await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser());
       } else if (hasCodeExt(absPath)) {
-        return await FSALCodeFile.parse(absPath, this._cache)
+        return await FSALCodeFile.parse(absPath, this._cache);
       } else {
-        return await FSALAttachment.parse(absPath, this._cache)
+        return await FSALAttachment.parse(absPath, this._cache);
       }
     }
 
     if (await this.isDir(absPath)) {
-      throw new Error(`[FSAL] Cannot load file ${absPath} as it is a directory`)
+      throw new Error(`[FSAL] Cannot load file ${absPath} as it is a directory`);
     }
 
-    throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`)
-
+    throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`);
   }
 
   /**
@@ -1082,22 +1185,28 @@ export default class FSAL extends ProviderContract {
    *
    * @throws if the path does not exist
    */
-  public async getDescriptorFor (absPath: string, avoidDiskAccess: boolean = true): Promise<AnyDescriptor> {
+  public async getDescriptorFor(
+    absPath: string,
+    avoidDiskAccess: boolean = true,
+  ): Promise<AnyDescriptor> {
     if (avoidDiskAccess) {
-      const cacheHit = await this._cache.get(absPath)
-      if (cacheHit !== undefined && (cacheHit.type !== 'file' || cacheHit.parserVersion === FSALFile.PARSER_VERSION)) {
-        return cacheHit
+      const cacheHit = await this._cache.get(absPath);
+      if (
+        cacheHit !== undefined &&
+        (cacheHit.type !== "file" || cacheHit.parserVersion === FSALFile.PARSER_VERSION)
+      ) {
+        return cacheHit;
       }
     }
 
     try {
-      return await this.getAnyDirectoryDescriptor(absPath)
+      return await this.getAnyDirectoryDescriptor(absPath);
     } catch (err: unknown) {
-      const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined
-      if (code === 'EACCES' || code === 'EPERM') {
-        return this.loadDummyDirectoryDescriptor(absPath)
+      const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+      if (code === "EACCES" || code === "EPERM") {
+        return this.loadDummyDirectoryDescriptor(absPath);
       }
-      return await this.getDescriptorForAnySupportedFile(absPath)
+      return await this.getDescriptorForAnySupportedFile(absPath);
     }
   }
 
@@ -1111,16 +1220,16 @@ export default class FSAL extends ProviderContract {
    *
    * @throws if the path is not a directory
    */
-  public async getAnyDirectoryDescriptor (absPath: string): Promise<DirDescriptor> {
+  public async getAnyDirectoryDescriptor(absPath: string): Promise<DirDescriptor> {
     if (this.deadWorkspaces.has(absPath)) {
-      return this.loadDummyDirectoryDescriptor(absPath)
+      return this.loadDummyDirectoryDescriptor(absPath);
     }
 
-    if (!await this.isDir(absPath)) {
-      throw new Error(`[FSAL] Cannot load directory ${absPath}: Not a directory`)
+    if (!(await this.isDir(absPath))) {
+      throw new Error(`[FSAL] Cannot load directory ${absPath}: Not a directory`);
     }
 
-    return await FSALDir.parse(absPath)
+    return await FSALDir.parse(absPath);
   }
 
   /**
@@ -1134,12 +1243,15 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<boolean>}           Resolves to true or false
    */
-  public async pathExists (absPath: string, flags: number = FS_CONSTANTS.F_OK|FS_CONSTANTS.R_OK): Promise<boolean> {
+  public async pathExists(
+    absPath: string,
+    flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
+  ): Promise<boolean> {
     try {
-      await fs.access(absPath, flags)
-      return true
+      await fs.access(absPath, flags);
+      return true;
     } catch (err: unknown) {
-      return false
+      return false;
     }
   }
 
@@ -1152,8 +1264,8 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<FilesystemMetadata>}           Returns the metadata.
    * @throws
    */
-  public async getFilesystemMetadata (absPath: string): Promise<FilesystemMetadata> {
-    return await getFilesystemMetadata(absPath)
+  public async getFilesystemMetadata(absPath: string): Promise<FilesystemMetadata> {
+    return await getFilesystemMetadata(absPath);
   }
 
   // *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
@@ -1173,12 +1285,12 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<string[]>}           Returns a list of the entire directory
    */
-  public async readDirectoryRecursively (directoryPath: string): Promise<string[]> {
-    if (!await this.isDir(directoryPath)) {
-      throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`)
+  public async readDirectoryRecursively(directoryPath: string): Promise<string[]> {
+    if (!(await this.isDir(directoryPath))) {
+      throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`);
     }
 
-    return await readDirectoryRecursivelyFromDisk(directoryPath, this.listingRules(), this._logger)
+    return await readDirectoryRecursivelyFromDisk(directoryPath, this.listingRules(), this._logger);
   }
 
   /**
@@ -1189,13 +1301,13 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
-  public async readDirectory (absPath: string): Promise<AnyDescriptor[]> {
+  public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
     return await readDirectoryFromDisk(
       absPath,
       this.listingRules(),
       this.deadWorkspaces.has(absPath),
-      async childPath => await this.getDescriptorFor(childPath),
-      this._logger
-    )
+      async (childPath) => await this.getDescriptorFor(childPath),
+      this._logger,
+    );
   }
 }

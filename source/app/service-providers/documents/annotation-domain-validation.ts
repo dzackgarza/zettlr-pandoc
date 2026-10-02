@@ -16,8 +16,6 @@
  * END HEADER
  */
 
-import Ajv from "ajv";
-import { Type } from "@sinclair/typebox";
 import type {
   AnnotationAnchor,
   AnnotationMessage,
@@ -25,6 +23,8 @@ import type {
   AnnotationSet,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
+import { Type } from "@sinclair/typebox";
+import Ajv from "ajv";
 
 export const AnnotationAnchorSchema = Type.Unsafe<AnnotationAnchor>(
   Type.Union([
@@ -181,7 +181,9 @@ function schemaIssue(): AnnotationDomainValidationIssue {
 }
 
 /** Return the first violated annotation-domain invariant, or undefined. */
-export function annotationSetValidationIssue(value: unknown): AnnotationDomainValidationIssue | undefined {
+export function annotationSetValidationIssue(
+  value: unknown,
+): AnnotationDomainValidationIssue | undefined {
   if (!validateAnnotationSetShape(value)) {
     return schemaIssue();
   }
@@ -256,7 +258,10 @@ export function annotationSetValidationIssue(value: unknown): AnnotationDomainVa
   return undefined;
 }
 
-export function assertValidAnnotationSet(value: unknown, context = "Annotation state"): asserts value is AnnotationSet {
+export function assertValidAnnotationSet(
+  value: unknown,
+  context = "Annotation state",
+): asserts value is AnnotationSet {
   const issue = annotationSetValidationIssue(value);
   if (issue !== undefined) {
     throw new AnnotationDomainValidationError({

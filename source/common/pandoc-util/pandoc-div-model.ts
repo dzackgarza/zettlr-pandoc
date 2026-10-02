@@ -16,28 +16,40 @@
  * END HEADER
  */
 
-import type { SyntaxNode } from '@lezer/common'
-import { parsePandocAttributes } from './parse-pandoc-attributes'
-import { referenceFamilyDisplayName, referenceFamilyOf } from '@dts/common/references'
-import { THEOREM_CLASS_TO_PREFIX, type TheoremFamilyPrefix } from '@common/util/pandoc-quick-reference'
+import {
+  THEOREM_CLASS_TO_PREFIX,
+  type TheoremFamilyPrefix,
+} from "@common/util/pandoc-quick-reference";
+import { referenceFamilyDisplayName, referenceFamilyOf } from "@dts/common/references";
+import type { SyntaxNode } from "@lezer/common";
+import { parsePandocAttributes } from "./parse-pandoc-attributes";
 
-export type PandocDivFamily = 'result'|'definition'|'explanation'|'task'|'warning'|'proof'|'float'|'generic'
+export type PandocDivFamily =
+  | "result"
+  | "definition"
+  | "explanation"
+  | "task"
+  | "warning"
+  | "proof"
+  | "float"
+  | "generic";
 
 export interface PandocDivModel {
-  from: number
-  to: number
-  openFrom: number
-  openTo: number
-  contentFrom: number
-  contentTo: number
-  closeFrom: number
-  closeTo: number
-  classes: string[]
-  id: string
-  properties: Record<string, string>
-  family: PandocDivFamily
-  label: string
-  depth: number
+  from: number;
+  to: number;
+  openFrom: number;
+  openTo: number;
+  contentFrom: number;
+  contentTo: number;
+  closeFrom: number;
+  closeTo: number;
+  classes: string[];
+  /** The identifier, or undefined when the attributes name none. */
+  id: string | undefined;
+  properties: Record<string, string>;
+  family: PandocDivFamily;
+  label: string;
+  depth: number;
 }
 
 /**
@@ -46,8 +58,8 @@ export interface PandocDivModel {
  * plain string. Kept structural so this module never imports the editor graph.
  */
 export interface DivSourceDocument {
-  lineAt: (pos: number) => { from: number, to: number }
-  sliceString: (from: number, to: number) => string
+  lineAt: (pos: number) => { from: number; to: number };
+  sliceString: (from: number, to: number) => string;
 }
 
 /**
@@ -56,25 +68,25 @@ export interface DivSourceDocument {
  * error here rather than a div that silently renders as generic.
  */
 const FAMILY_BY_THEOREM_PREFIX: Record<TheoremFamilyPrefix, PandocDivFamily> = {
-  thm: 'result',
-  lem: 'result',
-  prop: 'result',
-  cor: 'result',
-  conj: 'result',
-  clm: 'result',
-  def: 'definition',
-  ass: 'definition',
-  cons: 'definition',
-  not: 'definition',
-  conv: 'definition',
-  rmk: 'explanation',
-  ex: 'explanation',
-  obs: 'explanation',
-  qst: 'task',
-  prob: 'task',
-  exr: 'task',
-  warn: 'warning',
-}
+  thm: "result",
+  lem: "result",
+  prop: "result",
+  cor: "result",
+  conj: "result",
+  clm: "result",
+  def: "definition",
+  ass: "definition",
+  cons: "definition",
+  not: "definition",
+  conv: "definition",
+  rmk: "explanation",
+  ex: "explanation",
+  obs: "explanation",
+  qst: "task",
+  prob: "task",
+  exr: "task",
+  warn: "warning",
+};
 
 /**
  * The float families a fenced div can carry. A div is how Quarto writes a
@@ -84,125 +96,140 @@ const FAMILY_BY_THEOREM_PREFIX: Record<TheoremFamilyPrefix, PandocDivFamily> = {
  * spelled that way is not an authored construct and stays generic.
  */
 const FAMILY_BY_FLOAT_PREFIX: Record<string, PandocDivFamily> = {
-  fig: 'float',
-  tbl: 'float',
-  lst: 'float',
-}
+  fig: "float",
+  tbl: "float",
+  lst: "float",
+};
 
 /**
  * Styled div classes outside the referenceable registry: synonyms and the
  * proof-like classes, which pandoc-crossref never numbers or labels.
  */
 const UNREFERENCEABLE_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  fact: 'explanation',
-  caution: 'warning',
-  danger: 'warning',
-  error: 'warning',
-  proof: 'proof',
-  sketch: 'proof',
-  solution: 'proof',
-  prf: 'proof',
-  sol: 'proof',
-  axiom: 'definition',
-  hyp: 'definition',
-  hypothesis: 'definition',
-  cau: 'warning',
-}
+  fact: "explanation",
+  caution: "warning",
+  danger: "warning",
+  error: "warning",
+  proof: "proof",
+  sketch: "proof",
+  solution: "proof",
+  prf: "proof",
+  sol: "proof",
+  axiom: "definition",
+  hyp: "definition",
+  hypothesis: "definition",
+  cau: "warning",
+};
 
 export const SEMANTIC_DIV_CLASSES: Record<string, PandocDivFamily> = {
-  ...Object.fromEntries(Object.entries(THEOREM_CLASS_TO_PREFIX).map(([divClass, prefix]) => {
-    return [ divClass, FAMILY_BY_THEOREM_PREFIX[prefix] ]
-  })),
+  ...Object.fromEntries(
+    Object.entries(THEOREM_CLASS_TO_PREFIX).map(([divClass, prefix]) => {
+      return [divClass, FAMILY_BY_THEOREM_PREFIX[prefix]];
+    }),
+  ),
   ...UNREFERENCEABLE_DIV_CLASSES,
-}
+};
 
-export function humanizeClassName (className: string): string {
-  const prefix = THEOREM_CLASS_TO_PREFIX[className.toLowerCase()]
+export function humanizeClassName(className: string): string {
+  const prefix = THEOREM_CLASS_TO_PREFIX[className.toLowerCase()];
   if (prefix !== undefined) {
-    return referenceFamilyDisplayName(prefix)
+    return referenceFamilyDisplayName(prefix);
   }
-  const expanded: Record<string, string> = { prf: 'proof', sol: 'solution', hyp: 'hypothesis', cau: 'caution' }
-  className = expanded[className.toLowerCase()] ?? className
-  return className
-    .replace(/[._-]+/g, ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
+  const expanded: Record<string, string> = {
+    prf: "proof",
+    sol: "solution",
+    hyp: "hypothesis",
+    cau: "caution",
+  };
+  className = expanded[className.toLowerCase()] ?? className;
+  return className.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export function classifyDiv (classes: string[], id?: string): { family: PandocDivFamily, label: string } {
-  const proofClass = classes.find(name => SEMANTIC_DIV_CLASSES[name.toLowerCase()] === 'proof')
+export function classifyDiv(
+  classes: string[],
+  id?: string,
+): { family: PandocDivFamily; label: string } {
+  const proofClass = classes.find((name) => SEMANTIC_DIV_CLASSES[name.toLowerCase()] === "proof");
   if (proofClass !== undefined) {
-    return { family: 'proof', label: humanizeClassName(proofClass) }
+    return { family: "proof", label: humanizeClassName(proofClass) };
   }
   for (const authoredClass of classes) {
-    const normalizedClass = authoredClass.toLowerCase()
-    const family = SEMANTIC_DIV_CLASSES[normalizedClass]
+    const normalizedClass = authoredClass.toLowerCase();
+    const family = SEMANTIC_DIV_CLASSES[normalizedClass];
     if (family !== undefined) {
-      return { family, label: humanizeClassName(normalizedClass) }
+      return { family, label: humanizeClassName(normalizedClass) };
     }
   }
 
   // Quarto states the kind through the crossref prefix of the label instead of
   // a class: `::: {#def-core}` is the same definition that the pandoc-crossref
   // form spells `::: {.definition}`, and `::: {#fig-x}` is a figure.
-  const labelFamily = id === undefined ? undefined : referenceFamilyOf(id)
-  const family = labelFamily === undefined
-    ? undefined
-    : FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix] ?? FAMILY_BY_FLOAT_PREFIX[labelFamily]
+  const labelFamily = id === undefined ? undefined : referenceFamilyOf(id);
+  const family =
+    labelFamily === undefined
+      ? undefined
+      : (FAMILY_BY_THEOREM_PREFIX[labelFamily as TheoremFamilyPrefix] ??
+        FAMILY_BY_FLOAT_PREFIX[labelFamily]);
   if (labelFamily !== undefined && family !== undefined) {
-    return { family, label: referenceFamilyDisplayName(labelFamily) }
+    return { family, label: referenceFamilyDisplayName(labelFamily) };
   }
 
   return {
-    family: 'generic',
-    label: classes.length > 0 ? `.${classes[0]}` : 'Div',
-  }
+    family: "generic",
+    label: classes.length > 0 ? `.${classes[0]}` : "Div",
+  };
 }
 
 /**
  * Restricts authored properties to those safe to project onto DOM elements.
  */
-export function safeProperties (properties: Record<string, string>|undefined): Record<string, string> {
+export function safeProperties(
+  properties: Record<string, string> | undefined,
+): Record<string, string> {
   if (properties === undefined) {
-    return {}
+    return {};
   }
 
-  return Object.fromEntries(Object.entries(properties).filter(([name]) => {
-    return name === 'role' || name === 'title' || name.startsWith('aria-') || name.startsWith('data-')
-  }))
+  return Object.fromEntries(
+    Object.entries(properties).filter(([name]) => {
+      return (
+        name === "role" || name === "title" || name.startsWith("aria-") || name.startsWith("data-")
+      );
+    }),
+  );
 }
 
-export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): PandocDivModel|undefined {
-  const marks = node.getChildren('PandocDivMark')
-  const attrs = node.getChild('PandocAttribute')
-  const info = node.getChild('PandocDivInfo')
+export function divModelFromNode(
+  doc: DivSourceDocument,
+  node: SyntaxNode,
+): PandocDivModel | undefined {
+  const marks = node.getChildren("PandocDivMark");
+  const attrs = node.getChild("PandocAttribute");
+  const info = node.getChild("PandocDivInfo");
 
   if ((!attrs && !info) || marks.length !== 2) {
-    return undefined
+    return undefined;
   }
 
-  const openingLine = doc.lineAt(node.from)
-  const openingSyntaxTo = Math.max(
-    marks[0].to,
-    attrs?.to ?? marks[0].to,
-    info?.to ?? marks[0].to,
-  )
+  const openingLine = doc.lineAt(node.from);
+  const openingSyntaxTo = Math.max(marks[0].to, attrs?.to ?? marks[0].to, info?.to ?? marks[0].to);
   // Pandoc permits fenced-div attributes to span physical lines. The opening
   // shell ends on the line containing the final parsed attribute token, not
   // necessarily on the colon fence's first line.
-  const openingEndLine = doc.lineAt(Math.max(node.from, openingSyntaxTo - 1))
-  const closingLine = doc.lineAt(node.to)
-  const contentFrom = Math.min(openingEndLine.to + 1, closingLine.from)
-  const attributes = attrs ? parsePandocAttributes(doc.sliceString(attrs.from, attrs.to)) : {}
-  const classes = info ? [doc.sliceString(info.from, info.to)] : []
+  const openingEndLine = doc.lineAt(Math.max(node.from, openingSyntaxTo - 1));
+  const closingLine = doc.lineAt(node.to);
+  const contentFrom = Math.min(openingEndLine.to + 1, closingLine.from);
+  const attributes = attrs ? parsePandocAttributes(doc.sliceString(attrs.from, attrs.to)) : {};
+  const classes = info ? [doc.sliceString(info.from, info.to)] : [];
   if (attributes.classes) {
-    classes.push(...attributes.classes)
+    classes.push(...attributes.classes);
   }
 
-  const classification = classifyDiv(classes, attributes.id)
-  let depth = 0
+  const classification = classifyDiv(classes, attributes.id);
+  let depth = 0;
   for (let parent = node.parent; parent !== null; parent = parent.parent) {
-    if (parent.name === 'PandocDiv') {
-      depth++
+    if (parent.name === "PandocDiv") {
+      depth++;
     }
   }
   return {
@@ -215,9 +242,9 @@ export function divModelFromNode (doc: DivSourceDocument, node: SyntaxNode): Pan
     closeFrom: closingLine.from,
     closeTo: closingLine.to,
     classes,
-    id: attributes.id ?? '',
+    id: attributes.id,
     properties: safeProperties(attributes.properties),
     depth,
     ...classification,
-  }
+  };
 }

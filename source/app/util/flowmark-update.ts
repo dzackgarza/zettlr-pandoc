@@ -14,20 +14,20 @@
  * END HEADER
  */
 
-import { runFlowmarkProcess, type FlowmarkProcessResult } from './flowmark-runtime'
+import { type FlowmarkProcessResult, runFlowmarkProcess } from "./flowmark-runtime";
 
 // `just install-flowmark` installs the same source for CI and the test lanes.
-const FLOWMARK_SOURCE = 'flowmark @ git+https://github.com/dzackgarza/pandoc-flowmark@main'
+const FLOWMARK_SOURCE = "flowmark @ git+https://github.com/dzackgarza/pandoc-flowmark@main";
 
 /**
  * Run `uv tool install --upgrade` for Flowmark main. With no new commit on
  * main this is a no-op that takes a few seconds; a failure (no network, a
  * broken build on main) leaves the installed tool unchanged.
  */
-export async function updateFlowmark (): Promise<FlowmarkProcessResult> {
+export async function updateFlowmark(): Promise<FlowmarkProcessResult> {
   return await runFlowmarkProcess({
-    command: 'uv',
-    argv: [ 'tool', 'install', '--upgrade', FLOWMARK_SOURCE ],
-    timeoutMs: 300_000
-  })
+    command: "uv",
+    argv: ["tool", "install", "--upgrade", FLOWMARK_SOURCE],
+    timeoutMs: 300_000,
+  });
 }

@@ -147,76 +147,83 @@
 </template>
 
 <script setup lang="ts">
-import { reportError } from '@common/util/error-reporting'
-import { type LeafNodeJSON, type OpenDocument } from '@dts/common/documents'
-import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import DocumentTabs from './DocumentTabs.vue'
-import MainEditor from './MainEditor.vue'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import { useDocumentTreeStore, useWindowStateStore } from 'source/pinia'
-import ImageViewer from './file-viewers/ImageViewer.vue'
-import { hasImageExt, hasPDFExt } from '@common/util/file-extention-checks'
-import PDFViewer from './file-viewers/PDFViewer.vue'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { reportError } from "@common/util/error-reporting";
+import { hasImageExt, hasPDFExt } from "@common/util/file-extention-checks";
+import { type LeafNodeJSON, type OpenDocument } from "@dts/common/documents";
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import { useDocumentTreeStore, useWindowStateStore } from "source/pinia";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./component-contracts";
+import DocumentTabs from "./DocumentTabs.vue";
+import ImageViewer from "./file-viewers/ImageViewer.vue";
+import PDFViewer from "./file-viewers/PDFViewer.vue";
+import MainEditor from "./MainEditor.vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const windowStateStore = useWindowStateStore()
-const documentTreeStore = useDocumentTreeStore()
+const windowStateStore = useWindowStateStore();
+const documentTreeStore = useDocumentTreeStore();
 
 const props = defineProps<{
-  leafId: string
-  windowId: string
-  availableWidth?: number
-  availableHeight?: number
-  editorCommands: EditorCommands
-}>()
+  leafId: string;
+  windowId: string;
+  availableWidth?: number;
+  availableHeight?: number;
+  editorCommands: EditorCommands;
+}>();
 
-type DragTargetAreas = 'editor'|'top'|'left'|'right'|'bottom'
+type DragTargetAreas = "editor" | "top" | "left" | "right" | "bottom";
 
 const emit = defineEmits<{
-  (e: 'globalSearch', query: string): void
-  (e: 'referenceSearch', request: ReferenceSearchRequest): void
-  (e: 'fileSearch'): void
-  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
-  (e: 'openPandocQuickHelp'): void
-}>()
+  (e: "globalSearch", query: string): void;
+  (e: "referenceSearch", request: ReferenceSearchRequest): void;
+  (e: "fileSearch"): void;
+  (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
+  (e: "openPandocQuickHelp"): void;
+}>();
 
-const documentTabDrag = ref<boolean>(false)
-const documentTabDragWhere = ref<DragTargetAreas|undefined>(undefined)
+const documentTabDrag = ref<boolean>(false);
+const documentTabDragWhere = ref<DragTargetAreas | undefined>(undefined);
 
 const elementStyles = computed<string>(() => {
   if (distractionFree.value) {
-    return ''
+    return "";
   } else {
-    return `width: ${props.availableWidth ?? 100}%; height: ${props.availableHeight ?? 100}%`
+    return `width: ${props.availableWidth ?? 100}%; height: ${props.availableHeight ?? 100}%`;
   }
-})
+});
 
-const paneElement = ref<HTMLDivElement|null>(null)
-const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode === props.leafId)
-const node = computed<LeafNodeJSON|undefined>(() => documentTreeStore.paneData.find((leaf: LeafNodeJSON) => leaf.id === props.leafId))
-const activeFile = computed<OpenDocument|null>(() => node.value?.activeFile ?? null)
-const openFiles = computed<OpenDocument[]>(() => node.value?.openFiles ?? [])
-const hasNoOpenFiles = computed<boolean>(() => openFiles.value.length === 0)
+const paneElement = ref<HTMLDivElement | null>(null);
+const distractionFree = computed<boolean>(
+  () => windowStateStore.distractionFreeMode === props.leafId,
+);
+const node = computed<LeafNodeJSON | undefined>(() =>
+  documentTreeStore.paneData.find((leaf: LeafNodeJSON) => leaf.id === props.leafId),
+);
+const activeFile = computed<OpenDocument | null>(() => node.value?.activeFile ?? null);
+const openFiles = computed<OpenDocument[]>(() => node.value?.openFiles ?? []);
+const hasNoOpenFiles = computed<boolean>(() => openFiles.value.length === 0);
 
 onMounted(() => {
   // Global drag end listener to ensure the split-view indicators always disappear
-  document.addEventListener('dragend', finishDrag, true)
-})
+  document.addEventListener("dragend", finishDrag, true);
+});
 
 onBeforeUnmount(() => {
-  document.removeEventListener('dragend', finishDrag)
-})
+  document.removeEventListener("dragend", finishDrag);
+});
 
-function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bottom'): boolean|undefined {
-  const DELIM = (process.platform === 'win32') ? ';' : ':'
-  const documentTab = event.dataTransfer?.getData('zettlr/document-tab')
+function handleDrop(
+  event: DragEvent,
+  where: "editor" | "top" | "left" | "right" | "bottom",
+): boolean | undefined {
+  const DELIM = process.platform === "win32" ? ";" : ":";
+  const documentTab = event.dataTransfer?.getData("zettlr/document-tab");
   if (documentTab?.includes(DELIM) === true) {
-    documentTabDrag.value = false
-    event.stopPropagation()
-    event.preventDefault()
+    documentTabDrag.value = false;
+    event.stopPropagation();
+    event.preventDefault();
     // At this point, we have received a drop we need to handle it. There
     // are two possibilities: Either the user has dropped the file onto the
     // editor, which means the file should be moved from its origin here.
@@ -224,70 +231,75 @@ function handleDrop (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bot
     // case, we need to first split this specific leaf, and then move the
     // dropped file there. The drag data contains both the origin and the
     // path, separated by the $PATH delimiter -> window:leaf:absPath
-    const [ originWindow, originLeaf, ...filePath ] = documentTab.split(DELIM)
-    if (where === 'editor' && props.leafId === originLeaf) {
+    const [originWindow, originLeaf, ...filePath] = documentTab.split(DELIM);
+    if (where === "editor" && props.leafId === originLeaf) {
       // Nothing to do, the user dropped the file on the origin
-      return false
+      return false;
     }
 
     // Now actually perform the act
-    if (where === 'editor') {
-      ipcRenderer.invoke('documents-provider', {
-        command: 'move-file',
-        payload: {
-          originWindow,
-          targetWindow: props.windowId,
-          originLeaf,
-          targetLeaf: props.leafId,
-          path: filePath.join(DELIM)
-        }
-      } as DocumentManagerIPCAPI)
-        .catch(err => reportError(err))
+    if (where === "editor") {
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "move-file",
+          payload: {
+            originWindow,
+            targetWindow: props.windowId,
+            originLeaf,
+            targetLeaf: props.leafId,
+            path: filePath.join(DELIM),
+          },
+        } as DocumentManagerIPCAPI)
+        .catch((err) => reportError(err));
     } else {
-      const dir = ([ 'left', 'right' ].includes(where)) ? 'horizontal' : 'vertical'
-      const ins = ([ 'top', 'left' ].includes(where)) ? 'before' : 'after'
-      ipcRenderer.invoke('documents-provider', {
-        command: 'split-leaf',
-        payload: {
-          originWindow: props.windowId,
-          originLeaf: props.leafId,
-          direction: dir,
-          insertion: ins,
-          path: filePath.join(DELIM),
-          fromWindow: originWindow,
-          fromLeaf: originLeaf
-        }
-      } as DocumentManagerIPCAPI)
-        .catch(err => reportError(err))
+      const dir = ["left", "right"].includes(where) ? "horizontal" : "vertical";
+      const ins = ["top", "left"].includes(where) ? "before" : "after";
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "split-leaf",
+          payload: {
+            originWindow: props.windowId,
+            originLeaf: props.leafId,
+            direction: dir,
+            insertion: ins,
+            path: filePath.join(DELIM),
+            fromWindow: originWindow,
+            fromLeaf: originLeaf,
+          },
+        } as DocumentManagerIPCAPI)
+        .catch((err) => reportError(err));
     }
   }
 }
 
-function handleDragEnter (event: DragEvent, where: 'editor'|'top'|'left'|'right'|'bottom'): void {
-  const hasDocumentTab = event.dataTransfer?.types.includes('zettlr/document-tab') ?? false
+function handleDragEnter(
+  event: DragEvent,
+  where: "editor" | "top" | "left" | "right" | "bottom",
+): void {
+  const hasDocumentTab = event.dataTransfer?.types.includes("zettlr/document-tab") ?? false;
   if (hasDocumentTab) {
-    event.stopPropagation()
-    documentTabDrag.value = true
-    documentTabDragWhere.value = where
+    event.stopPropagation();
+    documentTabDrag.value = true;
+    documentTabDragWhere.value = where;
   }
 }
 
-function handleDragLeave (event: DragEvent): void {
+function handleDragLeave(event: DragEvent): void {
   if (paneElement.value === null) {
-    return
+    return;
   }
 
-  const bounds = paneElement.value.getBoundingClientRect()
-  const outX = event.clientX < bounds.left || event.clientX > bounds.right
-  const outY = event.clientY < bounds.top || event.clientY > bounds.bottom
+  const bounds = paneElement.value.getBoundingClientRect();
+  const outX = event.clientX < bounds.left || event.clientX > bounds.right;
+  const outY = event.clientY < bounds.top || event.clientY > bounds.bottom;
   if (outX || outY) {
-    finishDrag()
+    finishDrag();
   }
 }
 
-function finishDrag (): void {
-  documentTabDrag.value = false
-  documentTabDragWhere.value = undefined
+function finishDrag(): void {
+  documentTabDrag.value = false;
+  documentTabDragWhere.value = undefined;
 }
 </script>
 

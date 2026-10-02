@@ -13,17 +13,17 @@
  * END HEADER
  */
 
-import path from 'path'
-import { extractASTNodes, markdownToAST } from '../modules/markdown-utils'
-import { type ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
-import { type WikilinkIndex } from './wikilink-resolution'
-import { splitWikilinkTarget } from './wikilink-target'
+import path from "path";
+import { extractASTNodes, markdownToAST } from "../modules/markdown-utils";
+import { type ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
+import { type WikilinkIndex } from "./wikilink-resolution";
+import { splitWikilinkTarget } from "./wikilink-target";
 
 /** One rewritten link target: the range of the old target and its new text. */
 export interface LinkReplacement {
-  from: number
-  to: number
-  text: string
+  from: number;
+  to: number;
+  text: string;
 }
 
 /**
@@ -37,40 +37,43 @@ export interface LinkReplacement {
  *
  * @return  {LinkReplacement[]}  The replacements, in document order
  */
-function linkReplacements (markdown: string, rewrite: (target: string) => string|undefined): LinkReplacement[] {
-  const ast = markdownToAST(markdown)
-  const links = extractASTNodes(ast, 'ZettelkastenLink') as ZettelkastenLink[]
+function linkReplacements(
+  markdown: string,
+  rewrite: (target: string) => string | undefined,
+): LinkReplacement[] {
+  const ast = markdownToAST(markdown);
+  const links = extractASTNodes(ast, "ZettelkastenLink") as ZettelkastenLink[];
 
-  const replacements: LinkReplacement[] = []
+  const replacements: LinkReplacement[] = [];
   for (const link of links) {
-    const { target, fragment } = splitWikilinkTarget(link.target)
-    const replacement = rewrite(target)
+    const { target, fragment } = splitWikilinkTarget(link.target);
+    const replacement = rewrite(target);
     if (replacement === undefined) {
-      continue
+      continue;
     }
     replacements.push({
       ...link.targetRange,
-      text: fragment === undefined ? replacement : `${replacement}#${fragment}`
-    })
+      text: fragment === undefined ? replacement : `${replacement}#${fragment}`,
+    });
   }
-  return replacements.sort((a, b) => a.from - b.from)
+  return replacements.sort((a, b) => a.from - b.from);
 }
 
 /** A file or a directory that moved from `from` to `to`. */
 export interface PathMove {
-  from: string
-  to: string
+  from: string;
+  to: string;
 }
 
 /** Where `filePath` is after `move`: moved with it, or where it was. */
-export function movedPath (filePath: string, move: PathMove): string {
+export function movedPath(filePath: string, move: PathMove): string {
   if (filePath === move.from) {
-    return move.to
+    return move.to;
   }
   if (filePath.startsWith(move.from + path.sep)) {
-    return move.to + filePath.slice(move.from.length)
+    return move.to + filePath.slice(move.from.length);
   }
-  return filePath
+  return filePath;
 }
 
 /**
@@ -82,32 +85,36 @@ export function movedPath (filePath: string, move: PathMove): string {
  * ambiguous or gave to another document) takes the written form of the
  * document it named before.
  */
-export function retargetedLink (
+export function retargetedLink(
   target: string,
   sourcePath: string,
   move: PathMove,
   before: WikilinkIndex,
-  after: WikilinkIndex
-): string|undefined {
-  const previous = before.resolve(target, sourcePath)
-  if (previous.status !== 'resolved') {
-    return undefined
+  after: WikilinkIndex,
+): string | undefined {
+  const previous = before.resolve(target, sourcePath);
+  if (previous.status !== "resolved") {
+    return undefined;
   }
-  const destination = movedPath(previous.path, move)
-  const current = after.resolve(target, movedPath(sourcePath, move))
-  return current.status === 'resolved' && current.path === destination ? undefined : after.canonical(destination)
+  const destination = movedPath(previous.path, move);
+  const current = after.resolve(target, movedPath(sourcePath, move));
+  return current.status === "resolved" && current.path === destination
+    ? undefined
+    : after.canonical(destination);
 }
 
 /**
  * The replacements that retarget the links in `markdown`, the text of the
  * document that was at `sourcePath` before `move` (see `retargetedLink`).
  */
-export function retargetLinks (
+export function retargetLinks(
   markdown: string,
   sourcePath: string,
   move: PathMove,
   before: WikilinkIndex,
-  after: WikilinkIndex
+  after: WikilinkIndex,
 ): LinkReplacement[] {
-  return linkReplacements(markdown, target => retargetedLink(target, sourcePath, move, before, after))
+  return linkReplacements(markdown, (target) =>
+    retargetedLink(target, sourcePath, move, before, after),
+  );
 }

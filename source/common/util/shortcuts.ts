@@ -20,10 +20,10 @@
  * which can be overridden.
  */
 export interface DefaultShortcut {
-  mac?: string
-  win?: string
-  linux?: string
-  key?: string
+  mac?: string;
+  win?: string;
+  linux?: string;
+  key?: string;
 }
 
 /**
@@ -31,11 +31,11 @@ export interface DefaultShortcut {
  * shape ShortcutDisplay.vue renders.
  */
 export interface ExplodedShortcut {
-  altKey: boolean
-  shiftKey: boolean
-  modKey: boolean
-  ctrlKey: boolean
-  key: string
+  altKey: boolean;
+  shiftKey: boolean;
+  modKey: boolean;
+  ctrlKey: boolean;
+  key: string;
 }
 
 /**
@@ -47,21 +47,26 @@ export interface ExplodedShortcut {
  *
  * @return  {ExplodedShortcut}               The exploded shortcut
  */
-export function explodeAccelerator (accelerator: string): ExplodedShortcut {
-  const parts = accelerator.split('+')
-  const key = parts[parts.length - 1].toLowerCase()
-  const modifiers = parts.slice(0, -1).map(part => part.toLowerCase())
-  const commandOrControl = modifiers.includes('cmdorctrl') || modifiers.includes('commandorcontrol')
-  const command = modifiers.includes('cmd') || modifiers.includes('command') || modifiers.includes('super') || modifiers.includes('meta')
-  const control = modifiers.includes('ctrl') || modifiers.includes('control')
-  const isMac = process.platform === 'darwin'
+export function explodeAccelerator(accelerator: string): ExplodedShortcut {
+  const parts = accelerator.split("+");
+  const key = parts[parts.length - 1].toLowerCase();
+  const modifiers = parts.slice(0, -1).map((part) => part.toLowerCase());
+  const commandOrControl =
+    modifiers.includes("cmdorctrl") || modifiers.includes("commandorcontrol");
+  const command =
+    modifiers.includes("cmd") ||
+    modifiers.includes("command") ||
+    modifiers.includes("super") ||
+    modifiers.includes("meta");
+  const control = modifiers.includes("ctrl") || modifiers.includes("control");
+  const isMac = process.platform === "darwin";
   return {
-    altKey: modifiers.includes('alt') || modifiers.includes('option'),
-    shiftKey: modifiers.includes('shift'),
+    altKey: modifiers.includes("alt") || modifiers.includes("option"),
+    shiftKey: modifiers.includes("shift"),
     modKey: command || (isMac && commandOrControl),
     ctrlKey: control || (!isMac && commandOrControl),
-    key
-  }
+    key,
+  };
 }
 
 /**
@@ -72,19 +77,22 @@ export function explodeAccelerator (accelerator: string): ExplodedShortcut {
  *
  * @return  {ExplodedShortcut}            The exploded shortcut
  */
-export function explodeShortcut (shortcut: string): ExplodedShortcut {
-  const keys = shortcut.toLowerCase().split(/-/)
-  const altKey = keys.includes('alt') || keys.includes('option')
-  const shiftKey = keys.includes('shift')
-  const modKey = keys.includes('mod') || process.platform === 'darwin' && keys.includes('cmd') || process.platform !== 'darwin' && keys.includes('mod')
-  const ctrlKey = keys.includes('ctrl')
+export function explodeShortcut(shortcut: string): ExplodedShortcut {
+  const keys = shortcut.toLowerCase().split(/-/);
+  const altKey = keys.includes("alt") || keys.includes("option");
+  const shiftKey = keys.includes("shift");
+  const modKey =
+    keys.includes("mod") ||
+    (process.platform === "darwin" && keys.includes("cmd")) ||
+    (process.platform !== "darwin" && keys.includes("mod"));
+  const ctrlKey = keys.includes("ctrl");
   return {
     altKey,
     shiftKey,
     modKey,
     ctrlKey,
-    key: keys[keys.length - 1]
-  }
+    key: keys[keys.length - 1],
+  };
 }
 
 /**
@@ -98,17 +106,20 @@ export function explodeShortcut (shortcut: string): ExplodedShortcut {
  * @return  {string|undefined}          The (platform-specific) default
  *                                      keybinding, if available.
  */
-export function getDefaultKeybinding<T extends Record<string, DefaultShortcut>> (name: keyof T, defaults: T): string|undefined {
-  const candidate = defaults[name]
+export function getDefaultKeybinding<T extends Record<string, DefaultShortcut>>(
+  name: keyof T,
+  defaults: T,
+): string | undefined {
+  const candidate = defaults[name];
 
-  if (process.platform === 'darwin' && 'mac' in candidate) {
-    return candidate.mac
-  } else if (process.platform === 'win32' && 'win' in candidate) {
-    return candidate.win
-  } else if (process.platform === 'linux' && 'linux' in candidate) {
-    return candidate.linux
+  if (process.platform === "darwin" && "mac" in candidate) {
+    return candidate.mac;
+  } else if (process.platform === "win32" && "win" in candidate) {
+    return candidate.win;
+  } else if (process.platform === "linux" && "linux" in candidate) {
+    return candidate.linux;
   } else {
-    return candidate.key
+    return candidate.key;
   }
 }
 
@@ -117,51 +128,51 @@ export function getDefaultKeybinding<T extends Record<string, DefaultShortcut>> 
  * accelerator syntax. Example: `Mod-Shift-c` -> `CmdOrCtrl+Shift+C`.
  *
  * Two NOTEs:
- * 
+ *
  * 1. Also accepts undefined, and returns that if applicable, for easy pass-
  * through.
  * 2. The empty string is considered undefined.
- * 
+ *
  *
  * @param   {string}  cmShortcut  The CM shortcut
  *
  * @return  {string}              The Electron shortcut.
  */
-export function cmShortcutToElectron (cmShortcut?: string): string|undefined {
-  if (cmShortcut === undefined || cmShortcut.trim() === '') {
-    return undefined
+export function cmShortcutToElectron(cmShortcut?: string): string | undefined {
+  if (cmShortcut === undefined || cmShortcut.trim() === "") {
+    return undefined;
   }
 
-  const keys = cmShortcut.trim().split('-')
+  const keys = cmShortcut.trim().split("-");
 
-  const outputKeys: string[] = []
+  const outputKeys: string[] = [];
 
   for (const key of keys) {
     switch (key) {
-      case 'Mod':
-        outputKeys.push('CmdOrCtrl')
-        break
-      case 'Ctrl':
-        outputKeys.push('Ctrl')
-        break
-      case 'Alt':
-        outputKeys.push('Alt')
-        break
-      case 'Shift':
-        outputKeys.push('Shift')
-        break
-      case 'ArrowRight':
-      case 'ArrowLeft':
-      case 'ArrowUp':
-      case 'ArrowDown':
-        outputKeys.push(key.slice(5))
-        break
+      case "Mod":
+        outputKeys.push("CmdOrCtrl");
+        break;
+      case "Ctrl":
+        outputKeys.push("Ctrl");
+        break;
+      case "Alt":
+        outputKeys.push("Alt");
+        break;
+      case "Shift":
+        outputKeys.push("Shift");
+        break;
+      case "ArrowRight":
+      case "ArrowLeft":
+      case "ArrowUp":
+      case "ArrowDown":
+        outputKeys.push(key.slice(5));
+        break;
       default:
         // NOTE: Electron wants keys in uppercase format, not lowercase as
         // CodeMirror.
-        outputKeys.push(key.toUpperCase())
+        outputKeys.push(key.toUpperCase());
     }
   }
 
-  return outputKeys.join('+')
+  return outputKeys.join("+");
 }

@@ -40,208 +40,237 @@
  * END HEADER
  */
 
-import { Facet, StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
+import { type EditorState, type Extension, Facet, type Range, StateField } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
   type Panel,
   showPanel,
-  WidgetType
-} from '@codemirror/view'
-import { getReviewChunksState, suggestionLastLineEnd, type ReviewChunksFieldValue } from './review-chunks'
-import { activeAnnotationThreadAnchor, getTextAnnotationsState, type TextAnnotationsState } from './text-annotations'
+  WidgetType,
+} from "@codemirror/view";
+import {
+  getReviewChunksState,
+  type ReviewChunksFieldValue,
+  suggestionLastLineEnd,
+} from "./review-chunks";
+import {
+  activeAnnotationThreadAnchor,
+  getTextAnnotationsState,
+  type TextAnnotationsState,
+} from "./text-annotations";
 
 /** One block the editor places for the host to fill. */
 export type CollaborationControl =
-  | { kind: 'review-chunk', chunkId: string }
-  | { kind: 'review-bar' }
-  | { kind: 'annotation-thread', annotationId: string }
+  | { kind: "review-chunk"; chunkId: string }
+  | { kind: "review-bar" }
+  | { kind: "annotation-thread"; annotationId: string };
 
 /**
  * Fills a placed block with its content and returns the function that
  * removes that content again when the editor drops the block.
  */
-export type MountCollaborationControl = (dom: HTMLElement, control: CollaborationControl) => () => void
+export type MountCollaborationControl = (
+  dom: HTMLElement,
+  control: CollaborationControl,
+) => () => void;
 
-const mountFacet = Facet.define<MountCollaborationControl>()
+const mountFacet = Facet.define<MountCollaborationControl>();
 
-function requireMount (state: EditorState): MountCollaborationControl {
-  const mounts = state.facet(mountFacet)
+function requireMount(state: EditorState): MountCollaborationControl {
+  const mounts = state.facet(mountFacet);
   if (mounts.length !== 1) {
-    throw new Error(`collaboration controls require exactly one host, received ${mounts.length}`)
+    throw new Error(`collaboration controls require exactly one host, received ${mounts.length}`);
   }
-  return mounts[0]
+  return mounts[0];
 }
 
-function controlKey (control: CollaborationControl): string {
+function controlKey(control: CollaborationControl): string {
   switch (control.kind) {
-    case 'review-chunk':
-      return `review-chunk:${control.chunkId}`
-    case 'review-bar':
-      return 'review-bar'
-    case 'annotation-thread':
-      return `annotation-thread:${control.annotationId}`
+    case "review-chunk":
+      return `review-chunk:${control.chunkId}`;
+    case "review-bar":
+      return "review-bar";
+    case "annotation-thread":
+      return `annotation-thread:${control.annotationId}`;
   }
 }
 
 interface MountedBlock {
-  key: string
-  unmount: () => void
-  resizeObserver: ResizeObserver
+  key: string;
+  unmount: () => void;
+  resizeObserver: ResizeObserver;
 }
 
-const mountedBlocks = new WeakMap<HTMLElement, MountedBlock>()
+const mountedBlocks = new WeakMap<HTMLElement, MountedBlock>();
 
 /** An inert block takes no pointer or keyboard input: its actions would be
  *  fenced on a working text the provider has not confirmed. */
-function applyInteractive (dom: HTMLElement, interactive: boolean): void {
-  dom.toggleAttribute('inert', !interactive)
-  dom.classList.toggle('cm-collaborationControl-syncing', !interactive)
+function applyInteractive(dom: HTMLElement, interactive: boolean): void {
+  dom.toggleAttribute("inert", !interactive);
+  dom.classList.toggle("cm-collaborationControl-syncing", !interactive);
 }
 
 class ControlBlockWidget extends WidgetType {
-  constructor (
+  constructor(
     readonly control: CollaborationControl,
-    readonly interactive: boolean
+    readonly interactive: boolean,
   ) {
-    super()
+    super();
   }
 
-  eq (other: ControlBlockWidget): boolean {
-    return controlKey(other.control) === controlKey(this.control) && other.interactive === this.interactive
+  eq(other: ControlBlockWidget): boolean {
+    return (
+      controlKey(other.control) === controlKey(this.control) &&
+      other.interactive === this.interactive
+    );
   }
 
-  toDOM (view: EditorView): HTMLElement {
-    const dom = document.createElement('div')
-    dom.className = `cm-collaborationControl cm-collaborationControl-${this.control.kind}`
-    applyInteractive(dom, this.interactive)
-    const unmount = requireMount(view.state)(dom, this.control)
+  toDOM(view: EditorView): HTMLElement {
+    const dom = document.createElement("div");
+    dom.className = `cm-collaborationControl cm-collaborationControl-${this.control.kind}`;
+    applyInteractive(dom, this.interactive);
+    const unmount = requireMount(view.state)(dom, this.control);
     // The host renders into the block after CodeMirror measured it, and a
     // thread grows with every reply: re-measure so the height map follows.
-    const resizeObserver = new ResizeObserver(() => { view.requestMeasure() })
-    resizeObserver.observe(dom)
-    mountedBlocks.set(dom, { key: controlKey(this.control), unmount, resizeObserver })
-    return dom
+    const resizeObserver = new ResizeObserver(() => {
+      view.requestMeasure();
+    });
+    resizeObserver.observe(dom);
+    mountedBlocks.set(dom, { key: controlKey(this.control), unmount, resizeObserver });
+    return dom;
   }
 
   /** Same block, new interactivity: keep the host's content (a half-typed
    *  note survives), only lock or unlock it. */
-  updateDOM (dom: HTMLElement): boolean {
+  updateDOM(dom: HTMLElement): boolean {
     if (mountedBlocks.get(dom)?.key !== controlKey(this.control)) {
-      return false
+      return false;
     }
-    applyInteractive(dom, this.interactive)
-    return true
+    applyInteractive(dom, this.interactive);
+    return true;
   }
 
-  destroy (dom: HTMLElement): void {
-    const mounted = mountedBlocks.get(dom)
+  destroy(dom: HTMLElement): void {
+    const mounted = mountedBlocks.get(dom);
     if (mounted === undefined) {
-      return
+      return;
     }
-    mounted.resizeObserver.disconnect()
-    mounted.unmount()
-    mountedBlocks.delete(dom)
+    mounted.resizeObserver.disconnect();
+    mounted.unmount();
+    mountedBlocks.delete(dom);
   }
 
-  ignoreEvent (): boolean {
-    return true
+  ignoreEvent(): boolean {
+    return true;
   }
 }
 
 interface ControlsFieldValue {
-  review: ReviewChunksFieldValue | undefined
-  annotations: TextAnnotationsState | undefined
-  decorations: DecorationSet
+  review: ReviewChunksFieldValue | undefined;
+  annotations: TextAnnotationsState | undefined;
+  decorations: DecorationSet;
 }
 
-function buildControls (state: EditorState): ControlsFieldValue {
-  const review = getReviewChunksState(state)
-  const annotations = getTextAnnotationsState(state)
-  const blocks: Array<Range<Decoration>> = []
+function buildControls(state: EditorState): ControlsFieldValue {
+  const review = getReviewChunksState(state);
+  const annotations = getTextAnnotationsState(state);
+  const blocks: Array<Range<Decoration>> = [];
 
   if (review !== undefined) {
     for (const suggestion of review.suggestions) {
-      blocks.push(Decoration.widget({
-        widget: new ControlBlockWidget({ kind: 'review-chunk', chunkId: suggestion.suggestionId }, review.synced),
-        block: true,
-        side: 1
-      }).range(suggestionLastLineEnd(state, suggestion)))
+      blocks.push(
+        Decoration.widget({
+          widget: new ControlBlockWidget(
+            { kind: "review-chunk", chunkId: suggestion.suggestionId },
+            review.synced,
+          ),
+          block: true,
+          side: 1,
+        }).range(suggestionLastLineEnd(state, suggestion)),
+      );
     }
   }
 
-  const thread = annotations === undefined ? undefined : activeAnnotationThreadAnchor(annotations, state.doc)
+  const thread =
+    annotations === undefined ? undefined : activeAnnotationThreadAnchor(annotations, state.doc);
   if (thread !== undefined) {
-    blocks.push(Decoration.widget({
-      widget: new ControlBlockWidget({ kind: 'annotation-thread', annotationId: thread.annotationId }, true),
-      block: true,
-      side: 2
-    }).range(thread.position))
+    blocks.push(
+      Decoration.widget({
+        widget: new ControlBlockWidget(
+          { kind: "annotation-thread", annotationId: thread.annotationId },
+          true,
+        ),
+        block: true,
+        side: 2,
+      }).range(thread.position),
+    );
   }
 
-  return { review, annotations, decorations: Decoration.set(blocks, true) }
+  return { review, annotations, decorations: Decoration.set(blocks, true) };
 }
 
 const controlsField = StateField.define<ControlsFieldValue>({
   create: buildControls,
-  update (value, tr) {
+  update(value, tr) {
     if (
       !tr.docChanged &&
       getReviewChunksState(tr.state) === value.review &&
       getTextAnnotationsState(tr.state) === value.annotations
     ) {
-      return value
+      return value;
     }
-    return buildControls(tr.state)
+    return buildControls(tr.state);
   },
-  provide: field => [
-    EditorView.decorations.from(field, value => value.decorations),
-    showPanel.from(field, value => value.review !== undefined && value.review.suggestions.length > 0 ? reviewBarPanel : null)
-  ]
-})
+  provide: (field) => [
+    EditorView.decorations.from(field, (value) => value.decorations),
+    showPanel.from(field, (value) =>
+      value.review !== undefined && value.review.suggestions.length > 0 ? reviewBarPanel : null,
+    ),
+  ],
+});
 
 /**
  * The review bar. A module-level constructor keeps one panel alive across
  * every broadcast; only its interactivity follows the review's sync state.
  */
-function reviewBarPanel (view: EditorView): Panel {
-  const dom = document.createElement('div')
-  dom.className = 'cm-collaborationControl cm-collaborationControl-review-bar'
-  let unmount: (() => void) | undefined
+function reviewBarPanel(view: EditorView): Panel {
+  const dom = document.createElement("div");
+  dom.className = "cm-collaborationControl cm-collaborationControl-review-bar";
+  let unmount: (() => void) | undefined;
   const sync = (state: EditorState): void => {
-    applyInteractive(dom, getReviewChunksState(state)?.synced === true)
-  }
-  sync(view.state)
+    applyInteractive(dom, getReviewChunksState(state)?.synced === true);
+  };
+  sync(view.state);
   return {
     dom,
     top: false,
-    mount () {
-      unmount = requireMount(view.state)(dom, { kind: 'review-bar' })
+    mount() {
+      unmount = requireMount(view.state)(dom, { kind: "review-bar" });
     },
-    update (update) {
-      sync(update.state)
+    update(update) {
+      sync(update.state);
     },
-    destroy () {
-      unmount?.()
-    }
-  }
+    destroy() {
+      unmount?.();
+    },
+  };
 }
 
-export function collaborationControls (mount: MountCollaborationControl): Extension {
-  return [mountFacet.of(mount), controlsField, collaborationControlsTheme]
+export function collaborationControls(mount: MountCollaborationControl): Extension {
+  return [mountFacet.of(mount), controlsField, collaborationControlsTheme];
 }
 
 const collaborationControlsTheme = EditorView.baseTheme({
-  '.cm-collaborationControl': {
-    fontFamily: 'system-ui, sans-serif',
-    whiteSpace: 'normal',
-    cursor: 'auto'
+  ".cm-collaborationControl": {
+    fontFamily: "system-ui, sans-serif",
+    whiteSpace: "normal",
+    cursor: "auto",
   },
-  '.cm-collaborationControl-review-chunk, .cm-collaborationControl-annotation-thread': {
-    padding: '4px 0 8px'
+  ".cm-collaborationControl-review-chunk, .cm-collaborationControl-annotation-thread": {
+    padding: "4px 0 8px",
   },
-  '.cm-collaborationControl-syncing': {
-    opacity: '0.55'
-  }
-})
+  ".cm-collaborationControl-syncing": {
+    opacity: "0.55",
+  },
+});

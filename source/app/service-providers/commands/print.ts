@@ -12,12 +12,12 @@
  * END HEADER
  */
 
-import ZettlrCommand from './zettlr-command'
-import type { AppServiceContainer } from 'source/app/app-service-container'
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
 export default class Print extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'print')
+  constructor(app: AppServiceContainer) {
+    super(app, "print");
   }
 
   /**
@@ -26,21 +26,21 @@ export default class Print extends ZettlrCommand {
    * @param  {string}  evt The event name
    * @param  {any}     arg The argument
    */
-  async run (evt: string, arg?: string): Promise<void> {
-    const filePath = arg
+  async run(evt: string, arg?: string): Promise<void> {
+    const filePath = arg;
 
     if (filePath == null) {
-      this._app.log.error('[Print] Cannot print document: Not found.')
-      return
+      this._app.log.error("[Print] Cannot print document: Not found.");
+      return;
     }
 
-    const fileDescriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath)
+    const fileDescriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath);
 
     if (fileDescriptor === undefined) {
-      this._app.log.error('[Print] Cannot print document: Not found.')
-      return
+      this._app.log.error("[Print] Cannot print document: Not found.");
+      return;
     }
 
-    this._app.windows.showPrintWindow(fileDescriptor.path)
+    this._app.windows.showPrintWindow(fileDescriptor.path);
   }
 }

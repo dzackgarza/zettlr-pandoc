@@ -30,37 +30,36 @@
  * END HEADER
  */
 
-import { computed } from 'vue'
+import { computed } from "vue";
 
 const props = defineProps<{
   /**
    * The model associated with this control
    */
-  modelValue: boolean
+  modelValue: boolean;
   /**
    * The label associated with this control
    */
-  label?: string
+  label?: string;
   /**
    * The label's position. By default, it is after the switch control.
    */
-  labelPosition?: 'before'|'after'
+  labelPosition?: "before" | "after";
   /**
    * The name of this switch control.
    */
-  name?: string
+  name?: string;
   /**
    * By default, switch and label will be positioned next to each other. Setting
    * this to true makes the label and switch move to the opposite ends of the
    * available width.
    */
-  stretch?: boolean
-}>()
+  stretch?: boolean;
+}>();
 
-const fieldID = computed<string>(() => 'form-input-' + (props.name ?? ''))
+const fieldID = computed<string>(() => "form-input-" + (props.name ?? ""));
 
-const emit = defineEmits<(e: 'update:modelValue', value: boolean) => void>()
-
+const emit = defineEmits<(e: "update:modelValue", value: boolean) => void>();
 </script>
 
 <style lang="less">

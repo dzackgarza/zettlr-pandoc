@@ -18,10 +18,10 @@
  * Splits the text before a wikilink's `|` label into the document target and
  * the `#heading` fragment.
  */
-export function splitWikilinkTarget (raw: string): { target: string, fragment: string|undefined } {
-  const hash = raw.indexOf('#')
+export function splitWikilinkTarget(raw: string): { target: string; fragment: string | undefined } {
+  const hash = raw.indexOf("#");
   if (hash < 0) {
-    return { target: raw.trim(), fragment: undefined }
+    return { target: raw.trim(), fragment: undefined };
   }
-  return { target: raw.slice(0, hash).trim(), fragment: raw.slice(hash + 1).trim() }
+  return { target: raw.slice(0, hash).trim(), fragment: raw.slice(hash + 1).trim() };
 }

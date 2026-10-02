@@ -13,31 +13,31 @@
  * END HEADER
  */
 
-import { mathjax } from '@mathjax/src/cjs/mathjax.js'
-import { TeX } from '@mathjax/src/cjs/input/tex.js'
-import { CHTML } from '@mathjax/src/cjs/output/chtml.js'
-import { browserAdaptor } from '@mathjax/src/cjs/adaptors/browserAdaptor.js'
-import { liteAdaptor } from '@mathjax/src/cjs/adaptors/liteAdaptor.js'
-import '@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js'
-import '@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js'
-import '@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js'
-import '@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js'
-import '@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js'
-import { HandlerType } from '@mathjax/src/cjs/input/tex/HandlerTypes.js'
-import { AbstractParseMap } from '@mathjax/src/cjs/input/tex/TokenMap.js'
-import { type LiteDocument } from '@mathjax/src/cjs/adaptors/lite/Document.js'
-import { LiteElement, type LiteNode } from '@mathjax/src/cjs/adaptors/lite/Element.js'
-import { type LiteText } from '@mathjax/src/cjs/adaptors/lite/Text.js'
-import { type MathDocument } from '@mathjax/src/cjs/core/MathDocument.js'
-import { type MmlNode } from '@mathjax/src/cjs/core/MmlTree/MmlNode.js'
-import { HTMLDocument } from '@mathjax/src/cjs/handlers/html/HTMLDocument.js'
-import { MathJaxNewcmFont } from '@mathjax/mathjax-newcm-font/cjs/chtml.js'
-import { MathJaxMhchemFontExtension } from '@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js'
-import { mathJaxPackages, type MathJaxMacro } from 'tikz-workbench/src/mathjax-config'
+import { browserAdaptor } from "@mathjax/src/cjs/adaptors/browserAdaptor.js";
+import { liteAdaptor } from "@mathjax/src/cjs/adaptors/liteAdaptor.js";
+import { TeX } from "@mathjax/src/cjs/input/tex.js";
+import { mathjax } from "@mathjax/src/cjs/mathjax.js";
+import { CHTML } from "@mathjax/src/cjs/output/chtml.js";
+import "@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js";
+import "@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js";
+import "@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js";
+import "@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js";
+import "@mathjax/src/cjs/input/tex/noundefined/NoUndefinedConfiguration.js";
+import { MathJaxMhchemFontExtension } from "@mathjax/mathjax-mhchem-font-extension/cjs/chtml.js";
+import { MathJaxNewcmFont } from "@mathjax/mathjax-newcm-font/cjs/chtml.js";
+import { type LiteDocument } from "@mathjax/src/cjs/adaptors/lite/Document.js";
+import { LiteElement, type LiteNode } from "@mathjax/src/cjs/adaptors/lite/Element.js";
+import { type LiteText } from "@mathjax/src/cjs/adaptors/lite/Text.js";
+import { type MathDocument } from "@mathjax/src/cjs/core/MathDocument.js";
+import { type MmlNode } from "@mathjax/src/cjs/core/MmlTree/MmlNode.js";
+import { HTMLDocument } from "@mathjax/src/cjs/handlers/html/HTMLDocument.js";
+import { HandlerType } from "@mathjax/src/cjs/input/tex/HandlerTypes.js";
+import { AbstractParseMap } from "@mathjax/src/cjs/input/tex/TokenMap.js";
+import { type MathJaxMacro, mathJaxPackages } from "tikz-workbench/src/mathjax-config";
 
-import './mathjax-newcm-dynamic'
+import "./mathjax-newcm-dynamic";
 
-const documentElement = globalThis.document
+const documentElement = globalThis.document;
 
 // Register the mhchem glyphs (long reaction arrows and bonds) on the font
 // class before any output jax is constructed: with the complete stylesheet
@@ -45,125 +45,125 @@ const documentElement = globalThis.document
 // rules for the extension's own woff2 files.
 MathJaxNewcmFont.addExtension({
   ...MathJaxMhchemFontExtension,
-  fontURL: documentElement === undefined
-    ? ''
-    : new URL('../mathjax', documentElement.baseURI).href
-})
+  fontURL: documentElement === undefined ? "" : new URL("../mathjax", documentElement.baseURI).href,
+});
 
-type BrowserDocument = MathDocument<HTMLElement, Text, Document>
-type MainDocument = MathDocument<LiteNode, LiteText, LiteDocument>
+type BrowserDocument = MathDocument<HTMLElement, Text, Document>;
+type MainDocument = MathDocument<LiteNode, LiteText, LiteDocument>;
 
-let browserRenderer: BrowserDocument|undefined
-let mainRenderer: MainDocument|undefined
-let browserChtml: CHTML<HTMLElement, Text, Document>|undefined
-let mainChtml: CHTML<LiteElement, LiteText, LiteDocument>|undefined
-let browserAdaptorInstance: ReturnType<typeof browserAdaptor>|undefined
+let browserRenderer: BrowserDocument | undefined;
+let mainRenderer: MainDocument | undefined;
+let browserChtml: CHTML<HTMLElement, Text, Document> | undefined;
+let mainChtml: CHTML<LiteElement, LiteText, LiteDocument> | undefined;
+let browserAdaptorInstance: ReturnType<typeof browserAdaptor> | undefined;
 
-type MathJaxDisplay = 'inline'|'display'
+type MathJaxDisplay = "inline" | "display";
 
 // The cache must hold the equations of the documents in use. With fewer
 // entries than one document has equations, a scroll through the document
 // evicts each equation before the scroll comes back to it, and each pass
 // converts all of them again (#136: 444 distinct equations in one document,
 // 610 to 730 ms of conversion in each pass at a limit of 256).
-const BROWSER_RENDER_CACHE_LIMIT = 2048
-const browserRenderCache = new Map<string, HTMLElement>()
+const BROWSER_RENDER_CACHE_LIMIT = 2048;
+const browserRenderCache = new Map<string, HTMLElement>();
 
-function browserRenderCacheKey (equation: string, display: MathJaxDisplay): string {
-  return `${display}\0${equation}`
+function browserRenderCacheKey(equation: string, display: MathJaxDisplay): string {
+  return `${display}\0${equation}`;
 }
 
-function cacheBrowserNode (key: string, node: HTMLElement): void {
-  browserRenderCache.delete(key)
-  browserRenderCache.set(key, node.cloneNode(true) as HTMLElement)
+function cacheBrowserNode(key: string, node: HTMLElement): void {
+  browserRenderCache.delete(key);
+  browserRenderCache.set(key, node.cloneNode(true) as HTMLElement);
   if (browserRenderCache.size > BROWSER_RENDER_CACHE_LIMIT) {
-    const oldest = browserRenderCache.keys().next().value
+    const oldest = browserRenderCache.keys().next().value;
     if (oldest !== undefined) {
-      browserRenderCache.delete(oldest)
+      browserRenderCache.delete(oldest);
     }
   }
 }
 
-export function __resetMathJaxRenderCacheForTests (): void {
-  browserRenderCache.clear()
+export function __resetMathJaxRenderCacheForTests(): void {
+  browserRenderCache.clear();
 }
 
-export function __mathJaxRenderCacheSizeForTests (): number {
-  return browserRenderCache.size
+export function __mathJaxRenderCacheSizeForTests(): number {
+  return browserRenderCache.size;
 }
-let mainAdaptorInstance: ReturnType<typeof liteAdaptor>|undefined
+let mainAdaptorInstance: ReturnType<typeof liteAdaptor> | undefined;
 
-mathjax.asyncLoad = () => Promise.resolve()
+mathjax.asyncLoad = () => Promise.resolve();
 
-let initialized = false
-let initializing: Promise<void>|undefined
+let initialized = false;
+let initializing: Promise<void> | undefined;
 
 export interface MathJaxCompletionCatalogue {
   /** Control sequences exactly as authored, including the leading backslash. */
-  commands: readonly string[]
+  commands: readonly string[];
   /** Environments accepted by the active MathJax TeX package configuration. */
-  environments: readonly string[]
+  environments: readonly string[];
 }
 
 let completionCatalogue: MathJaxCompletionCatalogue = {
   commands: [],
-  environments: []
-}
+  environments: [],
+};
 
-function mapKeysForHandler<N, T, D> (tex: TeX<N, T, D>, handlerType: HandlerType): string[] {
-  const handler = tex.parseOptions.handlers.get(handlerType)
+function mapKeysForHandler<N, T, D>(tex: TeX<N, T, D>, handlerType: HandlerType): string[] {
+  const handler = tex.parseOptions.handlers.get(handlerType);
   if (handler === undefined) {
-    return []
+    return [];
   }
 
-  const keys: string[] = []
-  for (const mapName of handler.toString().split(', ').filter(Boolean)) {
-    const tokenMap = handler.retrieve(mapName)
+  const keys: string[] = [];
+  for (const mapName of handler.toString().split(", ").filter(Boolean)) {
+    const tokenMap = handler.retrieve(mapName);
     // Only parse maps hold a finite token table. Pattern maps (RegExpMap:
     // letters, digits) match open-ended token classes and name no commands.
     if (!(tokenMap instanceof AbstractParseMap)) {
-      continue
+      continue;
     }
     // MathJax exposes no public enumeration of a parse map; its table is the
     // `private map: Map<string, K>` of AbstractParseMap
     // (mathjax/MathJax-src ts/input/tex/TokenMap.ts). Element access reads
     // that declared field with its declared type.
-    keys.push(...tokenMap['map'].keys())
+    keys.push(...tokenMap["map"].keys());
   }
-  return keys
+  return keys;
 }
 
-function buildCompletionCatalogue<N, T, D> (tex: TeX<N, T, D>): MathJaxCompletionCatalogue {
-  const commands = new Set<string>()
+function buildCompletionCatalogue<N, T, D>(tex: TeX<N, T, D>): MathJaxCompletionCatalogue {
+  const commands = new Set<string>();
   for (const key of [
     ...mapKeysForHandler(tex, HandlerType.MACRO),
-    ...mapKeysForHandler(tex, HandlerType.DELIMITER)
+    ...mapKeysForHandler(tex, HandlerType.DELIMITER),
   ]) {
-    const bare = key.startsWith('\\') ? key.slice(1) : key
+    const bare = key.startsWith("\\") ? key.slice(1) : key;
     // Completion is intentionally for control words. TeX's one-character
     // control symbols (\%, \_, etc.) need no useful fuzzy catalogue and would
     // make the popup noisy as soon as the slash is typed.
     if (/^[A-Za-z@]+$/u.test(bare)) {
-      commands.add(`\\${bare}`)
+      commands.add(`\\${bare}`);
     }
   }
 
-  const environments = new Set<string>()
+  const environments = new Set<string>();
   for (const key of mapKeysForHandler(tex, HandlerType.ENVIRONMENT)) {
     if (/^[A-Za-z@*]+$/u.test(key)) {
-      environments.add(key)
+      environments.add(key);
     }
   }
 
   return {
     commands: [...commands].sort((a, b) => a.localeCompare(b)),
-    environments: [...environments].sort((a, b) => a.localeCompare(b))
-  }
+    environments: [...environments].sort((a, b) => a.localeCompare(b)),
+  };
 }
 
 /** Build completion data from the same MathJax configuration used at boot. */
-export function buildMathJaxCompletionCatalogue (macros: Record<string, MathJaxMacro>): MathJaxCompletionCatalogue {
-  return buildCompletionCatalogue(new TeX({ packages: [...mathJaxPackages], macros }))
+export function buildMathJaxCompletionCatalogue(
+  macros: Record<string, MathJaxMacro>,
+): MathJaxCompletionCatalogue {
+  return buildCompletionCatalogue(new TeX({ packages: [...mathJaxPackages], macros }));
 }
 
 /**
@@ -171,8 +171,8 @@ export function buildMathJaxCompletionCatalogue (macros: Record<string, MathJaxM
  * includes the configured base/AMS/mhchem packages and the central macro map;
  * it is therefore preferable to maintaining a parallel LaTeX command list.
  */
-export function mathJaxCompletionCatalogue (): MathJaxCompletionCatalogue {
-  return completionCatalogue
+export function mathJaxCompletionCatalogue(): MathJaxCompletionCatalogue {
+  return completionCatalogue;
 }
 
 /**
@@ -186,84 +186,90 @@ export function mathJaxCompletionCatalogue (): MathJaxCompletionCatalogue {
  *
  * @param   {Record<string, MathJaxMacro>}  macros  The supplied macro projection.
  */
-export function initializeMathJax (macros: Record<string, MathJaxMacro>): Promise<void> {
+export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise<void> {
   if (initializing !== undefined) {
-    return initializing
+    return initializing;
   }
 
-  const tex = new TeX({ packages: [...mathJaxPackages], macros })
-  completionCatalogue = buildCompletionCatalogue(tex)
+  const tex = new TeX({ packages: [...mathJaxPackages], macros });
+  completionCatalogue = buildCompletionCatalogue(tex);
 
   if (documentElement === undefined) {
-    mainAdaptorInstance = liteAdaptor()
+    mainAdaptorInstance = liteAdaptor();
     mainChtml = new CHTML<LiteElement, LiteText, LiteDocument>({
       fontData: MathJaxNewcmFont,
-      dynamicPrefix: '',
+      dynamicPrefix: "",
       // Emit the complete stylesheet: widgets render incrementally, so
       // adaptive CSS would miss constructs first used after initialization.
-      adaptiveCSS: false
-    })
-    mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(''), mainAdaptorInstance, { InputJax: tex, OutputJax: mainChtml })
+      adaptiveCSS: false,
+    });
+    mainRenderer = new HTMLDocument(mainAdaptorInstance.parse(""), mainAdaptorInstance, {
+      InputJax: tex,
+      OutputJax: mainChtml,
+    });
     initializing = mainChtml.font.loadDynamicFiles().then(() => {
-      initialized = true
-    })
+      initialized = true;
+    });
   } else {
-    browserAdaptorInstance = browserAdaptor()
+    browserAdaptorInstance = browserAdaptor();
     browserChtml = new CHTML({
       fontData: MathJaxNewcmFont,
-      fontURL: new URL('../mathjax', documentElement.baseURI).href,
-      dynamicPrefix: '',
+      fontURL: new URL("../mathjax", documentElement.baseURI).href,
+      dynamicPrefix: "",
       // Emit the complete stylesheet: widgets render incrementally, so
       // adaptive CSS would miss constructs first used after initialization.
-      adaptiveCSS: false
-    })
-    browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, { InputJax: tex, OutputJax: browserChtml })
+      adaptiveCSS: false,
+    });
+    browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, {
+      InputJax: tex,
+      OutputJax: browserChtml,
+    });
     initializing = browserChtml.font.loadDynamicFiles().then(() => {
-      browserRenderer?.updateDocument()
-      initialized = true
-    })
+      browserRenderer?.updateDocument();
+      initialized = true;
+    });
   }
 
-  return initializing
+  return initializing;
 }
 
-function isMmlNode (node: LiteNode|HTMLElement|MmlNode): node is MmlNode {
-  return 'isToken' in node
+function isMmlNode(node: LiteNode | HTMLElement | MmlNode): node is MmlNode {
+  return "isToken" in node;
 }
 
-function mathJaxToBrowserNode (equation: string, display: MathJaxDisplay): HTMLElement {
+function mathJaxToBrowserNode(equation: string, display: MathJaxDisplay): HTMLElement {
   if (browserRenderer === undefined) {
-    throw new Error('Browser MathJax renderer is unavailable')
+    throw new Error("Browser MathJax renderer is unavailable");
   }
 
-  const key = browserRenderCacheKey(equation, display)
-  const cached = browserRenderCache.get(key)
+  const key = browserRenderCacheKey(equation, display);
+  const cached = browserRenderCache.get(key);
   if (cached !== undefined) {
-    browserRenderCache.delete(key)
-    browserRenderCache.set(key, cached)
-    return cached.cloneNode(true) as HTMLElement
+    browserRenderCache.delete(key);
+    browserRenderCache.set(key, cached);
+    return cached.cloneNode(true) as HTMLElement;
   }
 
-  const node = browserRenderer.convert(equation, { display: display === 'display' })
+  const node = browserRenderer.convert(equation, { display: display === "display" });
   if (isMmlNode(node)) {
-    throw new Error('MathJax did not produce HTML')
+    throw new Error("MathJax did not produce HTML");
   }
-  browserRenderer.updateDocument()
-  cacheBrowserNode(key, node)
-  return node
+  browserRenderer.updateDocument();
+  cacheBrowserNode(key, node);
+  return node;
 }
 
-function mathJaxToMainNode (equation: string, display: MathJaxDisplay): LiteElement {
+function mathJaxToMainNode(equation: string, display: MathJaxDisplay): LiteElement {
   if (mainRenderer === undefined) {
-    throw new Error('Main-process MathJax renderer is unavailable')
+    throw new Error("Main-process MathJax renderer is unavailable");
   }
 
-  const node = mainRenderer.convert(equation, { display: display === 'display' })
+  const node = mainRenderer.convert(equation, { display: display === "display" });
   if (isMmlNode(node) || !(node instanceof LiteElement)) {
-    throw new Error('MathJax did not produce HTML')
+    throw new Error("MathJax did not produce HTML");
   }
-  mainRenderer.updateDocument()
-  return node
+  mainRenderer.updateDocument();
+  return node;
 }
 
 /**
@@ -274,12 +280,12 @@ function mathJaxToMainNode (equation: string, display: MathJaxDisplay): LiteElem
  * @param   {HTMLElement}  element      The target element.
  * @param   {'inline'|'display'}  display   The MathJax display variant.
  */
-export function mathJaxToElem (equation: string, element: HTMLElement, display: MathJaxDisplay) {
+export function mathJaxToElem(equation: string, element: HTMLElement, display: MathJaxDisplay) {
   if (!initialized) {
-    throw new Error('MathJax must be initialized before rendering')
+    throw new Error("MathJax must be initialized before rendering");
   }
 
-  element.replaceChildren(mathJaxToBrowserNode(equation, display))
+  element.replaceChildren(mathJaxToBrowserNode(equation, display));
 }
 
 /**
@@ -289,20 +295,20 @@ export function mathJaxToElem (equation: string, element: HTMLElement, display: 
  *
  * @return  {string}                     The equation as HTML.
  */
-export function mathJaxToHTML (equation: string, display: MathJaxDisplay): string {
+export function mathJaxToHTML(equation: string, display: MathJaxDisplay): string {
   if (!initialized) {
-    throw new Error('MathJax must be initialized before rendering')
+    throw new Error("MathJax must be initialized before rendering");
   }
 
   if (browserRenderer === undefined) {
     if (mainAdaptorInstance === undefined) {
-      throw new Error('Main-process MathJax adaptor is unavailable')
+      throw new Error("Main-process MathJax adaptor is unavailable");
     }
-    return mainAdaptorInstance.outerHTML(mathJaxToMainNode(equation, display))
+    return mainAdaptorInstance.outerHTML(mathJaxToMainNode(equation, display));
   }
 
   if (browserAdaptorInstance === undefined) {
-    throw new Error('Browser MathJax adaptor is unavailable')
+    throw new Error("Browser MathJax adaptor is unavailable");
   }
-  return browserAdaptorInstance.outerHTML(mathJaxToBrowserNode(equation, display))
+  return browserAdaptorInstance.outerHTML(mathJaxToBrowserNode(equation, display));
 }

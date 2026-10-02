@@ -12,29 +12,29 @@
  * END HEADER
  */
 
-import '@cds/core/icon/register.js'
+import "@cds/core/icon/register.js";
 import {
-  essentialCollectionIcons,
-  coreCollectionIcons,
+  ClarityIcons,
+  chartCollectionIcons,
   commerceCollectionIcons,
+  coreCollectionIcons,
+  essentialCollectionIcons,
   mediaCollectionIcons,
   socialCollectionIcons,
-  travelCollectionIcons,
-  textEditCollectionIcons,
   technologyCollectionIcons,
-  chartCollectionIcons,
-  ClarityIcons
-} from '@cds/core/icon'
+  textEditCollectionIcons,
+  travelCollectionIcons,
+} from "@cds/core/icon";
 
-import CodeAltIcon from './icons/clarity-custom/code-alt.svg'
-import FootnoteIcon from './icons/clarity-custom/footnote.svg'
-import FileExtIcon from './icons/clarity-custom/file-ext.svg'
-import IndentedViewListIcon from './icons/clarity-custom/indented-view-list.svg'
-import RegExpIcon from './icons/clarity-custom/regexp.svg'
-import GitIcon from './icons/clarity-custom/git.svg'
-import MarkdownIcon from './icons/clarity-custom/markdown.svg'
+import CodeAltIcon from "./icons/clarity-custom/code-alt.svg";
+import FileExtIcon from "./icons/clarity-custom/file-ext.svg";
+import FootnoteIcon from "./icons/clarity-custom/footnote.svg";
+import GitIcon from "./icons/clarity-custom/git.svg";
+import IndentedViewListIcon from "./icons/clarity-custom/indented-view-list.svg";
+import MarkdownIcon from "./icons/clarity-custom/markdown.svg";
+import RegExpIcon from "./icons/clarity-custom/regexp.svg";
 
-export default async function loadIcons (): Promise<void> {
+export default async function loadIcons(): Promise<void> {
   // I don't know why they decided to not export an "all" collection, but so be it.
   ClarityIcons.addIcons(
     ...essentialCollectionIcons,
@@ -45,8 +45,8 @@ export default async function loadIcons (): Promise<void> {
     ...travelCollectionIcons,
     ...textEditCollectionIcons,
     ...technologyCollectionIcons,
-    ...chartCollectionIcons
-  )
+    ...chartCollectionIcons,
+  );
 
   // NOTE: Unlike what VMWare writes on their homepage, adding just the string
   // of the SVG does NOT enable the icon. Rather, one has to actually provide
@@ -55,15 +55,18 @@ export default async function loadIcons (): Promise<void> {
   // it's shown by default. If it is also solid, one can add solid as well. Get
   // all available properties by console-logging the ClarityIcons.registry
   ClarityIcons.addIcons(
-    [ 'code-alt', { outline: CodeAltIcon }],
-    [ 'file-ext', { outline: FileExtIcon }],
-    [ 'indented-view-list', { outline: IndentedViewListIcon }],
-    [ 'regexp', { outline: RegExpIcon }],
-    [ 'footnote', { outline: FootnoteIcon }],
-    [ 'markdown', { outline: MarkdownIcon }],
-    [ 'git', {
-      outline: GitIcon,
-      solid: GitIcon
-    }]
-  )
+    ["code-alt", { outline: CodeAltIcon }],
+    ["file-ext", { outline: FileExtIcon }],
+    ["indented-view-list", { outline: IndentedViewListIcon }],
+    ["regexp", { outline: RegExpIcon }],
+    ["footnote", { outline: FootnoteIcon }],
+    ["markdown", { outline: MarkdownIcon }],
+    [
+      "git",
+      {
+        outline: GitIcon,
+        solid: GitIcon,
+      },
+    ],
+  );
 }
