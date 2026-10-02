@@ -209,7 +209,7 @@ def _math_spans(text: str) -> list[Span]:
         raise RuntimeError(f"Pandoc could not parse the document: {parsed.messages}")
 
     spans: list[Span] = []
-    for start, end in pandoc_math_regions(text, parsed.document):
+    for start, end in pandoc_math_regions(text):
         full_start, full_end, display = _expand_math(text, start, end)
         spans.append(Span(full_start, full_end, display, _punctuation(text[start:end])))
 
