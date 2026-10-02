@@ -13,6 +13,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import type { EnvironmentInfo } from "@dts/common/environment";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
@@ -25,6 +26,7 @@ import { type PreferencesFieldset } from "./types";
  * @return  {Fieldset[]}  The fields
  */
 export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] {
+  const { tray } = window.ipc.sendSync<EnvironmentInfo>("environment-info");
   const betaReleaseItem: PreferencesFieldset = {
     title: trans("Beta releases"),
     group: PreferencesGroups.Advanced,
@@ -94,8 +96,8 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
               ? trans("Show app in the notification area")
               : trans("Leave app running in the notification area"),
           model: "system.leaveAppRunning",
-          disabled: process.env.ZETTLR_IS_TRAY_SUPPORTED === "0",
-          info: process.env.ZETTLR_TRAY_ERROR,
+          disabled: !tray.supported,
+          info: tray.supported ? undefined : tray.reason,
         },
         { type: "separator" },
         {

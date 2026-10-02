@@ -27,7 +27,8 @@ import path from "path";
 import { type FlowmarkProcessFailureKind, runFlowmarkProcess } from "./flowmark-runtime";
 
 export interface FlowmarkLintOptions {
-  command?: string;
+  /** The linter executable: the installed `flowmark-lint`, or a substitute in a spec. */
+  command: string;
   args?: string[];
   env?: NodeJS.ProcessEnv;
   /** `editor.lint.flowmark.timeoutMs` from the app config. */
@@ -142,7 +143,7 @@ export async function lintMarkdownText(
   let result;
   try {
     result = await runFlowmarkProcess({
-      command: options.command ?? "flowmark-lint",
+      command: options.command,
       argv: options.args ?? lintArgs,
       input: text,
       env: options.env,

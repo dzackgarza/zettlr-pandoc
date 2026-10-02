@@ -13,15 +13,37 @@
  */
 
 import { reportError } from "@common/util/error-reporting";
+import type { TraySupport } from "@dts/common/environment";
 import { app, dialog } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import tls from "tls";
-import isFile from "../../common/util/is-file";
 import { getProgramVersion } from "./get-program-version";
 import isTraySupported from "./is-tray-supported";
 import { preflight } from "./preflight";
 import { runCommand } from "./run-command";
+
+/** What environmentCheck() found. The check runs once, before the app boots. */
+export interface CheckedEnvironment {
+  pandocVersion: string;
+  quartoVersion: string | undefined;
+  gitVersion: string | undefined;
+  tray: TraySupport;
+}
+
+let checkedEnvironmentResult: CheckedEnvironment | undefined;
+
+/**
+ * Returns what the environment check found.
+ *
+ * @throws {Error} When the environment check has not completed.
+ */
+export function checkedEnvironment(): CheckedEnvironment {
+  if (checkedEnvironmentResult === undefined) {
+    throw new Error("The environment check has not completed.");
+  }
+  return checkedEnvironmentResult;
+}
 
 export default async function environmentCheck(): Promise<void> {
   console.log("[Application] Performing environment check ...");
@@ -87,48 +109,28 @@ export default async function environmentCheck(): Promise<void> {
     );
   }
 
-  // We need to check if Pandoc has been bundled with this package.
-  // Because if it is, we can simply use that one instead.
-  const executable = process.platform === "win32" ? "pandoc.exe" : "pandoc";
-  const pandocPath = path.join(process.resourcesPath, executable);
-  if (isFile(pandocPath)) {
-    console.log(`[Application] Pandoc has been bundled with this release. Path: ${pandocPath}`);
-    process.env.PANDOC_PATH = pandocPath;
-  } else if (!app.isPackaged) {
-    // We're in develop mode, so possibly, we have a Pandoc exe. Let's check
-    const resPath = path.join(__dirname, "../../resources", executable);
-    if (isFile(resPath)) {
-      process.env.PANDOC_PATH = resPath;
-      console.log(
-        `[Application] App is unpackaged, and Pandoc has been found in the resources directory: ${resPath}`,
-      );
-    } else {
-      console.warn(
-        `[Application] App is unpackaged, but there was no Pandoc executable: ${resPath}`,
-      );
-    }
-  } else {
-    console.warn(
-      "[Application] Pandoc has not been bundled with this release. Falling back to system version instead.",
-    );
+  // The preflight has found pandoc on the launch PATH, so it must report a version.
+  const pandocVersion = await getProgramVersion("pandoc");
+  if (pandocVersion === undefined) {
+    throw new Error("pandoc is on PATH but did not report a version.");
   }
 
   // Now, let's see if there's a quarto package installed
+  let quartoVersion: string | undefined;
   try {
-    const version = await getProgramVersion("quarto");
-    console.log(`[Application] Found a system-wide Quarto install! Version ${String(version)}`);
-    process.env.QUARTO_SUPPORT = "1";
-    process.env.QUARTO_VERSION = String(version);
+    quartoVersion = await getProgramVersion("quarto");
+    console.log(
+      `[Application] Found a system-wide Quarto install! Version ${String(quartoVersion)}`,
+    );
   } catch (err) {
     // No system wide install
     console.log(
       "[Application] Quarto not found on system. *.qmd-files will be exported with Pandoc.",
     );
-    process.env.QUARTO_SUPPORT = "0";
   }
 
   // Finally, determine if git is installed on this machine.
-  process.env.GIT_SUPPORT = "0";
+  let gitVersion: string | undefined;
   try {
     // On macOS, the `git` command always exists. If the user has installed the
     // XCode command line tools, it will resolve to the actual git binary.
@@ -146,20 +148,13 @@ export default async function environmentCheck(): Promise<void> {
     }
 
     if (process.platform !== "darwin" || XCodeCLIToolsInstalled) {
-      const version = await getProgramVersion("git");
-      process.env.GIT_SUPPORT = "1";
-      process.env.GIT_VERSION = version;
+      gitVersion = await getProgramVersion("git");
     }
   } catch (err) {
-    // git is absent or did not report a version; GIT_SUPPORT stays "0".
+    // git is absent or did not report a version; gitVersion stays undefined.
     console.log(
       `[Application] git not found on system: ${err instanceof Error ? err.message : String(err)}`,
     );
-  }
-
-  // Make sure the PATH property exists
-  if (process.env.PATH === undefined) {
-    process.env.PATH = "";
   }
 
   // Then ensure all required directories exist
@@ -172,24 +167,19 @@ export default async function environmentCheck(): Promise<void> {
     }
   }
 
-  // Determine if the platform as Tray support
+  // Determine if the platform has Tray support. isTraySupported() resolves
+  // true or throws the reason why the tray is unavailable.
+  let tray: TraySupport;
   try {
-    process.env.ZETTLR_IS_TRAY_SUPPORTED = (await isTraySupported()) ? "1" : "0";
+    await isTraySupported();
+    tray = { supported: true };
   } catch (err: unknown) {
-    process.env.ZETTLR_IS_TRAY_SUPPORTED = "0";
-    if (err instanceof Error) {
-      process.env.ZETTLR_TRAY_ERROR = err.message;
-      console.warn(err.message);
-    }
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(reason);
+    tray = { supported: false, reason };
   }
 
-  // Finally, remember whether the updates have been disabled at build time.
-  // This makes this decision of the packager transparent to users and can help
-  // troubleshoot issues. Since `__UPDATES_DISABLED__` is not an actual variable
-  // but will be replaced with a string by Webpack, this ensures this
-  // information is retained in the final app, even though update code will be
-  // removed for good.
-  process.env.UPDATES_DISABLED = __UPDATES_DISABLED__;
+  checkedEnvironmentResult = { pandocVersion, quartoVersion, gitVersion, tray };
 
   if (__UPDATES_DISABLED__ === "1") {
     console.warn("This Zettlr binary has been compiled with update checks completely disabled.");

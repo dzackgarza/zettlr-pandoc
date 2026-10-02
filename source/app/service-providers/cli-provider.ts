@@ -16,47 +16,44 @@
 
 import { app } from "electron";
 
-export const DATA_DIR = "data-dir";
-export const DISABLE_HARDWARE_ACCELERATION = "disable-hardware-acceleration";
-export const CLEAR_CACHE = "clear-cache";
-export const LAUNCH_MINIMIZED = "launch-minimized";
-export const OPEN_IN_RUNNING_INSTANCE = "open-in-running-instance";
+/** The command-line options that take a value, as in --data-dir=FILEPATH. */
+export type CLIValueOption = "data-dir";
+
+/** The command-line switches, which are either present or absent. */
+export type CLISwitch =
+  | "disable-hardware-acceleration"
+  | "clear-cache"
+  | "launch-minimized"
+  | "open-in-running-instance";
 
 /**
- * This function returns whether or not a predefined argument was passed to the zettlr executable.
- * Possible keys:
- *    data-dir,
- *    disable-hardware-acceleration,
- *    clear-cache,
- *    launch-minimized
+ * Returns what was passed to the zettlr executable for a known option.
  *
- * Please use the defined constants instead of raw values!
+ * @param key  The option to check.
  *
- * @param key  {string}   This is the key to be checked.
- *
- * @return  {string}      If the key is of the format -x=y, --xlong=y, a string with y is returned (If it was predefined)
- * @return  {boolean}     If the key is of the format -x, --xlong, a boolean is returned. True if it was passed, false if not  (If it was predefined)
- * @return  {undefined}   If the key is not predefined, this function returns undefined
+ * @return  For a value option, the value of --option=value, or undefined if
+ *          the option was not passed. For a switch, whether it was passed.
  */
-export function getCLIArgument(key: string): string | boolean | undefined {
+export function getCLIArgument(key: CLIValueOption): string | undefined;
+export function getCLIArgument(key: CLISwitch): boolean;
+export function getCLIArgument(key: CLIValueOption | CLISwitch): string | boolean | undefined {
   switch (key) {
-    case DATA_DIR: {
+    case "data-dir": {
       return getArgumentValue("--data-dir");
     }
-    case CLEAR_CACHE: {
+    case "clear-cache": {
       return process.argv.includes("--clear-cache");
     }
-    case DISABLE_HARDWARE_ACCELERATION: {
+    case "disable-hardware-acceleration": {
       return process.argv.includes("--disable-hardware-acceleration");
     }
-    case LAUNCH_MINIMIZED: {
+    case "launch-minimized": {
       return process.argv.includes("--launch-minimized") || process.argv.includes("-m");
     }
-    case OPEN_IN_RUNNING_INSTANCE: {
+    case "open-in-running-instance": {
       return process.argv.includes("--open-in-running-instance");
     }
   }
-  return undefined;
 }
 
 /**

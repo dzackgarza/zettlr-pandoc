@@ -98,7 +98,6 @@ const guardOptions = {
     ["window.nativeAppearance", false],
     ["window.vibrancy", false],
     ["watchdog.activatePolling", false],
-    ["export.useBundledPandoc", false],
     ["zkn.idRE", false],
   ]),
   // The following options additionally require a clearing of the cache
@@ -344,20 +343,13 @@ export default class ConfigProvider extends ProviderContract {
     }
 
     // After version 4.0.0, we have split up `openPaths` into separate file and
-    // workspaces arrays.
+    // workspaces arrays. Only a configuration written before 4.0.0 has
+    // `openPaths`, and such a configuration has no `app` section.
     if (readConfig.openPaths !== undefined) {
-      const openFiles = readConfig.app?.openFiles ?? [];
-      const openWorkspaces = readConfig.app?.openWorkspaces ?? [];
-
-      for (const absPath of readConfig.openPaths) {
-        if (isFile(absPath)) {
-          openFiles.push(absPath);
-        } else if (isDir(absPath)) {
-          openWorkspaces.push(absPath);
-        }
-      }
-
-      readConfig.app = { openFiles, openWorkspaces };
+      readConfig.app = {
+        openFiles: readConfig.openPaths.filter((absPath) => isFile(absPath)),
+        openWorkspaces: readConfig.openPaths.filter((absPath) => isDir(absPath)),
+      };
     } // END: openPaths migration
   }
 

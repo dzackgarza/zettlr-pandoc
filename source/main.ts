@@ -15,13 +15,7 @@
 
 import { reportError } from "@common/util/error-reporting";
 import errorToString from "@common/util/error-to-string";
-import {
-  DATA_DIR,
-  DISABLE_HARDWARE_ACCELERATION,
-  getCLIArgument,
-  handleExitArguments,
-  OPEN_IN_RUNNING_INSTANCE,
-} from "@providers/cli-provider";
+import { getCLIArgument, handleExitArguments } from "@providers/cli-provider";
 import { app, dialog } from "electron";
 import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "./app/app-service-container";
@@ -45,9 +39,9 @@ handleExitArguments();
 
 // Setting custom data dir for user configuration files.
 // Full path or relative path is OK. '~' does not work as expected.
-let dataDir = getCLIArgument(DATA_DIR);
+let dataDir = getCLIArgument("data-dir");
 
-if (typeof dataDir === "string") {
+if (dataDir !== undefined) {
   // a path to a custom config dir is provided
   if (!path.isAbsolute(dataDir)) {
     if (app.isPackaged) {
@@ -83,7 +77,7 @@ if (!app.requestSingleInstanceLock()) {
 // instance must not silently become that instance: it was started to add a tab
 // to a live window, and booting a whole second app instead is the wrong outcome
 // nobody asked for. Say so and stop.
-if (getCLIArgument(OPEN_IN_RUNNING_INSTANCE) === true) {
+if (getCLIArgument("open-in-running-instance")) {
   reportError("No running Zettlr instance accepted the arguments; nothing was opened.");
   app.exit(1);
 }
@@ -99,7 +93,7 @@ if (process.platform === "win32") {
 // On systems with virtual GPUs (i.e. VMs), it might be necessary to disable
 // hardware acceleration. If the corresponding flag is set, we do so.
 // See for more info https://github.com/Zettlr/Zettlr/issues/2127
-if (getCLIArgument(DISABLE_HARDWARE_ACCELERATION) === true) {
+if (getCLIArgument("disable-hardware-acceleration")) {
   app.disableHardwareAcceleration();
 }
 

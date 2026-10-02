@@ -103,6 +103,7 @@ export async function lintDocumentText(
   const flowmarkContext = await buildFlowmarkLintContext(text, documentPath, context, options);
 
   const flowmark = await lintMarkdownText(text, {
+    command: "flowmark-lint",
     sourcePath: documentPath,
     context: flowmarkContext,
     timeoutMs: context.flowmarkLintTimeoutMs,

@@ -15,6 +15,7 @@
 
 import { trans } from "@common/i18n-main";
 import { showNativeNotification } from "@common/util/show-notification";
+import type { EnvironmentInfo } from "@dts/common/environment";
 import { app, ipcMain } from "electron";
 // Developer tools
 import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
@@ -34,13 +35,11 @@ import {
   isAppServiceContainerReady,
   setAppServiceContainer,
 } from "./app-service-container";
-import addToPath from "./util/add-to-PATH";
 import { attachAppNavigationHandlers } from "./util/attach-app-navigation-handlers";
 // Helper/Utility functions
 import registerCustomProtocols from "./util/custom-protocols";
-import environmentCheck from "./util/environment-check";
+import environmentCheck, { checkedEnvironment } from "./util/environment-check";
 import { updateFlowmark } from "./util/flowmark-update";
-import { getProgramVersion } from "./util/get-program-version";
 import {
   loadCanonicalMathJaxMacros,
   loadCanonicalTexMacroCommands,
@@ -146,28 +145,20 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   // Now make the service container available for the rest of the main process.
   setAppServiceContainer(appServiceContainer);
 
-  // If we have a bundled pandoc, unshift its path to env.PATH in order to have
-  // the system search there first for the binary, and not use the internal
-  // one.
-  const useBundledPandoc = Boolean(config.get("export.useBundledPandoc"));
-  if (process.env.PANDOC_PATH !== undefined && useBundledPandoc) {
-    addToPath(log, path.dirname(process.env.PANDOC_PATH), "unshift");
-    log.info(
-      "[Application] The bundled pandoc executable is now in PATH. If you do not want to use the bundled pandoc, uncheck the corresponding setting and reboot the app.",
-    );
-  }
+  const environment = checkedEnvironment();
 
-  // NOTE: Normally, we should check the Pandoc version in the environment check.
-  // However, since the user can decide whether they want to use the internal
-  // one or the system one (if applicable), we have to wait until here to
-  // extract the version string, since we may get any of the two but need the
-  // correct version string of the version that will actually be used.
-  try {
-    const version = await getProgramVersion("pandoc");
-    process.env.PANDOC_VERSION = String(version);
-  } catch {
-    // No Pandoc available.
-  }
+  // The About and Preferences windows read this synchronously.
+  const environmentInfo: EnvironmentInfo = {
+    programVersions: {
+      pandoc: environment.pandocVersion,
+      quarto: environment.quartoVersion,
+      git: environment.gitVersion,
+    },
+    tray: environment.tray,
+  };
+  ipcMain.on("environment-info", (event) => {
+    event.returnValue = environmentInfo;
+  });
 
   return appServiceContainer;
 }

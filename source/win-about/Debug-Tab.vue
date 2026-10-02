@@ -48,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import type { EnvironmentInfo } from "@dts/common/environment";
 import { DateTime } from "luxon";
 import { useConfigStore } from "source/pinia";
 
@@ -77,10 +78,11 @@ const buildDate = DateTime.fromISO(__BUILD_DATE__).toLocaleString({ dateStyle: "
 // DEBUG: getSystemVersion is a simple property in the renderer, not a function
 const platformVersion = process.getSystemVersion as unknown as string;
 // Add version strings for external helper programs Zettlr can use
+const environment = window.ipc.sendSync<EnvironmentInfo>("environment-info");
 const programVersions = {
-  pandoc: process.env.PANDOC_VERSION ?? "not available",
-  quarto: process.env.QUARTO_VERSION ?? "not available",
-  git: process.env.GIT_VERSION ?? "not available",
+  pandoc: environment.programVersions.pandoc,
+  quarto: environment.programVersions.quarto ?? "not available",
+  git: environment.programVersions.git ?? "not available",
 };
 </script>
 

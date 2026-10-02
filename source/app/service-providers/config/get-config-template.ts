@@ -192,7 +192,6 @@ export type ConfigOptions = {
     stripLinks: "full" | "unlink" | "no";
     cslLibrary: string;
     cslStyle: string;
-    useBundledPandoc: boolean;
     exportQmdWithQuarto: boolean;
     customCommands: Array<{ displayName: string; command: string }>;
     // Ordered list of Pandoc filters applied to every export before the
@@ -249,6 +248,8 @@ export type ConfigOptions = {
     autoSave: "off" | "immediately" | "delayed";
     // Run flowmark over the document on every save (issue #26). Off by default.
     formatOnSave: boolean;
+    /** How long one flowmark format run may take before it is reported as timed out. */
+    formatTimeoutMs: number;
     citeStyle: "in-text" | "in-text-suffix" | "regular";
     autoCloseBrackets: boolean;
     showLinkPreviews: boolean;
@@ -470,7 +471,6 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       stripLinks: "full", // Strip internal links: "full" - remove completely, "unlink" - only remove brackets, "no" - don't alter
       cslLibrary: "", // Path to a CSL JSON library file
       cslStyle: "", // Path to a CSL Style file
-      useBundledPandoc: true, // Whether to use the bundled Pandoc
       exportQmdWithQuarto: false, // Whether .qmd-files should be exported with Quarto
       customCommands: [], // Custom commands that the user can use to run arbitrary exports
       filters: [], // Ordered Pandoc filters applied to every export (resolved from ~/.pandoc/filters)
@@ -495,6 +495,7 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     editor: {
       autoSave: "off",
       formatOnSave: false, // Run flowmark on save (issue #26)
+      formatTimeoutMs: 300_000,
       autocompleteSuggestEmojis: true,
       autocompleteWithEnter: false,
       autocompleteWithTab: true,

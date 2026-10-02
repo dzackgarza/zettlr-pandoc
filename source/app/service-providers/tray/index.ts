@@ -13,10 +13,11 @@
  */
 
 import { trans } from "@common/i18n-main";
-import { getCLIArgument, LAUNCH_MINIMIZED } from "@providers/cli-provider";
+import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
 import { app, Menu, type MenuItemConstructorOptions, screen, Tray } from "electron";
 import path from "path";
+import { checkedEnvironment } from "source/app/util/environment-check";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 import type WindowProvider from "../windows";
@@ -41,7 +42,7 @@ export default class TrayProvider extends ProviderContract {
     super();
     this._tray = null;
 
-    if (process.env.ZETTLR_IS_TRAY_SUPPORTED === "0") {
+    if (!checkedEnvironment().tray.supported) {
       this._config.set("system.leaveAppRunning", false);
     }
 
@@ -60,8 +61,8 @@ export default class TrayProvider extends ProviderContract {
   async boot(): Promise<void> {
     this._logger.verbose("Tray provider booting up ...");
     let addToTray: boolean = this._config.get("system.leaveAppRunning");
-    const shouldStartMinimized = getCLIArgument(LAUNCH_MINIMIZED) === true;
-    const traySupported = process.env.ZETTLR_IS_TRAY_SUPPORTED === "1";
+    const shouldStartMinimized = getCLIArgument("launch-minimized");
+    const traySupported = checkedEnvironment().tray.supported;
 
     if (shouldStartMinimized && !addToTray && traySupported) {
       this._logger.info(

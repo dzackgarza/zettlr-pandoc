@@ -19,23 +19,16 @@ import { trans } from "@common/i18n-main";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
 import { DP_EVENTS } from "@dts/common/documents";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
-import { getCLIArgument, LAUNCH_MINIMIZED } from "@providers/cli-provider";
+import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
 import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
 import * as bcp47 from "bcp-47";
-import {
-  app,
-  BrowserWindow,
-  type FileFilter,
-  ipcMain,
-  type MessageBoxOptions,
-  screen,
-  shell,
-} from "electron";
+import { app, BrowserWindow, type FileFilter, ipcMain, screen, shell } from "electron";
 import EventEmitter from "events";
 import path from "path";
+import { checkedEnvironment } from "source/app/util/environment-check";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
 import createAssetsWindow from "./create-assets-window";
@@ -52,7 +45,7 @@ import createUpdateWindow from "./create-update-window";
 import askDirectoryDialog from "./dialog/ask-directory";
 import askFileDialog from "./dialog/ask-file";
 import askSaveChanges from "./dialog/ask-save-changes";
-import promptDialog from "./dialog/prompt";
+import promptDialog, { type PromptOptions } from "./dialog/prompt";
 import saveFileDialog from "./dialog/save-dialog";
 import shouldCloseAllDialog from "./dialog/should-close-all";
 import shouldOverwriteFileDialog from "./dialog/should-overwrite-file";
@@ -145,7 +138,7 @@ export default class WindowProvider extends ProviderContract {
     // If the corresponding CLI flag is passed, we should suppress opening of
     // any windows until the user has manually activated the app by utilizing
     // the tray menu.
-    this.suppressWindowOpening = getCLIArgument(LAUNCH_MINIMIZED) === true;
+    this.suppressWindowOpening = getCLIArgument("launch-minimized");
 
     // Detect whether we have an RTL locale for correct traffic light positions.
     const schema = bcp47.parse(app.getLocale());
@@ -338,7 +331,7 @@ export default class WindowProvider extends ProviderContract {
    * should begin opening the main windows, if applicable.
    */
   public maybeShowWindows(): void {
-    const traySupported = process.env.ZETTLR_IS_TRAY_SUPPORTED === "1";
+    const traySupported = checkedEnvironment().tray.supported;
     if (!this.suppressWindowOpening || !traySupported) {
       this.suppressWindowOpening = false;
       this.syncMainWindows();
@@ -984,7 +977,11 @@ export default class WindowProvider extends ProviderContract {
    */
   reportFSError(title: string, error: NodeJS.ErrnoException): void {
     const { what, why } = mapFSError(error);
-    this.showErrorMessage(title, `There was an error accessing "${what}"`, why);
+    const message =
+      what === undefined
+        ? "There was an error accessing the file system"
+        : `There was an error accessing "${what}"`;
+    this.showErrorMessage(title, message, why);
   }
 
   /**
@@ -1218,9 +1215,9 @@ export default class WindowProvider extends ProviderContract {
 
   /**
    * This function prompts the user with information.
-   * @param  {any} options Necessary information for displaying the prompt
+   * @param  {PromptOptions} options What the prompt shows
    */
-  prompt(options: (Partial<MessageBoxOptions> & { message: string }) | string): void {
+  prompt(options: PromptOptions): void {
     const firstMainWin = this.getFirstMainWindow();
     if (firstMainWin === undefined) {
       return;
