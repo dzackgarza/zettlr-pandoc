@@ -36,7 +36,6 @@ import {
 // CodeMirror imports
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
-import safeAssign from "@common/util/safe-assign";
 import type { TexMacroSource } from "@common/util/tex-context";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
@@ -162,8 +161,8 @@ import {
   cloneEditorConfiguration,
   configField,
   configUpdateEffect,
-  type EditorConfigOptions,
   type EditorConfiguration,
+  type EditorWindowConfiguration,
   getDefaultConfig,
 } from "./util/configuration";
 // Utilities
@@ -318,11 +317,12 @@ export default class MarkdownEditor extends EventEmitter {
    */
   private readonly authority: DocumentAuthorityAPI;
   /**
-   * The full editor configuration
+   * The configuration that loadDocument() builds the state from. Once the
+   * state exists, its configField owns the configuration.
    *
    * @var {EditorConfiguration}
    */
-  private config: EditorConfiguration;
+  private pendingConfig: EditorConfiguration;
 
   /**
    * Resolves when the initial document has been installed into CodeMirror.
@@ -393,7 +393,7 @@ export default class MarkdownEditor extends EventEmitter {
     readonly windowId: string,
     representedDocument: string,
     authorityAPI: DocumentAuthorityAPI,
-    configOverride?: Partial<EditorConfiguration>,
+    windowConfiguration?: EditorWindowConfiguration,
     persistentState?: EditorViewPersistentState,
   ) {
     super(); // Set up the event emitter
@@ -421,17 +421,15 @@ export default class MarkdownEditor extends EventEmitter {
     // Same goes for the config. Construction must start from the caller's
     // actual configuration, not from the defaults followed by an asynchronous
     // correction: the extension set (in particular the light/dark theme
-    // compartment) is built during loadDocument(). Calling setOptions() here
-    // would also be invalid because _instance does not exist yet.
+    // compartment) is built during loadDocument(). Calling
+    // setWindowConfiguration() here would also be invalid because _instance
+    // does not exist yet.
     const initialConfig = getDefaultConfig();
     // TODO: This is bad style imho
     initialConfig.metadata.path = representedDocument;
     // The editor sorts and changes its configuration. It keeps a copy, so the
     // configuration of the caller stays as the caller made it.
-    this.config =
-      configOverride === undefined
-        ? initialConfig
-        : cloneEditorConfiguration(safeAssign(configOverride, initialConfig));
+    this.pendingConfig = cloneEditorConfiguration({ ...initialConfig, ...windowConfiguration });
 
     // Create the editor ...
     this._instance = new EditorView({
@@ -458,7 +456,7 @@ export default class MarkdownEditor extends EventEmitter {
     const editorInstance = this;
 
     const options: CoreExtensionOptions = {
-      initialConfig: cloneEditorConfiguration(this.config),
+      initialConfig: cloneEditorConfiguration(this.currentConfiguration()),
       remoteConfig: {
         filePath,
         startVersion,
@@ -682,7 +680,7 @@ export default class MarkdownEditor extends EventEmitter {
 
     // Ensure the theme switcher picks the state change up; this somehow doesn't
     // properly work after the document has been mounted to the DOM.
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
+    this._instance.dispatch({ effects: configUpdateEffect.of(this.currentConfiguration()) });
 
     // Provide the cached databases to the state (can be overridden by the
     // caller afterwards by calling setCompletionDatabase)
@@ -864,50 +862,69 @@ export default class MarkdownEditor extends EventEmitter {
   }
 
   /**
-   * Updates the provided options for all currently loaded documents.
+   * Replaces the part of the configuration that the window owns.
    *
-   * @param   {Object}  newOptions  The new options
+   * @param   {EditorWindowConfiguration}  windowConfiguration  The window's configuration
    */
-  setOptions(newOptions: EditorConfigOptions): void {
-    // Here, we only trigger an update in the state itself. Then, we grab the
-    // update via an effect to ensure we can cache the final, correct
-    // configuration. However, in case there's no state (initial update), we
-    // still need to cache the config here, as the updateListener won't be
-    // firing yet.
-
-    // Cache the current config first, and then apply it
-    this.onConfigUpdate(newOptions);
-
-    this.config = cloneEditorConfiguration(safeAssign(newOptions, this.config));
-
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
+  setWindowConfiguration(windowConfiguration: EditorWindowConfiguration): void {
+    this.applyConfiguration({ ...this.currentConfiguration(), ...windowConfiguration });
   }
 
   /**
-   * This function is called by an updateListener that listens for changes to
-   * the main configuration. We do so to ensure that the editor state is the
-   * main source of truth, but that the editor class can cache the config in
-   * case we need to exchange the states.
+   * Replaces the metadata of the document that the editor shows.
    *
-   * @param   {Partial<EditorConfiguration>}  newOptions  The new options passed via the effect
+   * @param   {EditorConfiguration['metadata']}  metadata  The document's metadata
    */
-  private onConfigUpdate(newOptions: Partial<EditorConfiguration>): void {
-    const inputModeChanged =
-      newOptions.inputMode !== undefined && newOptions.inputMode !== this.config.inputMode;
-    const darkModeChanged =
-      newOptions.darkMode !== undefined && newOptions.darkMode !== this.config.darkMode;
-    const editorModeChanged =
-      newOptions.darkModeEditor !== undefined &&
-      newOptions.darkModeEditor !== this.config.darkModeEditor;
-    const themeChanged = newOptions.theme !== undefined && newOptions.theme !== this.config.theme;
+  setMetadata(metadata: EditorConfiguration["metadata"]): void {
+    this.applyConfiguration({ ...this.currentConfiguration(), metadata });
+  }
+
+  /**
+   * The configuration in force: the state's configField, or, before
+   * loadDocument() has built the state, the configuration it will build from.
+   * Commands that dispatch to the state directly change the configField, so
+   * no other copy may be read once the state exists.
+   */
+  private currentConfiguration(): EditorConfiguration {
+    const field = this._instance.state.field(configField, false);
+    return field === undefined ? this.pendingConfig : field;
+  }
+
+  /**
+   * Applies a full configuration: to the state when it exists, otherwise to
+   * the configuration that loadDocument() builds the state from.
+   *
+   * @param   {EditorConfiguration}  newConfig  The full new configuration
+   */
+  private applyConfiguration(newConfig: EditorConfiguration): void {
+    this.onConfigUpdate(newConfig, this.currentConfiguration());
+    const config = cloneEditorConfiguration(newConfig);
+    if (this._instance.state.field(configField, false) === undefined) {
+      this.pendingConfig = config;
+      return;
+    }
+    this._instance.dispatch({ effects: configUpdateEffect.of(config) });
+  }
+
+  /**
+   * Reconfigures the compartments that depend on the configuration.
+   *
+   * @param   {EditorConfiguration}  newConfig  The full new configuration
+   * @param   {EditorConfiguration}  oldConfig  The configuration it replaces
+   */
+  private onConfigUpdate(newConfig: EditorConfiguration, oldConfig: EditorConfiguration): void {
+    const inputModeChanged = newConfig.inputMode !== oldConfig.inputMode;
+    const darkModeChanged = newConfig.darkMode !== oldConfig.darkMode;
+    const editorModeChanged = newConfig.darkModeEditor !== oldConfig.darkModeEditor;
+    const themeChanged = newConfig.theme !== oldConfig.theme;
 
     // Third: The input mode, if applicable
     if (inputModeChanged) {
-      if (newOptions.inputMode === "emacs") {
+      if (newConfig.inputMode === "emacs") {
         this._instance.dispatch({
           effects: inputModeCompartment.reconfigure(emacs()),
         });
-      } else if (newOptions.inputMode === "vim") {
+      } else if (newConfig.inputMode === "vim") {
         const vimFactory: unknown = vimPlugin;
         if (typeof vimFactory !== "function") {
           throw new TypeError("The Vim editor extension factory is unavailable.");
@@ -927,13 +944,10 @@ export default class MarkdownEditor extends EventEmitter {
     if (darkModeChanged || editorModeChanged || themeChanged) {
       const themes = getMainEditorThemes();
 
-      const darkMode = newOptions.darkMode ?? this.config.darkMode;
-      const darkModeEditor = newOptions.darkModeEditor ?? this.config.darkModeEditor;
-
       this._instance.dispatch({
         effects: darkModeEffect.of({
-          darkMode: useDarkModeEditor(darkMode, darkModeEditor),
-          ...themes[newOptions.theme ?? this.config.theme],
+          darkMode: useDarkModeEditor(newConfig.darkMode, newConfig.darkModeEditor),
+          ...themes[newConfig.theme],
         }),
       });
     }
@@ -1340,7 +1354,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {Boolean}  True if typewriter mode is active
    */
   get hasTypewriterMode(): boolean {
-    return this.config.typewriterMode;
+    return this.currentConfiguration().typewriterMode;
   }
 
   /**
@@ -1349,10 +1363,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {Boolean}  shouldBeTypewriter  True or False
    */
   set hasTypewriterMode(shouldBeTypewriter: boolean) {
-    this.config.typewriterMode = shouldBeTypewriter;
-    this._instance.dispatch({
-      effects: configUpdateEffect.of({ typewriterMode: shouldBeTypewriter }),
-    });
+    this.applyConfiguration({ ...this.currentConfiguration(), typewriterMode: shouldBeTypewriter });
   }
 
   /**
@@ -1361,7 +1372,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {boolean}  True or false
    */
   get distractionFree(): boolean {
-    return this._instance.state.field(configField, false)?.distractionFree ?? false;
+    return this._instance.state.field(configField).distractionFree;
   }
 
   /**
@@ -1370,9 +1381,9 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {boolean}  shouldBeFullscreen  Whether the editor should be in distraction free
    */
   set distractionFree(shouldBeFullscreen: boolean) {
-    this.config.distractionFree = shouldBeFullscreen;
-    this._instance.dispatch({
-      effects: configUpdateEffect.of({ distractionFree: shouldBeFullscreen }),
+    this.applyConfiguration({
+      ...this.currentConfiguration(),
+      distractionFree: shouldBeFullscreen,
     });
   }
 
@@ -1391,8 +1402,10 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {boolean}  shouldBeReadability  Whether or not the mode should be active
    */
   set readabilityMode(shouldBeReadability: boolean) {
-    this.config.readabilityMode = shouldBeReadability;
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
+    this.applyConfiguration({
+      ...this.currentConfiguration(),
+      readabilityMode: shouldBeReadability,
+    });
   }
 
   /** What the LanguageTool linter is doing right now, from its state field. */

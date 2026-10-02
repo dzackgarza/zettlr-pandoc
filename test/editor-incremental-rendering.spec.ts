@@ -500,6 +500,7 @@ describe("The production renderers", function () {
     const before = drawn(view);
     const update = view.state.update({
       effects: configUpdateEffect.of({
+        ...view.state.field(configField),
         renderMath: true,
         metadata: { ...getDefaultConfig().metadata },
       }),
@@ -523,7 +524,9 @@ describe("The production renderers", function () {
   it("follow a configuration update that changes a renderer setting", function () {
     const view = createEditor(AGGREGATE_DOC, EditorSelection.single(AGGREGATE_DOC.length));
     assert.notEqual(view.dom.querySelector(".preview-math"), null);
-    const update = view.state.update({ effects: configUpdateEffect.of({ renderMath: false }) });
+    const update = view.state.update({
+      effects: configUpdateEffect.of({ ...view.state.field(configField), renderMath: false }),
+    });
     assert.equal(update.reconfigured, true);
     view.dispatch(update);
     assert.equal(view.dom.querySelector(".preview-math"), null);

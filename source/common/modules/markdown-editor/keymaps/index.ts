@@ -14,6 +14,7 @@
 
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
+import _ from "underscore";
 import { configField, configUpdateEffect, type EditorConfiguration } from "../util/configuration";
 import { mainEditorKeybindings } from "./default";
 import { type CustomEditorShortcut } from "./shortcuts";
@@ -25,7 +26,10 @@ const keymapCompartment = new Compartment();
 const keybindingsTransactionExtender = EditorState.transactionExtender.of((tr) => {
   let extendedTransaction = null;
   for (const effect of tr.effects) {
-    if (effect.is(configUpdateEffect) && effect.value.shortcuts !== undefined) {
+    if (
+      effect.is(configUpdateEffect) &&
+      !_.isEqual(effect.value.shortcuts, tr.startState.field(configField).shortcuts)
+    ) {
       const keys = mainEditorKeybindings(effect.value.shortcuts, tr.state.field(configField));
       extendedTransaction = {
         effects: keymapCompartment.reconfigure(keymap.of(keys)),

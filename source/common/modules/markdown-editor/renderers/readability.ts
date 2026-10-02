@@ -19,6 +19,8 @@ import { configField, configUpdateEffect } from "../util/configuration";
 /** Flips the readability mode of the editor's configuration. */
 export function toggleReadability(view: EditorView): boolean {
   const config = view.state.field(configField);
-  view.dispatch({ effects: configUpdateEffect.of({ readabilityMode: !config.readabilityMode }) });
+  view.dispatch({
+    effects: configUpdateEffect.of({ ...config, readabilityMode: !config.readabilityMode }),
+  });
   return true;
 }

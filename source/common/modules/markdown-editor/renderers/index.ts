@@ -16,7 +16,7 @@
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { renderTables } from "../table-editor";
-import { configField, configUpdateEffect, type EditorConfiguration } from "../util/configuration";
+import { configUpdateEffect, type EditorConfiguration } from "../util/configuration";
 import { renderBlockquotes } from "./render-blockquotes";
 import { renderCitations } from "./render-citations";
 import { renderCode } from "./render-code";
@@ -40,7 +40,7 @@ import { renderYamlFrontmatter } from "./render-yaml-frontmatter";
 const renderCompartment = new Compartment();
 
 /* Adds or removes an extension from a list of extensions based on the value of enabled */
-function updateExtension(renderer: Extension, enabled: boolean | undefined, ext: Extension[]) {
+function updateExtension(renderer: Extension, enabled: boolean, ext: Extension[]) {
   const idx = ext.indexOf(renderer);
 
   // Renderer is enabled and not in the list
@@ -56,7 +56,7 @@ function updateExtension(renderer: Extension, enabled: boolean | undefined, ext:
 }
 
 /* Configures the enabled renderer extensions, optionally updating an existing set of extensions */
-function configureRenderers(config: Partial<EditorConfiguration>, ext?: Extension[]) {
+function configureRenderers(config: EditorConfiguration, ext?: Extension[]) {
   if (ext === undefined || config.renderingMode === "raw") {
     // Default extensions to always include
     ext = [renderCode];
@@ -97,47 +97,29 @@ function configureRenderers(config: Partial<EditorConfiguration>, ext?: Extensio
  * A TransactionExtender that reconfigures the renderer extension compartment in response
  * to a configUpdateEffect
  */
-const modeSwitcher = EditorState.transactionExtender.from(
-  configField,
-  (config) => (transaction) => {
-    for (const effect of transaction.effects) {
-      if (effect.is(configUpdateEffect)) {
-        const overrides = {
-          renderingMode: effect.value.renderingMode ?? config.renderingMode,
-          renderImages: effect.value.renderImages ?? config.renderImages,
-          renderLinks: effect.value.renderLinks ?? config.renderLinks,
-          renderMath: effect.value.renderMath ?? config.renderMath,
-          renderTasks: effect.value.renderTasks ?? config.renderTasks,
-          renderHeadings: effect.value.renderHeadings ?? config.renderHeadings,
-          renderCitations: effect.value.renderCitations ?? config.renderCitations,
-          renderTables: effect.value.renderTables ?? config.renderTables,
-          renderIframes: effect.value.renderIframes ?? config.renderIframes,
-          renderEmphasis: effect.value.renderEmphasis ?? config.renderEmphasis,
-          renderPandoc: effect.value.renderPandoc ?? config.renderPandoc,
-          renderHorizontalRules: effect.value.renderHorizontalRules ?? config.renderHorizontalRules,
-        };
-
-        // A reconfiguration makes the view draw its content again, so only a
-        // changed set of renderers causes one.
-        const current = renderCompartment.get(transaction.startState) as Extension[] | undefined;
-        const next = configureRenderers(
-          overrides,
-          current === undefined ? undefined : [...current],
-        );
-        if (
-          current !== undefined &&
-          next.length === current.length &&
-          next.every((renderer, i) => renderer === current[i])
-        ) {
-          return null;
-        }
-        return { effects: renderCompartment.reconfigure(next) };
+const modeSwitcher = EditorState.transactionExtender.of((transaction) => {
+  for (const effect of transaction.effects) {
+    if (effect.is(configUpdateEffect)) {
+      // A reconfiguration makes the view draw its content again, so only a
+      // changed set of renderers causes one.
+      const current = renderCompartment.get(transaction.startState) as Extension[] | undefined;
+      const next = configureRenderers(
+        effect.value,
+        current === undefined ? undefined : [...current],
+      );
+      if (
+        current !== undefined &&
+        next.length === current.length &&
+        next.every((renderer, i) => renderer === current[i])
+      ) {
+        return null;
       }
+      return { effects: renderCompartment.reconfigure(next) };
     }
+  }
 
-    return null;
-  },
-);
+  return null;
+});
 
 /**
  * Configures the renderers that are active in the given Markdown state.

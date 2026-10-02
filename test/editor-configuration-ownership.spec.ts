@@ -19,10 +19,13 @@ import "./provision-renderer-window-seams";
 import { DocumentType } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import MarkdownEditor, { type DocumentAuthorityAPI } from "source/common/modules/markdown-editor";
+import { toggleReadability } from "source/common/modules/markdown-editor/renderers/readability";
 import {
   configField,
-  type EditorConfigOptions,
+  type EditorWindowConfiguration,
+  getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
+import _ from "underscore";
 import { reactive, watchEffect } from "vue";
 import arrowReplacements from "./fixtures/autocorrect-arrow-replacements.json";
 
@@ -42,11 +45,19 @@ describe("MarkdownEditor configuration ownership", function () {
 
   /** A configuration as the window makes it from its reactive store, and the count of changes to its list. */
   function windowConfiguration(): {
-    configuration: EditorConfigOptions;
+    configuration: EditorWindowConfiguration;
     listChanges: () => number;
     keys: () => string[];
   } {
-    const configuration = reactive({
+    const configuration: EditorWindowConfiguration = reactive({
+      ..._.omit(
+        getDefaultConfig(),
+        "metadata",
+        "readabilityMode",
+        "typewriterMode",
+        "linkPreference",
+        "margins",
+      ),
       autocorrect: {
         active: true,
         matchWholeWords: false,
@@ -98,7 +109,7 @@ describe("MarkdownEditor configuration ownership", function () {
     assert.deepEqual(editor.instance.state.field(configField).autocorrect.replacements, []);
 
     const fromWindow = windowConfiguration();
-    editor.setOptions(fromWindow.configuration);
+    editor.setWindowConfiguration(fromWindow.configuration);
 
     assert.deepEqual(
       editor.instance.state.field(configField).autocorrect.replacements.map((item) => item.key),
@@ -106,6 +117,24 @@ describe("MarkdownEditor configuration ownership", function () {
     );
     assert.deepEqual(fromWindow.keys(), WINDOW_ORDER);
     assert.equal(fromWindow.listChanges(), 0);
+    editor.unmount();
+  });
+
+  it("keeps a mode that a command toggled in the editor when the window sends its configuration", async function () {
+    const editor = new MarkdownEditor(
+      "leaf",
+      "window",
+      "/tmp/configuration-ownership.md",
+      authority,
+    );
+    await editor.ready;
+    assert.equal(editor.instance.state.field(configField).readabilityMode, false);
+
+    toggleReadability(editor.instance);
+    editor.setWindowConfiguration(windowConfiguration().configuration);
+
+    assert.equal(editor.instance.state.field(configField).readabilityMode, true);
+    assert.equal(editor.readabilityMode, true);
     editor.unmount();
   });
 });

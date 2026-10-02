@@ -14,7 +14,7 @@
 
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { configUpdateEffect } from "../util/configuration";
+import { configField, configUpdateEffect } from "../util/configuration";
 
 const extensionCompartment = new Compartment();
 
@@ -27,9 +27,12 @@ const modeSwitcher = EditorState.transactionExtender.of((transaction) => {
   let showLineNumbers: boolean | undefined;
 
   for (const effect of transaction.effects) {
-    // Allow updating both via the main config and a dedicated effect.
+    // An equal value causes no reconfiguration.
     if (effect.is(configUpdateEffect)) {
-      if (effect.value.showMarkdownLineNumbers !== undefined) {
+      if (
+        effect.value.showMarkdownLineNumbers !==
+        transaction.startState.field(configField).showMarkdownLineNumbers
+      ) {
         showLineNumbers = effect.value.showMarkdownLineNumbers;
       }
     }

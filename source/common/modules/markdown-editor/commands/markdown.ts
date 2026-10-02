@@ -324,7 +324,7 @@ export function applyBold(target: EditorView): boolean {
     return false;
   }
 
-  const markup = target.state.field(configField, false)?.boldFormatting ?? "**";
+  const markup = target.state.field(configField).boldFormatting;
   applyInlineMarkup(target, markup, markup);
   return true;
 }
@@ -341,7 +341,7 @@ export function applyItalic(target: EditorView): boolean {
     return false;
   }
 
-  const markup = target.state.field(configField, false)?.italicFormatting ?? "*";
+  const markup = target.state.field(configField).italicFormatting;
   applyInlineMarkup(target, markup, markup);
   return true;
 }
@@ -390,7 +390,7 @@ export function applyHighlight(target: EditorView): boolean {
     return false;
   }
 
-  const markup: string = target.state.field(configField, false)?.highlightFormatting ?? "==";
+  const markup = target.state.field(configField).highlightFormatting;
 
   if (markup === "span") {
     applyPandocDivOrSpan(target, "span", { classes: ["mark"] });
@@ -657,7 +657,9 @@ export function insertTabOrSpace(target: EditorView): boolean {
     // We need to temporarily override the `indentWithTabs` setting
     // so that the `indentUnit` facet updates to insert spaces.
     // This is necessary for `indentMore` to insert the correct indent.
-    target.dispatch({ effects: configUpdateEffect.of({ indentWithTabs: false }) });
+    target.dispatch({
+      effects: configUpdateEffect.of({ ...target.state.field(configField), indentWithTabs: false }),
+    });
   }
 
   let result = false;
@@ -677,7 +679,9 @@ export function insertTabOrSpace(target: EditorView): boolean {
   }
 
   // Reset the config to the initial value.
-  target.dispatch({ effects: configUpdateEffect.of({ indentWithTabs }) });
+  target.dispatch({
+    effects: configUpdateEffect.of({ ...target.state.field(configField), indentWithTabs }),
+  });
 
   return result;
 }

@@ -30,7 +30,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { configUpdateEffect } from "../util/configuration";
+import { configField, configUpdateEffect } from "../util/configuration";
 
 const extensionCompartment = new Compartment();
 
@@ -161,7 +161,11 @@ const modeSwitcher = EditorState.transactionExtender.of((transaction) => {
   for (const effect of transaction.effects) {
     // Allow updating both via the main config and a dedicated effect.
     if (effect.is(configUpdateEffect)) {
-      if (effect.value.highlightWhitespace !== undefined) {
+      // An equal value causes no reconfiguration.
+      if (
+        effect.value.highlightWhitespace !==
+        transaction.startState.field(configField).highlightWhitespace
+      ) {
         highlight = effect.value.highlightWhitespace;
       }
     } else if (effect.is(highlightWhitespaceEffect)) {
@@ -184,13 +188,12 @@ const modeSwitcher = EditorState.transactionExtender.of((transaction) => {
  * A configurable whitespace highlighter.
  *
  * @param   {boolean}      highlight  Initial setting for the highlighter
- *                                    (default: false)
  *
  * @return  {Extension[]}             The extension.
  */
-export function highlightWhitespace(highlight?: boolean): Extension[] {
+export function highlightWhitespace(highlight: boolean): Extension[] {
   const initialSetting = extensionCompartment.of(
-    (highlight ?? true) ? [hw(), htw(), pilcrowPlugin, pilcrowTheme] : [],
+    highlight ? [hw(), htw(), pilcrowPlugin, pilcrowTheme] : [],
   );
 
   return [initialSetting, modeSwitcher];

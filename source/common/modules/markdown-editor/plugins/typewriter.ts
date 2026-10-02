@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { Compartment, EditorState, StateField } from "@codemirror/state";
+import { Compartment, EditorState, type Extension, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { configField, configUpdateEffect } from "../util/configuration";
 
@@ -58,8 +58,8 @@ const scrollAndTheme = EditorState.transactionExtender.from(
     // First, check if we have to apply or disengage the theme
     for (const effect of transaction.effects) {
       if (effect.is(configUpdateEffect)) {
-        if (effect.value.typewriterMode !== undefined) {
-          modeChanged = typewriterMode !== effect.value.typewriterMode;
+        if (effect.value.typewriterMode !== typewriterMode) {
+          modeChanged = true;
           typewriterMode = effect.value.typewriterMode;
           effects.push(
             typewriterThemeCompartment.reconfigure(typewriterMode ? [typewriterTheme] : []),
@@ -112,10 +112,17 @@ const typewriterLine = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-export const typewriter = [
+/**
+ * The typewriter mode, with its theme engaged for the initial configuration.
+ *
+ * @param   {boolean}      typewriterMode  Whether the typewriter mode starts active
+ *
+ * @return  {Extension[]}                  The extension
+ */
+export const typewriter = (typewriterMode: boolean): Extension[] => [
   scrollAndTheme,
   typewriterLine,
-  typewriterThemeCompartment.of([]),
+  typewriterThemeCompartment.of(typewriterMode ? [typewriterTheme] : []),
   EditorView.baseTheme({
     ".cm-content .typewriter-active-line": {
       borderTop: "2px solid var(--grey-3)",

@@ -17,7 +17,6 @@
  */
 
 import { StateEffect, StateField } from "@codemirror/state";
-import safeAssign from "@common/util/safe-assign";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { type MarkdownTheme } from "@providers/config/get-config-template";
@@ -175,9 +174,16 @@ export function cloneEditorConfiguration(config: EditorConfiguration): EditorCon
   };
 }
 
-export type EditorConfigOptions = Partial<EditorConfiguration>;
+/**
+ * The part of the configuration that the window owns. The editor owns the
+ * rest: the document metadata, and the modes that its own commands toggle.
+ */
+export type EditorWindowConfiguration = Omit<
+  EditorConfiguration,
+  "metadata" | "readabilityMode" | "typewriterMode" | "linkPreference" | "margins"
+>;
 
-export const configUpdateEffect = StateEffect.define<EditorConfigOptions>();
+export const configUpdateEffect = StateEffect.define<EditorConfiguration>();
 export const configField = StateField.define<EditorConfiguration>({
   create(_state) {
     return getDefaultConfig();
@@ -185,7 +191,7 @@ export const configField = StateField.define<EditorConfiguration>({
   update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(configUpdateEffect)) {
-        const newConfig = safeAssign(effect.value, val);
+        const newConfig = cloneEditorConfiguration(effect.value);
         // Perform some housekeeping
         // Make sure the replacements are sorted longest-key-first
         newConfig.autocorrect.replacements.sort((a, b) => b.key.length - a.key.length);

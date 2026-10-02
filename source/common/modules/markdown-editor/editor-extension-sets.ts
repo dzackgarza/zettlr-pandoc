@@ -349,7 +349,7 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // Some statistics we need for Markdown documents
     countPlugin,
     countField,
-    typewriter,
+    typewriter(options.initialConfig.typewriterMode),
     distractionFree,
     tocField,
     projectInfoField,

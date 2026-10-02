@@ -231,6 +231,7 @@ describe("Quarto editor citation resolution and startup race", function () {
     // Simulate workspace descriptors arriving: update editor options with resolved project bibliographies
     view.dispatch({
       effects: configUpdateEffect.of({
+        ...view.state.field(configField),
         metadata: {
           path: chapterDescriptor.path,
           id: chapterDescriptor.id,

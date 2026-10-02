@@ -102,7 +102,7 @@ import {
   selectPreviousReviewChunk,
 } from "@common/modules/markdown-editor/plugins/review-chunks";
 import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
-import { type EditorConfigOptions } from "@common/modules/markdown-editor/util/configuration";
+import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import showPopupMenu, {
   type AnyMenuItem,
@@ -507,12 +507,10 @@ const stopCiteprocUpdates = ipcRenderer.on(
           return;
         }
 
-        currentEditor?.setOptions({
-          metadata: {
-            path: descriptor.path,
-            id: descriptor.id,
-            library,
-          },
+        currentEditor?.setMetadata({
+          path: descriptor.path,
+          id: descriptor.id,
+          library,
         });
         currentEditor?.syncCitationData();
       })
@@ -688,12 +686,10 @@ const stopDocumentUpdates = ipcRenderer.on(
           }
 
           // Provide the editor instance with updated metadata
-          currentEditor?.setOptions({
-            metadata: {
-              path: props.file.path,
-              id: descriptor.type === "file" ? descriptor.id : "",
-              library: library ?? CITEPROC_MAIN_DB,
-            },
+          currentEditor?.setMetadata({
+            path: props.file.path,
+            id: descriptor.type === "file" ? descriptor.id : "",
+            library: library ?? CITEPROC_MAIN_DB,
           });
         })
         .catch((err) => reportError(err));
@@ -813,7 +809,7 @@ const tikzPreviewTarget = computed<TikzLivePreviewTarget | null>(() =>
 
 const activeFileDescriptor = ref<undefined | MDFileDescriptor | CodeFileDescriptor>(undefined);
 
-const editorConfiguration = computed<EditorConfigOptions>(() => {
+const editorConfiguration = computed<EditorWindowConfiguration>(() => {
   // We update everything, because not so many values are actually updated
   // right after setting the new configurations. Plus, the user won't update
   // everything all the time, but rather do one initial configuration, so
@@ -876,7 +872,7 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     shortcuts: Object.entries(shortcuts.editor)
       .map(([name, shortcut]) => ({ name, shortcut }))
       .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined),
-  } satisfies EditorConfigOptions;
+  } satisfies EditorWindowConfiguration;
 });
 
 // BEGIN: PROJECT INFO
@@ -1122,7 +1118,7 @@ watch(storeToRefs(workspaceStore).descriptorMap, () => {
 
 watch(editorConfiguration, (newValue, oldValue) => {
   if (!_.isEqual(newValue, oldValue)) {
-    currentEditor?.setOptions(newValue);
+    currentEditor?.setWindowConfiguration(newValue);
   }
 });
 
@@ -1418,12 +1414,10 @@ async function loadDocument(): Promise<void> {
   updateFileDatabase().catch((err) => reportError("Could not update file database", err));
 
   // Provide the editor instance with metadata for the new file
-  currentEditor.setOptions({
-    metadata: {
-      path: props.file.path,
-      id: descriptor.type === "file" ? descriptor.id : "",
-      library: library ?? CITEPROC_MAIN_DB,
-    },
+  currentEditor.setMetadata({
+    path: props.file.path,
+    id: descriptor.type === "file" ? descriptor.id : "",
+    library: library ?? CITEPROC_MAIN_DB,
   });
   currentEditor.projectInfo = updateProjectInfo();
   await updateReferenceEntries();

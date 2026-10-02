@@ -62,7 +62,6 @@
     "stripLinks": "full",
     "cslLibrary": "",
     "cslStyle": "",
-    "useBundledPandoc": true,
     "exportQmdWithQuarto": false,
     "customCommands": [],
     "filters": [],
