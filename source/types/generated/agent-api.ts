@@ -1970,7 +1970,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["SubmitProposalResponse"];
+          "application/json": components["schemas"]["ReviewSubmissionResponse"];
         };
       };
       /** @description Invalid payload or claims */

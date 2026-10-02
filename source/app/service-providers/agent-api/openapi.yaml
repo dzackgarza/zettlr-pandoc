@@ -2815,7 +2815,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitProposalResponse'
+                $ref: '#/components/schemas/ReviewSubmissionResponse'
         '400':
           description: Invalid payload or claims
           content:
