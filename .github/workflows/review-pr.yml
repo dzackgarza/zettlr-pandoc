@@ -12,6 +12,12 @@ jobs:
       profile: 'bun'
       setup_recipe: 'setup-ci'
       infra_ref: 'main'
+      setup_cache_paths: |
+        ~/texlive
+        ~/ci-downloads
+      setup_cache_key_files: |
+        scripts/setup-ci-toolchain.sh
+        scripts/pandoc-reference.json
   deterministic-diff:
     uses: dzackgarza/ai-review-ci/.github/workflows/_gates.yml@main
     permissions:
