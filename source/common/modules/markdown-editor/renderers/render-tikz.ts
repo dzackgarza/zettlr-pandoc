@@ -396,7 +396,7 @@ export const renderTikzFigures = [
     },
     ".tikz-figure-actions": {
       position: "absolute",
-      top: "-1.5em",
+      bottom: "100%",
       right: "0",
       display: "flex",
       gap: "0.3em",
