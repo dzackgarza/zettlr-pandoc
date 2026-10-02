@@ -655,7 +655,7 @@ export default class DocumentLintProvider extends ProviderContract {
           column: diagnostic.column,
           from: diagnostic.from,
           to: diagnostic.to,
-          fix: diagnostic.fix ?? null,
+          fix: diagnostic.fix === undefined ? null : diagnostic.fix,
         };
       });
       documents.push({
@@ -678,11 +678,12 @@ export default class DocumentLintProvider extends ProviderContract {
     const text = await this.currentText(request.documentPath);
     if (hashDocumentSource(text) !== request.sourceHash) return false;
     const [lookup] = await this.lookup([{ path: request.documentPath, text }]);
-    return lookup.current && (lookup.record?.diagnostics.some((diagnostic) =>
+    if (!lookup.current || lookup.record === undefined) return false;
+    return lookup.record.diagnostics.some((diagnostic) =>
       diagnostic.from === request.from &&
       diagnostic.to === request.to &&
       diagnostic.fix?.replacement === request.replacement
-    ) ?? false);
+    );
   }
 
   /**
