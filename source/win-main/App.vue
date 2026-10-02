@@ -6,121 +6,121 @@
     :disable-vibrancy="!hasVibrancy"
   >
     <div class="main-body">
-    <!-- The activity bar, then the three panes under one splitter (D8): the
+      <!-- The activity bar, then the three panes under one splitter (D8): the
          sidebar's drawer, the editor, the annotation panel. -->
-    <ActivityBar
-      bar-id="activity-bar"
-      side="left"
-      :items="SIDEBAR_VIEWS"
-      :badges="sidebarActivityBadges"
-      :pressed="fileManagerVisible ? configStore.config.ui.sidebarView : ''"
-      :label="trans('Sidebar views')"
-      @press="pressSidebarView($event)"
-    />
-    <SplitterGroup
-      direction="horizontal"
-      class="main-panes"
-      :class="{ animating: panesAnimating }"
-      :style="{
-        '--annotation-panel-width': mountWidths.annotationPanel + 'px',
-        '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
-      }"
-    >
-      <SplitterPanel
-        ref="navigationSidebarPanel"
-        class="main-pane"
-        data-pane="navigation-sidebar"
-        size-unit="px"
-        :order="0"
-        :collapsible="true"
-        :collapsed-size="0"
-        :min-size="NAVIGATION_SIDEBAR_MINIMUM"
-        :default-size="mountSizes.navigationSidebar"
-        @resize="draggedWidths.navigationSidebar = $event"
-      >
-        <NavigationSidebar
-          ref="navigationSidebar"
-          :window-id="windowId"
-          @jump-to-line="jtl($event.filePath, $event.line, false)"
-          @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
-          @jump-to-active-line="genericJtl($event)"
-          @move-section="moveSection($event)"
-          @navigate-problem="openProblem($event)"
-          @problems-count="problemsCount = $event"
-        />
-      </SplitterPanel>
-      <SplitterResizeHandle
-        class="main-pane-handle"
-        :class="{ collapsed: !fileManagerVisible }"
-        data-pane-handle="navigation-sidebar"
-        @dragging="onPaneDragging('navigationSidebar', $event)"
+      <ActivityBar
+        bar-id="activity-bar"
+        side="left"
+        :items="SIDEBAR_VIEWS"
+        :badges="sidebarActivityBadges"
+        :pressed="fileManagerVisible ? configStore.config.ui.sidebarView : ''"
+        :label="trans('Sidebar views')"
+        @press="pressSidebarView($event)"
       />
-      <SplitterPanel
-        class="main-pane"
-        data-pane="editor"
-        :order="1"
-        :min-size="EDITOR_MINIMUM_PERCENT"
-        @focusin="rememberEditorDesktopFocus"
+      <SplitterGroup
+        direction="horizontal"
+        class="main-panes"
+        :class="{ animating: panesAnimating }"
+        :style="{
+          '--annotation-panel-width': mountWidths.annotationPanel + 'px',
+          '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
+        }"
       >
-        <EditorPane
-          v-if="paneConfiguration?.type === 'leaf'"
-          :node="paneConfiguration"
-          :leaf-id="paneConfiguration.id"
-          :editor-commands="editorCommands"
-          :window-id="windowId"
-          @global-search="startGlobalSearch($event)"
-          @reference-search="openReferenceSearch($event)"
-          @file-search="openFileLauncher()"
-          @create-reference-label="openCreateReferenceLabel($event)"
-          @open-pandoc-quick-help="showPandocQuickHelp = true"
+        <SplitterPanel
+          ref="navigationSidebarPanel"
+          class="main-pane"
+          data-pane="navigation-sidebar"
+          size-unit="px"
+          :order="0"
+          :collapsible="true"
+          :collapsed-size="0"
+          :min-size="NAVIGATION_SIDEBAR_MINIMUM"
+          :default-size="mountSizes.navigationSidebar"
+          @resize="draggedWidths.navigationSidebar = $event"
+        >
+          <NavigationSidebar
+            ref="navigationSidebar"
+            :window-id="windowId"
+            @jump-to-line="jtl($event.filePath, $event.line, false)"
+            @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
+            @jump-to-active-line="genericJtl($event)"
+            @move-section="moveSection($event)"
+            @navigate-problem="openProblem($event)"
+            @problems-count="problemsCount = $event"
+          />
+        </SplitterPanel>
+        <SplitterResizeHandle
+          class="main-pane-handle"
+          :class="{ collapsed: !fileManagerVisible }"
+          data-pane-handle="navigation-sidebar"
+          @dragging="onPaneDragging('navigationSidebar', $event)"
         />
-        <EditorBranch
-          v-else-if="paneConfiguration !== undefined"
-          :node="paneConfiguration"
-          :window-id="windowId"
-          :editor-commands="editorCommands"
-          :is-last="true"
-          @global-search="startGlobalSearch($event)"
-          @reference-search="openReferenceSearch($event)"
-          @file-search="openFileLauncher()"
-          @create-reference-label="openCreateReferenceLabel($event)"
-          @open-pandoc-quick-help="showPandocQuickHelp = true"
+        <SplitterPanel
+          class="main-pane"
+          data-pane="editor"
+          :order="1"
+          :min-size="EDITOR_MINIMUM_PERCENT"
+          @focusin="rememberEditorDesktopFocus"
+        >
+          <EditorPane
+            v-if="paneConfiguration?.type === 'leaf'"
+            :node="paneConfiguration"
+            :leaf-id="paneConfiguration.id"
+            :editor-commands="editorCommands"
+            :window-id="windowId"
+            @global-search="startGlobalSearch($event)"
+            @reference-search="openReferenceSearch($event)"
+            @file-search="openFileLauncher()"
+            @create-reference-label="openCreateReferenceLabel($event)"
+            @open-pandoc-quick-help="showPandocQuickHelp = true"
+          />
+          <EditorBranch
+            v-else-if="paneConfiguration !== undefined"
+            :node="paneConfiguration"
+            :window-id="windowId"
+            :editor-commands="editorCommands"
+            :is-last="true"
+            @global-search="startGlobalSearch($event)"
+            @reference-search="openReferenceSearch($event)"
+            @file-search="openFileLauncher()"
+            @create-reference-label="openCreateReferenceLabel($event)"
+            @open-pandoc-quick-help="showPandocQuickHelp = true"
+          />
+        </SplitterPanel>
+        <SplitterResizeHandle
+          class="main-pane-handle"
+          :class="{ collapsed: !sidebarVisible }"
+          data-pane-handle="annotation-panel"
+          @dragging="onPaneDragging('annotationPanel', $event)"
         />
-      </SplitterPanel>
-      <SplitterResizeHandle
-        class="main-pane-handle"
-        :class="{ collapsed: !sidebarVisible }"
-        data-pane-handle="annotation-panel"
-        @dragging="onPaneDragging('annotationPanel', $event)"
+        <SplitterPanel
+          ref="annotationPanelPanel"
+          class="main-pane"
+          data-pane="annotation-panel"
+          size-unit="px"
+          :order="2"
+          :collapsible="true"
+          :collapsed-size="0"
+          :min-size="ANNOTATION_PANEL_MINIMUM"
+          :default-size="mountSizes.annotationPanel"
+          @resize="draggedWidths.annotationPanel = $event"
+        >
+          <AnnotationsTab
+            :workspace-paths="workspaceCollaborationPaths"
+            @navigate="navigateToWorkspaceCollaboration($event)"
+            @close="configStore.setConfigValue('window.sidebarVisible', false)"
+          />
+        </SplitterPanel>
+      </SplitterGroup>
+      <ActivityBar
+        bar-id="panel-activity-bar"
+        side="right"
+        :items="PANEL_VIEWS"
+        :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
+        :badges="panelActivityBadges"
+        :label="trans('Panel views')"
+        @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
       />
-      <SplitterPanel
-        ref="annotationPanelPanel"
-        class="main-pane"
-        data-pane="annotation-panel"
-        size-unit="px"
-        :order="2"
-        :collapsible="true"
-        :collapsed-size="0"
-        :min-size="ANNOTATION_PANEL_MINIMUM"
-        :default-size="mountSizes.annotationPanel"
-        @resize="draggedWidths.annotationPanel = $event"
-      >
-        <AnnotationsTab
-          v-bind:workspace-paths="workspaceCollaborationPaths"
-          @navigate="navigateToWorkspaceCollaboration($event)"
-          @close="configStore.setConfigValue('window.sidebarVisible', false)"
-        />
-      </SplitterPanel>
-    </SplitterGroup>
-    <ActivityBar
-      bar-id="panel-activity-bar"
-      side="right"
-      :items="PANEL_VIEWS"
-      :pressed="sidebarVisible ? PANEL_VIEW_ID : ''"
-      :badges="panelActivityBadges"
-      :label="trans('Panel views')"
-      @press="configStore.setConfigValue('window.sidebarVisible', $event === PANEL_VIEW_ID)"
-    />
     </div>
     <template #statusbar>
       <MainStatusbar
