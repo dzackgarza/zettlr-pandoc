@@ -8,7 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     The left pane as an activity bar of views (M9, D9): the
- *                  bar's three icons open one drawer on one view at a time,
+ *                  bar's four icons open one drawer on one view at a time,
  *                  the pressed icon closes it, the view and the collapsed
  *                  sections survive a relaunch; the Explorer lists the tree
  *                  (attachments included) with Outline and Book as sections
@@ -158,7 +158,7 @@ describe("the sidebar views", function () {
     assertCleanExit(getOutput());
   });
 
-  it("opens on the Explorer: the tree with an attachment, Outline and Book collapsed below it, and no other view", async function () {
+  it("opens on the Explorer with its sections and one selected activity-bar view", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     const icons = await activePage
       .locator(`${BAR} [data-activity]`)
@@ -174,14 +174,16 @@ describe("the sidebar views", function () {
         ["explorer", "Explorer"],
         ["search", "Search"],
         ["references", "References"],
+        ["problems", "Problems"],
       ],
-      "three icons, each named",
+      "four icons, each named",
     );
     assert.deepEqual(await pressedIcons(activePage), ["explorer"], "the Explorer is pressed");
     await activePage.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
     assert.equal(
       (await activePage.locator(VIEW("search")).count()) +
-        (await activePage.locator(VIEW("references")).count()),
+        (await activePage.locator(VIEW("references")).count()) +
+        (await activePage.locator(VIEW("problems")).count()),
       0,
       "no other view is shown",
     );
