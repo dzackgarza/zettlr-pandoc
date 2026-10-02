@@ -242,7 +242,12 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
         if (context.windowId !== windowId) {
           return; // None of our business
         }
-        if (event === DP_EVENTS.ACTIVE_FILE && context.leafId !== undefined && context.filePath !== undefined && context.targetRange !== undefined) {
+        if (
+          event === DP_EVENTS.ACTIVE_FILE &&
+          context.leafId !== undefined &&
+          context.filePath !== undefined &&
+          context.targetRange !== undefined
+        ) {
           pendingRangeNavigation.value = {
             leafId: context.leafId,
             filePath: context.filePath,
@@ -298,7 +303,9 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
             }
           })
           .catch((err) => reportError(err))
-          .finally(() => { pendingTreeUpdates.value -= 1; });
+          .finally(() => {
+            pendingTreeUpdates.value -= 1;
+          });
       }
     },
   );
@@ -328,5 +335,13 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
     }
   });
 
-  return { paneStructure, paneData, modifiedDocuments, lastLeafId, lastLeafActiveFile, pendingRangeNavigation, pendingTreeUpdates };
+  return {
+    paneStructure,
+    paneData,
+    modifiedDocuments,
+    lastLeafId,
+    lastLeafActiveFile,
+    pendingRangeNavigation,
+    pendingTreeUpdates,
+  };
 });

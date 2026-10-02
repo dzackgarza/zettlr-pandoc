@@ -43,6 +43,12 @@ import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type { FixAllEdit, FixAllPlan } from "@dts/common/fix-all";
 import type { DirDescriptor } from "@dts/common/fsal";
+import type {
+  ApplyProblemFixRequest,
+  ListProblemsRequest,
+  ProblemDocument,
+  WorkspaceProblems,
+} from "@dts/common/problems";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import type FSAL from "@providers/fsal";
 import type { FSALEventPayload } from "@providers/fsal";
@@ -52,7 +58,6 @@ import type { LongRunningTask } from "@providers/long-running-tasks/task";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { createHash } from "crypto";
 import { readdir, readFile, rename, stat, writeFile } from "fs/promises";
-import type { ApplyProblemFixRequest, ListProblemsRequest, ProblemDocument, WorkspaceProblems } from "@dts/common/problems";
 import { availableParallelism } from "os";
 import path from "path";
 import { trans } from "source/common/i18n-main";
@@ -72,8 +77,8 @@ import {
   workspaceDefinitions,
 } from "../../util/flowmark-lint-context";
 import { flowmarkInstallIdentity } from "../../util/flowmark-runtime";
-import { workspaceLintRows } from "../../util/workspace-lint-results";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
+import { workspaceLintRows } from "../../util/workspace-lint-results";
 import ProviderContract from "../provider-contract";
 
 /** One document's lint result and the key it was computed under. */
@@ -623,15 +628,22 @@ export default class DocumentLintProvider extends ProviderContract {
   /** Answer the Problems view from cached records and queue outdated documents. */
   async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
     const allPaths = await this.workspaceDocuments();
-    const paths = request.scope === "all"
-      ? allPaths
-      : request.workspacePath === undefined
-        ? []
-        : allPaths.filter((filePath) => filePath === request.workspacePath || filePath.startsWith(`${request.workspacePath}${path.sep}`));
-    const sources = await Promise.all(paths.map(async (filePath) => ({
-      path: filePath,
-      text: await this.currentText(filePath),
-    })));
+    const paths =
+      request.scope === "all"
+        ? allPaths
+        : request.workspacePath === undefined
+          ? []
+          : allPaths.filter(
+              (filePath) =>
+                filePath === request.workspacePath ||
+                filePath.startsWith(`${request.workspacePath}${path.sep}`),
+            );
+    const sources = await Promise.all(
+      paths.map(async (filePath) => ({
+        path: filePath,
+        text: await this.currentText(filePath),
+      })),
+    );
     const lookups = await workspaceLintRows(this, sources);
     const documents: ProblemDocument[] = [];
     const pendingPaths: string[] = [];
@@ -669,7 +681,12 @@ export default class DocumentLintProvider extends ProviderContract {
     });
     documents.sort((a, b) => a.path.localeCompare(b.path));
     pendingPaths.sort();
-    return { documents, pendingPaths, documentCount: paths.length, queueActive: this.activeWorkers > 0 || this.queue.size > 0 };
+    return {
+      documents,
+      pendingPaths,
+      documentCount: paths.length,
+      queueActive: this.activeWorkers > 0 || this.queue.size > 0,
+    };
   }
 
   /** A single-fix request must still name a current Flowmark machine edit. */
@@ -679,10 +696,11 @@ export default class DocumentLintProvider extends ProviderContract {
     if (hashDocumentSource(text) !== request.sourceHash) return false;
     const [lookup] = await this.lookup([{ path: request.documentPath, text }]);
     if (!lookup.current || lookup.record === undefined) return false;
-    return lookup.record.diagnostics.some((diagnostic) =>
-      diagnostic.from === request.from &&
-      diagnostic.to === request.to &&
-      diagnostic.fix?.replacement === request.replacement
+    return lookup.record.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.from === request.from &&
+        diagnostic.to === request.to &&
+        diagnostic.fix?.replacement === request.replacement,
     );
   }
 

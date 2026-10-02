@@ -99,10 +99,10 @@ import {
 import { computed, nextTick, ref } from "vue";
 import FileManager from "../file-manager/FileManager.vue";
 import QuartoBookOutline from "../file-manager/QuartoBookOutline.vue";
+import ProblemsView from "./ProblemsView.vue";
 import ReferencesTab from "./ReferencesTab.vue";
 import RelatedFilesTab from "./RelatedFilesTab.vue";
 import SearchView from "./SearchView.vue";
-import ProblemsView from "./ProblemsView.vue";
 import { type RevealTarget, sidebarSection, sidebarView } from "./sidebar-views";
 import ToCTab from "./ToCTab.vue";
 import ViewContainer from "./ViewContainer.vue";
@@ -187,11 +187,12 @@ async function reveal(target: RevealTarget): Promise<void> {
   configStore.setConfigValue("window.fileManagerVisible", true);
   await nextTick();
   if (target.section !== undefined) {
-    const container = target.view === "explorer"
-      ? explorerContainer.value
-      : target.view === "problems"
-        ? problemsContainer.value
-        : referencesContainer.value;
+    const container =
+      target.view === "explorer"
+        ? explorerContainer.value
+        : target.view === "problems"
+          ? problemsContainer.value
+          : referencesContainer.value;
     if (container === null) {
       throw new Error(
         `The ${target.view} view holds no section container after the drawer was revealed, so ` +

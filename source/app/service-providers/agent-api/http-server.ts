@@ -55,7 +55,6 @@ import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
-import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import type { DocumentLintRecord } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
 import type {
@@ -86,6 +85,7 @@ import OpenAPIBackend, {
   type Operation,
 } from "openapi-backend";
 import path from "path";
+import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { fileURLToPath } from "url";
 import { type Document, parseDocument } from "yaml";
 import {

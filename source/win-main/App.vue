@@ -597,21 +597,23 @@ function openProblem(target: { path: string; from: number; to: number }): void {
       range: { from: target.from, to: target.to },
     };
   }
-  ipcRenderer.invoke("documents-provider", {
-    command: "open-file",
-    payload: {
-      path: target.path,
-      windowId,
-      leafId,
-      newTab: false,
-      targetRange: { from: target.from, to: target.to },
-    },
-  }).catch((err) => {
-    if (documentTreeStore.pendingRangeNavigation?.filePath === target.path) {
-      documentTreeStore.pendingRangeNavigation = undefined;
-    }
-    reportError(err);
-  });
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: target.path,
+        windowId,
+        leafId,
+        newTab: false,
+        targetRange: { from: target.from, to: target.to },
+      },
+    })
+    .catch((err) => {
+      if (documentTreeStore.pendingRangeNavigation?.filePath === target.path) {
+        documentTreeStore.pendingRangeNavigation = undefined;
+      }
+      reportError(err);
+    });
 }
 
 const pomodoro = ref<PomodoroConfig>({
@@ -760,7 +762,9 @@ const panelActivityBadges = computed<Record<string, number>>(() => ({
   [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount,
 }));
 const problemsCount = ref(0);
-const sidebarActivityBadges = computed<Record<string, number>>(() => ({ problems: problemsCount.value }));
+const sidebarActivityBadges = computed<Record<string, number>>(() => ({
+  problems: problemsCount.value,
+}));
 
 /** The editor pane became the user's filesystem context. */
 function rememberEditorDesktopFocus(): void {

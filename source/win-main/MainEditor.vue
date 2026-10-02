@@ -456,10 +456,19 @@ let pendingReviewDiffSession: ReviewDiffSession | null = null;
  */
 function applyPendingNavigation(): void {
   const carried = documentTreeStore.pendingRangeNavigation;
-  if (pendingNavigation === null && carried?.leafId === props.leafId && carried.filePath === props.file.path) {
+  if (
+    pendingNavigation === null &&
+    carried?.leafId === props.leafId &&
+    carried.filePath === props.file.path
+  ) {
     pendingNavigation = { filePath: carried.filePath, targetRange: carried.range };
   }
-  if (pendingNavigation === null || currentEditor === null || editorLoadPromise !== null || documentTreeStore.pendingTreeUpdates > 0) {
+  if (
+    pendingNavigation === null ||
+    currentEditor === null ||
+    editorLoadPromise !== null ||
+    documentTreeStore.pendingTreeUpdates > 0
+  ) {
     return;
   }
 
@@ -774,11 +783,15 @@ watch(isActiveTab, (active) => {
 
 watch(
   () => documentTreeStore.pendingRangeNavigation,
-  () => { void nextTick().then(applyPendingNavigation); },
+  () => {
+    void nextTick().then(applyPendingNavigation);
+  },
 );
 watch(
   () => documentTreeStore.pendingTreeUpdates,
-  (count) => { if (count === 0) void nextTick().then(applyPendingNavigation); },
+  (count) => {
+    if (count === 0) void nextTick().then(applyPendingNavigation);
+  },
 );
 
 // The focus event reaches this pane before main moves lastLeafId here, so

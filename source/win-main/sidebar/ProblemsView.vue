@@ -54,7 +54,13 @@
 
 <script setup lang="ts">
 import { pathBasename } from "@common/util/renderer-path-polyfill";
-import type { ProblemDocument, ProblemFinding, ProblemScope, ProblemSeverity, WorkspaceProblems } from "@dts/common/problems";
+import type {
+  ProblemDocument,
+  ProblemFinding,
+  ProblemScope,
+  ProblemSeverity,
+  WorkspaceProblems,
+} from "@dts/common/problems";
 import { useDocumentTreeStore, useWorkspaceStore } from "source/pinia";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -73,18 +79,30 @@ const error = ref("");
 
 const workspacePath = computed(() => {
   const activePath = documentTreeStore.lastLeafActiveFile?.path;
-  const roots = workspaceStore.rootDescriptors.filter((descriptor) => descriptor.type === "directory");
-  return roots
-    .filter((descriptor) => activePath !== undefined && (activePath === descriptor.path || activePath.startsWith(`${descriptor.path}/`)))
-    .sort((a, b) => b.path.length - a.path.length)[0]?.path ?? roots[0]?.path;
+  const roots = workspaceStore.rootDescriptors.filter(
+    (descriptor) => descriptor.type === "directory",
+  );
+  return (
+    roots
+      .filter(
+        (descriptor) =>
+          activePath !== undefined &&
+          (activePath === descriptor.path || activePath.startsWith(`${descriptor.path}/`)),
+      )
+      .sort((a, b) => b.path.length - a.path.length)[0]?.path ?? roots[0]?.path
+  );
 });
 
 const weight: Record<ProblemSeverity, number> = { info: 0, warning: 1, error: 2 };
 function filtered(findings: ProblemFinding[]): ProblemFinding[] {
   return findings.filter((finding) => weight[finding.severity] >= weight[minimumSeverity.value]);
 }
-const visibleDocuments = computed(() => (answer.value?.documents ?? []).filter((document) => filtered(document.diagnostics).length > 0));
-const visibleFindings = computed(() => visibleDocuments.value.flatMap((document) => filtered(document.diagnostics)));
+const visibleDocuments = computed(() =>
+  (answer.value?.documents ?? []).filter((document) => filtered(document.diagnostics).length > 0),
+);
+const visibleFindings = computed(() =>
+  visibleDocuments.value.flatMap((document) => filtered(document.diagnostics)),
+);
 const ruleGroups = computed(() => {
   const groups = new Map<string, { document: ProblemDocument; finding: ProblemFinding }[]>();
   for (const document of visibleDocuments.value) {
@@ -94,7 +112,9 @@ const ruleGroups = computed(() => {
       groups.set(finding.rule, list);
     }
   }
-  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([rule, findings]) => ({ rule, findings }));
+  return [...groups]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([rule, findings]) => ({ rule, findings }));
 });
 
 async function refresh(): Promise<void> {
@@ -105,7 +125,10 @@ async function refresh(): Promise<void> {
       payload: { scope: scope.value, workspacePath: workspacePath.value },
     });
     answer.value = result;
-    emit("count", result.documents.reduce((total, document) => total + document.diagnostics.length, 0));
+    emit(
+      "count",
+      result.documents.reduce((total, document) => total + document.diagnostics.length, 0),
+    );
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   }
@@ -124,15 +147,20 @@ async function applyFix(document: ProblemDocument, finding: ProblemFinding): Pro
         replacement: finding.fix.replacement,
       },
     });
-    if (result.status === "conflict") error.value = "Document changed. Refresh problems before fixing it.";
+    if (result.status === "conflict")
+      error.value = "Document changed. Refresh problems before fixing it.";
     else await refresh();
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   }
 }
 
-watch([scope, workspacePath], () => { void refresh(); });
-function onLintChanged(): void { void refresh(); }
+watch([scope, workspacePath], () => {
+  void refresh();
+});
+function onLintChanged(): void {
+  void refresh();
+}
 let stopLintChanged: (() => void) | undefined;
 onMounted(() => {
   stopLintChanged = ipcRenderer.on("document-lint-changed", onLintChanged);

@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { EditorView } from "@codemirror/view";
 import type { Browser, Page } from "playwright";
-import { assertCleanExit, attach, createFixture, findEditorPage, hideDevServerOverlay, preserveArtifacts, shutdown } from "./support/electron-app";
+import {
+  assertCleanExit,
+  attach,
+  createFixture,
+  findEditorPage,
+  hideDevServerOverlay,
+  preserveArtifacts,
+  shutdown,
+} from "./support/electron-app";
 
 type EditorContent = HTMLElement & { cmTile?: { root: { view: EditorView } } };
 
@@ -50,23 +58,39 @@ describe("assembled app: Problems view", function () {
 
   after(async function () {
     await shutdown(browser, appProcess);
-    await preserveArtifacts(path.join(tmpdir(), "zettlr-problems-e2e-latest"), fixtureRoot, getOutput(), rendererEvents, screenshots);
+    await preserveArtifacts(
+      path.join(tmpdir(), "zettlr-problems-e2e-latest"),
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
     if (fixtureRoot !== undefined) await rm(fixtureRoot, { recursive: true, force: true });
     assertCleanExit(getOutput());
   });
 
   it("lists a background finding and selects its exact source range", async function () {
     await page.locator('[data-activity="problems"]').click();
-    const finding = page.locator('.problems-finding').filter({ hasText: "document/authorial-residue" }).first();
+    const finding = page
+      .locator(".problems-finding")
+      .filter({ hasText: "document/authorial-residue" })
+      .first();
     await finding.waitFor({ state: "visible", timeout: 90_000 });
     screenshots.set("problems-light.png", await page.screenshot());
-    await finding.locator('.problems-jump').click();
+    await finding.locator(".problems-jump").click();
     await page.waitForFunction(() => {
-      const content = [...document.querySelectorAll<EditorContent>(".cm-content")].find((element) => element.cmTile?.root.view.state.doc.toString().includes("Residue ???"));
-      return content?.cmTile?.root.view.state.selection.main.to !== content?.cmTile?.root.view.state.selection.main.from;
+      const content = [...document.querySelectorAll<EditorContent>(".cm-content")].find((element) =>
+        element.cmTile?.root.view.state.doc.toString().includes("Residue ???"),
+      );
+      return (
+        content?.cmTile?.root.view.state.selection.main.to !==
+        content?.cmTile?.root.view.state.selection.main.from
+      );
     });
     const selected = await page.evaluate(() => {
-      const content = [...document.querySelectorAll<EditorContent>(".cm-content")].find((element) => element.cmTile?.root.view.state.doc.toString().includes("Residue ???"));
+      const content = [...document.querySelectorAll<EditorContent>(".cm-content")].find((element) =>
+        element.cmTile?.root.view.state.doc.toString().includes("Residue ???"),
+      );
       if (content?.cmTile === undefined) throw new Error("The problem document did not open");
       const view = content.cmTile.root.view;
       const range = view.state.selection.main;
@@ -78,32 +102,60 @@ describe("assembled app: Problems view", function () {
   it("filters and groups findings, then applies a guarded machine fix", async function () {
     await page.locator('[data-activity="problems"]').click();
     await page.locator('[data-activity="problems"]').click();
-    const fixFinding = page.locator('.problems-finding').filter({ hasText: "math/bare-operator" }).first();
+    const fixFinding = page
+      .locator(".problems-finding")
+      .filter({ hasText: "math/bare-operator" })
+      .first();
     await fixFinding.waitFor({ state: "visible", timeout: 90_000 });
     await page.locator('[aria-label="Minimum severity"]').selectOption("warning");
-    await page.locator('.problems-finding').filter({ hasText: "document/authorial-residue" }).waitFor({ state: "detached" });
+    await page
+      .locator(".problems-finding")
+      .filter({ hasText: "document/authorial-residue" })
+      .waitFor({ state: "detached" });
     await page.locator('[aria-label="Minimum severity"]').selectOption("info");
     await page.locator('[aria-label="Group problems"]').selectOption("rule");
-    await page.locator('.problems-group summary').filter({ hasText: "math/bare-operator" }).waitFor({ state: "visible" });
-    const before = await page.evaluate(() => window.ipc.invoke("application", { command: "list-workspace-lint", payload: { scope: "all" } }));
+    await page
+      .locator(".problems-group summary")
+      .filter({ hasText: "math/bare-operator" })
+      .waitFor({ state: "visible" });
+    const before = await page.evaluate(() =>
+      window.ipc.invoke("application", {
+        command: "list-workspace-lint",
+        payload: { scope: "all" },
+      }),
+    );
     const record = before.documents.find((document: { path: string }) => document.path === fixPath);
     assert.ok(record, "The fixable document must be in the cache answer");
-    const fix = record.diagnostics.find((diagnostic: { rule: string }) => diagnostic.rule === "math/bare-operator");
+    const fix = record.diagnostics.find(
+      (diagnostic: { rule: string }) => diagnostic.rule === "math/bare-operator",
+    );
     assert.ok(fix?.fix, "Flowmark must provide the machine edit");
-    await page.locator('.problems-group').filter({ hasText: "math/bare-operator" }).locator('.problems-fix').click();
+    await page
+      .locator(".problems-group")
+      .filter({ hasText: "math/bare-operator" })
+      .locator(".problems-fix")
+      .click();
     const expected = "Let $\\sin x = 0$.\n";
     const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline && await readFile(fixPath, "utf8") !== expected) {
+    while (Date.now() < deadline && (await readFile(fixPath, "utf8")) !== expected) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    assert.equal(await readFile(fixPath, "utf8"), expected, await page.locator('#problems-view').innerText());
-    const stale = await page.evaluate((request) => window.ipc.invoke("application", { command: "apply-lint-fix", payload: request }), {
-      documentPath: fixPath,
-      sourceHash: record.sourceHash,
-      from: fix.from,
-      to: fix.to,
-      replacement: fix.fix.replacement,
-    });
+    assert.equal(
+      await readFile(fixPath, "utf8"),
+      expected,
+      await page.locator("#problems-view").innerText(),
+    );
+    const stale = await page.evaluate(
+      (request) =>
+        window.ipc.invoke("application", { command: "apply-lint-fix", payload: request }),
+      {
+        documentPath: fixPath,
+        sourceHash: record.sourceHash,
+        from: fix.from,
+        to: fix.to,
+        replacement: fix.fix.replacement,
+      },
+    );
     assert.equal(stale.status, "conflict");
     assert.equal(await readFile(fixPath, "utf8"), expected);
   });
@@ -111,11 +163,25 @@ describe("assembled app: Problems view", function () {
   it("switches between the active workspace and all loaded workspaces", async function () {
     await page.locator('[aria-label="Group problems"]').selectOption("document");
     await page.locator('[aria-label="Problem scope"]').selectOption("workspace");
-    await page.locator('.problems-group').filter({ hasText: "other.md" }).waitFor({ state: "detached" });
+    await page
+      .locator(".problems-group")
+      .filter({ hasText: "other.md" })
+      .waitFor({ state: "detached" });
     await page.locator('[aria-label="Problem scope"]').selectOption("all");
-    await page.locator('.problems-group').filter({ hasText: "other.md" }).waitFor({ state: "visible", timeout: 90_000 });
-    await page.locator('.problems-group').filter({ hasText: "fix.md" }).waitFor({ state: "detached", timeout: 90_000 });
-    await page.evaluate(() => window.ipc.sendSync("config-provider", { command: "set-config-single", payload: { key: "darkMode", val: true } }));
+    await page
+      .locator(".problems-group")
+      .filter({ hasText: "other.md" })
+      .waitFor({ state: "visible", timeout: 90_000 });
+    await page
+      .locator(".problems-group")
+      .filter({ hasText: "fix.md" })
+      .waitFor({ state: "detached", timeout: 90_000 });
+    await page.evaluate(() =>
+      window.ipc.sendSync("config-provider", {
+        command: "set-config-single",
+        payload: { key: "darkMode", val: true },
+      }),
+    );
     await page.locator("body.dark").waitFor({ state: "visible" });
     screenshots.set("problems-dark.png", await page.screenshot());
   });
@@ -125,18 +191,27 @@ describe("assembled app: Problems view", function () {
     await page.getByText("No problems", { exact: true }).waitFor({ state: "visible" });
     screenshots.set("problems-empty.png", await page.screenshot());
     await page.locator('[aria-label="Minimum severity"]').selectOption("info");
-    await Promise.all(Array.from({ length: 80 }, (_, index) =>
-      writeFile(path.join(workspace, `late-${String(index).padStart(3, "0")}.md`),
-        index === 79 ? "Late ???\n" : `# Clean ${index}\n`, "utf8")));
-    const pending = page.locator('[data-problems-pending]');
+    await Promise.all(
+      Array.from({ length: 80 }, (_, index) =>
+        writeFile(
+          path.join(workspace, `late-${String(index).padStart(3, "0")}.md`),
+          index === 79 ? "Late ???\n" : `# Clean ${index}\n`,
+          "utf8",
+        ),
+      ),
+    );
+    const pending = page.locator("[data-problems-pending]");
     const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline && await pending.count() === 0) {
+    while (Date.now() < deadline && (await pending.count()) === 0) {
       await page.getByRole("button", { name: "Refresh problems" }).click();
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     await pending.waitFor({ state: "visible" });
     screenshots.set("problems-pending.png", await page.screenshot());
     await pending.waitFor({ state: "detached", timeout: 90_000 });
-    await page.locator('.problems-group').filter({ hasText: "late-079.md" }).waitFor({ state: "visible", timeout: 90_000 });
+    await page
+      .locator(".problems-group")
+      .filter({ hasText: "late-079.md" })
+      .waitFor({ state: "visible", timeout: 90_000 });
   });
 });
