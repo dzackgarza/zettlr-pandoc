@@ -115,16 +115,14 @@ function populate(
   result: TikzRenderResult,
   editTitle: string,
   editSource: () => void,
+  actions: HTMLElement,
 ): void {
   if (result.ok) {
     const figure = figureNodes(result.html);
     const frame = document.createElement("div");
     frame.classList.add("tikz-rendered-frame");
-    frame.append(...figure);
+    frame.append(...figure, actions);
     normalizeSvgTypography(frame, result.svg, result.texFontSizePt);
-
-    // Editing is the only inline action. Fullscreen belongs to the unified
-    // RHS preview pane so rendered widgets do not expose a second preview path.
 
     elem.classList.remove("tikz-pending");
     elem.classList.add("tikz-rendered");
@@ -232,6 +230,7 @@ function populate(
   edit.addEventListener("click", editSource);
   box.insertBefore(edit, title);
 
+  box.append(actions);
   elem.replaceChildren(box);
 }
 
@@ -293,7 +292,7 @@ class TikzWidget extends WidgetType {
           if (version !== renderVersion) {
             return;
           }
-          populate(elem, result, editTitle, editSource);
+          populate(elem, result, editTitle, editSource, actions);
         },
         // Only the IPC round-trip is handled here. A failure to reach the main
         // process is a render failure the user must see; a failure raised by
@@ -313,12 +312,11 @@ class TikzWidget extends WidgetType {
             },
             editTitle,
             editSource,
+            actions,
           );
         },
       );
     };
-    render("use");
-
     const actions = document.createElement("div");
     actions.className = "tikz-figure-actions";
     const refresh = document.createElement("button");
@@ -347,6 +345,8 @@ class TikzWidget extends WidgetType {
       );
     });
     actions.append(refresh, visual);
+    elem.append(actions);
+    render("use");
 
     // A click on the figure selects its authored source. The overlay buttons
     // have their own actions and do not enter source editing.
@@ -363,7 +363,7 @@ class TikzWidget extends WidgetType {
     // CodeMirror measures a block widget by its border box, so the space
     // around the figure is padding on this root, never a margin on the figure.
     block.classList.add("tikz-figure-block");
-    block.append(elem, actions);
+    block.append(elem);
     return block;
   }
 
@@ -393,12 +393,11 @@ export const renderTikzFigures = [
     ".tikz-figure-block": {
       display: "block",
       padding: "0.35em 0",
-      position: "relative",
     },
     ".tikz-figure-actions": {
       position: "absolute",
-      top: "0.7em",
-      right: "0.45em",
+      top: "-1.5em",
+      right: "0",
       display: "flex",
       gap: "0.3em",
       opacity: "0.42",
@@ -418,6 +417,7 @@ export const renderTikzFigures = [
     },
     ".tikz-figure": {
       display: "block",
+      position: "relative",
       textAlign: "center",
       padding: "0.8em 0 0.4em",
       cursor: "default",
@@ -431,7 +431,7 @@ export const renderTikzFigures = [
       // Keep the original figure measure exactly: the delineation must not
       // steal horizontal space from a wide diagram. An inset stroke is visual
       // only, unlike a border plus horizontal padding.
-      padding: "0.8em 0 0.4em",
+      padding: "1.8em 0 0.4em",
       borderRadius: "0.35em",
       boxShadow: "inset 0 0 0 1px color-mix(in srgb, currentColor 13%, transparent)",
       backgroundColor: "color-mix(in srgb, currentColor 1.8%, transparent)",
@@ -470,6 +470,7 @@ export const renderTikzFigures = [
       fontStyle: "italic",
     },
     ".tikz-error": {
+      position: "relative",
       display: "inline-block",
       textAlign: "left",
       border: "1px solid #c0392b",
