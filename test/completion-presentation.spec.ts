@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import {
   completionIconText,
   completionPresentationOptions,
-  completionSource,
+  completionSourceOf,
   withCompletionSource,
 } from "source/common/modules/markdown-editor/autocomplete/completion-presentation";
 
@@ -21,7 +21,7 @@ describe("completion presentation", function () {
       "LaTeX",
     );
 
-    assert.equal(completionSource(completion), "LaTeX");
+    assert.equal(completionSourceOf(completion), "LaTeX");
     assert.equal(completionIconText(completion), "T");
     assert.equal(completion.label, "\\operatorname");
     assert.equal(completion.detail, "[amsmath]");

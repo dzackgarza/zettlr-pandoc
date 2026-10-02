@@ -24,7 +24,7 @@ import { sha256Text } from "@common/util/sha256";
 import type { AgentEventType } from "@dts/common/agent-api";
 import type { SerializedUpdate } from "@dts/common/documents";
 import { strict as assert } from "assert";
-import { mkdtempSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -208,6 +208,22 @@ export interface Harness {
   warnings: string[];
 }
 
+const temporaryDirectories: string[] = [];
+
+// A root hook: it runs once, after every spec of the run.
+after(function () {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/** A fresh sidecar directory that the run removes when it ends. */
+export function temporarySidecarDirectory(prefix: string): string {
+  const directory = mkdtempSync(join(tmpdir(), prefix));
+  temporaryDirectories.push(directory);
+  return directory;
+}
+
 export interface HarnessOptions {
   /** Which document this authority answers for — required, never guessed. */
   documentId: string;
@@ -238,7 +254,7 @@ export function harness(options: HarnessOptions): Harness {
   const authority = new DocumentAuthority(diskText, documentId, documentPath);
   const emitted: Array<{ event: AgentEventType; payload: AgentEventPayload }> = [];
   const warnings: string[] = [];
-  const directory = sidecarDirectory ?? mkdtempSync(join(tmpdir(), tmpPrefix));
+  const directory = sidecarDirectory ?? temporarySidecarDirectory(tmpPrefix);
   return {
     authority,
     sidecarDirectory: directory,

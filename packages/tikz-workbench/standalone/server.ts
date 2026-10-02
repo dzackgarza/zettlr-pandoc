@@ -39,7 +39,7 @@ const config = {
 const macroProjectionPath = path.join(home, ".pandoc", "templates", "css", "mathjax-macros.json");
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".svg"]);
 
-await build({ configFile: path.join(import.meta.dir, "vite.config.ts"), logLevel: "warn" });
+await build({ configFile: path.join(packageRoot, "vite.config.ts"), logLevel: "warn" });
 
 function revisionOf(source: string): string {
   return `"${createHash("sha256").update(source).digest("hex")}"`;

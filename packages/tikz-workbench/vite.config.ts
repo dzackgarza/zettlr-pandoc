@@ -1,8 +1,10 @@
+import path from "node:path";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 
+// The standalone page; standalone/server.ts builds it with this config.
 export default defineConfig({
-  root: import.meta.dirname,
+  root: path.join(import.meta.dirname, "standalone"),
   plugins: [vue()],
   resolve: {
     // The repository's patch to @tikz-editor/lang-tikz

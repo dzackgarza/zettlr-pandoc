@@ -37,9 +37,6 @@ import type { TextAnnotation } from "@dts/common/annotation-domain";
 import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
 import { DP_EVENTS } from "@dts/common/documents";
 import { strict as assert } from "assert";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import { createPinia, setActivePinia } from "pinia";
 import {
   type AnnotationFailure,
@@ -48,7 +45,10 @@ import {
 import { collaborationSessionFor } from "source/app/service-providers/documents/review-diff-store";
 import { useDocumentCollaborationStore } from "source/pinia/document-collaboration-store";
 import { computed } from "vue";
-import { DocumentAuthority as SharedDocumentAuthority } from "./collaboration-test-authority";
+import {
+  DocumentAuthority as SharedDocumentAuthority,
+  temporarySidecarDirectory,
+} from "./collaboration-test-authority";
 // Must be the first local import: it installs window.ipc as a side effect,
 // before the store below reads window.ipc at its own module top level.
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
@@ -77,7 +77,7 @@ function harness(): { authority: DocumentAuthority; service: CollaborationApplic
   const authority = new DocumentAuthority();
   const service = new CollaborationApplicationService({
     authority,
-    sidecarDirectory: mkdtempSync(join(tmpdir(), "zettlr-multi-pane-")),
+    sidecarDirectory: temporarySidecarDirectory("zettlr-multi-pane-"),
     emit: () => undefined,
     warn: () => undefined,
   });

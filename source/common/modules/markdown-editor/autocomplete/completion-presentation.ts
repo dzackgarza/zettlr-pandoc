@@ -83,9 +83,6 @@ export function completionSourceOf(completion: Completion): CompletionSourceName
   return (completion as PresentedCompletion).zettlrSource;
 }
 
-/** Compatibility name used by source-level tests and external completion helpers. */
-export const completionSource = completionSourceOf;
-
 export function completionIconText(completion: Completion): string {
   const source = completionSourceOf(completion);
   if (source !== undefined && TEXT_SOURCE_ICON[source] !== undefined) {
