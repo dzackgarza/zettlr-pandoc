@@ -377,22 +377,25 @@ export type ConfigPath = Paths<ConfigOptions>;
  */
 export type ConfigValue<P extends ConfigPath> = Get<ConfigOptions, P>;
 
-export function getConfigTemplate(): ConfigOptions {
-  // Before returning the settings object, we have to make sure we retrieve a
-  // locale that is both installed as a translation AND more or less the user's
-  // wish.
-  let locale = app.getLocale();
-  let locSchema = bcp47.parse(locale);
+/**
+ * The installed translation that best matches the system locale, or en-US
+ * when the system locale is not a language tag.
+ */
+export function systemAppLang(): string {
+  const locale = app.getLocale();
   // bcp-47 sets the language to null for a tag that it cannot parse.
-  if (locSchema.language === null || locSchema.language === undefined) {
-    // Fall back to en-US
-    locale = "en-US";
-  } else {
-    // Return the best match that the app can find (only the tag).
-    locale = getLanguageFile(locale).tag;
+  const language = bcp47.parse(locale).language;
+  if (language === null || language === undefined) {
+    return "en-US";
   }
+  return getLanguageFile(locale).tag;
+}
 
-  // Return the complete configuration object
+/**
+ * The default configuration. The caller resolves the interface language,
+ * because that reads the installed translations.
+ */
+export function getConfigTemplate(appLang: string): ConfigOptions {
   return {
     version: app.getVersion(), // Useful for migrating
     buildDate: __BUILD_DATE__,
@@ -603,7 +606,7 @@ export function getConfigTemplate(): ConfigOptions {
     },
     // Language
     selectedDicts: [], // By default no spell checking is active to speed up first start.
-    appLang: locale,
+    appLang,
     debug: false,
     watchdog: {
       activatePolling: false, // Set to true to enable polling in chokidar

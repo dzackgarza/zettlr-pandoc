@@ -35,6 +35,7 @@ import {
   type ConfigPath,
   type ConfigValue,
   getConfigTemplate,
+  systemAppLang,
 } from "./get-config-template";
 import { showOnboardingWindow } from "./onboarding-window";
 
@@ -166,7 +167,7 @@ export default class ConfigProvider extends ProviderContract {
 
     this._emitter = new EventEmitter(); // Initiate the emitter
 
-    this.config = getConfigTemplate();
+    this.config = getConfigTemplate(systemAppLang());
     this._rules = validationRules();
     this._firstStart = false; // Only true if a config file has been created
     this._newVersion = false; // True if the last read config had a different version

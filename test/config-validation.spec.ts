@@ -10,40 +10,25 @@
  * Description:     Every validation rule accepts the value that the shipped
  *                  configuration template gives its option, and refuses a
  *                  value outside its ruleset. The template is the real
- *                  getConfigTemplate, built under an Electron stub because
- *                  it reads the locale, the version and the theme from
- *                  Electron.
+ *                  getConfigTemplate under the headless Electron harness,
+ *                  because it reads the version and the theme from Electron.
  *
  * END HEADER
  */
 
+// The harness must load before the configuration modules import Electron.
+import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import Module from "module";
-import type {
-  ConfigJsonValue,
-  ValidationRule,
+import {
+  type ConfigJsonValue,
+  validationRules,
 } from "source/app/service-providers/config/config-validation";
-import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import {
+  type ConfigOptions,
+  getConfigTemplate,
+} from "source/app/service-providers/config/get-config-template";
 
-/** The parts of Electron that the configuration template reads. */
-const electronStub = {
-  app: {
-    getLocale: () => "",
-    getVersion: () => "0.0.0",
-    getPath: () => "/home/user",
-  },
-  nativeTheme: { shouldUseDarkColors: false },
-  ipcMain: { handle() {}, on() {} },
-};
-
-/** What Module._load returns: the exports of whatever module was requested. */
-type ModuleExports = ReturnType<NodeJS.Require>;
-type ModuleLoad = (
-  this: typeof Module,
-  request: string,
-  ...rest: ReadonlyArray<string | boolean>
-) => ModuleExports;
-const moduleWithLoad = Module as typeof Module & { _load: ModuleLoad };
+/** Webpack's DefinePlugin supplies __BUILD_DATE__ to the bundle. */
 const buildGlobals = globalThis as typeof globalThis & { __BUILD_DATE__?: number };
 
 /** A value of the template that each rule refuses. */
@@ -91,27 +76,15 @@ function templateValue(template: ConfigOptions, option: string): ConfigJsonValue
 }
 
 describe("Configuration validation (#164)", function () {
+  const rules = validationRules();
   let template: ConfigOptions;
-  let rules: ValidationRule[];
-  const originalLoad = moduleWithLoad._load;
 
-  before(async function () {
-    moduleWithLoad._load = function (request, ...rest) {
-      return request === "electron" ? electronStub : originalLoad.call(this, request, ...rest);
-    };
+  before(function () {
     buildGlobals.__BUILD_DATE__ = 0;
-    const { getConfigTemplate } = await import(
-      "source/app/service-providers/config/get-config-template"
-    );
-    const { validationRules } = await import(
-      "source/app/service-providers/config/config-validation"
-    );
-    template = getConfigTemplate();
-    rules = validationRules();
+    template = getConfigTemplate("en-US");
   });
 
   after(function () {
-    moduleWithLoad._load = originalLoad;
     delete buildGlobals.__BUILD_DATE__;
   });
 

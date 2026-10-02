@@ -158,6 +158,7 @@ Module._load = function (request, ...rest) {
       },
       shell: { openPath: async () => "" },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+      nativeTheme: { shouldUseDarkColors: false },
       Notification: class {
         static isSupported() {
           return true;
