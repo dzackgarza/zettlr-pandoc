@@ -83,6 +83,7 @@ export const WINDOW_SHORTCUT_NAMES = [
   "previous-tab",
   "print",
   "rename-file",
+  "reopen-closed-tab",
   "save-file",
   "save-all",
   "save-all-and-close",

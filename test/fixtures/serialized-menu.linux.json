@@ -702,6 +702,13 @@
       },
       {
         "type": "normal",
+        "id": "menu.tab_reopen_closed",
+        "label": "Reopen Closed Tab",
+        "enabled": true,
+        "accelerator": "Ctrl+Shift+T"
+      },
+      {
+        "type": "normal",
         "id": "menu.tabs_close_all",
         "label": "Close All Tabs",
         "enabled": true
