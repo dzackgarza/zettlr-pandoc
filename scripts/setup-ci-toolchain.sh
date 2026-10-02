@@ -51,8 +51,13 @@ sudo apt-get install --yes pdf2svg xvfb
 # checksum to pin; tlmgr verifies each package's signature instead. The
 # repository is one fixed mirror: mirror.ctan.org redirects to a random
 # mirror, and some of those serve a certificate curl cannot verify.
+#
+# The check workflow restores ${texlive_dir} from its cache, keyed by this
+# script and the ISO week; a restored tree only needs its paths linked.
 readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
+readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"
+if [[ ! -x "${tlmgr}" ]]; then
 curl --fail --location --silent --show-error \
   "${texlive_repository}/install-tl-unx.tar.gz" \
   --output "${setup_dir}/install-tl.tar.gz"
@@ -77,8 +82,8 @@ tlpdbopt_autobackup 0
 instopt_adjustpath 0
 PROFILE
 "${setup_dir}/install-tl/install-tl" --no-interaction --repository "${texlive_repository}" --profile "${setup_dir}/texlive.profile"
-readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"
 "${tlmgr}" install bbm bbm-macros latexmk
+fi
 sudo "${tlmgr}" path add
 
 readonly pandoc_package="${setup_dir}/pandoc.deb"
