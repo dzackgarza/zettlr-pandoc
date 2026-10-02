@@ -52,44 +52,62 @@ export default class FixAll extends ZettlrCommand {
     arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
   ): Promise<FixAllPlan | FixAllOutcome | WorkspaceProblems> {
     if (evt === "list-workspace-lint") {
-      if (!("scope" in arg) || (arg.scope !== "workspace" && arg.scope !== "all")) {
-        throw new Error("list-workspace-lint requires a workspace or all scope");
-      }
-      return await this._app.documentLint.workspaceProblems(arg);
+      return await this.listProblems(arg);
     }
     if (evt === "apply-lint-fix") {
-      if (!("documentPath" in arg) || !("sourceHash" in arg)) {
-        throw new Error("apply-lint-fix requires a document path and source hash");
-      }
-      if (!(await this._app.documentLint.hasCurrentFix(arg))) {
-        return { status: "conflict", documentPath: arg.documentPath };
-      }
-      return await this.commit({
-        documents: [
-          {
-            documentPath: arg.documentPath,
-            sourceHash: arg.sourceHash,
-            edits: [{ from: arg.from, to: arg.to, insert: arg.replacement, rule: "" }],
-          },
-        ],
-        documentsChecked: 1,
-        unlinted: [],
-      });
+      return await this.applyProblemFix(arg);
     }
     if (evt === "preview-fix-all") {
-      if (!("scope" in arg) || arg.scope === "all") {
-        throw new Error("preview-fix-all requires a scope");
-      }
-      const request: FixAllRequest =
-        arg.scope === "document" && "documentPath" in arg
-          ? { scope: "document", documentPath: arg.documentPath }
-          : { scope: arg.scope };
-      return await this._app.documentLint.planFixes(await this.documentsIn(request));
+      return await this.preview(arg);
     }
     if (!("plan" in arg)) {
       throw new Error("commit-fix-all requires a plan");
     }
     return await this.commit(arg.plan);
+  }
+
+  private async listProblems(
+    arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
+  ): Promise<WorkspaceProblems> {
+    if (!("scope" in arg) || (arg.scope !== "workspace" && arg.scope !== "all")) {
+      throw new Error("list-workspace-lint requires a workspace or all scope");
+    }
+    return await this._app.documentLint.workspaceProblems(arg);
+  }
+
+  private async applyProblemFix(
+    arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
+  ): Promise<FixAllOutcome> {
+    if (!("documentPath" in arg) || !("sourceHash" in arg)) {
+      throw new Error("apply-lint-fix requires a document path and source hash");
+    }
+    if (!(await this._app.documentLint.hasCurrentFix(arg))) {
+      return { status: "conflict", documentPath: arg.documentPath };
+    }
+    return await this.commit({
+      documents: [
+        {
+          documentPath: arg.documentPath,
+          sourceHash: arg.sourceHash,
+          edits: [{ from: arg.from, to: arg.to, insert: arg.replacement, rule: "" }],
+        },
+      ],
+      documentsChecked: 1,
+      unlinted: [],
+    });
+  }
+
+  private async preview(
+    arg: FixAllRequest | { plan: FixAllPlan } | ListProblemsRequest | ApplyProblemFixRequest,
+  ): Promise<FixAllPlan> {
+    if (!("scope" in arg) || arg.scope === "all") {
+      throw new Error("preview-fix-all requires a scope");
+    }
+    const request: FixAllRequest =
+      arg.scope === "document" && "documentPath" in arg
+        ? { scope: "document", documentPath: arg.documentPath }
+        : { scope: arg.scope };
+    return await this._app.documentLint.planFixes(await this.documentsIn(request));
   }
 
   private async documentsIn(request: FixAllRequest): Promise<string[]> {

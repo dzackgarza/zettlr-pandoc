@@ -443,18 +443,15 @@ function reportDocumentLoadError(error: unknown): void {
  * jump. Applied once the editor for that file is loaded (or immediately when
  * it already is), then cleared.
  */
-let pendingNavigation: {
+type PendingNavigation = {
   filePath: string;
   location?: DocumentLocation;
   targetRange?: SourceRange;
-} | null = null;
+};
+let pendingNavigation: PendingNavigation | null = null;
 let pendingReviewDiffSession: ReviewDiffSession | null = null;
 
-/**
- * Applies (and clears) the pending navigation payload when the currently
- * loaded editor shows the file it belongs to.
- */
-function applyPendingNavigation(): void {
+function carryRangeNavigation(): void {
   const carried = documentTreeStore.pendingRangeNavigation;
   if (
     pendingNavigation === null &&
@@ -463,29 +460,39 @@ function applyPendingNavigation(): void {
   ) {
     pendingNavigation = { filePath: carried.filePath, targetRange: carried.range };
   }
-  if (
-    pendingNavigation === null ||
-    currentEditor === null ||
-    editorLoadPromise !== null ||
-    documentTreeStore.pendingTreeUpdates > 0
-  ) {
+}
+
+function navigationReady(navigation: PendingNavigation, editor: MarkdownEditor): boolean {
+  return (
+    editorLoadPromise === null &&
+    documentTreeStore.pendingTreeUpdates === 0 &&
+    navigation.filePath === editor.documentPath &&
+    isActiveTab.value
+  );
+}
+
+/**
+ * Applies (and clears) the pending navigation payload when the currently
+ * loaded editor shows the file it belongs to.
+ */
+function applyPendingNavigation(): void {
+  carryRangeNavigation();
+  const carried = documentTreeStore.pendingRangeNavigation;
+  const navigation = pendingNavigation;
+  const editor = currentEditor;
+  if (navigation === null || editor === null || !navigationReady(navigation, editor)) {
     return;
   }
-
-  if (pendingNavigation.filePath !== currentEditor.documentPath || !isActiveTab.value) {
-    return; // The pane moved elsewhere; keep waiting or get superseded.
-  }
-
-  const { location, targetRange } = pendingNavigation;
+  const { location, targetRange } = navigation;
   pendingNavigation = null;
   if (carried?.leafId === props.leafId && carried.filePath === props.file.path) {
     documentTreeStore.pendingRangeNavigation = undefined;
   }
 
   if (location !== undefined) {
-    currentEditor.restoreDocumentLocation(location);
+    editor.restoreDocumentLocation(location);
   } else if (targetRange !== undefined) {
-    currentEditor.selectSourceRange(targetRange);
+    editor.selectSourceRange(targetRange);
   }
 }
 

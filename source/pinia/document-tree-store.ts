@@ -207,6 +207,22 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
   const pendingRangeNavigation = ref<{ leafId: string; filePath: string; range: SourceRange }>();
   const pendingTreeUpdates = ref(0);
 
+  function captureRangeNavigation(event: DP_EVENTS, context: DocumentsUpdateContext): void {
+    if (
+      event !== DP_EVENTS.ACTIVE_FILE ||
+      context.leafId === undefined ||
+      context.filePath === undefined ||
+      context.targetRange === undefined
+    ) {
+      return;
+    }
+    pendingRangeNavigation.value = {
+      leafId: context.leafId,
+      filePath: context.filePath,
+      range: context.targetRange,
+    };
+  }
+
   // Initial update for the pane structure ...
   if (windowId !== null) {
     ipcRenderer
@@ -242,18 +258,7 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
         if (context.windowId !== windowId) {
           return; // None of our business
         }
-        if (
-          event === DP_EVENTS.ACTIVE_FILE &&
-          context.leafId !== undefined &&
-          context.filePath !== undefined &&
-          context.targetRange !== undefined
-        ) {
-          pendingRangeNavigation.value = {
-            leafId: context.leafId,
-            filePath: context.filePath,
-            range: context.targetRange,
-          };
-        }
+        captureRangeNavigation(event, context);
         pendingTreeUpdates.value += 1;
 
         // Something in the document status has changed, here we simply pull in
