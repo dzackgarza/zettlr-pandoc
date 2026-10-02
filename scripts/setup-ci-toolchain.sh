@@ -42,6 +42,23 @@ setup_dir="$(mktemp -d)"
 readonly setup_dir
 trap 'rm -r -- "${setup_dir}"' EXIT
 
+# The check workflow caches ${downloads_dir} and ${texlive_dir}, keyed by
+# this script. Every download below is pinned by its checksum, so a cached
+# file is reused only when it still matches.
+readonly downloads_dir="${HOME}/ci-downloads"
+mkdir --parents "${downloads_dir}"
+
+# fetch URL SHA256 NAME: print the path of the verified file NAME in the
+# download cache, and download it first when it is absent or does not match.
+fetch() {
+  local -r url="$1" sha256="$2" file="${downloads_dir}/$3"
+  if [[ ! -f "${file}" ]] || ! printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check --status; then
+    curl --fail --location --silent --show-error "${url}" --output "${file}" || return
+    printf '%s  %s\n' "${sha256}" "${file}" | sha256sum --check >&2 || return
+  fi
+  printf '%s\n' "${file}"
+}
+
 sudo apt-get update
 sudo apt-get install --yes pdf2svg xvfb
 
@@ -52,8 +69,8 @@ sudo apt-get install --yes pdf2svg xvfb
 # repository is one fixed mirror: mirror.ctan.org redirects to a random
 # mirror, and some of those serve a certificate curl cannot verify.
 #
-# The check workflow restores ${texlive_dir} from its cache, keyed by this
-# script and the ISO week; a restored tree only needs its paths linked.
+# A ${texlive_dir} that the check workflow restored from its cache only
+# needs its paths linked.
 readonly texlive_repository='https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'
 readonly texlive_dir="${HOME}/texlive"
 readonly tlmgr="${texlive_dir}/bin/x86_64-linux/tlmgr"
@@ -86,46 +103,41 @@ PROFILE
 fi
 sudo "${tlmgr}" path add
 
-readonly pandoc_package="${setup_dir}/pandoc.deb"
-curl --fail --location --silent --show-error \
+pandoc_package="$(fetch \
   "https://github.com/jgm/pandoc/releases/download/${pandoc_version}/pandoc-${pandoc_version}-1-amd64.deb" \
-  --output "${pandoc_package}"
-printf '%s  %s\n' "${pandoc_sha256}" "${pandoc_package}" | sha256sum --check
+  "${pandoc_sha256}" "pandoc-${pandoc_version}.deb")"
+readonly pandoc_package
 sudo dpkg --install "${pandoc_package}"
 
 # Parser differential tests are locked to the vendored grammar's exact Pandoc
 # reference release. Keep that oracle separate from the export toolchain above:
 # pandoc-crossref must match the runtime pandoc ABI, while grammar tests must not
 # silently change meaning when the export toolchain changes.
-readonly pandoc_reference_package="${setup_dir}/pandoc-reference.deb"
-readonly pandoc_reference_root="${setup_dir}/pandoc-reference"
-curl --fail --location --silent --show-error \
+pandoc_reference_package="$(fetch \
   "https://github.com/jgm/pandoc/releases/download/${pandoc_reference_version}/pandoc-${pandoc_reference_version}-1-amd64.deb" \
-  --output "${pandoc_reference_package}"
-printf '%s  %s\n' "${pandoc_reference_sha256}" "${pandoc_reference_package}" | sha256sum --check
+  "${pandoc_reference_sha256}" "pandoc-${pandoc_reference_version}.deb")"
+readonly pandoc_reference_package
+readonly pandoc_reference_root="${setup_dir}/pandoc-reference"
 mkdir --parents "${pandoc_reference_root}"
 dpkg-deb --extract "${pandoc_reference_package}" "${pandoc_reference_root}"
 sudo install --mode 0755 "${pandoc_reference_root}/usr/bin/pandoc" /usr/local/bin/pandoc-reference
 
-readonly crossref_archive="${setup_dir}/pandoc-crossref.tar.xz"
-curl --fail --location --silent --show-error \
+crossref_archive="$(fetch \
   "https://github.com/lierdakil/pandoc-crossref/releases/download/v${crossref_release}/pandoc-crossref-Linux-X64.tar.xz" \
-  --output "${crossref_archive}"
-printf '%s  %s\n' "${crossref_sha256}" "${crossref_archive}" | sha256sum --check
+  "${crossref_sha256}" "pandoc-crossref-${crossref_release}.tar.xz")"
+readonly crossref_archive
 sudo tar --extract --xz --file "${crossref_archive}" --directory /usr/local/bin pandoc-crossref
 
-readonly pandoc_flowmark_binary="${setup_dir}/pandoc-flowmark"
-curl --fail --location --silent --show-error \
+pandoc_flowmark_binary="$(fetch \
   "https://github.com/dzackgarza/pandoc/releases/download/${pandoc_flowmark_release}/pandoc-flowmark" \
-  --output "${pandoc_flowmark_binary}"
-printf '%s  %s\n' "${pandoc_flowmark_sha256}" "${pandoc_flowmark_binary}" | sha256sum --check
+  "${pandoc_flowmark_sha256}" "pandoc-flowmark-${pandoc_flowmark_release}")"
+readonly pandoc_flowmark_binary
 sudo install --mode 0755 "${pandoc_flowmark_binary}" /usr/local/bin/pandoc-flowmark
 
-readonly languagetool_archive="${setup_dir}/LanguageTool.zip"
-curl --fail --location --silent --show-error \
+languagetool_archive="$(fetch \
   "https://languagetool.org/download/LanguageTool-${languagetool_version}.zip" \
-  --output "${languagetool_archive}"
-printf '%s  %s\n' "${languagetool_sha256}" "${languagetool_archive}" | sha256sum --check
+  "${languagetool_sha256}" "LanguageTool-${languagetool_version}.zip")"
+readonly languagetool_archive
 sudo unzip -q "${languagetool_archive}" -d /opt
 printf '#!/bin/sh\nexec java -jar /opt/LanguageTool-%s/languagetool-commandline.jar "$@"\n' \
   "${languagetool_version}" | sudo tee /usr/local/bin/languagetool >/dev/null
