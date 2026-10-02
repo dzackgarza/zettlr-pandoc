@@ -69,7 +69,7 @@ export function getAppServiceContainer(): AppServiceContainer {
  * @return  {boolean}  Whether the app service container is booted.
  */
 export function isAppServiceContainerReady(): boolean {
-  return appServiceContainer?.isBooted ?? false;
+  return appServiceContainer !== undefined && appServiceContainer.isBooted;
 }
 
 export function setAppServiceContainer(container: AppServiceContainer) {

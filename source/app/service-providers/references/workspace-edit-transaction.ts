@@ -137,7 +137,7 @@ export async function runWorkspaceEditTransaction(
 ): Promise<WorkspaceEditTransactionResult> {
   const documentPaths = Object.keys(input.expectedSourceHashes);
   const openPaths: string[] = [];
-  const sources = new Map<string, string>();
+  const sources: Array<{ documentPath: string; source: string }> = [];
 
   // Resolve ownership and read every source, then verify EVERY hash before
   // anything is computed or mutated: a conflict must abort with nothing done.
@@ -145,15 +145,15 @@ export async function runWorkspaceEditTransaction(
     const buffer = authority.readMarkdownBufferContent(documentPath);
     if (buffer !== undefined) {
       openPaths.push(documentPath);
-      sources.set(documentPath, buffer);
+      sources.push({ documentPath, source: buffer });
     } else {
-      sources.set(documentPath, await readFile(documentPath, "utf-8"));
+      sources.push({ documentPath, source: await readFile(documentPath, "utf-8") });
     }
   }
 
-  for (const documentPath of documentPaths) {
+  for (const { documentPath, source } of sources) {
     const expected = input.expectedSourceHashes[documentPath];
-    const actual = hashDocumentSource(sources.get(documentPath) ?? "");
+    const actual = hashDocumentSource(source);
     if (actual !== expected) {
       return {
         status: "conflict",
@@ -167,24 +167,22 @@ export async function runWorkspaceEditTransaction(
   // Compute and stage every target — both partitions — before mutating.
   const editsFor = (documentPath: string): WorkspaceTextEdit[] =>
     input.edits.filter((edit) => edit.documentPath === documentPath);
-  const journaled = new Map<string, JournaledDocument>();
+  const journaled: JournaledDocument[] = [];
   const resultingHashes: Record<string, string> = {};
-  for (const documentPath of documentPaths) {
-    const original = sources.get(documentPath) ?? "";
-    const target = computeTarget(original, editsFor(documentPath));
-    journaled.set(documentPath, { documentPath, original, target });
+  for (const { documentPath, source } of sources) {
+    const target = computeTarget(source, editsFor(documentPath));
+    journaled.push({ documentPath, original: source, target });
     resultingHashes[documentPath] = hashDocumentSource(target);
   }
 
-  const closedPaths = documentPaths.filter((documentPath) => !openPaths.includes(documentPath));
+  const closedFiles = journaled.filter((document) => !openPaths.includes(document.documentPath));
+  const closedPaths = closedFiles.map((document) => document.documentPath);
   const journalFile = path.join(journalDirectory, JOURNAL_FILE);
   const journal: WorkspaceEditJournal = {
     transactionId: randomUUID(),
     phase: "installing",
-    closedFiles: closedPaths.map(
-      (documentPath) => journaled.get(documentPath) as JournaledDocument,
-    ),
-    openBuffers: openPaths.map((documentPath) => journaled.get(documentPath) as JournaledDocument),
+    closedFiles,
+    openBuffers: journaled.filter((document) => openPaths.includes(document.documentPath)),
   };
   await writeFileAtomic(journalFile, JSON.stringify(journal), "utf-8");
 
@@ -217,8 +215,8 @@ export async function runWorkspaceEditTransaction(
       }
     }
 
-    for (const documentPath of closedPaths) {
-      await writeFileAtomic(documentPath, journaled.get(documentPath)?.target ?? "", "utf-8");
+    for (const { documentPath, target } of closedFiles) {
+      await writeFileAtomic(documentPath, target, "utf-8");
       installed.push(documentPath);
     }
   } catch (err) {

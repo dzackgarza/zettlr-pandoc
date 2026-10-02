@@ -133,7 +133,7 @@ describe("assembled editor: click into rendered math to edit it", function () {
         const block = view.lineBlockAt(view.posAtDOM(element, 0));
         const offset = element.getBoundingClientRect().top - (block.top + view.documentTop);
         if (Math.abs(offset) > 1) {
-          offsets.push({ text: (element.textContent ?? "").slice(0, 40), offset });
+          offsets.push({ text: element.textContent.slice(0, 40), offset });
         }
       }
       return offsets;

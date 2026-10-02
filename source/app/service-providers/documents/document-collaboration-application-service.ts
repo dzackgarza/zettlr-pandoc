@@ -613,10 +613,12 @@ export class CollaborationApplicationService {
       throw new Error(`Document ${documentId} has collaboration state but is not open`);
     }
     const documentPath = review?.documentPath ?? annotationState!.documentPath;
-    const unresolvedChunks =
-      review === undefined
-        ? 0
-        : (this.reviews.getStatus(documentId, workingText)?.unresolvedChunks ?? 0);
+    const status =
+      review === undefined ? undefined : this.reviews.getStatus(documentId, workingText);
+    if (review !== undefined && status === undefined) {
+      throw new Error(`Review ${review.reviewId} of document ${documentId} has no status`);
+    }
+    const unresolvedChunks = status === undefined ? 0 : status.unresolvedChunks;
     const keepsAnnotations = (annotationState?.annotations.items.length ?? 0) > 0;
     const survivesSave = unresolvedChunks > 0 || keepsAnnotations;
     if (survivesSave) {
@@ -1417,7 +1419,16 @@ export class CollaborationApplicationService {
       });
     }
     this.deps.authority.commitWorkingTextReplacement(prepared);
-    for (const draft of [...plan.events, ...(mapped?.events ?? []), ...(linkage?.events ?? [])]) {
+    // A document without annotations maps and links nothing, so those steps
+    // are absent and contribute no events.
+    const events = [...plan.events];
+    if (mapped !== undefined) {
+      events.push(...mapped.events);
+    }
+    if (linkage !== undefined) {
+      events.push(...linkage.events);
+    }
+    for (const draft of events) {
       this.deps.emit(draft.event, draft.payload);
     }
     this.deps.authority.broadcastCollaborationState(input.documentId);

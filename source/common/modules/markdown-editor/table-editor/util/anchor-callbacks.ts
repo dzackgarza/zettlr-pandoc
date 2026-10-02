@@ -29,7 +29,12 @@ export function interceptAnchorClicks(content: HTMLElement, cb: (href: string) =
       event.preventDefault();
       event.stopPropagation();
       // NOTE: `anchor.href` already returns a *resolved* link.
-      cb(anchor.getAttribute("href") ?? "");
+      const href = anchor.getAttribute("href");
+      // An anchor without an href is a placeholder, not a link: it has no target.
+      if (href === null) {
+        return false;
+      }
+      cb(href);
       return false;
     });
   }

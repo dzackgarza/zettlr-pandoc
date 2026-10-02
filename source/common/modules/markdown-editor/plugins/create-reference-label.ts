@@ -184,13 +184,18 @@ function resolveNodeRequest(
     // The class registry decides the family; proof-like and unknown div
     // classes are never labelable.
     const classMatch = openLine.text.match(/^:{3,}\s*(?:\{\s*)?\.?([a-zA-Z-]+)/);
-    const family =
-      classMatch !== null ? CLASS_TO_FAMILY.get(classMatch[1].toLowerCase()) : undefined;
+    if (classMatch === null) {
+      return null;
+    }
+    const className = classMatch[1];
+    const family = CLASS_TO_FAMILY.get(className.toLowerCase());
     if (family === undefined) {
       return null;
     }
 
-    const title = openLine.text.match(/title="([^"]*)"/)?.[1] ?? "";
+    // An untitled div gives no words to propose a slug from.
+    const titleMatch = openLine.text.match(/title="([^"]*)"/);
+    const proposedSlug = titleMatch === null ? "" : proposeSlug(titleMatch[1]);
     const brace = openLine.text.indexOf("{");
     if (brace !== -1) {
       // Attribute form: insert the id inside the existing block, before '}'.
@@ -200,7 +205,7 @@ function resolveNodeRequest(
       }
       return {
         family,
-        proposedSlug: proposeSlug(title),
+        proposedSlug,
         insertion: {
           from: openLine.from + close,
           to: openLine.from + close,
@@ -213,11 +218,10 @@ function resolveNodeRequest(
 
     // Bare form `::: theorem`: rewrite the class word into an attribute
     // block carrying both the class and the new id.
-    const className = classMatch?.[1] ?? "";
     const classStart = openLine.from + openLine.text.indexOf(className);
     return {
       family,
-      proposedSlug: proposeSlug(title),
+      proposedSlug,
       insertion: {
         from: classStart,
         to: classStart + className.length,
@@ -259,10 +263,13 @@ function resolveNodeRequest(
   if (node.name === "Image") {
     // pandoc-crossref figure attributes attach directly after the closing
     // parenthesis, without a space.
-    const alt = view.state.sliceDoc(node.from, node.to).match(/^!\[([^\]]*)\]/)?.[1] ?? "";
+    const altMatch = view.state.sliceDoc(node.from, node.to).match(/^!\[([^\]]*)\]/);
+    if (altMatch === null) {
+      throw new Error(`The Image node at ${node.from} does not start with an alt text.`);
+    }
     return {
       family: "fig",
-      proposedSlug: proposeSlug(alt),
+      proposedSlug: proposeSlug(altMatch[1]),
       insertion: { from: node.to, to: node.to, prefix: "{", suffix: "}" },
       targetLine: openLine.text,
     };

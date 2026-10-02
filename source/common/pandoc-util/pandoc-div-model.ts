@@ -44,7 +44,8 @@ export interface PandocDivModel {
   closeFrom: number;
   closeTo: number;
   classes: string[];
-  id: string;
+  /** The identifier, or undefined when the attributes name none. */
+  id: string | undefined;
   properties: Record<string, string>;
   family: PandocDivFamily;
   label: string;
@@ -241,7 +242,7 @@ export function divModelFromNode(
     closeFrom: closingLine.from,
     closeTo: closingLine.to,
     classes,
-    id: attributes.id ?? "",
+    id: attributes.id,
     properties: safeProperties(attributes.properties),
     depth,
     ...classification,

@@ -43,7 +43,11 @@ export default class FormatDocument extends ZettlrCommand {
     );
     let result: FlowmarkResult;
     try {
-      result = await formatMarkdownText(arg.text, { env: process.env });
+      result = await formatMarkdownText(
+        arg.text,
+        this._app.config.get().editor.formatTimeoutMs,
+        process.env,
+      );
     } catch (error) {
       this._app.lrt.settleTask(task, error instanceof Error ? error : new Error(String(error)));
       throw error;

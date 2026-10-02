@@ -34,9 +34,7 @@ import { type EditorShortcutName, getCustomShortcut } from "../keymaps/shortcuts
 import { configField } from "../util/configuration";
 
 export function getTransformSubmenu(view: EditorView): SubmenuItem {
-  const config = view.state.field(configField, false);
-
-  const customShortcutMap = config?.shortcuts ?? [];
+  const customShortcutMap = view.state.field(configField).shortcuts;
   const sc = (name: EditorShortcutName) => {
     return cmShortcutToElectron(getCustomShortcut(name, customShortcutMap));
   };

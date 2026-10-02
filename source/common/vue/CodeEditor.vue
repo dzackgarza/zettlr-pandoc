@@ -58,6 +58,7 @@ import {
   highlightWhitespaceEffect,
 } from "../modules/markdown-editor/plugins/highlight-whitespace";
 import { darkMode, darkModeEffect } from "../modules/markdown-editor/theme/dark-mode";
+import { defaultDark, defaultLight } from "../modules/markdown-editor/theme/editor";
 
 const configStore = useConfigStore();
 
@@ -115,7 +116,11 @@ function getExtensions(mode: SupportedLanguage): Extension[] {
     indentOnInput(),
     autocompletion(),
     codeSyntaxHighlighter(), // This comes from the main editor component
-    darkMode({ darkMode: configStore.config.darkMode }),
+    darkMode({
+      darkMode: configStore.config.darkMode,
+      lightThemes: [defaultLight],
+      darkThemes: [defaultDark],
+    }),
     plainLinkHighlighter,
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {

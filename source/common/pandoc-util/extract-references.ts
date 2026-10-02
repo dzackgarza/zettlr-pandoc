@@ -31,6 +31,7 @@ import {
   isPandocIdentifierToken,
   type ParsedPandocAttributes,
   pandocAttributesFromTokens,
+  pandocClassesFromTokens,
 } from "./parse-pandoc-attributes";
 
 /**
@@ -56,6 +57,8 @@ export interface LocatedAttribute {
   range: SourceRange;
   /** The parsed attribute list (classes and properties) */
   attributes: ParsedPandocAttributes;
+  /** The classes of the attribute list, in source order */
+  classes: string[];
 }
 
 /**
@@ -91,6 +94,7 @@ export function locateAttribute(
     key: identifier.value,
     range: { from: identifier.from, to: identifier.to },
     attributes: pandocAttributesFromTokens(scanned.value.tokens),
+    classes: pandocClassesFromTokens(scanned.value.tokens),
   };
 }
 
@@ -231,7 +235,7 @@ export function extractReferencesFromAST(
       sourceKind,
       documentPath,
       range: located.range,
-      classes: located.attributes.classes ?? [],
+      classes: located.classes,
       title,
       previewSource,
       enclosingSection: currentSection,
@@ -300,7 +304,7 @@ export function extractReferencesFromAST(
 
     // Theorem-like divs define targets through their class registry;
     // proof-like and other non-referenceable div classes never do.
-    const classes = located.attributes.classes ?? [];
+    const classes = located.classes;
     const isProofLike = classes.some((divClass) => {
       const lower = divClass.toLowerCase();
       return SEMANTIC_DIV_CLASSES[lower] === "proof";

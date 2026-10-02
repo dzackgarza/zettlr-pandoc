@@ -267,16 +267,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    * them add a field of their own. No call names an actor: the handlers
    * hardcode 'owner' and their input types declare no such field, so the
    * renderer cannot claim to be anyone else.
+   *
+   * A mutation with no cached session has no snapshot to name, so this
+   * throws instead of inventing a generation: a thread renders only from a
+   * cached session.
    */
   function annotationFence(
     documentPath: string,
     annotationId: string,
   ): AnnotationLifecycleIpcInput {
+    const session = sessionsByDocumentPath[documentPath];
+    if (session === undefined) {
+      throw new Error(`No collaboration session is cached for ${documentPath}`);
+    }
     return {
       path: documentPath,
       annotationId,
-      expectedAnnotationGeneration:
-        sessionsByDocumentPath[documentPath]?.annotations.generation ?? 0,
+      expectedAnnotationGeneration: session.annotations.generation,
     };
   }
 

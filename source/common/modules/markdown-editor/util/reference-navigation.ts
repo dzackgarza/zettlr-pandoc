@@ -91,9 +91,12 @@ function currentDocumentPath(view: EditorView): string | null {
     return references.snapshot.documentPath;
   }
 
-  const config = view.state.field(configField, false);
-  const path = config?.metadata.path ?? "";
-  return path === "" ? null : path;
+  // The configuration of an unsaved document names no path.
+  const path = view.state.field(configField).metadata.path;
+  if (path === "") {
+    return null;
+  }
+  return path;
 }
 
 /**

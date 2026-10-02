@@ -78,6 +78,7 @@ import { trans } from "@common/i18n-renderer";
 import { ref, watch } from "vue";
 import {
   chunkNoteCommit,
+  chunkNoteFieldText,
   type SuggestionCardView,
 } from "../sidebar/annotations/annotation-panel-model";
 
@@ -102,12 +103,12 @@ const noteField = ref<HTMLInputElement | null>(null);
  * be typing; re-seeding the focused field would overwrite those unsent
  * characters, so only an unfocused field takes the provider's value.
  */
-const draft = ref(props.card.comment);
+const draft = ref(chunkNoteFieldText(props.card.comment));
 watch(
   () => props.card.comment,
   (comment) => {
     if (document.activeElement !== noteField.value) {
-      draft.value = comment;
+      draft.value = chunkNoteFieldText(comment);
     }
   },
 );

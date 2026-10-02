@@ -2,13 +2,11 @@ import { type SyntaxNode } from "@lezer/common";
 
 export interface LogTreeOptions {
   /**
-   * Whether to log the root node in a separate section above the tree. Default
-   * false.
+   * Whether to log the root node in a separate section above the tree.
    */
   logRoot: boolean;
   /**
    * Whether to log the various pieces. Can look ugly, depending on the tree.
-   * Default false.
    */
   logNodes: boolean;
   /**
@@ -17,11 +15,11 @@ export interface LogTreeOptions {
    */
   markdown?: string;
   /**
-   * Optionally define a baseIndent for the root node.
+   * The indentation of the root node.
    */
   baseIndent: number;
   /**
-   * By how much should child nodes be indented from their parent? Default 2
+   * By how much should child nodes be indented from their parent?
    */
   indentIncrement: number;
 }
@@ -34,11 +32,7 @@ export interface LogTreeOptions {
  * @param  {SyntaxNode}      rootNode  The root node of the (partial) tree
  * @param  {LogTreeOptions}  options   Options for the logger
  */
-export function logLezerTree(rootNode: SyntaxNode, options?: Partial<LogTreeOptions>): void {
-  // Set defaults
-  options = options ?? {};
-  options.baseIndent = options.baseIndent ?? 0;
-
+export function logLezerTree(rootNode: SyntaxNode, options: LogTreeOptions): void {
   // Log warnings once if the options are incompatible.
   if (options.logRoot === true && options.markdown == null && options.baseIndent === 0) {
     console.warn("Cannot log full table: No Markdown source was provided.");
@@ -67,7 +61,7 @@ export function logLezerTree(rootNode: SyntaxNode, options?: Partial<LogTreeOpti
   while (child !== null) {
     logLezerTree(child, {
       ...options,
-      baseIndent: options.baseIndent + (options.indentIncrement ?? 2),
+      baseIndent: options.baseIndent + options.indentIncrement,
     });
     child = child.nextSibling;
   }

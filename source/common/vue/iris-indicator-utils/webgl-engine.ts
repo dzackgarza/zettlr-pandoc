@@ -8,7 +8,12 @@ import {
   resizeCanvasToDisplaySize,
 } from "./util/webgl";
 
-export const MAX_SUPPORTED_SEGMENTS = 4;
+// The fragment shader owns the segment count: its uniform array has a fixed size.
+const segmentUniform = /uniform Segment u_segments\[(\d+)\];/.exec(fragmentShaderSource);
+if (segmentUniform === null) {
+  throw new Error("The fragment shader declares no u_segments uniform array.");
+}
+export const MAX_SUPPORTED_SEGMENTS = Number(segmentUniform[1]);
 export type Vec4<T = number> = [T, T, T, T];
 export type Vec2<T> = [T, T];
 
@@ -16,6 +21,16 @@ export type Vec2<T> = [T, T];
 // background colors (if so wished, but let me tell you it looks awful with
 // anything too bright).
 const BACKGROUND_COLOR: Vec4 = [0.3, 0.3, 0.4, 0.0];
+
+// WebGL 2 defines MAX_SAMPLES as a number on every context, so another value
+// is a broken context.
+function maxMSAASamples(gl: WebGL2RenderingContext): number {
+  const samples = getMSAASamples(gl);
+  if (samples === undefined) {
+    throw new Error("The WebGL 2 context reports no MAX_SAMPLES value.");
+  }
+  return samples;
+}
 
 export interface Segment {
   color: [number, number, number, number];
@@ -270,7 +285,7 @@ export class WebGLEngine {
     gl.bindRenderbuffer(gl.RENDERBUFFER, this.scenetarget.rbMSAA);
     gl.renderbufferStorageMultisample(
       gl.RENDERBUFFER,
-      getMSAASamples(gl) ?? 1,
+      maxMSAASamples(gl),
       internalFormat,
       cWidth,
       cHeight,
@@ -400,7 +415,7 @@ export class WebGLEngine {
     gl.bindRenderbuffer(gl.RENDERBUFFER, this.scenetarget.rbMSAA);
     gl.renderbufferStorageMultisample(
       gl.RENDERBUFFER,
-      getMSAASamples(gl) ?? 1,
+      maxMSAASamples(gl),
       internalFormat,
       cWidth,
       cHeight,

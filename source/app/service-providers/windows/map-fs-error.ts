@@ -52,8 +52,12 @@ interface FsSystemError extends NodeJS.ErrnoException {
   dest?: string;
 }
 
+/**
+ * The path the operation failed on, or undefined for an error that names no
+ * path (EMFILE, ETIMEDOUT), and the reason in words.
+ */
 export default function mapFSError(error: FsSystemError): {
-  what: string;
+  what: string | undefined;
   why: string;
 } {
   // This function should display a very specific type of information: Why a
@@ -65,7 +69,7 @@ export default function mapFSError(error: FsSystemError): {
   //
   // See for the following as reference: https://nodejs.org/api/errors.html#errors
   return {
-    what: error.path ?? error.dest ?? "<unknown>",
+    what: error.path ?? error.dest,
     why: mapErrorCode(error.code),
   };
 }

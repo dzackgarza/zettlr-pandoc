@@ -110,7 +110,7 @@ function excerptSource(definition: ReferenceDefinition): string {
  * @return  {Tooltip|null}      The tooltip spec, or null
  */
 export function referenceTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip | null {
-  const references = view.state.field(workspaceReferencesField, false) ?? null;
+  const references = view.state.field(workspaceReferencesField);
   if (references === null) {
     return null; // No workspace view yet: never fabricate a target.
   }
@@ -214,9 +214,8 @@ function getPreviewElement(
   const source = excerptSource(definition);
   excerpt.textContent = source;
 
-  const config = view.state.field(configField, false);
   md2html(source, {
-    zknLinkFormat: config?.zknLinkFormat ?? "link|title",
+    zknLinkFormat: view.state.field(configField).zknLinkFormat,
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
   })
     .then((html) => {

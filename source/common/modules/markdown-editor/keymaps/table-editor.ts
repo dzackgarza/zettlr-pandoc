@@ -95,10 +95,16 @@ export function tableEditorKeymap(
       // row if possible)
       {
         key: "Enter",
-        // NOTE: "?? true" ensures no other keybinding will be called after this.
-        // This prevents the default behavior of inserting a newline character.
-        run: (_v) => moveNextRow(mainView) ?? true,
-        shift: (_v) => movePrevRow(mainView) ?? true,
+        // Enter is handled even when there is no row to move to, so that no
+        // other keybinding inserts a newline character into the cell.
+        run: (_v) => {
+          moveNextRow(mainView);
+          return true;
+        },
+        shift: (_v) => {
+          movePrevRow(mainView);
+          return true;
+        },
       },
       // Same for these two commands which disables these keybindings.
       { key: "Ctrl-Enter", run: (_v) => true },

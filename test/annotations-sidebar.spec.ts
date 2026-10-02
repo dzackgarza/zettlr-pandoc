@@ -509,8 +509,8 @@ describe("inline chunk controls model", function () {
     assert.equal(cards[1].comment, SCENE_CHUNK_GOAL_NOTE);
     assert.equal(
       cards[0].comment,
-      "",
-      "a chunk with no note starts empty rather than borrowing another's",
+      null,
+      "a chunk with no note has none rather than borrowing another's",
     );
   });
 

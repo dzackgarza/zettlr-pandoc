@@ -54,7 +54,7 @@ const BASELINE = [
 
 interface AgentClient {
   get: (route: string) => Promise<unknown>;
-  post: (route: string, body?: unknown) => Promise<unknown>;
+  post: (route: string, body: unknown) => Promise<unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,7 +84,7 @@ function client(port: number): AgentClient {
       await request(route, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body ?? {}),
+        body: JSON.stringify(body),
       }),
   };
 }
@@ -451,7 +451,7 @@ describe("review-diff closure contract composite lifecycle", function () {
     );
     // Focus is now the only operation that deliberately takes a pane, and
     // opening the file is what reattaches its sidecar-backed review.
-    await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`);
+    await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`, {});
     await waitForReview(page);
     assert.equal(
       await (await cardWithText(page, "Rewrite the display-math environment"))

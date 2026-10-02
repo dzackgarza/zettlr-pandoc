@@ -207,14 +207,16 @@ export class DTLeaf {
       }
     }
 
-    // Revitalize the active File pointer
-    const tabManActiveFile = leaf.tabMan.openFiles.find((e) => e.path === activeFile?.path) ?? null;
-    leaf.tabMan.activeFile = tabManActiveFile;
-
-    // If the last active file can't be restored, make the first one of this
-    // leaf active so that the editor shows something.
-    if (leaf.tabMan.activeFile === null && leaf.tabMan.openFiles.length > 0) {
+    // Revitalize the active File pointer. If the last active file can't be
+    // restored, make the first one of this leaf active so that the editor
+    // shows something; a leaf without open files has no active file.
+    const restoredActiveFile = leaf.tabMan.openFiles.find((e) => e.path === activeFile?.path);
+    if (restoredActiveFile !== undefined) {
+      leaf.tabMan.activeFile = restoredActiveFile;
+    } else if (leaf.tabMan.openFiles.length > 0) {
       leaf.tabMan.activeFile = leaf.tabMan.openFiles[0];
+    } else {
+      leaf.tabMan.activeFile = null;
     }
 
     return leaf;

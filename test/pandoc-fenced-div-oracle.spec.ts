@@ -14,7 +14,7 @@ import { divModelFromNode } from "source/common/pandoc-util/pandoc-div-model";
 import { execPandocReference } from "./pandoc-reference";
 
 interface OracleAttr {
-  id: string;
+  id: string | undefined;
   classes: string[];
   properties: Record<string, string>;
 }
@@ -28,7 +28,8 @@ function pandocDivAttr(source: string): OracleAttr | undefined {
   }
   const attr = block.c[0] as [string, string[], Array<[string, string]>];
   return {
-    id: attr[0],
+    // Pandoc writes an empty identifier for a div that names none.
+    id: attr[0] === "" ? undefined : attr[0],
     classes: attr[1],
     properties: Object.fromEntries(attr[2]),
   };

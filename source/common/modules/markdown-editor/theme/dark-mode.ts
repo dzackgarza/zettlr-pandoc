@@ -150,16 +150,12 @@ export function useDarkModeEditor(
  * and dark themes. Pass an initial configuration to the function, and continue
  * to configure the extension with the darkModeEffect.
  *
- * @param   {Partial<DarkModeConfiguration>}  conf  An optional initial config.
- *                                                  Anything not set will be set
- *                                                  to default.
+ * @param   {DarkModeConfiguration}  conf  The initial configuration.
  *
- * @return  {Extension[]}                           The extension.
+ * @return  {Extension[]}                  The extension.
  */
-export function darkMode(conf?: Partial<DarkModeConfiguration>): Extension[] {
-  const lightThemes = conf?.lightThemes ?? [defaultLight];
-  const darkThemes = conf?.darkThemes ?? [defaultDark];
-  const darkMode = conf?.darkMode ?? false;
+export function darkMode(conf: DarkModeConfiguration): Extension[] {
+  const { lightThemes, darkThemes, darkMode } = conf;
   const initialThemes = darkMode ? darkThemes : lightThemes;
 
   return [

@@ -34,14 +34,15 @@ export default function formatDate(
     // A difference of less than one minute shows as "just now".
     if (dt.diff(DateTime.now(), "minutes").toObject().minutes! * -1 < 1) {
       return trans("just now");
-    } else {
-      return (
-        dt.toRelative({
-          style: "short", // Can be short, narrow, or long
-          locale,
-        }) ?? ""
-      );
     }
+    const relativeDate = dt.toRelative({
+      style: "short", // Can be short, narrow, or long
+      locale,
+    });
+    if (relativeDate === null) {
+      throw new Error(`Cannot format an invalid date: ${dt.invalidExplanation}`);
+    }
+    return relativeDate;
   } else {
     return dt.toLocaleString({ dateStyle: "long", timeStyle: "short" }, { locale });
   }

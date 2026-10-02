@@ -147,8 +147,10 @@ export class TableWidget extends WidgetType {
   // Codemirror changed the viewport will it believe (itself). Anyways, now it
   // works -- much better than before.
   get estimatedHeight(): number {
-    const height = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0;
-    if (height > 0) {
+    // A table that was never measured, or measured without layout, has no
+    // height to reuse.
+    const height = TABLE_HEIGHT_CACHE.get(this.cacheKey);
+    if (height !== undefined && height > 0) {
       return height;
     }
 
@@ -210,7 +212,8 @@ export class TableWidget extends WidgetType {
     const node = tableNodeOf(view.state, this);
     const tableAST = parseTableNode(node, documentText(view.state));
     if (tableAST.type === "Table") {
-      const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey) ?? 0;
+      // An unmeasured table differs from every height, so it is measured.
+      const prevHeight = TABLE_HEIGHT_CACHE.get(this.cacheKey);
       updateTable(table, tableAST, view);
       updateTableReviewIndicator(dom, view, node.from, node.to);
       // Instruct the editor to remeasure its height; see
@@ -328,7 +331,7 @@ function tableDecorationsBetween(
       if (ast.type !== "Table" || ast.tableType !== "pipe") {
         return false;
       }
-      const rowLength = ast.alignment?.length ?? 0;
+      const rowLength = ast.alignment.length;
       if (ast.rows.every((r) => r.cells.length === rowLength)) {
         newDecos.push(
           Decoration.replace({
@@ -611,12 +614,19 @@ function updateRow(
     // An edit before the table moves the table and leaves these offsets valid.
     tds[i].dataset.cellFrom = String(cell.from - tableFrom);
     tds[i].dataset.cellTo = String(cell.to - tableFrom);
-    tds[i].style.textAlign = align[i] ?? "";
+    const alignment = align[i];
+    if (alignment === undefined) {
+      throw new Error(`Table column ${i} has no alignment entry`);
+    }
+    // A column without an alignment marker uses the alignment of the table.
+    if (alignment === null) {
+      tds[i].style.removeProperty("text-align");
+    } else {
+      tds[i].style.textAlign = alignment;
+    }
 
     const contentWrapper: HTMLDivElement = tds[i].querySelector("div.content")!;
     const subview = EditorView.findFromDOM(contentWrapper);
-
-    const [subviewFrom, subviewTo] = subview?.state.field(hiddenSpanField).cellRange ?? [-1, -1];
 
     if (subview !== null && !selectionInCell) {
       subview.destroy();
@@ -663,10 +673,7 @@ function updateRow(
     } else if (subview === null) {
       // Simply transfer the contents
       renderCellContent(contentWrapper, cell, view);
-    } else if (
-      (subviewFrom !== cell.from || subviewTo !== cell.to) &&
-      (columnsChanged || rowsChanged)
-    ) {
+    } else if ((columnsChanged || rowsChanged) && !subviewShowsCell(subview, cell)) {
       // Here, there is a subview in the cell and the selection is in this cell,
       // but the subview has been "carried over" from a different column or row,
       // which happens if the user adds or removes columns or rows. In this case
@@ -682,6 +689,19 @@ function updateRow(
       createSubviewForCell(view, contentWrapper, { from: cell.from, to: cell.to });
     } // Else: The cell has a subview and the selection is still in there.
   }
+}
+
+/**
+ * Tells whether a cell subview edits the source range of a table cell.
+ *
+ * @param   {EditorView}  subview  The subview of the cell
+ * @param   {TableCell}   cell     The table cell
+ *
+ * @return  {boolean}              True if the subview range is the cell range
+ */
+function subviewShowsCell(subview: EditorView, cell: TableCell): boolean {
+  const [subviewFrom, subviewTo] = subview.state.field(hiddenSpanField).cellRange;
+  return subviewFrom === cell.from && subviewTo === cell.to;
 }
 
 /**
@@ -707,9 +727,19 @@ function setSelectionToCell(td: HTMLTableCellElement, cell: TableCell, view: Edi
   const from = tableFrom + parseInt(td.dataset.cellFrom, 10);
   const cellTo = tableFrom + parseInt(td.dataset.cellTo, 10);
   const selection = getSelection();
-  const textOffset = selection?.focusOffset ?? 0;
-  const nodeOffset = estimateNodeOffset(selection?.anchorNode ?? td, td, cell.textContent);
-  view.dispatch({ selection: { anchor: Math.min(from + nodeOffset + textOffset, cellTo) } });
+  if (selection === null) {
+    throw new Error("Cannot select a table cell: the window has no selection object");
+  }
+  // A click that placed no caret gives no position inside the cell, so the
+  // cursor goes to the start of the cell.
+  if (selection.anchorNode === null) {
+    view.dispatch({ selection: { anchor: from } });
+    return;
+  }
+  const nodeOffset = estimateNodeOffset(selection.anchorNode, td, cell.textContent);
+  view.dispatch({
+    selection: { anchor: Math.min(from + nodeOffset + selection.focusOffset, cellTo) },
+  });
 }
 
 /**
@@ -781,11 +811,11 @@ function estimateNodeOffset(
 
     if (currentNode instanceof Text) {
       // Simple text node -> offset increases by its nodeValue
-      nodeOffset += currentNode.nodeValue?.length ?? 0;
+      nodeOffset += currentNode.data.length;
     } else if (currentNode instanceof Element) {
       // Element node --> offset increases by its textContent as well as a rough
       // formatting character estimation
-      nodeOffset += currentNode.textContent?.length ?? 0;
+      nodeOffset += currentNode.textContent.length;
       nodeOffset += guessFormattingCharsFor(currentNode);
     }
   }

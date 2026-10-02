@@ -93,6 +93,27 @@ export function isPandocIdentifierToken(
 }
 
 /**
+ * The classes of one attribute list in source order: `.class` and special
+ * tokens, and each word of a `class="…"` value. A list without classes has
+ * none.
+ *
+ * @param   {PandocAttributeToken[]}  tokens  The tokens of one attribute list
+ *
+ * @return  {string[]}                        The classes
+ */
+export function pandocClassesFromTokens(tokens: readonly PandocAttributeToken[]): string[] {
+  const classes: string[] = [];
+  for (const token of tokens) {
+    if (token.kind === "class" || token.kind === "special") {
+      classes.push(token.value);
+    } else if (token.kind === "key-value" && token.key === "class") {
+      classes.push(...token.value.split(/\s+/).filter(Boolean));
+    }
+  }
+  return classes;
+}
+
+/**
  * Folds the scanned tokens of one attribute list into its parsed attributes.
  * A later identifier replaces an earlier one, as in Pandoc.
  *
@@ -104,22 +125,22 @@ export function pandocAttributesFromTokens(
   tokens: readonly PandocAttributeToken[],
 ): ParsedPandocAttributes {
   const parsed: ParsedPandocAttributes = {};
+  const classes = pandocClassesFromTokens(tokens);
+  if (classes.length > 0) {
+    parsed.classes = classes;
+  }
   for (const token of tokens) {
     if (isPandocIdentifierToken(token)) {
       parsed.id = token.value;
       continue;
     }
     if (token.kind === "class" || token.kind === "special") {
-      parsed.classes ??= [];
-      parsed.classes.push(token.value);
       continue;
     }
 
     const key = token.key;
     let value = token.value;
     if (key === "class") {
-      parsed.classes ??= [];
-      parsed.classes.push(...value.split(/\s+/).filter(Boolean));
       continue;
     }
     if ((key.toLowerCase() === "width" || key.toLowerCase() === "height") && /^\d+$/.test(value)) {

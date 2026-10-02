@@ -326,7 +326,7 @@ function contentAttributes(div: PandocDivModel, state: PandocDivState): Record<s
 function authoredMetadataAttributes(div: PandocDivModel): Record<string, string> {
   const authoredTitle = div.properties.title;
   const description = [
-    div.id === "" ? undefined : `#${div.id}`,
+    div.id === undefined ? undefined : `#${div.id}`,
     ...div.classes.map((className) => `.${className}`),
     authoredTitle,
   ]
@@ -334,7 +334,7 @@ function authoredMetadataAttributes(div: PandocDivModel): Record<string, string>
     .join(" ");
 
   return {
-    ...(div.id === "" ? {} : { "data-pandoc-authored-id": div.id }),
+    ...(div.id === undefined ? {} : { "data-pandoc-authored-id": div.id }),
     ...(description === "" ? {} : { title: description }),
   };
 }

@@ -563,7 +563,12 @@ export default class DictionaryProvider extends ProviderContract {
 
     const suggestions: string[] = [];
     for (const dictionary of this.hunspell) {
-      suggestions.push(...(dictionary.suggestSync(term) ?? []));
+      // nodehun answers null when this dictionary spells the term correctly
+      // (Nodehun::suggestSync), so it has no correction to offer.
+      const corrections = dictionary.suggestSync(term);
+      if (corrections !== null) {
+        suggestions.push(...corrections);
+      }
     }
 
     return suggestions;

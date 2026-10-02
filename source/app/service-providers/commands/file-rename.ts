@@ -39,7 +39,11 @@ export default class FileRename extends ZettlrCommand {
     let newName = sanitize(arg.name, { replacement: "-" });
 
     if (newName === "") {
-      this._app.windows.prompt("Cannot rename file: No valid characters");
+      this._app.windows.prompt({
+        type: "error",
+        title: trans("Could not rename file"),
+        message: trans("Cannot rename file: No valid characters"),
+      });
       return;
     }
 
@@ -90,7 +94,11 @@ export default class FileRename extends ZettlrCommand {
       // Make sure to not rename a file if it contains unsaved changes. People who
       // have autosave activated are pretty likely to never see this message box
       // either way.
-      this._app.windows.prompt("Cannot rename file: Please save your changes first.");
+      this._app.windows.prompt({
+        type: "error",
+        title: trans("Could not rename file"),
+        message: trans("Cannot rename file: Please save your changes first."),
+      });
       return;
     }
 

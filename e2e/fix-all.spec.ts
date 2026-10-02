@@ -11,7 +11,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type EditorView } from "@codemirror/view";
-import { type Browser, type Page } from "playwright";
+import { type Browser, type Locator, type Page } from "playwright";
 import {
   assertCleanExit,
   attach,
@@ -44,6 +44,15 @@ async function editorText(page: Page): Promise<string> {
     });
 }
 
+/** The text of an element. Playwright returns null only for a document or doctype node. */
+async function elementText(locator: Locator): Promise<string> {
+  const text = await locator.textContent();
+  if (text === null) {
+    throw new Error("The locator matched a node that is not an element");
+  }
+  return text;
+}
+
 async function clickMenuItem(page: Page, id: string): Promise<void> {
   await page.evaluate((itemId) => {
     window.ipc.send("menu-provider", { command: "click-menu-item", payload: itemId });
@@ -56,7 +65,7 @@ async function plannedSummary(page: Page): Promise<string> {
   await summary.waitFor({ state: "visible", timeout: 60_000 });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    const text = (await summary.textContent()) ?? "";
+    const text = await elementText(summary);
     if (!text.startsWith("Finding fixes")) {
       return text;
     }
@@ -132,7 +141,7 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       "Apply 1 fix to 1 of 1 document? Every fix keeps the meaning of the text.",
     );
     assert.match(
-      (await page.locator(`${DIALOG} [data-fix-all-rules]`).textContent()) ?? "",
+      await elementText(page.locator(`${DIALOG} [data-fix-all-rules]`)),
       /math\/bare-operator\s*1/,
     );
     screenshots.set("fix-all-document.png", await page.screenshot());
@@ -156,7 +165,7 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       "Apply 2 fixes to 1 of 3 documents? Every fix keeps the meaning of the text.",
     );
     assert.match(
-      (await page.locator(`${DIALOG} [data-fix-all-documents]`).textContent()) ?? "",
+      await elementText(page.locator(`${DIALOG} [data-fix-all-documents]`)),
       /other\.md\s*2/,
     );
     screenshots.set("fix-all-workspace.png", await page.screenshot());

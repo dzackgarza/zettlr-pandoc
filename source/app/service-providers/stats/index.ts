@@ -30,6 +30,22 @@ export type Stats = {
   pomodoros: Record<string, number>; // All pomodoros ever completed
 };
 
+/** What the container reads from disk, before any check. */
+type StoredStats = Awaited<ReturnType<PersistentDataContainer<Stats>["get"]>>;
+
+/**
+ * Returns one date-count record of a parsed stats file.
+ *
+ * @throws {Error} If the file has no such record.
+ */
+function dateCountRecord(data: StoredStats, prop: keyof Stats): Record<string, number> {
+  const record: Record<string, number> | undefined | null = data[prop];
+  if (typeof record !== "object" || record === null) {
+    throw new Error(`The stats file has no ${prop} record.`);
+  }
+  return record;
+}
+
 /**
  * ZettlrStats works like the ZettlrConfig object, only with a different file.
  * ZettlrStats monitors how the user uses Zettlr and should in the future be
@@ -85,9 +101,13 @@ export default class StatsProvider extends ProviderContract {
    */
   _recompute(): void {
     const todayISO = today();
-    // Make sure we have a today-count
-    this.stats.wordCount[todayISO] = this.stats.wordCount[todayISO] ?? 0;
-    this.stats.charCount[todayISO] = this.stats.charCount[todayISO] ?? 0;
+    // A day without writing is a day with a count of zero.
+    if (!(todayISO in this.stats.wordCount)) {
+      this.stats.wordCount[todayISO] = 0;
+    }
+    if (!(todayISO in this.stats.charCount)) {
+      this.stats.charCount[todayISO] = 0;
+    }
 
     // Trigger a save. _recompute is being called from all the different setters
     // after anything changes. NOTE: Remember this for future stuff!
@@ -111,9 +131,11 @@ export default class StatsProvider extends ProviderContract {
       const parsedData = await this.container.get();
       // We cannot safeAssign here, as we store everything in records, which
       // would make the function throw the keys away.
-      this.stats.wordCount = parsedData.wordCount ?? {};
-      this.stats.charCount = parsedData.charCount ?? {};
-      this.stats.pomodoros = parsedData.pomodoros ?? {};
+      // A file without one of the records is malformed; the catch below moves
+      // it to a backup.
+      this.stats.wordCount = dateCountRecord(parsedData, "wordCount");
+      this.stats.charCount = dateCountRecord(parsedData, "charCount");
+      this.stats.pomodoros = dateCountRecord(parsedData, "pomodoros");
 
       // Sanity check: We need all entries within date-count-properties in the
       // data container to conform to the format YYYY-MM-DD: count<number>

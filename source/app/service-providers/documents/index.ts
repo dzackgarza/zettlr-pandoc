@@ -168,10 +168,15 @@ type DocumentManagerApp = {
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
-// Delayed timeout means: Save after 5 seconds
-const DELAYED_SAVE_TIMEOUT = 5000;
-// Even "immediate" should not save immediately to prevent race conditions on slower systems
-const IMMEDIATE_SAVE_TIMEOUT = 500;
+/**
+ * What each autosave mode means: the time from the last change to the save.
+ * "immediately" still waits half a second, so that a save does not race the
+ * next change on a slow system.
+ */
+const autoSaveDelayMs: Record<Exclude<ConfigOptions["editor"]["autoSave"], "off">, number> = {
+  immediately: 500,
+  delayed: 5000,
+};
 
 export type DocumentsUpdateContext = {
   windowId?: string;
@@ -1705,39 +1710,36 @@ current contents from the editor somewhere else, and restart the application.`,
       return true;
     }
 
-    doc.saveTimeout = setTimeout(
-      () => {
-        this.saveFile(doc.filePath)
-          .then((result) => {
-            if (result.ok) {
-              return;
-            }
-            // A refusal resolves; only disk errors reject. Without this branch
-            // the autosave timer swallowed refusals entirely: the review gate
-            // above returns early for an open review, but a disk-changed
-            // refusal reaches here, and the document stayed dirty with nothing
-            // recorded anywhere. The buffer is preserved either way — this
-            // makes the reason findable instead of inventing a silent success.
-            const reason =
-              result.refusal === undefined
-                ? "no reason reported"
-                : `${result.refusal.reason}: ${result.refusal.message}`;
-            this._app.log.warning(
-              `[Document Provider] Autosave refused for ${doc.filePath} (${reason}). ` +
-                "The buffer is unchanged and still unsaved; the next explicit save will " +
-                "surface this to the user.",
-            );
-          })
-          .catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
-            this._app.log.error(
-              `[Document Provider] Could not save file ${doc.filePath}: ${message}`,
-              err,
-            );
-          });
-      },
-      autoSave === "delayed" ? DELAYED_SAVE_TIMEOUT : IMMEDIATE_SAVE_TIMEOUT,
-    );
+    doc.saveTimeout = setTimeout(() => {
+      this.saveFile(doc.filePath)
+        .then((result) => {
+          if (result.ok) {
+            return;
+          }
+          // A refusal resolves; only disk errors reject. Without this branch
+          // the autosave timer swallowed refusals entirely: the review gate
+          // above returns early for an open review, but a disk-changed
+          // refusal reaches here, and the document stayed dirty with nothing
+          // recorded anywhere. The buffer is preserved either way — this
+          // makes the reason findable instead of inventing a silent success.
+          const reason =
+            result.refusal === undefined
+              ? "no reason reported"
+              : `${result.refusal.reason}: ${result.refusal.message}`;
+          this._app.log.warning(
+            `[Document Provider] Autosave refused for ${doc.filePath} (${reason}). ` +
+              "The buffer is unchanged and still unsaved; the next explicit save will " +
+              "surface this to the user.",
+          );
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this._app.log.error(
+            `[Document Provider] Could not save file ${doc.filePath}: ${message}`,
+            err,
+          );
+        });
+    }, autoSaveDelayMs[autoSave]);
 
     return true;
   }
@@ -2730,17 +2732,18 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Returns the hash of the currently active file.
-   * @returns {number|null} The hash of the active file.
+   * Returns the path of the active file of a leaf.
+   * @returns {string|undefined} The path, or undefined when the leaf does not
+   *                             exist or has no active file.
    */
-  public getActiveFile(leafId: string): string | null {
+  public getActiveFile(leafId: string): string | undefined {
     for (const windowId in this._windows) {
       const leaf = this._windows[windowId].findLeaf(leafId);
       if (leaf !== undefined) {
-        return leaf.tabMan.activeFile?.path ?? null;
+        return leaf.tabMan.activeFile?.path;
       }
     }
-    return null;
+    return undefined;
   }
 
   public isModified(filePath: string): boolean {
@@ -3369,7 +3372,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this.broadcastEvent(DP_EVENTS.ACTIVE_FILE, {
       windowId,
       leafId,
-      filePath: this.getActiveFile(leafId) ?? undefined,
+      filePath: this.getActiveFile(leafId),
     });
   }
 
@@ -3615,7 +3618,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return undefined;
     }
     const activePath = this.getActiveFile(this._lastEditor.leafId);
-    if (activePath === null) {
+    if (activePath === undefined) {
       return undefined;
     }
     return {

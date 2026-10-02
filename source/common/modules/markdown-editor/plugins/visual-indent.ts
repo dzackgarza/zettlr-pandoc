@@ -122,13 +122,13 @@ function render(view: EditorView, measurements?: Map<string, number>): RangeSet<
           }
 
           const base = view.contentDOM.getBoundingClientRect().left;
-          const after = view.coordsAtPos(pos)?.left ?? 0;
-          if (after === 0) {
+          const coords = view.coordsAtPos(pos);
+          if (coords === null) {
             return; // Could not retrieve coordinates
           }
           // Note that this continuously updates our measurements after any layout
           // changes
-          measurements?.set(measurementKey, after - base);
+          measurements?.set(measurementKey, coords.left - base);
         },
         key: measurementKey,
       });

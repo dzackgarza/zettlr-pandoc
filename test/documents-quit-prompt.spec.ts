@@ -134,7 +134,7 @@ describe("Documents-provider quit prompt", function () {
       assert.fail(`The review proposal was refused: ${submitted.code}`);
     }
     assert.equal(provider.isModified(proposedPath), true);
-    assert.equal(provider.getActiveFile(leafId), null);
+    assert.equal(provider.getActiveFile(leafId), undefined);
     return documentId;
   }
 

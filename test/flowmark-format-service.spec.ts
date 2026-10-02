@@ -23,13 +23,14 @@ import { strict as assert } from "assert";
 import { readFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { formatMarkdownText } from "source/app/util/flowmark-format";
+import { formatMarkdownText, runInPlaceFormatter } from "source/app/util/flowmark-format";
 
 describe("flowmark format service (issue #26)", function () {
   it("reports a typed flowmark-absent result when the runner binary does not exist", async function () {
-    const result = await formatMarkdownText("The cat sat.\n", {
+    const result = await runInPlaceFormatter("The cat sat.\n", {
       command: "zettlr-no-such-binary-xyzzy",
       argsPrefix: [],
+      timeoutMs: 60_000,
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -43,9 +44,10 @@ describe("flowmark format service (issue #26)", function () {
 
   it("reports a typed flowmark-error when the runner exits non-zero", async function () {
     // `false` exits 1 without touching the file.
-    const result = await formatMarkdownText("The cat sat.\n", {
+    const result = await runInPlaceFormatter("The cat sat.\n", {
       command: "false",
       argsPrefix: [],
+      timeoutMs: 60_000,
     });
     assert.equal(result.ok, false);
     if (!result.ok) {
@@ -57,7 +59,11 @@ describe("flowmark format service (issue #26)", function () {
     // `true` exits 0 and leaves the temp file exactly as written, so the
     // roundtrip returns the input bytes — proving write -> run -> read-back.
     const text = "The cat sat.  The dog ran.\n";
-    const result = await formatMarkdownText(text, { command: "true", argsPrefix: [] });
+    const result = await runInPlaceFormatter(text, {
+      command: "true",
+      argsPrefix: [],
+      timeoutMs: 60_000,
+    });
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.formatted, text);
@@ -68,9 +74,10 @@ describe("flowmark format service (issue #26)", function () {
     // A runner that appends a marker to its last argument (the temp file)
     // stands in for flowmark's --inplace rewrite; the service must surface the
     // rewritten bytes, not the original input.
-    const result = await formatMarkdownText("original\n", {
+    const result = await runInPlaceFormatter("original\n", {
       command: "sh",
       argsPrefix: ["-c", 'printf "formatted\\n" > "$1"', "sh"],
+      timeoutMs: 60_000,
     });
     assert.equal(result.ok, true);
     if (result.ok) {
@@ -97,7 +104,7 @@ describe("flowmark format service (issue #26)", function () {
       "Last line.",
       "",
     ].join("\n");
-    const result = await formatMarkdownText(text);
+    const result = await formatMarkdownText(text, 300_000);
     assert.deepEqual(result, { ok: true, formatted: text });
   });
 
@@ -106,7 +113,7 @@ describe("flowmark format service (issue #26)", function () {
     // wedged Flowmark process (dependency setup that stalls, a deadlocked process).
     // `exec sleep` replaces the shell in-place, so the recorded $$ is the PID of
     // the actual hanging process the service must kill — no grandchild orphan.
-    // Without a time bound `formatMarkdownText` would await `close` forever and
+    // Without a time bound `runInPlaceFormatter` would await `close` forever and
     // the caller's save/format would silently hang; the service must instead
     // resolve with a typed failure within the injected bound AND leave no
     // lingering process.
@@ -114,7 +121,7 @@ describe("flowmark format service (issue #26)", function () {
     const script = `echo $$ > '${pidFile}'; exec sleep 300`;
 
     const start = Date.now();
-    const result = await formatMarkdownText("The cat sat.\n", {
+    const result = await runInPlaceFormatter("The cat sat.\n", {
       command: "sh",
       argsPrefix: ["-c", script, "sh"],
       timeoutMs: 250,

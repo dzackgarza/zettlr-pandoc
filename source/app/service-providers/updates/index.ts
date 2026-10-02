@@ -21,10 +21,11 @@ import { showNativeNotification } from "@common/util/show-notification";
 import type ConfigProvider from "@providers/config";
 import crypto from "crypto";
 import { app, dialog, ipcMain, net, shell } from "electron";
-import { createWriteStream, promises as fs, type ReadStream, type WriteStream } from "fs";
+import { createWriteStream, promises as fs, type WriteStream } from "fs";
 import got, { RequestError, type Response } from "got";
 import path from "path";
 import semver from "semver";
+import PACKAGE_JSON from "../../../../package.json";
 import { loadCanonicalMathJaxMacros } from "../../util/load-mathjax-macros";
 import type CommandProvider from "../commands";
 import type LogProvider from "../log";
@@ -248,9 +249,24 @@ function parseReleases(value: JsonValue): ServerAPIResponse[] {
 }
 
 const CUR_VER = app.getVersion();
-// Zettlr-Pandoc updates from its own releases, not from upstream Zettlr's.
-const REPO_URL = "https://api.github.com/repos/dzackgarza/zettlr-pandoc/releases";
-const RELEASE_PAGE = "https://github.com/dzackgarza/zettlr-pandoc/releases";
+
+/**
+ * The releases of the GitHub repository that package.json names as the
+ * homepage are this app's updates. The GitHub REST API serves them under
+ * /repos/{owner}/{repo}/releases.
+ */
+function releaseLocations(homepage: string): { releasePage: string; releasesApi: string } {
+  const repository = new URL(homepage);
+  if (repository.hostname !== "github.com") {
+    throw new Error(`package.json homepage ${homepage} is not a GitHub repository.`);
+  }
+  return {
+    releasePage: `${repository.origin}${repository.pathname}/releases`,
+    releasesApi: `https://api.github.com/repos${repository.pathname}/releases`,
+  };
+}
+
+const { releasePage, releasesApi } = releaseLocations(PACKAGE_JSON.homepage);
 const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60; // 1 hour
 
 /**
@@ -265,7 +281,7 @@ function getUpdateState(): UpdateState {
     updateAvailable: false,
     prerelease: false,
     changelog: "",
-    releasePage: RELEASE_PAGE,
+    releasePage,
     tagName: "",
     compatibleAssets: [],
     name: "",
@@ -280,7 +296,7 @@ function getUpdateState(): UpdateState {
 export default class UpdateProvider extends ProviderContract {
   private readonly _sha256Data: Map<string, string>;
   private _updateState: UpdateState;
-  private _downloadReadStream: undefined | ReadStream;
+  private _downloadReadStream: undefined | ReturnType<typeof got.stream>;
   private _downloadWriteStream: undefined | WriteStream;
 
   constructor(
@@ -381,7 +397,7 @@ export default class UpdateProvider extends ProviderContract {
     this._resetState();
 
     try {
-      this._logger.info(`[Update Provider] Checking ${REPO_URL} for application updates ...`);
+      this._logger.info(`[Update Provider] Checking ${releasesApi} for application updates ...`);
       let platformString = "";
       if (process.platform === "win32") {
         platformString = `Windows NT 10.0; ${process.arch}`;
@@ -395,7 +411,7 @@ export default class UpdateProvider extends ProviderContract {
 
       // got parses the body; a body that is not JSON is a ParseError
       // (a RequestError), which the handler below reports with its message.
-      const response: Response<JsonValue> = await got(REPO_URL, {
+      const response: Response<JsonValue> = await got(releasesApi, {
         timeout: { request: 5000 },
         method: "GET",
         responseType: "json",
@@ -456,16 +472,15 @@ export default class UpdateProvider extends ProviderContract {
         return;
       }
 
-      const statusCode = err.response?.statusCode ?? -1;
-
       // See for all errors https://github.com/sindresorhus/got/blob/main/documentation/8-errors.md
-      // If we have an ENOTFOUND error there is no response and no statusCode
-      // so we'll use TypeScript shortcuts to save us from ugly errors.
+      // A connection error (ENOTFOUND, ETIMEDOUT) has no response and so no
+      // status code.
+      const statusCode = err.response?.statusCode;
       const notFoundError = err.code === "ENOTFOUND";
       const timeoutError = err.code === "ETIMEDOUT";
-      const serverError = statusCode >= 500;
-      const clientError = statusCode >= 400 && statusCode < 500;
-      const redirectError = statusCode >= 300 && statusCode < 400;
+      const serverError = statusCode !== undefined && statusCode >= 500;
+      const clientError = statusCode !== undefined && statusCode >= 400 && statusCode < 500;
+      const redirectError = statusCode !== undefined && statusCode >= 300 && statusCode < 400;
 
       // Give a more detailed error message.
       if (serverError) {
@@ -520,7 +535,7 @@ export default class UpdateProvider extends ProviderContract {
     state.lastCheck = Date.now();
     const parsedResponse = newestRelease(releases, this._config.get("checkForBeta"));
     if (parsedResponse === undefined) {
-      this._logger.info(`[Update Provider] ${RELEASE_PAGE} has no published release.`);
+      this._logger.info(`[Update Provider] ${releasePage} has no published release.`);
       return state;
     }
 
@@ -655,9 +670,7 @@ export default class UpdateProvider extends ProviderContract {
     // The read stream reads the remote binary file, the write stream pipes that
     // data through to the local file.
     this._downloadWriteStream = createWriteStream(destination);
-    this._downloadReadStream = got.stream(
-      updateToPull.browser_download_url,
-    ) as unknown as ReadStream;
+    this._downloadReadStream = got.stream(updateToPull.browser_download_url);
 
     // Preset the appropriate values on the internal state
     this._updateState.name = updateToPull.name;
@@ -807,12 +820,12 @@ export default class UpdateProvider extends ProviderContract {
     // Second the read stream
     if (this._downloadReadStream !== undefined) {
       try {
-        this._downloadReadStream.close();
+        this._downloadReadStream.destroy();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown error";
         this._logger.warning(`[Update Provider] Could not close read stream: ${message}`, err);
       }
-      this._downloadWriteStream = undefined;
+      this._downloadReadStream = undefined;
     }
 
     // Also reset the state

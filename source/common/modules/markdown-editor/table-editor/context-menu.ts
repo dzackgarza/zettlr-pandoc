@@ -31,9 +31,7 @@ export function displayTableContextMenu(
   mainView: EditorView,
   subviewOrView: EditorView,
 ): void {
-  const config = mainView.state.field(configField, false);
-
-  const customShortcutMap = config?.shortcuts ?? [];
+  const customShortcutMap = mainView.state.field(configField).shortcuts;
   const sc = (name: EditorShortcutName) => {
     return cmShortcutToElectron(getCustomShortcut(name, customShortcutMap));
   };

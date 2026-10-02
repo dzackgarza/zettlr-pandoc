@@ -53,7 +53,10 @@ function alignToLast30CalendarDays(record: Array<[string, number]>): Array<[stri
 
   const data: Array<[string, number]> = [];
   for (const iso of last30Days) {
-    const count = record.find((x) => x[0] === iso)?.[1] ?? 0;
+    // The count of a day is the sum of its records; a day without a record sums to zero.
+    const count = record
+      .filter(([date]) => date === iso)
+      .reduce((sum, [, dayCount]) => sum + dayCount, 0);
     data.push([iso, count]);
   }
 

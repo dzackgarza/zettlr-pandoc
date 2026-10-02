@@ -83,9 +83,43 @@ function normalizeSize(size?: string): string | undefined {
   return size.toLowerCase();
 }
 
+/**
+ * The Image node that an image widget replaces. A widget holds no document
+ * position, so the position is read from the DOM.
+ *
+ * @param   {EditorView}   view  The editor view
+ * @param   {HTMLElement}  dom   The DOM of the widget
+ *
+ * @return  {SyntaxNode}         The Image node
+ */
+function imageNodeAt(view: EditorView, dom: HTMLElement): SyntaxNode {
+  let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(view.posAtDOM(dom), 1);
+  while (node !== null && node.name !== "Image") {
+    node = node.parent;
+  }
+  if (node === null) {
+    throw new Error("An image widget does not replace an Image node.");
+  }
+  return node;
+}
+
+/**
+ * The URL as written in the document. `updateDOM` keeps it current.
+ *
+ * @param   {HTMLImageElement}  img  The image of the widget
+ *
+ * @return  {string}                 The URL
+ */
+function originalUrlOf(img: HTMLImageElement): string {
+  const url = img.dataset.originalUrl;
+  if (url === undefined) {
+    throw new Error("An image widget has no original URL.");
+  }
+  return url;
+}
+
 class ImageWidget extends WidgetType {
   constructor(
-    readonly node: SyntaxNode,
     readonly imageTitle: string,
     readonly imageUrl: string,
     readonly resolvedImageUrl: string,
@@ -104,7 +138,8 @@ class ImageWidget extends WidgetType {
   }
 
   get estimatedHeight(): number {
-    return IMAGE_HEIGHT_CACHE.get(this.resolvedImageUrl) ?? -1;
+    // An image that has not loaded yet has the height that CodeMirror counts as unknown.
+    return IMAGE_HEIGHT_CACHE.get(this.resolvedImageUrl) ?? super.estimatedHeight;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -134,8 +169,7 @@ class ImageWidget extends WidgetType {
     figure.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const node = syntaxTree(view.state).resolve(parseInt(img.dataset.from ?? "-1", 10), 1);
-      linkImageMenu(view, node, { x: event.clientX, y: event.clientY });
+      linkImageMenu(view, imageNodeAt(view, figure), { x: event.clientX, y: event.clientY });
     });
 
     //////////////////////////////////////////
@@ -150,8 +184,6 @@ class ImageWidget extends WidgetType {
     img.title = this.imageTitle;
 
     // Store some crucial information on the node itself
-    img.dataset.from = String(this.node.from);
-    img.dataset.to = String(this.node.to);
     img.dataset.originalUrl = this.imageUrl;
     img.dataset.title = this.imageTitle;
 
@@ -163,11 +195,7 @@ class ImageWidget extends WidgetType {
     // Display a replacement image in case the correct one is not found
     img.onerror = () => {
       img.src = img404;
-      const originalUrl = img.dataset.originalUrl;
-      if (originalUrl === undefined) {
-        throw new Error("An image widget has no original URL.");
-      }
-      caption.textContent = trans("Image not found: %s", originalUrl);
+      caption.textContent = trans("Image not found: %s", originalUrlOf(img));
       caption.contentEditable = "false";
     };
 
@@ -177,7 +205,7 @@ class ImageWidget extends WidgetType {
       size.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
 
       // Determine if the image can be opened externally
-      if (isDataUrl(img.dataset.originalUrl!) && figure.contains(openExternally)) {
+      if (isDataUrl(originalUrlOf(img)) && figure.contains(openExternally)) {
         figure.removeChild(openExternally);
       } else if (!figure.contains(openExternally)) {
         figure.appendChild(openExternally);
@@ -216,21 +244,25 @@ class ImageWidget extends WidgetType {
         return;
       }
 
-      const { from, to, attributes, originalUrl } = img.dataset;
-      const nodeFrom = parseInt(from ?? "-1", 10);
-      const nodeTo = parseInt(to ?? "-1", 10);
+      const { from, to } = imageNodeAt(view, figure);
 
       event.preventDefault();
       event.stopPropagation();
+      // The DOM returns null only for a document or a doctype node.
+      const captionText = caption.textContent;
+      if (captionText === null) {
+        throw new Error("An image caption has no text content.");
+      }
       // Escape quotes to prevent breaking of the image
-      const newCaption = caption.textContent?.replace(/"/g, '\\"') ?? "";
+      const newCaption = captionText.replace(/"/g, '\\"');
       // "Why are you setting the caption both as the image description and title?"
       // Well, since all exports sometimes use this, sometimes the other value.
-      const newImageTag = `![${newCaption}](${originalUrl} "${newCaption}")${attributes ?? ""}`;
+      // The Pandoc attributes follow the Image node, so this change keeps them.
+      const newImageTag = `![${newCaption}](${originalUrlOf(img)} "${newCaption}")`;
       // Remove the event listeners beforehand to prevent multiple dispatches
       caption.removeEventListener("keydown", updateCaptionFunction);
       caption.removeEventListener("focusout", updateCaptionFunction);
-      view.dispatch({ changes: { from: nodeFrom, to: nodeTo, insert: newImageTag } });
+      view.dispatch({ changes: { from, to, insert: newImageTag } });
     };
 
     // Should work on these events
@@ -245,10 +277,7 @@ class ImageWidget extends WidgetType {
     openExternally.setAttribute("title", trans("Open image externally"));
     openExternally.onclick = function (event) {
       event.stopPropagation();
-      const url = resolveImageUrl(
-        view.state.field(configField).metadata.path,
-        img.dataset.originalUrl ?? "",
-      );
+      const url = resolveImageUrl(view.state.field(configField).metadata.path, originalUrlOf(img));
 
       // Open in Zettlr if wanted. TODO: Maybe move this into the editor config?
       if (window.config.get("files.images.openWith") === "zettlr") {
@@ -294,8 +323,6 @@ class ImageWidget extends WidgetType {
     try {
       // First, update the image itself
       const img = dom.querySelector("img")! as HTMLImageElement;
-      img.dataset.from = String(this.node.from);
-      img.dataset.to = String(this.node.to);
       img.dataset.originalUrl = this.imageUrl;
 
       if (img.dataset.title !== this.imageTitle) {
@@ -358,7 +385,7 @@ function createWidget(state: EditorState, node: SyntaxNodeRef): ImageWidget | un
   }
 
   const resolvedImageSrc = resolveImageUrl(state.field(configField).metadata.path, url);
-  return new ImageWidget(node.node, title, url, resolvedImageSrc, alt, data);
+  return new ImageWidget(title, url, resolvedImageSrc, alt, data);
 }
 
 export const renderImages = [

@@ -92,9 +92,9 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): WidgetType | undefined {
-  const resolutions = state.field(wikilinkResolutionsField, false) ?? null;
+  const resolutions = state.field(wikilinkResolutionsField, false);
   const content = node.node.getChild("ZknLinkContent");
-  if (resolutions === null || content === null) {
+  if (resolutions === undefined || resolutions === null || content === null) {
     return undefined;
   }
 

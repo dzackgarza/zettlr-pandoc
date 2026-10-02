@@ -293,18 +293,25 @@ export interface SuggestionCardView {
   suggestionId: string;
   /** The packet's claim: why the agent proposed this change. */
   description: string;
-  /** The reviewer's own note on this chunk; '' when none was written. */
-  comment: string;
+  /** The reviewer's own note on this chunk; null when none was written. */
+  comment: string | null;
 }
 
 /** A review's outstanding chunks, in the order the provider projected them. */
 export function buildSuggestionCards(review: ReviewDiffSession): SuggestionCardView[] {
-  return review.suggestions.map((suggestion) => ({
-    suggestionId: suggestion.suggestionId,
-    description: suggestion.description,
-    comment:
-      review.chunkComments.find((note) => note.chunkId === suggestion.suggestionId)?.comment ?? "",
-  }));
+  return review.suggestions.map((suggestion) => {
+    const note = review.chunkComments.find((item) => item.chunkId === suggestion.suggestionId);
+    return {
+      suggestionId: suggestion.suggestionId,
+      description: suggestion.description,
+      comment: note === undefined ? null : note.comment,
+    };
+  });
+}
+
+/** The text a chunk-note field shows for a note: a chunk with no note shows an empty field. */
+export function chunkNoteFieldText(comment: string | null): string {
+  return comment === null ? "" : comment;
 }
 
 /**
@@ -318,7 +325,7 @@ export function buildSuggestionCards(review: ReviewDiffSession): SuggestionCardV
  */
 export function chunkNoteCommit(card: SuggestionCardView, value: string): string | undefined {
   const text = value.trim();
-  return text === card.comment ? undefined : text;
+  return text === chunkNoteFieldText(card.comment) ? undefined : text;
 }
 
 /**
@@ -332,9 +339,12 @@ export function describeAcceptFailures(
   const groups = new Map<string, string[]>();
   for (const { path, result } of failures) {
     const reason = `${result.code}: ${result.message}`;
-    const paths = groups.get(reason) ?? [];
-    paths.push(path);
-    groups.set(reason, paths);
+    const paths = groups.get(reason);
+    if (paths === undefined) {
+      groups.set(reason, [path]);
+    } else {
+      paths.push(path);
+    }
   }
   return [...groups]
     .flatMap(([reason, paths]) => [reason, ...paths.map((path) => `  ${path}`)])

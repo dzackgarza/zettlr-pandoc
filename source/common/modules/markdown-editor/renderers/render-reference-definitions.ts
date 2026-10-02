@@ -74,6 +74,14 @@ interface BadgeGroup {
 }
 
 /**
+ * The measured place of one badge group; null when its line has no layout.
+ */
+interface BadgePlacement {
+  group: BadgeGroup;
+  position: { left: number; top: number } | null;
+}
+
+/**
  * Builds the DOM of one badge group: the subtle label badge showing the
  * authored key and the always-visible, clickable citing-count badge.
  */
@@ -109,8 +117,8 @@ class ReferenceDefinitionBadges {
   private readonly container: HTMLElement;
   private groups: BadgeGroup[];
   private readonly measureReq: {
-    read: () => Array<{ left: number; top: number } | null>;
-    write: (positions: Array<{ left: number; top: number } | null>) => void;
+    read: () => BadgePlacement[];
+    write: (placements: BadgePlacement[]) => void;
   };
 
   constructor(private readonly view: EditorView) {
@@ -121,7 +129,7 @@ class ReferenceDefinitionBadges {
     this.groups = [];
     this.measureReq = {
       read: () => this.measurePositions(),
-      write: (positions) => this.applyPositions(positions),
+      write: (placements) => this.applyPositions(placements),
     };
     this.sync(view.state);
     view.requestMeasure(this.measureReq);
@@ -164,21 +172,33 @@ class ReferenceDefinitionBadges {
    * renders and no counts are fabricated.
    */
   private sync(state: EditorState): void {
-    const references = state.field(workspaceReferencesField, false) ?? null;
+    // A table cell subview carries no workspace reference field.
+    const references = state.field(workspaceReferencesField, false);
     this.container.replaceChildren();
     this.groups = [];
 
-    if (references === null) {
+    if (references === undefined || references === null) {
       return;
     }
 
+    // Every definition starts with no citing occurrence; an occurrence of a
+    // key that this document does not define gets no badge.
     const citingCounts = new Map<string, number>();
+    for (const definition of references.snapshot.definitions) {
+      citingCounts.set(definition.key, 0);
+    }
     for (const occurrence of references.workspaceOccurrences) {
-      citingCounts.set(occurrence.key, (citingCounts.get(occurrence.key) ?? 0) + 1);
+      const count = citingCounts.get(occurrence.key);
+      if (count !== undefined) {
+        citingCounts.set(occurrence.key, count + 1);
+      }
     }
 
     for (const definition of references.snapshot.definitions) {
-      const citingCount = citingCounts.get(definition.key) ?? 0;
+      const citingCount = citingCounts.get(definition.key);
+      if (citingCount === undefined) {
+        throw new Error(`Reference definition ${definition.key} has no citing count.`);
+      }
       const dom = buildBadgeGroup(this.view, definition.key, citingCount);
       this.container.appendChild(dom);
       this.groups.push({ key: definition.key, citingCount, range: { ...definition.range }, dom });
@@ -190,21 +210,24 @@ class ReferenceDefinitionBadges {
    * line bearing the authored id token. Lines without layout (outside the
    * viewport) yield null.
    */
-  private measurePositions(): Array<{ left: number; top: number } | null> {
+  private measurePositions(): BadgePlacement[] {
     const base = this.container.getBoundingClientRect();
     const { from, to } = this.view.viewport;
     return this.groups.map((group) => {
       if (group.range.to < from || group.range.to > to) {
-        return null;
+        return { group, position: null };
       }
 
       const lineEnd = this.view.state.doc.lineAt(group.range.to).to;
       const coords = this.view.coordsAtPos(lineEnd, -1);
       if (coords === null) {
-        return null;
+        return { group, position: null };
       }
 
-      return { left: coords.right - base.left + 8, top: coords.top - base.top };
+      return {
+        group,
+        position: { left: coords.right - base.left + 8, top: coords.top - base.top },
+      };
     });
   }
 
@@ -212,9 +235,8 @@ class ReferenceDefinitionBadges {
    * Write phase: positions every badge group, hiding groups whose line has
    * no layout.
    */
-  private applyPositions(positions: Array<{ left: number; top: number } | null>): void {
-    this.groups.forEach((group, index) => {
-      const position = positions[index] ?? null;
+  private applyPositions(placements: BadgePlacement[]): void {
+    for (const { group, position } of placements) {
       if (position === null) {
         group.dom.classList.remove("positioned");
         return;
@@ -223,7 +245,7 @@ class ReferenceDefinitionBadges {
       group.dom.classList.add("positioned");
       group.dom.style.left = `${position.left}px`;
       group.dom.style.top = `${position.top}px`;
-    });
+    }
   }
 }
 

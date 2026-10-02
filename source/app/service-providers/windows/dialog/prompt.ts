@@ -17,25 +17,31 @@ import type LogProvider from "@providers/log";
 import { type BrowserWindow, dialog, type MessageBoxOptions } from "electron";
 
 /**
+ * What a prompt shows. Every caller names the kind of the message and its
+ * title.
+ */
+export interface PromptOptions {
+  type: NonNullable<MessageBoxOptions["type"]>;
+  title: string;
+  message: string;
+}
+
+/**
  * Displays a prompt with information
  *
  * @param   {BrowserWindow|null}  win      The window to attach to
- * @param   {any}            options  Options for the message box
+ * @param   {PromptOptions}       options  What the message box shows
  */
 export default function promptDialog(
   logger: LogProvider,
   win: BrowserWindow | null,
-  options: (Partial<MessageBoxOptions> & { message: string }) | string,
+  options: PromptOptions,
 ): void {
-  if (typeof options === "string") {
-    options = { message: options };
-  }
-
   const boxOptions: MessageBoxOptions = {
-    type: options.type ?? "info",
+    type: options.type,
     buttons: [trans("Ok")],
     defaultId: 0,
-    title: options.title ?? "Zettlr",
+    title: options.title,
     message: options.message,
   };
 
