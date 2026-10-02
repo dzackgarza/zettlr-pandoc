@@ -55,6 +55,7 @@ import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
+import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import type { DocumentLintRecord } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
 import type {
@@ -2474,7 +2475,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (scope === "workspace" || scope === "all") {
         // A workspace answers from the lint cache; the background linter
         // brings every outdated or pending document current.
-        const lookups = await this._app.documentLint.lookup(sources);
+        const lookups = await workspaceLintRows(this._app.documentLint, sources);
         lookups.forEach((lookup, index) => {
           const target = targets[index];
           if (lookup.record === undefined) {

@@ -501,6 +501,14 @@ of an isolated instance are in the first comment of #132.
   `inputsKey`, or results go stale silently. Adding or removing a resource
   file (an image, an `\input` target) does not yet invalidate closed
   documents.
+- **Problems view:** the left activity bar and View menu open
+  `win-main/sidebar/ProblemsView.vue`. It reads `list-workspace-lint` from the
+  document lint cache for the active workspace or all loaded workspaces. It
+  shows pending and stale documents; a queue drain broadcasts
+  `document-lint-changed` to refresh an open view. Clicking a finding opens
+  its document and selects its source range. A finding with a current
+  machine `fix` uses `apply-lint-fix`, which checks the cached finding and
+  applies its edit through the guarded Fix All transaction.
 - **Background work is visible:** a Flowmark format, the background lint
   queue and the startup Flowmark update each register a long-running task
   (`LongRunningTaskProvider`). The status bar names the newest running task

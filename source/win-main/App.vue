@@ -12,6 +12,7 @@
       bar-id="activity-bar"
       side="left"
       :items="SIDEBAR_VIEWS"
+      :badges="sidebarActivityBadges"
       :pressed="fileManagerVisible ? configStore.config.ui.sidebarView : ''"
       :label="trans('Sidebar views')"
       @press="pressSidebarView($event)"
@@ -44,6 +45,8 @@
           @jtl="(filePath, lineNumber, newTab) => jtl(filePath, lineNumber, newTab)"
           @jump-to-active-line="genericJtl($event)"
           @move-section="moveSection($event)"
+          @navigate-problem="openProblem($event)"
+          @problems-count="problemsCount = $event"
         />
       </SplitterPanel>
       <SplitterResizeHandle
@@ -585,6 +588,32 @@ function handleReferenceJump(intent: ReferenceJumpIntent): void {
     .catch((err) => reportError(err));
 }
 
+function openProblem(target: { path: string; from: number; to: number }): void {
+  const leafId = lastLeafId.value;
+  if (leafId !== undefined) {
+    documentTreeStore.pendingRangeNavigation = {
+      leafId,
+      filePath: target.path,
+      range: { from: target.from, to: target.to },
+    };
+  }
+  ipcRenderer.invoke("documents-provider", {
+    command: "open-file",
+    payload: {
+      path: target.path,
+      windowId,
+      leafId,
+      newTab: false,
+      targetRange: { from: target.from, to: target.to },
+    },
+  }).catch((err) => {
+    if (documentTreeStore.pendingRangeNavigation?.filePath === target.path) {
+      documentTreeStore.pendingRangeNavigation = undefined;
+    }
+    reportError(err);
+  });
+}
+
 const pomodoro = ref<PomodoroConfig>({
   currentEffectFile: glassFile,
   soundEffect: new Audio(glassFile),
@@ -730,6 +759,8 @@ const workspaceCollaborationPaths = computed(() =>
 const panelActivityBadges = computed<Record<string, number>>(() => ({
   [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount,
 }));
+const problemsCount = ref(0);
+const sidebarActivityBadges = computed<Record<string, number>>(() => ({ problems: problemsCount.value }));
 
 /** The editor pane became the user's filesystem context. */
 function rememberEditorDesktopFocus(): void {
@@ -1050,6 +1081,8 @@ onMounted(() => {
     },
     "global-search": () =>
       navigationSidebar.value?.reveal({ view: "search", focus: "search-query" }),
+    "problems-reveal": () =>
+      navigationSidebar.value?.reveal({ view: "problems", section: "problems", focus: "none" }),
     "toggle-navigation-sidebar": () => {
       configStore.setConfigValue("window.fileManagerVisible", !fileManagerVisible.value);
     },

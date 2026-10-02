@@ -52,6 +52,7 @@ import type { LongRunningTask } from "@providers/long-running-tasks/task";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { createHash } from "crypto";
 import { readdir, readFile, rename, stat, writeFile } from "fs/promises";
+import type { ApplyProblemFixRequest, ListProblemsRequest, ProblemDocument, WorkspaceProblems } from "@dts/common/problems";
 import { availableParallelism } from "os";
 import path from "path";
 import { trans } from "source/common/i18n-main";
@@ -71,6 +72,7 @@ import {
   workspaceDefinitions,
 } from "../../util/flowmark-lint-context";
 import { flowmarkInstallIdentity } from "../../util/flowmark-runtime";
+import { workspaceLintRows } from "../../util/workspace-lint-results";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
 import ProviderContract from "../provider-contract";
 
@@ -122,6 +124,7 @@ export interface DocumentLintDependencies {
   homeDirectory: string;
   env: NodeJS.ProcessEnv;
   userDataDirectory: string;
+  onDrain?: () => void;
 }
 
 interface CacheFile {
@@ -617,6 +620,71 @@ export default class DocumentLintProvider extends ProviderContract {
       .map((descriptor) => descriptor.path);
   }
 
+  /** Answer the Problems view from cached records and queue outdated documents. */
+  async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
+    const allPaths = await this.workspaceDocuments();
+    const paths = request.scope === "all"
+      ? allPaths
+      : request.workspacePath === undefined
+        ? []
+        : allPaths.filter((filePath) => filePath === request.workspacePath || filePath.startsWith(`${request.workspacePath}${path.sep}`));
+    const sources = await Promise.all(paths.map(async (filePath) => ({
+      path: filePath,
+      text: await this.currentText(filePath),
+    })));
+    const lookups = await workspaceLintRows(this, sources);
+    const documents: ProblemDocument[] = [];
+    const pendingPaths: string[] = [];
+    lookups.forEach((lookup, index) => {
+      const filePath = paths[index];
+      const record = lookup.record;
+      if (record === undefined) {
+        pendingPaths.push(filePath);
+        return;
+      }
+      if (record.diagnostics.length === 0) return;
+      const counts = { error: 0, warning: 0, info: 0 };
+      const diagnostics = record.diagnostics.map((diagnostic) => {
+        counts[diagnostic.severity] += 1;
+        return {
+          severity: diagnostic.severity,
+          rule: diagnostic.rule,
+          source: diagnostic.source,
+          message: diagnostic.message,
+          line: diagnostic.line,
+          column: diagnostic.column,
+          from: diagnostic.from,
+          to: diagnostic.to,
+          fix: diagnostic.fix ?? null,
+        };
+      });
+      documents.push({
+        path: filePath,
+        name: path.basename(filePath),
+        state: lookup.current ? "current" : "stale",
+        sourceHash: hashDocumentSource(sources[index].text),
+        diagnostics,
+        counts,
+      });
+    });
+    documents.sort((a, b) => a.path.localeCompare(b.path));
+    pendingPaths.sort();
+    return { documents, pendingPaths, documentCount: paths.length, queueActive: this.activeWorkers > 0 || this.queue.size > 0 };
+  }
+
+  /** A single-fix request must still name a current Flowmark machine edit. */
+  async hasCurrentFix(request: ApplyProblemFixRequest): Promise<boolean> {
+    if (!(await this.workspaceDocuments()).includes(request.documentPath)) return false;
+    const text = await this.currentText(request.documentPath);
+    if (hashDocumentSource(text) !== request.sourceHash) return false;
+    const [lookup] = await this.lookup([{ path: request.documentPath, text }]);
+    return lookup.current && (lookup.record?.diagnostics.some((diagnostic) =>
+      diagnostic.from === request.from &&
+      diagnostic.to === request.to &&
+      diagnostic.fix?.replacement === request.replacement
+    ) ?? false);
+  }
+
   /**
    * The machine-applicable fixes of each document, planned on its current
    * text. Each document is linted through the cache, WORKER_COUNT at a time,
@@ -713,6 +781,7 @@ export default class DocumentLintProvider extends ProviderContract {
     this.activeWorkers -= 1;
     if (this.activeWorkers === 0 && this.queue.size === 0) {
       this.settleBatch();
+      this.deps.onDrain?.();
     }
   }
 

@@ -557,6 +557,14 @@ export default function getMenu(
           },
         },
         {
+          id: "menu.problems_reveal",
+          label: trans("Problems: Reveal"),
+          accelerator: "Ctrl+Shift+M",
+          click: function (_menuitem, focusedWindow) {
+            sendShortcut(focusedWindow, "problems-reveal");
+          },
+        },
+        {
           id: "menu.toggle_annotation_panel",
           label: trans("Toggle Annotation Panel"),
           accelerator: "Ctrl+Shift+0",

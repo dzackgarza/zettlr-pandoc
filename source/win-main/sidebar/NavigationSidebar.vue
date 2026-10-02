@@ -42,6 +42,15 @@
       ></SearchView>
     </div>
     <ViewContainer
+      v-else-if="view.id === 'problems'"
+      ref="problemsContainer"
+      v-bind:sections="problemsSections"
+    >
+      <template #problems>
+        <ProblemsView v-on:navigate="emit('navigate-problem', $event)" v-on:count="emit('problems-count', $event)"></ProblemsView>
+      </template>
+    </ViewContainer>
+    <ViewContainer
       v-else
       ref="referencesContainer"
       v-bind:sections="referencesSections"
@@ -93,6 +102,7 @@ import QuartoBookOutline from "../file-manager/QuartoBookOutline.vue";
 import ReferencesTab from "./ReferencesTab.vue";
 import RelatedFilesTab from "./RelatedFilesTab.vue";
 import SearchView from "./SearchView.vue";
+import ProblemsView from "./ProblemsView.vue";
 import { type RevealTarget, sidebarSection, sidebarView } from "./sidebar-views";
 import ToCTab from "./ToCTab.vue";
 import ViewContainer from "./ViewContainer.vue";
@@ -107,6 +117,8 @@ const emit = defineEmits<{
   /** A jump within the active document (the outline). */
   (e: "jump-to-active-line", line: number): void;
   (e: "move-section", data: { from: number; to: number }): void;
+  (e: "navigate-problem", target: { path: string; from: number; to: number }): void;
+  (e: "problems-count", count: number): void;
 }>();
 
 const configStore = useConfigStore();
@@ -125,6 +137,7 @@ interface ViewContainerHandle {
 const globalSearch = ref<GlobalSearchHandle | null>(null);
 const explorerContainer = ref<ViewContainerHandle | null>(null);
 const referencesContainer = ref<ViewContainerHandle | null>(null);
+const problemsContainer = ref<ViewContainerHandle | null>(null);
 
 const view = computed(() => sidebarView(configStore.config.ui.sidebarView));
 
@@ -161,6 +174,7 @@ const explorerSections = computed(() =>
 );
 
 const referencesSections = computed(() => sidebarView("references").sections.map(sidebarSection));
+const problemsSections = computed(() => sidebarView("problems").sections.map(sidebarSection));
 
 const explorerCounts = computed<Partial<Record<SidebarSectionId, number>>>(() => {
   const toc = windowStateStore.tableOfContents;
@@ -173,8 +187,11 @@ async function reveal(target: RevealTarget): Promise<void> {
   configStore.setConfigValue("window.fileManagerVisible", true);
   await nextTick();
   if (target.section !== undefined) {
-    const container =
-      target.view === "explorer" ? explorerContainer.value : referencesContainer.value;
+    const container = target.view === "explorer"
+      ? explorerContainer.value
+      : target.view === "problems"
+        ? problemsContainer.value
+        : referencesContainer.value;
     if (container === null) {
       throw new Error(
         `The ${target.view} view holds no section container after the drawer was revealed, so ` +

@@ -455,7 +455,11 @@ let pendingReviewDiffSession: ReviewDiffSession | null = null;
  * loaded editor shows the file it belongs to.
  */
 function applyPendingNavigation(): void {
-  if (pendingNavigation === null || currentEditor === null) {
+  const carried = documentTreeStore.pendingRangeNavigation;
+  if (pendingNavigation === null && carried?.leafId === props.leafId && carried.filePath === props.file.path) {
+    pendingNavigation = { filePath: carried.filePath, targetRange: carried.range };
+  }
+  if (pendingNavigation === null || currentEditor === null || editorLoadPromise !== null || documentTreeStore.pendingTreeUpdates > 0) {
     return;
   }
 
@@ -465,6 +469,9 @@ function applyPendingNavigation(): void {
 
   const { location, targetRange } = pendingNavigation;
   pendingNavigation = null;
+  if (carried?.leafId === props.leafId && carried.filePath === props.file.path) {
+    documentTreeStore.pendingRangeNavigation = undefined;
+  }
 
   if (location !== undefined) {
     currentEditor.restoreDocumentLocation(location);
@@ -765,6 +772,15 @@ watch(isActiveTab, (active) => {
     .catch(reportDocumentLoadError);
 });
 
+watch(
+  () => documentTreeStore.pendingRangeNavigation,
+  () => { void nextTick().then(applyPendingNavigation); },
+);
+watch(
+  () => documentTreeStore.pendingTreeUpdates,
+  (count) => { if (count === 0) void nextTick().then(applyPendingNavigation); },
+);
+
 // The focus event reaches this pane before main moves lastLeafId here, so
 // the pane's own events are refused ownership until that move lands. Publish
 // once it does, or the window keeps the previous pane's document info.
@@ -773,6 +789,7 @@ watch(
   (leafId) => {
     if (leafId === props.leafId && currentEditor !== null) {
       publishActiveEditorState(currentEditor);
+      applyPendingNavigation();
     }
   },
 );

@@ -29,6 +29,7 @@ import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
 import type { DocumentType } from "@dts/common/documents";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
+import type { ApplyProblemFixRequest, ListProblemsRequest, WorkspaceProblems } from "@dts/common/problems";
 import type { ProjectSettings } from "@dts/common/fsal";
 import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
@@ -157,6 +158,14 @@ export const commands = [
  * only by narrowing the command it dispatches to.
  */
 export type ApplicationIPCContract = {
+  "list-workspace-lint": {
+    request: { payload: ListProblemsRequest };
+    response: WorkspaceProblems;
+  };
+  "apply-lint-fix": {
+    request: { payload: ApplyProblemFixRequest };
+    response: FixAllOutcome;
+  };
   "add-language-tool-ignore-rule": {
     request: { payload: LanguageToolIgnoredRuleEntry };
     response: unknown;

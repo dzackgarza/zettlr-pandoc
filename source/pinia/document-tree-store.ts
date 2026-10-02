@@ -13,6 +13,7 @@
  */
 
 import { reportError } from "@common/util/error-reporting";
+import type { SourceRange } from "@dts/common/references";
 import type { DocumentsUpdateContext } from "@providers/documents";
 import { defineStore } from "pinia";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
@@ -203,6 +204,8 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
 
   const lastLeafId = ref<undefined | string>(undefined);
   const lastLeafActiveFile = ref<OpenDocument | undefined>(undefined);
+  const pendingRangeNavigation = ref<{ leafId: string; filePath: string; range: SourceRange }>();
+  const pendingTreeUpdates = ref(0);
 
   // Initial update for the pane structure ...
   if (windowId !== null) {
@@ -239,6 +242,14 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
         if (context.windowId !== windowId) {
           return; // None of our business
         }
+        if (event === DP_EVENTS.ACTIVE_FILE && context.leafId !== undefined && context.filePath !== undefined && context.targetRange !== undefined) {
+          pendingRangeNavigation.value = {
+            leafId: context.leafId,
+            filePath: context.filePath,
+            range: context.targetRange,
+          };
+        }
+        pendingTreeUpdates.value += 1;
 
         // Something in the document status has changed, here we simply pull in
         // the full config as it is in the main process, and dispatch it into
@@ -286,7 +297,8 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
               }
             }
           })
-          .catch((err) => reportError(err));
+          .catch((err) => reportError(err))
+          .finally(() => { pendingTreeUpdates.value -= 1; });
       }
     },
   );
@@ -316,5 +328,5 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
     }
   });
 
-  return { paneStructure, paneData, modifiedDocuments, lastLeafId, lastLeafActiveFile };
+  return { paneStructure, paneData, modifiedDocuments, lastLeafId, lastLeafActiveFile, pendingRangeNavigation, pendingTreeUpdates };
 });

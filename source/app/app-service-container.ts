@@ -38,7 +38,7 @@ import TargetProvider from "@providers/targets";
 import TrayProvider from "@providers/tray";
 import UpdateProvider from "@providers/updates";
 import WindowProvider from "@providers/windows";
-import { app, dialog } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import LongRunningTaskProvider from "./service-providers/long-running-tasks";
@@ -161,6 +161,11 @@ export class AppServiceContainer {
       homeDirectory: app.getPath("home"),
       env: process.env,
       userDataDirectory: app.getPath("userData"),
+      onDrain: () => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send("document-lint-changed");
+        }
+      },
     });
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
