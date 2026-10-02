@@ -16,95 +16,95 @@
  * END HEADER
  */
 
-import { StateEffect, StateField } from '@codemirror/state'
-import safeAssign from '@common/util/safe-assign'
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { CitationDatabase } from '@dts/common/citeproc'
-import { type MarkdownTheme } from '@providers/config/get-config-template'
-import { type CustomEditorShortcut } from '../keymaps/shortcuts'
-import _ from 'underscore'
+import { StateEffect, StateField } from "@codemirror/state";
+import safeAssign from "@common/util/safe-assign";
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { type MarkdownTheme } from "@providers/config/get-config-template";
+import _ from "underscore";
+import { type CustomEditorShortcut } from "../keymaps/shortcuts";
 
 export interface AutocorrectOptions {
-  active: boolean
-  matchWholeWords: boolean
-  magicQuotes: { primary: string, secondary: string }
-  replacements: Array<{ key: string, value: string }>
+  active: boolean;
+  matchWholeWords: boolean;
+  magicQuotes: { primary: string; secondary: string };
+  replacements: Array<{ key: string; value: string }>;
 }
 
 export interface EditorConfiguration {
-  appLang: string
-  autocompleteSuggestEmojis: boolean
-  autocompleteWithEnter: boolean
-  autocompleteWithTab: boolean
-  autocorrect: AutocorrectOptions
-  autoCloseBrackets: boolean
-  renderingMode: 'preview'|'raw'
-  previewModeShowSyntaxWhenCursorIsAdjacent: boolean
-  renderCitations: boolean
-  renderIframes: boolean
-  renderImages: boolean
-  renderLinks: boolean
-  renderMath: boolean
-  renderTasks: boolean
-  renderHeadings: boolean
-  renderTables: boolean
-  renderEmphasis: boolean
-  renderPandoc: boolean
-  renderHorizontalRules: boolean
-  imagePreviewWidth: number
-  imagePreviewHeight: number
-  idRE: string
-  idGen: string
-  indentUnit: number
-  indentWithTabs: boolean
-  alwaysIndentLineOnTab: boolean
-  linkPreference: 'always'|'never'|'withID'
-  zknLinkFormat: 'link|title'|'title|link'
-  zknAddFileTitle: boolean
-  linkWithIDIfPossible: boolean
+  appLang: string;
+  autocompleteSuggestEmojis: boolean;
+  autocompleteWithEnter: boolean;
+  autocompleteWithTab: boolean;
+  autocorrect: AutocorrectOptions;
+  autoCloseBrackets: boolean;
+  renderingMode: "preview" | "raw";
+  previewModeShowSyntaxWhenCursorIsAdjacent: boolean;
+  renderCitations: boolean;
+  renderIframes: boolean;
+  renderImages: boolean;
+  renderLinks: boolean;
+  renderMath: boolean;
+  renderTasks: boolean;
+  renderHeadings: boolean;
+  renderTables: boolean;
+  renderEmphasis: boolean;
+  renderPandoc: boolean;
+  renderHorizontalRules: boolean;
+  imagePreviewWidth: number;
+  imagePreviewHeight: number;
+  idRE: string;
+  idGen: string;
+  indentUnit: number;
+  indentWithTabs: boolean;
+  alwaysIndentLineOnTab: boolean;
+  linkPreference: "always" | "never" | "withID";
+  zknLinkFormat: "link|title" | "title|link";
+  zknAddFileTitle: boolean;
+  linkWithIDIfPossible: boolean;
   metadata: {
-    path: string
-    id: string
-    library: CitationDatabase
-  }
-  boldFormatting: '**'|'__'
-  italicFormatting: '*'|'_'
-  highlightFormatting: 'span'|'=='
-  citeStyle: 'in-text'|'in-text-suffix'|'regular'
-  inputMode: 'default'|'vim'|'emacs'
-  muteLines: boolean
-  readabilityAlgorithm: 'dale-chall'|'gunning-fog'|'coleman-liau'|'automated-readability'
-  readabilityMode: boolean
-  typewriterMode: boolean
-  distractionFree: boolean
-  lintLanguageTool: boolean
-  darkMode: boolean
-  darkModeEditor: 'match'|'light'|'dark'
-  theme: MarkdownTheme
-  margins: 'S'|'M'|'L'
-  highlightWhitespace: boolean
-  showMarkdownLineNumbers: boolean
-  countChars: boolean
-  shortcuts: CustomEditorShortcut[]
+    path: string;
+    id: string;
+    library: CitationDatabase;
+  };
+  boldFormatting: "**" | "__";
+  italicFormatting: "*" | "_";
+  highlightFormatting: "span" | "==";
+  citeStyle: "in-text" | "in-text-suffix" | "regular";
+  inputMode: "default" | "vim" | "emacs";
+  muteLines: boolean;
+  readabilityAlgorithm: "dale-chall" | "gunning-fog" | "coleman-liau" | "automated-readability";
+  readabilityMode: boolean;
+  typewriterMode: boolean;
+  distractionFree: boolean;
+  lintLanguageTool: boolean;
+  darkMode: boolean;
+  darkModeEditor: "match" | "light" | "dark";
+  theme: MarkdownTheme;
+  margins: "S" | "M" | "L";
+  highlightWhitespace: boolean;
+  showMarkdownLineNumbers: boolean;
+  countChars: boolean;
+  shortcuts: CustomEditorShortcut[];
 }
 
-export function getDefaultConfig (): EditorConfiguration {
+export function getDefaultConfig(): EditorConfiguration {
   return {
-    appLang: 'en-US',
+    appLang: "en-US",
     autocorrect: {
       active: true,
       matchWholeWords: false,
       magicQuotes: {
         primary: '"…"',
-        secondary: "'…'"
+        secondary: "'…'",
       },
-      replacements: []
+      replacements: [],
     },
     autocompleteSuggestEmojis: false,
     autocompleteWithEnter: false,
     autocompleteWithTab: true,
     autoCloseBrackets: true,
-    renderingMode: 'preview',
+    renderingMode: "preview",
     previewModeShowSyntaxWhenCursorIsAdjacent: true,
     renderCitations: true,
     renderIframes: true,
@@ -119,49 +119,47 @@ export function getDefaultConfig (): EditorConfiguration {
     renderHorizontalRules: true,
     imagePreviewWidth: 100,
     imagePreviewHeight: 100,
-    idRE: '(\\d{14})',
-    idGen: '',
+    idRE: "(\\d{14})",
+    idGen: "",
     indentUnit: 4,
     indentWithTabs: false,
     alwaysIndentLineOnTab: false,
-    linkPreference: 'always',
-    zknLinkFormat: 'link|title',
+    linkPreference: "always",
+    zknLinkFormat: "link|title",
     linkWithIDIfPossible: false,
     zknAddFileTitle: true,
     metadata: {
-      path: '',
-      id: '',
-      library: CITEPROC_MAIN_DB
+      path: "",
+      id: "",
+      library: CITEPROC_MAIN_DB,
     },
-    boldFormatting: '**',
-    italicFormatting: '_',
-    highlightFormatting: '==',
-    citeStyle: 'regular',
+    boldFormatting: "**",
+    italicFormatting: "_",
+    highlightFormatting: "==",
+    citeStyle: "regular",
     muteLines: true,
-    readabilityAlgorithm: 'dale-chall',
-    inputMode: 'default',
+    readabilityAlgorithm: "dale-chall",
+    inputMode: "default",
     readabilityMode: false,
     typewriterMode: false,
     distractionFree: false,
     lintLanguageTool: false,
     darkMode: false,
-    darkModeEditor: 'match',
-    theme: 'berlin',
-    margins: 'M',
+    darkModeEditor: "match",
+    theme: "berlin",
+    margins: "M",
     highlightWhitespace: false,
     showMarkdownLineNumbers: false,
     countChars: false,
-    shortcuts: []
-  }
+    shortcuts: [],
+  };
 }
 
 /**
  * Detaches the editor configuration from renderer-owned reactive state before
  * CodeMirror extensions retain it.
  */
-export function cloneEditorConfiguration(
-  config: EditorConfiguration
-): EditorConfiguration {
+export function cloneEditorConfiguration(config: EditorConfiguration): EditorConfiguration {
   return {
     ...config,
     autocorrect: {
@@ -169,33 +167,33 @@ export function cloneEditorConfiguration(
       magicQuotes: { ...config.autocorrect.magicQuotes },
       replacements: config.autocorrect.replacements.map(({ key, value }) => ({
         key,
-        value
-      }))
+        value,
+      })),
     },
     metadata: { ...config.metadata },
-    shortcuts: config.shortcuts.map(({ name, shortcut }) => ({ name, shortcut }))
-  }
+    shortcuts: config.shortcuts.map(({ name, shortcut }) => ({ name, shortcut })),
+  };
 }
 
-export type EditorConfigOptions = Partial<EditorConfiguration>
+export type EditorConfigOptions = Partial<EditorConfiguration>;
 
-export const configUpdateEffect = StateEffect.define<EditorConfigOptions>()
+export const configUpdateEffect = StateEffect.define<EditorConfigOptions>();
 export const configField = StateField.define<EditorConfiguration>({
-  create (_state) {
-    return getDefaultConfig()
+  create(_state) {
+    return getDefaultConfig();
   },
-  update (val, transaction) {
+  update(val, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(configUpdateEffect)) {
-        const newConfig = safeAssign(effect.value, val)
+        const newConfig = safeAssign(effect.value, val);
         // Perform some housekeeping
         // Make sure the replacements are sorted longest-key-first
-        newConfig.autocorrect.replacements.sort((a, b) => b.key.length - a.key.length)
+        newConfig.autocorrect.replacements.sort((a, b) => b.key.length - a.key.length);
         // A configuration with the same values keeps its object, so an
         // extension that compares the field renders again only for a change.
-        return _.isEqual(newConfig, val) ? val : newConfig
+        return _.isEqual(newConfig, val) ? val : newConfig;
       }
     }
-    return val
-  }
-})
+    return val;
+  },
+});

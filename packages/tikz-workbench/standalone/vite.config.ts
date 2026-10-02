@@ -11,7 +11,10 @@ export default defineConfig({
     // must load the same ES module copies as every other import, or CodeMirror
     // sees two instances of @codemirror/state.
     alias: [
-      { find: /^.*\/@codemirror\/language\/dist\/index\.cjs$/u, replacement: "@codemirror/language" },
+      {
+        find: /^.*\/@codemirror\/language\/dist\/index\.cjs$/u,
+        replacement: "@codemirror/language",
+      },
       { find: /^.*\/@lezer\/highlight\/dist\/index\.cjs$/u, replacement: "@lezer/highlight" },
     ],
   },

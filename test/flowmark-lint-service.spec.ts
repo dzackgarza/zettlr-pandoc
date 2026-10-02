@@ -15,71 +15,77 @@
  * END HEADER
  */
 
-import { strict as assert } from 'assert'
-import { lintMarkdownText } from 'source/app/util/flowmark-lint'
+import { strict as assert } from "assert";
+import { lintMarkdownText } from "source/app/util/flowmark-lint";
 
-describe('Flowmark lint service', function () {
-  it('transports the standalone JSON diagnostic contract', async function () {
+describe("Flowmark lint service", function () {
+  it("transports the standalone JSON diagnostic contract", async function () {
     const payload = JSON.stringify({
       version: 1,
-      files: [{
-        path: '-',
-        diagnostics: [{
-          rule: 'reference/undefined',
-          severity: 'warning',
-          message: 'undefined reference',
+      files: [
+        {
+          path: "-",
+          diagnostics: [
+            {
+              rule: "reference/undefined",
+              severity: "warning",
+              message: "undefined reference",
+              line: 2,
+              column: 3,
+              end_line: 2,
+              end_column: 8,
+              suggestions: [{ title: "Use `\\sin`", replacement: "\\sin" }],
+              fix: { title: "Use `\\sin`", replacement: "\\sin" },
+            },
+          ],
+        },
+      ],
+    });
+    const result = await lintMarkdownText("ignored input", {
+      command: process.execPath,
+      timeoutMs: 60_000,
+      args: ["-e", `process.stdout.write(${JSON.stringify(payload)})`],
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(result.diagnostics, [
+        {
+          rule: "reference/undefined",
+          severity: "warning",
+          message: "undefined reference",
           line: 2,
           column: 3,
           end_line: 2,
           end_column: 8,
-          suggestions: [ { title: 'Use `\\sin`', replacement: '\\sin' } ],
-          fix: { title: 'Use `\\sin`', replacement: '\\sin' }
-        }]
-      }]
-    })
-    const result = await lintMarkdownText('ignored input', {
+          suggestions: [{ title: "Use `\\sin`", replacement: "\\sin" }],
+          fix: { title: "Use `\\sin`", replacement: "\\sin" },
+        },
+      ]);
+    }
+  });
+
+  it("rejects malformed linter output instead of inventing clean diagnostics", async function () {
+    const result = await lintMarkdownText("text", {
       command: process.execPath,
       timeoutMs: 60_000,
-      args: [ '-e', `process.stdout.write(${JSON.stringify(payload)})` ]
-    })
-
-    assert.equal(result.ok, true)
-    if (result.ok) {
-      assert.deepEqual(result.diagnostics, [{
-        rule: 'reference/undefined',
-        severity: 'warning',
-        message: 'undefined reference',
-        line: 2,
-        column: 3,
-        end_line: 2,
-        end_column: 8,
-        suggestions: [ { title: 'Use `\\sin`', replacement: '\\sin' } ],
-        fix: { title: 'Use `\\sin`', replacement: '\\sin' }
-      }])
-    }
-  })
-
-  it('rejects malformed linter output instead of inventing clean diagnostics', async function () {
-    const result = await lintMarkdownText('text', {
-      command: process.execPath,
-      timeoutMs: 60_000,
-      args: [ '-e', 'process.stdout.write("not-json")' ]
-    })
-    assert.equal(result.ok, false)
+      args: ["-e", 'process.stdout.write("not-json")'],
+    });
+    assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.equal(result.kind, 'flowmark-invalid-output')
+      assert.equal(result.kind, "flowmark-invalid-output");
     }
-  })
+  });
 
-  it('reports a missing runner as a typed failure', async function () {
-    const result = await lintMarkdownText('text', {
-      command: 'zettlr-no-such-flowmark-runner-xyzzy',
+  it("reports a missing runner as a typed failure", async function () {
+    const result = await lintMarkdownText("text", {
+      command: "zettlr-no-such-flowmark-runner-xyzzy",
       timeoutMs: 60_000,
-      args: []
-    })
-    assert.equal(result.ok, false)
+      args: [],
+    });
+    assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.equal(result.kind, 'flowmark-absent')
+      assert.equal(result.kind, "flowmark-absent");
     }
-  })
-})
+  });
+});

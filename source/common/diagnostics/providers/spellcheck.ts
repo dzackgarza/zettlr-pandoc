@@ -1,123 +1,117 @@
-import type {
-  ExternalDiagnostic,
-  ExternalLinter
-} from '@common/diagnostics/external-linter'
-import { trans } from '@common/i18n-renderer'
-import { extractTextnodes, markdownToAST } from '@common/modules/markdown-utils'
-import type { DictionaryProviderBroadcast } from '@providers/dictionary/ipc-contract'
-import type { Tree } from '@lezer/common'
+import type { ExternalDiagnostic, ExternalLinter } from "@common/diagnostics/external-linter";
+import { trans } from "@common/i18n-renderer";
+import { extractTextnodes, markdownToAST } from "@common/modules/markdown-utils";
+import type { Tree } from "@lezer/common";
+import type { DictionaryProviderBroadcast } from "@providers/dictionary/ipc-contract";
 
 export interface SpellcheckDiagnosticContext {
-  autocorrectValues: string[]
+  autocorrectValues: string[];
   /** The syntax tree of exactly the text, when the caller has one. */
-  tree: Tree | null
+  tree: Tree | null;
 }
 
-const anyLetterRE = /[\p{L}'’‘]+/gu
-const noneLetterRE = /^['’‘]+$/
-const nonLetters = '\'’‘'
-const spellcheckCache = new Map<string, boolean>()
-let dictionaryListenerRegistered = false
+const anyLetterRE = /[\p{L}'’‘]+/gu;
+const noneLetterRE = /^['’‘]+$/;
+const nonLetters = "'’‘";
+const spellcheckCache = new Map<string, boolean>();
+let dictionaryListenerRegistered = false;
 
-function ensureDictionaryListener (): void {
+function ensureDictionaryListener(): void {
   if (dictionaryListenerRegistered || window.ipc === undefined) {
-    return
+    return;
   }
-  dictionaryListenerRegistered = true
-  window.ipc.on('dictionary-provider', (_event, message: DictionaryProviderBroadcast) => {
-    if (message.command === 'invalidate-dict') {
-      spellcheckCache.clear()
+  dictionaryListenerRegistered = true;
+  window.ipc.on("dictionary-provider", (_event, message: DictionaryProviderBroadcast) => {
+    if (message.command === "invalidate-dict") {
+      spellcheckCache.clear();
     }
-  })
+  });
 }
 
-function sanitizeTerm (term: string): string {
-  return term.replace(/’‘‚‹›»“”」/g, "'")
+function sanitizeTerm(term: string): string {
+  return term.replace(/’‘‚‹›»“”」/g, "'");
 }
 
-async function batchCheck (terms: string[]): Promise<void> {
+async function batchCheck(terms: string[]): Promise<void> {
   const pending = terms
-    .map(term => sanitizeTerm(term))
-    .filter(term => !spellcheckCache.has(term))
+    .map((term) => sanitizeTerm(term))
+    .filter((term) => !spellcheckCache.has(term));
   if (pending.length === 0) {
-    return
+    return;
   }
-  const correct: boolean[] | undefined = await window.ipc.invoke(
-    'dictionary-provider',
-    { command: 'check', terms: pending }
-  )
+  const correct: boolean[] | undefined = await window.ipc.invoke("dictionary-provider", {
+    command: "check",
+    terms: pending,
+  });
   if (correct === undefined) {
-    return
+    return;
   }
   for (let index = 0; index < pending.length; index++) {
-    spellcheckCache.set(pending[index], correct[index])
+    spellcheckCache.set(pending[index], correct[index]);
   }
 }
 
-async function check (
-  term: string,
-  autocorrectValues: string[]
-): Promise<boolean> {
-  const saneTerm = sanitizeTerm(term)
+async function check(term: string, autocorrectValues: string[]): Promise<boolean> {
+  const saneTerm = sanitizeTerm(term);
   if (autocorrectValues.includes(saneTerm)) {
-    return true
+    return true;
   }
-  const cached = spellcheckCache.get(saneTerm)
+  const cached = spellcheckCache.get(saneTerm);
   if (cached !== undefined) {
-    return cached
+    return cached;
   }
-  const correct: boolean[] | undefined = await window.ipc.invoke(
-    'dictionary-provider',
-    { command: 'check', terms: [saneTerm] }
-  )
+  const correct: boolean[] | undefined = await window.ipc.invoke("dictionary-provider", {
+    command: "check",
+    terms: [saneTerm],
+  });
   if (correct === undefined) {
-    return true
+    return true;
   }
-  spellcheckCache.set(saneTerm, correct[0])
-  return correct[0]
+  spellcheckCache.set(saneTerm, correct[0]);
+  return correct[0];
 }
 
 export const spellcheckDiagnosticProvider: ExternalLinter<SpellcheckDiagnosticContext> = {
-  id: 'spellcheck',
-  async run ({ text, context }) {
-    ensureDictionaryListener()
-    const ast = markdownToAST(text, context.tree)
-    const textNodes = extractTextnodes(ast)
-    const wordsToCheck: Array<{ word: string, index: number, nodeStart: number }> =
-      textNodes.flatMap(node => {
-        const words: Array<{ index: number, word: string }> = []
+  id: "spellcheck",
+  async run({ text, context }) {
+    ensureDictionaryListener();
+    const ast = markdownToAST(text, context.tree);
+    const textNodes = extractTextnodes(ast);
+    const wordsToCheck: Array<{ word: string; index: number; nodeStart: number }> =
+      textNodes.flatMap((node) => {
+        const words: Array<{ index: number; word: string }> = [];
         for (const match of node.value.matchAll(anyLetterRE)) {
           if (noneLetterRE.test(match[0])) {
-            continue
+            continue;
           }
-          let word = match[0]
+          let word = match[0];
           while (word.length > 0 && nonLetters.includes(word[0])) {
-            word = word.slice(1)
+            word = word.slice(1);
           }
           while (word.length > 0 && nonLetters.includes(word[word.length - 1])) {
-            word = word.slice(0, word.length - 1)
+            word = word.slice(0, word.length - 1);
           }
-          if (word !== '') {
-            words.push({ word, index: match.index })
+          if (word !== "") {
+            words.push({ word, index: match.index });
           }
         }
-        return words.map(item => ({ ...item, nodeStart: node.from }))
-      })
+        return words.map((item) => ({ ...item, nodeStart: node.from }));
+      });
 
-    await batchCheck(wordsToCheck.map(item => item.word))
-    const diagnostics: ExternalDiagnostic[] = []
+    await batchCheck(wordsToCheck.map((item) => item.word));
+    const diagnostics: ExternalDiagnostic[] = [];
     for (const { word, index, nodeStart } of wordsToCheck) {
       if (await check(word, context.autocorrectValues)) {
-        continue
+        continue;
       }
       diagnostics.push({
         from: nodeStart + index,
         to: nodeStart + index + word.length,
-        message: trans('Spelling mistake'),
-        severity: 'error',
-        source: 'spellcheck'
-      })
+        message: trans("Spelling mistake"),
+        severity: "error",
+        source: "spellcheck",
+      });
     }
-    return { diagnostics }
-  }
-}
+    return { diagnostics };
+  },
+};

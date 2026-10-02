@@ -13,11 +13,14 @@
  * END HEADER
  */
 
+import { Text } from "@codemirror/state";
+import { sha256Text } from "@common/util/sha256";
+import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
   AnnotationListResponse,
   AnnotationResponse,
-  EditorContext,
   DocumentSummary,
+  EditorContext,
   EditorViewSummary,
   ReadDocumentResponse,
   ReadSide,
@@ -28,21 +31,18 @@ import type {
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
-import { Text } from "@codemirror/state";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
+import type {
+  CollaborationApplicationService,
+  ReviewQueryPort,
+} from "@providers/documents/document-collaboration-application-service";
+import { normalizeText, reviewReferenceText } from "@providers/documents/review-diff-store";
 import type LogProvider from "@providers/log";
-import type { CollaborationApplicationService, ReviewQueryPort } from "@providers/documents/document-collaboration-application-service";
 import fs from "fs";
 import path from "path";
-import vm from "vm";
-import { sha256Text } from "@common/util/sha256";
-import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import makeSearchRegex from "source/common/util/make-search-regex";
-import {
-  normalizeText,
-  reviewReferenceText,
-} from "@providers/documents/review-diff-store";
+import vm from "vm";
 
 const SEARCH_CONTEXT_DEFAULT = 3;
 export const SEARCH_DEADLINE_MS = 1000;
@@ -207,7 +207,9 @@ export default class AgentDocumentQueries {
     if (filePath === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find((candidate) => candidate.filePath === filePath);
+    const document = this.documents.loadedDocuments.find(
+      (candidate) => candidate.filePath === filePath,
+    );
     if (document === undefined) {
       return undefined;
     }
@@ -289,7 +291,8 @@ export default class AgentDocumentQueries {
     }
     const workingText = document.document.toString();
     const set: AnnotationSet = this.annotations.getAnnotations(documentId);
-    const items = state === undefined ? set.items : set.items.filter((item) => item.state === state);
+    const items =
+      state === undefined ? set.items : set.items.filter((item) => item.state === state);
     return {
       annotations: items.map((item) => buildAnnotationResponse(item, set.generation, workingText)),
     };
@@ -324,12 +327,18 @@ export default class AgentDocumentQueries {
    */
   public async findAnnotationQuery(
     annotationId: string,
-  ): Promise<{ documentId: string; annotation: TextAnnotation; annotationGeneration: number } | undefined> {
+  ): Promise<
+    { documentId: string; annotation: TextAnnotation; annotationGeneration: number } | undefined
+  > {
     for (const document of this.documents.loadedDocuments) {
       const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
       const found = set.items.find((item) => item.annotationId === annotationId);
       if (found !== undefined) {
-        return { documentId: document.documentId, annotation: found, annotationGeneration: set.generation };
+        return {
+          documentId: document.documentId,
+          annotation: found,
+          annotationGeneration: set.generation,
+        };
       }
     }
     return undefined;
@@ -382,8 +391,7 @@ export default class AgentDocumentQueries {
         viewId: `view-${windowId}-${leafId}`,
         windowId,
         leafId,
-        documentId:
-          activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
+        documentId: activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
         focused: isFocused,
         active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
@@ -475,7 +483,8 @@ export default class AgentDocumentQueries {
       return {
         attached: true,
         working,
-        reference: review === undefined ? working : reviewReferenceText(review.suggestions, working),
+        reference:
+          review === undefined ? working : reviewReferenceText(review.suggestions, working),
         reviewGeneration: review?.generation ?? 0,
       };
     }
@@ -485,9 +494,10 @@ export default class AgentDocumentQueries {
       return {
         attached: false,
         working,
-        reference: sidecar.review === null
-          ? working
-          : reviewReferenceText(sidecar.review.suggestions, working),
+        reference:
+          sidecar.review === null
+            ? working
+            : reviewReferenceText(sidecar.review.suggestions, working),
         reviewGeneration: sidecar.review?.generation ?? 0,
       };
     }
@@ -588,10 +598,7 @@ export default class AgentDocumentQueries {
     return false;
   }
 
-  private async isOpenableInWorkspace(
-    filePath: string,
-    workspacePath: string,
-  ): Promise<boolean> {
+  private async isOpenableInWorkspace(filePath: string, workspacePath: string): Promise<boolean> {
     let canonicalFilePath: string;
     try {
       canonicalFilePath = await fs.promises.realpath(filePath);

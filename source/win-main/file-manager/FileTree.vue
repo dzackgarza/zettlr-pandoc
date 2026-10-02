@@ -187,271 +187,285 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { trans } from '@common/i18n-renderer'
-import TreeItem from './TreeItem.vue'
-import matchQuery from './util/match-query'
-import { ref, computed } from 'vue'
-import { useConfigStore, useDocumentTreeStore, useIgnoreRulesStore, useWindowStateStore } from 'source/pinia'
-import { useWorkspaceStore } from 'source/pinia/workspace-store'
-import { retrieveChildrenAndSort } from './util/retrieve-children-and-sort'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { sortExplorerChildren } from "@common/util/explorer-ordering";
+import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
+import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
+import type { CloseAllIPCAPI } from "source/app/service-providers/windows";
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "source/common/modules/window-register/application-menu-helper";
+import { isInsideRoot, pathDirname } from "source/common/util/renderer-path-polyfill";
+import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
+import TextControl from "source/common/vue/form/elements/TextControl.vue";
+import PopoverWrapper from "source/common/vue/PopoverWrapper.vue";
+import {
+  useConfigStore,
+  useDocumentTreeStore,
+  useIgnoreRulesStore,
+  useWindowStateStore,
+} from "source/pinia";
+import { useWorkspaceStore } from "source/pinia/workspace-store";
 import type {
   AnyDescriptor,
+  DirDescriptor,
   DirectoryExplorerSettings,
   DirectorySettings,
-  DirDescriptor,
   FileNameDisplay,
   ProjectFileFilter,
-  SortMethod
-} from 'source/types/common/fsal'
-import type { DocumentManagerIPCAPI } from 'source/app/service-providers/documents'
-import { isInsideRoot, pathDirname } from 'source/common/util/renderer-path-polyfill'
-import { closeFile, closeWorkspace } from './util/item-composable'
-import showPopupMenu, { type AnyMenuItem } from 'source/common/modules/window-register/application-menu-helper'
-import type { CloseAllIPCAPI } from 'source/app/service-providers/windows'
-import PopoverWrapper from 'source/common/vue/PopoverWrapper.vue'
-import ButtonControl from 'source/common/vue/form/elements/ButtonControl.vue'
-import TextControl from 'source/common/vue/form/elements/TextControl.vue'
-import { filterDescriptorChildren } from './util/filter-children'
-import { sortExplorerChildren } from '@common/util/explorer-ordering'
-import type { DirSettingsCommandAPI } from 'source/app/service-providers/commands/dir-settings'
+  SortMethod,
+} from "source/types/common/fsal";
+import { computed, ref } from "vue";
+import TreeItem from "./TreeItem.vue";
+import { filterDescriptorChildren } from "./util/filter-children";
+import { closeFile, closeWorkspace } from "./util/item-composable";
+import matchQuery from "./util/match-query";
+import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
 
-type SortChoice = 'display'|'filename'|'title'|'heading'|'modified'|'created'|'manual'|'metadata'|'book'
-type Direction = 'up'|'down'
-type FoldersMode = 'inherit'|'folders'|'mixed'
+type SortChoice =
+  | "display"
+  | "filename"
+  | "title"
+  | "heading"
+  | "modified"
+  | "created"
+  | "manual"
+  | "metadata"
+  | "book";
+type Direction = "up" | "down";
+type FoldersMode = "inherit" | "folders" | "mixed";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 const props = defineProps<{
-  isVisible: boolean
-  filterQuery: string
-  filePickerActive: boolean
-  filePickerPaths: string[]
-  filePickerPathSet: Set<string>
-  windowId: string
-}>()
+  isVisible: boolean;
+  filterQuery: string;
+  filePickerActive: boolean;
+  filePickerPaths: string[];
+  filePickerPathSet: Set<string>;
+  windowId: string;
+}>();
 
 const emit = defineEmits<{
-  (e: 'selection', event: MouseEvent): void
-  (e: 'toggle-file-list'): void
-}>()
+  (e: "selection", event: MouseEvent): void;
+  (e: "toggle-file-list"): void;
+}>();
 
 // Can contain the path to a tree item that is focused
-const activeTreeItem = ref<undefined|[string, string]>(undefined)
-const rootElement = ref<HTMLDivElement|null>(null)
+const activeTreeItem = ref<undefined | [string, string]>(undefined);
+const rootElement = ref<HTMLDivElement | null>(null);
 
-const workspacesContextMenuButton = ref<HTMLElement|null>(null)
-const showSortingPopover = ref(false)
-const showMetadataKeyPopover = ref(false)
-const metadataDirectoryPath = ref<string|null>(null)
-const metadataKeyDraft = ref('date')
+const workspacesContextMenuButton = ref<HTMLElement | null>(null);
+const showSortingPopover = ref(false);
+const showMetadataKeyPopover = ref(false);
+const metadataDirectoryPath = ref<string | null>(null);
+const metadataKeyDraft = ref("date");
 
-const workspaceStore = useWorkspaceStore()
-const windowStateStore = useWindowStateStore()
-const documentTreeStore = useDocumentTreeStore()
-const configStore = useConfigStore()
-const ignoreRulesStore = useIgnoreRulesStore()
+const workspaceStore = useWorkspaceStore();
+const windowStateStore = useWindowStateStore();
+const documentTreeStore = useDocumentTreeStore();
+const configStore = useConfigStore();
+const ignoreRulesStore = useIgnoreRulesStore();
 
-const rootDescriptors = computed(() => workspaceStore.rootDescriptors)
+const rootDescriptors = computed(() => workspaceStore.rootDescriptors);
 const hasWorkspaceRoots = computed(() => {
-  return rootDescriptors.value.some(desc => desc.type === 'directory')
-})
+  return rootDescriptors.value.some((desc) => desc.type === "directory");
+});
 
-const showFilesSection = computed(() => configStore.config.fileManagerShowFiles)
-const showWorkspacesSection = computed(() => configStore.config.fileManagerShowWorkspaces)
-const lastLeafId = computed(() => documentTreeStore.lastLeafId)
+const showFilesSection = computed(() => configStore.config.fileManagerShowFiles);
+const showWorkspacesSection = computed(() => configStore.config.fileManagerShowWorkspaces);
+const lastLeafId = computed(() => documentTreeStore.lastLeafId);
 
-const platform = process.platform
-const fileSectionHeading = trans('Files')
-const workspaceSectionHeading = trans('Workspaces')
-const noRootsMessage = trans('No open files or folders')
-const noResultsMessage = trans('No results')
-const hideFilesLabel = trans('Hide files')
-const showFilesLabel = trans('Show files')
-const hideWorkspacesLabel = trans('Hide workspaces')
-const showWorkspacesLabel = trans('Show workspaces')
-const autoSortButtonLabel = trans('Switch to automatic sorting')
-const displayAsLabel = trans('Display as')
-const sortByLabel = trans('Sort by')
-const directionLabel = trans('Direction')
-const groupingLabel = trans('Grouping')
-const projectFilesLabel = trans('Project files')
-const defaultLabel = trans('Default')
-const filenameLabel = trans('Filename')
-const titleLabel = trans('Title')
-const headingLabel = trans('First heading')
-const titleHeadingLabel = trans('Title or first heading')
-const displayedNameLabel = trans('Displayed name')
-const modifiedLabel = trans('Modified')
-const createdLabel = trans('Created')
-const manualOrderLabel = trans('Manual order (zettlr-order_)')
-const metadataFieldMenuLabel = trans('Metadata field…')
-const projectOrderLabel = trans('Book / Project order')
-const ascendingLabel = trans('Ascending')
-const descendingLabel = trans('Descending')
-const foldersFirstLabel = trans('Folders first')
-const mixedLabel = trans('Mixed')
-const allFilesLabel = trans('All')
-const includedLabel = trans('Included')
-const omittedLabel = trans('Not included')
-const metadataFieldHeading = trans('Sort by metadata field')
-const metadataFieldLabel = trans('Metadata field')
-const applyLabel = trans('Apply')
+const platform = process.platform;
+const fileSectionHeading = trans("Files");
+const workspaceSectionHeading = trans("Workspaces");
+const noRootsMessage = trans("No open files or folders");
+const noResultsMessage = trans("No results");
+const hideFilesLabel = trans("Hide files");
+const showFilesLabel = trans("Show files");
+const hideWorkspacesLabel = trans("Hide workspaces");
+const showWorkspacesLabel = trans("Show workspaces");
+const autoSortButtonLabel = trans("Switch to automatic sorting");
+const displayAsLabel = trans("Display as");
+const sortByLabel = trans("Sort by");
+const directionLabel = trans("Direction");
+const groupingLabel = trans("Grouping");
+const projectFilesLabel = trans("Project files");
+const defaultLabel = trans("Default");
+const filenameLabel = trans("Filename");
+const titleLabel = trans("Title");
+const headingLabel = trans("First heading");
+const titleHeadingLabel = trans("Title or first heading");
+const displayedNameLabel = trans("Displayed name");
+const modifiedLabel = trans("Modified");
+const createdLabel = trans("Created");
+const manualOrderLabel = trans("Manual order (zettlr-order_)");
+const metadataFieldMenuLabel = trans("Metadata field…");
+const projectOrderLabel = trans("Book / Project order");
+const ascendingLabel = trans("Ascending");
+const descendingLabel = trans("Descending");
+const foldersFirstLabel = trans("Folders first");
+const mixedLabel = trans("Mixed");
+const allFilesLabel = trans("All");
+const includedLabel = trans("Included");
+const omittedLabel = trans("Not included");
+const metadataFieldHeading = trans("Sort by metadata field");
+const metadataFieldLabel = trans("Metadata field");
+const applyLabel = trans("Apply");
 
-const useH1 = computed(() => configStore.config.fileNameDisplay.includes('heading'))
-const useTitle = computed(() => configStore.config.fileNameDisplay.includes('title'))
+const useH1 = computed(() => configStore.config.fileNameDisplay.includes("heading"));
+const useTitle = computed(() => configStore.config.fileNameDisplay.includes("title"));
 
-const query = computed(() => props.filterQuery.trim().toLowerCase())
-const filterActive = computed(() => query.value !== '' || props.filePickerActive)
+const query = computed(() => props.filterQuery.trim().toLowerCase());
+const filterActive = computed(() => query.value !== "" || props.filePickerActive);
 
-const activeWorkspace = computed<DirDescriptor|undefined>(() => {
-  const roots = getDirectories.value
-  const selected = configStore.config.openDirectory
+const activeWorkspace = computed<DirDescriptor | undefined>(() => {
+  const roots = getDirectories.value;
+  const selected = configStore.config.openDirectory;
   if (selected !== null) {
     const containing = roots
-      .filter(root => selected === root.path || isInsideRoot(selected, root.path))
-      .sort((a, b) => b.path.length - a.path.length)[0]
+      .filter((root) => selected === root.path || isInsideRoot(selected, root.path))
+      .sort((a, b) => b.path.length - a.path.length)[0];
     if (containing !== undefined) {
-      return containing
+      return containing;
     }
   }
-  return roots.length === 1 ? roots[0] : undefined
-})
+  return roots.length === 1 ? roots[0] : undefined;
+});
 
-const metadataDirectory = computed<DirDescriptor|undefined>(() => {
-  const path = metadataDirectoryPath.value
-  if (path === null) return undefined
-  const descriptor = workspaceStore.descriptorMap.get(path)
-  return descriptor?.type === 'directory' ? descriptor : undefined
-})
+const metadataDirectory = computed<DirDescriptor | undefined>(() => {
+  const path = metadataDirectoryPath.value;
+  if (path === null) return undefined;
+  const descriptor = workspaceStore.descriptorMap.get(path);
+  return descriptor?.type === "directory" ? descriptor : undefined;
+});
 
 const filterResults = computed<string[]>(() => {
-  const q = query.value
+  const q = query.value;
   if (!filterActive.value) {
-    return []
+    return [];
   }
 
-  if (props.filePickerActive && q === '') {
-    return props.filePickerPaths
+  if (props.filePickerActive && q === "") {
+    return props.filePickerPaths;
   }
 
-  const filter = matchQuery(
-    q,
-    useTitle.value,
-    useH1.value
-  )
-  const visible = filterDescriptorChildren()
-  const results: string[] = []
+  const filter = matchQuery(q, useTitle.value, useH1.value);
+  const visible = filterDescriptorChildren();
+  const results: string[] = [];
 
   if (props.filePickerActive) {
     for (const absPath of props.filePickerPaths) {
-      const descriptor = workspaceStore.descriptorMap.get(absPath)
+      const descriptor = workspaceStore.descriptorMap.get(absPath);
       if (descriptor !== undefined && filter(descriptor)) {
-        results.push(absPath)
+        results.push(absPath);
       }
     }
   } else {
-    for (const [ absPath, descriptor ] of workspaceStore.descriptorMap.entries()) {
+    for (const [absPath, descriptor] of workspaceStore.descriptorMap.entries()) {
       if (visible(descriptor) && filter(descriptor)) {
-        results.push(absPath)
+        results.push(absPath);
       }
     }
   }
 
-  return results
-})
+  return results;
+});
 
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
-  const visible = filterDescriptorChildren()
+  const visible = filterDescriptorChildren();
   const roots = rootDescriptors.value
-    .filter(desc => desc.type === 'file' || desc.type === 'code')
-    .filter(visible)
+    .filter((desc) => desc.type === "file" || desc.type === "code")
+    .filter(visible);
   if (!filterActive.value) {
-    return roots
+    return roots;
   }
 
-  if (props.filePickerActive && query.value === '') {
-    return roots.filter(root => props.filePickerPathSet.has(root.path))
+  if (props.filePickerActive && query.value === "") {
+    return roots.filter((root) => props.filePickerPathSet.has(root.path));
   }
 
-  return roots.filter(root => filterResults.value.includes(root.path))
-})
+  return roots.filter((root) => filterResults.value.includes(root.path));
+});
 
 const getDirectories = computed(() => {
-  const visible = filterDescriptorChildren()
-  const roots = rootDescriptors.value
-    .filter(desc => desc.type === 'directory')
-    .filter(visible)
+  const visible = filterDescriptorChildren();
+  const roots = rootDescriptors.value.filter((desc) => desc.type === "directory").filter(visible);
   if (!filterActive.value) {
-    return roots
+    return roots;
   }
 
-  return roots.filter(root => {
-    return filterResults.value.some(res => res.startsWith(root.path))
-  })
-})
+  return roots.filter((root) => {
+    return filterResults.value.some((res) => res.startsWith(root.path));
+  });
+});
 
-function nameCounts (descriptors: AnyDescriptor[]): Map<string, number> {
-  const counts = new Map<string, number>()
+function nameCounts(descriptors: AnyDescriptor[]): Map<string, number> {
+  const counts = new Map<string, number>();
   for (const descriptor of descriptors) {
-    counts.set(descriptor.name, (counts.get(descriptor.name) ?? 0) + 1)
+    counts.set(descriptor.name, (counts.get(descriptor.name) ?? 0) + 1);
   }
-  return counts
+  return counts;
 }
 
-const fileNameCounts = computed(() => nameCounts(getFiles.value))
-const directoryNameCounts = computed(() => nameCounts(getDirectories.value))
+const fileNameCounts = computed(() => nameCounts(getFiles.value));
+const directoryNameCounts = computed(() => nameCounts(getDirectories.value));
 
 const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, string]>>(() => {
   // First, get all descriptors.
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
     .filter(filterDescriptorChildren())
-  // Second, filter them if applicable.
-    .filter(descriptor => {
-      return !filterActive.value ? true : filterResults.value.some(res => res.startsWith(descriptor.path))
-    })
+    // Second, filter them if applicable.
+    .filter((descriptor) => {
+      return !filterActive.value
+        ? true
+        : filterResults.value.some((res) => res.startsWith(descriptor.path));
+    });
 
-  const uncollapsed = windowStateStore.uncollapsedDirectories
+  const uncollapsed = windowStateStore.uncollapsedDirectories;
   const collapsed = allDescriptors
-    .filter(d => d.type === 'directory' && !uncollapsed.includes(d.path))
-    .map(d => d.path)
+    .filter((d) => d.type === "directory" && !uncollapsed.includes(d.path))
+    .map((d) => d.path);
 
   const visibleDescriptors = allDescriptors
     // Third, remove any file that is within a collapsed directory
-    .filter(descriptor => {
-      return collapsed.find(absPath => descriptor.dir.startsWith(absPath)) === undefined
-    })
+    .filter((descriptor) => {
+      return collapsed.find((absPath) => descriptor.dir.startsWith(absPath)) === undefined;
+    });
 
   // Fourth, sort them recursively so that the list is the same as what the file
   // tree will see
-  const retValue: AnyDescriptor[] = [
-    ...getFiles.value
-  ]
+  const retValue: AnyDescriptor[] = [...getFiles.value];
 
   const defaults = {
     sortingType: configStore.config.sorting,
     sortFoldersFirst: configStore.config.sortFoldersFirst,
     fileNameDisplay: configStore.config.fileNameDisplay,
     appLang: configStore.config.appLang,
-    fileMetaTime: configStore.config.fileMetaTime
-  } as const
-  const filter = filterDescriptorChildren()
+    fileMetaTime: configStore.config.fileMetaTime,
+  } as const;
+  const filter = filterDescriptorChildren();
 
   for (const descriptor of getDirectories.value) {
-    retValue.push(...retrieveChildrenAndSort(descriptor, visibleDescriptors, (directory, children) => {
-      return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors)
-    }))
+    retValue.push(
+      ...retrieveChildrenAndSort(descriptor, visibleDescriptors, (directory, children) => {
+        return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
+      }),
+    );
   }
 
-  return retValue
-    // Filter out any files and folders that should not be displayed such that
-    // this "global" list of files and folders corresponds exactly to how they
-    // will be displayed to the user. This is especially important for the
-    // navigation with the arrow keys.
-    .filter(filter)
-    .map(descriptor => ([ descriptor.path, descriptor.type ]))
-})
+  return (
+    retValue
+      // Filter out any files and folders that should not be displayed such that
+      // this "global" list of files and folders corresponds exactly to how they
+      // will be displayed to the user. This is especially important for the
+      // navigation with the arrow keys.
+      .filter(filter)
+      .map((descriptor) => [descriptor.path, descriptor.type])
+  );
+});
 
 /**
  * Called whenever the user clicks on the "No open files or folders"
@@ -459,58 +473,63 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
  * @param  {MouseEvent} evt The click event.
  * @return {void}     Does not return.
  */
-function requestOpenRoot (event: MouseEvent): void {
-  const command = event.shiftKey ? 'root-open-files' : 'root-open-workspaces'
+function requestOpenRoot(event: MouseEvent): void {
+  const command = event.shiftKey ? "root-open-files" : "root-open-workspaces";
 
-  ipcRenderer.invoke('application', { command })
-    .catch(err => reportError(err))
+  ipcRenderer.invoke("application", { command }).catch((err) => reportError(err));
 }
 
 // Close all open root files, including open tabs
-function closeAllFiles (): void {
+function closeAllFiles(): void {
   // Ask for confirmation before closing
-  ipcRenderer.invoke('close-all', {
-    rootType: 'file'
-  } as CloseAllIPCAPI).then((confirm: boolean) => {
-    if (!confirm) {
-      return
-    }
+  ipcRenderer
+    .invoke("close-all", {
+      rootType: "file",
+    } as CloseAllIPCAPI)
+    .then((confirm: boolean) => {
+      if (!confirm) {
+        return;
+      }
 
-    for (const rootFile of getFiles.value) {
-      closeFile(rootFile.path)
-    }
-  }).catch(err => reportError(err))
+      for (const rootFile of getFiles.value) {
+        closeFile(rootFile.path);
+      }
+    })
+    .catch((err) => reportError(err));
 }
 
 // Context menu for the `Files` header
-function fileRootContextMenu (event: MouseEvent): void {
+function fileRootContextMenu(event: MouseEvent): void {
   const template: AnyMenuItem[] = [
     {
-      label: trans('Close all files'),
-      type: 'normal',
-      action () {
-        closeAllFiles()
-      }
+      label: trans("Close all files"),
+      type: "normal",
+      action() {
+        closeAllFiles();
+      },
     },
-  ]
+  ];
 
-  showPopupMenu({ x: event.clientX, y: event.clientY }, template)
+  showPopupMenu({ x: event.clientX, y: event.clientY }, template);
 }
 
 // Close all open workspaces and associated files, including open tabs.
-function closeAllWorkspaces (): void {
+function closeAllWorkspaces(): void {
   // Ask for confirmation before closing
-  ipcRenderer.invoke('close-all', {
-    rootType: 'workspace'
-  } as CloseAllIPCAPI).then((confirm: boolean) => {
-    if (!confirm) {
-      return
-    }
+  ipcRenderer
+    .invoke("close-all", {
+      rootType: "workspace",
+    } as CloseAllIPCAPI)
+    .then((confirm: boolean) => {
+      if (!confirm) {
+        return;
+      }
 
-    for (const dir of getDirectories.value) {
-      closeWorkspace(dir.path)
-    }
-  }).catch(err => reportError(err))
+      for (const dir of getDirectories.value) {
+        closeWorkspace(dir.path);
+      }
+    })
+    .catch((err) => reportError(err));
 }
 
 /**
@@ -519,123 +538,133 @@ function closeAllWorkspaces (): void {
  *
  * @param   {boolean}  collapseRoots  If true, collapses everything.
  */
-function collapseAll (collapseRoots: boolean): void {
+function collapseAll(collapseRoots: boolean): void {
   // Collapse all folders and roots.
   if (collapseRoots) {
-    windowStateStore.uncollapsedDirectories.splice(0)
-    return
+    windowStateStore.uncollapsedDirectories.splice(0);
+    return;
   }
 
   // Collapse only child folders, leaving roots uncollapsed
-  const roots = new Set(rootDescriptors.value.map(r => r.path))
+  const roots = new Set(rootDescriptors.value.map((r) => r.path));
 
-  const uncollapsed = windowStateStore.uncollapsedDirectories
-    .filter(path => !roots.has(path))
+  const uncollapsed = windowStateStore.uncollapsedDirectories.filter((path) => !roots.has(path));
 
   for (const filePath of uncollapsed) {
-    let idx = windowStateStore.uncollapsedDirectories.indexOf(filePath)
+    let idx = windowStateStore.uncollapsedDirectories.indexOf(filePath);
     if (idx > -1) {
-      windowStateStore.uncollapsedDirectories.splice(idx, 1)
+      windowStateStore.uncollapsedDirectories.splice(idx, 1);
     }
   }
 }
 
 // Context menu for the `Workspaces` header
-function workspaceRootContextMenu (event: MouseEvent): void {
-  const twoStep = configStore.config.fileManager.twoStepCollapseWorkspaces
-  const roots = new Set(rootDescriptors.value.map(r => r.path))
-  const onlyRoots = windowStateStore.uncollapsedDirectories
-    .every(path => roots.has(path))
+function workspaceRootContextMenu(event: MouseEvent): void {
+  const twoStep = configStore.config.fileManager.twoStepCollapseWorkspaces;
+  const roots = new Set(rootDescriptors.value.map((r) => r.path));
+  const onlyRoots = windowStateStore.uncollapsedDirectories.every((path) => roots.has(path));
 
-  const collapseRoots = !twoStep || onlyRoots
-  const workspace = activeWorkspace.value
+  const collapseRoots = !twoStep || onlyRoots;
+  const workspace = activeWorkspace.value;
 
   const template: AnyMenuItem[] = [
     {
-      label: collapseRoots ? trans('Collapse workspaces') : trans('Collapse subfolders'),
-      type: 'normal',
-      action () { collapseAll(collapseRoots) }
+      label: collapseRoots ? trans("Collapse workspaces") : trans("Collapse subfolders"),
+      type: "normal",
+      action() {
+        collapseAll(collapseRoots);
+      },
     },
     {
-      id: 'explorer-show-ignored',
-      label: trans('Turn the filters off'),
-      type: 'checkbox',
+      id: "explorer-show-ignored",
+      label: trans("Turn the filters off"),
+      type: "checkbox",
       checked: configStore.config.fileManager.showIgnored,
-      action () {
+      action() {
         configStore.setConfigValue(
-          'fileManager.showIgnored',
-          !configStore.config.fileManager.showIgnored
-        )
-      }
+          "fileManager.showIgnored",
+          !configStore.config.fileManager.showIgnored,
+        );
+      },
     },
     {
-      id: 'explorer-edit-ignore-rules',
-      label: trans('Edit filters…'),
-      type: 'normal',
-      action () { ignoreRulesStore.editing = true }
+      id: "explorer-edit-ignore-rules",
+      label: trans("Edit filters…"),
+      type: "normal",
+      action() {
+        ignoreRulesStore.editing = true;
+      },
     },
     {
-      label: trans('Sort workspaces…'),
-      type: 'normal',
-      action () { showSortingPopover.value = true }
+      label: trans("Sort workspaces…"),
+      type: "normal",
+      action() {
+        showSortingPopover.value = true;
+      },
     },
     ...explorerViewItems(workspace),
     {
-      type: 'separator'
+      type: "separator",
     },
     {
-      label: trans('Close all workspaces'),
-      type: 'normal',
-      action () { closeAllWorkspaces() }
+      label: trans("Close all workspaces"),
+      type: "normal",
+      action() {
+        closeAllWorkspaces();
+      },
     },
-  ]
+  ];
 
-  showPopupMenu({ x: event.clientX, y: event.clientY }, template, clickedID => {
+  showPopupMenu({ x: event.clientX, y: event.clientY }, template, (clickedID) => {
     if (workspace !== undefined) {
-      handleExplorerMenuChoice(workspace, clickedID)
+      handleExplorerMenuChoice(workspace, clickedID);
     }
-  })
+  });
 }
 
-function sortPrefix (method: SortMethod): string {
-  return method.slice(0, method.lastIndexOf('-'))
+function sortPrefix(method: SortMethod): string {
+  return method.slice(0, method.lastIndexOf("-"));
 }
 
-function sortSuffix (method: SortMethod): Direction {
-  return method.endsWith('-down') ? 'down' : 'up'
+function sortSuffix(method: SortMethod): Direction {
+  return method.endsWith("-down") ? "down" : "up";
 }
 
-function choiceForDirectory (directory: DirDescriptor): SortChoice {
-  const prefix = sortPrefix(directory.settings.sorting)
-  if (prefix === 'name') return 'display'
-  if (prefix === 'time') return configStore.config.fileMetaTime === 'modtime' ? 'modified' : 'created'
-  if (prefix === 'modtime') return 'modified'
-  if (prefix === 'creationtime') return 'created'
-  if (prefix === 'frontmatter') {
-    return directory.settings.explorer.sortMetadataKey === 'zettlr-order_' ? 'manual' : 'metadata'
+function choiceForDirectory(directory: DirDescriptor): SortChoice {
+  const prefix = sortPrefix(directory.settings.sorting);
+  if (prefix === "name") return "display";
+  if (prefix === "time")
+    return configStore.config.fileMetaTime === "modtime" ? "modified" : "created";
+  if (prefix === "modtime") return "modified";
+  if (prefix === "creationtime") return "created";
+  if (prefix === "frontmatter") {
+    return directory.settings.explorer.sortMetadataKey === "zettlr-order_" ? "manual" : "metadata";
   }
-  if (prefix === 'book') return 'book'
-  return prefix as SortChoice
+  if (prefix === "book") return "book";
+  return prefix as SortChoice;
 }
 
-function directionForDirectory (directory: DirDescriptor): Direction {
-  const suffix = sortSuffix(directory.settings.sorting)
-  return sortPrefix(directory.settings.sorting) === 'time'
-    ? (suffix === 'up' ? 'down' : 'up')
-    : suffix
+function directionForDirectory(directory: DirDescriptor): Direction {
+  const suffix = sortSuffix(directory.settings.sorting);
+  return sortPrefix(directory.settings.sorting) === "time"
+    ? suffix === "up"
+      ? "down"
+      : "up"
+    : suffix;
 }
 
-function methodFor (choice: SortChoice, direction: Direction): SortMethod {
-  const prefix = choice === 'display'
-    ? 'name'
-    : choice === 'modified'
-      ? 'modtime'
-      : choice === 'created'
-        ? 'creationtime'
-        : choice === 'manual' || choice === 'metadata'
-          ? 'frontmatter'
-          : choice
-  return `${prefix}-${direction}` as SortMethod
+function methodFor(choice: SortChoice, direction: Direction): SortMethod {
+  const prefix =
+    choice === "display"
+      ? "name"
+      : choice === "modified"
+        ? "modtime"
+        : choice === "created"
+          ? "creationtime"
+          : choice === "manual" || choice === "metadata"
+            ? "frontmatter"
+            : choice;
+  return `${prefix}-${direction}` as SortMethod;
 }
 
 /**
@@ -645,377 +674,476 @@ function methodFor (choice: SortChoice, direction: Direction): SortMethod {
  * after a later choice was made, and a choice computed from it would write
  * that earlier state back.
  */
-let explorerUpdates: Promise<void> = Promise.resolve()
+let explorerUpdates: Promise<void> = Promise.resolve();
 
-function updateExplorerDirectory (
+function updateExplorerDirectory(
   directory: DirDescriptor,
   settingsPatch: (stored: DirDescriptor) => Partial<DirectorySettings>,
-  explorerPatch: Partial<DirectoryExplorerSettings> = {}
+  explorerPatch: Partial<DirectoryExplorerSettings> = {},
 ): void {
-  explorerUpdates = explorerUpdates.then(async () => {
-    const stored: AnyDescriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: directory.path })
-    if (stored.type !== 'directory') {
-      throw new Error(`${directory.path} is no longer a directory`)
-    }
-    const settings = { ...settingsPatch(stored), explorer: { ...stored.settings.explorer, ...explorerPatch } }
-    Object.assign(directory.settings, settings)
-    try {
-      await ipcRenderer.invoke('application', {
-        command: 'set-directory-setting',
-        payload: { path: directory.path, settings } satisfies DirSettingsCommandAPI
-      })
-    } catch (err) {
-      Object.assign(directory.settings, stored.settings)
-      throw err
-    }
-  }).catch(err => reportError('Could not update Explorer settings', err))
+  explorerUpdates = explorerUpdates
+    .then(async () => {
+      const stored: AnyDescriptor = await ipcRenderer.invoke("fsal", {
+        command: "get-descriptor",
+        payload: directory.path,
+      });
+      if (stored.type !== "directory") {
+        throw new Error(`${directory.path} is no longer a directory`);
+      }
+      const settings = {
+        ...settingsPatch(stored),
+        explorer: { ...stored.settings.explorer, ...explorerPatch },
+      };
+      Object.assign(directory.settings, settings);
+      try {
+        await ipcRenderer.invoke("application", {
+          command: "set-directory-setting",
+          payload: { path: directory.path, settings } satisfies DirSettingsCommandAPI,
+        });
+      } catch (err) {
+        Object.assign(directory.settings, stored.settings);
+        throw err;
+      }
+    })
+    .catch((err) => reportError("Could not update Explorer settings", err));
 }
 
-function setDisplay (directory: DirDescriptor, value: 'inherit'|FileNameDisplay): void {
-  updateExplorerDirectory(directory, () => ({}), { displayName: value })
+function setDisplay(directory: DirDescriptor, value: "inherit" | FileNameDisplay): void {
+  updateExplorerDirectory(directory, () => ({}), { displayName: value });
 }
 
-function setSort (directory: DirDescriptor, value: SortChoice): void {
-  const explorerPatch: Partial<DirectoryExplorerSettings> = value === 'manual'
-    ? { sortMetadataKey: 'zettlr-order_' }
-    : {}
-  updateExplorerDirectory(directory, stored => ({
-    sorting: methodFor(value, directionForDirectory(stored))
-  }), explorerPatch)
+function setSort(directory: DirDescriptor, value: SortChoice): void {
+  const explorerPatch: Partial<DirectoryExplorerSettings> =
+    value === "manual" ? { sortMetadataKey: "zettlr-order_" } : {};
+  updateExplorerDirectory(
+    directory,
+    (stored) => ({
+      sorting: methodFor(value, directionForDirectory(stored)),
+    }),
+    explorerPatch,
+  );
 }
 
-function setDirection (directory: DirDescriptor, value: Direction): void {
-  updateExplorerDirectory(directory, stored => ({
-    sorting: methodFor(choiceForDirectory(stored), value)
-  }))
+function setDirection(directory: DirDescriptor, value: Direction): void {
+  updateExplorerDirectory(directory, (stored) => ({
+    sorting: methodFor(choiceForDirectory(stored), value),
+  }));
 }
 
-function setGrouping (directory: DirDescriptor, value: FoldersMode): void {
+function setGrouping(directory: DirDescriptor, value: FoldersMode): void {
   updateExplorerDirectory(directory, () => ({}), {
-    foldersFirst: value === 'inherit' ? null : value === 'folders'
-  })
+    foldersFirst: value === "inherit" ? null : value === "folders",
+  });
 }
 
-function setProjectFilter (directory: DirDescriptor, value: ProjectFileFilter): void {
-  updateExplorerDirectory(directory, () => ({}), { projectFilter: value })
+function setProjectFilter(directory: DirDescriptor, value: ProjectFileFilter): void {
+  updateExplorerDirectory(directory, () => ({}), { projectFilter: value });
 }
 
-function openMetadataFieldEditor (directory: DirDescriptor): void {
-  setSort(directory, 'metadata')
-  metadataDirectoryPath.value = directory.path
-  metadataKeyDraft.value = directory.settings.explorer.sortMetadataKey || 'date'
-  showMetadataKeyPopover.value = true
+function openMetadataFieldEditor(directory: DirDescriptor): void {
+  setSort(directory, "metadata");
+  metadataDirectoryPath.value = directory.path;
+  metadataKeyDraft.value = directory.settings.explorer.sortMetadataKey || "date";
+  showMetadataKeyPopover.value = true;
 }
 
-function commitMetadataKey (): void {
-  const directory = metadataDirectory.value
-  if (directory === undefined) return
-  const key = metadataKeyDraft.value.trim()
-  if (key === '') return
-  updateExplorerDirectory(directory, stored => ({
-    sorting: methodFor('metadata', directionForDirectory(stored))
-  }), { sortMetadataKey: key })
-  showMetadataKeyPopover.value = false
+function commitMetadataKey(): void {
+  const directory = metadataDirectory.value;
+  if (directory === undefined) return;
+  const key = metadataKeyDraft.value.trim();
+  if (key === "") return;
+  updateExplorerDirectory(
+    directory,
+    (stored) => ({
+      sorting: methodFor("metadata", directionForDirectory(stored)),
+    }),
+    { sortMetadataKey: key },
+  );
+  showMetadataKeyPopover.value = false;
 }
 
-function radioItem (id: string, label: string, checked: boolean): AnyMenuItem {
-  return { id, label, type: 'radio', checked }
+function radioItem(id: string, label: string, checked: boolean): AnyMenuItem {
+  return { id, label, type: "radio", checked };
 }
 
-function handleExplorerMenuChoice (directory: DirDescriptor, clickedID: string): void {
+function handleExplorerMenuChoice(directory: DirDescriptor, clickedID: string): void {
   switch (clickedID) {
-    case 'explorer-display-inherit': setDisplay(directory, 'inherit'); break
-    case 'explorer-display-filename': setDisplay(directory, 'filename'); break
-    case 'explorer-display-title': setDisplay(directory, 'title'); break
-    case 'explorer-display-heading': setDisplay(directory, 'heading'); break
-    case 'explorer-display-title-heading': setDisplay(directory, 'title+heading'); break
-    case 'explorer-sort-display': setSort(directory, 'display'); break
-    case 'explorer-sort-filename': setSort(directory, 'filename'); break
-    case 'explorer-sort-title': setSort(directory, 'title'); break
-    case 'explorer-sort-heading': setSort(directory, 'heading'); break
-    case 'explorer-sort-modified': setSort(directory, 'modified'); break
-    case 'explorer-sort-created': setSort(directory, 'created'); break
-    case 'explorer-sort-manual': setSort(directory, 'manual'); break
-    case 'explorer-sort-metadata': openMetadataFieldEditor(directory); break
-    case 'explorer-sort-project': setSort(directory, 'book'); break
-    case 'explorer-direction-up': setDirection(directory, 'up'); break
-    case 'explorer-direction-down': setDirection(directory, 'down'); break
-    case 'explorer-grouping-inherit': setGrouping(directory, 'inherit'); break
-    case 'explorer-grouping-folders': setGrouping(directory, 'folders'); break
-    case 'explorer-grouping-mixed': setGrouping(directory, 'mixed'); break
-    case 'explorer-project-all': setProjectFilter(directory, 'all'); break
-    case 'explorer-project-included': setProjectFilter(directory, 'included'); break
-    case 'explorer-project-omitted': setProjectFilter(directory, 'omitted'); break
+    case "explorer-display-inherit":
+      setDisplay(directory, "inherit");
+      break;
+    case "explorer-display-filename":
+      setDisplay(directory, "filename");
+      break;
+    case "explorer-display-title":
+      setDisplay(directory, "title");
+      break;
+    case "explorer-display-heading":
+      setDisplay(directory, "heading");
+      break;
+    case "explorer-display-title-heading":
+      setDisplay(directory, "title+heading");
+      break;
+    case "explorer-sort-display":
+      setSort(directory, "display");
+      break;
+    case "explorer-sort-filename":
+      setSort(directory, "filename");
+      break;
+    case "explorer-sort-title":
+      setSort(directory, "title");
+      break;
+    case "explorer-sort-heading":
+      setSort(directory, "heading");
+      break;
+    case "explorer-sort-modified":
+      setSort(directory, "modified");
+      break;
+    case "explorer-sort-created":
+      setSort(directory, "created");
+      break;
+    case "explorer-sort-manual":
+      setSort(directory, "manual");
+      break;
+    case "explorer-sort-metadata":
+      openMetadataFieldEditor(directory);
+      break;
+    case "explorer-sort-project":
+      setSort(directory, "book");
+      break;
+    case "explorer-direction-up":
+      setDirection(directory, "up");
+      break;
+    case "explorer-direction-down":
+      setDirection(directory, "down");
+      break;
+    case "explorer-grouping-inherit":
+      setGrouping(directory, "inherit");
+      break;
+    case "explorer-grouping-folders":
+      setGrouping(directory, "folders");
+      break;
+    case "explorer-grouping-mixed":
+      setGrouping(directory, "mixed");
+      break;
+    case "explorer-project-all":
+      setProjectFilter(directory, "all");
+      break;
+    case "explorer-project-included":
+      setProjectFilter(directory, "included");
+      break;
+    case "explorer-project-omitted":
+      setProjectFilter(directory, "omitted");
+      break;
   }
 }
 
-function explorerViewItems (directory: DirDescriptor|undefined): AnyMenuItem[] {
+function explorerViewItems(directory: DirDescriptor | undefined): AnyMenuItem[] {
   if (directory === undefined) {
     return [
-      { type: 'separator' },
-      { id: 'explorer-display', label: displayAsLabel, type: 'submenu', enabled: false, submenu: [] },
-      { id: 'explorer-sort', label: sortByLabel, type: 'submenu', enabled: false, submenu: [] },
-      { id: 'explorer-direction', label: directionLabel, type: 'submenu', enabled: false, submenu: [] },
-      { id: 'explorer-grouping', label: groupingLabel, type: 'submenu', enabled: false, submenu: [] }
-    ]
+      { type: "separator" },
+      {
+        id: "explorer-display",
+        label: displayAsLabel,
+        type: "submenu",
+        enabled: false,
+        submenu: [],
+      },
+      { id: "explorer-sort", label: sortByLabel, type: "submenu", enabled: false, submenu: [] },
+      {
+        id: "explorer-direction",
+        label: directionLabel,
+        type: "submenu",
+        enabled: false,
+        submenu: [],
+      },
+      {
+        id: "explorer-grouping",
+        label: groupingLabel,
+        type: "submenu",
+        enabled: false,
+        submenu: [],
+      },
+    ];
   }
 
-  const sortChoice = choiceForDirectory(directory)
-  const direction = directionForDirectory(directory)
-  const display = directory.settings.explorer.displayName
-  const folders = directory.settings.explorer.foldersFirst === null
-    ? 'inherit'
-    : directory.settings.explorer.foldersFirst ? 'folders' : 'mixed'
-  const filter = directory.settings.explorer.projectFilter
-  const project = directory.settings.project
+  const sortChoice = choiceForDirectory(directory);
+  const direction = directionForDirectory(directory);
+  const display = directory.settings.explorer.displayName;
+  const folders =
+    directory.settings.explorer.foldersFirst === null
+      ? "inherit"
+      : directory.settings.explorer.foldersFirst
+        ? "folders"
+        : "mixed";
+  const filter = directory.settings.explorer.projectFilter;
+  const project = directory.settings.project;
 
   const items: AnyMenuItem[] = [
-    { type: 'separator' },
+    { type: "separator" },
     {
-      id: 'explorer-display',
+      id: "explorer-display",
       label: displayAsLabel,
-      type: 'submenu',
+      type: "submenu",
       submenu: [
-        radioItem('explorer-display-inherit', defaultLabel, display === 'inherit'),
-        radioItem('explorer-display-filename', filenameLabel, display === 'filename'),
-        radioItem('explorer-display-title', titleLabel, display === 'title'),
-        radioItem('explorer-display-heading', headingLabel, display === 'heading'),
-        radioItem('explorer-display-title-heading', titleHeadingLabel, display === 'title+heading')
-      ]
+        radioItem("explorer-display-inherit", defaultLabel, display === "inherit"),
+        radioItem("explorer-display-filename", filenameLabel, display === "filename"),
+        radioItem("explorer-display-title", titleLabel, display === "title"),
+        radioItem("explorer-display-heading", headingLabel, display === "heading"),
+        radioItem("explorer-display-title-heading", titleHeadingLabel, display === "title+heading"),
+      ],
     },
     {
-      id: 'explorer-sort',
+      id: "explorer-sort",
       label: sortByLabel,
-      type: 'submenu',
+      type: "submenu",
       submenu: [
-        radioItem('explorer-sort-display', displayedNameLabel, sortChoice === 'display'),
-        radioItem('explorer-sort-filename', filenameLabel, sortChoice === 'filename'),
-        radioItem('explorer-sort-title', titleLabel, sortChoice === 'title'),
-        radioItem('explorer-sort-heading', headingLabel, sortChoice === 'heading'),
-        radioItem('explorer-sort-modified', modifiedLabel, sortChoice === 'modified'),
-        radioItem('explorer-sort-created', createdLabel, sortChoice === 'created'),
-        radioItem('explorer-sort-manual', manualOrderLabel, sortChoice === 'manual'),
+        radioItem("explorer-sort-display", displayedNameLabel, sortChoice === "display"),
+        radioItem("explorer-sort-filename", filenameLabel, sortChoice === "filename"),
+        radioItem("explorer-sort-title", titleLabel, sortChoice === "title"),
+        radioItem("explorer-sort-heading", headingLabel, sortChoice === "heading"),
+        radioItem("explorer-sort-modified", modifiedLabel, sortChoice === "modified"),
+        radioItem("explorer-sort-created", createdLabel, sortChoice === "created"),
+        radioItem("explorer-sort-manual", manualOrderLabel, sortChoice === "manual"),
         {
-          id: 'explorer-sort-metadata',
+          id: "explorer-sort-metadata",
           label: metadataFieldMenuLabel,
-          type: 'radio',
-          checked: sortChoice === 'metadata'
+          type: "radio",
+          checked: sortChoice === "metadata",
         },
-        ...(project === null ? [] : [
-          radioItem('explorer-sort-project', projectOrderLabel, sortChoice === 'book')
-        ])
-      ]
+        ...(project === null
+          ? []
+          : [radioItem("explorer-sort-project", projectOrderLabel, sortChoice === "book")]),
+      ],
     },
     {
-      id: 'explorer-direction',
+      id: "explorer-direction",
       label: directionLabel,
-      type: 'submenu',
+      type: "submenu",
       submenu: [
-        radioItem('explorer-direction-up', ascendingLabel, direction === 'up'),
-        radioItem('explorer-direction-down', descendingLabel, direction === 'down')
-      ]
+        radioItem("explorer-direction-up", ascendingLabel, direction === "up"),
+        radioItem("explorer-direction-down", descendingLabel, direction === "down"),
+      ],
     },
     {
-      id: 'explorer-grouping',
+      id: "explorer-grouping",
       label: groupingLabel,
-      type: 'submenu',
-      enabled: sortChoice !== 'book',
+      type: "submenu",
+      enabled: sortChoice !== "book",
       submenu: [
-        radioItem('explorer-grouping-inherit', defaultLabel, folders === 'inherit'),
-        radioItem('explorer-grouping-folders', foldersFirstLabel, folders === 'folders'),
-        radioItem('explorer-grouping-mixed', mixedLabel, folders === 'mixed')
-      ]
-    }
-  ]
+        radioItem("explorer-grouping-inherit", defaultLabel, folders === "inherit"),
+        radioItem("explorer-grouping-folders", foldersFirstLabel, folders === "folders"),
+        radioItem("explorer-grouping-mixed", mixedLabel, folders === "mixed"),
+      ],
+    },
+  ];
 
   if (project !== null) {
     items.push({
-      id: 'explorer-project-files',
-      label: project.manifest.kind === 'quarto' ? trans('Book files') : projectFilesLabel,
-      type: 'submenu',
+      id: "explorer-project-files",
+      label: project.manifest.kind === "quarto" ? trans("Book files") : projectFilesLabel,
+      type: "submenu",
       submenu: [
-        radioItem('explorer-project-all', allFilesLabel, filter === 'all'),
-        radioItem('explorer-project-included', includedLabel, filter === 'included'),
-        radioItem('explorer-project-omitted', omittedLabel, filter === 'omitted')
-      ]
-    })
+        radioItem("explorer-project-all", allFilesLabel, filter === "all"),
+        radioItem("explorer-project-included", includedLabel, filter === "included"),
+        radioItem("explorer-project-omitted", omittedLabel, filter === "omitted"),
+      ],
+    });
   }
 
-  return items
+  return items;
 }
 
-function clickHandler (event: MouseEvent): void {
+function clickHandler(event: MouseEvent): void {
   // We need to bubble this event upwards so that the file manager is informed of the selection
-  emit('selection', event)
+  emit("selection", event);
 }
 
-function navigate (event: KeyboardEvent): void {
+function navigate(event: KeyboardEvent): void {
   // The user requested to navigate into the file tree with the keyboard
   // Only capture arrow movements
-  if (![ 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape' ].includes(event.key)) {
-    return
+  if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Enter", "Escape"].includes(event.key)) {
+    return;
   }
 
-  event.stopPropagation()
-  event.preventDefault()
+  event.stopPropagation();
+  event.preventDefault();
 
-  if (event.key === 'Escape') {
-    activeTreeItem.value = undefined
-    return
+  if (event.key === "Escape") {
+    activeTreeItem.value = undefined;
+    return;
   }
 
   if (flatSortedAndFilteredVisualFileDescriptors.value.length === 0) {
-    return // Nothing to navigate
+    return; // Nothing to navigate
   }
 
-  if (event.key === 'Enter' && activeTreeItem.value !== undefined) {
+  if (event.key === "Enter" && activeTreeItem.value !== undefined) {
     // Open the currently active item
-    if (activeTreeItem.value[0] === 'directory') {
-      configStore.setConfigValue('openDirectory', activeTreeItem.value[0])
+    if (activeTreeItem.value[0] === "directory") {
+      configStore.setConfigValue("openDirectory", activeTreeItem.value[0]);
     } else {
       // Select the active file (if there is one)
-      ipcRenderer.invoke('documents-provider', {
-        command: 'open-file',
-        payload: {
-          path: activeTreeItem.value[0],
-          windowId: props.windowId,
-          leafId: lastLeafId.value,
-          newTab: false
-        }
-      } as DocumentManagerIPCAPI)
-        .catch(e => reportError(e))
+      ipcRenderer
+        .invoke("documents-provider", {
+          command: "open-file",
+          payload: {
+            path: activeTreeItem.value[0],
+            windowId: props.windowId,
+            leafId: lastLeafId.value,
+            newTab: false,
+          },
+        } as DocumentManagerIPCAPI)
+        .catch((e) => reportError(e));
     }
   }
 
   // Get the current index of the current active file
-  let currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.findIndex(val => val[0] === activeTreeItem.value?.[0])
+  let currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.findIndex(
+    (val) => val[0] === activeTreeItem.value?.[0],
+  );
 
   switch (event.key) {
-    case 'ArrowDown':
-      currentIndex++
-      break
-    case 'ArrowUp':
-      currentIndex--
-      break
-    case 'ArrowLeft':
+    case "ArrowDown":
+      currentIndex++;
+      break;
+    case "ArrowUp":
+      currentIndex--;
+      break;
+    case "ArrowLeft":
       // Close a directory if applicable
-      if (currentIndex > -1 && flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] === 'directory') {
-        const path = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0]
-        const idx = windowStateStore.uncollapsedDirectories.indexOf(path)
+      if (
+        currentIndex > -1 &&
+        flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] === "directory"
+      ) {
+        const path = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0];
+        const idx = windowStateStore.uncollapsedDirectories.indexOf(path);
         if (idx > -1) {
-          windowStateStore.uncollapsedDirectories.splice(idx, 1)
+          windowStateStore.uncollapsedDirectories.splice(idx, 1);
         }
-        return // No need to update activeTreeItem
-      } else if (currentIndex > -1 && flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] !== 'directory') {
-        const path = pathDirname(flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0])
-        const idx = windowStateStore.uncollapsedDirectories.indexOf(path)
+        return; // No need to update activeTreeItem
+      } else if (
+        currentIndex > -1 &&
+        flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] !== "directory"
+      ) {
+        const path = pathDirname(flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0]);
+        const idx = windowStateStore.uncollapsedDirectories.indexOf(path);
         if (idx > -1) {
-          windowStateStore.uncollapsedDirectories.splice(idx, 1)
+          windowStateStore.uncollapsedDirectories.splice(idx, 1);
           // Also, here, reset the index to the containing directory. If that was not found, currentIndex is -1
           // meaning navigation stops.
-          currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.findIndex(x => x[0] === path)
+          currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.findIndex(
+            (x) => x[0] === path,
+          );
         }
       }
-      break
-    case 'ArrowRight':
+      break;
+    case "ArrowRight":
       // Open a directory if applicable
-      if (currentIndex > -1 && flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] === 'directory') {
-        const path = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0]
+      if (
+        currentIndex > -1 &&
+        flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][1] === "directory"
+      ) {
+        const path = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex][0];
         if (!windowStateStore.uncollapsedDirectories.includes(path)) {
-          windowStateStore.uncollapsedDirectories.push(path)
+          windowStateStore.uncollapsedDirectories.push(path);
         }
       }
-      return // No need to update activeTreeItem
+      return; // No need to update activeTreeItem
   }
 
   // Sanitize the index
   if (currentIndex > flatSortedAndFilteredVisualFileDescriptors.value.length - 1) {
-    currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.length - 1
+    currentIndex = flatSortedAndFilteredVisualFileDescriptors.value.length - 1;
   } else if (currentIndex < 0) {
-    currentIndex = 0
+    currentIndex = 0;
   }
 
   // Set the active tree item
-  activeTreeItem.value = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex]
-  windowStateStore.desktopFocusPath = activeTreeItem.value[0]
+  activeTreeItem.value = flatSortedAndFilteredVisualFileDescriptors.value[currentIndex];
+  windowStateStore.desktopFocusPath = activeTreeItem.value[0];
 }
 
-function stopNavigate (): void {
-  activeTreeItem.value = undefined
+function stopNavigate(): void {
+  activeTreeItem.value = undefined;
 }
 
-function getRootElement (): HTMLDivElement|null {
-  return rootElement.value
+function getRootElement(): HTMLDivElement | null {
+  return rootElement.value;
 }
 
 // Dragging for the manual workspaces sort popover
-function startDragging (event: DragEvent): void {
+function startDragging(event: DragEvent): void {
   if (event.currentTarget === null || !(event.currentTarget instanceof HTMLLIElement)) {
-    return
+    return;
   }
 
-  const dragPath = event.currentTarget.dataset.path
+  const dragPath = event.currentTarget.dataset.path;
   if (dragPath !== undefined && event.dataTransfer !== null) {
-    event.dataTransfer.dropEffect = 'move'
-    event.dataTransfer.setData('x-zettlr/workspaces-drag-source', dragPath)
+    event.dataTransfer.dropEffect = "move";
+    event.dataTransfer.setData("x-zettlr/workspaces-drag-source", dragPath);
   }
 }
 
-function dragOver (event: DragEvent): void {
-  const lis = document.querySelectorAll('ul#workspaces-drag-list li')
-  lis.forEach(li => li.classList.remove('drag-over'))
+function dragOver(event: DragEvent): void {
+  const lis = document.querySelectorAll("ul#workspaces-drag-list li");
+  lis.forEach((li) => li.classList.remove("drag-over"));
 
   if (event.target === null || !(event.target instanceof HTMLLIElement)) {
-    return
+    return;
   }
 
-  event.preventDefault()
-  event.target.classList.add('drag-over')
+  event.preventDefault();
+  event.target.classList.add("drag-over");
 }
 
-function drop (event: DragEvent): void {
-  const lis = document.querySelectorAll<HTMLLIElement>('ul#workspaces-drag-list li')
-  const targetLi = lis.entries().map(([ _idx, li ]) => li).find(li => li.classList.contains('drag-over'))
-  lis.forEach(li => li.classList.remove('drag-over'))
+function drop(event: DragEvent): void {
+  const lis = document.querySelectorAll<HTMLLIElement>("ul#workspaces-drag-list li");
+  const targetLi = lis
+    .entries()
+    .map(([_idx, li]) => li)
+    .find((li) => li.classList.contains("drag-over"));
+  lis.forEach((li) => li.classList.remove("drag-over"));
 
   if (
     targetLi === undefined ||
-    event.currentTarget === null || event.dataTransfer === null ||
+    event.currentTarget === null ||
+    event.dataTransfer === null ||
     !(event.currentTarget instanceof HTMLLIElement)
   ) {
-    return
+    return;
   }
 
-  const sourcePath = event.dataTransfer.getData('x-zettlr/workspaces-drag-source')
-  const targetPath = targetLi.dataset.path
+  const sourcePath = event.dataTransfer.getData("x-zettlr/workspaces-drag-source");
+  const targetPath = targetLi.dataset.path;
 
-  if (sourcePath === '' || targetPath === undefined) {
-    return
+  if (sourcePath === "" || targetPath === undefined) {
+    return;
   }
 
   if (sourcePath === targetPath) {
-    return
+    return;
   }
 
   // Now we have to perform the sorting. The animation indicates that the source
   // path will be moved BEFORE the target path, and that is how splice works.
-  const wsPaths = getDirectories.value.map(ws => ws.path)
-  const sourceIdx = wsPaths.findIndex(ws => ws === sourcePath)
-  const targetIdx = wsPaths.findIndex(ws => ws === targetPath)
+  const wsPaths = getDirectories.value.map((ws) => ws.path);
+  const sourceIdx = wsPaths.findIndex((ws) => ws === sourcePath);
+  const targetIdx = wsPaths.findIndex((ws) => ws === targetPath);
 
   if (sourceIdx < 0 || targetIdx < 0) {
-    return
+    return;
   }
 
-  wsPaths.splice(sourceIdx, 1)
-  wsPaths.splice(targetIdx, 0, sourcePath) // NOTE: Inserts *before* targetIdx
+  wsPaths.splice(sourceIdx, 1);
+  wsPaths.splice(targetIdx, 0, sourcePath); // NOTE: Inserts *before* targetIdx
 
   // Finally, emit a config setting
-  ipcRenderer.invoke('application', { command: 'sort-workspaces', payload: wsPaths })
-    .catch(e => reportError(e))
+  ipcRenderer
+    .invoke("application", { command: "sort-workspaces", payload: wsPaths })
+    .catch((e) => reportError(e));
 }
 
-defineExpose({ navigate, stopNavigate, getRootElement })
+defineExpose({ navigate, stopNavigate, getRootElement });
 </script>
 
 <style lang="less">

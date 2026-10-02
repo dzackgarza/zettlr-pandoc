@@ -25,12 +25,12 @@
  * END HEADER
  */
 
-import { TEX_COMMAND_DECLARATION_RE } from "./tex-command-declarations";
 import { spawn } from "child_process";
 import { createHash } from "crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
+import { TEX_COMMAND_DECLARATION_RE } from "./tex-command-declarations";
 
 const REQUIRED_TIKZ_DATA_FILES = ["filters/tikzcd.lua", "filters/utilities.lua"] as const;
 
@@ -567,7 +567,9 @@ const availableTools = new Map<string, Promise<ToolProbe>>();
 
 async function probeToolOnce(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
   if (env.PATH === undefined) {
-    throw new Error(`tikz-render: the render environment has no PATH, so ${tool} cannot be found in it.`);
+    throw new Error(
+      `tikz-render: the render environment has no PATH, so ${tool} cannot be found in it.`,
+    );
   }
   const key = `${env.PATH}\0${tool}`;
   const known = availableTools.get(key);

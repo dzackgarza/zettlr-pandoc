@@ -17,9 +17,9 @@
  * END HEADER
  */
 
-import { tikzBlockHasContiguousSource } from "./source-block";
-import { quiverCanEditBlock, quiverSourceError } from "./quiver-bridge";
 import type { TikzLivePreviewTarget } from "./live-preview";
+import { quiverCanEditBlock, quiverSourceError } from "./quiver-bridge";
+import { tikzBlockHasContiguousSource } from "./source-block";
 
 export type TikzPreviewModeId = "tikz" | "quiver" | "visual";
 

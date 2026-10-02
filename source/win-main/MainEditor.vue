@@ -64,7 +64,6 @@
 </template>
 
 <script setup lang="ts">
-
 /**
  * @ignore
  * BEGIN HEADER
@@ -80,87 +79,121 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import MarkdownEditor from '@common/modules/markdown-editor'
-
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, toRef, nextTick } from 'vue'
-import _ from 'underscore'
-import type { CreateReferenceLabelDialogPrompt, EditorCommands } from './component-contracts'
-import { getDocumentTypeForExtension, hasMarkdownExt } from '@common/util/file-extention-checks'
-import { DocumentType, DP_EVENTS, type OpenDocument } from '@dts/common/documents'
-import { CITEPROC_MAIN_DB } from '@dts/common/citeproc'
-import type { CitationDatabase } from '@dts/common/citeproc'
-import { type EditorConfigOptions } from '@common/modules/markdown-editor/util/configuration'
-import type { AnyDescriptor, CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from '@dts/common/fsal'
-import { getBibliographyForDescriptor as getBibliography, resolveProjectForDescriptor } from '@common/util/get-bibliography-for-descriptor'
-import { EditorSelection } from '@codemirror/state'
-import type { EditorView } from '@codemirror/view'
-import AnnotationCreateDialog from './AnnotationCreateDialog.vue'
-import InlineCollaborationControls, { type CollaborationBlock } from './editor-collaboration/InlineCollaborationControls.vue'
-import type { CollaborationControl } from '@common/modules/markdown-editor/plugins/collaboration-controls'
-import { selectNextReviewChunk, selectPreviousReviewChunk } from '@common/modules/markdown-editor/plugins/review-chunks'
-import { ANNOTATE_SELECTION_EVENT } from '@common/modules/markdown-editor/plugins/annotate-selection'
-import { resolveReattachSelection } from './util/annotation-reattach-selection'
-import { documentAuthorityIPCAPI } from '@common/modules/markdown-editor/util/ipc-api'
-import { ipcMarkdownFormatter, surfaceFormatResult } from '@common/modules/markdown-editor/commands/format-document-ipc'
-import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useTagsStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import { storeToRefs } from 'pinia'
-import { isAbsolutePath, pathBasename, pathDirname, resolvePath } from '@common/util/renderer-path-polyfill'
-import type { DocumentsUpdateContext } from 'source/app/service-providers/documents'
-import type {
-  ProjectInfo,
-  ProjectInfoNavigationItem
-} from 'source/common/modules/markdown-editor/plugins/project-info-field'
-import type { DocumentLocation, ProjectRootSpec, ReferenceCompletionEntry, SourceRange } from '@dts/common/references'
-import type { ReviewDiffSession } from '@dts/common/review-diff'
-import type { AnnotationSet } from '@dts/common/annotation-domain'
-import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import { annotateCompletionEntries } from '@common/pandoc-util/project-reference-status'
-import { trans } from '@common/i18n-renderer'
-import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
-import showToast from '@common/util/show-toast'
-import type { ReferenceKeyEditPromptIntent } from '@common/modules/markdown-editor/plugins/reference-key-edit-prompt'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
+import { EditorSelection } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import MarkdownEditor from "@common/modules/markdown-editor";
 import {
-  confirmReferenceLabelInsertion,
+  ipcMarkdownFormatter,
+  surfaceFormatResult,
+} from "@common/modules/markdown-editor/commands/format-document-ipc";
+import { ANNOTATE_SELECTION_EVENT } from "@common/modules/markdown-editor/plugins/annotate-selection";
+import type { CollaborationControl } from "@common/modules/markdown-editor/plugins/collaboration-controls";
+import {
   type ConfirmReferenceLabelOutcome,
   type CreateReferenceLabelIntent,
-  type CreateReferenceLabelRequest
-} from '@common/modules/markdown-editor/plugins/create-reference-label'
-import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
-import { runRecoverably } from '@common/util/run-recoverably'
-import surfaceDocumentLoadError, {
-  surfaceDocumentLoadFailure
-} from './util/surface-document-load-error'
-import RenameReferencePreviewDialog from './RenameReferencePreviewDialog.vue'
+  type CreateReferenceLabelRequest,
+  confirmReferenceLabelInsertion,
+} from "@common/modules/markdown-editor/plugins/create-reference-label";
+import type { ReferenceKeyEditPromptIntent } from "@common/modules/markdown-editor/plugins/reference-key-edit-prompt";
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import {
+  selectNextReviewChunk,
+  selectPreviousReviewChunk,
+} from "@common/modules/markdown-editor/plugins/review-chunks";
+import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
+import { type EditorConfigOptions } from "@common/modules/markdown-editor/util/configuration";
+import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "@common/modules/window-register/application-menu-helper";
 import {
   buildRenamePreviewSummary,
   type CommitRenameOutcome,
   type ReferenceRenamePreview,
   type ReferenceRenameRejection,
   type RenamePreviewFileSummary,
-  type UndoRenameOutcome
-} from '@common/pandoc-util/compute-reference-edits'
-import type { WorkspaceReferenceEdit } from '@dts/common/references'
-import type { CustomEditorShortcut } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
-import { isEditorCommandName } from '@dts/common/shortcut-names'
-import getDocumentTitle from './util/get-document-title'
-import TikzWorkbench from 'tikz-workbench/src/ui/TikzWorkbench.vue'
-import { zettlrTikzWorkbenchHost } from './tikz-workbench-host'
-import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import { activeTikzBlock as findActiveTikzBlock } from '@common/modules/markdown-editor/tikz-block'
-import type { TikzSourceBlock } from 'tikz-workbench/src/source-block'
-import type { TikzLivePreviewTarget } from 'tikz-workbench/src/live-preview'
-import type { WikilinkEdge } from 'source/app/service-providers/links/ipc-contract'
-import { wikilinkTargetsIn } from '@common/util/wikilink-resolution'
+  type UndoRenameOutcome,
+} from "@common/pandoc-util/compute-reference-edits";
+import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
+import { reportError } from "@common/util/error-reporting";
+import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
+import {
+  getBibliographyForDescriptor as getBibliography,
+  resolveProjectForDescriptor,
+} from "@common/util/get-bibliography-for-descriptor";
+import {
+  isAbsolutePath,
+  pathBasename,
+  pathDirname,
+  resolvePath,
+} from "@common/util/renderer-path-polyfill";
+import { runRecoverably } from "@common/util/run-recoverably";
+import showToast from "@common/util/show-toast";
 import {
   declaredTexMacroSources,
   type TexDocumentKind,
-  type TexMacroSource
-} from '@common/util/tex-context'
-import { resolveTexMacroSourcePaths } from '@common/util/tex-macro-source-resolution'
+  type TexMacroSource,
+} from "@common/util/tex-context";
+import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
+import { wikilinkTargetsIn } from "@common/util/wikilink-resolution";
+import type { AnnotationSet } from "@dts/common/annotation-domain";
+import type { CitationDatabase } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import { DocumentType, DP_EVENTS, type OpenDocument } from "@dts/common/documents";
+import type {
+  AnyDescriptor,
+  CodeFileDescriptor,
+  DirDescriptor,
+  MDFileDescriptor,
+} from "@dts/common/fsal";
+import type {
+  DocumentLocation,
+  ProjectRootSpec,
+  ReferenceCompletionEntry,
+  SourceRange,
+  WorkspaceReferenceEdit,
+} from "@dts/common/references";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
+import { isEditorCommandName } from "@dts/common/shortcut-names";
+import { storeToRefs } from "pinia";
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
+import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
+import type { WikilinkEdge } from "source/app/service-providers/links/ipc-contract";
+import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
+import type { CustomEditorShortcut } from "source/common/modules/markdown-editor/keymaps/shortcuts";
+import type {
+  ProjectInfo,
+  ProjectInfoNavigationItem,
+} from "source/common/modules/markdown-editor/plugins/project-info-field";
+import {
+  useConfigStore,
+  useDocumentCollaborationStore,
+  useDocumentTreeStore,
+  useTagsStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
+import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
+import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
+import _ from "underscore";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
+import AnnotationCreateDialog from "./AnnotationCreateDialog.vue";
+import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./component-contracts";
+import InlineCollaborationControls, {
+  type CollaborationBlock,
+} from "./editor-collaboration/InlineCollaborationControls.vue";
+import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
+import { zettlrTikzWorkbenchHost } from "./tikz-workbench-host";
+import { resolveReattachSelection } from "./util/annotation-reattach-selection";
+import getDocumentTitle from "./util/get-document-title";
+import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
+import surfaceDocumentLoadError, {
+  surfaceDocumentLoadFailure,
+} from "./util/surface-document-load-error";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 // Live-buffer reference state is owned by MAIN (issue #53): the document
 // authority already streams every edit in through collab push-updates, and
@@ -171,47 +204,57 @@ const ipcRenderer = window.ipc
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
 // issue that path-browserify is entirely unusable.
-async function fsalDirectoryLookup (dirPath: string): Promise<AnyDescriptor|undefined> {
-  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: dirPath })
-  return Array.isArray(descriptor) ? undefined : descriptor
+async function fsalDirectoryLookup(dirPath: string): Promise<AnyDescriptor | undefined> {
+  const descriptor = await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
+    payload: dirPath,
+  });
+  return Array.isArray(descriptor) ? undefined : descriptor;
 }
 
-async function getBibliographyForDescriptor (descriptor: MDFileDescriptor): Promise<CitationDatabase> {
+async function getBibliographyForDescriptor(
+  descriptor: MDFileDescriptor,
+): Promise<CitationDatabase> {
   // The workspace descriptor map is still empty while the workspace walk runs,
   // so fall back to the FSAL for any parent directory it does not know yet.
   // Without that fallback, files in a Quarto project opened at boot resolve to
   // the main database and their citations do not render.
-  const project = await resolveProjectForDescriptor(descriptor, workspaceStore.descriptorMap, fsalDirectoryLookup)
-  const library = getBibliography(descriptor, project)
-  const resolveLibrary = (filename: string): string => filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
-    ? resolvePath(descriptor.dir, filename)
-    : filename
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library)
+  const project = await resolveProjectForDescriptor(
+    descriptor,
+    workspaceStore.descriptorMap,
+    fsalDirectoryLookup,
+  );
+  const library = getBibliography(descriptor, project);
+  const resolveLibrary = (filename: string): string =>
+    filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
+      ? resolvePath(descriptor.dir, filename)
+      : filename;
+  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
 }
 
 const props = defineProps<{
-  leafId: string
-  windowId: string
-  activeFile: OpenDocument|null
-  editorCommands: EditorCommands
-  distractionFree: boolean
-  file: OpenDocument
-}>()
+  leafId: string;
+  windowId: string;
+  activeFile: OpenDocument | null;
+  editorCommands: EditorCommands;
+  distractionFree: boolean;
+  file: OpenDocument;
+}>();
 
 const emit = defineEmits<{
-  (e: 'globalSearch', query: string): void
-  (e: 'referenceSearch', request: ReferenceSearchRequest): void
-  (e: 'fileSearch'): void
-  (e: 'createReferenceLabel', prompt: CreateReferenceLabelDialogPrompt): void
-  (e: 'openPandocQuickHelp'): void
-}>()
+  (e: "globalSearch", query: string): void;
+  (e: "referenceSearch", request: ReferenceSearchRequest): void;
+  (e: "fileSearch"): void;
+  (e: "createReferenceLabel", prompt: CreateReferenceLabelDialogPrompt): void;
+  (e: "openPandocQuickHelp"): void;
+}>();
 
-const windowStateStore = useWindowStateStore()
-const documentTreeStore = useDocumentTreeStore()
-const workspaceStore = useWorkspaceStore()
-const configStore = useConfigStore()
-const tagStore = useTagsStore()
-const collaborationStore = useDocumentCollaborationStore()
+const windowStateStore = useWindowStateStore();
+const documentTreeStore = useDocumentTreeStore();
+const workspaceStore = useWorkspaceStore();
+const configStore = useConfigStore();
+const tagStore = useTagsStore();
+const collaborationStore = useDocumentCollaborationStore();
 
 /**
  * This pane's own slice of the one cached DocumentCollaborationSession for
@@ -219,8 +262,10 @@ const collaborationStore = useDocumentCollaborationStore()
  * other pane on the same document, and the annotations panel, read the same
  * store entry; nothing here pulls the sidecar or a session of its own.
  */
-const collaborationSession = computed(() => collaborationStore.sessionsByDocumentPath[props.file.path])
-const isActiveTab = computed(() => props.activeFile?.path === props.file.path)
+const collaborationSession = computed(
+  () => collaborationStore.sessionsByDocumentPath[props.file.path],
+);
+const isActiveTab = computed(() => props.activeFile?.path === props.file.path);
 
 /**
  * The open selection-creation composer request (M6), or null when none is
@@ -230,19 +275,24 @@ const isActiveTab = computed(() => props.activeFile?.path === props.file.path)
  * rather than a CodeMirror StateEffect relay, so this composer needs no
  * change to the editor core or the annotation decoration plugin.
  */
-const annotationComposerRequest = shallowRef<{ editorView: EditorView, from: number, to: number, quotedText: string }|null>(null)
+const annotationComposerRequest = shallowRef<{
+  editorView: EditorView;
+  from: number;
+  to: number;
+  quotedText: string;
+} | null>(null);
 
-function requestAnnotationComposer (event: Event): void {
+function requestAnnotationComposer(event: Event): void {
   if (currentEditor === null) {
-    return
+    return;
   }
-  const { from, to } = (event as CustomEvent<{ from: number, to: number }>).detail
+  const { from, to } = (event as CustomEvent<{ from: number; to: number }>).detail;
   annotationComposerRequest.value = {
     editorView: currentEditor.instance,
     from,
     to,
-    quotedText: currentEditor.instance.state.sliceDoc(from, to)
-  }
+    quotedText: currentEditor.instance.state.sliceDoc(from, to),
+  };
 }
 
 /**
@@ -251,8 +301,8 @@ function requestAnnotationComposer (event: Event): void {
  * broadcast is the only thing that moves collaboration state in this pane,
  * so closing is the whole of this handler.
  */
-function closeAnnotationComposer (): void {
-  annotationComposerRequest.value = null
+function closeAnnotationComposer(): void {
+  annotationComposerRequest.value = null;
 }
 
 /**
@@ -261,125 +311,129 @@ function closeAnnotationComposer (): void {
  * mountCollaborationControl when it places one and the returned function
  * when it drops it; InlineCollaborationControls renders into each.
  */
-const collaborationBlocks = shallowRef<CollaborationBlock[]>([])
-let collaborationBlockSerial = 0
+const collaborationBlocks = shallowRef<CollaborationBlock[]>([]);
+let collaborationBlockSerial = 0;
 
-function mountCollaborationControl (dom: HTMLElement, control: CollaborationControl): () => void {
-  const block: CollaborationBlock = { key: ++collaborationBlockSerial, dom, control }
-  collaborationBlocks.value = [ ...collaborationBlocks.value, block ]
+function mountCollaborationControl(dom: HTMLElement, control: CollaborationControl): () => void {
+  const block: CollaborationBlock = { key: ++collaborationBlockSerial, dom, control };
+  collaborationBlocks.value = [...collaborationBlocks.value, block];
   return () => {
-    collaborationBlocks.value = collaborationBlocks.value.filter(existing => existing !== block)
-  }
+    collaborationBlocks.value = collaborationBlocks.value.filter((existing) => existing !== block);
+  };
 }
 
-function revealRange (range: SourceRange): void {
-  currentEditor?.selectSourceRange(range)
+function revealRange(range: SourceRange): void {
+  currentEditor?.selectSourceRange(range);
 }
 
-function stepReviewChunk (direction: 1 | -1): void {
+function stepReviewChunk(direction: 1 | -1): void {
   if (currentEditor === null) {
-    return
+    return;
   }
-  const view = currentEditor.instance
+  const view = currentEditor.instance;
   if (direction === 1) {
-    selectNextReviewChunk(view)
+    selectNextReviewChunk(view);
   } else {
-    selectPreviousReviewChunk(view)
+    selectPreviousReviewChunk(view);
   }
-  view.focus()
+  view.focus();
 }
 
 // UNREFFED STUFF
-let currentEditor: MarkdownEditor|null = null
-let texMacroSourceCacheKey = ''
-let texMacroSourceRequestId = 0
-let activeTexMacroSourcePaths = new Set<string>()
+let currentEditor: MarkdownEditor | null = null;
+let texMacroSourceCacheKey = "";
+let texMacroSourceRequestId = 0;
+let activeTexMacroSourcePaths = new Set<string>();
 
-function texDocumentKindForPath (filePath: string): TexDocumentKind|undefined {
+function texDocumentKindForPath(filePath: string): TexDocumentKind | undefined {
   switch (getDocumentTypeForExtension(filePath)) {
     case DocumentType.Markdown:
-      return 'markdown'
+      return "markdown";
     case DocumentType.LaTeX:
-      return 'latex'
+      return "latex";
     case DocumentType.YAML:
-      return 'yaml'
+      return "yaml";
     case DocumentType.JSON:
     case undefined:
-      return undefined
+      return undefined;
   }
 }
 
-async function updateTexMacroSources (
-  editor: MarkdownEditor|null = currentEditor,
-  force = false
+async function updateTexMacroSources(
+  editor: MarkdownEditor | null = currentEditor,
+  force = false,
 ): Promise<void> {
-  if (editor === null) return
-  const kind = texDocumentKindForPath(editor.documentPath)
-  if (kind === undefined) return
+  if (editor === null) return;
+  const kind = texDocumentKindForPath(editor.documentPath);
+  if (kind === undefined) return;
 
-  const patterns = declaredTexMacroSources(editor.value, kind)
-  const descriptors = workspaceStore.descriptorMap
-  const workspacePaths = patterns.length === 0
-    ? []
-    : [...descriptors.values()]
-        .filter(descriptor => descriptor.type === 'file' || descriptor.type === 'code')
-        .map(descriptor => descriptor.path)
-  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths)
+  const patterns = declaredTexMacroSources(editor.value, kind);
+  const descriptors = workspaceStore.descriptorMap;
+  const workspacePaths =
+    patterns.length === 0
+      ? []
+      : [...descriptors.values()]
+          .filter((descriptor) => descriptor.type === "file" || descriptor.type === "code")
+          .map((descriptor) => descriptor.path);
+  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths);
   // The modification time of a source is part of the key: a source that
   // changed on disk is read again.
   const cacheKey = JSON.stringify([
     editor.documentPath,
     patterns,
-    paths.map(filePath => [ filePath, descriptors.get(filePath)?.modtime ])
-  ])
-  if (!force && cacheKey === texMacroSourceCacheKey) return
+    paths.map((filePath) => [filePath, descriptors.get(filePath)?.modtime]),
+  ]);
+  if (!force && cacheKey === texMacroSourceCacheKey) return;
 
-  texMacroSourceCacheKey = cacheKey
-  activeTexMacroSourcePaths = new Set(paths)
-  const requestId = ++texMacroSourceRequestId
-  const sources: TexMacroSource[] = []
+  texMacroSourceCacheKey = cacheKey;
+  activeTexMacroSourcePaths = new Set(paths);
+  const requestId = ++texMacroSourceRequestId;
+  const sources: TexMacroSource[] = [];
   for (const filePath of paths) {
     try {
-      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath)
-      sources.push({ path: filePath, content: sourceDocument.content })
+      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath);
+      sources.push({ path: filePath, content: sourceDocument.content });
     } catch (error) {
-      console.error('[MainEditor] Could not load TeX macro source ' + filePath, error)
+      console.error("[MainEditor] Could not load TeX macro source " + filePath, error);
     }
   }
 
-  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) return
-  editor.setCompletionDatabase('tex-macro-sources', sources)
+  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) return;
+  editor.setCompletionDatabase("tex-macro-sources", sources);
 }
-let editorLoadPromise: Promise<void>|null = null
-const activeTikzSource = shallowRef<TikzSourceBlock|null>(null)
-const activeEditorView = shallowRef<EditorView|null>(null)
+let editorLoadPromise: Promise<void> | null = null;
+const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
+const activeEditorView = shallowRef<EditorView | null>(null);
 
-function ownsWindowActiveState (editor: MarkdownEditor|null = currentEditor): editor is MarkdownEditor {
-  return editor !== null &&
+function ownsWindowActiveState(
+  editor: MarkdownEditor | null = currentEditor,
+): editor is MarkdownEditor {
+  return (
+    editor !== null &&
     editor === currentEditor &&
     isActiveTab.value &&
     documentTreeStore.lastLeafId === props.leafId
+  );
 }
 
-function updateActiveTikzSource (editor: MarkdownEditor): void {
+function updateActiveTikzSource(editor: MarkdownEditor): void {
   if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
-    return
+    return;
   }
-  activeTikzSource.value = findActiveTikzBlock(editor.instance.state)
+  activeTikzSource.value = findActiveTikzBlock(editor.instance.state);
 }
 
-function publishActiveEditorState (editor: MarkdownEditor): void {
+function publishActiveEditorState(editor: MarkdownEditor): void {
   if (!ownsWindowActiveState(editor)) {
-    return
+    return;
   }
-  windowStateStore.activeDocumentInfo = editor.documentInfo
-  windowStateStore.tableOfContents = editor.tableOfContents
-  updateActiveTikzSource(editor)
+  windowStateStore.activeDocumentInfo = editor.documentInfo;
+  windowStateStore.tableOfContents = editor.tableOfContents;
+  updateActiveTikzSource(editor);
 }
 
-
-function reportDocumentLoadError (error: unknown): void {
-  surfaceDocumentLoadError(props.file.path, error)
+function reportDocumentLoadError(error: unknown): void {
+  surfaceDocumentLoadError(props.file.path, error);
 }
 
 /**
@@ -389,77 +443,84 @@ function reportDocumentLoadError (error: unknown): void {
  * jump. Applied once the editor for that file is loaded (or immediately when
  * it already is), then cleared.
  */
-let pendingNavigation: { filePath: string, location?: DocumentLocation, targetRange?: SourceRange }|null = null
-let pendingReviewDiffSession: ReviewDiffSession|null = null
+let pendingNavigation: {
+  filePath: string;
+  location?: DocumentLocation;
+  targetRange?: SourceRange;
+} | null = null;
+let pendingReviewDiffSession: ReviewDiffSession | null = null;
 
 /**
  * Applies (and clears) the pending navigation payload when the currently
  * loaded editor shows the file it belongs to.
  */
-function applyPendingNavigation (): void {
+function applyPendingNavigation(): void {
   if (pendingNavigation === null || currentEditor === null) {
-    return
+    return;
   }
 
   if (pendingNavigation.filePath !== currentEditor.documentPath || !isActiveTab.value) {
-    return // The pane moved elsewhere; keep waiting or get superseded.
+    return; // The pane moved elsewhere; keep waiting or get superseded.
   }
 
-  const { location, targetRange } = pendingNavigation
-  pendingNavigation = null
+  const { location, targetRange } = pendingNavigation;
+  pendingNavigation = null;
 
   if (location !== undefined) {
-    currentEditor.restoreDocumentLocation(location)
+    currentEditor.restoreDocumentLocation(location);
   } else if (targetRange !== undefined) {
-    currentEditor.selectSourceRange(targetRange)
+    currentEditor.selectSourceRange(targetRange);
   }
 }
 
-function applyReviewDiffSession (session: ReviewDiffSession): void {
+function applyReviewDiffSession(session: ReviewDiffSession): void {
   if (session.documentPath !== props.file.path) {
-    return
+    return;
   }
 
   if (currentEditor === null) {
-    pendingReviewDiffSession = session
-    return
+    pendingReviewDiffSession = session;
+    return;
   }
 
-  pendingReviewDiffSession = null
-  currentEditor.startReviewDiffSession(session)
+  pendingReviewDiffSession = null;
+  currentEditor.startReviewDiffSession(session);
 }
 
 // EVENT LISTENERS
-const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event, _dbPath: string) => {
-  if (!isActiveTab.value) {
-    return
-  }
-  const descriptor = activeFileDescriptor.value
+const stopCiteprocUpdates = ipcRenderer.on(
+  "citeproc-database-updated",
+  (_event, _dbPath: string) => {
+    if (!isActiveTab.value) {
+      return;
+    }
+    const descriptor = activeFileDescriptor.value;
 
-  if (descriptor === undefined || descriptor.type !== 'file') {
-    return // Nothing to do
-  }
+    if (descriptor === undefined || descriptor.type !== "file") {
+      return; // Nothing to do
+    }
 
-  getBibliographyForDescriptor(descriptor)
-    .then(async library => {
-      await updateCitationKeys(library)
-      if (activeFileDescriptor.value?.path !== descriptor.path) {
-        return
-      }
+    getBibliographyForDescriptor(descriptor)
+      .then(async (library) => {
+        await updateCitationKeys(library);
+        if (activeFileDescriptor.value?.path !== descriptor.path) {
+          return;
+        }
 
-      currentEditor?.setOptions({
-        metadata: {
-          path: descriptor.path,
-          id: descriptor.id,
-          library,
-        },
+        currentEditor?.setOptions({
+          metadata: {
+            path: descriptor.path,
+            id: descriptor.id,
+            library,
+          },
+        });
+        currentEditor?.syncCitationData();
       })
-      currentEditor?.syncCitationData()
-    })
-    .catch(e => {
-      reportError('Could not update citation keys', e)
-    })
-})
+      .catch((e) => {
+        reportError("Could not update citation keys", e);
+      });
+  },
+);
 
 // Combined @-completion label feed (issue #1). Mirrors the citation-keys
 // feed above: whenever main broadcasts changed workspace references, fetch
@@ -467,42 +528,45 @@ const stopCiteprocUpdates = ipcRenderer.on('citeproc-database-updated', (_event,
 // updateReferenceEntries() itself routes provider failures through the
 // recoverable-error boundary (closable toast, typed outcome); this catch
 // only guards against unexpected renderer-side faults.
-const stopReferenceUpdates = ipcRenderer.on('references', _event => {
+const stopReferenceUpdates = ipcRenderer.on("references", (_event) => {
   if (!isActiveTab.value) {
-    return
+    return;
   }
-  updateReferenceEntries().catch(e => {
-    reportError('Could not update workspace reference entries', e)
-  })
-})
+  updateReferenceEntries().catch((e) => {
+    reportError("Could not update workspace reference entries", e);
+  });
+});
 
-const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
+const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
   if (currentEditor?.hasFocusWithin() !== true) {
-    return // None of our business
+    return; // None of our business
   }
 
-  if (command === 'save-file') {
+  if (command === "save-file") {
     // Main is telling us to save, so tell main to save the current file.
     const doSave = (): void => {
-      ipcRenderer.invoke('documents:save-file', { path: props.file.path })
-        .then(result => {
+      ipcRenderer
+        .invoke("documents:save-file", { path: props.file.path })
+        .then((result) => {
           if (result.ok) {
-            return
+            return;
           }
           // The provider refuses saves it cannot perform (an unresolved review,
           // an external edit). It deliberately does not present this itself: a
           // blocking main-process modal freezes the app until dismissed. Show
           // the closable toast surface instead, and never swallow the reason.
-          const message = result.refusal?.message ??
-            trans('Could not save "%s".', pathBasename(props.file.path))
+          const message =
+            result.refusal?.message ?? trans('Could not save "%s".', pathBasename(props.file.path));
           reportError(
             `[MainEditor] Main refused to save ${props.file.path}` +
-            (result.refusal !== undefined ? ` (${result.refusal.reason}): ${result.refusal.message}` : '')
-          )
-          showToast(message, 'error', 12000)
+              (result.refusal !== undefined
+                ? ` (${result.refusal.reason}): ${result.refusal.message}`
+                : ""),
+          );
+          showToast(message, "error", 12000);
         })
-        .catch(e => reportError(e))
-    }
+        .catch((e) => reportError(e));
+    };
 
     // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
     // over the buffer first and wait for the format's collab update to reach the
@@ -518,210 +582,243 @@ const stopShortcuts = ipcRenderer.on('shortcut', (event, command) => {
     // instead; the buffer keeps the formatted text and pressing save again
     // retries the whole thing.
     if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
-      const editor = currentEditor
-      editor.runFormatter(ipcMarkdownFormatter(props.file.path))
-        .then(async result => {
-          surfaceFormatResult(result)
-          await editor.whenSynced()
-          doSave()
+      const editor = currentEditor;
+      editor
+        .runFormatter(ipcMarkdownFormatter(props.file.path))
+        .then(async (result) => {
+          surfaceFormatResult(result);
+          await editor.whenSynced();
+          doSave();
         })
-        .catch(e => {
-          reportError(`[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`, e)
+        .catch((e) => {
+          reportError(
+            `[MainEditor] Format-on-save for ${props.file.path} did not complete; the file was NOT saved`,
+            e,
+          );
           showToast(
             trans(
               'Could not save "%s": format-on-save did not complete, so nothing was written. Press save again.',
-              pathBasename(props.file.path)
+              pathBasename(props.file.path),
             ),
-            'error',
-            12000
-          )
-        })
+            "error",
+            12000,
+          );
+        });
     } else {
-      doSave()
+      doSave();
     }
-  } else if (command === 'search') {
-    currentEditor.toggleSearchPanel()
-  } else if (command === 'toggle-typewriter-mode') {
-    currentEditor.hasTypewriterMode = !currentEditor.hasTypewriterMode
-  } else if (command === 'copy-as-html') {
-    currentEditor.copyAsHTML()
-  } else if (command === 'paste-as-plain') {
-    currentEditor.pasteAsPlainText()
+  } else if (command === "search") {
+    currentEditor.toggleSearchPanel();
+  } else if (command === "toggle-typewriter-mode") {
+    currentEditor.hasTypewriterMode = !currentEditor.hasTypewriterMode;
+  } else if (command === "copy-as-html") {
+    currentEditor.copyAsHTML();
+  } else if (command === "paste-as-plain") {
+    currentEditor.pasteAsPlainText();
   }
-})
+});
 
-const stopDocumentUpdates = ipcRenderer.on('documents-update', (e, payload: { event: DP_EVENTS, context: DocumentsUpdateContext }) => {
-  const { event, context } = payload
-  if (
-    event === DP_EVENTS.ACTIVE_FILE && context.leafId === props.leafId &&
-    context.filePath !== undefined &&
-    (context.location !== undefined || context.targetRange !== undefined)
-  ) {
-    // The activation carries a navigation payload (issue #1 Phase 5): a
-    // Back/Forward-restored DocumentLocation or a cross-file reference jump
-    // landing range. Record it, and apply it right away when the editor for
-    // that file is already loaded (otherwise the 'loaded' hook applies it
-    // after the remount).
-    pendingNavigation = {
-      filePath: context.filePath,
-      location: context.location,
-      targetRange: context.targetRange
+const stopDocumentUpdates = ipcRenderer.on(
+  "documents-update",
+  (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
+    const { event, context } = payload;
+    if (
+      event === DP_EVENTS.ACTIVE_FILE &&
+      context.leafId === props.leafId &&
+      context.filePath !== undefined &&
+      (context.location !== undefined || context.targetRange !== undefined)
+    ) {
+      // The activation carries a navigation payload (issue #1 Phase 5): a
+      // Back/Forward-restored DocumentLocation or a cross-file reference jump
+      // landing range. Record it, and apply it right away when the editor for
+      // that file is already loaded (otherwise the 'loaded' hook applies it
+      // after the remount).
+      pendingNavigation = {
+        filePath: context.filePath,
+        location: context.location,
+        targetRange: context.targetRange,
+      };
+      applyPendingNavigation();
     }
-    applyPendingNavigation()
-  }
 
-  if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
-    if (context.documentLoadError === undefined) {
-      throw new Error(
-        `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`
-      )
-    }
-    surfaceDocumentLoadFailure(context.filePath, context.documentLoadError)
-  } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
-    // The currently loaded document has been changed remotely. This event indicates
-    // that the document provider has already reloaded the document and we only
-    // need to tell the main editor to reload it as well.
-    //
-    // Drop the review first. notifyRemoteChange closed the provider-owned review
-    // when it accepted the external edit, so this pane's session is already dead;
-    // leaving it set would let the reload restore accept/reject controls over the
-    // externally reloaded text. Rejecting one of those phantom chunks would
-    // reinstate the stale review reference, and with the provider's review gone
-    // the save gate would not stop that text being written over the external
-    // edit.
-    currentEditor?.clearReviewDiffSession()
-    currentEditor?.reload().catch(reportDocumentLoadError)
-  } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
-    // The file has been saved to disk. This means we should probably update the
-    // descriptor to know of, e.g., library changes.
-    ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-      .then(async descriptor => {
-        if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
-          throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
-        }
-
-        activeFileDescriptor.value = descriptor
-        const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
-        if (library !== undefined) {
-          updateCitationKeys(library).catch(e => reportError('Could not update citation keys', e))
-        }
-
-        // Provide the editor instance with updated metadata
-        currentEditor?.setOptions({
-          metadata: {
-            path: props.file.path,
-            id: descriptor.type === 'file' ? descriptor.id : '',
-            library: library ?? CITEPROC_MAIN_DB
+    if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
+      if (context.documentLoadError === undefined) {
+        throw new Error(
+          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`,
+        );
+      }
+      surfaceDocumentLoadFailure(context.filePath, context.documentLoadError);
+    } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+      // The currently loaded document has been changed remotely. This event indicates
+      // that the document provider has already reloaded the document and we only
+      // need to tell the main editor to reload it as well.
+      //
+      // Drop the review first. notifyRemoteChange closed the provider-owned review
+      // when it accepted the external edit, so this pane's session is already dead;
+      // leaving it set would let the reload restore accept/reject controls over the
+      // externally reloaded text. Rejecting one of those phantom chunks would
+      // reinstate the stale review reference, and with the provider's review gone
+      // the save gate would not stop that text being written over the external
+      // edit.
+      currentEditor?.clearReviewDiffSession();
+      currentEditor?.reload().catch(reportDocumentLoadError);
+    } else if (event === DP_EVENTS.FILE_SAVED && context.filePath === props.file.path) {
+      // The file has been saved to disk. This means we should probably update the
+      // descriptor to know of, e.g., library changes.
+      ipcRenderer
+        .invoke("fsal", { command: "get-descriptor", payload: props.file.path })
+        .then(async (descriptor) => {
+          if (
+            descriptor === undefined ||
+            Array.isArray(descriptor) ||
+            (descriptor.type !== "file" && descriptor.type !== "code")
+          ) {
+            throw new Error(
+              `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
+            );
           }
-        })
-      })
-      .catch(err => reportError(err))
-  }
-  if (
-    context.filePath !== undefined &&
-    activeTexMacroSourcePaths.has(context.filePath) &&
-    (
-      event === DP_EVENTS.CHANGE_FILE_STATUS ||
-      event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
-      event === DP_EVENTS.FILE_SAVED
-    )
-  ) {
-    updateTexMacroSources(currentEditor, true)
-      .catch(error => reportError('Could not refresh TeX macro sources', error))
-  }
-  // Collaboration state (annotations, review) is not handled here: it
-  // reaches this pane through the document-collaboration store and the
-  // `collaborationSession` watcher below, not through this raw event.
-})
 
-const stopReloads = ipcRenderer.on('reload-editors', _e => {
-  currentEditor?.reload().catch(reportDocumentLoadError)
-})
+          activeFileDescriptor.value = descriptor;
+          const library =
+            descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
+          if (library !== undefined) {
+            updateCitationKeys(library).catch((e) =>
+              reportError("Could not update citation keys", e),
+            );
+          }
+
+          // Provide the editor instance with updated metadata
+          currentEditor?.setOptions({
+            metadata: {
+              path: props.file.path,
+              id: descriptor.type === "file" ? descriptor.id : "",
+              library: library ?? CITEPROC_MAIN_DB,
+            },
+          });
+        })
+        .catch((err) => reportError(err));
+    }
+    if (
+      context.filePath !== undefined &&
+      activeTexMacroSourcePaths.has(context.filePath) &&
+      (event === DP_EVENTS.CHANGE_FILE_STATUS ||
+        event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
+        event === DP_EVENTS.FILE_SAVED)
+    ) {
+      updateTexMacroSources(currentEditor, true).catch((error) =>
+        reportError("Could not refresh TeX macro sources", error),
+      );
+    }
+    // Collaboration state (annotations, review) is not handled here: it
+    // reaches this pane through the document-collaboration store and the
+    // `collaborationSession` watcher below, not through this raw event.
+  },
+);
+
+const stopReloads = ipcRenderer.on("reload-editors", (_e) => {
+  currentEditor?.reload().catch(reportDocumentLoadError);
+});
 
 // Update the file database whenever links have been updated
-const stopLinkUpdates = ipcRenderer.on('links', _e => {
+const stopLinkUpdates = ipcRenderer.on("links", (_e) => {
   if (!isActiveTab.value) {
-    return
+    return;
   }
-  updateFileDatabase().catch(err => reportError('Could not update file database', err))
-})
+  updateFileDatabase().catch((err) => reportError("Could not update file database", err));
+});
 
 // MOUNTED HOOK
 onMounted(() => {
-  mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
+  mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
   if (isActiveTab.value) {
-    activateTab().catch(reportDocumentLoadError)
+    activateTab().catch(reportDocumentLoadError);
   }
-})
+});
 
 onBeforeUnmount(() => {
-  for (const stop of [stopCiteprocUpdates, stopReferenceUpdates, stopShortcuts, stopDocumentUpdates, stopReloads, stopLinkUpdates]) {
-    stop()
+  for (const stop of [
+    stopCiteprocUpdates,
+    stopReferenceUpdates,
+    stopShortcuts,
+    stopDocumentUpdates,
+    stopReloads,
+    stopLinkUpdates,
+  ]) {
+    stop();
   }
-  latestReferenceRequestId++
-  refreshDocumentRequests.cancel()
-  activeTikzSource.value = null
-  activeEditorView.value = null
-  mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer)
+  latestReferenceRequestId++;
+  refreshDocumentRequests.cancel();
+  activeTikzSource.value = null;
+  activeEditorView.value = null;
+  mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
   if (currentEditor !== null) {
-    currentEditor.unmount()
+    currentEditor.unmount();
   }
-})
+});
 
-watch(isActiveTab, active => {
+watch(isActiveTab, (active) => {
   if (!active) {
-    activeTikzSource.value = null
-    annotationComposerRequest.value = null
-    return
+    activeTikzSource.value = null;
+    annotationComposerRequest.value = null;
+    return;
   }
   nextTick()
-    .then(async () => { await activateTab() })
-    .catch(reportDocumentLoadError)
-})
+    .then(async () => {
+      await activateTab();
+    })
+    .catch(reportDocumentLoadError);
+});
 
 // The focus event reaches this pane before main moves lastLeafId here, so
 // the pane's own events are refused ownership until that move lands. Publish
 // once it does, or the window keeps the previous pane's document info.
-watch(() => documentTreeStore.lastLeafId, leafId => {
-  if (leafId === props.leafId && currentEditor !== null) {
-    publishActiveEditorState(currentEditor)
-  }
-})
+watch(
+  () => documentTreeStore.lastLeafId,
+  (leafId) => {
+    if (leafId === props.leafId && currentEditor !== null) {
+      publishActiveEditorState(currentEditor);
+    }
+  },
+);
 
 // DATA SETUP
-const mainEditorWrapper = ref<HTMLDivElement|null>(null)
-const editorHost = ref<HTMLDivElement|null>(null)
+const mainEditorWrapper = ref<HTMLDivElement | null>(null);
+const editorHost = ref<HTMLDivElement | null>(null);
 
 // COMPUTED PROPERTIES
-const useH1 = computed<boolean>(() => configStore.config.fileNameDisplay.includes('heading'))
-const useTitle = computed<boolean>(() => configStore.config.fileNameDisplay.includes('title'))
-const fontSize = computed<number>(() => configStore.config.editor.fontSize)
-const globalSearchResults = computed(() => windowStateStore.searchResults)
-const snippets = computed(() => windowStateStore.snippets)
-const quickTex = computed(() => windowStateStore.quickTex)
-const phraseCompletions = computed(() => windowStateStore.phraseCompletions)
-const tags = computed(() => tagStore.tags)
-const isMarkdown = computed(() => hasMarkdownExt(props.file.path))
-const tikzWorkbenchHost = computed(() => activeEditorView.value === null ? null : zettlrTikzWorkbenchHost(activeEditorView.value))
-const tikzPreviewTarget = computed<TikzLivePreviewTarget|null>(() => activeTikzSource.value === null || activeEditorView.value === null
-  ? null
-  : {
-      ...activeTikzSource.value,
-      docPath: props.file.path,
-      authoredSource: activeEditorView.value.state.sliceDoc(
-        activeTikzSource.value.sourceFrom,
-        activeTikzSource.value.sourceTo
-      )
-    })
+const useH1 = computed<boolean>(() => configStore.config.fileNameDisplay.includes("heading"));
+const useTitle = computed<boolean>(() => configStore.config.fileNameDisplay.includes("title"));
+const fontSize = computed<number>(() => configStore.config.editor.fontSize);
+const globalSearchResults = computed(() => windowStateStore.searchResults);
+const snippets = computed(() => windowStateStore.snippets);
+const quickTex = computed(() => windowStateStore.quickTex);
+const phraseCompletions = computed(() => windowStateStore.phraseCompletions);
+const tags = computed(() => tagStore.tags);
+const isMarkdown = computed(() => hasMarkdownExt(props.file.path));
+const tikzWorkbenchHost = computed(() =>
+  activeEditorView.value === null ? null : zettlrTikzWorkbenchHost(activeEditorView.value),
+);
+const tikzPreviewTarget = computed<TikzLivePreviewTarget | null>(() =>
+  activeTikzSource.value === null || activeEditorView.value === null
+    ? null
+    : {
+        ...activeTikzSource.value,
+        docPath: props.file.path,
+        authoredSource: activeEditorView.value.state.sliceDoc(
+          activeTikzSource.value.sourceFrom,
+          activeTikzSource.value.sourceTo,
+        ),
+      },
+);
 
-const activeFileDescriptor = ref<undefined|MDFileDescriptor|CodeFileDescriptor>(undefined)
+const activeFileDescriptor = ref<undefined | MDFileDescriptor | CodeFileDescriptor>(undefined);
 
 const editorConfiguration = computed<EditorConfigOptions>(() => {
   // We update everything, because not so many values are actually updated
   // right after setting the new configurations. Plus, the user won't update
   // everything all the time, but rather do one initial configuration, so
   // even if we incur a performance penalty, it won't be noticed that much.
-  const { appLang, editor, display, zkn, darkMode, shortcuts, darkModeEditor } = configStore.config
+  const { appLang, editor, display, zkn, darkMode, shortcuts, darkModeEditor } = configStore.config;
   return {
     appLang,
     indentUnit: editor.indentUnit,
@@ -733,9 +830,9 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
       matchWholeWords: editor.autoCorrect.matchWholeWords,
       magicQuotes: {
         primary: editor.autoCorrect.magicQuotes.primary,
-        secondary: editor.autoCorrect.magicQuotes.secondary
+        secondary: editor.autoCorrect.magicQuotes.secondary,
       },
-      replacements: editor.autoCorrect.replacements
+      replacements: editor.autoCorrect.replacements,
     },
     autocompleteSuggestEmojis: editor.autocompleteSuggestEmojis,
     autocompleteWithEnter: editor.autocompleteWithEnter,
@@ -777,136 +874,145 @@ const editorConfiguration = computed<EditorConfigOptions>(() => {
     showMarkdownLineNumbers: editor.showMarkdownLineNumbers,
     countChars: editor.countChars,
     shortcuts: Object.entries(shortcuts.editor)
-      .map(([ name, shortcut ]) => ({ name, shortcut }))
-      .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined)
-  } satisfies EditorConfigOptions
-})
+      .map(([name, shortcut]) => ({ name, shortcut }))
+      .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined),
+  } satisfies EditorConfigOptions;
+});
 
 // BEGIN: PROJECT INFO
-function updateProjectInfo (): ProjectInfo|null {
+function updateProjectInfo(): ProjectInfo | null {
   // If this file is part of a project, the project must be defined in any
   // containing folder -> traverse up the file tree until we have found one.
-  let dir = workspaceStore.descriptorMap.get(pathDirname(props.file.path)) as DirDescriptor|undefined
+  let dir = workspaceStore.descriptorMap.get(pathDirname(props.file.path)) as
+    | DirDescriptor
+    | undefined;
 
   while (dir !== undefined && dir.settings.project === null) {
-    dir = workspaceStore.descriptorMap.get(dir.dir) as DirDescriptor|undefined
+    dir = workspaceStore.descriptorMap.get(dir.dir) as DirDescriptor | undefined;
   }
 
   if (dir === undefined || dir.settings.project === null) {
-    return null // No project found in the tree
+    return null; // No project found in the tree
   }
 
   // Check if this file is part of the project.
-  const absPaths = dir.settings.project.files.map(p => resolvePath(dir.path, p))
+  const absPaths = dir.settings.project.files.map((p) => resolvePath(dir.path, p));
   if (!absPaths.includes(props.file.path)) {
-    return null
+    return null;
   }
 
   const extractedMetadata = absPaths
-    .map(p => workspaceStore.descriptorMap.get(p))
-    .filter((descriptor): descriptor is MDFileDescriptor => descriptor?.type === 'file')
-    .map(descriptor => ({
+    .map((p) => workspaceStore.descriptorMap.get(p))
+    .filter((descriptor): descriptor is MDFileDescriptor => descriptor?.type === "file")
+    .map((descriptor) => ({
       wordCount: descriptor.wordCount,
       charCount: descriptor.charCount,
       path: descriptor.path,
-      displayName: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name
-    }))
+      displayName: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
+    }));
 
-  const metadataByPath = new Map(extractedMetadata.map(file => [file.path, file]))
-  const makeChapter = (relativePath: string): Extract<ProjectInfoNavigationItem, { kind: 'chapter' }>|null => {
-    const absolutePath = resolvePath(dir.path, relativePath)
-    const metadata = metadataByPath.get(absolutePath)
+  const metadataByPath = new Map(extractedMetadata.map((file) => [file.path, file]));
+  const makeChapter = (
+    relativePath: string,
+  ): Extract<ProjectInfoNavigationItem, { kind: "chapter" }> | null => {
+    const absolutePath = resolvePath(dir.path, relativePath);
+    const metadata = metadataByPath.get(absolutePath);
     return metadata === undefined
       ? null
-      : { kind: 'chapter', path: metadata.path, displayName: metadata.displayName }
-  }
+      : { kind: "chapter", path: metadata.path, displayName: metadata.displayName };
+  };
 
-  const navigation = dir.settings.project.manifest.kind === 'quarto'
-    ? dir.settings.project.manifest.navigation.flatMap((item): ProjectInfoNavigationItem[] => {
-      if (item.kind === 'chapter') {
-        const entry = makeChapter(item.path)
-        return entry === null ? [] : [entry]
-      }
+  const navigation =
+    dir.settings.project.manifest.kind === "quarto"
+      ? dir.settings.project.manifest.navigation.flatMap((item): ProjectInfoNavigationItem[] => {
+          if (item.kind === "chapter") {
+            const entry = makeChapter(item.path);
+            return entry === null ? [] : [entry];
+          }
 
-      return [{
-        kind: 'part' as const,
-        title: item.title,
-        chapters: item.chapters
-          .map(makeChapter)
-          .filter((entry): entry is Extract<ProjectInfoNavigationItem, { kind: 'chapter' }> => entry !== null)
-      }]
-    })
-    : extractedMetadata.map(file => ({
-      kind: 'chapter' as const,
-      path: file.path,
-      displayName: file.displayName
-    }))
+          return [
+            {
+              kind: "part" as const,
+              title: item.title,
+              chapters: item.chapters
+                .map(makeChapter)
+                .filter(
+                  (entry): entry is Extract<ProjectInfoNavigationItem, { kind: "chapter" }> =>
+                    entry !== null,
+                ),
+            },
+          ];
+        })
+      : extractedMetadata.map((file) => ({
+          kind: "chapter" as const,
+          path: file.path,
+          displayName: file.displayName,
+        }));
 
   // It is! So now we can return the proper project info.
   return {
     name: dir.settings.project.title,
-    files: extractedMetadata
-      .map(p => ({ path: p.path, displayName: p.displayName })),
+    files: extractedMetadata.map((p) => ({ path: p.path, displayName: p.displayName })),
     navigation,
-    wordCount: extractedMetadata
-      .map(p => p.wordCount)
-      .reduce((p, c) => p + c, 0),
-    charCount: extractedMetadata
-      .map(p => p.charCount)
-      .reduce((p, c) => p + c, 0)
-  }
+    wordCount: extractedMetadata.map((p) => p.wordCount).reduce((p, c) => p + c, 0),
+    charCount: extractedMetadata.map((p) => p.charCount).reduce((p, c) => p + c, 0),
+  };
 }
 
 // END: PROJECT INFO
 
 // External commands/"event" system
-watch(toRef(props.editorCommands, 'jumpToLine'), () => {
-  const data = props.editorCommands.data
-  if (typeof data !== 'object' || data === undefined || !('lineNumber' in data)) {
-    return // The toggled command carried no jump payload
+watch(toRef(props.editorCommands, "jumpToLine"), () => {
+  const data = props.editorCommands.data;
+  if (typeof data !== "object" || data === undefined || !("lineNumber" in data)) {
+    return; // The toggled command carried no jump payload
   }
 
   // Execute a jtl-command if the current displayed file is the correct one
   if (data.filePath === props.file.path) {
-    jtl(data.lineNumber)
+    jtl(data.lineNumber);
   }
-})
+});
 
-watch(toRef(props.editorCommands, 'moveSection'), () => {
+watch(toRef(props.editorCommands, "moveSection"), () => {
   if (props.activeFile?.path !== props.file.path || documentTreeStore.lastLeafId !== props.leafId) {
-    return
+    return;
   }
 
-  const data = props.editorCommands.data
-  if (typeof data === 'object' && data !== undefined && 'from' in data) {
-    currentEditor?.moveSection(data.from, data.to)
+  const data = props.editorCommands.data;
+  if (typeof data === "object" && data !== undefined && "from" in data) {
+    currentEditor?.moveSection(data.from, data.to);
   }
-})
+});
 
-watch(toRef(props, 'distractionFree'), () => {
-  if (currentEditor !== null && props.activeFile?.path === props.file.path && documentTreeStore.lastLeafId === props.leafId) {
-    currentEditor.distractionFree = props.distractionFree
+watch(toRef(props, "distractionFree"), () => {
+  if (
+    currentEditor !== null &&
+    props.activeFile?.path === props.file.path &&
+    documentTreeStore.lastLeafId === props.leafId
+  ) {
+    currentEditor.distractionFree = props.distractionFree;
   }
-})
+});
 
-watch(toRef(props.editorCommands, 'executeCommand'), () => {
+watch(toRef(props.editorCommands, "executeCommand"), () => {
   if (props.activeFile?.path !== props.file.path || currentEditor === null) {
-    return
+    return;
   }
 
   if (documentTreeStore.lastLeafId !== props.leafId) {
     // This editor, even though it may be focused, was not the last focused
     // See https://github.com/Zettlr/Zettlr/issues/4361
-    return
+    return;
   }
 
-  const data = props.editorCommands.data
-  if (typeof data !== 'string' || !isEditorCommandName(data)) {
-    return // The toggled command carried no editor command name
+  const data = props.editorCommands.data;
+  if (typeof data !== "string" || !isEditorCommandName(data)) {
+    return; // The toggled command carried no editor command name
   }
-  currentEditor.runCommand(data)
-  currentEditor.focus()
-})
+  currentEditor.runCommand(data);
+  currentEditor.focus();
+});
 
 /**
  * S8/I6: the thread's Reattach names only the annotation — the replacement
@@ -916,142 +1022,152 @@ watch(toRef(props.editorCommands, 'executeCommand'), () => {
  * refuses with a toast that says exactly that, rather than silently doing
  * nothing or fabricating a point range.
  */
-function reattachAnnotation (annotationId: string): void {
+function reattachAnnotation(annotationId: string): void {
   if (currentEditor === null) {
-    return
+    return;
   }
-  const selection = resolveReattachSelection(currentEditor.instance)
+  const selection = resolveReattachSelection(currentEditor.instance);
   if (!selection.ok) {
-    showToast(trans('Select the new location for this annotation, then click Reattach again.'), 'error')
-    return
+    showToast(
+      trans("Select the new location for this annotation, then click Reattach again."),
+      "error",
+    );
+    return;
   }
-  collaborationStore.reattachAnnotation(props.file.path, annotationId, selection.from, selection.to)
-    .then(result => {
-      if ('ok' in result && !result.ok) {
-        showToast(result.message, 'error')
+  collaborationStore
+    .reattachAnnotation(props.file.path, annotationId, selection.from, selection.to)
+    .then((result) => {
+      if ("ok" in result && !result.ok) {
+        showToast(result.message, "error");
       }
     })
-    .catch(err => reportError('[MainEditor] Could not reattach the annotation', err))
+    .catch((err) => reportError("[MainEditor] Could not reattach the annotation", err));
 }
 
-watch(toRef(props.editorCommands, 'replaceSelection'), () => {
+watch(toRef(props.editorCommands, "replaceSelection"), () => {
   if (props.activeFile?.path !== props.file.path) {
-    return
+    return;
   }
 
   if (documentTreeStore.lastLeafId !== props.leafId) {
     // This editor, even though it may be focused, was not the last focused
     // See https://github.com/Zettlr/Zettlr/issues/4361
-    return
+    return;
   }
 
-  const data = props.editorCommands.data
-  if (typeof data !== 'string') {
-    return // The toggled command carried no text payload
+  const data = props.editorCommands.data;
+  if (typeof data !== "string") {
+    return; // The toggled command carried no text payload
   }
-  currentEditor?.replaceSelection(data)
-})
+  currentEditor?.replaceSelection(data);
+});
 
 // The status bar's LanguageTool language choice, for the last focused pane.
-watch(toRef(props.editorCommands, 'setLanguageToolLanguage'), () => {
+watch(toRef(props.editorCommands, "setLanguageToolLanguage"), () => {
   if (props.activeFile?.path !== props.file.path || currentEditor === null) {
-    return
+    return;
   }
   if (documentTreeStore.lastLeafId !== props.leafId) {
-    return
+    return;
   }
-  const data = props.editorCommands.data
-  if (typeof data !== 'string') {
-    return // The toggle carried no language code
+  const data = props.editorCommands.data;
+  if (typeof data !== "string") {
+    return; // The toggle carried no language code
   }
-  currentEditor.setLanguageToolLanguage(data)
-})
+  currentEditor.setLanguageToolLanguage(data);
+});
 
-watch(toRef(props.editorCommands, 'insertPandoc'), () => {
+watch(toRef(props.editorCommands, "insertPandoc"), () => {
   if (props.activeFile?.path !== props.file.path || currentEditor === null) {
-    return
+    return;
   }
 
   if (documentTreeStore.lastLeafId !== props.leafId) {
     // This editor, even though it may be focused, was not the last focused
     // See https://github.com/Zettlr/Zettlr/issues/4361
-    return
+    return;
   }
 
-  const data = props.editorCommands.data
+  const data = props.editorCommands.data;
   if (
-    typeof data === 'object' && data !== undefined && 'type' in data &&
-    (data.type === 'div' || data.type === 'span')
+    typeof data === "object" &&
+    data !== undefined &&
+    "type" in data &&
+    (data.type === "div" || data.type === "span")
   ) {
-    currentEditor?.insertPandocDivOrSpan(data.type, data.attributes)
-    currentEditor?.focus()
+    currentEditor?.insertPandocDivOrSpan(data.type, data.attributes);
+    currentEditor?.focus();
   }
-})
+});
 
 // WATCHERS
 watch(useH1, () => {
   if (isActiveTab.value) {
-    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+    updateFileDatabase().catch((err) => reportError("Could not update file database", err));
   }
-})
+});
 watch(useTitle, () => {
   if (isActiveTab.value) {
-    updateFileDatabase().catch(err => reportError('Could not update file database', err))
+    updateFileDatabase().catch((err) => reportError("Could not update file database", err));
   }
-})
+});
 // The workspace changed: the active editor reads again what it shows of the
 // workspace. An editor in a background tab does that when its tab becomes
 // active.
 watch(storeToRefs(workspaceStore).descriptorMap, () => {
   if (isActiveTab.value) {
-    refreshWorkspaceState()
+    refreshWorkspaceState();
   }
-})
+});
 
 watch(editorConfiguration, (newValue, oldValue) => {
   if (!_.isEqual(newValue, oldValue)) {
-    currentEditor?.setOptions(newValue)
+    currentEditor?.setOptions(newValue);
   }
-})
+});
 
 watch(globalSearchResults, () => {
   if (!isActiveTab.value) {
-    return
+    return;
   }
   // TODO: I don't like that we need a timeout here.
-  setTimeout(maybeHighlightSearchResults, 200)
-})
+  setTimeout(maybeHighlightSearchResults, 200);
+});
 
 watch(snippets, (newValue) => {
-  currentEditor?.setCompletionDatabase('snippets', newValue)
-})
+  currentEditor?.setCompletionDatabase("snippets", newValue);
+});
 
 watch(quickTex, (newValue) => {
-  currentEditor?.setQuickTexCatalogue(newValue)
-})
+  currentEditor?.setQuickTexCatalogue(newValue);
+});
 
 watch(phraseCompletions, (newValue) => {
-  currentEditor?.setCompletionDatabase('phrases', newValue)
-})
+  currentEditor?.setCompletionDatabase("phrases", newValue);
+});
 
 watch(tags, (newValue) => {
-  currentEditor?.setCompletionDatabase('tags', newValue)
-})
+  currentEditor?.setCompletionDatabase("tags", newValue);
+});
 
 // The store is the only thing that moves review state in this pane: a
 // session appearing starts (or re-syncs) the review-diff widgets, and a
 // session disappearing clears them. `immediate` covers the pane that mounts
 // onto a document another pane already cached the session for, where the
 // store never changes again to re-fire this watcher on its own.
-watch(() => collaborationSession.value?.review, (nextReview, previousReview) => {
-  if (nextReview !== undefined) {
-    applyReviewDiffSession(nextReview)
-  } else if (previousReview !== undefined) {
-    currentEditor?.clearReviewDiffSession(previousReview.id)
-  }
-}, { immediate: true })
+watch(
+  () => collaborationSession.value?.review,
+  (nextReview, previousReview) => {
+    if (nextReview !== undefined) {
+      applyReviewDiffSession(nextReview);
+    } else if (previousReview !== undefined) {
+      currentEditor?.clearReviewDiffSession(previousReview.id);
+    }
+  },
+  { immediate: true },
+);
 
-const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
+const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] };
 
 // Annotations are never absent on a session (unlike review), so this just
 // forwards the current set — the editor's own field only distinguishes and
@@ -1062,15 +1178,19 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] }
 // builds a fresh editor state, so
 // pushing the set alone would leave the new state with no selection and the
 // resolved switch back at its default.
-watch([
-  () => collaborationSession.value?.annotations,
-  () => collaborationStore.selectedAnnotationId,
-  () => collaborationStore.showResolved
-], ([ annotations, selectedAnnotationId, showResolved ]) => {
-  currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET)
-  currentEditor?.setActiveAnnotation(selectedAnnotationId)
-  currentEditor?.setShowResolvedAnnotations(showResolved)
-}, { immediate: true, deep: true })
+watch(
+  [
+    () => collaborationSession.value?.annotations,
+    () => collaborationStore.selectedAnnotationId,
+    () => collaborationStore.showResolved,
+  ],
+  ([annotations, selectedAnnotationId, showResolved]) => {
+    currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET);
+    currentEditor?.setActiveAnnotation(selectedAnnotationId);
+    currentEditor?.setShowResolvedAnnotations(showResolved);
+  },
+  { immediate: true, deep: true },
+);
 
 // METHODS
 /**
@@ -1080,125 +1200,132 @@ watch([
  *
  * @return  {MarkdownEditor}       The requested editor
  */
-async function getEditorFor (doc: string): Promise<MarkdownEditor> {
+async function getEditorFor(doc: string): Promise<MarkdownEditor> {
   const editor = new MarkdownEditor(
     props.leafId,
     props.windowId,
     doc,
     documentAuthorityIPCAPI,
-    editorConfiguration.value
-  )
+    editorConfiguration.value,
+  );
 
-  editor.on('document-load-error', reportDocumentLoadError)
+  editor.on("document-load-error", reportDocumentLoadError);
 
   // Update the document info on corresponding events
-  editor.on('loaded', () => {
+  editor.on("loaded", () => {
     if (ownsWindowActiveState(editor)) {
-      publishActiveEditorState(editor)
+      publishActiveEditorState(editor);
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
-      applyPendingNavigation()
-      updateTexMacroSources(editor)
-        .catch(error => reportError('Could not refresh TeX macro sources', error))
+      applyPendingNavigation();
+      updateTexMacroSources(editor).catch((error) =>
+        reportError("Could not refresh TeX macro sources", error),
+      );
     }
-  })
+  });
 
-  editor.on('change', () => {
-    refreshDocumentRequests()
+  editor.on("change", () => {
+    refreshDocumentRequests();
     if (ownsWindowActiveState(editor)) {
-      windowStateStore.tableOfContents = editor.tableOfContents
-      updateActiveTikzSource(editor)
+      windowStateStore.tableOfContents = editor.tableOfContents;
+      updateActiveTikzSource(editor);
     }
-  })
+  });
 
-  editor.on('cursorActivity', () => {
+  editor.on("cursorActivity", () => {
     if (ownsWindowActiveState(editor)) {
-      updateActiveTikzSource(editor)
+      updateActiveTikzSource(editor);
     }
-  })
+  });
 
-  editor.on('docUpdate', () => {
+  editor.on("docUpdate", () => {
     if (ownsWindowActiveState(editor)) {
-      windowStateStore.activeDocumentInfo = editor.documentInfo
+      windowStateStore.activeDocumentInfo = editor.documentInfo;
     }
-  })
+  });
 
-  editor.on('focus', () => {
-    ipcRenderer.invoke('documents-provider', {
-      command: 'focus-leaf',
-      payload: {
-        leafId: props.leafId,
-        windowId: props.windowId
-      }
-    }).catch(err => reportError(err))
+  editor.on("focus", () => {
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "focus-leaf",
+        payload: {
+          leafId: props.leafId,
+          windowId: props.windowId,
+        },
+      })
+      .catch((err) => reportError(err));
 
     // NOTE: The lastLeafId will be changed in the documentTreeStore in response
     // to an event from main (DP_EVENTS.ACTIVE_FILE) which will be emitted as a
     // result of our focus-leaf event above.
     if (ownsWindowActiveState(editor)) {
-      windowStateStore.tableOfContents = editor.tableOfContents
+      windowStateStore.tableOfContents = editor.tableOfContents;
     }
-  })
+  });
 
-  editor.on('zettelkasten-link', (linkContents: string) => {
-    ipcRenderer.invoke('application', {
-      command: 'force-open',
-      payload: {
-        linkContents,
-        sourcePath: props.file.path,
-        newTab: undefined, // let open-file command decide based on preferences
-        leafId: props.leafId,
-        windowId: props.windowId
-      }
-    })
-      .catch(err => reportError(err))
+  editor.on("zettelkasten-link", (linkContents: string) => {
+    ipcRenderer
+      .invoke("application", {
+        command: "force-open",
+        payload: {
+          linkContents,
+          sourcePath: props.file.path,
+          newTab: undefined, // let open-file command decide based on preferences
+          leafId: props.leafId,
+          windowId: props.windowId,
+        },
+      })
+      .catch((err) => reportError(err));
 
     if (configStore.config.zkn.autoSearch) {
-      emit('globalSearch', linkContents)
+      emit("globalSearch", linkContents);
     }
-  })
+  });
 
-  editor.on('zettelkasten-tag', (tag: string) => {
-    emit('globalSearch', tag)
-  })
+  editor.on("zettelkasten-tag", (tag: string) => {
+    emit("globalSearch", tag);
+  });
 
   // The workspace reference search overlay was requested (issue #1 Phase
   // 3b) — plain Mod-P (null) or a count badge's keyed reverse lookup
   // ({ key }, Phase 8); relay the request payload up the component tree to
   // App.vue.
-  editor.on('reference-search', (request: ReferenceSearchRequest) => {
-    emit('referenceSearch', request)
-  })
+  editor.on("reference-search", (request: ReferenceSearchRequest) => {
+    emit("referenceSearch", request);
+  });
 
-  editor.on('file-search', () => {
-    emit('fileSearch')
-  })
+  editor.on("file-search", () => {
+    emit("fileSearch");
+  });
 
   // A gutter chip was clicked: open that annotation's inline thread, or
   // close it when it is the one already open, as an editor comment glyph
   // toggles its thread.
-  editor.on('annotation-selected', (annotationId: string) => {
+  editor.on("annotation-selected", (annotationId: string) => {
     collaborationStore.selectAnnotation(
-      collaborationStore.selectedAnnotationId === annotationId ? null : annotationId
-    )
-  })
+      collaborationStore.selectedAnnotationId === annotationId ? null : annotationId,
+    );
+  });
 
-  editor.setCollaborationControls(mountCollaborationControl)
+  editor.setCollaborationControls(mountCollaborationControl);
 
   // An in-editor help link (the completion info panel, issue #1 review A2)
   // requested the searchable Pandoc quick help: relay up to App.vue's
   // PandocQuickHelp mount — the same surface the Help menu opens.
-  editor.on('pandoc-quick-help', () => {
-    emit('openPandocQuickHelp')
-  })
+  editor.on("pandoc-quick-help", () => {
+    emit("openPandocQuickHelp");
+  });
 
   // A keystroke (Mod-Alt-l) requested a flowmark format (issue #26). Run the
   // IPC format here in the renderer and surface any absence/error as a toast.
-  editor.on('format-document', () => {
-    editor.runFormatter(ipcMarkdownFormatter(props.file.path))
+  editor.on("format-document", () => {
+    editor
+      .runFormatter(ipcMarkdownFormatter(props.file.path))
       .then(surfaceFormatResult)
-      .catch(e => { reportError('Format document failed', e) })
-  })
+      .catch((e) => {
+        reportError("Format document failed", e);
+      });
+  });
 
   // The context menu (or command registry) requested the create-label
   // dialog for a resolved target (issue #1 Phase 6): relay the typed
@@ -1207,238 +1334,261 @@ async function getEditorFor (doc: string): Promise<MarkdownEditor> {
   // re-resolves the target in the CURRENT document (issue #1 Phase 8): the
   // dialog is modal only visually, so the request-time offsets are never
   // applied verbatim, and a stale target inserts nothing.
-  editor.on('create-reference-label', (request: CreateReferenceLabelRequest) => {
-    emit('createReferenceLabel', {
+  editor.on("create-reference-label", (request: CreateReferenceLabelRequest) => {
+    emit("createReferenceLabel", {
       family: request.family,
       proposedSlug: request.proposedSlug,
       applyCreate: (intent: CreateReferenceLabelIntent): ConfirmReferenceLabelOutcome => {
-        const view = currentEditor?.instance
+        const view = currentEditor?.instance;
         if (view === undefined) {
-          return { status: 'stale', reason: 'target-vanished' }
+          return { status: "stale", reason: "target-vanished" };
         }
-        const outcome = confirmReferenceLabelInsertion(view, request)
-        if (outcome.status === 'applied') {
-          const { from, to, prefix, suffix } = outcome.insertion
-          view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } })
+        const outcome = confirmReferenceLabelInsertion(view, request);
+        if (outcome.status === "applied") {
+          const { from, to, prefix, suffix } = outcome.insertion;
+          view.dispatch({ changes: { from, to, insert: prefix + intent.insertText + suffix } });
         }
-        return outcome
-      }
-    })
-  })
+        return outcome;
+      },
+    });
+  });
 
   // The selection left a directly edited definition-id token (issue #1
   // Phase 6): offer the workspace rename. Declining does nothing further —
   // the local edit stays and the reference diagnostics flag the stale uses.
-  editor.on('reference-key-edit-prompt', (intent: ReferenceKeyEditPromptIntent) => {
-    promptWorkspaceRename(intent)
-  })
+  editor.on("reference-key-edit-prompt", (intent: ReferenceKeyEditPromptIntent) => {
+    promptWorkspaceRename(intent);
+  });
 
-  return editor
+  return editor;
 }
 
 /**
  * Loads the document for this editor instance.
  */
-async function loadDocument (): Promise<void> {
-  activeTikzSource.value = null
-  activeEditorView.value = null
-  const newEditor = await getEditorFor(props.file.path)
+async function loadDocument(): Promise<void> {
+  activeTikzSource.value = null;
+  activeEditorView.value = null;
+  const newEditor = await getEditorFor(props.file.path);
 
-  editorHost.value?.appendChild(newEditor.dom)
-  currentEditor = newEditor
-  activeEditorView.value = newEditor.instance
+  editorHost.value?.appendChild(newEditor.dom);
+  currentEditor = newEditor;
+  activeEditorView.value = newEditor.instance;
   try {
-    await newEditor.ready
+    await newEditor.ready;
   } catch (error) {
-    newEditor.unmount()
+    newEditor.unmount();
     if (currentEditor === newEditor) {
-      currentEditor = null
-      activeEditorView.value = null
+      currentEditor = null;
+      activeEditorView.value = null;
     }
-    throw error
+    throw error;
   }
 
-  currentEditor.setCompletionDatabase('tags', tags.value)
-  currentEditor.setCompletionDatabase('snippets', snippets.value)
-  currentEditor.setCompletionDatabase('phrases', phraseCompletions.value)
-  currentEditor.setQuickTexCatalogue(quickTex.value)
-  await updateTexMacroSources(currentEditor)
+  currentEditor.setCompletionDatabase("tags", tags.value);
+  currentEditor.setCompletionDatabase("snippets", snippets.value);
+  currentEditor.setCompletionDatabase("phrases", phraseCompletions.value);
+  currentEditor.setQuickTexCatalogue(quickTex.value);
+  await updateTexMacroSources(currentEditor);
 
-  maybeHighlightSearchResults()
+  maybeHighlightSearchResults();
 
-  const descriptor = await ipcRenderer.invoke('fsal', { command: 'get-descriptor', payload: props.file.path })
-  if (descriptor === undefined || Array.isArray(descriptor) || (descriptor.type !== 'file' && descriptor.type !== 'code')) {
-    throw new Error(`Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`)
+  const descriptor = await ipcRenderer.invoke("fsal", {
+    command: "get-descriptor",
+    payload: props.file.path,
+  });
+  if (
+    descriptor === undefined ||
+    Array.isArray(descriptor) ||
+    (descriptor.type !== "file" && descriptor.type !== "code")
+  ) {
+    throw new Error(
+      `Could not swap document: Could not retrieve descriptor for path ${props.file.path}!`,
+    );
   }
 
-  activeFileDescriptor.value = descriptor
+  activeFileDescriptor.value = descriptor;
 
-  const library = descriptor.type === 'file' ? await getBibliographyForDescriptor(descriptor) : undefined
+  const library =
+    descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
   if (library !== undefined) {
-    updateCitationKeys(library).catch(e => reportError('Could not update citation keys', e))
+    updateCitationKeys(library).catch((e) => reportError("Could not update citation keys", e));
   }
 
-  updateFileDatabase().catch(err => reportError('Could not update file database', err))
+  updateFileDatabase().catch((err) => reportError("Could not update file database", err));
 
   // Provide the editor instance with metadata for the new file
   currentEditor.setOptions({
     metadata: {
       path: props.file.path,
-      id: descriptor.type === 'file' ? descriptor.id : '',
-      library: library ?? CITEPROC_MAIN_DB
-    }
-  })
-  currentEditor.projectInfo = updateProjectInfo()
-  await updateReferenceEntries()
+      id: descriptor.type === "file" ? descriptor.id : "",
+      library: library ?? CITEPROC_MAIN_DB,
+    },
+  });
+  currentEditor.projectInfo = updateProjectInfo();
+  await updateReferenceEntries();
 
   // A review that arrived (via the store watcher above) before this editor
   // was ready is buffered here; apply it now that it is. Otherwise, pull
   // this pane's collaboration session: a no-op if another pane already
   // cached it, a single IPC read if this is the first pane to ask.
   if (pendingReviewDiffSession !== null) {
-    applyReviewDiffSession(pendingReviewDiffSession)
+    applyReviewDiffSession(pendingReviewDiffSession);
   }
-  currentEditor.setAnnotations(collaborationSession.value?.annotations ?? EMPTY_ANNOTATION_SET)
-  currentEditor.setActiveAnnotation(collaborationStore.selectedAnnotationId)
-  currentEditor.setShowResolvedAnnotations(collaborationStore.showResolved)
-  collaborationStore.ensureSession(props.file.path)
-    .catch(err => reportError('Could not fetch the collaboration session', err))
+  currentEditor.setAnnotations(collaborationSession.value?.annotations ?? EMPTY_ANNOTATION_SET);
+  currentEditor.setActiveAnnotation(collaborationStore.selectedAnnotationId);
+  currentEditor.setShowResolvedAnnotations(collaborationStore.showResolved);
+  collaborationStore
+    .ensureSession(props.file.path)
+    .catch((err) => reportError("Could not fetch the collaboration session", err));
 }
 
-async function ensureEditorLoaded (): Promise<boolean> {
+async function ensureEditorLoaded(): Promise<boolean> {
   if (currentEditor !== null) {
-    return false
+    return false;
   }
   if (editorLoadPromise === null) {
     editorLoadPromise = loadDocument().finally(() => {
-      editorLoadPromise = null
-    })
+      editorLoadPromise = null;
+    });
   }
-  await editorLoadPromise
-  return true
+  await editorLoadPromise;
+  return true;
 }
 
 /** Reads again the values that the editor derives from the workspace descriptors. */
-function refreshWorkspaceState (): void {
+function refreshWorkspaceState(): void {
   if (currentEditor !== null) {
-    currentEditor.projectInfo = updateProjectInfo()
+    currentEditor.projectInfo = updateProjectInfo();
   }
-  updateFileDatabase().catch(err => reportError('Could not update file database', err))
-  updateTexMacroSources().catch(error => reportError('Could not refresh TeX macro sources', error))
+  updateFileDatabase().catch((err) => reportError("Could not update file database", err));
+  updateTexMacroSources().catch((error) =>
+    reportError("Could not refresh TeX macro sources", error),
+  );
 }
 
-function refreshActiveEditorAuxiliaryState (): void {
-  maybeHighlightSearchResults()
-  refreshWorkspaceState()
-  currentEditor?.syncCitationData()
-  updateReferenceEntries().catch(err => reportError('Could not update workspace reference entries', err))
+function refreshActiveEditorAuxiliaryState(): void {
+  maybeHighlightSearchResults();
+  refreshWorkspaceState();
+  currentEditor?.syncCitationData();
+  updateReferenceEntries().catch((err) =>
+    reportError("Could not update workspace reference entries", err),
+  );
 
-  const descriptor = activeFileDescriptor.value
-  if (descriptor?.type === 'file') {
+  const descriptor = activeFileDescriptor.value;
+  if (descriptor?.type === "file") {
     getBibliographyForDescriptor(descriptor)
       .then(updateCitationKeys)
-      .catch(err => reportError('Could not update citation keys', err))
+      .catch((err) => reportError("Could not update citation keys", err));
   }
 }
 
-async function activateTab (): Promise<void> {
-  const loadedNow = await ensureEditorLoaded()
-  const editor = currentEditor
+async function activateTab(): Promise<void> {
+  const loadedNow = await ensureEditorLoaded();
+  const editor = currentEditor;
   if (editor === null || !isActiveTab.value) {
-    return
+    return;
   }
 
-  publishActiveEditorState(editor)
-  applyPendingNavigation()
+  publishActiveEditorState(editor);
+  applyPendingNavigation();
   if (!editor.hasFocus()) {
-    editor.focus()
+    editor.focus();
   }
   if (!loadedNow) {
-    refreshActiveEditorAuxiliaryState()
+    refreshActiveEditorAuxiliaryState();
   }
 }
 
-function jtl (lineNumber: number): void {
-  currentEditor?.jtl(lineNumber)
+function jtl(lineNumber: number): void {
+  currentEditor?.jtl(lineNumber);
 }
 
 /** A CSL name field: persons carry family names, institutions a literal. */
 interface CSLNameField {
-  family?: unknown
-  literal?: unknown
+  family?: unknown;
+  literal?: unknown;
 }
 
 /** Narrows a CSL item's author/editor field to a usable name list. */
-function isNameList (value: unknown): value is CSLNameField[] {
-  return Array.isArray(value) && value.every(entry => typeof entry === 'object' && entry !== null)
+function isNameList(value: unknown): value is CSLNameField[] {
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "object" && entry !== null)
+  );
 }
 
 /** The year (or literal date) of a CSL item's issued field, if present. */
-function formatIssuedDate (issued: unknown): string {
-  if (typeof issued !== 'object' || issued === null) {
-    return ''
+function formatIssuedDate(issued: unknown): string {
+  if (typeof issued !== "object" || issued === null) {
+    return "";
   }
 
-  const dateParts = (issued as { 'date-parts'?: unknown })['date-parts']
+  const dateParts = (issued as { "date-parts"?: unknown })["date-parts"];
   if (Array.isArray(dateParts) && Array.isArray(dateParts[0])) {
-    const year: unknown = dateParts[0][0]
-    if (typeof year === 'number' || typeof year === 'string') {
-      return ` (${year})`
+    const year: unknown = dateParts[0][0];
+    if (typeof year === "number" || typeof year === "string") {
+      return ` (${year})`;
     }
   }
 
-  const literal = (issued as { literal?: unknown }).literal
-  if (typeof literal === 'string' || typeof literal === 'number') {
-    return ` (${literal})`
+  const literal = (issued as { literal?: unknown }).literal;
+  if (typeof literal === "string" || typeof literal === "number") {
+    return ` (${literal})`;
   }
 
-  return ''
+  return "";
 }
 
-async function updateCitationKeys (library: CitationDatabase): Promise<void> {
-  const items = (await ipcRenderer.invoke('citeproc-provider', {
-    command: 'get-items',
-    payload: { database: library }
-  }))
-    .map(item => {
-      // Get a rudimentary author list. Precedence are authors, then editors.
-      // Fallback: Container title.
-      let authors = ''
-      const authorSrc = isNameList(item.author)
-        ? item.author
-        : isNameList(item.editor) ? item.editor : []
-
-      if (authorSrc.length > 0) {
-        authors = authorSrc.map(author => {
-          if (typeof author.family === 'string') {
-            return author.family
-          } else if (typeof author.literal === 'string') {
-            return author.literal
-          } else {
-            return undefined
-          }
-        }).filter(elem => elem !== undefined).join(', ')
-      } else if (typeof item['container-title'] === 'string') {
-        authors = item['container-title']
-      }
-
-      let title = ''
-      if (typeof item.title === 'string') {
-        title = item.title
-      } else if (typeof item['container-title'] === 'string') {
-        title = item['container-title']
-      }
-
-      const date = formatIssuedDate(item.issued)
-
-      // This is just a very crude representation of the citations.
-      return {
-        citekey: item.id,
-        displayText: `${authors}${date} - ${title}`
-      }
+async function updateCitationKeys(library: CitationDatabase): Promise<void> {
+  const items = (
+    await ipcRenderer.invoke("citeproc-provider", {
+      command: "get-items",
+      payload: { database: library },
     })
+  ).map((item) => {
+    // Get a rudimentary author list. Precedence are authors, then editors.
+    // Fallback: Container title.
+    let authors = "";
+    const authorSrc = isNameList(item.author)
+      ? item.author
+      : isNameList(item.editor)
+        ? item.editor
+        : [];
 
-  currentEditor?.setCompletionDatabase('citations', items)
+    if (authorSrc.length > 0) {
+      authors = authorSrc
+        .map((author) => {
+          if (typeof author.family === "string") {
+            return author.family;
+          } else if (typeof author.literal === "string") {
+            return author.literal;
+          } else {
+            return undefined;
+          }
+        })
+        .filter((elem) => elem !== undefined)
+        .join(", ");
+    } else if (typeof item["container-title"] === "string") {
+      authors = item["container-title"];
+    }
+
+    let title = "";
+    if (typeof item.title === "string") {
+      title = item.title;
+    } else if (typeof item["container-title"] === "string") {
+      title = item["container-title"];
+    }
+
+    const date = formatIssuedDate(item.issued);
+
+    // This is just a very crude representation of the citations.
+    return {
+      citekey: item.id,
+      displayText: `${authors}${date} - ${title}`,
+    };
+  });
+
+  currentEditor?.setCompletionDatabase("citations", items);
 }
 
 /**
@@ -1452,72 +1602,77 @@ async function updateCitationKeys (library: CitationDatabase): Promise<void> {
  * Phase 7): a DirDescriptor with non-null settings.project maps to its
  * absolute path plus the ordered project-relative ProjectSettings.files list.
  */
-function collectProjectRoots (): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = []
+function collectProjectRoots(): ProjectRootSpec[] {
+  const roots: ProjectRootSpec[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === 'directory' && descriptor.settings.project !== null) {
+    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
       roots.push({
         rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files]
-      })
+        files: [...descriptor.settings.project.files],
+      });
     }
   }
-  return roots
+  return roots;
 }
 
-let latestReferenceRequestId = 0
+let latestReferenceRequestId = 0;
 
-async function updateReferenceEntries (): Promise<void> {
-  const requestId = ++latestReferenceRequestId
+async function updateReferenceEntries(): Promise<void> {
+  const requestId = ++latestReferenceRequestId;
   // Routed through the recoverable-error boundary (issue #1 Phase 8): a
   // failed fetch surfaces one closable toast and the editor keeps its last
   // known reference state — never a fabricated fallback, never an
   // uncloseable overlay.
   const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
-  )
-  if (outcome.status === 'failed' || requestId !== latestReferenceRequestId) {
-    return
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
+  );
+  if (outcome.status === "failed" || requestId !== latestReferenceRequestId) {
+    return;
   }
-  const state = outcome.value
+  const state = outcome.value;
 
   // The provider serves the whole merged workspace state; the completion
   // database for this editor is fed from EVERY document's definitions,
   // annotated with their Project-membership status relative to this editor's
   // document and the visible Project roots (issue #1 Phase 7).
-  const projectRoots = collectProjectRoots()
+  const projectRoots = collectProjectRoots();
 
   const rawEntries: ReferenceCompletionEntry[] = state.snapshots
-    .flatMap(candidate => candidate.definitions)
-    .map(definition => ({
+    .flatMap((candidate) => candidate.definitions)
+    .map((definition) => ({
       key: definition.key,
       family: definition.family,
       title: definition.title,
-      documentPath: definition.documentPath
-    }))
-  const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots)
+      documentPath: definition.documentPath,
+    }));
+  const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots);
 
   if (currentEditor === null) {
-    return
+    return;
   }
 
   // The main-process reference provider owns the live buffer overlay. Do not
   // extract a parallel snapshot from the renderer: that would let an editor
   // pane diverge from the authority used by citing and rename operations.
-  const liveSnapshot = state.snapshots.find(candidate => candidate.documentPath === props.file.path)
+  const liveSnapshot = state.snapshots.find(
+    (candidate) => candidate.documentPath === props.file.path,
+  );
   if (liveSnapshot === undefined) {
-    currentEditor.setCompletionDatabase('references', entries)
-    return
+    currentEditor.setCompletionDatabase("references", entries);
+    return;
   }
-  const workspace = state.snapshots
-  currentEditor.setWorkspaceReferences({
-    snapshot: liveSnapshot,
-    workspaceOccurrences: workspace.flatMap(candidate => candidate.occurrences),
-    resolutions: state.resolutions,
-    projectRoots
-  }, entries)
+  const workspace = state.snapshots;
+  currentEditor.setWorkspaceReferences(
+    {
+      snapshot: liveSnapshot,
+      workspaceOccurrences: workspace.flatMap((candidate) => candidate.occurrences),
+      resolutions: state.resolutions,
+      projectRoots,
+    },
+    entries,
+  );
 }
 
 /**
@@ -1527,16 +1682,24 @@ async function updateReferenceEntries (): Promise<void> {
  *
  * @return  {string}                            The user-facing message
  */
-function describeRenameRejection (reason: ReferenceRenameRejection): string {
+function describeRenameRejection(reason: ReferenceRenameRejection): string {
   switch (reason.kind) {
-    case 'malformed-key':
-      return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey)
-    case 'family-changed':
-      return trans('Cannot rename: the reference type cannot change from "%s:" to "%s:".', reason.oldFamily, reason.newFamily)
-    case 'collision':
-      return trans('Cannot rename: %s is already defined in %s.', reason.newKey, reason.definitionPaths.join(', '))
-    case 'unknown-key':
-      return trans('Cannot rename: %s is not defined anywhere in this workspace.', reason.oldKey)
+    case "malformed-key":
+      return trans('Cannot rename: "%s" is not a valid reference key.', reason.newKey);
+    case "family-changed":
+      return trans(
+        'Cannot rename: the reference type cannot change from "%s:" to "%s:".',
+        reason.oldFamily,
+        reason.newFamily,
+      );
+    case "collision":
+      return trans(
+        "Cannot rename: %s is already defined in %s.",
+        reason.newKey,
+        reason.definitionPaths.join(", "),
+      );
+    case "unknown-key":
+      return trans("Cannot rename: %s is not defined anywhere in this workspace.", reason.oldKey);
   }
 }
 
@@ -1547,33 +1710,37 @@ function describeRenameRejection (reason: ReferenceRenameRejection): string {
  *
  * @param   {ReferenceKeyEditPromptIntent}  intent  The prompt intent
  */
-function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
-  const view = currentEditor?.instance
+function promptWorkspaceRename(intent: ReferenceKeyEditPromptIntent): void {
+  const view = currentEditor?.instance;
   if (view === undefined || intent.documentPath !== props.file.path) {
-    return
+    return;
   }
 
-  const coords = view.coordsAtPos(Math.min(intent.range.from, view.state.doc.length))
+  const coords = view.coordsAtPos(Math.min(intent.range.from, view.state.doc.length));
   const items: AnyMenuItem[] = [
     {
       label: trans('Rename "%s" to "%s" across the workspace…', intent.oldKey, intent.newKey),
-      id: 'apply-workspace-rename',
-      type: 'normal',
+      id: "apply-workspace-rename",
+      type: "normal",
       action: () => {
         // A failed rename protocol run surfaces through the recoverable
         // boundary (review B8): one closable error toast, never a silent
         // console-only line.
-        void runRecoverably(async () => { await runWorkspaceRename(intent) }, trans('Workspace rename'))
-      }
+        void runRecoverably(async () => {
+          await runWorkspaceRename(intent);
+        }, trans("Workspace rename"));
+      },
     },
     {
-      label: trans('Keep this edit only'),
-      id: 'decline-workspace-rename',
-      type: 'normal',
-      action: () => { /* Declining does nothing further */ }
-    }
-  ]
-  showPopupMenu({ x: coords?.left ?? 0, y: coords?.bottom ?? 0 }, items)
+      label: trans("Keep this edit only"),
+      id: "decline-workspace-rename",
+      type: "normal",
+      action: () => {
+        /* Declining does nothing further */
+      },
+    },
+  ];
+  showPopupMenu({ x: coords?.left ?? 0, y: coords?.bottom ?? 0 }, items);
 }
 
 /**
@@ -1583,12 +1750,12 @@ function promptWorkspaceRename (intent: ReferenceKeyEditPromptIntent): void {
  * Apply commits, Cancel restores the authored local edit.
  */
 interface RenamePreviewPrompt {
-  intent: ReferenceKeyEditPromptIntent
-  edit: WorkspaceReferenceEdit
-  files: RenamePreviewFileSummary[]
+  intent: ReferenceKeyEditPromptIntent;
+  edit: WorkspaceReferenceEdit;
+  files: RenamePreviewFileSummary[];
 }
 
-const renamePreviewPrompt = ref<RenamePreviewPrompt|undefined>(undefined)
+const renamePreviewPrompt = ref<RenamePreviewPrompt | undefined>(undefined);
 
 /**
  * Runs the confirmed workspace rename protocol up to the PREVIEW (issue #1,
@@ -1600,26 +1767,26 @@ const renamePreviewPrompt = ref<RenamePreviewPrompt|undefined>(undefined)
  *
  * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
  */
-async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promise<void> {
-  const view = currentEditor?.instance
+async function runWorkspaceRename(intent: ReferenceKeyEditPromptIntent): Promise<void> {
+  const view = currentEditor?.instance;
   if (view === undefined) {
-    return
+    return;
   }
 
   // Withdraw the local definition edit so the previewed rename computes
   // and applies the complete, consistent workspace edit set.
   view.dispatch({
-    changes: { from: intent.range.from, to: intent.range.to, insert: '#' + intent.oldKey }
-  })
+    changes: { from: intent.range.from, to: intent.range.to, insert: "#" + intent.oldKey },
+  });
 
-  const preview: ReferenceRenamePreview = await ipcRenderer.invoke('application', {
-    command: 'preview-reference-rename',
-    payload: { oldKey: intent.oldKey, newKey: intent.newKey }
-  })
+  const preview: ReferenceRenamePreview = await ipcRenderer.invoke("application", {
+    command: "preview-reference-rename",
+    payload: { oldKey: intent.oldKey, newKey: intent.newKey },
+  });
 
-  if (preview.status === 'rejected') {
-    showToast(describeRenameRejection(preview.reason), 'error')
-    return
+  if (preview.status === "rejected") {
+    showToast(describeRenameRejection(preview.reason), "error");
+    return;
   }
 
   // The per-file summary is built over the same merged workspace state the
@@ -1627,18 +1794,18 @@ async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promis
   // previewSource/clusterRaw context the dialog shows).
   const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
-  )
-  if (outcome.status === 'failed') {
-    return // The boundary surfaced the closable toast; the withdrawal stays.
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
+  );
+  if (outcome.status === "failed") {
+    return; // The boundary surfaced the closable toast; the withdrawal stays.
   }
 
   renamePreviewPrompt.value = {
     intent,
     edit: preview.edit,
-    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey)
-  }
+    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey),
+  };
 }
 
 /**
@@ -1646,19 +1813,19 @@ async function runWorkspaceRename (intent: ReferenceKeyEditPromptIntent): Promis
  * and the user's authored key edit is restored so declining here equals
  * declining the original prompt (the diagnostics flag the stale uses).
  */
-function cancelWorkspaceRename (): void {
-  const prompt = renamePreviewPrompt.value
-  renamePreviewPrompt.value = undefined
-  const view = currentEditor?.instance
+function cancelWorkspaceRename(): void {
+  const prompt = renamePreviewPrompt.value;
+  renamePreviewPrompt.value = undefined;
+  const view = currentEditor?.instance;
   if (prompt === undefined || view === undefined) {
-    return
+    return;
   }
 
-  const { intent } = prompt
-  const from = intent.range.from
-  const to = from + ('#' + intent.oldKey).length
-  if (view.state.doc.sliceString(from, to) === '#' + intent.oldKey) {
-    view.dispatch({ changes: { from, to, insert: '#' + intent.newKey } })
+  const { intent } = prompt;
+  const from = intent.range.from;
+  const to = from + ("#" + intent.oldKey).length;
+  if (view.state.doc.sliceString(from, to) === "#" + intent.oldKey) {
+    view.dispatch({ changes: { from, to, insert: "#" + intent.newKey } });
   }
 }
 
@@ -1670,44 +1837,47 @@ function cancelWorkspaceRename (): void {
  * before the command returns; every renderer receives the resulting collab
  * update. Conflicts surface as closable toasts.
  */
-async function applyWorkspaceRename (): Promise<void> {
-  const prompt = renamePreviewPrompt.value
-  renamePreviewPrompt.value = undefined
-  const view = currentEditor?.instance
+async function applyWorkspaceRename(): Promise<void> {
+  const prompt = renamePreviewPrompt.value;
+  renamePreviewPrompt.value = undefined;
+  const view = currentEditor?.instance;
   if (prompt === undefined || view === undefined) {
-    return
+    return;
   }
-  const { intent, edit } = prompt
+  const { intent, edit } = prompt;
 
-  const outcome: CommitRenameOutcome = await ipcRenderer.invoke('application', {
-    command: 'commit-reference-rename',
-    payload: { edit }
-  })
+  const outcome: CommitRenameOutcome = await ipcRenderer.invoke("application", {
+    command: "commit-reference-rename",
+    payload: { edit },
+  });
 
-  if (outcome.status === 'conflict') {
-    showToast(trans(
-      'Rename aborted: %s changed concurrently. No document was modified.',
-      outcome.conflict.documentPath
-    ), 'error')
-    return
+  if (outcome.status === "conflict") {
+    showToast(
+      trans(
+        "Rename aborted: %s changed concurrently. No document was modified.",
+        outcome.conflict.documentPath,
+      ),
+      "error",
+    );
+    return;
   }
 
   showToast(
     trans(
-      'Renamed %s to %s across %s documents.',
+      "Renamed %s to %s across %s documents.",
       intent.oldKey,
       intent.newKey,
-      Object.keys(edit.expectedSourceHashes).length
+      Object.keys(edit.expectedSourceHashes).length,
     ),
-    'info',
+    "info",
     8000,
     {
-      label: trans('Undo'),
+      label: trans("Undo"),
       onAction: () => {
-        undoWorkspaceRename().catch(err => reportError('Workspace rename undo failed', err))
-      }
-    }
-  )
+        undoWorkspaceRename().catch((err) => reportError("Workspace rename undo failed", err));
+      },
+    },
+  );
 }
 
 /**
@@ -1718,112 +1888,125 @@ async function applyWorkspaceRename (): Promise<void> {
  * command returns; conflicts and a consumed record surface as closable
  * toasts.
  */
-async function undoWorkspaceRename (): Promise<void> {
-  const outcome: UndoRenameOutcome = await ipcRenderer.invoke('application', {
-    command: 'undo-reference-rename'
-  })
+async function undoWorkspaceRename(): Promise<void> {
+  const outcome: UndoRenameOutcome = await ipcRenderer.invoke("application", {
+    command: "undo-reference-rename",
+  });
 
-  if (outcome.status === 'no-pending-undo') {
-    showToast(trans('Nothing to undo: no workspace rename is pending.'), 'error')
-    return
+  if (outcome.status === "no-pending-undo") {
+    showToast(trans("Nothing to undo: no workspace rename is pending."), "error");
+    return;
   }
 
-  if (outcome.status === 'conflict') {
-    showToast(trans(
-      'Undo aborted: %s changed after the rename. No document was modified.',
-      outcome.conflict.documentPath
-    ), 'error')
-    return
+  if (outcome.status === "conflict") {
+    showToast(
+      trans(
+        "Undo aborted: %s changed after the rename. No document was modified.",
+        outcome.conflict.documentPath,
+      ),
+      "error",
+    );
+    return;
   }
 
-  showToast(trans('Workspace rename undone.'))
+  showToast(trans("Workspace rename undone."));
 }
 
-async function updateFileDatabase (): Promise<void> {
+async function updateFileDatabase(): Promise<void> {
   // Get all our files ...
-  const fileDatabase: Array<{ filename: string, displayName: string, id: string }> = []
+  const fileDatabase: Array<{ filename: string; displayName: string; id: string }> = [];
 
   // ... under the wikilink target each one is written as, and the links that
   // name no document yet
-  const linkTargets: Record<string, string> = await ipcRenderer.invoke('link-provider', { command: 'get-link-targets' })
-  const linkDatabase: Record<string, WikilinkEdge[]> = await ipcRenderer.invoke('link-provider', { command: 'get-link-database' })
+  const linkTargets: Record<string, string> = await ipcRenderer.invoke("link-provider", {
+    command: "get-link-targets",
+  });
+  const linkDatabase: Record<string, WikilinkEdge[]> = await ipcRenderer.invoke("link-provider", {
+    command: "get-link-database",
+  });
 
   for (const file of workspaceStore.descriptorMap.values()) {
-    if (file.type !== 'file') {
-      continue
+    if (file.type !== "file") {
+      continue;
     }
-    const target = linkTargets[file.path]
+    const target = linkTargets[file.path];
     if (target === undefined) {
-      continue // Not part of an indexed workspace yet
+      continue; // Not part of an indexed workspace yet
     }
-    fileDatabase.push({ filename: target, displayName: getDocumentTitle(file), id: file.id })
+    fileDatabase.push({ filename: target, displayName: getDocumentTitle(file), id: file.id });
   }
 
-  const unresolved = new Set(Object.values(linkDatabase).flat()
-    .filter(edge => edge.path === undefined)
-    .map(edge => edge.target))
+  const unresolved = new Set(
+    Object.values(linkDatabase)
+      .flat()
+      .filter((edge) => edge.path === undefined)
+      .map((edge) => edge.target),
+  );
   for (const target of unresolved) {
-    fileDatabase.push({ filename: target, displayName: target, id: '' })
+    fileDatabase.push({ filename: target, displayName: target, id: "" });
   }
 
-  currentEditor?.setCompletionDatabase('files', fileDatabase)
-  await updateWikilinkResolutions(true)
+  currentEditor?.setCompletionDatabase("files", fileDatabase);
+  await updateWikilinkResolutions(true);
 }
 
 // The requests that follow from the text of the document. Each reads the
 // whole document, so they wait until the author stops typing.
 const refreshDocumentRequests = _.debounce(() => {
-  updateWikilinkResolutions(false)
-    .catch(error => reportError('Could not resolve the wikilinks', error))
+  updateWikilinkResolutions(false).catch((error) =>
+    reportError("Could not resolve the wikilinks", error),
+  );
   if (ownsWindowActiveState()) {
-    updateTexMacroSources()
-      .catch(error => reportError('Could not refresh TeX macro sources', error))
+    updateTexMacroSources().catch((error) =>
+      reportError("Could not refresh TeX macro sources", error),
+    );
   }
-}, 200)
+}, 200);
 
 // The targets whose resolutions the editor last asked for
-let requestedWikilinkTargets = ''
+let requestedWikilinkTargets = "";
 
 /**
  * Asks the link provider how the wikilink targets of the document resolve,
  * for the wikilink chips. Without `force`, it asks only when the set of
  * targets changed; with it (the workspace changed), always.
  */
-async function updateWikilinkResolutions (force: boolean): Promise<void> {
-  const editor = currentEditor
+async function updateWikilinkResolutions(force: boolean): Promise<void> {
+  const editor = currentEditor;
   if (editor === null) {
-    return
+    return;
   }
-  const targets = wikilinkTargetsIn(editor.value)
-  const key = targets.join('\n')
+  const targets = wikilinkTargetsIn(editor.value);
+  const key = targets.join("\n");
   if (!force && key === requestedWikilinkTargets) {
-    return
+    return;
   }
-  requestedWikilinkTargets = key
-  const resolutions = await ipcRenderer.invoke('link-provider', {
-    command: 'resolve-wikilinks',
-    payload: { sourcePath: props.file.path, targets }
-  })
+  requestedWikilinkTargets = key;
+  const resolutions = await ipcRenderer.invoke("link-provider", {
+    command: "resolve-wikilinks",
+    payload: { sourcePath: props.file.path, targets },
+  });
   if (editor === currentEditor) {
-    editor.setWikilinkResolutions(new Map(Object.entries(resolutions)))
+    editor.setWikilinkResolutions(new Map(Object.entries(resolutions)));
   }
 }
 
-function maybeHighlightSearchResults (): void {
+function maybeHighlightSearchResults(): void {
   if (currentEditor === null) {
-    return
+    return;
   }
 
-  const result = globalSearchResults.value.find(r => r.documentPath === props.file.path)
+  const result = globalSearchResults.value.find((r) => r.documentPath === props.file.path);
   if (result === undefined) {
-    currentEditor.highlightRanges([])
-    return
+    currentEditor.highlightRanges([]);
+    return;
   }
 
   // The provider reports every match as offsets into the whole document.
-  currentEditor.highlightRanges(result.matches.map(match => EditorSelection.range(match.range.from, match.range.to)))
+  currentEditor.highlightRanges(
+    result.matches.map((match) => EditorSelection.range(match.range.from, match.range.to)),
+  );
 }
-
 </script>
 
 <style lang="less">

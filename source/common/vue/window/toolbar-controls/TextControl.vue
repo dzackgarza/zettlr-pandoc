@@ -57,16 +57,16 @@
  */
 
 export interface ToolbarTextControl {
-  id?: string
-  type: 'text'
-  style?: 'strong'|'emphasis'
-  align: 'left'|'center'|'right'
-  content: string|string[]
+  id?: string;
+  type: "text";
+  style?: "strong" | "emphasis";
+  align: "left" | "center" | "right";
+  content: string | string[];
   // Allow arbitrary properties that we ignore
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
-const props = defineProps<{ control: ToolbarTextControl }>()
+const props = defineProps<{ control: ToolbarTextControl }>();
 </script>
 
 <style lang="less">

@@ -77,14 +77,14 @@
  * 'Another Project', 'Outside any Project', 'This file').
  */
 
-import type { ProjectSettings } from '../../types/common/fsal'
-import { isInsideRoot } from '../util/renderer-path-polyfill'
+import type { ProjectSettings } from "../../types/common/fsal";
 import type {
   AppendAndContinuePlan,
   ProjectReferenceStatus,
   ProjectRootSpec,
-  ReferenceCompletionEntry
-} from '../../types/common/references'
+  ReferenceCompletionEntry,
+} from "../../types/common/references";
+import { isInsideRoot } from "../util/renderer-path-polyfill";
 
 /**
  * How a status-carrying completion entry may be inserted: plainly, not at
@@ -92,10 +92,10 @@ import type {
  * with an export-unit warning.
  */
 export type CompletionInsertionAffordance =
-  | { kind: 'insert' }
-  | { kind: 'disabled-another-project' }
-  | { kind: 'insert-with-append', plan: AppendAndContinuePlan }
-  | { kind: 'insert-with-export-warning' }
+  | { kind: "insert" }
+  | { kind: "disabled-another-project" }
+  | { kind: "insert-with-append"; plan: AppendAndContinuePlan }
+  | { kind: "insert-with-export-warning" };
 
 /**
  * The project-relative Unix-separator path of an in-root document.
@@ -105,8 +105,8 @@ export type CompletionInsertionAffordance =
  *
  * @return  {string}                The relative path, '/'-separated
  */
-function projectRelativePath (documentPath: string, rootPath: string): string {
-  return documentPath.slice(rootPath.length + 1).replace(/\\/g, '/')
+function projectRelativePath(documentPath: string, rootPath: string): string {
+  return documentPath.slice(rootPath.length + 1).replace(/\\/g, "/");
 }
 
 /**
@@ -117,8 +117,11 @@ function projectRelativePath (documentPath: string, rootPath: string): string {
  *
  * @return  {ProjectRootSpec|undefined}        The containing root
  */
-function containingRoot (documentPath: string, projectRoots: ProjectRootSpec[]): ProjectRootSpec|undefined {
-  return projectRoots.find(root => isInsideRoot(documentPath, root.rootPath))
+function containingRoot(
+  documentPath: string,
+  projectRoots: ProjectRootSpec[],
+): ProjectRootSpec | undefined {
+  return projectRoots.find((root) => isInsideRoot(documentPath, root.rootPath));
 }
 
 /**
@@ -131,36 +134,36 @@ function containingRoot (documentPath: string, projectRoots: ProjectRootSpec[]):
  *
  * @return  {ProjectReferenceStatus}                      The membership status
  */
-export function computeProjectReferenceStatus (
+export function computeProjectReferenceStatus(
   definitionPath: string,
   activeDocumentPath: string,
-  projectRoots: ProjectRootSpec[]
+  projectRoots: ProjectRootSpec[],
 ): ProjectReferenceStatus {
   if (definitionPath === activeDocumentPath) {
-    return 'same-file' // Always wins, regardless of Project membership.
+    return "same-file"; // Always wins, regardless of Project membership.
   }
 
   // The ACTIVE Project is the root containing the active document — even
   // when the active document itself is omitted from the root's files list.
-  const activeRoot = containingRoot(activeDocumentPath, projectRoots)
-  const definitionRoot = containingRoot(definitionPath, projectRoots)
+  const activeRoot = containingRoot(activeDocumentPath, projectRoots);
+  const definitionRoot = containingRoot(definitionPath, projectRoots);
 
   if (activeRoot === undefined) {
     // Standalone active document: any Project-rooted target is foreign.
-    return definitionRoot === undefined ? 'standalone' : 'another-project'
+    return definitionRoot === undefined ? "standalone" : "another-project";
   }
 
   if (definitionRoot === undefined) {
-    return 'standalone'
+    return "standalone";
   }
 
   if (definitionRoot.rootPath !== activeRoot.rootPath) {
-    return 'another-project'
+    return "another-project";
   }
 
   return activeRoot.files.includes(projectRelativePath(definitionPath, activeRoot.rootPath))
-    ? 'in-active-project'
-    : 'omitted-from-active-project'
+    ? "in-active-project"
+    : "omitted-from-active-project";
 }
 
 /**
@@ -174,31 +177,37 @@ export function computeProjectReferenceStatus (
  *
  * @return  {AppendAndContinuePlan|null}              The plan, or null
  */
-export function computeAppendAndContinuePlan (
+export function computeAppendAndContinuePlan(
   targetDocumentPath: string,
   activeDocumentPath: string,
-  projectRoots: ProjectRootSpec[]
-): AppendAndContinuePlan|null {
-  const status = computeProjectReferenceStatus(targetDocumentPath, activeDocumentPath, projectRoots)
-  if (status !== 'omitted-from-active-project') {
-    return null // Included, other-Project, standalone, or same-file target.
+  projectRoots: ProjectRootSpec[],
+): AppendAndContinuePlan | null {
+  const status = computeProjectReferenceStatus(
+    targetDocumentPath,
+    activeDocumentPath,
+    projectRoots,
+  );
+  if (status !== "omitted-from-active-project") {
+    return null; // Included, other-Project, standalone, or same-file target.
   }
 
   // The status above guarantees an active root exists and contains the target.
-  const activeRoot = containingRoot(activeDocumentPath, projectRoots)
+  const activeRoot = containingRoot(activeDocumentPath, projectRoots);
   if (activeRoot === undefined) {
-    throw new Error(`No active Project root contains ${activeDocumentPath} despite an omitted target status`)
+    throw new Error(
+      `No active Project root contains ${activeDocumentPath} despite an omitted target status`,
+    );
   }
 
-  const appendFiles: string[] = []
-  const activeRelative = projectRelativePath(activeDocumentPath, activeRoot.rootPath)
+  const appendFiles: string[] = [];
+  const activeRelative = projectRelativePath(activeDocumentPath, activeRoot.rootPath);
   if (!activeRoot.files.includes(activeRelative)) {
     // The omitted SOURCE document comes first, then the target.
-    appendFiles.push(activeRelative)
+    appendFiles.push(activeRelative);
   }
-  appendFiles.push(projectRelativePath(targetDocumentPath, activeRoot.rootPath))
+  appendFiles.push(projectRelativePath(targetDocumentPath, activeRoot.rootPath));
 
-  return { rootPath: activeRoot.rootPath, appendFiles }
+  return { rootPath: activeRoot.rootPath, appendFiles };
 }
 
 /**
@@ -211,14 +220,14 @@ export function computeAppendAndContinuePlan (
  *
  * @return  {ProjectSettings}                  The new settings (input unmutated)
  */
-export function applyAppendPlan (
+export function applyAppendPlan(
   settings: ProjectSettings,
-  plan: AppendAndContinuePlan
+  plan: AppendAndContinuePlan,
 ): ProjectSettings {
   return {
     ...settings,
-    files: [ ...settings.files, ...plan.appendFiles ]
-  }
+    files: [...settings.files, ...plan.appendFiles],
+  };
 }
 
 /**
@@ -230,9 +239,9 @@ export function applyAppendPlan (
  *
  * @return  {string}                        The toast message
  */
-export function appendToastMessage (plan: AppendAndContinuePlan): string {
-  const names = plan.appendFiles.join(' and ')
-  return `Added ${names} to this Project's file list.`
+export function appendToastMessage(plan: AppendAndContinuePlan): string {
+  const names = plan.appendFiles.join(" and ");
+  return `Added ${names} to this Project's file list.`;
 }
 
 /**
@@ -245,26 +254,36 @@ export function appendToastMessage (plan: AppendAndContinuePlan): string {
  *
  * @return  {ReferenceCompletionEntry[]}                       Annotated entries
  */
-export function annotateCompletionEntries (
+export function annotateCompletionEntries(
   entries: ReferenceCompletionEntry[],
   activeDocumentPath: string,
-  projectRoots: ProjectRootSpec[]
+  projectRoots: ProjectRootSpec[],
 ): ReferenceCompletionEntry[] {
-  return entries.map(entry => {
-    const projectStatus = computeProjectReferenceStatus(entry.documentPath, activeDocumentPath, projectRoots)
-    let appendPlan
-    if (projectStatus === 'omitted-from-active-project') {
-      const plan = computeAppendAndContinuePlan(entry.documentPath, activeDocumentPath, projectRoots)
+  return entries.map((entry) => {
+    const projectStatus = computeProjectReferenceStatus(
+      entry.documentPath,
+      activeDocumentPath,
+      projectRoots,
+    );
+    let appendPlan;
+    if (projectStatus === "omitted-from-active-project") {
+      const plan = computeAppendAndContinuePlan(
+        entry.documentPath,
+        activeDocumentPath,
+        projectRoots,
+      );
       if (plan === null) {
         // Both functions derive the status from the same pure inputs, so an
         // omitted entry without a plan is a status divergence — a bug, not a
         // presentable state (review B13: fail loud, never silently degrade).
-        throw new Error(`No append-and-continue plan for the omitted entry ${entry.key} (${entry.documentPath})`)
+        throw new Error(
+          `No append-and-continue plan for the omitted entry ${entry.key} (${entry.documentPath})`,
+        );
       }
-      appendPlan = plan
+      appendPlan = plan;
     }
-    return { ...entry, projectStatus, appendPlan }
-  })
+    return { ...entry, projectStatus, appendPlan };
+  });
 }
 
 /**
@@ -276,22 +295,22 @@ export function annotateCompletionEntries (
  *
  * @return  {CompletionInsertionAffordance}                  The affordance
  */
-export function completionAffordanceFor (
-  status: ProjectReferenceStatus|undefined,
-  appendPlan?: AppendAndContinuePlan
+export function completionAffordanceFor(
+  status: ProjectReferenceStatus | undefined,
+  appendPlan?: AppendAndContinuePlan,
 ): CompletionInsertionAffordance {
-  if (status === 'another-project') {
-    return { kind: 'disabled-another-project' }
+  if (status === "another-project") {
+    return { kind: "disabled-another-project" };
   }
-  if (status === 'omitted-from-active-project' && appendPlan !== undefined) {
-    return { kind: 'insert-with-append', plan: appendPlan }
+  if (status === "omitted-from-active-project" && appendPlan !== undefined) {
+    return { kind: "insert-with-append", plan: appendPlan };
   }
-  if (status === 'standalone') {
-    return { kind: 'insert-with-export-warning' }
+  if (status === "standalone") {
+    return { kind: "insert-with-export-warning" };
   }
   // undefined (Phase-3 compatibility), 'same-file', 'in-active-project', and
   // omitted entries carrying no mechanical append plan all insert plainly.
-  return { kind: 'insert' }
+  return { kind: "insert" };
 }
 
 /**
@@ -302,17 +321,17 @@ export function completionAffordanceFor (
  *
  * @return  {string}                           The display wording
  */
-export function projectStatusDisplayName (status: ProjectReferenceStatus): string {
+export function projectStatusDisplayName(status: ProjectReferenceStatus): string {
   switch (status) {
-    case 'same-file':
-      return 'This file'
-    case 'in-active-project':
-      return 'In current Project'
-    case 'omitted-from-active-project':
-      return 'Not included in current Project'
-    case 'another-project':
-      return 'Another Project'
-    case 'standalone':
-      return 'Outside any Project'
+    case "same-file":
+      return "This file";
+    case "in-active-project":
+      return "In current Project";
+    case "omitted-from-active-project":
+      return "Not included in current Project";
+    case "another-project":
+      return "Another Project";
+    case "standalone":
+      return "Outside any Project";
   }
 }

@@ -4,2776 +4,2860 @@
  */
 
 export interface paths {
-    "/help": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Serve authoring help documentation
-         * @description Returns authoring documentation from HELP.md in Markdown or JSON format.
-         */
-        get: operations["getHelp"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/help": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/ping": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Protocol version, instance ID, and PID */
-        get: operations["ping"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Serve authoring help documentation
+     * @description Returns authoring documentation from HELP.md in Markdown or JSON format.
+     */
+    get: operations["getHelp"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/ping": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Report supported Agent API capabilities and formats */
-        get: operations["getCapabilities"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Protocol version, instance ID, and PID */
+    get: operations["ping"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/context": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** High-level overview of active editor views and open documents */
-        get: operations["getContext"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Report supported Agent API capabilities and formats */
+    get: operations["getCapabilities"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/views": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List active editor views */
-        get: operations["listViews"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** High-level overview of active editor views and open documents */
+    get: operations["getContext"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/views": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/workspace/files": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List every file across the configured workspaces
-         * @description The agent's orientation entry point — all files the editor can see, flat, open or not. Files here can be read and reviewed immediately.
-         */
-        get: operations["listWorkspaceFiles"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List active editor views */
+    get: operations["listViews"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspace/files": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/workspace/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find text across every file in the workspaces
-         * @description The editor's find-in-files over every file in the open workspaces. Open documents are searched in their live buffer. Text is literal unless regex is true. Each file carries the documentId that the document routes take.
-         */
-        get: operations["searchWorkspace"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List every file across the configured workspaces
+     * @description The agent's orientation entry point — all files the editor can see, flat, open or not. Files here can be read and reviewed immediately.
+     */
+    get: operations["listWorkspaceFiles"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspace/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/workspaces": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List configured workspaces or documents within a workspace */
-        get: operations["listWorkspaces"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Find text across every file in the workspaces
+     * @description The editor's find-in-files over every file in the open workspaces. Open documents are searched in their live buffer. Text is literal unless regex is true. Each file carries the documentId that the document routes take.
+     */
+    get: operations["searchWorkspace"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/documents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List open or loaded documents */
-        get: operations["listDocuments"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List configured workspaces or documents within a workspace */
+    get: operations["listWorkspaces"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/documents/{documentId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Document metadata and optional text content
-         * @description Returns document metadata by default. Set includeContent=true to read current or pre-review text with an ETag revision header.
-         */
-        get: operations["getDocument"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List open or loaded documents */
+    get: operations["listDocuments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/documents/{documentId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/documents/{documentId}/focus": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Focus or create an editor view for the document */
-        post: operations["focusDocument"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Document metadata and optional text content
+     * @description Returns document metadata by default. Set includeContent=true to read current or pre-review text with an ETag revision header.
+     */
+    get: operations["getDocument"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/documents/{documentId}/focus": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/documents/{documentId}/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Literal or regex search in one document, open or closed
-         * @description Searches the text that getDocument reads: the live buffer of an open document, or the file of a closed one. To search every file, use searchWorkspace.
-         */
-        post: operations["searchDocument"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Focus or create an editor view for the document */
+    post: operations["focusDocument"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/documents/{documentId}/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/documents/{documentId}/proposals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Submit edits against an open document */
-        post: operations["submitProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Literal or regex search in one document, open or closed
+     * @description Searches the text that getDocument reads: the live buffer of an open document, or the file of a closed one. To search every file, use searchWorkspace.
+     */
+    post: operations["searchDocument"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/documents/{documentId}/proposals": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/review-submissions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Submit a review by file path
-         * @description Resolve a workspace file, verify an optional revision hash, submit ordered claims or one patch as an all-or-nothing change, and focus the document unless disabled.
-         */
-        post: operations["submitReview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Submit edits against an open document */
+    post: operations["submitProposal"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/review-submissions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/annotations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List annotations across the workspace or for one document */
-        get: operations["listAnnotations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Submit a review by file path
+     * @description Resolve a workspace file, verify an optional revision hash, submit ordered claims or one patch as an all-or-nothing change, and focus the document unless disabled.
+     */
+    post: operations["submitReview"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/annotations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/annotations/{annotationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a single annotation and its conversation thread */
-        get: operations["getAnnotation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List annotations across the workspace or for one document */
+    get: operations["listAnnotations"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/annotations/{annotationId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/annotations/{annotationId}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Append a message to an annotation conversation thread */
-        post: operations["addAnnotationMessage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Get a single annotation and its conversation thread */
+    get: operations["getAnnotation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/annotations/{annotationId}/messages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List reviews for open and closed workspace files */
-        get: operations["listReviews"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Append a message to an annotation conversation thread */
+    post: operations["addAnnotationMessage"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews/{reviewId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Inspect review details, its diff, pending changes, or proposals */
-        get: operations["getReview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List reviews for open and closed workspace files */
+    get: operations["listReviews"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews/{reviewId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews/{reviewId}/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add a comment to a review */
-        post: operations["addReviewComment"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Inspect review details, its diff, pending changes, or proposals */
+    get: operations["getReview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews/{reviewId}/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews/{reviewId}/reapply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reapply an invalidated review to the current text
-         * @description Maps the frozen suggestions of an invalidated review onto the current text (the open buffer, or the file on disk). A suggestion whose text is still there is live again; the rest are withdrawn and listed in withdrawnChunkIds.
-         */
-        post: operations["reapplyReview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Add a comment to a review */
+    post: operations["addReviewComment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews/{reviewId}/reapply": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews/{reviewId}/discard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Discard an invalidated review
-         * @description Removes an invalidated review and its frozen suggestions. The file keeps its current text. Discard a review whose changes are already in the file, or no longer apply.
-         */
-        post: operations["discardReview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Reapply an invalidated review to the current text
+     * @description Maps the frozen suggestions of an invalidated review onto the current text (the open buffer, or the file on disk). A suggestion whose text is still there is live again; the rest are withdrawn and listed in withdrawnChunkIds.
+     */
+    post: operations["reapplyReview"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews/{reviewId}/discard": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/proposals/{packetId}/retract": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Retract the newest untouched proposal */
-        post: operations["retractProposal"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Discard an invalidated review
+     * @description Removes an invalidated review and its frozen suggestions. The file keeps its current text. Discard a review whose changes are already in the file, or no longer apply.
+     */
+    post: operations["discardReview"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/proposals/{packetId}/retract": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/reviews/{reviewId}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Wait for review changes after a generation */
-        get: operations["waitForReviewEvents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Retract the newest untouched proposal */
+    post: operations["retractProposal"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/reviews/{reviewId}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/citations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Query citation databases, item lists, or specific items */
-        get: operations["queryCitations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Wait for review changes after a generation */
+    get: operations["waitForReviewEvents"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/citations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/citations/render": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Render formatted inline citations or bibliographies */
-        post: operations["renderCitations"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Query citation databases, item lists, or specific items */
+    get: operations["queryCitations"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/citations/render": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/macros": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Inspect configured mathematical macros */
-        get: operations["listMacros"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Render formatted inline citations or bibliographies */
+    post: operations["renderCitations"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/macros": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/figures": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List, search, or read figure files */
-        get: operations["queryFigures"];
-        put?: never;
-        /** Create or update a figure file */
-        post: operations["saveFigure"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Inspect configured mathematical macros */
+    get: operations["listMacros"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/figures": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/lint": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Lint documents by editor/workspace scope
-         * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once; documents never linted are listed under pending while the background linter works through them.
-         */
-        get: operations["lintDocuments"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List, search, or read figure files */
+    get: operations["queryFigures"];
+    put?: never;
+    /** Create or update a figure file */
+    post: operations["saveFigure"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/lint": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/zotero/items": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Search the Zotero library and get citation keys
-         * @description Searches the titles, creators and years of the top-level items in the Zotero library. Each result has its Better BibTeX citation key and whether the editor can cite it now. Search before an import: a work that is already in the library needs no import.
-         */
-        get: operations["searchZoteroItems"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Lint documents by editor/workspace scope
+     * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once; documents never linted are listed under pending while the background linter works through them.
+     */
+    get: operations["lintDocuments"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/zotero/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/zotero/imports/identifier": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add a work to Zotero by arXiv ID, DOI, ISBN or PubMed ID
-         * @description Zotero gets the metadata of the work from the registry of the identifier, and the full text when it can. The response has the citation key of each new item. Prefer this operation when the work has an identifier.
-         */
-        post: operations["importZoteroIdentifier"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Search the Zotero library and get citation keys
+     * @description Searches the titles, creators and years of the top-level items in the Zotero library. Each result has its Better BibTeX citation key and whether the editor can cite it now. Search before an import: a work that is already in the library needs no import.
+     */
+    get: operations["searchZoteroItems"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/zotero/imports/identifier": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/zotero/imports/url": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add a work to Zotero from a URL
-         * @description Zotero identifies the work at the URL with its own translators, identifier discovery and PDF recognition, and stores the full text it gets: the PDF itself when the URL is a PDF. A work that is already in the library is returned with existing true. When Zotero cannot identify the source, the 422 ZOTERO_SOURCE_NOT_IDENTIFIED error has a remediation: find the work at one of its sources and import that. Only when none has the work, send the same URL again with fallbackMetadata; the item then has the tag metadata:unresolved and is citable at once.
-         */
-        post: operations["importZoteroUrl"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Add a work to Zotero by arXiv ID, DOI, ISBN or PubMed ID
+     * @description Zotero gets the metadata of the work from the registry of the identifier, and the full text when it can. The response has the citation key of each new item. Prefer this operation when the work has an identifier.
+     */
+    post: operations["importZoteroIdentifier"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/zotero/imports/url": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    get?: never;
+    put?: never;
+    /**
+     * Add a work to Zotero from a URL
+     * @description Zotero identifies the work at the URL with its own translators, identifier discovery and PDF recognition, and stores the full text it gets: the PDF itself when the URL is a PDF. A work that is already in the library is returned with existing true. When Zotero cannot identify the source, the 422 ZOTERO_SOURCE_NOT_IDENTIFIED error has a remediation: find the work at one of its sources and import that. Only when none has the work, send the same URL again with fallbackMetadata; the item then has the tag metadata:unresolved and is citable at once.
+     */
+    post: operations["importZoteroUrl"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        DocumentRevision: {
-            sha256: string;
-        };
-        /**
-         * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
-         * @enum {string}
-         */
-        ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
-        ReviewSummary: {
-            reviewId: string;
-            state: components["schemas"]["ReviewState"];
-            generation: number;
-            /** @description Suggestions not yet accepted or rejected. */
-            unresolvedChunks: number;
-            packetCount: number;
-        };
-        ReviewComment: {
-            text: string;
-            createdAt: string;
-        };
-        EditorViewSummary: {
-            viewId: string;
-            windowId: string;
-            leafId: string;
-            focused: boolean;
-            active: boolean;
-        };
-        DocumentSummary: {
-            documentId: string;
-            uri: string;
-            path: string;
-            name: string;
-            /** @enum {string} */
-            type: "markdown" | "code";
-            dirty: boolean;
-            revision: components["schemas"]["DocumentRevision"];
-            lineCount: number;
-            byteLength: number;
-            views: components["schemas"]["EditorViewSummary"][];
-            /**
-             * @description The system that renders this document's cross-references, which fixes the ID syntax: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). GET /help shows both.
-             * @enum {string}
-             */
-            crossReferences?: "quarto" | "pandoc-crossref";
-            review?: components["schemas"]["ReviewSummary"];
-        };
-        EditorContext: {
-            focusedView?: components["schemas"]["FocusedViewSummary"];
-            focusedDocument?: components["schemas"]["DocumentSummary"];
-            openDocuments: components["schemas"]["DocumentSummary"][];
-        };
-        ReadDocumentResponse: {
-            documentId: string;
-            /** @description Whether the document is currently open in the editor. */
-            attached: boolean;
-            /** @enum {string} */
-            side: "working" | "reference";
-            revision: components["schemas"]["DocumentRevision"];
-            reviewGeneration: number;
-            range: {
-                startLine: number;
-                endLine: number;
-                totalLines: number;
-            };
-            content: string;
-            truncated: boolean;
-        };
-        /** @description One reviewable change: exactly one unified-diff hunk, justified by its own description. The reviewer keeps or undoes each claim on its own. An edit that repeats at several places in the document is several claims, each with its own description. */
-        ProposalClaim: {
-            /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
-            description: string;
-            /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. The change must be exactly one hunk when diffed with three lines of context (as `diff -u` and `git diff` do): changes more than six unchanged lines apart are separate hunks, and a patch whose change is two or more hunks is CLAIM_NOT_ATOMIC. */
-            patch: string;
-            /** @description Open annotation IDs this claim answers. If any ID is missing, resolved, or no longer points to text, the submission is rejected. Successful proposals appear on the addressed annotations. */
-            addressesAnnotationIds?: string[];
-        };
-        SubmitProposalRequest: {
-            /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
-            baselineSha256: string;
-            /** @description Zero when no review exists; otherwise the generation returned by the most recent review or chunk read. */
-            expectedReviewGeneration: number;
-            /** @description Client-chosen unique string. Replaying it returns the original packet rather than applying the patch twice; reusing it for a different request is refused as IDEMPOTENCY_CONFLICT. */
-            clientRequestId: string;
-            /** @description Claims are applied in order against the supplied revision. All claims succeed or none are applied. Each claim becomes a separate review proposal that the reviewer can decide independently. */
-            claims: components["schemas"]["ProposalClaim"][];
-        };
-        SubmitProposalResponse: {
-            /** @description ID of the newest proposal in this submission; it is the last element of packetIds. */
-            packetId: string;
-            /** @description One proposal ID per claim, in claim order. */
-            packetIds: string[];
-            reviewId: string;
-            documentId: string;
-            documentRevision: components["schemas"]["DocumentRevision"];
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            state: components["schemas"]["ReviewState"];
-        };
-        AgentError: {
-            /** @enum {string} */
-            code: "APP_NOT_RUNNING" | "PROTOCOL_MISMATCH" | "NO_FOCUSED_DOCUMENT" | "DOCUMENT_NOT_FOUND" | "DOCUMENT_CLOSED" | "REVISION_MISMATCH" | "REVIEW_GENERATION_MISMATCH" | "REVIEW_NOT_FOUND" | "REVIEW_INVALIDATED" | "REVIEW_NOT_INVALIDATED" | "PATCH_INVALID" | "PATCH_NOT_APPLICABLE" | "CLAIM_NOT_ATOMIC" | "PACKET_NOT_RETRACTABLE" | "CHUNK_NOT_FOUND" | "ANNOTATION_NOT_FOUND" | "ANNOTATION_GENERATION_MISMATCH" | "ANNOTATION_RESOLVED" | "ANNOTATION_ORPHANED" | "ANNOTATION_OWNER_ONLY" | "IDEMPOTENCY_CONFLICT" | "REQUEST_TOO_LARGE" | "REQUEST_BODY_TIMEOUT" | "SEARCH_TIMEOUT" | "METHOD_NOT_FOUND" | "INVALID_PARAMS" | "PERSISTENCE_FAILED" | "INTERNAL_ERROR" | "CITATION_DATABASE_NOT_LOADED" | "CITATION_NOT_FOUND" | "FIGURE_NOT_FOUND" | "FIGURE_ALREADY_EXISTS" | "DUPLICATE_CLAIM_DESCRIPTION" | "BASELINE_MISMATCH" | "ZOTERO_UNAVAILABLE" | "ZOTERO_SOURCE_NOT_IDENTIFIED" | "ZOTERO_REQUEST_FAILED";
-            message: string;
-            documentId?: string;
-            expected?: components["schemas"]["DocumentRevision"];
-            actual?: components["schemas"]["DocumentRevision"];
-            reviewId?: string;
-            /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
-            reviewGeneration?: number;
-            /** @description DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair of claims whose normalized descriptions are too similar. */
-            conflictingClaimIndices?: number[];
-            /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
-            descriptionSimilarity?: number;
-            remediation?: components["schemas"]["ZoteroSourceRemediation"];
-        };
-        AgentErrorResponse: {
-            error: components["schemas"]["AgentError"];
-        };
-        AgentEvent: {
-            /** @enum {string} */
-            event: "review.started" | "review.changed" | "review.resolved" | "review.commented" | "review.cleared" | "review.invalidated" | "review.completed" | "review.discarded" | "review.sidecar-error" | "proposal.applied" | "proposal.retracted" | "annotation.created" | "annotation.message-added" | "annotation.target-changed" | "annotation.orphaned" | "annotation.resolved" | "annotation.reopened" | "annotation.deleted" | "annotation.proposal-linked";
-            timestamp: string;
-            reviewId?: string;
-            documentId?: string;
-            documentRevision?: components["schemas"]["DocumentRevision"];
-            reviewGeneration?: number;
-            unresolvedChunks?: number;
-            /** @description annotation.*: the annotation the event is about. */
-            annotationId?: string;
-            /** @description annotation.*: annotation version after the event. */
-            annotationGeneration?: number;
-            /** @description proposal.applied and proposal.retracted: proposal ID affected by the event. */
-            packetId?: string;
-            /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
-            chunkId?: string;
-            /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
-            comment?: string;
-            /** @description Error detail for review.sidecar-error events. */
-            message?: string;
-            /** @description Server-generated event sequence identifier. */
-            id?: string;
-        };
-        ReviewEventsResponse: {
-            reviewId: string;
-            status?: components["schemas"]["ReviewSummary"];
-            events?: components["schemas"]["AgentEvent"][];
-            /** @description True if the request reached its timeout before a status change. */
-            timedOut?: boolean;
-        };
-        FocusedViewSummary: {
-            viewId: string;
-            windowId: string;
-            leafId: string;
-            documentId: string;
-        };
-        ViewSummary: {
-            viewId: string;
-            windowId: string;
-            leafId: string;
-            documentId?: string;
-            focused: boolean;
-            active: boolean;
-            documents?: {
-                documentId?: string;
-                path: string;
-            }[];
-        };
-        ViewsResponse: {
-            views: components["schemas"]["ViewSummary"][];
-        };
-        WorkspaceSummary: {
-            workspaceId: string;
-            path: string;
-        };
-        WorkspacesResponse: {
-            workspaces: components["schemas"]["WorkspaceSummary"][];
-        };
-        LoadedWorkspaceDocumentSummary: {
-            documentId: string;
-            workspaceId: string;
-            uri: string;
-            path: string;
-            name: string;
-            /** @enum {boolean} */
-            loaded: true;
-            /** @enum {string} */
-            type: "markdown" | "code";
-            dirty: boolean;
-            revision: components["schemas"]["DocumentRevision"];
-            lineCount: number;
-            byteLength: number;
-            views: components["schemas"]["EditorViewSummary"][];
-            review?: components["schemas"]["ReviewSummary"];
-        };
-        UnloadedWorkspaceDocumentSummary: {
-            documentId: string;
-            workspaceId: string;
-            uri: string;
-            path: string;
-            name: string;
-            /** @enum {boolean} */
-            loaded: false;
-        };
-        WorkspaceDocumentSummary: components["schemas"]["LoadedWorkspaceDocumentSummary"] | components["schemas"]["UnloadedWorkspaceDocumentSummary"];
-        FocusDocumentResponse: {
-            /** @constant */
-            focused: true;
-            documentId: string;
-        };
-        WorkspaceDocumentsResponse: {
-            workspaceId: string;
-            documents: components["schemas"]["WorkspaceDocumentSummary"][];
-        };
-        WorkspaceFileEntry: {
-            documentId: string;
-            path: string;
-            name: string;
-            workspaceId: string;
-            /** @description Whether the file is currently loaded in the editor. */
-            open: boolean;
-            /** @description How other documents link to this Markdown file: [[linkTarget]]. The shortest path suffix that names it alone. Absent for other files. */
-            linkTarget?: string;
-        };
-        WorkspaceFilesResponse: {
-            files: components["schemas"]["WorkspaceFileEntry"][];
-        };
-        WorkspaceSearchMatch: {
-            /** @description Character offsets into the file text, end exclusive. */
-            range: {
-                from: number;
-                to: number;
-            };
-            /** @description One-based line of the match start. */
-            line: number;
-            /** @description The line of the match: text before it (trimmed), the match, and text after it. */
-            preview: {
-                before: string;
-                inside: string;
-                after: string;
-            };
-        };
-        WorkspaceSearchFile: {
-            documentId: string;
-            path: string;
-            name: string;
-            /** @description The workspace that holds the file; absent for an open file outside every workspace. */
-            workspaceId?: string;
-            /** @description Whether the file is currently loaded in the editor. */
-            open: boolean;
-            matches: components["schemas"]["WorkspaceSearchMatch"][];
-        };
-        WorkspaceSearchResponse: {
-            files: components["schemas"]["WorkspaceSearchFile"][];
-            matchCount: number;
-            /** @description True when the search stopped at maxMatches; narrow the query or the globs. */
-            truncated: boolean;
-        };
-        SearchDocumentResponse: {
-            documentId: string;
-            revision: components["schemas"]["DocumentRevision"];
-            /** @description Search hits in document order. At most 1000 hits are returned; a true truncated field means more matching hits were present. */
-            hits: {
-                line: number;
-                column: number;
-                length: number;
-                contextBefore: string;
-                contextAfter: string;
-            }[];
-            truncated: boolean;
-        };
-        ReviewDetailResponse: {
-            reviewId: string;
-            state: components["schemas"]["ReviewState"];
-            generation: number;
-            /** @description Suggestions not yet accepted or rejected. */
-            unresolvedChunks: number;
-            packetCount: number;
-            /** @description Review-level comments in creation order. */
-            comments: components["schemas"]["ReviewComment"][];
-            /** @description True while the reviewed document is open. Reviews for closed files remain readable but cannot be changed until the file is reopened. */
-            attached: boolean;
-            /** @description Current document revision. Absent while the reviewed file is closed. */
-            documentRevision?: components["schemas"]["DocumentRevision"];
-        };
-        ReviewDiffResponse: {
-            reviewId: string;
-            /** @description Absent while the reviewed file is closed. */
-            documentId?: string;
-            patch: string;
-            generation: number;
-        };
-        ReviewChunksResponse: {
-            reviewId: string;
-            /** @description Absent while the reviewed file is closed. */
-            documentId?: string;
-            generation: number;
-            /** @description SHA-256 of the current text containing these changes. Use it as expectedWorkingSha256 when retracting a related proposal. Absent while the reviewed file is closed. */
-            workingSha256?: string;
-            chunks: components["schemas"]["OutstandingChunk"][];
-        };
-        ReviewPacketsResponse: {
-            reviewId: string;
-            /** @description Absent while the reviewed file is closed. */
-            documentId?: string;
-            packets: components["schemas"]["ProposalPacket"][];
-        };
-        ReapplyReviewRequest: {
-            /** @description See ReviewMutationPrecondition. Reapply and discard do not depend on the current text, so they carry no working hash. */
-            expectedReviewGeneration: number;
-        };
-        ReapplyReviewResponse: {
-            reviewId: string;
-            documentId: string;
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            /** @description The suggestions whose text the current file no longer holds. They are withdrawn; submit them again as new proposals if they still apply. */
-            withdrawnChunkIds: string[];
-            state: components["schemas"]["ReviewState"];
-        };
-        DiscardReviewResponse: {
-            reviewId: string;
-            documentId: string;
-        };
-        RetractProposalResponse: {
-            /** @constant */
-            retracted: true;
-            packetId: string;
-            reviewId: string;
-            documentId: string;
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            documentRevision: components["schemas"]["DocumentRevision"];
-        };
-        OutstandingChunk: {
-            /** @description Stable ID for this proposed change. */
-            chunkId: string;
-            /** @description Original text; empty for a pure insertion. */
-            referenceText: string;
-            /** @description Proposed text; empty for a pure deletion. */
-            workingText: string;
-            /** @description Character ranges belonging to this proposed change. Text added by the document owner is excluded. */
-            workingSpans: {
-                from: number;
-                to: number;
-            }[];
-            /** @description Proposal ID associated with this change. */
-            packetIds: string[];
-            /** @description Description of the associated proposal. */
-            descriptions: string[];
-            /** @description Reviewer's note on this change. Address it in a later proposal. */
-            comment?: string;
-            /** @description Focused zero-context unified diff of exactly this chunk. */
-            patch: string;
-        };
-        ReviewMutationPrecondition: {
-            /** @description generation from the latest review read. A stale value is rejected as REVIEW_GENERATION_MISMATCH. */
-            expectedReviewGeneration: number;
-            /** @description workingSha256 from the latest chunk read. A stale hash is rejected as REVISION_MISMATCH. */
-            expectedWorkingSha256: string;
-        };
-        AddReviewCommentRequest: {
-            /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
-            expectedReviewGeneration: number;
-            text: string;
-        };
-        ReviewCommentResponse: {
-            reviewId: string;
-            documentId: string;
-            reviewGeneration: number;
-            comment: components["schemas"]["ReviewComment"];
-        };
-        ProposalPacket: {
-            packetId: string;
-            reviewId: string;
-            clientRequestId: string;
-            description?: string;
-            appliedAt: string;
-            patchFormat: string;
-            patch: string;
-            /** @description Review generation after this proposal was applied. */
-            applicationGeneration: number;
-        };
-        HelpResponse: {
-            /** @description Markdown authoring help. */
-            help: string;
-        };
-        PingResponse: {
-            protocolVersion: string;
-            instanceId: string;
-            pid: number;
-        };
-        CapabilitiesResponse: {
-            protocolVersion: string;
-            supportedPatchFormats: "unified-diff"[];
-            /** @constant */
-            reviewSupport: true;
-            /** @constant */
-            retractionSupport: true;
-            maxRequestSize: number;
-            applicationVersion: string;
-            instanceId: string;
-        };
-        DocumentListResponse: {
-            documents: components["schemas"]["DocumentSummary"][];
-        };
-        ReviewListEntry: components["schemas"]["ReviewSummary"] & {
-            /** @description Present while the reviewed file is open; absent while it is closed. */
-            documentId?: string;
-            /** @description The absolute path of the reviewed file. */
-            documentPath: string;
-            /** @description True while the reviewed file is open. Open a closed reviewed file before changing its review. */
-            attached: boolean;
-        };
-        ReviewListResponse: {
-            reviews: components["schemas"]["ReviewListEntry"][];
-        };
-        /** @description Where an annotation points, reported in UTF-16 code-unit offsets and 1-based line/column together. orphaned carries neither: I6 says the honest answer to lost text is a marker and Reattach, never a guessed position. */
-        AnnotationTarget: {
-            /** @enum {string} */
-            state: "range" | "point" | "orphaned";
-            /** @description Text selected when the annotation was created. */
-            quotedText: string;
-            /** @description UTF-16 offset where the target starts. Present when state is range. */
-            from?: number;
-            /** @description UTF-16 offset where the target ends. Present when state is range. */
-            to?: number;
-            /** @description UTF-16 offset of the collapsed seam. Present when state is point. */
-            at?: number;
-            /** @description 1-based line of from (range) or at (point). Absent when state is orphaned. */
-            line?: number;
-            /** @description 1-based UTF-16 column of from (range) or at (point). Absent when state is orphaned. */
-            column?: number;
-            /** @description 1-based line of to. Present only when state is range. */
-            endLine?: number;
-            /** @description 1-based UTF-16 column of to. Present only when state is range. */
-            endColumn?: number;
-            /**
-             * @description Present when state is point (always target-deleted) or orphaned (external-drift or unmapped-document-change).
-             * @enum {string}
-             */
-            reason?: "target-deleted" | "external-drift" | "unmapped-document-change";
-        };
-        AnnotationMessage: {
-            messageId: string;
-            /** @enum {string} */
-            author: "owner" | "agent";
-            text: string;
-            createdAt: string;
-            /** @description Client request ID for an agent-authored message, when present. */
-            clientRequestId?: string;
-        };
-        AnnotationProposalAction: {
-            actionId: string;
-            packetId: string;
-            reviewId: string;
-            linkedAt: string;
-            /** @enum {string} */
-            terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
-        };
-        /** @description A comment thread attached to part of a document. Only the document owner can create, resolve, reopen, reattach, or delete annotations; agents may only reply to an open thread. */
-        AnnotationResponse: {
-            annotationId: string;
-            documentId: string;
-            target: components["schemas"]["AnnotationTarget"];
-            /** @enum {string} */
-            state: "open" | "resolved";
-            /** @description The thread, owner-first, in creation order. */
-            messages: components["schemas"]["AnnotationMessage"][];
-            proposalActions: components["schemas"]["AnnotationProposalAction"][];
-            /** @description Annotation version returned by this read. Send it back as expectedAnnotationGeneration on the next message. */
-            annotationGeneration: number;
-            createdAt: string;
-            updatedAt: string;
-            resolvedAt?: string;
-        };
-        AnnotationListResponse: {
-            annotations: components["schemas"]["AnnotationResponse"][];
-        };
-        AddAnnotationMessageRequest: {
-            text: string;
-            /** @description Client-chosen request ID. Repeating the same request returns the original message instead of posting it twice. */
-            clientRequestId: string;
-            /** @description annotationGeneration from the latest annotation read. A stale value is rejected as ANNOTATION_GENERATION_MISMATCH. */
-            expectedAnnotationGeneration: number;
-        };
-        AddAnnotationMessageResponse: {
-            annotationId: string;
-            documentId: string;
-            message: components["schemas"]["AnnotationMessage"];
-            annotationGeneration: number;
-        };
-        ReviewSubmissionRequest: {
-            document: {
-                /** @description Absolute file path or file URI within a configured workspace. */
-                uri: string;
-            };
-            baseline?: {
-                /** @description SHA-256 of the document text this submission was built against. */
-                sha256: string;
-            };
-            /** @description Client-chosen request ID. Use a new ID after rebuilding a submission. */
-            clientRequestId: string;
-            /** @description Ordered edits built against the same document revision. All claims succeed or none are applied. Each claim becomes a separate review proposal. */
-            claims?: components["schemas"]["ProposalClaim"][];
-            patch?: string;
-            description?: string;
-            /** @default true */
-            focus: boolean;
-        } & ({
-            /** @description Ordered edits built against the same document revision. All claims succeed or none are applied. Each claim becomes a separate review proposal. */
-            claims: components["schemas"]["ProposalClaim"][];
-        } | {
-            patch: string;
-            description: string;
-        });
-        ReviewSubmissionResponse: {
-            /** @description ID of the newest proposal in this submission; the last element of packetIds. */
-            packetId: string;
-            /** @description One proposal ID per claim, in claim order. */
-            packetIds: string[];
-            reviewId: string;
-            documentId: string;
-            documentRevision: components["schemas"]["DocumentRevision"];
-            reviewGeneration: number;
-            unresolvedChunks: number;
-            state: components["schemas"]["ReviewState"];
-            focused: boolean;
-        };
-        CitationDatabaseSummary: {
-            path: string;
-            /** @enum {string} */
-            type: "csl" | "bibtex" | "biblatex";
-        };
-        CitationItem: {
-            id: string;
-            type: string;
-        } & {
-            [key: string]: unknown;
-        };
-        CiteItemInput: {
-            /** @description The citation key. */
-            id: string;
-            locator?: string;
-            label?: string;
-            prefix?: string;
-            suffix?: string;
-        };
-        RenderCitationRequest: {
-            /**
-             * @description Database identifier. Use "main" for the globally configured library.
-             * @default main
-             */
-            database: string;
-            citations: components["schemas"]["CiteItemInput"][];
-            /** @default false */
-            composite: boolean;
-        };
-        RenderBibliographyRequest: {
-            /** @default main */
-            database: string;
-            citekeys: string[];
-        };
-        RenderCitationsRequest: {
-            /**
-             * @default citation
-             * @enum {string}
-             */
-            mode: "citation" | "bibliography";
-            /** @default main */
-            database: string;
-            citations?: components["schemas"]["CiteItemInput"][];
-            /** @default false */
-            composite: boolean;
-            citekeys?: string[];
-        };
-        CitationDatabasesResponse: {
-            databases: components["schemas"]["CitationDatabaseSummary"][];
-        };
-        CitationItemsResponse: {
-            items: components["schemas"]["CitationItem"][];
-            count: number;
-        };
-        RenderCitationResponse: {
-            /** @description The formatted citation string. */
-            rendered: string;
-        };
-        RenderBibliographyResponse: {
-            /** @description CSL bibliography formatting options. */
-            options?: {
-                [key: string]: unknown;
-            };
-            /** @description Each entry is an HTML string for one bibliography item. */
-            entries: string[];
-        };
-        MacroMathJaxDefinition: {
-            replacement: string;
-            argumentCount: number;
-            optionalDefault?: string;
-        };
-        MacroDeclaration: {
-            /** @description Path relative to ~/.pandoc/styles/macros. */
-            sourcePath: string;
-            line: number;
-            /** @description The physical source line containing the declaration. */
-            declaration: string;
-            /** @description A bounded source excerpt around the declaration. */
-            context: string;
-        };
-        MacroEntry: {
-            /** @description TeX control word including its leading backslash. */
-            name: string;
-            declarations: components["schemas"]["MacroDeclaration"][];
-            mathjax?: components["schemas"]["MacroMathJaxDefinition"];
-        };
-        MacroInventoryResponse: {
-            /** @description Absolute TeX macro directory. */
-            root: string;
-            count: number;
-            macros: components["schemas"]["MacroEntry"][];
-        };
-        FigureEntry: {
-            /** @description Path relative to the configured figures directory. */
-            path: string;
-            /** @enum {string} */
-            kind: "file" | "directory" | "symlink";
-            size: number;
-            modifiedAt: string;
-        };
-        FigureListResponse: {
-            /** @description Absolute figures directory. */
-            root: string;
-            count: number;
-            entries: components["schemas"]["FigureEntry"][];
-        };
-        FigureFileResponse: {
-            path: string;
-            size: number;
-            modifiedAt: string;
-            sha256: string;
-            /** @enum {string} */
-            encoding: "utf8" | "base64";
-            content: string;
-        };
-        FigureWriteRequest: {
-            content: string;
-            /**
-             * @default utf8
-             * @enum {string}
-             */
-            encoding: "utf8" | "base64";
-        };
-        FigureCreateRequest: {
-            /** @description Relative destination under the configured figures directory. The filename must end in the lowercase `.tikz` extension; `.tikzcd` and every other extension are refused. */
-            path: string;
-            /** @description UTF-8 TikZ source written byte-for-byte to the new file. */
-            content: string;
-        };
-        FigureSaveRequest: {
-            /** @description Relative destination under the configured figures directory. */
-            path: string;
-            /** @description File content as UTF-8 or base64. */
-            content: string;
-            /**
-             * @description create fails with 409 if file exists; write replaces existing files.
-             * @default create
-             * @enum {string}
-             */
-            action: "create" | "write";
-            /**
-             * @default utf8
-             * @enum {string}
-             */
-            encoding: "utf8" | "base64";
-        };
-        FigureSearchHit: {
-            path: string;
-            /** @enum {string} */
-            matchType: "path" | "content";
-            line?: number;
-            excerpt: string;
-        };
-        FigureSearchResponse: {
-            root: string;
-            query: string;
-            hits: components["schemas"]["FigureSearchHit"][];
-            truncated: boolean;
-        };
-        LintSeverityCounts: {
-            error: number;
-            warning: number;
-            info: number;
-        };
-        LintDiagnostic: {
-            /** @description UTF-16 source offset of the diagnostic start. */
-            from: number;
-            /** @description UTF-16 source offset immediately after the diagnostic. */
-            to: number;
-            line: number;
-            column: number;
-            endLine: number;
-            endColumn: number;
-            /** @enum {string} */
-            severity: "error" | "warning" | "info";
-            message: string;
-            source: string;
-            rule?: string;
-            /** @description Candidate fixes. Each replaces the whole from-to range with its replacement. */
-            suggestions?: {
-                title: string;
-                replacement: string;
-            }[];
-            /** @description The one edit a batch fix applies without asking; it needs no choice and keeps the meaning. Absent when no such edit exists. */
-            fix?: {
-                title: string;
-                replacement: string;
-            };
-            /** @description Structured rule-specific facts. Human-facing message text is not an API identifier. */
-            data?: {
-                [key: string]: unknown;
-            };
-        };
-        DocumentLintResult: {
-            documentId: string;
-            path: string;
-            name: string;
-            open: boolean;
-            focused: boolean;
-            revision: components["schemas"]["DocumentRevision"];
-            /** @description True when the diagnostics are for the document's current text and current lint inputs. False when the text or an input (a bibliography, the macro sources, another document's definitions, Flowmark itself) changed after the lint; the background linter is linting it again. revision names the text the diagnostics are for. */
-            current: boolean;
-            /**
-             * Format: date-time
-             * @description When Flowmark produced these diagnostics.
-             */
-            lintedAt: string;
-            diagnostics: components["schemas"]["LintDiagnostic"][];
-            counts: components["schemas"]["LintSeverityCounts"];
-        };
-        LintResponse: {
-            /** @enum {string} */
-            scope: "focused" | "open" | "document" | "workspace" | "all";
-            documents: components["schemas"]["DocumentLintResult"][];
-            documentCount: number;
-            /** @description Documents of a workspace or all scope with no lint result yet. The background linter is linting them; request the scope again to read their diagnostics. Always empty for the other scopes. */
-            pending: {
-                documentId: string;
-                path: string;
-                name: string;
-            }[];
-            diagnosticCount: number;
-            counts: components["schemas"]["LintSeverityCounts"];
-        };
-        /** @description One creator of a Zotero item. A person has firstName and lastName; an institution has name. */
-        ZoteroCreator: {
-            /** @description The Zotero creator type, for example author or editor. */
-            creatorType: string;
-            firstName?: string;
-            lastName?: string;
-            name?: string;
-        };
-        ZoteroSearchItem: {
-            /** @description The Zotero item key. */
-            itemKey: string;
-            /** @description The Zotero item type, for example journalArticle or book. */
-            itemType: string;
-            /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
-            citationKey: string;
-            /** @description Absent for item types whose title field has another name. */
-            title?: string;
-            creators: components["schemas"]["ZoteroCreator"][];
-            /** @description The date as Zotero stores it, for example 1962 or 8/1962. */
-            date?: string;
-            DOI?: string;
-            url?: string;
-            /** @description The item's tags. metadata:unresolved marks an item that was saved from caller-supplied metadata and needs review. */
-            tags: string[];
-            /** @description Whether the main citation database of the editor contains citationKey, so that a citation of the item renders and exports. */
-            citable: boolean;
-        };
-        ZoteroSearchResponse: {
-            items: components["schemas"]["ZoteroSearchItem"][];
-        };
-        ZoteroAddedItem: {
-            /** @description The Zotero item key. */
-            itemKey: string;
-            /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
-            citationKey: string;
-            /** @description Whether the main citation database of the editor contained citationKey before the response was sent. The import waits for the Better BibTeX export to reach that database; false means the export did not arrive in time, and a later search shows when it does. */
-            citable: boolean;
-        };
-        ZoteroIdentifierImportRequest: {
-            /** @description An arXiv ID (2401.01234 or arXiv:2401.01234), a DOI (10.1007/BF01440955), an ISBN, or a PubMed ID. Zotero gets the metadata from the registry of the identifier. */
-            identifier: string;
-            /** @description Zotero collection keys to add the new items to. */
-            collectionKeys?: string[];
-        };
-        ZoteroIdentifierImportResponse: {
-            items: components["schemas"]["ZoteroAddedItem"][];
-        };
-        /** @description The caller's description of a source that Zotero cannot identify. Send it only after importZoteroUrl answered ZOTERO_SOURCE_NOT_IDENTIFIED and no alternative source in the remediation has the work. Take the title, authors and year from the source itself. */
-        ZoteroFallbackMetadata: {
-            title: string;
-            creators: {
-                firstName?: string;
-                lastName: string;
-            }[];
-            year: string;
-        };
-        ZoteroUrlImportRequest: {
-            /**
-             * Format: uri
-             * @description An http or https URL: an arXiv abstract page, a DOI link, a publisher page, a catalogue page, or a direct link to a PDF.
-             */
-            url: string;
-            /** @description Zotero collection keys to add the new item to. */
-            collectionKeys?: string[];
-            fallbackMetadata?: components["schemas"]["ZoteroFallbackMetadata"];
-        };
-        ZoteroUrlImportResponse: {
-            item: components["schemas"]["ZoteroAddedItem"];
-            /** @description true when the work was already in the library; that item is returned unchanged. */
-            existing: boolean;
-            /**
-             * @description How Zotero identified the source. caller_metadata means the item was made from fallbackMetadata and has the tag metadata:unresolved.
-             * @enum {string}
-             */
-            method: "web_translator" | "page_metadata" | "identifier" | "published_bibtex" | "external_service" | "pdf_recognition" | "caller_metadata";
-            /** @description The URL after redirects. */
-            finalUrl: string;
-            /** @description Attachments that Zotero could not store. The item is saved without them. */
-            attachmentFailures: {
-                title: string;
-                url: string;
-                error: string;
-            }[];
-        };
-        /** @description ZOTERO_SOURCE_NOT_IDENTIFIED: sources whose pages Zotero identifies reliably. Find the work at one of them and import that URL or identifier. Only when none has the work, send the same URL again with fallbackMetadata. */
-        ZoteroSourceRemediation: {
-            message: string;
-            alternativeSources: {
-                name: string;
-                /** @description The form of a URL or identifier at this source. */
-                example: string;
-            }[];
-        };
+  schemas: {
+    DocumentRevision: {
+      sha256: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    /**
+     * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
+     * @enum {string}
+     */
+    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+    ReviewSummary: {
+      reviewId: string;
+      state: components["schemas"]["ReviewState"];
+      generation: number;
+      /** @description Suggestions not yet accepted or rejected. */
+      unresolvedChunks: number;
+      packetCount: number;
+    };
+    ReviewComment: {
+      text: string;
+      createdAt: string;
+    };
+    EditorViewSummary: {
+      viewId: string;
+      windowId: string;
+      leafId: string;
+      focused: boolean;
+      active: boolean;
+    };
+    DocumentSummary: {
+      documentId: string;
+      uri: string;
+      path: string;
+      name: string;
+      /** @enum {string} */
+      type: "markdown" | "code";
+      dirty: boolean;
+      revision: components["schemas"]["DocumentRevision"];
+      lineCount: number;
+      byteLength: number;
+      views: components["schemas"]["EditorViewSummary"][];
+      /**
+       * @description The system that renders this document's cross-references, which fixes the ID syntax: quarto for documents in a Quarto project (#tbl-key), pandoc-crossref for everything else (#tbl:key). GET /help shows both.
+       * @enum {string}
+       */
+      crossReferences?: "quarto" | "pandoc-crossref";
+      review?: components["schemas"]["ReviewSummary"];
+    };
+    EditorContext: {
+      focusedView?: components["schemas"]["FocusedViewSummary"];
+      focusedDocument?: components["schemas"]["DocumentSummary"];
+      openDocuments: components["schemas"]["DocumentSummary"][];
+    };
+    ReadDocumentResponse: {
+      documentId: string;
+      /** @description Whether the document is currently open in the editor. */
+      attached: boolean;
+      /** @enum {string} */
+      side: "working" | "reference";
+      revision: components["schemas"]["DocumentRevision"];
+      reviewGeneration: number;
+      range: {
+        startLine: number;
+        endLine: number;
+        totalLines: number;
+      };
+      content: string;
+      truncated: boolean;
+    };
+    /** @description One reviewable change: exactly one unified-diff hunk, justified by its own description. The reviewer keeps or undoes each claim on its own. An edit that repeats at several places in the document is several claims, each with its own description. */
+    ProposalClaim: {
+      /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
+      description: string;
+      /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. The change must be exactly one hunk when diffed with three lines of context (as `diff -u` and `git diff` do): changes more than six unchanged lines apart are separate hunks, and a patch whose change is two or more hunks is CLAIM_NOT_ATOMIC. */
+      patch: string;
+      /** @description Open annotation IDs this claim answers. If any ID is missing, resolved, or no longer points to text, the submission is rejected. Successful proposals appear on the addressed annotations. */
+      addressesAnnotationIds?: string[];
+    };
+    SubmitProposalRequest: {
+      /** @description SHA-256 returned by the most recent working-content read. It pins the exact text the patches must apply to; a stale hash is refused as REVISION_MISMATCH. */
+      baselineSha256: string;
+      /** @description Zero when no review exists; otherwise the generation returned by the most recent review or chunk read. */
+      expectedReviewGeneration: number;
+      /** @description Client-chosen unique string. Replaying it returns the original packet rather than applying the patch twice; reusing it for a different request is refused as IDEMPOTENCY_CONFLICT. */
+      clientRequestId: string;
+      /** @description Claims are applied in order against the supplied revision. All claims succeed or none are applied. Each claim becomes a separate review proposal that the reviewer can decide independently. */
+      claims: components["schemas"]["ProposalClaim"][];
+    };
+    SubmitProposalResponse: {
+      /** @description ID of the newest proposal in this submission; it is the last element of packetIds. */
+      packetId: string;
+      /** @description One proposal ID per claim, in claim order. */
+      packetIds: string[];
+      reviewId: string;
+      documentId: string;
+      documentRevision: components["schemas"]["DocumentRevision"];
+      reviewGeneration: number;
+      unresolvedChunks: number;
+      state: components["schemas"]["ReviewState"];
+    };
+    AgentError: {
+      /** @enum {string} */
+      code:
+        | "APP_NOT_RUNNING"
+        | "PROTOCOL_MISMATCH"
+        | "NO_FOCUSED_DOCUMENT"
+        | "DOCUMENT_NOT_FOUND"
+        | "DOCUMENT_CLOSED"
+        | "REVISION_MISMATCH"
+        | "REVIEW_GENERATION_MISMATCH"
+        | "REVIEW_NOT_FOUND"
+        | "REVIEW_INVALIDATED"
+        | "REVIEW_NOT_INVALIDATED"
+        | "PATCH_INVALID"
+        | "PATCH_NOT_APPLICABLE"
+        | "CLAIM_NOT_ATOMIC"
+        | "PACKET_NOT_RETRACTABLE"
+        | "CHUNK_NOT_FOUND"
+        | "ANNOTATION_NOT_FOUND"
+        | "ANNOTATION_GENERATION_MISMATCH"
+        | "ANNOTATION_RESOLVED"
+        | "ANNOTATION_ORPHANED"
+        | "ANNOTATION_OWNER_ONLY"
+        | "IDEMPOTENCY_CONFLICT"
+        | "REQUEST_TOO_LARGE"
+        | "REQUEST_BODY_TIMEOUT"
+        | "SEARCH_TIMEOUT"
+        | "METHOD_NOT_FOUND"
+        | "INVALID_PARAMS"
+        | "PERSISTENCE_FAILED"
+        | "INTERNAL_ERROR"
+        | "CITATION_DATABASE_NOT_LOADED"
+        | "CITATION_NOT_FOUND"
+        | "FIGURE_NOT_FOUND"
+        | "FIGURE_ALREADY_EXISTS"
+        | "DUPLICATE_CLAIM_DESCRIPTION"
+        | "BASELINE_MISMATCH"
+        | "ZOTERO_UNAVAILABLE"
+        | "ZOTERO_SOURCE_NOT_IDENTIFIED"
+        | "ZOTERO_REQUEST_FAILED";
+      message: string;
+      documentId?: string;
+      expected?: components["schemas"]["DocumentRevision"];
+      actual?: components["schemas"]["DocumentRevision"];
+      reviewId?: string;
+      /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
+      reviewGeneration?: number;
+      /** @description DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair of claims whose normalized descriptions are too similar. */
+      conflictingClaimIndices?: number[];
+      /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
+      descriptionSimilarity?: number;
+      remediation?: components["schemas"]["ZoteroSourceRemediation"];
+    };
+    AgentErrorResponse: {
+      error: components["schemas"]["AgentError"];
+    };
+    AgentEvent: {
+      /** @enum {string} */
+      event:
+        | "review.started"
+        | "review.changed"
+        | "review.resolved"
+        | "review.commented"
+        | "review.cleared"
+        | "review.invalidated"
+        | "review.completed"
+        | "review.discarded"
+        | "review.sidecar-error"
+        | "proposal.applied"
+        | "proposal.retracted"
+        | "annotation.created"
+        | "annotation.message-added"
+        | "annotation.target-changed"
+        | "annotation.orphaned"
+        | "annotation.resolved"
+        | "annotation.reopened"
+        | "annotation.deleted"
+        | "annotation.proposal-linked";
+      timestamp: string;
+      reviewId?: string;
+      documentId?: string;
+      documentRevision?: components["schemas"]["DocumentRevision"];
+      reviewGeneration?: number;
+      unresolvedChunks?: number;
+      /** @description annotation.*: the annotation the event is about. */
+      annotationId?: string;
+      /** @description annotation.*: annotation version after the event. */
+      annotationGeneration?: number;
+      /** @description proposal.applied and proposal.retracted: proposal ID affected by the event. */
+      packetId?: string;
+      /** @description review.commented: the outstanding chunk the comment is anchored to, when it is chunk-anchored. */
+      chunkId?: string;
+      /** @description review.commented: the comment text. Absent on a chunk-anchored event when the reviewer removed the chunk's note. */
+      comment?: string;
+      /** @description Error detail for review.sidecar-error events. */
+      message?: string;
+      /** @description Server-generated event sequence identifier. */
+      id?: string;
+    };
+    ReviewEventsResponse: {
+      reviewId: string;
+      status?: components["schemas"]["ReviewSummary"];
+      events?: components["schemas"]["AgentEvent"][];
+      /** @description True if the request reached its timeout before a status change. */
+      timedOut?: boolean;
+    };
+    FocusedViewSummary: {
+      viewId: string;
+      windowId: string;
+      leafId: string;
+      documentId: string;
+    };
+    ViewSummary: {
+      viewId: string;
+      windowId: string;
+      leafId: string;
+      documentId?: string;
+      focused: boolean;
+      active: boolean;
+      documents?: {
+        documentId?: string;
+        path: string;
+      }[];
+    };
+    ViewsResponse: {
+      views: components["schemas"]["ViewSummary"][];
+    };
+    WorkspaceSummary: {
+      workspaceId: string;
+      path: string;
+    };
+    WorkspacesResponse: {
+      workspaces: components["schemas"]["WorkspaceSummary"][];
+    };
+    LoadedWorkspaceDocumentSummary: {
+      documentId: string;
+      workspaceId: string;
+      uri: string;
+      path: string;
+      name: string;
+      /** @enum {boolean} */
+      loaded: true;
+      /** @enum {string} */
+      type: "markdown" | "code";
+      dirty: boolean;
+      revision: components["schemas"]["DocumentRevision"];
+      lineCount: number;
+      byteLength: number;
+      views: components["schemas"]["EditorViewSummary"][];
+      review?: components["schemas"]["ReviewSummary"];
+    };
+    UnloadedWorkspaceDocumentSummary: {
+      documentId: string;
+      workspaceId: string;
+      uri: string;
+      path: string;
+      name: string;
+      /** @enum {boolean} */
+      loaded: false;
+    };
+    WorkspaceDocumentSummary:
+      | components["schemas"]["LoadedWorkspaceDocumentSummary"]
+      | components["schemas"]["UnloadedWorkspaceDocumentSummary"];
+    FocusDocumentResponse: {
+      /** @constant */
+      focused: true;
+      documentId: string;
+    };
+    WorkspaceDocumentsResponse: {
+      workspaceId: string;
+      documents: components["schemas"]["WorkspaceDocumentSummary"][];
+    };
+    WorkspaceFileEntry: {
+      documentId: string;
+      path: string;
+      name: string;
+      workspaceId: string;
+      /** @description Whether the file is currently loaded in the editor. */
+      open: boolean;
+      /** @description How other documents link to this Markdown file: [[linkTarget]]. The shortest path suffix that names it alone. Absent for other files. */
+      linkTarget?: string;
+    };
+    WorkspaceFilesResponse: {
+      files: components["schemas"]["WorkspaceFileEntry"][];
+    };
+    WorkspaceSearchMatch: {
+      /** @description Character offsets into the file text, end exclusive. */
+      range: {
+        from: number;
+        to: number;
+      };
+      /** @description One-based line of the match start. */
+      line: number;
+      /** @description The line of the match: text before it (trimmed), the match, and text after it. */
+      preview: {
+        before: string;
+        inside: string;
+        after: string;
+      };
+    };
+    WorkspaceSearchFile: {
+      documentId: string;
+      path: string;
+      name: string;
+      /** @description The workspace that holds the file; absent for an open file outside every workspace. */
+      workspaceId?: string;
+      /** @description Whether the file is currently loaded in the editor. */
+      open: boolean;
+      matches: components["schemas"]["WorkspaceSearchMatch"][];
+    };
+    WorkspaceSearchResponse: {
+      files: components["schemas"]["WorkspaceSearchFile"][];
+      matchCount: number;
+      /** @description True when the search stopped at maxMatches; narrow the query or the globs. */
+      truncated: boolean;
+    };
+    SearchDocumentResponse: {
+      documentId: string;
+      revision: components["schemas"]["DocumentRevision"];
+      /** @description Search hits in document order. At most 1000 hits are returned; a true truncated field means more matching hits were present. */
+      hits: {
+        line: number;
+        column: number;
+        length: number;
+        contextBefore: string;
+        contextAfter: string;
+      }[];
+      truncated: boolean;
+    };
+    ReviewDetailResponse: {
+      reviewId: string;
+      state: components["schemas"]["ReviewState"];
+      generation: number;
+      /** @description Suggestions not yet accepted or rejected. */
+      unresolvedChunks: number;
+      packetCount: number;
+      /** @description Review-level comments in creation order. */
+      comments: components["schemas"]["ReviewComment"][];
+      /** @description True while the reviewed document is open. Reviews for closed files remain readable but cannot be changed until the file is reopened. */
+      attached: boolean;
+      /** @description Current document revision. Absent while the reviewed file is closed. */
+      documentRevision?: components["schemas"]["DocumentRevision"];
+    };
+    ReviewDiffResponse: {
+      reviewId: string;
+      /** @description Absent while the reviewed file is closed. */
+      documentId?: string;
+      patch: string;
+      generation: number;
+    };
+    ReviewChunksResponse: {
+      reviewId: string;
+      /** @description Absent while the reviewed file is closed. */
+      documentId?: string;
+      generation: number;
+      /** @description SHA-256 of the current text containing these changes. Use it as expectedWorkingSha256 when retracting a related proposal. Absent while the reviewed file is closed. */
+      workingSha256?: string;
+      chunks: components["schemas"]["OutstandingChunk"][];
+    };
+    ReviewPacketsResponse: {
+      reviewId: string;
+      /** @description Absent while the reviewed file is closed. */
+      documentId?: string;
+      packets: components["schemas"]["ProposalPacket"][];
+    };
+    ReapplyReviewRequest: {
+      /** @description See ReviewMutationPrecondition. Reapply and discard do not depend on the current text, so they carry no working hash. */
+      expectedReviewGeneration: number;
+    };
+    ReapplyReviewResponse: {
+      reviewId: string;
+      documentId: string;
+      reviewGeneration: number;
+      unresolvedChunks: number;
+      /** @description The suggestions whose text the current file no longer holds. They are withdrawn; submit them again as new proposals if they still apply. */
+      withdrawnChunkIds: string[];
+      state: components["schemas"]["ReviewState"];
+    };
+    DiscardReviewResponse: {
+      reviewId: string;
+      documentId: string;
+    };
+    RetractProposalResponse: {
+      /** @constant */
+      retracted: true;
+      packetId: string;
+      reviewId: string;
+      documentId: string;
+      reviewGeneration: number;
+      unresolvedChunks: number;
+      documentRevision: components["schemas"]["DocumentRevision"];
+    };
+    OutstandingChunk: {
+      /** @description Stable ID for this proposed change. */
+      chunkId: string;
+      /** @description Original text; empty for a pure insertion. */
+      referenceText: string;
+      /** @description Proposed text; empty for a pure deletion. */
+      workingText: string;
+      /** @description Character ranges belonging to this proposed change. Text added by the document owner is excluded. */
+      workingSpans: {
+        from: number;
+        to: number;
+      }[];
+      /** @description Proposal ID associated with this change. */
+      packetIds: string[];
+      /** @description Description of the associated proposal. */
+      descriptions: string[];
+      /** @description Reviewer's note on this change. Address it in a later proposal. */
+      comment?: string;
+      /** @description Focused zero-context unified diff of exactly this chunk. */
+      patch: string;
+    };
+    ReviewMutationPrecondition: {
+      /** @description generation from the latest review read. A stale value is rejected as REVIEW_GENERATION_MISMATCH. */
+      expectedReviewGeneration: number;
+      /** @description workingSha256 from the latest chunk read. A stale hash is rejected as REVISION_MISMATCH. */
+      expectedWorkingSha256: string;
+    };
+    AddReviewCommentRequest: {
+      /** @description See ReviewMutationPrecondition. A comment moves no document text, so it carries no working hash. */
+      expectedReviewGeneration: number;
+      text: string;
+    };
+    ReviewCommentResponse: {
+      reviewId: string;
+      documentId: string;
+      reviewGeneration: number;
+      comment: components["schemas"]["ReviewComment"];
+    };
+    ProposalPacket: {
+      packetId: string;
+      reviewId: string;
+      clientRequestId: string;
+      description?: string;
+      appliedAt: string;
+      patchFormat: string;
+      patch: string;
+      /** @description Review generation after this proposal was applied. */
+      applicationGeneration: number;
+    };
+    HelpResponse: {
+      /** @description Markdown authoring help. */
+      help: string;
+    };
+    PingResponse: {
+      protocolVersion: string;
+      instanceId: string;
+      pid: number;
+    };
+    CapabilitiesResponse: {
+      protocolVersion: string;
+      supportedPatchFormats: "unified-diff"[];
+      /** @constant */
+      reviewSupport: true;
+      /** @constant */
+      retractionSupport: true;
+      maxRequestSize: number;
+      applicationVersion: string;
+      instanceId: string;
+    };
+    DocumentListResponse: {
+      documents: components["schemas"]["DocumentSummary"][];
+    };
+    ReviewListEntry: components["schemas"]["ReviewSummary"] & {
+      /** @description Present while the reviewed file is open; absent while it is closed. */
+      documentId?: string;
+      /** @description The absolute path of the reviewed file. */
+      documentPath: string;
+      /** @description True while the reviewed file is open. Open a closed reviewed file before changing its review. */
+      attached: boolean;
+    };
+    ReviewListResponse: {
+      reviews: components["schemas"]["ReviewListEntry"][];
+    };
+    /** @description Where an annotation points, reported in UTF-16 code-unit offsets and 1-based line/column together. orphaned carries neither: I6 says the honest answer to lost text is a marker and Reattach, never a guessed position. */
+    AnnotationTarget: {
+      /** @enum {string} */
+      state: "range" | "point" | "orphaned";
+      /** @description Text selected when the annotation was created. */
+      quotedText: string;
+      /** @description UTF-16 offset where the target starts. Present when state is range. */
+      from?: number;
+      /** @description UTF-16 offset where the target ends. Present when state is range. */
+      to?: number;
+      /** @description UTF-16 offset of the collapsed seam. Present when state is point. */
+      at?: number;
+      /** @description 1-based line of from (range) or at (point). Absent when state is orphaned. */
+      line?: number;
+      /** @description 1-based UTF-16 column of from (range) or at (point). Absent when state is orphaned. */
+      column?: number;
+      /** @description 1-based line of to. Present only when state is range. */
+      endLine?: number;
+      /** @description 1-based UTF-16 column of to. Present only when state is range. */
+      endColumn?: number;
+      /**
+       * @description Present when state is point (always target-deleted) or orphaned (external-drift or unmapped-document-change).
+       * @enum {string}
+       */
+      reason?: "target-deleted" | "external-drift" | "unmapped-document-change";
+    };
+    AnnotationMessage: {
+      messageId: string;
+      /** @enum {string} */
+      author: "owner" | "agent";
+      text: string;
+      createdAt: string;
+      /** @description Client request ID for an agent-authored message, when present. */
+      clientRequestId?: string;
+    };
+    AnnotationProposalAction: {
+      actionId: string;
+      packetId: string;
+      reviewId: string;
+      linkedAt: string;
+      /** @enum {string} */
+      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+    };
+    /** @description A comment thread attached to part of a document. Only the document owner can create, resolve, reopen, reattach, or delete annotations; agents may only reply to an open thread. */
+    AnnotationResponse: {
+      annotationId: string;
+      documentId: string;
+      target: components["schemas"]["AnnotationTarget"];
+      /** @enum {string} */
+      state: "open" | "resolved";
+      /** @description The thread, owner-first, in creation order. */
+      messages: components["schemas"]["AnnotationMessage"][];
+      proposalActions: components["schemas"]["AnnotationProposalAction"][];
+      /** @description Annotation version returned by this read. Send it back as expectedAnnotationGeneration on the next message. */
+      annotationGeneration: number;
+      createdAt: string;
+      updatedAt: string;
+      resolvedAt?: string;
+    };
+    AnnotationListResponse: {
+      annotations: components["schemas"]["AnnotationResponse"][];
+    };
+    AddAnnotationMessageRequest: {
+      text: string;
+      /** @description Client-chosen request ID. Repeating the same request returns the original message instead of posting it twice. */
+      clientRequestId: string;
+      /** @description annotationGeneration from the latest annotation read. A stale value is rejected as ANNOTATION_GENERATION_MISMATCH. */
+      expectedAnnotationGeneration: number;
+    };
+    AddAnnotationMessageResponse: {
+      annotationId: string;
+      documentId: string;
+      message: components["schemas"]["AnnotationMessage"];
+      annotationGeneration: number;
+    };
+    ReviewSubmissionRequest: {
+      document: {
+        /** @description Absolute file path or file URI within a configured workspace. */
+        uri: string;
+      };
+      baseline?: {
+        /** @description SHA-256 of the document text this submission was built against. */
+        sha256: string;
+      };
+      /** @description Client-chosen request ID. Use a new ID after rebuilding a submission. */
+      clientRequestId: string;
+      /** @description Ordered edits built against the same document revision. All claims succeed or none are applied. Each claim becomes a separate review proposal. */
+      claims?: components["schemas"]["ProposalClaim"][];
+      patch?: string;
+      description?: string;
+      /** @default true */
+      focus: boolean;
+    } & (
+      | {
+          /** @description Ordered edits built against the same document revision. All claims succeed or none are applied. Each claim becomes a separate review proposal. */
+          claims: components["schemas"]["ProposalClaim"][];
+        }
+      | {
+          patch: string;
+          description: string;
+        }
+    );
+    ReviewSubmissionResponse: {
+      /** @description ID of the newest proposal in this submission; the last element of packetIds. */
+      packetId: string;
+      /** @description One proposal ID per claim, in claim order. */
+      packetIds: string[];
+      reviewId: string;
+      documentId: string;
+      documentRevision: components["schemas"]["DocumentRevision"];
+      reviewGeneration: number;
+      unresolvedChunks: number;
+      state: components["schemas"]["ReviewState"];
+      focused: boolean;
+    };
+    CitationDatabaseSummary: {
+      path: string;
+      /** @enum {string} */
+      type: "csl" | "bibtex" | "biblatex";
+    };
+    CitationItem: {
+      id: string;
+      type: string;
+    } & {
+      [key: string]: unknown;
+    };
+    CiteItemInput: {
+      /** @description The citation key. */
+      id: string;
+      locator?: string;
+      label?: string;
+      prefix?: string;
+      suffix?: string;
+    };
+    RenderCitationRequest: {
+      /**
+       * @description Database identifier. Use "main" for the globally configured library.
+       * @default main
+       */
+      database: string;
+      citations: components["schemas"]["CiteItemInput"][];
+      /** @default false */
+      composite: boolean;
+    };
+    RenderBibliographyRequest: {
+      /** @default main */
+      database: string;
+      citekeys: string[];
+    };
+    RenderCitationsRequest: {
+      /**
+       * @default citation
+       * @enum {string}
+       */
+      mode: "citation" | "bibliography";
+      /** @default main */
+      database: string;
+      citations?: components["schemas"]["CiteItemInput"][];
+      /** @default false */
+      composite: boolean;
+      citekeys?: string[];
+    };
+    CitationDatabasesResponse: {
+      databases: components["schemas"]["CitationDatabaseSummary"][];
+    };
+    CitationItemsResponse: {
+      items: components["schemas"]["CitationItem"][];
+      count: number;
+    };
+    RenderCitationResponse: {
+      /** @description The formatted citation string. */
+      rendered: string;
+    };
+    RenderBibliographyResponse: {
+      /** @description CSL bibliography formatting options. */
+      options?: {
+        [key: string]: unknown;
+      };
+      /** @description Each entry is an HTML string for one bibliography item. */
+      entries: string[];
+    };
+    MacroMathJaxDefinition: {
+      replacement: string;
+      argumentCount: number;
+      optionalDefault?: string;
+    };
+    MacroDeclaration: {
+      /** @description Path relative to ~/.pandoc/styles/macros. */
+      sourcePath: string;
+      line: number;
+      /** @description The physical source line containing the declaration. */
+      declaration: string;
+      /** @description A bounded source excerpt around the declaration. */
+      context: string;
+    };
+    MacroEntry: {
+      /** @description TeX control word including its leading backslash. */
+      name: string;
+      declarations: components["schemas"]["MacroDeclaration"][];
+      mathjax?: components["schemas"]["MacroMathJaxDefinition"];
+    };
+    MacroInventoryResponse: {
+      /** @description Absolute TeX macro directory. */
+      root: string;
+      count: number;
+      macros: components["schemas"]["MacroEntry"][];
+    };
+    FigureEntry: {
+      /** @description Path relative to the configured figures directory. */
+      path: string;
+      /** @enum {string} */
+      kind: "file" | "directory" | "symlink";
+      size: number;
+      modifiedAt: string;
+    };
+    FigureListResponse: {
+      /** @description Absolute figures directory. */
+      root: string;
+      count: number;
+      entries: components["schemas"]["FigureEntry"][];
+    };
+    FigureFileResponse: {
+      path: string;
+      size: number;
+      modifiedAt: string;
+      sha256: string;
+      /** @enum {string} */
+      encoding: "utf8" | "base64";
+      content: string;
+    };
+    FigureWriteRequest: {
+      content: string;
+      /**
+       * @default utf8
+       * @enum {string}
+       */
+      encoding: "utf8" | "base64";
+    };
+    FigureCreateRequest: {
+      /** @description Relative destination under the configured figures directory. The filename must end in the lowercase `.tikz` extension; `.tikzcd` and every other extension are refused. */
+      path: string;
+      /** @description UTF-8 TikZ source written byte-for-byte to the new file. */
+      content: string;
+    };
+    FigureSaveRequest: {
+      /** @description Relative destination under the configured figures directory. */
+      path: string;
+      /** @description File content as UTF-8 or base64. */
+      content: string;
+      /**
+       * @description create fails with 409 if file exists; write replaces existing files.
+       * @default create
+       * @enum {string}
+       */
+      action: "create" | "write";
+      /**
+       * @default utf8
+       * @enum {string}
+       */
+      encoding: "utf8" | "base64";
+    };
+    FigureSearchHit: {
+      path: string;
+      /** @enum {string} */
+      matchType: "path" | "content";
+      line?: number;
+      excerpt: string;
+    };
+    FigureSearchResponse: {
+      root: string;
+      query: string;
+      hits: components["schemas"]["FigureSearchHit"][];
+      truncated: boolean;
+    };
+    LintSeverityCounts: {
+      error: number;
+      warning: number;
+      info: number;
+    };
+    LintDiagnostic: {
+      /** @description UTF-16 source offset of the diagnostic start. */
+      from: number;
+      /** @description UTF-16 source offset immediately after the diagnostic. */
+      to: number;
+      line: number;
+      column: number;
+      endLine: number;
+      endColumn: number;
+      /** @enum {string} */
+      severity: "error" | "warning" | "info";
+      message: string;
+      source: string;
+      rule?: string;
+      /** @description Candidate fixes. Each replaces the whole from-to range with its replacement. */
+      suggestions?: {
+        title: string;
+        replacement: string;
+      }[];
+      /** @description The one edit a batch fix applies without asking; it needs no choice and keeps the meaning. Absent when no such edit exists. */
+      fix?: {
+        title: string;
+        replacement: string;
+      };
+      /** @description Structured rule-specific facts. Human-facing message text is not an API identifier. */
+      data?: {
+        [key: string]: unknown;
+      };
+    };
+    DocumentLintResult: {
+      documentId: string;
+      path: string;
+      name: string;
+      open: boolean;
+      focused: boolean;
+      revision: components["schemas"]["DocumentRevision"];
+      /** @description True when the diagnostics are for the document's current text and current lint inputs. False when the text or an input (a bibliography, the macro sources, another document's definitions, Flowmark itself) changed after the lint; the background linter is linting it again. revision names the text the diagnostics are for. */
+      current: boolean;
+      /**
+       * Format: date-time
+       * @description When Flowmark produced these diagnostics.
+       */
+      lintedAt: string;
+      diagnostics: components["schemas"]["LintDiagnostic"][];
+      counts: components["schemas"]["LintSeverityCounts"];
+    };
+    LintResponse: {
+      /** @enum {string} */
+      scope: "focused" | "open" | "document" | "workspace" | "all";
+      documents: components["schemas"]["DocumentLintResult"][];
+      documentCount: number;
+      /** @description Documents of a workspace or all scope with no lint result yet. The background linter is linting them; request the scope again to read their diagnostics. Always empty for the other scopes. */
+      pending: {
+        documentId: string;
+        path: string;
+        name: string;
+      }[];
+      diagnosticCount: number;
+      counts: components["schemas"]["LintSeverityCounts"];
+    };
+    /** @description One creator of a Zotero item. A person has firstName and lastName; an institution has name. */
+    ZoteroCreator: {
+      /** @description The Zotero creator type, for example author or editor. */
+      creatorType: string;
+      firstName?: string;
+      lastName?: string;
+      name?: string;
+    };
+    ZoteroSearchItem: {
+      /** @description The Zotero item key. */
+      itemKey: string;
+      /** @description The Zotero item type, for example journalArticle or book. */
+      itemType: string;
+      /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
+      citationKey: string;
+      /** @description Absent for item types whose title field has another name. */
+      title?: string;
+      creators: components["schemas"]["ZoteroCreator"][];
+      /** @description The date as Zotero stores it, for example 1962 or 8/1962. */
+      date?: string;
+      DOI?: string;
+      url?: string;
+      /** @description The item's tags. metadata:unresolved marks an item that was saved from caller-supplied metadata and needs review. */
+      tags: string[];
+      /** @description Whether the main citation database of the editor contains citationKey, so that a citation of the item renders and exports. */
+      citable: boolean;
+    };
+    ZoteroSearchResponse: {
+      items: components["schemas"]["ZoteroSearchItem"][];
+    };
+    ZoteroAddedItem: {
+      /** @description The Zotero item key. */
+      itemKey: string;
+      /** @description The Better BibTeX citation key. Cite the item as [@citationKey]. */
+      citationKey: string;
+      /** @description Whether the main citation database of the editor contained citationKey before the response was sent. The import waits for the Better BibTeX export to reach that database; false means the export did not arrive in time, and a later search shows when it does. */
+      citable: boolean;
+    };
+    ZoteroIdentifierImportRequest: {
+      /** @description An arXiv ID (2401.01234 or arXiv:2401.01234), a DOI (10.1007/BF01440955), an ISBN, or a PubMed ID. Zotero gets the metadata from the registry of the identifier. */
+      identifier: string;
+      /** @description Zotero collection keys to add the new items to. */
+      collectionKeys?: string[];
+    };
+    ZoteroIdentifierImportResponse: {
+      items: components["schemas"]["ZoteroAddedItem"][];
+    };
+    /** @description The caller's description of a source that Zotero cannot identify. Send it only after importZoteroUrl answered ZOTERO_SOURCE_NOT_IDENTIFIED and no alternative source in the remediation has the work. Take the title, authors and year from the source itself. */
+    ZoteroFallbackMetadata: {
+      title: string;
+      creators: {
+        firstName?: string;
+        lastName: string;
+      }[];
+      year: string;
+    };
+    ZoteroUrlImportRequest: {
+      /**
+       * Format: uri
+       * @description An http or https URL: an arXiv abstract page, a DOI link, a publisher page, a catalogue page, or a direct link to a PDF.
+       */
+      url: string;
+      /** @description Zotero collection keys to add the new item to. */
+      collectionKeys?: string[];
+      fallbackMetadata?: components["schemas"]["ZoteroFallbackMetadata"];
+    };
+    ZoteroUrlImportResponse: {
+      item: components["schemas"]["ZoteroAddedItem"];
+      /** @description true when the work was already in the library; that item is returned unchanged. */
+      existing: boolean;
+      /**
+       * @description How Zotero identified the source. caller_metadata means the item was made from fallbackMetadata and has the tag metadata:unresolved.
+       * @enum {string}
+       */
+      method:
+        | "web_translator"
+        | "page_metadata"
+        | "identifier"
+        | "published_bibtex"
+        | "external_service"
+        | "pdf_recognition"
+        | "caller_metadata";
+      /** @description The URL after redirects. */
+      finalUrl: string;
+      /** @description Attachments that Zotero could not store. The item is saved without them. */
+      attachmentFailures: {
+        title: string;
+        url: string;
+        error: string;
+      }[];
+    };
+    /** @description ZOTERO_SOURCE_NOT_IDENTIFIED: sources whose pages Zotero identifies reliably. Find the work at one of them and import that URL or identifier. Only when none has the work, send the same URL again with fallbackMetadata. */
+    ZoteroSourceRemediation: {
+      message: string;
+      alternativeSources: {
+        name: string;
+        /** @description The form of a URL or identifier at this source. */
+        example: string;
+      }[];
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    getHelp: {
-        parameters: {
-            query?: {
-                /** @description Response format (markdown or json) */
-                format?: "markdown" | "json";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Authoring help documentation in Markdown or JSON */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/markdown": string;
-                    "text/plain": string;
-                    "application/json": components["schemas"]["HelpResponse"];
-                };
-            };
-        };
+  getHelp: {
+    parameters: {
+      query?: {
+        /** @description Response format (markdown or json) */
+        format?: "markdown" | "json";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    ping: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Authoring help documentation in Markdown or JSON */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PingResponse"];
-                };
-            };
+        content: {
+          "text/markdown": string;
+          "text/plain": string;
+          "application/json": components["schemas"]["HelpResponse"];
         };
+      };
     };
-    getCapabilities: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CapabilitiesResponse"];
-                };
-            };
-        };
+  };
+  ping: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getContext: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EditorContext"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["PingResponse"];
         };
+      };
     };
-    listViews: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ViewsResponse"];
-                };
-            };
-        };
+  };
+  getCapabilities: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listWorkspaceFiles: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description All workspace files. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceFilesResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["CapabilitiesResponse"];
         };
+      };
     };
-    searchWorkspace: {
-        parameters: {
-            query: {
-                /** @description The text or regular expression to find. */
-                text: string;
-                /** @description Match letter case exactly. */
-                matchCase?: boolean;
-                /** @description Match only at word boundaries. */
-                wholeWord?: boolean;
-                /** @description Read text as a JavaScript regular expression. */
-                regex?: boolean;
-                /** @description Comma-separated globs relative to the workspace root; a file must match one. A glob without a slash matches at any depth, for example `*.md`. */
-                include?: string;
-                /** @description Comma-separated globs; a file that matches one is skipped. */
-                exclude?: string;
-                /** @description The search stops after this many matches and sets truncated. */
-                maxMatches?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The matching files, in workspace order. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceSearchResponse"];
-                };
-            };
-            /** @description Empty text or invalid regular expression */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Matching one file did not finish within the server deadline */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  getContext: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listWorkspaces: {
-        parameters: {
-            query?: {
-                /** @description Optional workspace ID to inspect documents in that workspace. */
-                workspaceId?: string;
-                /** @description Whether to return workspace summaries or documents. */
-                include?: "summary" | "documents";
-                /** @description Optional search term when listing workspace documents. */
-                query?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Workspace listing or document list. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspacesResponse"] | components["schemas"]["WorkspaceDocumentsResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["EditorContext"];
         };
+      };
     };
-    listDocuments: {
-        parameters: {
-            query?: {
-                /** @description Reserved document-state filter. */
-                state?: "open";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocumentListResponse"];
-                };
-            };
-        };
+  };
+  listViews: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getDocument: {
-        parameters: {
-            query?: {
-                /** @description Whether to include the text content lines. */
-                includeContent?: boolean;
-                /** @description working is the current text; reference is the text before proposed changes. */
-                side?: "working" | "reference";
-                startLine?: number;
-                endLine?: number;
-            };
-            header?: never;
-            path: {
-                documentId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocumentSummary"] | components["schemas"]["ReadDocumentResponse"];
-                };
-            };
-            /** @description Document not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["ViewsResponse"];
         };
+      };
     };
-    focusDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                documentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FocusDocumentResponse"];
-                };
-            };
-            /** @description Document not found or outside workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  listWorkspaceFiles: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    searchDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                documentId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description All workspace files. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": {
-                    literal: string;
-                    /** @default 3 */
-                    context?: number;
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["WorkspaceFilesResponse"];
         };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SearchDocumentResponse"];
-                };
-            };
-            /** @description Invalid regex pattern */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Search timed out */
-            408: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+      };
     };
-    submitProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                documentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubmitProposalRequest"];
-            };
-        };
-        responses: {
-            /** @description Proposal accepted into review */
-            200: {
-                headers: {
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubmitProposalResponse"];
-                };
-            };
-            /** @description Invalid request payload or claims */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Revision mismatch or document closed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Precondition failed */
-            412: {
-                headers: {
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Patch does not apply */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Internal error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  searchWorkspace: {
+    parameters: {
+      query: {
+        /** @description The text or regular expression to find. */
+        text: string;
+        /** @description Match letter case exactly. */
+        matchCase?: boolean;
+        /** @description Match only at word boundaries. */
+        wholeWord?: boolean;
+        /** @description Read text as a JavaScript regular expression. */
+        regex?: boolean;
+        /** @description Comma-separated globs relative to the workspace root; a file must match one. A glob without a slash matches at any depth, for example `*.md`. */
+        include?: string;
+        /** @description Comma-separated globs; a file that matches one is skipped. */
+        exclude?: string;
+        /** @description The search stops after this many matches and sets truncated. */
+        maxMatches?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    submitReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description The matching files, in workspace order. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewSubmissionRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["WorkspaceSearchResponse"];
         };
-        responses: {
-            /** @description Review submission applied */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubmitProposalResponse"];
-                };
-            };
-            /** @description Invalid payload or claims */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description File not found in workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Conflict or mismatch */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Baseline mismatch */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Patch does not apply */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+      };
+      /** @description Empty text or invalid regular expression */
+      400: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Matching one file did not finish within the server deadline */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    listAnnotations: {
-        parameters: {
-            query?: {
-                /** @description Optional document ID to filter annotations. */
-                documentId?: string;
-                state?: "open" | "resolved";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Annotations list. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AnnotationListResponse"];
-                };
-            };
-            /** @description Document not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  listWorkspaces: {
+    parameters: {
+      query?: {
+        /** @description Optional workspace ID to inspect documents in that workspace. */
+        workspaceId?: string;
+        /** @description Whether to return workspace summaries or documents. */
+        include?: "summary" | "documents";
+        /** @description Optional search term when listing workspace documents. */
+        query?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    getAnnotation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                annotationId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Workspace listing or document list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description The annotation. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AnnotationResponse"];
-                };
-            };
-            /** @description Annotation not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+        content: {
+          "application/json":
+            | components["schemas"]["WorkspacesResponse"]
+            | components["schemas"]["WorkspaceDocumentsResponse"];
         };
+      };
     };
-    addAnnotationMessage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                annotationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddAnnotationMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Appended message */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AddAnnotationMessageResponse"];
-                };
-            };
-            /** @description Annotation not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document is closed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  listDocuments: {
+    parameters: {
+      query?: {
+        /** @description Reserved document-state filter. */
+        state?: "open";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    listReviews: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Review summaries. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewListResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["DocumentListResponse"];
         };
+      };
     };
-    getReview: {
-        parameters: {
-            query?: {
-                /** @description Which slice of the review to return. */
-                view?: "detail" | "diff" | "chunks" | "packets";
-            };
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Review slice. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewDetailResponse"] | components["schemas"]["ReviewDiffResponse"] | components["schemas"]["ReviewChunksResponse"] | components["schemas"]["ReviewPacketsResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document closed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  getDocument: {
+    parameters: {
+      query?: {
+        /** @description Whether to include the text content lines. */
+        includeContent?: boolean;
+        /** @description working is the current text; reference is the text before proposed changes. */
+        side?: "working" | "reference";
+        startLine?: number;
+        endLine?: number;
+      };
+      header?: never;
+      path: {
+        documentId: string;
+      };
+      cookie?: never;
     };
-    addReviewComment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          ETag?: string;
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AddReviewCommentRequest"];
-            };
+        content: {
+          "application/json":
+            | components["schemas"]["DocumentSummary"]
+            | components["schemas"]["ReadDocumentResponse"];
         };
-        responses: {
-            /** @description The review with the comment appended. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewDetailResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document closed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+      };
+      /** @description Document not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    reapplyReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReapplyReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description The review is live again. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReapplyReviewResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description The review is still current, or its generation moved. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  focusDocument: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        documentId: string;
+      };
+      cookie?: never;
     };
-    discardReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReapplyReviewRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["FocusDocumentResponse"];
         };
-        responses: {
-            /** @description The review is discarded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscardReviewResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description The review is still current, or its generation moved. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+      };
+      /** @description Document not found or outside workspace */
+      404: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    retractProposal: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                packetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewMutationPrecondition"];
-            };
-        };
-        responses: {
-            /** @description Proposal retracted */
-            200: {
-                headers: {
-                    ETag?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RetractProposalResponse"];
-                };
-            };
-            /** @description Proposal not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Proposal cannot be retracted or document is closed */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  searchDocument: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        documentId: string;
+      };
+      cookie?: never;
     };
-    waitForReviewEvents: {
-        parameters: {
-            query?: {
-                afterGeneration?: number;
-                waitSeconds?: number;
-                /** @deprecated */
-                wait?: number;
-            };
-            header?: never;
-            path: {
-                reviewId: string;
-            };
-            cookie?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          literal: string;
+          /** @default 3 */
+          context?: number;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Advance events or current status. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReviewEventsResponse"];
-                };
-            };
-            /** @description Review not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+      };
     };
-    queryCitations: {
-        parameters: {
-            query?: {
-                target?: "items" | "databases";
-                /** @description Database identifier. Defaults to main. */
-                database?: string;
-                /** @description Lookup a specific citation item by key. */
-                citeKey?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Citation query results. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CitationItemsResponse"] | components["schemas"]["CitationDatabasesResponse"] | components["schemas"]["CitationItem"];
-                };
-            };
-            /** @description Database or cite key not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["SearchDocumentResponse"];
         };
+      };
+      /** @description Invalid regex pattern */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Search timed out */
+      408: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    renderCitations: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RenderCitationsRequest"];
-            };
-        };
-        responses: {
-            /** @description Rendered citations or bibliography */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RenderCitationResponse"] | components["schemas"]["RenderBibliographyResponse"];
-                };
-            };
-            /** @description No citations or citekeys to render */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Database not loaded, or a citation key not in it */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  submitProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        documentId: string;
+      };
+      cookie?: never;
     };
-    listMacros: {
-        parameters: {
-            query?: {
-                query?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Configured macro inventory. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MacroInventoryResponse"];
-                };
-            };
-            /** @description Macro inspection failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SubmitProposalRequest"];
+      };
     };
-    queryFigures: {
-        parameters: {
-            query?: {
-                action?: "list" | "search" | "read";
-                /** @description Search term when action=search. */
-                query?: string;
-                /** @description Relative path when action=read. */
-                path?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Proposal accepted into review */
+      200: {
+        headers: {
+          ETag?: string;
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Figure listing, search results, or file contents. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FigureListResponse"] | components["schemas"]["FigureSearchResponse"] | components["schemas"]["FigureFileResponse"];
-                };
-            };
-            /** @description Invalid path or search parameters */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Figure file not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Figure operation failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["SubmitProposalResponse"];
         };
+      };
+      /** @description Invalid request payload or claims */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Revision mismatch or document closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Precondition failed */
+      412: {
+        headers: {
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Patch does not apply */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Internal error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    saveFigure: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FigureSaveRequest"];
-            };
-        };
-        responses: {
-            /** @description Figure saved */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FigureFileResponse"];
-                };
-            };
-            /** @description Figure created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FigureFileResponse"];
-                };
-            };
-            /** @description Invalid path or content */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Figure already exists */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Figure persistence failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  submitReview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    lintDocuments: {
-        parameters: {
-            query?: {
-                scope?: "focused" | "open" | "document" | "workspace" | "all";
-                documentId?: string;
-                workspaceId?: string;
-                minimumSeverity?: "info" | "warning" | "error";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Lint diagnostics. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LintResponse"];
-                };
-            };
-            /** @description Missing scope parameters */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Document or workspace not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Lint failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewSubmissionRequest"];
+      };
     };
-    searchZoteroItems: {
-        parameters: {
-            query: {
-                /** @description Words of the title, a creator name, or a year. */
-                q: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Review submission applied */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description At most limit matching items, most recently added first. Standalone notes are left out. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ZoteroSearchResponse"];
-                };
-            };
-            /** @description Zotero answered with an error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Zotero or the citation database is not available */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["SubmitProposalResponse"];
         };
+      };
+      /** @description Invalid payload or claims */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description File not found in workspace */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Conflict or mismatch */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Baseline mismatch */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Patch does not apply */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
-    importZoteroIdentifier: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ZoteroIdentifierImportRequest"];
-            };
-        };
-        responses: {
-            /** @description The new items */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ZoteroIdentifierImportResponse"];
-                };
-            };
-            /** @description The request or the identifier is not valid */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description No registry has the identifier, or a collection key does not exist */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Zotero answered with an error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Zotero or the citation database is not available */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-        };
+  };
+  listAnnotations: {
+    parameters: {
+      query?: {
+        /** @description Optional document ID to filter annotations. */
+        documentId?: string;
+        state?: "open" | "resolved";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    importZoteroUrl: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Annotations list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ZoteroUrlImportRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["AnnotationListResponse"];
         };
-        responses: {
-            /** @description The new or existing item */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ZoteroUrlImportResponse"];
-                };
-            };
-            /** @description The request is not valid */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description A collection key does not exist */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Zotero could not fetch the source, or answered with an error */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
-            /** @description Zotero or the citation database is not available */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AgentErrorResponse"];
-                };
-            };
+      };
+      /** @description Document not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
+  };
+  getAnnotation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The annotation. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AnnotationResponse"];
+        };
+      };
+      /** @description Annotation not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  addAnnotationMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        annotationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddAnnotationMessageRequest"];
+      };
+    };
+    responses: {
+      /** @description Appended message */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AddAnnotationMessageResponse"];
+        };
+      };
+      /** @description Annotation not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document is closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  listReviews: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Review summaries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewListResponse"];
+        };
+      };
+    };
+  };
+  getReview: {
+    parameters: {
+      query?: {
+        /** @description Which slice of the review to return. */
+        view?: "detail" | "diff" | "chunks" | "packets";
+      };
+      header?: never;
+      path: {
+        reviewId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Review slice. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["ReviewDetailResponse"]
+            | components["schemas"]["ReviewDiffResponse"]
+            | components["schemas"]["ReviewChunksResponse"]
+            | components["schemas"]["ReviewPacketsResponse"];
+        };
+      };
+      /** @description Review not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  addReviewComment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reviewId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddReviewCommentRequest"];
+      };
+    };
+    responses: {
+      /** @description The review with the comment appended. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewDetailResponse"];
+        };
+      };
+      /** @description Review not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  reapplyReview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reviewId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReapplyReviewRequest"];
+      };
+    };
+    responses: {
+      /** @description The review is live again. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReapplyReviewResponse"];
+        };
+      };
+      /** @description Review not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The review is still current, or its generation moved. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  discardReview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reviewId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReapplyReviewRequest"];
+      };
+    };
+    responses: {
+      /** @description The review is discarded. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DiscardReviewResponse"];
+        };
+      };
+      /** @description Review not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The review is still current, or its generation moved. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  retractProposal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        packetId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewMutationPrecondition"];
+      };
+    };
+    responses: {
+      /** @description Proposal retracted */
+      200: {
+        headers: {
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RetractProposalResponse"];
+        };
+      };
+      /** @description Proposal not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Proposal cannot be retracted or document is closed */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  waitForReviewEvents: {
+    parameters: {
+      query?: {
+        afterGeneration?: number;
+        waitSeconds?: number;
+        /** @deprecated */
+        wait?: number;
+      };
+      header?: never;
+      path: {
+        reviewId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Advance events or current status. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReviewEventsResponse"];
+        };
+      };
+      /** @description Review not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  queryCitations: {
+    parameters: {
+      query?: {
+        target?: "items" | "databases";
+        /** @description Database identifier. Defaults to main. */
+        database?: string;
+        /** @description Lookup a specific citation item by key. */
+        citeKey?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Citation query results. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["CitationItemsResponse"]
+            | components["schemas"]["CitationDatabasesResponse"]
+            | components["schemas"]["CitationItem"];
+        };
+      };
+      /** @description Database or cite key not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  renderCitations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenderCitationsRequest"];
+      };
+    };
+    responses: {
+      /** @description Rendered citations or bibliography */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["RenderCitationResponse"]
+            | components["schemas"]["RenderBibliographyResponse"];
+        };
+      };
+      /** @description No citations or citekeys to render */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Database not loaded, or a citation key not in it */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  listMacros: {
+    parameters: {
+      query?: {
+        query?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Configured macro inventory. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MacroInventoryResponse"];
+        };
+      };
+      /** @description Macro inspection failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  queryFigures: {
+    parameters: {
+      query?: {
+        action?: "list" | "search" | "read";
+        /** @description Search term when action=search. */
+        query?: string;
+        /** @description Relative path when action=read. */
+        path?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Figure listing, search results, or file contents. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            | components["schemas"]["FigureListResponse"]
+            | components["schemas"]["FigureSearchResponse"]
+            | components["schemas"]["FigureFileResponse"];
+        };
+      };
+      /** @description Invalid path or search parameters */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Figure file not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Figure operation failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  saveFigure: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FigureSaveRequest"];
+      };
+    };
+    responses: {
+      /** @description Figure saved */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FigureFileResponse"];
+        };
+      };
+      /** @description Figure created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FigureFileResponse"];
+        };
+      };
+      /** @description Invalid path or content */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Figure already exists */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Figure persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  lintDocuments: {
+    parameters: {
+      query?: {
+        scope?: "focused" | "open" | "document" | "workspace" | "all";
+        documentId?: string;
+        workspaceId?: string;
+        minimumSeverity?: "info" | "warning" | "error";
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Lint diagnostics. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LintResponse"];
+        };
+      };
+      /** @description Missing scope parameters */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Document or workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Lint failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  searchZoteroItems: {
+    parameters: {
+      query: {
+        /** @description Words of the title, a creator name, or a year. */
+        q: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description At most limit matching items, most recently added first. Standalone notes are left out. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroSearchResponse"];
+        };
+      };
+      /** @description Zotero answered with an error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero or the citation database is not available */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  importZoteroIdentifier: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ZoteroIdentifierImportRequest"];
+      };
+    };
+    responses: {
+      /** @description The new items */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroIdentifierImportResponse"];
+        };
+      };
+      /** @description The request or the identifier is not valid */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description No registry has the identifier, or a collection key does not exist */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero answered with an error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero or the citation database is not available */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  importZoteroUrl: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ZoteroUrlImportRequest"];
+      };
+    };
+    responses: {
+      /** @description The new or existing item */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroUrlImportResponse"];
+        };
+      };
+      /** @description The request is not valid */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description A collection key does not exist */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero could not fetch the source, or answered with an error */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero or the citation database is not available */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
 }

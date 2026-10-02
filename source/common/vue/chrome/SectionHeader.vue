@@ -45,15 +45,15 @@
  * END HEADER
  */
 
-import { AccordionHeader, AccordionTrigger } from 'reka-ui'
-import { useSlots } from 'vue'
+import { AccordionHeader, AccordionTrigger } from "reka-ui";
+import { useSlots } from "vue";
 
 const props = defineProps<{
-  label: string
-  count?: number
-}>()
+  label: string;
+  count?: number;
+}>();
 
-const slots = useSlots()
+const slots = useSlots();
 </script>
 
 <style lang="less">

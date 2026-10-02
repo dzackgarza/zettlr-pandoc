@@ -1,52 +1,52 @@
 // FSAL types available in both main process and renderer process
 
-import type { DocumentReferenceSnapshot } from './references'
+import type { DocumentReferenceSnapshot } from "./references";
 
 export type ProjectNavigationItem =
-  | { kind: 'chapter', path: string }
-  | { kind: 'part', title: string, chapters: string[] }
+  | { kind: "chapter"; path: string }
+  | { kind: "part"; title: string; chapters: string[] };
 
 export type ProjectManifest =
-  | { kind: 'zettlr' }
+  | { kind: "zettlr" }
   | {
-    kind: 'quarto'
-    path: string
-    bibliographies: string[]
-    navigation: ProjectNavigationItem[]
-  }
+      kind: "quarto";
+      path: string;
+      bibliographies: string[];
+      navigation: ProjectNavigationItem[];
+    };
 
 export interface ProjectSettings {
   /** The file that owns this project definition. */
-  manifest: ProjectManifest
+  manifest: ProjectManifest;
   /**
    * The title of the project, will be used, e.g., as title and filename for
    * projects.
    */
-  title: string
+  title: string;
   /**
    * A list of project filenames (found in the defaults folder in the app data)
    * to use for export.
    */
-  profiles: string[]
+  profiles: string[];
   /**
    * A sorted (!) list of project-relative paths to the files that should be
    * included in the export of this project, including the ordering in which
    * they should be included. A project derived from a Quarto manifest names
    * each chapter this way too, whatever route the manifest reached it by.
    */
-  files: string[]
+  files: string[];
   /**
    * An optional, deviating CSL Style to use for citations within this project.
    */
-  cslStyle: string
+  cslStyle: string;
   /**
    * Template files for various export profiles that override any templates
    * provided by the templates themselves.
    */
   templates: {
-    tex: string
-    html: string
-  }
+    tex: string;
+    html: string;
+  };
 }
 
 /**
@@ -54,17 +54,17 @@ export interface ProjectSettings {
  * descriptors should provide.
  */
 export interface FSMetaInfo {
-  path: string // absolutePath
-  dir: string // path.dirname(absolutePath)
-  name: string // path.basename(absolutePath)
-  type: 'file' | 'directory' | 'code' | 'other'
-  size: number
-  modtime: number
-  creationtime: number
+  path: string; // absolutePath
+  dir: string; // path.dirname(absolutePath)
+  name: string; // path.basename(absolutePath)
+  type: "file" | "directory" | "code" | "other";
+  size: number;
+  modtime: number;
+  creationtime: number;
 }
 
 /** How Markdown documents are labelled in Explorer surfaces. */
-export type FileNameDisplay = 'filename'|'title'|'heading'|'title+heading'
+export type FileNameDisplay = "filename" | "title" | "heading" | "title+heading";
 
 /**
  * A directory's persisted Explorer ordering. `name-*` and `time-*` are the
@@ -73,56 +73,65 @@ export type FileNameDisplay = 'filename'|'title'|'heading'|'title+heading'
  * the visible label from the ordering relation.
  */
 export type SortMethod =
-  | 'name-up'|'name-down'
-  | 'time-up'|'time-down'
-  | 'filename-up'|'filename-down'
-  | 'title-up'|'title-down'
-  | 'heading-up'|'heading-down'
-  | 'modtime-up'|'modtime-down'
-  | 'creationtime-up'|'creationtime-down'
-  | 'frontmatter-up'|'frontmatter-down'
-  | 'book-up'|'book-down'
+  | "name-up"
+  | "name-down"
+  | "time-up"
+  | "time-down"
+  | "filename-up"
+  | "filename-down"
+  | "title-up"
+  | "title-down"
+  | "heading-up"
+  | "heading-down"
+  | "modtime-up"
+  | "modtime-down"
+  | "creationtime-up"
+  | "creationtime-down"
+  | "frontmatter-up"
+  | "frontmatter-down"
+  | "book-up"
+  | "book-down";
 
-export type ProjectFileFilter = 'all'|'included'|'omitted'
+export type ProjectFileFilter = "all" | "included" | "omitted";
 
 /** Directory-local Explorer controls that do not belong to the project model. */
 export interface DirectoryExplorerSettings {
   /** `inherit` means the global fileNameDisplay preference. */
-  displayName: 'inherit'|FileNameDisplay
+  displayName: "inherit" | FileNameDisplay;
   /** Metadata key used by frontmatter-* sorting. */
-  sortMetadataKey: string
+  sortMetadataKey: string;
   /** `null` means the global sortFoldersFirst preference. */
-  foldersFirst: boolean|null
+  foldersFirst: boolean | null;
   /** Optional project-membership view over files in this directory. */
-  projectFilter: ProjectFileFilter
+  projectFilter: ProjectFileFilter;
 }
 
 export interface DirectorySettings {
   /**
    * Describes the sorting that should be applied to the directory
    */
-  sorting: SortMethod
+  sorting: SortMethod;
   /** Authoring/browser presentation local to this directory. */
-  explorer: DirectoryExplorerSettings
+  explorer: DirectoryExplorerSettings;
   /**
    * Can hold an optional custom icon for the directory
    */
-  icon: string|null
+  icon: string | null;
   /**
    * Holds the project settings if it's a project.
    */
-  project: ProjectSettings|null
+  project: ProjectSettings | null;
   /**
    * Holds an optional color for the directory.
    */
-  color: string|null
+  color: string | null;
   /**
    * Names the Quarto manifest that describes this directory when the manifest
    * does not sit in the directory itself, relative to the directory. The
    * binding is an input: the project it describes is derived from the manifest
    * on every load, and never written back here.
    */
-  quartoManifest: string|null
+  quartoManifest: string | null;
 }
 
 /**
@@ -131,61 +140,65 @@ export interface DirectorySettings {
 export interface DirDescriptor extends FSMetaInfo {
   // Settings are properties that must be persisted separately in a
   // .ztr-directory file, since they are not bound to the directory.
-  settings: DirectorySettings
-  type: 'directory'
-  isGitRepository: boolean
-  dirNotFoundFlag?: boolean // If the flag is set & true this directory has not been found
+  settings: DirectorySettings;
+  type: "directory";
+  isGitRepository: boolean;
+  dirNotFoundFlag?: boolean; // If the flag is set & true this directory has not been found
 }
 
 /**
  * The FSAL Markdown file descriptor
  */
 export interface MDFileDescriptor extends FSMetaInfo {
-  ext: string
-  id: string
-  type: 'file'
-  tags: string[]
-  links: string[] // Any outlinks declared in the file
-  citekeys: string[] // Any citation keys declared in the file
-  bom: string // An optional BOM
-  wordCount: number
-  charCount: number
+  ext: string;
+  id: string;
+  type: "file";
+  tags: string[];
+  links: string[]; // Any outlinks declared in the file
+  citekeys: string[]; // Any citation keys declared in the file
+  bom: string; // An optional BOM
+  wordCount: number;
+  charCount: number;
   /** First authored Markdown heading, regardless of heading depth. */
-  firstHeading: string|null
+  firstHeading: string | null;
   /** First prose sentence, used only when no authored heading exists. */
-  firstSentence?: string|null
+  firstSentence?: string | null;
   /** The parser that produced this descriptor; a cached descriptor from another parser is parsed again. */
-  parserVersion?: number
-  yamlTitle: string|undefined
+  parserVersion?: number;
+  yamlTitle: string | undefined;
   /** The YAML `aliases`: further names a wikilink may use for this document. */
-  aliases: string[]
-  frontmatter: any|null
-  linefeed: string
+  aliases: string[];
+  frontmatter: any | null;
+  linefeed: string;
   /**
    * The document's saved reference surface (pandoc-crossref and theorem-div
    * definitions and occurrences), extracted in the same markdownToAST pass
    * that produces tags, links, and citekeys (issue #1).
    */
-  references: DocumentReferenceSnapshot
+  references: DocumentReferenceSnapshot;
 }
 
 /**
  * The FSAL code file descriptor (.tex, .yml)
  */
 export interface CodeFileDescriptor extends FSMetaInfo {
-  ext: string
-  type: 'code'
-  bom: string // An optional BOM
-  linefeed: string
+  ext: string;
+  type: "code";
+  bom: string; // An optional BOM
+  linefeed: string;
 }
 
 /**
  * The FSAL other (non-MD and non-Tex) file descriptor
  */
 export interface OtherFileDescriptor extends FSMetaInfo {
-  type: 'other'
-  ext: string
+  type: "other";
+  ext: string;
 }
 
-export type AnyDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor
-export type MaybeRootDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor
+export type AnyDescriptor =
+  | DirDescriptor
+  | MDFileDescriptor
+  | CodeFileDescriptor
+  | OtherFileDescriptor;
+export type MaybeRootDescriptor = DirDescriptor | MDFileDescriptor | CodeFileDescriptor;

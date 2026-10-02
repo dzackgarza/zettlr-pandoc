@@ -51,92 +51,102 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import ButtonControl from '@common/vue/form/elements/ButtonControl.vue'
-import CodeEditor from '@common/vue/CodeEditor.vue'
-import { trans } from '@common/i18n-renderer'
-import { ref, watch, onUnmounted } from 'vue'
-import ZtrAdmonition from 'source/common/vue/ZtrAdmonition.vue'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import CodeEditor from "@common/vue/CodeEditor.vue";
+import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
+import ZtrAdmonition from "source/common/vue/ZtrAdmonition.vue";
+import { onUnmounted, ref, watch } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-interface CodeEditorAPI { isClean: () => boolean, markClean: () => void }
-const codeEditor = ref<CodeEditorAPI | null>(null)
+interface CodeEditorAPI {
+  isClean: () => boolean;
+  markClean: () => void;
+}
+const codeEditor = ref<CodeEditorAPI | null>(null);
 
-const saveButtonLabel = trans('Save')
-const openSnippetFileLabel = trans('Open snippet file')
-const snippetsExplanation = trans('Edit the .code-snippets file selected in Preferences → Snippets.')
+const saveButtonLabel = trans("Save");
+const openSnippetFileLabel = trans("Open snippet file");
+const snippetsExplanation = trans(
+  "Edit the .code-snippets file selected in Preferences → Snippets.",
+);
 
-const sourcePath = ref('')
-const editorContents = ref('')
-const savingStatus = ref('')
+const sourcePath = ref("");
+const editorContents = ref("");
+const savingStatus = ref("");
 
 watch(editorContents, () => {
   if (codeEditor.value != null && codeEditor.value.isClean()) {
-    savingStatus.value = ''
+    savingStatus.value = "";
   } else {
-    savingStatus.value = trans('Unsaved changes')
+    savingStatus.value = trans("Unsaved changes");
   }
-})
+});
 
-loadSource()
+loadSource();
 
-const offShortcut = ipcRenderer.on('shortcut', (_event, shortcut) => {
-  if (shortcut === 'save-file') {
-    saveSnippet()
+const offShortcut = ipcRenderer.on("shortcut", (_event, shortcut) => {
+  if (shortcut === "save-file") {
+    saveSnippet();
   }
-})
+});
 
-const offAssets = ipcRenderer.on('assets-provider', (_event, what: string) => {
-  if (what === 'snippets-updated' && (codeEditor.value == null || codeEditor.value.isClean())) {
-    loadSource()
+const offAssets = ipcRenderer.on("assets-provider", (_event, what: string) => {
+  if (what === "snippets-updated" && (codeEditor.value == null || codeEditor.value.isClean())) {
+    loadSource();
   }
-})
+});
 
 onUnmounted(() => {
-  offShortcut()
-  offAssets()
-})
+  offShortcut();
+  offAssets();
+});
 
-function loadSource (): void {
-  ipcRenderer.invoke('assets-provider', { command: 'get-snippets-source' })
-    .then(source => {
-      sourcePath.value = source.filePath
-      editorContents.value = source.contents
-      codeEditor.value?.markClean()
-      savingStatus.value = ''
+function loadSource(): void {
+  ipcRenderer
+    .invoke("assets-provider", { command: "get-snippets-source" })
+    .then((source) => {
+      sourcePath.value = source.filePath;
+      editorContents.value = source.contents;
+      codeEditor.value?.markClean();
+      savingStatus.value = "";
     })
-    .catch(err => {
-      savingStatus.value = trans('Could not load snippet file')
-      reportError(err)
-    })
+    .catch((err) => {
+      savingStatus.value = trans("Could not load snippet file");
+      reportError(err);
+    });
 }
 
-function saveSnippet (): void {
-  savingStatus.value = trans('Saving …')
+function saveSnippet(): void {
+  savingStatus.value = trans("Saving …");
 
-  ipcRenderer.invoke('assets-provider', {
-    command: 'set-snippets-source',
-    payload: { contents: editorContents.value }
-  })
-    .then(result => {
+  ipcRenderer
+    .invoke("assets-provider", {
+      command: "set-snippets-source",
+      payload: { contents: editorContents.value },
+    })
+    .then((result) => {
       if (!result.ok) {
-        savingStatus.value = result.error
-        return
+        savingStatus.value = result.error;
+        return;
       }
-      savingStatus.value = trans('Saved!')
-      codeEditor.value?.markClean()
-      setTimeout(() => { savingStatus.value = '' }, 1000)
+      savingStatus.value = trans("Saved!");
+      codeEditor.value?.markClean();
+      setTimeout(() => {
+        savingStatus.value = "";
+      }, 1000);
     })
-    .catch(err => {
-      savingStatus.value = trans('Could not save changes')
-      reportError(err)
-    })
+    .catch((err) => {
+      savingStatus.value = trans("Could not save changes");
+      reportError(err);
+    });
 }
 
-function openSnippetsFile (): void {
-  ipcRenderer.invoke('assets-provider', { command: 'open-snippets-file' })
-    .catch(err => reportError(err))
+function openSnippetsFile(): void {
+  ipcRenderer
+    .invoke("assets-provider", { command: "open-snippets-file" })
+    .catch((err) => reportError(err));
 }
 </script>
 

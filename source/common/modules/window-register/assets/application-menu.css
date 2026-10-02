@@ -21,9 +21,9 @@ body {
     overflow-y: auto; /* In case the menu is too small, enable scrolling */
     font-family: system-ui, sans-serif;
     font-size: 14px;
-    box-shadow: 5px 5px 15px 0px rgba(0, 0, 0, .3);
+    box-shadow: 5px 5px 15px 0px rgba(0, 0, 0, 0.3);
     min-width: 150px;
-  
+
     div.menu-item {
       height: 25px;
       line-height: 25px;
@@ -42,7 +42,7 @@ body {
       &.disabled {
         color: rgb(180, 180, 180);
       }
-  
+
       div.status {
         grid-area: status;
         text-align: center;
@@ -55,7 +55,7 @@ body {
         grid-area: label;
         text-align: left;
       }
-  
+
       /* Separators are obviously very small */
       &.separator {
         height: 1px;
@@ -69,17 +69,25 @@ body {
       border: 1px solid #666;
       background-color: #333;
       color: #eee;
-    
+
       div.menu-item {
-        div.after-element { color: #aaa; }
-    
-        &.disabled { color: #aaa; }
-    
+        div.after-element {
+          color: #aaa;
+        }
+
+        &.disabled {
+          color: #aaa;
+        }
+
         /* Separators are obviously very small */
-        &.separator { background-color: #666; }
-    
-        &:not(.separator):not(.disabled):hover { background-color: #999; }
+        &.separator {
+          background-color: #666;
+        }
+
+        &:not(.separator):not(.disabled):hover {
+          background-color: #999;
+        }
       }
-    }    
+    }
   }
 }

@@ -7,61 +7,67 @@
  * per-spec callback without reintroducing synchronous IPC.
  */
 
-export function installCitationIpcFromCallback (): () => void {
-  const originalIpc = window.ipc
+export function installCitationIpcFromCallback(): () => void {
+  const originalIpc = window.ipc;
   const replacement = {
     on: originalIpc?.on ?? (() => () => undefined),
     send: originalIpc?.send ?? (() => undefined),
     sendSync: originalIpc?.sendSync ?? (() => undefined),
-    invoke: async (channel: string, message?: {
-      command?: string
-      payload?: {
-        database?: import('source/types/common/citeproc').CitationDatabase
-        citations?: CiteItem[]
-        composite?: boolean
-      }
-    }): Promise<unknown> => {
-      if (channel === 'citeproc-provider' && message?.command === 'get-citation') {
-        const payload = message.payload
+    invoke: async (
+      channel: string,
+      message?: {
+        command?: string;
+        payload?: {
+          database?: import("source/types/common/citeproc").CitationDatabase;
+          citations?: CiteItem[];
+          composite?: boolean;
+        };
+      },
+    ): Promise<unknown> => {
+      if (channel === "citeproc-provider" && message?.command === "get-citation") {
+        const payload = message.payload;
         if (payload?.database === undefined) {
-          throw new Error('citation test IPC bridge received get-citation without a database')
+          throw new Error("citation test IPC bridge received get-citation without a database");
         }
         return window.getCitationCallback(payload.database)(
           payload.citations ?? [],
-          payload.composite ?? false
-        )
+          payload.composite ?? false,
+        );
       }
       if (originalIpc === undefined) {
-        return undefined
+        return undefined;
       }
       // This test bridge only intercepts citeproc. Other calls retain whatever
       // seam the importing spec installed.
-      return await (originalIpc.invoke as (channel: string, message?: unknown) => Promise<unknown>)(channel, message)
-    }
-  }
+      return await (originalIpc.invoke as (channel: string, message?: unknown) => Promise<unknown>)(
+        channel,
+        message,
+      );
+    },
+  };
 
-  Object.defineProperty(window, 'ipc', {
+  Object.defineProperty(window, "ipc", {
     configurable: true,
     writable: true,
-    value: replacement
-  })
+    value: replacement,
+  });
 
   return () => {
-    Object.defineProperty(window, 'ipc', {
+    Object.defineProperty(window, "ipc", {
       configurable: true,
       writable: true,
-      value: originalIpc
-    })
-  }
+      value: originalIpc,
+    });
+  };
 }
 
-export async function settleCitationWidgets (root: ParentNode = document): Promise<void> {
+export async function settleCitationWidgets(root: ParentNode = document): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    await Promise.resolve()
-    if (root.querySelector('.citeproc-pending') === null) {
-      return
+    await Promise.resolve();
+    if (root.querySelector(".citeproc-pending") === null) {
+      return;
     }
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  throw new Error('Citation widgets did not settle')
+  throw new Error("Citation widgets did not settle");
 }

@@ -13,31 +13,31 @@
  * END HEADER
  */
 
-import EventEmitter from 'events'
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import enumDictFiles, { type DictFileMetadata } from "@common/util/enum-dict-files";
+import findLangCandidates, { type Candidate } from "@common/util/find-lang-candidates";
+import type ConfigProvider from "@providers/config";
+import { FSWatcher } from "chokidar";
+
+import { app, ipcMain, shell } from "electron";
+import EventEmitter from "events";
+import { promises as fs } from "fs";
 // NOTE: We have to include the compiled Nodehun.node library directly, because
 // webpack, the asset relocator, forge, or all of them at once will otherwise be
 // unable to detect that Nodehun is not a Javascript, but a native module,
 // because the dylib is referenced directly in the package.json -- but without
 // a file extension.
-import Nodehun from 'nodehun/build/Release/Nodehun.node'
+import Nodehun from "nodehun/build/Release/Nodehun.node";
 // import { Nodehun } from 'nodehun'
-import path from 'path'
-import { promises as fs } from 'fs'
-import { FSWatcher } from 'chokidar'
-
-import { ipcMain, app, shell } from 'electron'
-import broadcastIpcMessage from '@common/util/broadcast-ipc-message'
-import findLangCandidates, { type Candidate } from '@common/util/find-lang-candidates'
-import enumDictFiles, { type DictFileMetadata } from '@common/util/enum-dict-files'
-import ProviderContract from '../provider-contract'
-import type LogProvider from '../log'
-import type ConfigProvider from '@providers/config'
+import path from "path";
 import {
   appendPortableProseCompletion,
+  normalizeProseCompletionEntry,
   parsePortableProseCompletions,
   proseWordsFromHunspellDic,
-  normalizeProseCompletionEntry,
-} from '../../util/prose-completion-files'
+} from "../../util/prose-completion-files";
+import type LogProvider from "../log";
+import ProviderContract from "../provider-contract";
 
 /**
  * This class loads and unloads dictionaries according to the configuration set
@@ -45,313 +45,325 @@ import {
  * loaded dictionaries for words and even change the dictionaries during runtime.
  */
 export default class DictionaryProvider extends ProviderContract {
-  private readonly hunspell: Nodehun[]
-  private readonly _loadedDicts: string[]
-  private readonly _userDictionaryPath: string
-  private readonly _emitter: EventEmitter
-  private _userDictionary: string[]
-  private _fileLock: boolean
-  private _unwrittenChanges: boolean
-  private _cachedAutocorrect: string[]
-  private _reloadWanted: boolean
-  private _reloadLock: boolean
+  private readonly hunspell: Nodehun[];
+  private readonly _loadedDicts: string[];
+  private readonly _userDictionaryPath: string;
+  private readonly _emitter: EventEmitter;
+  private _userDictionary: string[];
+  private _fileLock: boolean;
+  private _unwrittenChanges: boolean;
+  private _cachedAutocorrect: string[];
+  private _reloadWanted: boolean;
+  private _reloadLock: boolean;
   /** Base words obtained from the currently selected Hunspell dictionaries. */
-  private readonly _hunspellCompletionWords = new Map<string, string[]>()
+  private readonly _hunspellCompletionWords = new Map<string, string[]>();
   /** Portable prose-completion files, with the first path being writable. */
-  private _proseCompletionFile = ''
-  private _proseCompletionExtraFiles: string[] = []
-  private readonly _portableCompletionEntries = new Map<string, string[]>()
-  private readonly _proseCompletionWatcher: FSWatcher
+  private _proseCompletionFile = "";
+  private _proseCompletionExtraFiles: string[] = [];
+  private readonly _portableCompletionEntries = new Map<string, string[]>();
+  private readonly _proseCompletionWatcher: FSWatcher;
 
-  constructor (private readonly _logger: LogProvider, private readonly _config: ConfigProvider) {
-    super()
+  constructor(
+    private readonly _logger: LogProvider,
+    private readonly _config: ConfigProvider,
+  ) {
+    super();
     // Array containing all loaded Hunspell dictionaries
-    this.hunspell = []
+    this.hunspell = [];
     // Array containing the language codes for which checking currently works
-    this._loadedDicts = []
+    this._loadedDicts = [];
     // Path to the user dictionary
-    this._userDictionaryPath = path.join(app.getPath('userData'), 'user.dic')
+    this._userDictionaryPath = path.join(app.getPath("userData"), "user.dic");
     // The user dictionary
-    this._userDictionary = ['Zettlr']
+    this._userDictionary = ["Zettlr"];
 
-    this._cachedAutocorrect = []
+    this._cachedAutocorrect = [];
 
-    this._emitter = new EventEmitter()
+    this._emitter = new EventEmitter();
 
     // If this flag is set, this indicates that a reload is wanted
-    this._reloadWanted = false
-    this._reloadLock = false // True during reload
+    this._reloadWanted = false;
+    this._reloadLock = false; // True during reload
 
     this._proseCompletionWatcher = new FSWatcher({
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
         stabilityThreshold: 200,
-        pollInterval: 50
-      }
-    })
-    this._proseCompletionWatcher.on('all', (_event, affectedPath) => {
-      const resolved = path.resolve(affectedPath)
+        pollInterval: 50,
+      },
+    });
+    this._proseCompletionWatcher.on("all", (_event, affectedPath) => {
+      const resolved = path.resolve(affectedPath);
       if (!this.proseCompletionPaths().includes(resolved)) {
-        return
+        return;
       }
-      void this.reloadPortableProseCompletions().catch(error => {
+      void this.reloadPortableProseCompletions().catch((error) => {
         this._logger.error(
           `[Dictionary Provider] Could not reload prose completions after ${resolved} changed: ${error instanceof Error ? error.message : String(error)}`,
-          error
-        )
-      })
-    })
+          error,
+        );
+      });
+    });
 
     // Flags for writing the file
-    this._fileLock = false
-    this._unwrittenChanges = false
+    this._fileLock = false;
+    this._unwrittenChanges = false;
 
-    ipcMain.handle('dictionary-provider', (event, message) => {
-      const terms: string[] = message.terms
-      const { command } = message
-      if (command === 'get-user-dictionary') {
-        return this._userDictionary.map(elem => elem)
-      } else if (command === 'set-user-dictionary') {
-        const dict = message.payload
-        if (!Array.isArray(dict) || !dict.every(d => typeof d === 'string')) {
-          throw new Error('[Dictionary Provider] Cannot set user dictionary: Argument was not a string array.')
+    ipcMain.handle("dictionary-provider", (event, message) => {
+      const terms: string[] = message.terms;
+      const { command } = message;
+      if (command === "get-user-dictionary") {
+        return this._userDictionary.map((elem) => elem);
+      } else if (command === "set-user-dictionary") {
+        const dict = message.payload;
+        if (!Array.isArray(dict) || !dict.every((d) => typeof d === "string")) {
+          throw new Error(
+            "[Dictionary Provider] Cannot set user dictionary: Argument was not a string array.",
+          );
         }
-        this.setUserDictionary(dict)
-      } else if (command === 'check') {
-        return terms.map(t => this.check(t))
-      } else if (command === 'suggest') {
-        return terms.map(t => this.suggest(t))
-      } else if (command === 'add') {
-        return terms.map(t => this.add(t))
-      } else if (command === 'open-dictionary-folder') {
-        shell.showItemInFolder(path.join(app.getPath('userData'), '/dict'))
-      } else if (command === 'get-prose-completions') {
-        return this.getProseCompletions()
-      } else if (command === 'add-prose-completion') {
-        return this.addProseCompletion(message.payload.entry)
-      } else if (command === 'open-prose-completion-file') {
-        return shell.openPath(this._proseCompletionFile)
+        this.setUserDictionary(dict);
+      } else if (command === "check") {
+        return terms.map((t) => this.check(t));
+      } else if (command === "suggest") {
+        return terms.map((t) => this.suggest(t));
+      } else if (command === "add") {
+        return terms.map((t) => this.add(t));
+      } else if (command === "open-dictionary-folder") {
+        shell.showItemInFolder(path.join(app.getPath("userData"), "/dict"));
+      } else if (command === "get-prose-completions") {
+        return this.getProseCompletions();
+      } else if (command === "add-prose-completion") {
+        return this.addProseCompletion(message.payload.entry);
+      } else if (command === "open-prose-completion-file") {
+        return shell.openPath(this._proseCompletionFile);
       }
-    })
+    });
 
     // Reload as soon as the config has been updated
-    this._config.on('update', (opt: string) => {
+    this._config.on("update", (opt: string) => {
       // Reload the dictionaries (if applicable) ...
-      this.synchronizeHunspellDictionaries()
-        .catch(err => {
-          this._logger.error(`[Dictionary Provider] Could not (re)load dictionaries: ${err.message as string}`, err)
-        })
+      this.synchronizeHunspellDictionaries().catch((err) => {
+        this._logger.error(
+          `[Dictionary Provider] Could not (re)load dictionaries: ${err.message as string}`,
+          err,
+        );
+      });
       // ... and add cache the autocorrect replacements so they are not seen as "wrong"
-      this._cacheAutoCorrectValues()
+      this._cacheAutoCorrectValues();
       if (
         opt === undefined ||
-        opt === 'editor.proseCompletionFile' ||
-        opt === 'editor.proseCompletionExtraFiles'
+        opt === "editor.proseCompletionFile" ||
+        opt === "editor.proseCompletionExtraFiles"
       ) {
-        void this.configureProseCompletionFiles().catch(error => {
+        void this.configureProseCompletionFiles().catch((error) => {
           this._logger.error(
             `[Dictionary Provider] Could not switch prose completion files: ${error instanceof Error ? error.message : String(error)}`,
-            error
-          )
-        })
+            error,
+          );
+        });
       }
-    })
+    });
   }
 
-  async boot (): Promise<void> {
-    this._logger.verbose('Dictionary provider booting up ...')
-    await this.synchronizeHunspellDictionaries()
-    await this.loadUserDictionary()
-    await this.configureProseCompletionFiles()
-    this._cacheAutoCorrectValues()
+  async boot(): Promise<void> {
+    this._logger.verbose("Dictionary provider booting up ...");
+    await this.synchronizeHunspellDictionaries();
+    await this.loadUserDictionary();
+    await this.configureProseCompletionFiles();
+    this._cacheAutoCorrectValues();
   }
 
   /**
    * Shuts down the provider
    */
-  async shutdown (): Promise<void> {
-    this._logger.verbose('Dictionary provider shutting down ...')
-    await this._proseCompletionWatcher.close()
-    await this.persistUserDictionary()
+  async shutdown(): Promise<void> {
+    this._logger.verbose("Dictionary provider shutting down ...");
+    await this._proseCompletionWatcher.close();
+    await this.persistUserDictionary();
   }
 
-  private configuredProseCompletionFile (): string {
-    const configured = this._config.get().editor.proseCompletionFile.trim()
-    return configured === ''
-      ? path.join(app.getPath('home'), '.pandoc', 'completions', 'prose.txt')
-      : path.resolve(configured)
+  private configuredProseCompletionFile(): string {
+    const configured = this._config.get().editor.proseCompletionFile.trim();
+    return configured === ""
+      ? path.join(app.getPath("home"), ".pandoc", "completions", "prose.txt")
+      : path.resolve(configured);
   }
 
-  private configuredProseCompletionExtraFiles (): string[] {
-    const configured = this._config.get('editor.proseCompletionExtraFiles')
+  private configuredProseCompletionExtraFiles(): string[] {
+    const configured = this._config.get("editor.proseCompletionExtraFiles");
     if (!Array.isArray(configured)) {
-      return []
+      return [];
     }
     return configured
-      .filter((entry): entry is string => typeof entry === 'string')
-      .map(entry => entry.trim())
-      .filter(entry => entry !== '')
-      .map(entry => path.resolve(entry))
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== "")
+      .map((entry) => path.resolve(entry));
   }
 
-  private proseCompletionPaths (): string[] {
-    return [...new Set([
-      this._proseCompletionFile,
-      ...this._proseCompletionExtraFiles,
-    ].filter(filePath => filePath !== ''))]
+  private proseCompletionPaths(): string[] {
+    return [
+      ...new Set(
+        [this._proseCompletionFile, ...this._proseCompletionExtraFiles].filter(
+          (filePath) => filePath !== "",
+        ),
+      ),
+    ];
   }
 
-  private async configureProseCompletionFiles (): Promise<void> {
-    const previous = this.proseCompletionPaths()
-    const primary = this.configuredProseCompletionFile()
-    const extras = this.configuredProseCompletionExtraFiles().filter(filePath => filePath !== primary)
+  private async configureProseCompletionFiles(): Promise<void> {
+    const previous = this.proseCompletionPaths();
+    const primary = this.configuredProseCompletionFile();
+    const extras = this.configuredProseCompletionExtraFiles().filter(
+      (filePath) => filePath !== primary,
+    );
 
-    await fs.mkdir(path.dirname(primary), { recursive: true })
+    await fs.mkdir(path.dirname(primary), { recursive: true });
     try {
-      await fs.access(primary)
+      await fs.access(primary);
     } catch {
-      await fs.writeFile(
-        primary,
-        '# Zettlr prose completions: one word or phrase per line.\n',
-        { encoding: 'utf-8' }
-      )
+      await fs.writeFile(primary, "# Zettlr prose completions: one word or phrase per line.\n", {
+        encoding: "utf-8",
+      });
     }
 
     for (const oldPath of previous) {
-      if (oldPath !== '' && ![primary, ...extras].includes(oldPath)) {
-        await this._proseCompletionWatcher.unwatch(oldPath)
+      if (oldPath !== "" && ![primary, ...extras].includes(oldPath)) {
+        await this._proseCompletionWatcher.unwatch(oldPath);
       }
     }
-    this._proseCompletionFile = primary
-    this._proseCompletionExtraFiles = extras
-    this._proseCompletionWatcher.add(this.proseCompletionPaths())
-    await this.reloadPortableProseCompletions()
+    this._proseCompletionFile = primary;
+    this._proseCompletionExtraFiles = extras;
+    this._proseCompletionWatcher.add(this.proseCompletionPaths());
+    await this.reloadPortableProseCompletions();
   }
 
-  private async reloadPortableProseCompletions (): Promise<void> {
-    const entries = new Map<string, string[]>()
+  private async reloadPortableProseCompletions(): Promise<void> {
+    const entries = new Map<string, string[]>();
     for (const filePath of this.proseCompletionPaths()) {
       try {
-        entries.set(filePath, parsePortableProseCompletions(await fs.readFile(filePath, 'utf8')))
+        entries.set(filePath, parsePortableProseCompletions(await fs.readFile(filePath, "utf8")));
       } catch (error) {
         // The primary file is created by configureProseCompletionFiles. Extra
         // files are user-owned and may temporarily disappear while being
         // synced/renamed; keep other sources live and report the exact source.
         if (filePath === this._proseCompletionFile) {
-          throw error
+          throw error;
         }
         this._logger.error(
           `[Dictionary Provider] Could not read prose completion catalogue ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-          error
-        )
+          error,
+        );
       }
     }
-    this._portableCompletionEntries.clear()
+    this._portableCompletionEntries.clear();
     for (const [filePath, fileEntries] of entries) {
-      this._portableCompletionEntries.set(filePath, fileEntries)
+      this._portableCompletionEntries.set(filePath, fileEntries);
     }
-    broadcastIpcMessage('dictionary-provider', { command: 'prose-completions-updated' })
+    broadcastIpcMessage("dictionary-provider", { command: "prose-completions-updated" });
   }
 
   /** Merged read-only language vocabulary plus portable user catalogues. */
-  getProseCompletions (): string[] {
-    const result = new Set<string>()
+  getProseCompletions(): string[] {
+    const result = new Set<string>();
     // Portable entries lead so authored phrases/terminology win stable ordering
     // ahead of the much larger language dictionaries.
     for (const entries of this._portableCompletionEntries.values()) {
-      for (const entry of entries) result.add(entry)
+      for (const entry of entries) result.add(entry);
     }
     for (const entries of this._hunspellCompletionWords.values()) {
-      for (const entry of entries) result.add(entry)
+      for (const entry of entries) result.add(entry);
     }
-    return [...result]
+    return [...result];
   }
 
   /** Append one word or phrase to the portable primary completion file. */
-  async addProseCompletion (rawEntry: string): Promise<{ added: boolean, filePath: string }> {
-    const entry = normalizeProseCompletionEntry(rawEntry)
-    if (entry === '') {
-      return { added: false, filePath: this._proseCompletionFile }
+  async addProseCompletion(rawEntry: string): Promise<{ added: boolean; filePath: string }> {
+    const entry = normalizeProseCompletionEntry(rawEntry);
+    if (entry === "") {
+      return { added: false, filePath: this._proseCompletionFile };
     }
 
     // reloadPortableProseCompletions() either loads the primary file or throws,
     // so a missing entry means the provider has not been configured yet.
-    const currentEntries = this._portableCompletionEntries.get(this._proseCompletionFile)
+    const currentEntries = this._portableCompletionEntries.get(this._proseCompletionFile);
     if (currentEntries === undefined) {
       throw new Error(
         `Prose completion file ${this._proseCompletionFile} is not loaded; ` +
-        'the dictionary provider must finish booting before completions can be added'
-      )
+          "the dictionary provider must finish booting before completions can be added",
+      );
     }
     if (currentEntries.includes(entry)) {
-      return { added: false, filePath: this._proseCompletionFile }
+      return { added: false, filePath: this._proseCompletionFile };
     }
 
-    const added = await appendPortableProseCompletion(this._proseCompletionFile, entry)
-    if (!added) return { added: false, filePath: this._proseCompletionFile }
-    this._portableCompletionEntries.set(this._proseCompletionFile, [...currentEntries, entry])
-    broadcastIpcMessage('dictionary-provider', { command: 'prose-completions-updated' })
-    return { added, filePath: this._proseCompletionFile }
+    const added = await appendPortableProseCompletion(this._proseCompletionFile, entry);
+    if (!added) return { added: false, filePath: this._proseCompletionFile };
+    this._portableCompletionEntries.set(this._proseCompletionFile, [...currentEntries, entry]);
+    broadcastIpcMessage("dictionary-provider", { command: "prose-completions-updated" });
+    return { added, filePath: this._proseCompletionFile };
   }
 
   /**
-     * Replaces the current user dictionary with a new one
-     * @param {Array} dict The new dictionary.
-     * @return {Boolean} Whether or not the call succeeded.
-     */
-  setUserDictionary (dict: string[]): boolean {
+   * Replaces the current user dictionary with a new one
+   * @param {Array} dict The new dictionary.
+   * @return {Boolean} Whether or not the call succeeded.
+   */
+  setUserDictionary(dict: string[]): boolean {
     if (!Array.isArray(dict)) {
-      return false
+      return false;
     }
 
-    this._userDictionary = dict
-    this._userDictionary = [...new Set(this._userDictionary)]
-    this._userDictionary = this._userDictionary.filter(word => word.trim() !== '')
-    this.persistUserDictionary()
-      .catch(err => {
-        this._logger.error(`[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`, err)
-      })
+    this._userDictionary = dict;
+    this._userDictionary = [...new Set(this._userDictionary)];
+    this._userDictionary = this._userDictionary.filter((word) => word.trim() !== "");
+    this.persistUserDictionary().catch((err) => {
+      this._logger.error(
+        `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
+        err,
+      );
+    });
 
     // Send an invalidation message to the renderer
-    broadcastIpcMessage('dictionary-provider', { command: 'invalidate-dict' })
+    broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });
 
-    return true
+    return true;
   }
 
   /**
    * Caches the autocorrect replacement table in order to mark the replacements
    * as correct.
    */
-  _cacheAutoCorrectValues (): void {
-    const table = this._config.get().editor.autoCorrect.replacements
-    this._cachedAutocorrect = table.map(x => x.value)
+  _cacheAutoCorrectValues(): void {
+    const table = this._config.get().editor.autoCorrect.replacements;
+    this._cachedAutocorrect = table.map((x) => x.value);
   }
 
   /**
- * Returns metadata for a given dictionary dir and provides a status code.
- * @param  {string} query         The language metadata is requested for (BCP 47 compatible)
- * @return {Object}               A language metadata object.
- */
-  private _getDictionaryFile (query: string): Candidate & DictFileMetadata {
+   * Returns metadata for a given dictionary dir and provides a status code.
+   * @param  {string} query         The language metadata is requested for (BCP 47 compatible)
+   * @return {Object}               A language metadata object.
+   */
+  private _getDictionaryFile(query: string): Candidate & DictFileMetadata {
     // First of all, create the fallback object.
     const fallback: Candidate & DictFileMetadata = {
-      tag: 'en-US',
-      status: 'fallback',
-      aff: path.join(__dirname, 'dict/en-US/en-US.aff'),
-      dic: path.join(__dirname, 'dict/en-US/en-US.dic')
-    }
+      tag: "en-US",
+      status: "fallback",
+      aff: path.join(__dirname, "dict/en-US/en-US.aff"),
+      dic: path.join(__dirname, "dict/en-US/en-US.dic"),
+    };
 
     // Now we should have a list of all available dictionaries. Next, we need to
     // search for a best and a close match.
-    const { exact, close } = findLangCandidates(query, enumDictFiles())
+    const { exact, close } = findLangCandidates(query, enumDictFiles());
 
     if (exact !== undefined) {
-      return exact
+      return exact;
     } else if (close !== undefined) {
-      return close
+      return close;
     } else {
-      return fallback
+      return fallback;
     }
   }
 
@@ -359,85 +371,90 @@ export default class DictionaryProvider extends ProviderContract {
    * (Re)Loads the dictionaries efficiently based upon the selected dictionaries
    * @return {Promise} Does not throw, as we catch errors.
    */
-  async synchronizeHunspellDictionaries (): Promise<void> {
+  async synchronizeHunspellDictionaries(): Promise<void> {
     if (this._reloadLock) {
       // Another reload is wanted
-      this._reloadWanted = true
-      return
+      this._reloadWanted = true;
+      return;
     }
 
-    this._reloadWanted = false
-    this._reloadLock = true
+    this._reloadWanted = false;
+    this._reloadLock = true;
 
-    const { selectedDicts } = this._config.get()
-    let dictsToLoad = []
+    const { selectedDicts } = this._config.get();
+    let dictsToLoad = [];
 
-    let changeWanted = false
+    let changeWanted = false;
 
     // This function can also be called during runtime to exchange some dicts,
     // so make sure we don't reload these monstrous things all too often.
     // 1. Which dicts do we have to load?
     for (let dict of selectedDicts) {
       if (!this._loadedDicts.includes(dict)) {
-        dictsToLoad.push(dict)
-        changeWanted = true
+        dictsToLoad.push(dict);
+        changeWanted = true;
       }
     }
 
     // 2. Which of the already loaded dicts can be trashed?
     for (let dict of this._loadedDicts) {
       if (!selectedDicts.includes(dict)) {
-        let index = this._loadedDicts.indexOf(dict)
-        this._loadedDicts.splice(index, 1) // Remove both from the loadedDicts...
-        this.hunspell.splice(index, 1) // ... and the typos themselves
-        this._hunspellCompletionWords.delete(dict)
-        changeWanted = true
+        let index = this._loadedDicts.indexOf(dict);
+        this._loadedDicts.splice(index, 1); // Remove both from the loadedDicts...
+        this.hunspell.splice(index, 1); // ... and the typos themselves
+        this._hunspellCompletionWords.delete(dict);
+        changeWanted = true;
       }
     }
 
     for (const dict of dictsToLoad) {
       // First request a dictionary.
-      const dictMeta = this._getDictionaryFile(dict)
-      if (dictMeta.status !== 'exact') {
-        this._logger.error(`[Dictionary Provider] Could not load ${dict}: No exact match found.`, dictMeta)
-        continue // Only consider exact matches
+      const dictMeta = this._getDictionaryFile(dict);
+      if (dictMeta.status !== "exact") {
+        this._logger.error(
+          `[Dictionary Provider] Could not load ${dict}: No exact match found.`,
+          dictMeta,
+        );
+        continue; // Only consider exact matches
       }
 
-      let aff: null|Buffer = null
-      let dic: null|Buffer = null
+      let aff: null | Buffer = null;
+      let dic: null | Buffer = null;
 
       try {
-        aff = await fs.readFile(dictMeta.aff)
+        aff = await fs.readFile(dictMeta.aff);
       } catch (err: any) {
-        this._logger.error(`[Dictionary Provider] Could not load affix file for ${dict}`, err)
-        continue
+        this._logger.error(`[Dictionary Provider] Could not load affix file for ${dict}`, err);
+        continue;
       }
 
       try {
-        dic = await fs.readFile(dictMeta.dic)
+        dic = await fs.readFile(dictMeta.dic);
       } catch (err: any) {
-        this._logger.error(`[Dictionary Provider] Could not load .dic-file for ${dict}`, err)
-        continue
+        this._logger.error(`[Dictionary Provider] Could not load .dic-file for ${dict}`, err);
+        continue;
       }
 
-      this._loadedDicts.push(dict)
-      this.hunspell.push(new Nodehun(aff, dic))
-      this._hunspellCompletionWords.set(dict, proseWordsFromHunspellDic(dic.toString('utf8')))
+      this._loadedDicts.push(dict);
+      this.hunspell.push(new Nodehun(aff, dic));
+      this._hunspellCompletionWords.set(dict, proseWordsFromHunspellDic(dic.toString("utf8")));
     } // END for
 
     if (changeWanted) {
       // Don't be noisy: Only emit if necessary
       // Finally emit the update event
-      this._emitter.emit('update', this._loadedDicts)
-      this._logger.info(`[Dictionary Provider] Loaded dictionaries: ${this._loadedDicts.join(', ')}`)
+      this._emitter.emit("update", this._loadedDicts);
+      this._logger.info(
+        `[Dictionary Provider] Loaded dictionaries: ${this._loadedDicts.join(", ")}`,
+      );
 
       // Send an invalidation message to the renderer
-      broadcastIpcMessage('dictionary-provider', { command: 'invalidate-dict' })
+      broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });
     }
 
-    this._reloadLock = false
+    this._reloadLock = false;
     if (this._reloadWanted) {
-      await this.synchronizeHunspellDictionaries()
+      await this.synchronizeHunspellDictionaries();
     }
   }
 
@@ -445,49 +462,49 @@ export default class DictionaryProvider extends ProviderContract {
    * Loads the user dictionary from file.
    * @return {Promise} Will resolve after the dictionary has been loaded.
    */
-  async loadUserDictionary (): Promise<void> {
+  async loadUserDictionary(): Promise<void> {
     try {
-      await fs.lstat(this._userDictionaryPath)
+      await fs.lstat(this._userDictionaryPath);
     } catch (err) {
       // Create a new file and add the current user dictionary to it
-      await this.persistUserDictionary()
+      await this.persistUserDictionary();
     }
 
-    const fileContents = await fs.readFile(this._userDictionaryPath, 'utf8')
-    this._userDictionary = fileContents.split('\n')
+    const fileContents = await fs.readFile(this._userDictionaryPath, "utf8");
+    this._userDictionary = fileContents.split("\n");
 
     // String.split() returns an array with one empty string if the file is
     // empty, so we need to perform in total two operations: Make a set out of
     // it (remove duplicates) and remove empty strings
-    this._userDictionary = [...new Set(this._userDictionary)]
-    this._userDictionary = this._userDictionary.filter(elem => elem.trim() !== '')
+    this._userDictionary = [...new Set(this._userDictionary)];
+    this._userDictionary = this._userDictionary.filter((elem) => elem.trim() !== "");
 
     // If the user dictionary is empty, the split will not create an array
     // Send an invalidation message to the renderer so that it reloads all words
-    broadcastIpcMessage('dictionary-provider', { command: 'invalidate-dict' })
+    broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });
   }
 
   /**
    * Persists the user dictionary to disk
    */
-  private async persistUserDictionary (): Promise<void> {
+  private async persistUserDictionary(): Promise<void> {
     if (this._fileLock) {
       // If there is a file lock, set the changes flag and abort
-      this._unwrittenChanges = true
-      return
+      this._unwrittenChanges = true;
+      return;
     }
 
     // Initiate the filelock, write, release the lock
-    const data = this._userDictionary.join('\n')
-    this._fileLock = true
-    this._unwrittenChanges = false // NOTE that this has to come before the writing
-    await fs.writeFile(this._userDictionaryPath, data)
-    this._fileLock = false
+    const data = this._userDictionary.join("\n");
+    this._fileLock = true;
+    this._unwrittenChanges = false; // NOTE that this has to come before the writing
+    await fs.writeFile(this._userDictionaryPath, data);
+    this._fileLock = false;
 
     // After we're done, check if someone tried to call the function in the
     // meantime. If so, the flag will be true by now: immediately call it again.
     if (this._unwrittenChanges) {
-      return await this.persistUserDictionary()
+      return await this.persistUserDictionary();
     }
   }
 
@@ -497,10 +514,10 @@ export default class DictionaryProvider extends ProviderContract {
    * @param  {String} term The word/term to check
    * @return {Boolean}      True if the word was confirmed by any dictionary, or false.
    */
-  check (term: string): boolean {
+  check(term: string): boolean {
     // Don't check until all are loaded
     if (this._config.get().selectedDicts.length !== this.hunspell.length) {
-      return true
+      return true;
     }
 
     // We need to differentiate between not ready and ready, but there are no
@@ -508,25 +525,25 @@ export default class DictionaryProvider extends ProviderContract {
     // renderer save the words anyway. Object indexing is still more efficient
     // than querying the main process via IPC.
     if (this.hunspell.length === 0) {
-      return true
+      return true;
     }
 
     // First, check the small tables: user dictionary and replacement table
     if (this._cachedAutocorrect.includes(term)) {
-      return true
+      return true;
     }
 
     if (this._userDictionary.includes(term)) {
-      return true
+      return true;
     }
 
     for (const dictionary of this.hunspell) {
       if (dictionary.spellSync(term)) {
-        return true
+        return true;
       }
     }
 
-    return false
+    return false;
   }
 
   /**
@@ -534,56 +551,58 @@ export default class DictionaryProvider extends ProviderContract {
    * @param  {String} term The term or word to check for.
    * @return {Array}      An array containing all returned possible alternatives.
    */
-  suggest (term: string): string[] {
+  suggest(term: string): string[] {
     if (this.hunspell.length === 0) {
-      return []
+      return [];
     }
 
     // Return no suggestions
     if (this._config.get().selectedDicts.length !== this.hunspell.length) {
-      return []
+      return [];
     }
 
-    const suggestions: string[] = []
+    const suggestions: string[] = [];
     for (const dictionary of this.hunspell) {
-      suggestions.push(...(dictionary.suggestSync(term) ?? []))
+      suggestions.push(...(dictionary.suggestSync(term) ?? []));
     }
 
-    return suggestions
+    return suggestions;
   }
 
   /**
    * Adds the given term to the user dictionary
    * @param {String} term The term to add
    */
-  add (term: string): boolean {
-    term = term.trim()
-    if (term === '') {
-      return false
+  add(term: string): boolean {
+    term = term.trim();
+    if (term === "") {
+      return false;
     }
 
     // Adds the given term to the user dictionary
     if (!this._userDictionary.includes(term)) {
-      this._userDictionary.push(term)
-      this.persistUserDictionary()
-        .catch(err => {
-          this._logger.error(`[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`, err)
-        })
+      this._userDictionary.push(term);
+      this.persistUserDictionary().catch((err) => {
+        this._logger.error(
+          `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
+          err,
+        );
+      });
       // Send an invalidation message to the renderer so that it reloads all words
-      broadcastIpcMessage('dictionary-provider', { command: 'invalidate-dict' })
+      broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });
 
-      return true
+      return true;
     }
 
-    return false
+    return false;
   }
 
   /**
    * Get all dictionaries that have been actually loaded.
    * @return {Array} All loaded dicts (precisely: their language codes)
    */
-  getDicts (): string[] {
-    return this._loadedDicts
+  getDicts(): string[] {
+    return this._loadedDicts;
   }
 
   /**
@@ -591,7 +610,7 @@ export default class DictionaryProvider extends ProviderContract {
    * @param  {string} lang The language code, e.g. en_GB
    * @return {Boolean}      True, if the dictionary has been loaded, or false.
    */
-  checks (lang: string): boolean {
-    return this._loadedDicts.includes(lang)
+  checks(lang: string): boolean {
+    return this._loadedDicts.includes(lang);
   }
 }

@@ -12,112 +12,119 @@
  * END HEADER
  */
 
-import { Compartment, EditorState, StateField, type StateEffect } from '@codemirror/state'
-import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
-import { configField, configUpdateEffect } from '../util/configuration'
+import { Compartment, EditorState, type StateEffect, StateField } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { configField, configUpdateEffect } from "../util/configuration";
 
 /**
  * The class to be applied to the typewriter line
  */
-const typewriterFocusedLineDeco = Decoration.line({ class: 'typewriter-active-line' })
+const typewriterFocusedLineDeco = Decoration.line({ class: "typewriter-active-line" });
 
 /**
  * The theme that applies a large margin to the content area to ensure that
  * documents with only one line are still centered vertically
  */
 const typewriterTheme = EditorView.theme({
-  '.cm-content': {
-    marginTop: '50vh',
-    marginBottom: '50vh'
+  ".cm-content": {
+    marginTop: "50vh",
+    marginBottom: "50vh",
   },
-  '.cm-gutters': {
-    marginTop: '50vh',
-    marginBottom: '50vh'
-  }
-})
+  ".cm-gutters": {
+    marginTop: "50vh",
+    marginBottom: "50vh",
+  },
+});
 
 /**
  * This compartment is being used to apply and disengage the theme
  */
-const typewriterThemeCompartment = new Compartment()
+const typewriterThemeCompartment = new Compartment();
 
 /**
  * A transaction extender that scrolls the active line into the center of the
  * viewport if the typewriter mode is active, and applies or disengages the
  * corresponding theme based on the configuration
  */
-const scrollAndTheme = EditorState.transactionExtender.from(configField, config => transaction => {
-  const effects: Array<StateEffect<any>> = []
+const scrollAndTheme = EditorState.transactionExtender.from(
+  configField,
+  (config) => (transaction) => {
+    const effects: Array<StateEffect<any>> = [];
 
-  let typewriterMode = config.typewriterMode
-  let modeChanged = false
-  // First, check if we have to apply or disengage the theme
-  for (const effect of transaction.effects) {
-    if (effect.is(configUpdateEffect)) {
-      if (effect.value.typewriterMode !== undefined) {
-        modeChanged = typewriterMode !== effect.value.typewriterMode
-        typewriterMode = effect.value.typewriterMode
-        effects.push(typewriterThemeCompartment.reconfigure(typewriterMode ? [typewriterTheme] : []))
+    let typewriterMode = config.typewriterMode;
+    let modeChanged = false;
+    // First, check if we have to apply or disengage the theme
+    for (const effect of transaction.effects) {
+      if (effect.is(configUpdateEffect)) {
+        if (effect.value.typewriterMode !== undefined) {
+          modeChanged = typewriterMode !== effect.value.typewriterMode;
+          typewriterMode = effect.value.typewriterMode;
+          effects.push(
+            typewriterThemeCompartment.reconfigure(typewriterMode ? [typewriterTheme] : []),
+          );
+        }
       }
     }
-  }
 
-  // Second, check if we should scroll into view
-  if ((typewriterMode && transaction.docChanged) || modeChanged) {
-    effects.push(EditorView.scrollIntoView(transaction.state.selection.main.from, { y: 'center' }))
-  }
+    // Second, check if we should scroll into view
+    if ((typewriterMode && transaction.docChanged) || modeChanged) {
+      effects.push(
+        EditorView.scrollIntoView(transaction.state.selection.main.from, { y: "center" }),
+      );
+    }
 
-  // We MUST return `null` here if there is nothing to extend. Otherwise, stuff
-  // in other parts of the code starts to break. More specifically, we had the
-  // issue that, when we always return `effects`, snippet insertion would
-  // misbehave in the sense that the tab stops would stop recalculating their
-  // positions. I have the suspicion that this is wanted behavior in CodeMirror,
-  // where transaction extenders are powerful and they can override quite a lot
-  // of functionality. For more context, see #6058
-  if (effects.length === 0) {
-    return null
-  } else {
-    return { effects }
-  }
-})
+    // We MUST return `null` here if there is nothing to extend. Otherwise, stuff
+    // in other parts of the code starts to break. More specifically, we had the
+    // issue that, when we always return `effects`, snippet insertion would
+    // misbehave in the sense that the tab stops would stop recalculating their
+    // positions. I have the suspicion that this is wanted behavior in CodeMirror,
+    // where transaction extenders are powerful and they can override quite a lot
+    // of functionality. For more context, see #6058
+    if (effects.length === 0) {
+      return null;
+    } else {
+      return { effects };
+    }
+  },
+);
 
 /**
  * Renders all muted lines (except the active one)
  */
-function renderTypewriterLine (state: EditorState): DecorationSet {
+function renderTypewriterLine(state: EditorState): DecorationSet {
   if (!state.field(configField).typewriterMode) {
-    return Decoration.none
+    return Decoration.none;
   }
 
-  const lineStart = state.doc.lineAt(state.selection.main.head).from
-  return Decoration.set(typewriterFocusedLineDeco.range(lineStart))
+  const lineStart = state.doc.lineAt(state.selection.main.head).from;
+  return Decoration.set(typewriterFocusedLineDeco.range(lineStart));
 }
 
 const typewriterLine = StateField.define<DecorationSet>({
-  create (state: EditorState) {
-    return renderTypewriterLine(state)
+  create(state: EditorState) {
+    return renderTypewriterLine(state);
   },
-  update (oldDecoSet, transaction) {
-    return renderTypewriterLine(transaction.state)
+  update(oldDecoSet, transaction) {
+    return renderTypewriterLine(transaction.state);
   },
-  provide: f => EditorView.decorations.from(f)
-})
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 export const typewriter = [
   scrollAndTheme,
   typewriterLine,
   typewriterThemeCompartment.of([]),
   EditorView.baseTheme({
-    '.cm-content .typewriter-active-line': {
-      borderTop: '2px solid var(--grey-3)',
-      borderBottom: '2px solid var(--grey-3)',
+    ".cm-content .typewriter-active-line": {
+      borderTop: "2px solid var(--grey-3)",
+      borderBottom: "2px solid var(--grey-3)",
       // This is wild CSS syntax, but it works! See https://chriscoyier.net/2023/05/12/add-opacity-to-an-existing-color/
-      backgroundColor: 'rgb(from var(--grey-1) r g b / 70%)',
-      marginTop: '-2px',
-      marginBottom: '-2px'
+      backgroundColor: "rgb(from var(--grey-1) r g b / 70%)",
+      marginTop: "-2px",
+      marginBottom: "-2px",
     },
-    '&dark .cm-content .typewriter-active-line': {
-      backgroundColor: 'rgb(from var(--grey-7) r g b / 70%)'
-    }
-  })
-]
+    "&dark .cm-content .typewriter-active-line": {
+      backgroundColor: "rgb(from var(--grey-7) r g b / 70%)",
+    },
+  }),
+];

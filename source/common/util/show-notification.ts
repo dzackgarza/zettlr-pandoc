@@ -12,49 +12,48 @@
  * END HEADER
  */
 
-import { app, Notification, nativeImage } from 'electron'
-import path from 'path'
-import { spawnSync } from 'child_process'
+import { spawnSync } from "child_process";
+import { app, Notification, nativeImage } from "electron";
+import path from "path";
 
 /**
  * The default icon: The Zettlr logo
  */
-const defaultIcon = nativeImage.createFromPath(path.join(__dirname, '../img/image-preview.png'))
+const defaultIcon = nativeImage.createFromPath(path.join(__dirname, "../img/image-preview.png"));
 
 /**
-* Shows a native notification for the operating system. If the operating
-* system does not support notifications, the notification will be logged and
-* the function returns false.
-*
-* @param   {string}   message   The message (body) of the notification
-* @param   {string}   title     The (optional) title; an untitled notification
-*                               is headed by the application's name
-* @param   {void}     callback  Optional callback, invoked when user clicks the notification
-*
-* @return  {boolean}            False if the platform doesn't support notifications.
-*/
-export function showNativeNotification (
+ * Shows a native notification for the operating system. If the operating
+ * system does not support notifications, the notification will be logged and
+ * the function returns false.
+ *
+ * @param   {string}   message   The message (body) of the notification
+ * @param   {string}   title     The (optional) title; an untitled notification
+ *                               is headed by the application's name
+ * @param   {void}     callback  Optional callback, invoked when user clicks the notification
+ *
+ * @return  {boolean}            False if the platform doesn't support notifications.
+ */
+export function showNativeNotification(
   message: string,
   title?: string,
-  callback?: () => void
+  callback?: () => void,
 ): boolean {
   // Electron resolves the application's name from package.json `productName`.
-  const appName = app.getName()
-  const heading = title === undefined ? appName : title
+  const appName = app.getName();
+  const heading = title === undefined ? appName : title;
   if (!Notification.isSupported()) {
     // Electron's Linux notification support depends on the desktop session.
     // `notify-send` is the standard freedesktop/libnotify client and gives us
     // the same dismissible notification surface without owning another UI.
-    if (process.platform === 'linux') {
-      const result = spawnSync('notify-send', [
-        `--app-name=${appName}`,
-        '--urgency=normal',
-        heading,
-        message
-      ], { stdio: 'ignore' })
-      return result.error === undefined && result.status === 0
+    if (process.platform === "linux") {
+      const result = spawnSync(
+        "notify-send",
+        [`--app-name=${appName}`, "--urgency=normal", heading, message],
+        { stdio: "ignore" },
+      );
+      return result.error === undefined && result.status === 0;
     }
-    return false
+    return false;
   }
 
   const notification = new Notification({
@@ -63,19 +62,19 @@ export function showNativeNotification (
     silent: true,
     icon: defaultIcon,
     hasReply: false, // macOS only
-    timeoutType: 'default', // Windows/Linux only
-    urgency: 'low', // Linux only, we don't want to distract too much
-    closeButtonText: '' // macOS only, empty means to use localized text
-  })
+    timeoutType: "default", // Windows/Linux only
+    urgency: "low", // Linux only, we don't want to distract too much
+    closeButtonText: "", // macOS only, empty means to use localized text
+  });
 
   // Now show the notification
-  notification.show()
+  notification.show();
 
   if (callback !== undefined) {
-    notification.on('click', (event) => {
-      callback()
-    })
+    notification.on("click", (event) => {
+      callback();
+    });
   }
 
-  return true
+  return true;
 }

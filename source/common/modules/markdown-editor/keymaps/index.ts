@@ -12,29 +12,29 @@
  * END HEADER
  */
 
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { type CustomEditorShortcut } from './shortcuts'
-import { keymap } from '@codemirror/view'
-import { mainEditorKeybindings } from './default'
-import { configField, configUpdateEffect, type EditorConfiguration } from '../util/configuration'
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
+import { configField, configUpdateEffect, type EditorConfiguration } from "../util/configuration";
+import { mainEditorKeybindings } from "./default";
+import { type CustomEditorShortcut } from "./shortcuts";
 
-const keymapCompartment = new Compartment()
+const keymapCompartment = new Compartment();
 
 // This transaction extender listens for configUpdate effects and reconfigures
 // the keymap accordingly
-const keybindingsTransactionExtender = EditorState.transactionExtender.of(tr => {
-  let extendedTransaction = null
+const keybindingsTransactionExtender = EditorState.transactionExtender.of((tr) => {
+  let extendedTransaction = null;
   for (const effect of tr.effects) {
     if (effect.is(configUpdateEffect) && effect.value.shortcuts !== undefined) {
-      const keys = mainEditorKeybindings(effect.value.shortcuts, tr.state.field(configField))
+      const keys = mainEditorKeybindings(effect.value.shortcuts, tr.state.field(configField));
       extendedTransaction = {
-        effects: keymapCompartment.reconfigure(keymap.of(keys))
-      }
+        effects: keymapCompartment.reconfigure(keymap.of(keys)),
+      };
     }
   }
 
-  return extendedTransaction
-})
+  return extendedTransaction;
+});
 
 /**
  * Registers the Zettlr keymap including a transaction extender that keeps the
@@ -44,9 +44,12 @@ const keybindingsTransactionExtender = EditorState.transactionExtender.of(tr => 
  *
  * @return  {Extension}                                  The keymap
  */
-export function zettlrKeymap (customShortcutMap: CustomEditorShortcut[], config: Pick<EditorConfiguration, 'autocompleteWithEnter'|'autocompleteWithTab'>): Extension {
+export function zettlrKeymap(
+  customShortcutMap: CustomEditorShortcut[],
+  config: Pick<EditorConfiguration, "autocompleteWithEnter" | "autocompleteWithTab">,
+): Extension {
   return [
     keybindingsTransactionExtender,
-    keymapCompartment.of(keymap.of(mainEditorKeybindings(customShortcutMap, config)))
-  ]
+    keymapCompartment.of(keymap.of(mainEditorKeybindings(customShortcutMap, config))),
+  ];
 }

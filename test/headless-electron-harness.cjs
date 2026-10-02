@@ -22,10 +22,10 @@
  * END HEADER
  */
 
-const Module = require('module')
-const fs = require('fs')
-const os = require('os')
-const path = require('path')
+const Module = require("module");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 // Per-process, because this path is a real app-data directory: the harness
 // writes documents.yaml here and the providers read it back on boot. A fixed
@@ -34,10 +34,10 @@ const path = require('path')
 // on a single line" — a failure that belongs to neither run and reproduces
 // from leftover state alone. The pid keys it to the process that owns it.
 const userData = fs.mkdtempSync(
-  path.join(os.tmpdir(), `zettlr-pandoc-headless-test-${process.pid}-`)
-)
-fs.mkdirSync(path.join(userData, 'logs'), { recursive: true })
-fs.mkdirSync(path.join(userData, 'lang'), { recursive: true })
+  path.join(os.tmpdir(), `zettlr-pandoc-headless-test-${process.pid}-`),
+);
+fs.mkdirSync(path.join(userData, "logs"), { recursive: true });
+fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
 
 /**
  * Records every ipcMain.handle registration made by main-process modules
@@ -48,9 +48,9 @@ fs.mkdirSync(path.join(userData, 'lang'), { recursive: true })
  *
  * @type {Map<string, Function>}
  */
-const ipcMainHandlers = new Map()
-const sentMessages = new WeakMap()
-const openWindows = new Set()
+const ipcMainHandlers = new Map();
+const sentMessages = new WeakMap();
+const openWindows = new Set();
 
 /**
  * The REAL listeners main-process modules register on `app`, keyed by event
@@ -59,10 +59,10 @@ const openWindows = new Set()
  *
  * @type {Map<string, Function[]>}
  */
-const appListeners = new Map()
+const appListeners = new Map();
 
 /** One entry per app.quit() call made by the code under proof. */
-const appQuitRequests = []
+const appQuitRequests = [];
 
 /**
  * Every dialog.showMessageBox() call, with the options it was shown. A spec
@@ -72,29 +72,35 @@ const appQuitRequests = []
  *
  * @type {{ shown: Array<{ title?: string, message: string, detail?: string }>, answer: number | undefined }}
  */
-const messageBoxes = { shown: [], answer: undefined }
+const messageBoxes = { shown: [], answer: undefined };
 
 class HeadlessBrowserWindow {
-  constructor () {
-    const messages = []
-    sentMessages.set(this, messages)
+  constructor() {
+    const messages = [];
+    sentMessages.set(this, messages);
     this.webContents = {
-      send (...args) { messages.push(args) }
-    }
-    openWindows.add(this)
+      send(...args) {
+        messages.push(args);
+      },
+    };
+    openWindows.add(this);
   }
 
-  close () { openWindows.delete(this) }
+  close() {
+    openWindows.delete(this);
+  }
 
   // Electron semantics: a window is in the list from its construction to its
   // close, so broadcastIPCMessage() reaches each window that a spec has open
   // and nobody in a process without one.
-  static getAllWindows () { return [...openWindows] }
+  static getAllWindows() {
+    return [...openWindows];
+  }
 }
 
 class HeadlessMenuItem {
-  constructor (options) {
-    Object.assign(this, options)
+  constructor(options) {
+    Object.assign(this, options);
   }
 }
 
@@ -104,61 +110,76 @@ class HeadlessMenuItem {
  * @param {HeadlessBrowserWindow} window
  * @returns {unknown[][]}
  */
-function sentMessagesFor (window) {
-  const messages = sentMessages.get(window)
+function sentMessagesFor(window) {
+  const messages = sentMessages.get(window);
   if (messages === undefined) {
-    throw new Error('Window was not created by the headless Electron harness')
+    throw new Error("Window was not created by the headless Electron harness");
   }
-  return messages
+  return messages;
 }
 
-const orig = Module._load
+const orig = Module._load;
 Module._load = function (request, ...rest) {
-  if (request === 'electron') {
+  if (request === "electron") {
     return {
       app: {
-        getPath: (key) => key === 'userData' ? userData : os.tmpdir(),
+        getPath: (key) => (key === "userData" ? userData : os.tmpdir()),
         isPackaged: false,
-        getName: () => 'Zettlr-Pandoc',
-        getVersion: () => '0.0.0-headless-test',
-        getLocale: () => 'en-US',
-        on (event, listener) {
-          appListeners.set(event, [...(appListeners.get(event) ?? []), listener])
+        getName: () => "Zettlr-Pandoc",
+        getVersion: () => "0.0.0-headless-test",
+        getLocale: () => "en-US",
+        on(event, listener) {
+          appListeners.set(event, [...(appListeners.get(event) ?? []), listener]);
         },
-        quit () { appQuitRequests.push(Date.now()) },
-        whenReady: async () => {}
+        quit() {
+          appQuitRequests.push(Date.now());
+        },
+        whenReady: async () => {},
       },
       ipcMain: {
-        handle (channel, listener) { ipcMainHandlers.set(channel, listener) },
-        on () {},
-        removeHandler (channel) { ipcMainHandlers.delete(channel) }
+        handle(channel, listener) {
+          ipcMainHandlers.set(channel, listener);
+        },
+        on() {},
+        removeHandler(channel) {
+          ipcMainHandlers.delete(channel);
+        },
       },
       dialog: {
-        showErrorBox () {},
-        async showMessageBox (...args) {
-          const options = args[args.length - 1]
-          messageBoxes.shown.push(options)
+        showErrorBox() {},
+        async showMessageBox(...args) {
+          const options = args[args.length - 1];
+          messageBoxes.shown.push(options);
           if (messageBoxes.answer === undefined) {
-            throw new Error(`Unscripted dialog: ${options.title}: ${options.message}`)
+            throw new Error(`Unscripted dialog: ${options.title}: ${options.message}`);
           }
-          return { response: messageBoxes.answer, checkboxChecked: false }
-        }
+          return { response: messageBoxes.answer, checkboxChecked: false };
+        },
       },
-      shell: { openPath: async () => '' },
+      shell: { openPath: async () => "" },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       Notification: class {
-        static isSupported () { return true }
-        show () {}
-        on () {}
+        static isSupported() {
+          return true;
+        }
+        show() {}
+        on() {}
       },
       BrowserWindow: HeadlessBrowserWindow,
-      MenuItem: HeadlessMenuItem
-    }
+      MenuItem: HeadlessMenuItem,
+    };
   }
-  return orig.call(this, request, ...rest)
-}
+  return orig.call(this, request, ...rest);
+};
 
 // userData is exported because it is now per-process: a spec that needs the
 // directory must ask the harness that created it rather than recomputing the
 // path, which is what coupled the two to a fixed location in the first place.
-module.exports = { appListeners, appQuitRequests, ipcMainHandlers, messageBoxes, sentMessagesFor, userData }
+module.exports = {
+  appListeners,
+  appQuitRequests,
+  ipcMainHandlers,
+  messageBoxes,
+  sentMessagesFor,
+  userData,
+};

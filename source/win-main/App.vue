@@ -192,113 +192,125 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import NavigationSidebar from './sidebar/NavigationSidebar.vue'
-import ActivityBar from './sidebar/ActivityBar.vue'
-import AnnotationsTab from './sidebar/AnnotationsTab.vue'
-import EditorPane from './EditorPane.vue'
-import EditorBranch from './EditorBranch.vue'
-import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from 'reka-ui'
-import PopoverPomodoro from './PopoverPomodoro.vue'
-import PandocQuickHelp from './PandocQuickHelp.vue'
-import MainStatusbar from './MainStatusbar.vue'
-import type { ExportRequest } from './launcher/launcher-rows'
-import type { CustomExportIPCAPI, ExportIPCAPI } from 'source/app/service-providers/commands/export'
-import CommandLauncher from './launcher/CommandLauncher.vue'
-import type { LauncherView } from './launcher/launcher-state'
-import { PANEL_VIEW_ID, PANEL_VIEWS, SIDEBAR_VIEWS, type RevealTarget } from './sidebar/sidebar-views'
-import { isSidebarViewId } from '@dts/common/sidebar-views'
-import CreateReferenceLabelDialog from './CreateReferenceLabelDialog.vue'
-import FixAllDialog from './FixAllDialog.vue'
-import IgnoreRulesDialog from './IgnoreRulesDialog.vue'
+import { trans } from "@common/i18n-renderer";
 import type {
   ConfirmReferenceLabelOutcome,
-  CreateReferenceLabelIntent
-} from '@common/modules/markdown-editor/plugins/create-reference-label'
-import type { ReferenceSearchRequest } from '@common/modules/markdown-editor/plugins/reference-search-effect'
-import type { SourceRange } from '@dts/common/references'
-import { invokeReferenceProviderRecoverably } from './util/recoverable-reference-errors'
+  CreateReferenceLabelIntent,
+} from "@common/modules/markdown-editor/plugins/create-reference-label";
+import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
+import { reportError } from "@common/util/error-reporting";
+import generateId from "@common/util/generate-id";
+import localiseNumber from "@common/util/localise-number";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { recordRendererError } from "@common/util/run-recoverably";
+import showToast from "@common/util/show-toast";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import {
+  DocumentType,
+  type LeafNodeJSON,
+  SAVE_REFUSED_CHANNEL,
+  type SaveRefusedBroadcast,
+} from "@dts/common/documents";
+import type { SourceRange } from "@dts/common/references";
+import {
+  type EditorCommandName,
+  insertTablePayloadSchema,
+  isEditorCommandName,
+  isShortcutName,
+  type ShortcutName,
+} from "@dts/common/shortcut-names";
+import { isSidebarViewId } from "@dts/common/sidebar-views";
+import { type UpdateState } from "@providers/updates";
+import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
+import type {
+  CustomExportIPCAPI,
+  ExportIPCAPI,
+} from "source/app/service-providers/commands/export";
+import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
+import {
+  useConfigStore,
+  useDocumentCollaborationStore,
+  useDocumentTreeStore,
+  useIgnoreRulesStore,
+  useWindowStateStore,
+  useWorkspaceStore,
+} from "source/pinia";
+import { type AnyDescriptor } from "source/types/common/fsal";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import chimeFile from "./assets/chime.mp3";
+import alarmFile from "./assets/digital_alarm.mp3";
+// Import the sound effects for the pomodoro timer
+import glassFile from "./assets/glass.wav";
+import CreateReferenceLabelDialog from "./CreateReferenceLabelDialog.vue";
 import type {
   CreateReferenceLabelDialogPrompt,
   EditorCommands,
   PomodoroConfig,
-  ReferenceJumpIntent
-} from './component-contracts'
-import showToast from '@common/util/show-toast'
-import { recordRendererError } from '@common/util/run-recoverably'
-import { trans } from '@common/i18n-renderer'
-import localiseNumber from '@common/util/localise-number'
-import generateId from '@common/util/generate-id'
+  ReferenceJumpIntent,
+} from "./component-contracts";
+import EditorBranch from "./EditorBranch.vue";
+import EditorPane from "./EditorPane.vue";
+import FixAllDialog from "./FixAllDialog.vue";
+import IgnoreRulesDialog from "./IgnoreRulesDialog.vue";
+import CommandLauncher from "./launcher/CommandLauncher.vue";
+import type { ExportRequest } from "./launcher/launcher-rows";
+import type { LauncherView } from "./launcher/launcher-state";
+import MainStatusbar from "./MainStatusbar.vue";
+import PandocQuickHelp from "./PandocQuickHelp.vue";
+import PopoverLRT from "./PopoverLRT.vue";
+import PopoverPomodoro from "./PopoverPomodoro.vue";
+import ActivityBar from "./sidebar/ActivityBar.vue";
+import AnnotationsTab from "./sidebar/AnnotationsTab.vue";
+import NavigationSidebar from "./sidebar/NavigationSidebar.vue";
 import {
-  nextTick,
-  ref,
-  computed,
-  watch,
-  onMounted,
-  onUnmounted,
-  reactive
-} from 'vue'
-
-// Import the sound effects for the pomodoro timer
-import glassFile from './assets/glass.wav'
-import alarmFile from './assets/digital_alarm.mp3'
-import chimeFile from './assets/chime.mp3'
-import { DocumentType, type LeafNodeJSON } from '@dts/common/documents'
-import { buildPipeMarkdownTable } from '@common/util/build-pipe-markdown-table'
-import { type UpdateState } from '@providers/updates'
-import { getSemanticDocumentTitle } from './util/get-document-title'
-import { useConfigStore, useDocumentCollaborationStore, useDocumentTreeStore, useIgnoreRulesStore, useWindowStateStore, useWorkspaceStore } from 'source/pinia'
-import { type AnyDescriptor } from 'source/types/common/fsal'
-import type { WorkspaceReferenceState } from 'source/app/service-providers/references/reference-index'
-import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from '@dts/common/documents'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
+  PANEL_VIEW_ID,
+  PANEL_VIEWS,
+  type RevealTarget,
+  SIDEBAR_VIEWS,
+} from "./sidebar/sidebar-views";
 import {
+  type DesktopCommandContext,
   resolveDirectoryHere,
   resolveExternalFile,
-  type DesktopCommandContext
-} from './util/desktop-command-target'
-import PopoverLRT from './PopoverLRT.vue'
-import {
-  insertTablePayloadSchema,
-  isEditorCommandName,
-  isShortcutName,
-  type EditorCommandName,
-  type ShortcutName
-} from '@dts/common/shortcut-names'
+} from "./util/desktop-command-target";
+import { getSemanticDocumentTitle } from "./util/get-document-title";
+import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const configStore = useConfigStore()
-const documentTreeStore = useDocumentTreeStore()
-const collaborationStore = useDocumentCollaborationStore()
-const windowStateStore = useWindowStateStore()
-const workspaceStore = useWorkspaceStore()
-const ignoreRulesStore = useIgnoreRulesStore()
+const configStore = useConfigStore();
+const documentTreeStore = useDocumentTreeStore();
+const collaborationStore = useDocumentCollaborationStore();
+const windowStateStore = useWindowStateStore();
+const workspaceStore = useWorkspaceStore();
+const ignoreRulesStore = useIgnoreRulesStore();
 
 const SOUND_EFFECTS = [
   {
     file: glassFile,
-    label: 'Glass'
+    label: "Glass",
   },
   {
     file: alarmFile,
-    label: 'Digital Alarm'
+    label: "Digital Alarm",
   },
   {
     file: chimeFile,
-    label: 'Chime'
-  }
-]
+    label: "Chime",
+  },
+];
 
-const searchParams = new URLSearchParams(window.location.search)
+const searchParams = new URLSearchParams(window.location.search);
 // The window number indicates which main window this one here is. This is only
 // necessary for the documents and split views to show up.
-const windowId = searchParams.get('window_id')!
+const windowId = searchParams.get("window_id")!;
 
-const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible)
-const isUpdateAvailable = ref(false)
-const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
+const fileManagerVisible = computed<boolean>(() => configStore.config.window.fileManagerVisible);
+const isUpdateAvailable = ref(false);
+const hasVibrancy = computed(
+  () => configStore.config.window.vibrancy && process.platform === "darwin",
+);
 
 // The panes' widths. The sidebar and the panel are pixel panels with a
 // minimum each; the editor takes the rest, down to a fifth of the window,
@@ -306,95 +318,101 @@ const hasVibrancy = computed(() => configStore.config.window.vibrancy && process
 // mounts at the width it was last dragged to, in this session or in the
 // config, and a drag's end persists it — a window that squeezes the panes
 // does not overwrite the width the user chose.
-const NAVIGATION_SIDEBAR_MINIMUM = 200
-const ANNOTATION_PANEL_MINIMUM = 240
-const EDITOR_MINIMUM_PERCENT = 20
+const NAVIGATION_SIDEBAR_MINIMUM = 200;
+const ANNOTATION_PANEL_MINIMUM = 240;
+const EDITOR_MINIMUM_PERCENT = 20;
 
-type DraggablePane = 'navigationSidebar' | 'annotationPanel'
-const PANE_WIDTH_KEY: Record<DraggablePane, 'ui.navigationSidebarWidth' | 'ui.annotationPanelWidth'> = {
-  navigationSidebar: 'ui.navigationSidebarWidth',
-  annotationPanel: 'ui.annotationPanelWidth'
-}
+type DraggablePane = "navigationSidebar" | "annotationPanel";
+const PANE_WIDTH_KEY: Record<
+  DraggablePane,
+  "ui.navigationSidebarWidth" | "ui.annotationPanelWidth"
+> = {
+  navigationSidebar: "ui.navigationSidebarWidth",
+  annotationPanel: "ui.annotationPanelWidth",
+};
 /** The width each pane mounts at; moves only when a drag ends. */
 const mountWidths = reactive<Record<DraggablePane, number>>({
   navigationSidebar: configStore.config.ui.navigationSidebarWidth,
-  annotationPanel: configStore.config.ui.annotationPanelWidth
-})
+  annotationPanel: configStore.config.ui.annotationPanelWidth,
+});
 /** The width each pane has right now, as the splitter reports it. */
-const draggedWidths = reactive<Record<DraggablePane, number>>({ ...mountWidths })
+const draggedWidths = reactive<Record<DraggablePane, number>>({ ...mountWidths });
 /** Which handles are mid-drag: only a drag that happened persists a width. */
-const paneDragActive = reactive<Record<DraggablePane, boolean>>({ navigationSidebar: false, annotationPanel: false })
+const paneDragActive = reactive<Record<DraggablePane, boolean>>({
+  navigationSidebar: false,
+  annotationPanel: false,
+});
 
-function onPaneDragging (pane: DraggablePane, dragging: boolean): void {
+function onPaneDragging(pane: DraggablePane, dragging: boolean): void {
   if (dragging) {
-    paneDragActive[pane] = true
-    return
+    paneDragActive[pane] = true;
+    return;
   }
   if (!paneDragActive[pane]) {
-    return
+    return;
   }
-  paneDragActive[pane] = false
-  const width = Math.round(draggedWidths[pane])
+  paneDragActive[pane] = false;
+  const width = Math.round(draggedWidths[pane]);
   // A handle dragged past its pane's minimum collapses the pane, which is
   // how a pane is hidden by dragging. The width it comes back at is the one
   // it had before that, so this does not persist the zero.
   if (width < PANE_MINIMUM[pane]) {
-    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false)
-    return
+    configStore.setConfigValue(PANE_VISIBLE_KEY[pane], false);
+    return;
   }
-  mountWidths[pane] = width
-  configStore.setConfigValue(PANE_WIDTH_KEY[pane], width)
+  mountWidths[pane] = width;
+  configStore.setConfigValue(PANE_WIDTH_KEY[pane], width);
 }
 
 // Popover targets: the status bar items, looked up when their popover opens.
-const pomodoroButton = ref<HTMLElement|null>(null)
-const showPomodoroPopover = ref<boolean>(false)
-const tasksButton = ref<HTMLElement|null>(null)
-const showTasksPopover = ref(false)
-const showPandocQuickHelp = ref<boolean>(false)
+const pomodoroButton = ref<HTMLElement | null>(null);
+const showPomodoroPopover = ref<boolean>(false);
+const tasksButton = ref<HTMLElement | null>(null);
+const showTasksPopover = ref(false);
+const showPandocQuickHelp = ref<boolean>(false);
 
-function togglePomodoroPopover (): void {
-  pomodoroButton.value = document.querySelector('#statusbar-pomodoro')
-  showPomodoroPopover.value = !showPomodoroPopover.value
+function togglePomodoroPopover(): void {
+  pomodoroButton.value = document.querySelector("#statusbar-pomodoro");
+  showPomodoroPopover.value = !showPomodoroPopover.value;
 }
 
-function toggleTasksPopover (): void {
-  tasksButton.value = document.querySelector('#main-statusbar [data-statusbar-item="tasks"]')
-  showTasksPopover.value = !showTasksPopover.value
+function toggleTasksPopover(): void {
+  tasksButton.value = document.querySelector('#main-statusbar [data-statusbar-item="tasks"]');
+  showTasksPopover.value = !showTasksPopover.value;
 }
 
 /** Runs a named editor command in the last focused pane. */
-function runEditorCommand (name: EditorCommandName): void {
-  editorCommands.value.data = name
-  editorCommands.value.executeCommand = !editorCommands.value.executeCommand
+function runEditorCommand(name: EditorCommandName): void {
+  editorCommands.value.data = name;
+  editorCommands.value.executeCommand = !editorCommands.value.executeCommand;
 }
 
 /** Overrides the language LanguageTool checks the focused pane's document in. */
-function setLanguageToolLanguage (language: string): void {
-  editorCommands.value.data = language
-  editorCommands.value.setLanguageToolLanguage = !editorCommands.value.setLanguageToolLanguage
+function setLanguageToolLanguage(language: string): void {
+  editorCommands.value.data = language;
+  editorCommands.value.setLanguageToolLanguage = !editorCommands.value.setLanguageToolLanguage;
 }
 
-async function openUpdater (): Promise<void> {
-  await ipcRenderer.invoke('application', { command: 'open-update-window' })
+async function openUpdater(): Promise<void> {
+  await ipcRenderer.invoke("application", { command: "open-update-window" });
 }
 
 /** The surface CommandLauncher.vue exposes to its template ref. */
 interface CommandLauncherHandle {
-  open: (view: LauncherView) => Promise<void>
-  close: () => void
+  open: (view: LauncherView) => Promise<void>;
+  close: () => void;
 }
 
-const commandLauncher = ref<CommandLauncherHandle|null>(null)
-const fixAllDialog = ref<InstanceType<typeof FixAllDialog>|null>(null)
+const commandLauncher = ref<CommandLauncherHandle | null>(null);
+const fixAllDialog = ref<InstanceType<typeof FixAllDialog> | null>(null);
 
 /** Opens Fix All on the focused document; with no document open there is nothing to fix. */
-function fixAllInDocument (): void {
+function fixAllInDocument(): void {
   if (activeFile.value === undefined) {
-    showToast(trans('No document is open.'), 'error')
-    return
+    showToast(trans("No document is open."), "error");
+    return;
   }
-  fixAllDialog.value?.start({ scope: 'document', documentPath: activeFile.value.path })
+  fixAllDialog.value?.start({ scope: "document", documentPath: activeFile.value.path });
 }
 
 /**
@@ -405,43 +423,43 @@ function fixAllInDocument (): void {
  *
  * @param   {ReferenceSearchRequest}  request  The relayed request payload
  */
-async function openReferenceSearch (request: ReferenceSearchRequest = null): Promise<void> {
-  const view: LauncherView = request === null ? { kind: 'root' } : { kind: 'references', request }
-  await commandLauncher.value?.open(view)
+async function openReferenceSearch(request: ReferenceSearchRequest = null): Promise<void> {
+  const view: LauncherView = request === null ? { kind: "root" } : { kind: "references", request };
+  await commandLauncher.value?.open(view);
 }
 
 /** Opens the command launcher directly on its workspace-file navigator. */
-async function openFileLauncher (): Promise<void> {
-  await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'go-to-file' })
+async function openFileLauncher(): Promise<void> {
+  await commandLauncher.value?.open({ kind: "dynamic-group", id: "go-to-file" });
 }
 
 /** Opens the launcher on the export profiles: the Export… menu item's path. */
-async function openExport (): Promise<void> {
-  await commandLauncher.value?.open({ kind: 'dynamic-group', id: 'export' })
+async function openExport(): Promise<void> {
+  await commandLauncher.value?.open({ kind: "dynamic-group", id: "export" });
 }
 
 /** Exports the active document with the profile or custom command chosen in the launcher. */
-async function runExport (request: ExportRequest): Promise<void> {
-  const file = activeFile.value
+async function runExport(request: ExportRequest): Promise<void> {
+  const file = activeFile.value;
   if (file === undefined) {
-    return
+    return;
   }
-  if (request.kind === 'command') {
-    await ipcRenderer.invoke('application', {
-      command: 'custom-export',
-      payload: { displayName: request.displayName, file: file.path } satisfies CustomExportIPCAPI
-    })
-    return
+  if (request.kind === "command") {
+    await ipcRenderer.invoke("application", {
+      command: "custom-export",
+      payload: { displayName: request.displayName, file: file.path } satisfies CustomExportIPCAPI,
+    });
+    return;
   }
-  await ipcRenderer.invoke('application', {
-    command: 'export',
+  await ipcRenderer.invoke("application", {
+    command: "export",
     payload: {
       // Spread into a plain object: the reactive proxy cannot cross the IPC boundary.
       profile: { ...request.profile },
       exportTo: configStore.config.export.dir,
-      file: file.path
-    } satisfies ExportIPCAPI
-  })
+      file: file.path,
+    } satisfies ExportIPCAPI,
+  });
 }
 
 /**
@@ -450,18 +468,18 @@ async function runExport (request: ExportRequest): Promise<void> {
  *
  * @param   {string}  path  The document's path
  */
-async function openWorkspaceFile (path: string): Promise<void> {
-  await ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: { path, windowId, leafId: lastLeafId.value, newTab: false }
-  })
+async function openWorkspaceFile(path: string): Promise<void> {
+  await ipcRenderer.invoke("documents-provider", {
+    command: "open-file",
+    payload: { path, windowId, leafId: lastLeafId.value, newTab: false },
+  });
 }
 
 // Create-reference-label dialog (issue #1 Phase 6): the relayed request
 // carries the fixed family, the slug proposal, and the editor-owned
 // insertion closure; the workspace key set feeds the live uniqueness verdict.
-const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt|undefined>(undefined)
-const createLabelExistingKeys = ref<string[]>([])
+const createLabelPrompt = ref<CreateReferenceLabelDialogPrompt | undefined>(undefined);
+const createLabelExistingKeys = ref<string[]>([]);
 
 /**
  * Fetches the current workspace definition keys from the reference provider
@@ -470,22 +488,22 @@ const createLabelExistingKeys = ref<string[]>([])
  *
  * @param   {CreateReferenceLabelDialogPrompt}  prompt  The relayed request
  */
-function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): void {
+function openCreateReferenceLabel(prompt: CreateReferenceLabelDialogPrompt): void {
   invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
     async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: 'get-snapshot' },
-    trans('Loading workspace references')
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
   )
-    .then(outcome => {
-      if (outcome.status === 'failed') {
-        return // The boundary surfaced the closable toast; nothing to open.
+    .then((outcome) => {
+      if (outcome.status === "failed") {
+        return; // The boundary surfaced the closable toast; nothing to open.
       }
       createLabelExistingKeys.value = outcome.value.snapshots
-        .flatMap(snapshot => snapshot.definitions)
-        .map(definition => definition.key)
-      createLabelPrompt.value = prompt
+        .flatMap((snapshot) => snapshot.definitions)
+        .map((definition) => definition.key);
+      createLabelPrompt.value = prompt;
     })
-    .catch(err => reportError('Could not open the create-reference-label dialog', err))
+    .catch((err) => reportError("Could not open the create-reference-label dialog", err));
 }
 
 /**
@@ -497,12 +515,14 @@ function openCreateReferenceLabel (prompt: CreateReferenceLabelDialogPrompt): vo
  *
  * @return  {string}                                 The user-facing message
  */
-function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { status: 'stale' }): string {
+function describeStaleCreateOutcome(
+  outcome: ConfirmReferenceLabelOutcome & { status: "stale" },
+): string {
   switch (outcome.reason) {
-    case 'already-labeled':
-      return trans('No label created: the target gained a label while the dialog was open.')
-    case 'target-vanished':
-      return trans('No label created: the target no longer exists in the document.')
+    case "already-labeled":
+      return trans("No label created: the target gained a label while the dialog was open.");
+    case "target-vanished":
+      return trans("No label created: the target no longer exists in the document.");
   }
 }
 
@@ -515,27 +535,30 @@ function describeStaleCreateOutcome (outcome: ConfirmReferenceLabelOutcome & { s
  *
  * @param   {CreateReferenceLabelIntent}  intent  The confirmed intent
  */
-function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
-  const prompt = createLabelPrompt.value
-  createLabelPrompt.value = undefined
+function handleCreateReferenceLabel(intent: CreateReferenceLabelIntent): void {
+  const prompt = createLabelPrompt.value;
+  createLabelPrompt.value = undefined;
   if (prompt === undefined) {
-    return
+    return;
   }
 
-  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent)
-  if (outcome.status === 'stale') {
-    showToast(describeStaleCreateOutcome(outcome), 'error')
-    return
+  const outcome: ConfirmReferenceLabelOutcome = prompt.applyCreate(intent);
+  if (outcome.status === "stale") {
+    showToast(describeStaleCreateOutcome(outcome), "error");
+    return;
   }
 
-  navigator.clipboard.writeText(intent.clipboardText)
+  navigator.clipboard
+    .writeText(intent.clipboardText)
     .then(() => {
-      showToast(trans('Created %s — %s copied to the clipboard.', intent.key, intent.clipboardText))
+      showToast(
+        trans("Created %s — %s copied to the clipboard.", intent.key, intent.clipboardText),
+      );
     })
-    .catch(err => {
-      reportError('Could not copy the reference to the clipboard', err)
-      showToast(trans('Created %s. The clipboard copy failed.', intent.key), 'error')
-    })
+    .catch((err) => {
+      reportError("Could not copy the reference to the clipboard", err);
+      showToast(trans("Created %s. The clipboard copy failed.", intent.key), "error");
+    });
 }
 
 /**
@@ -547,18 +570,19 @@ function handleCreateReferenceLabel (intent: CreateReferenceLabelIntent): void {
  *
  * @param   {ReferenceJumpIntent}  intent  The chosen jump intent
  */
-function handleReferenceJump (intent: ReferenceJumpIntent): void {
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: {
-      path: intent.documentPath,
-      windowId,
-      leafId: lastLeafId.value,
-      newTab: false,
-      targetRange: intent.range
-    }
-  })
-    .catch(err => reportError(err))
+function handleReferenceJump(intent: ReferenceJumpIntent): void {
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: intent.documentPath,
+        windowId,
+        leafId: lastLeafId.value,
+        newTab: false,
+        targetRange: intent.range,
+      },
+    })
+    .catch((err) => reportError(err));
 }
 
 const pomodoro = ref<PomodoroConfig>({
@@ -566,10 +590,10 @@ const pomodoro = ref<PomodoroConfig>({
   soundEffect: new Audio(glassFile),
   intervalHandle: undefined,
   durations: { task: 1500, short: 300, long: 1200 },
-  phase: { type: 'task', elapsed: 0 },
+  phase: { type: "task", elapsed: 0 },
   counter: { task: 0, short: 0, long: 0 },
-  colour: { task: '#ff3366', short: '#ddff00', long: '#33ffcc' }
-})
+  colour: { task: "#ff3366", short: "#ddff00", long: "#33ffcc" },
+});
 
 // Editor commands state (the prop-as-event bus; see component-contracts.ts)
 const editorCommands = ref<EditorCommands>({
@@ -580,35 +604,38 @@ const editorCommands = ref<EditorCommands>({
   insertPandoc: false,
   executeCommand: false,
   setLanguageToolLanguage: false,
-  data: undefined
-})
+  data: undefined,
+});
 
-const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean, sidebar: boolean }>({
+const sidebarsBeforeDistractionfree = ref<{ fileManager: boolean; sidebar: boolean }>({
   fileManager: true,
-  sidebar: false
-})
+  sidebar: false,
+});
 
-const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible)
+const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebarVisible);
 
 // Showing and hiding a pane. The panes stay mounted and collapse to nothing
 // through the splitter's own collapse, so the width slides instead of
 // jumping and a pane comes back holding what it held. The transition is
 // armed only around a toggle: a window resize relays the panes too, and a
 // pane that eased after the window edge would lag behind the pointer.
-const PANE_ANIMATION_MS = 180
-const PANE_VISIBLE_KEY: Record<DraggablePane, 'window.fileManagerVisible' | 'window.sidebarVisible'> = {
-  navigationSidebar: 'window.fileManagerVisible',
-  annotationPanel: 'window.sidebarVisible'
-}
+const PANE_ANIMATION_MS = 180;
+const PANE_VISIBLE_KEY: Record<
+  DraggablePane,
+  "window.fileManagerVisible" | "window.sidebarVisible"
+> = {
+  navigationSidebar: "window.fileManagerVisible",
+  annotationPanel: "window.sidebarVisible",
+};
 const PANE_MINIMUM: Record<DraggablePane, number> = {
   navigationSidebar: NAVIGATION_SIDEBAR_MINIMUM,
-  annotationPanel: ANNOTATION_PANEL_MINIMUM
-}
-const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
-const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel>|null>(null)
-const panesAnimating = ref(false)
-let paneAnimationTimer: ReturnType<typeof setTimeout>|undefined
-let paneResizeFrame: number|undefined
+  annotationPanel: ANNOTATION_PANEL_MINIMUM,
+};
+const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
+const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
+const panesAnimating = ref(false);
+let paneAnimationTimer: ReturnType<typeof setTimeout> | undefined;
+let paneResizeFrame: number | undefined;
 
 /**
  * The width each pane mounts at, zero for a pane the window opens with
@@ -618,11 +645,11 @@ let paneResizeFrame: number|undefined
  */
 const mountSizes: Record<DraggablePane, number> = {
   navigationSidebar: fileManagerVisible.value ? mountWidths.navigationSidebar : 0,
-  annotationPanel: sidebarVisible.value ? mountWidths.annotationPanel : 0
-}
+  annotationPanel: sidebarVisible.value ? mountWidths.annotationPanel : 0,
+};
 
-function panelFor (pane: DraggablePane): InstanceType<typeof SplitterPanel>|null {
-  return pane === 'navigationSidebar' ? navigationSidebarPanel.value : annotationPanelPanel.value
+function panelFor(pane: DraggablePane): InstanceType<typeof SplitterPanel> | null {
+  return pane === "navigationSidebar" ? navigationSidebarPanel.value : annotationPanelPanel.value;
 }
 
 /**
@@ -631,30 +658,32 @@ function panelFor (pane: DraggablePane): InstanceType<typeof SplitterPanel>|null
  * window opened with hidden was never collapsed, so the splitter remembers
  * no width for it and would hand it its bare minimum.
  */
-function applyPaneVisibility (pane: DraggablePane, visible: boolean): void {
-  const panel = panelFor(pane)
+function applyPaneVisibility(pane: DraggablePane, visible: boolean): void {
+  const panel = panelFor(pane);
   if (panel === null) {
-    return
+    return;
   }
-  panesAnimating.value = true
-  clearTimeout(paneAnimationTimer)
-  paneAnimationTimer = setTimeout(() => { panesAnimating.value = false }, PANE_ANIMATION_MS)
+  panesAnimating.value = true;
+  clearTimeout(paneAnimationTimer);
+  paneAnimationTimer = setTimeout(() => {
+    panesAnimating.value = false;
+  }, PANE_ANIMATION_MS);
   if (visible) {
-    panel.expand()
-    panel.resize(mountWidths[pane])
+    panel.expand();
+    panel.resize(mountWidths[pane]);
   } else {
-    panel.collapse()
+    panel.collapse();
   }
 }
 
-watch([ fileManagerVisible, sidebarVisible ], ([ sidebar, panel ], [ wasSidebar, wasPanel ]) => {
+watch([fileManagerVisible, sidebarVisible], ([sidebar, panel], [wasSidebar, wasPanel]) => {
   if (sidebar !== wasSidebar) {
-    applyPaneVisibility('navigationSidebar', sidebar)
+    applyPaneVisibility("navigationSidebar", sidebar);
   }
   if (panel !== wasPanel) {
-    applyPaneVisibility('annotationPanel', panel)
+    applyPaneVisibility("annotationPanel", panel);
   }
-})
+});
 
 /**
  * Reka preserves the pixel size a panel had immediately before the group
@@ -663,81 +692,87 @@ watch([ fileManagerVisible, sidebarVisible ], ([ sidebar, panel ], [ wasSidebar,
  * host window has finished resizing; Reka still clamps them when the current
  * window genuinely cannot fit them, and no temporary clamp is persisted.
  */
-function restorePaneWidthsAfterWindowResize (): void {
+function restorePaneWidthsAfterWindowResize(): void {
   if (paneResizeFrame !== undefined) {
-    cancelAnimationFrame(paneResizeFrame)
+    cancelAnimationFrame(paneResizeFrame);
   }
   paneResizeFrame = requestAnimationFrame(() => {
     paneResizeFrame = requestAnimationFrame(() => {
-      paneResizeFrame = undefined
+      paneResizeFrame = undefined;
       if (fileManagerVisible.value) {
-        navigationSidebarPanel.value?.resize(mountWidths.navigationSidebar)
+        navigationSidebarPanel.value?.resize(mountWidths.navigationSidebar);
       }
       if (sidebarVisible.value) {
-        annotationPanelPanel.value?.resize(mountWidths.annotationPanel)
+        annotationPanelPanel.value?.resize(mountWidths.annotationPanel);
       }
-    })
-  })
+    });
+  });
 }
 
 onMounted(() => {
-  window.addEventListener('resize', restorePaneWidthsAfterWindowResize)
-})
+  window.addEventListener("resize", restorePaneWidthsAfterWindowResize);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('resize', restorePaneWidthsAfterWindowResize)
+  window.removeEventListener("resize", restorePaneWidthsAfterWindowResize);
   if (paneResizeFrame !== undefined) {
-    cancelAnimationFrame(paneResizeFrame)
+    cancelAnimationFrame(paneResizeFrame);
   }
-})
+});
 
-const activeFile = computed(() => documentTreeStore.lastLeafActiveFile)
+const activeFile = computed(() => documentTreeStore.lastLeafActiveFile);
 
-const workspaceCollaborationPaths = computed(() => workspaceStore.pathList.filter(path =>
-  workspaceStore.descriptorMap.get(path)?.type === 'file'
-))
+const workspaceCollaborationPaths = computed(() =>
+  workspaceStore.pathList.filter((path) => workspaceStore.descriptorMap.get(path)?.type === "file"),
+);
 
 /** The right-edge collaboration badge is workspace-wide, like the panel. */
 const panelActivityBadges = computed<Record<string, number>>(() => ({
-  [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount
-}))
+  [PANEL_VIEW_ID]: collaborationStore.workspaceUnresolvedCount,
+}));
 
 /** The editor pane became the user's filesystem context. */
-function rememberEditorDesktopFocus (): void {
+function rememberEditorDesktopFocus(): void {
   if (activeFile.value !== undefined) {
-    windowStateStore.desktopFocusPath = activeFile.value.path
+    windowStateStore.desktopFocusPath = activeFile.value.path;
   }
 }
 
 /** Snapshot of the current filesystem context for the three desktop actions. */
-function desktopCommandContext (): DesktopCommandContext {
+function desktopCommandContext(): DesktopCommandContext {
   return {
     focusPath: windowStateStore.desktopFocusPath,
     activeFilePath: activeFile.value?.path,
     selectedDirectory: configStore.config.openDirectory,
     descriptors: workspaceStore.descriptorMap,
-    roots: workspaceStore.rootDescriptors
-  }
+    roots: workspaceStore.rootDescriptors,
+  };
 }
 
 /** Open one path through the desktop's configured MIME association. */
-function openDesktopPath (target: string|undefined, missingMessage: string): void {
+function openDesktopPath(target: string | undefined, missingMessage: string): void {
   if (target === undefined) {
-    showToast(missingMessage, 'error')
-    return
+    showToast(missingMessage, "error");
+    return;
   }
-  ipcRenderer.invoke('application', { command: 'open-desktop-path', payload: target })
-    .then(error => {
-      if (error !== '') {
-        showToast(trans('Could not open %s: %s', target, error), 'error')
+  ipcRenderer
+    .invoke("application", { command: "open-desktop-path", payload: target })
+    .then((error) => {
+      if (error !== "") {
+        showToast(trans("Could not open %s: %s", target, error), "error");
       }
     })
-    .catch(err => { showToast(trans('Could not open %s: %s', target, err instanceof Error ? err.message : String(err)), 'error') })
+    .catch((err) => {
+      showToast(
+        trans("Could not open %s: %s", target, err instanceof Error ? err.message : String(err)),
+        "error",
+      );
+    });
 }
 
 /** Open the focused file using its desktop MIME association. */
-function openFileExternally (): void {
-  openDesktopPath(resolveExternalFile(desktopCommandContext()), trans('No file is focused.'))
+function openFileExternally(): void {
+  openDesktopPath(resolveExternalFile(desktopCommandContext()), trans("No file is focused."));
 }
 
 /**
@@ -745,68 +780,85 @@ function openFileExternally (): void {
  * the generic desktop opener this operation is awaited, so a failed kitty
  * launch has both a durable log entry and a closable in-window surface.
  */
-function editConfiguredTextFile (target: string, operationLabel: string): void {
-  if (target.trim() === '') {
-    const error = new Error(trans('No file is configured.'))
-    recordRendererError(`${operationLabel} failed`, error)
-    showToast(trans('%s failed: %s', operationLabel, error.message), 'error')
-    return
+function editConfiguredTextFile(target: string, operationLabel: string): void {
+  if (target.trim() === "") {
+    const error = new Error(trans("No file is configured."));
+    recordRendererError(`${operationLabel} failed`, error);
+    showToast(trans("%s failed: %s", operationLabel, error.message), "error");
+    return;
   }
 
-  ipcRenderer.invoke('application', { command: 'edit-text-file', payload: target })
-    .then(error => {
-      if (error === '') {
-        return
+  ipcRenderer
+    .invoke("application", { command: "edit-text-file", payload: target })
+    .then((error) => {
+      if (error === "") {
+        return;
       }
-      const failure = new Error(error)
-      recordRendererError(`${operationLabel} failed`, failure)
-      showToast(trans('%s failed: %s', operationLabel, error), 'error')
+      const failure = new Error(error);
+      recordRendererError(`${operationLabel} failed`, failure);
+      showToast(trans("%s failed: %s", operationLabel, error), "error");
     })
-    .catch(err => {
-      recordRendererError(`${operationLabel} failed`, err)
+    .catch((err) => {
+      recordRendererError(`${operationLabel} failed`, err);
       showToast(
-        trans('%s failed: %s', operationLabel, err instanceof Error ? err.message : String(err)),
-        'error'
-      )
-    })
+        trans("%s failed: %s", operationLabel, err instanceof Error ? err.message : String(err)),
+        "error",
+      );
+    });
 }
 
-function editSnippets (): void {
-  editConfiguredTextFile(configStore.config.editor.snippetsFile, trans('Opening snippets'))
+function editSnippets(): void {
+  editConfiguredTextFile(configStore.config.editor.snippetsFile, trans("Opening snippets"));
 }
 
-function editQuickTexDefinitions (): void {
-  editConfiguredTextFile(configStore.config.editor.quickTexFile, trans('Opening QuickTeX definitions'))
+function editQuickTexDefinitions(): void {
+  editConfiguredTextFile(
+    configStore.config.editor.quickTexFile,
+    trans("Opening QuickTeX definitions"),
+  );
 }
 
 /** Open the directory meant by "here" using its desktop MIME association. */
-function openFileBrowserHere (): void {
-  openDesktopPath(resolveDirectoryHere(desktopCommandContext()), trans('No workspace or file is focused.'))
+function openFileBrowserHere(): void {
+  openDesktopPath(
+    resolveDirectoryHere(desktopCommandContext()),
+    trans("No workspace or file is focused."),
+  );
 }
 
 /** Launch kitty with the focused file/workspace directory as its working directory. */
-function openTerminalHere (): void {
-  const target = resolveDirectoryHere(desktopCommandContext())
+function openTerminalHere(): void {
+  const target = resolveDirectoryHere(desktopCommandContext());
   if (target === undefined) {
-    showToast(trans('No workspace or file is focused.'), 'error')
-    return
+    showToast(trans("No workspace or file is focused."), "error");
+    return;
   }
-  ipcRenderer.invoke('application', { command: 'open-terminal-here', payload: target })
-    .then(error => {
-      if (error !== '') {
-        showToast(trans('Could not open a terminal in %s: %s', target, error), 'error')
+  ipcRenderer
+    .invoke("application", { command: "open-terminal-here", payload: target })
+    .then((error) => {
+      if (error !== "") {
+        showToast(trans("Could not open a terminal in %s: %s", target, error), "error");
       }
     })
-    .catch(err => { showToast(trans('Could not open a terminal in %s: %s', target, err instanceof Error ? err.message : String(err)), 'error') })
+    .catch((err) => {
+      showToast(
+        trans(
+          "Could not open a terminal in %s: %s",
+          target,
+          err instanceof Error ? err.message : String(err),
+        ),
+        "error",
+      );
+    });
 }
 
 const windowTitle = computed<string>(() => {
   if (activeFile.value === undefined) {
-    return 'Zettlr'
+    return "Zettlr";
   }
 
-  return `Zettlr - ${getSemanticDocumentTitle(activeFile.value)}`
-})
+  return `Zettlr - ${getSemanticDocumentTitle(activeFile.value)}`;
+});
 
 // Simple state machine to trigger which of the three shows up when. Below's the
 // corresponding truth table, which is relatively large, but by spotting some
@@ -844,31 +896,31 @@ const windowTitle = computed<string>(() => {
 */
 
 // With no toolbar row to drag the window by, macOS keeps its titlebar.
-const shouldShowTitlebar = computed<boolean>(() => process.platform === 'darwin')
+const shouldShowTitlebar = computed<boolean>(() => process.platform === "darwin");
 
 // The menubar is independent of other values; always shown on Windows, and on Linux only if native Appearance is off.
-const shouldShowMenubar = computed<boolean>(() => process.platform === 'win32' || (process.platform !== 'darwin' && !configStore.config.window.nativeAppearance))
-
-
-
-
+const shouldShowMenubar = computed<boolean>(
+  () =>
+    process.platform === "win32" ||
+    (process.platform !== "darwin" && !configStore.config.window.nativeAppearance),
+);
 
 /** The surface NavigationSidebar.vue exposes to its template ref. */
 interface NavigationSidebarHandle {
-  reveal: (target: RevealTarget) => Promise<void>
-  startSearch: (terms: string) => Promise<void>
+  reveal: (target: RevealTarget) => Promise<void>;
+  startSearch: (terms: string) => Promise<void>;
 }
 
-const navigationSidebar = ref<NavigationSidebarHandle|null>(null)
-const paneConfiguration = computed(() => documentTreeStore.paneStructure)
-const lastLeafId = computed(() => documentTreeStore.lastLeafId)
-const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined)
+const navigationSidebar = ref<NavigationSidebarHandle | null>(null);
+const paneConfiguration = computed(() => documentTreeStore.paneStructure);
+const lastLeafId = computed(() => documentTreeStore.lastLeafId);
+const distractionFree = computed<boolean>(() => windowStateStore.distractionFreeMode !== undefined);
 
 // Per-pane session history position (issue #1 Phase 5): feeds the toolbar
 // Back/Forward controls' enabled state. Refreshed from the documents
 // provider whenever the focused leaf or its documents change.
-const canGoBack = ref(false)
-const canGoForward = ref(false)
+const canGoBack = ref(false);
+const canGoForward = ref(false);
 
 /**
  * Asks the documents provider to move the focused pane one step through its
@@ -876,68 +928,79 @@ const canGoForward = ref(false)
  *
  * @param   {'navigate-back'|'navigate-forward'}  command  The direction
  */
-function navigateHistory (command: 'navigate-back'|'navigate-forward'): void {
-  const leafId = lastLeafId.value
+function navigateHistory(command: "navigate-back" | "navigate-forward"): void {
+  const leafId = lastLeafId.value;
   if (leafId === undefined) {
-    return // No pane has been focused yet; there is no history to navigate
+    return; // No pane has been focused yet; there is no history to navigate
   }
 
-  ipcRenderer.invoke('documents-provider', {
-    command,
-    payload: { windowId, leafId }
-  }).catch(err => reportError(err))
-}
-
-function refreshNavigationState (): void {
-  const leafId = lastLeafId.value
-  if (leafId === undefined) {
-    canGoBack.value = false
-    canGoForward.value = false
-    return
-  }
-
-  ipcRenderer.invoke('documents-provider', {
-    command: 'get-navigation-state',
-    payload: { windowId, leafId }
-  })
-    .then(state => {
-      canGoBack.value = state.canGoBack
-      canGoForward.value = state.canGoForward
+  ipcRenderer
+    .invoke("documents-provider", {
+      command,
+      payload: { windowId, leafId },
     })
-    .catch(err => reportError(err))
+    .catch((err) => reportError(err));
 }
 
-watch(lastLeafId, refreshNavigationState)
-ipcRenderer.on('documents-update', () => { refreshNavigationState() })
+function refreshNavigationState(): void {
+  const leafId = lastLeafId.value;
+  if (leafId === undefined) {
+    canGoBack.value = false;
+    canGoForward.value = false;
+    return;
+  }
+
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "get-navigation-state",
+      payload: { windowId, leafId },
+    })
+    .then((state) => {
+      canGoBack.value = state.canGoBack;
+      canGoForward.value = state.canGoForward;
+    })
+    .catch((err) => reportError(err));
+}
+
+watch(lastLeafId, refreshNavigationState);
+ipcRenderer.on("documents-update", () => {
+  refreshNavigationState();
+});
 // A wikilink to `[[file#heading]]` opens the file at that heading.
-ipcRenderer.on('jump-to-line', (event, target: { filePath: string, line: number }) => {
-  jtl(target.filePath, target.line, false)
-})
-refreshNavigationState()
+ipcRenderer.on("jump-to-line", (event, target: { filePath: string; line: number }) => {
+  jtl(target.filePath, target.line, false);
+});
+refreshNavigationState();
 
 // Showing a pane ends distraction-free mode; the panes themselves mount
 // and unmount with their config values.
-watch([ sidebarVisible, fileManagerVisible ], ([ panel, sidebar ]) => {
+watch([sidebarVisible, fileManagerVisible], ([panel, sidebar]) => {
   if ((panel || sidebar) && windowStateStore.distractionFreeMode !== undefined) {
-    windowStateStore.distractionFreeMode = undefined
+    windowStateStore.distractionFreeMode = undefined;
   }
-})
+});
 
 watch(distractionFree, (newValue) => {
   if (newValue) {
     // Enter distraction free mode
     sidebarsBeforeDistractionfree.value = {
       fileManager: fileManagerVisible.value,
-      sidebar: sidebarVisible.value
-    }
-    configStore.setConfigValue('window.sidebarVisible', false)
-    configStore.setConfigValue('window.fileManagerVisible', false)
+      sidebar: sidebarVisible.value,
+    };
+    configStore.setConfigValue("window.sidebarVisible", false);
+    configStore.setConfigValue("window.fileManagerVisible", false);
   } else {
     // Leave distraction free mode
-    configStore.setConfigValue('window.sidebarVisible', sidebarsBeforeDistractionfree.value.sidebar)
-    configStore.setConfigValue('window.fileManagerVisible', sidebarsBeforeDistractionfree.value.fileManager)
+    configStore.setConfigValue(
+      "window.sidebarVisible",
+      sidebarsBeforeDistractionfree.value.sidebar,
+    );
+    configStore.setConfigValue(
+      "window.fileManagerVisible",
+      sidebarsBeforeDistractionfree.value.fileManager,
+    );
   }
-})
+});
 
 onMounted(() => {
   // Saves that main initiated — the close-and-save prompts — have no renderer
@@ -945,305 +1008,334 @@ onMounted(() => {
   // Without this the prompt closes and the window stays open with no reason
   // given anywhere the user can see.
   ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
-    const name = pathBasename(payload.filePath)
-    const message = payload.refusal === undefined
-      ? trans('Could not save "%s".', name)
-      : `${name}: ${payload.refusal.message}`
-    showToast(message, 'error', 12000)
-  })
+    const name = pathBasename(payload.filePath);
+    const message =
+      payload.refusal === undefined
+        ? trans('Could not save "%s".', name)
+        : `${name}: ${payload.refusal.message}`;
+    showToast(message, "error", 12000);
+  });
 
   // The window-level shortcuts this component owns, by their typed name. The
   // main process sends the same names from the application menu; names other
   // components own (save-file, search, …) have no entry here.
   const shortcutHandlers: Partial<Record<ShortcutName, () => void>> = {
-    'toggle-annotation-panel': () => {
-      configStore.setConfigValue('window.sidebarVisible', !sidebarVisible.value)
+    "toggle-annotation-panel": () => {
+      configStore.setConfigValue("window.sidebarVisible", !sidebarVisible.value);
     },
-    'insert-id': () => {
-      editorCommands.value.data = generateId(configStore.config.zkn.idGen)
-      editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
+    "insert-id": () => {
+      editorCommands.value.data = generateId(configStore.config.zkn.idGen);
+      editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
     },
-    'copy-current-id': () => {
+    "copy-current-id": () => {
       if (documentTreeStore.lastLeafActiveFile === undefined) {
-        return
+        return;
       }
-      ipcRenderer.invoke('fsal', {
-        command: 'get-descriptor',
-        payload: documentTreeStore.lastLeafActiveFile.path
-      })
-        .then((descriptor: AnyDescriptor|AnyDescriptor[]|undefined) => {
-          if (descriptor !== undefined && !Array.isArray(descriptor) && descriptor.type === 'file' && descriptor.id !== '') {
-            navigator.clipboard.writeText(descriptor.id).catch(err => reportError(err))
+      ipcRenderer
+        .invoke("fsal", {
+          command: "get-descriptor",
+          payload: documentTreeStore.lastLeafActiveFile.path,
+        })
+        .then((descriptor: AnyDescriptor | AnyDescriptor[] | undefined) => {
+          if (
+            descriptor !== undefined &&
+            !Array.isArray(descriptor) &&
+            descriptor.type === "file" &&
+            descriptor.id !== ""
+          ) {
+            navigator.clipboard.writeText(descriptor.id).catch((err) => reportError(err));
           }
         })
-        .catch(err => reportError(err))
+        .catch((err) => reportError(err));
     },
-    'global-search': () => navigationSidebar.value?.reveal({ view: 'search', focus: 'search-query' }),
-    'toggle-navigation-sidebar': () => {
-      configStore.setConfigValue('window.fileManagerVisible', !fileManagerVisible.value)
+    "global-search": () =>
+      navigationSidebar.value?.reveal({ view: "search", focus: "search-query" }),
+    "toggle-navigation-sidebar": () => {
+      configStore.setConfigValue("window.fileManagerVisible", !fileManagerVisible.value);
     },
     // The file manager focuses its own filter on the next tick; the drawer
     // and the Files section only have to be visible by then.
-    'filter-files': () => navigationSidebar.value?.reveal({ view: 'explorer', section: 'files', focus: 'none' }),
-    'edit-ignore-rules': () => { ignoreRulesStore.editing = true },
+    "filter-files": () =>
+      navigationSidebar.value?.reveal({ view: "explorer", section: "files", focus: "none" }),
+    "edit-ignore-rules": () => {
+      ignoreRulesStore.editing = true;
+    },
     export: () => openExport(),
-    'fix-all-document': fixAllInDocument,
-    'fix-all-open': () => fixAllDialog.value?.start({ scope: 'open' }),
-    'fix-all-workspace': () => fixAllDialog.value?.start({ scope: 'workspace' }),
-    'pandoc-quick-help': () => { showPandocQuickHelp.value = true },
+    "fix-all-document": fixAllInDocument,
+    "fix-all-open": () => fixAllDialog.value?.start({ scope: "open" }),
+    "fix-all-workspace": () => fixAllDialog.value?.start({ scope: "workspace" }),
+    "pandoc-quick-help": () => {
+      showPandocQuickHelp.value = true;
+    },
     print: () => {
       if (activeFile.value !== undefined) {
-        ipcRenderer.invoke('application', { command: 'print', payload: activeFile.value.path })
-          .catch(err => reportError(err))
+        ipcRenderer
+          .invoke("application", { command: "print", payload: activeFile.value.path })
+          .catch((err) => reportError(err));
       }
     },
-    'navigate-back': () => { navigateHistory('navigate-back') },
-    'navigate-forward': () => { navigateHistory('navigate-forward') },
-    'insert-pandoc-div': () => { insertPandoc({ type: 'div', attributes: '' }) },
-    'insert-pandoc-span': () => { insertPandoc({ type: 'span', attributes: '' }) },
-    'open-command-launcher': () => openReferenceSearch(null),
-    'open-file-launcher': () => openFileLauncher(),
-    'edit-snippets': editSnippets,
-    'edit-quicktex': editQuickTexDefinitions,
-    'open-file-browser-here': openFileBrowserHere,
-    'open-file-externally': openFileExternally,
-    'open-terminal-here': openTerminalHere
-  }
+    "navigate-back": () => {
+      navigateHistory("navigate-back");
+    },
+    "navigate-forward": () => {
+      navigateHistory("navigate-forward");
+    },
+    "insert-pandoc-div": () => {
+      insertPandoc({ type: "div", attributes: "" });
+    },
+    "insert-pandoc-span": () => {
+      insertPandoc({ type: "span", attributes: "" });
+    },
+    "open-command-launcher": () => openReferenceSearch(null),
+    "open-file-launcher": () => openFileLauncher(),
+    "edit-snippets": editSnippets,
+    "edit-quicktex": editQuickTexDefinitions,
+    "open-file-browser-here": openFileBrowserHere,
+    "open-file-externally": openFileExternally,
+    "open-terminal-here": openTerminalHere,
+  };
 
-  ipcRenderer.on('shortcut', (event, shortcut: unknown, payload: unknown) => {
-    if (typeof shortcut !== 'string' || !isShortcutName(shortcut)) {
-      throw new Error(`The main process sent an unknown shortcut: ${String(shortcut)}`)
+  ipcRenderer.on("shortcut", (event, shortcut: unknown, payload: unknown) => {
+    if (typeof shortcut !== "string" || !isShortcutName(shortcut)) {
+      throw new Error(`The main process sent an unknown shortcut: ${String(shortcut)}`);
     }
-    if (shortcut === 'insert-table') {
-      insertTable(insertTablePayloadSchema.parse(payload))
-      return
+    if (shortcut === "insert-table") {
+      insertTable(insertTablePayloadSchema.parse(payload));
+      return;
     }
     if (isEditorCommandName(shortcut)) {
-      runEditorCommand(shortcut)
-      return
+      runEditorCommand(shortcut);
+      return;
     }
-    shortcutHandlers[shortcut]?.()
-  })
+    shortcutHandlers[shortcut]?.();
+  });
 
   // Check if there is an update available.
-  ipcRenderer.invoke('update-provider', { command: 'update-status' })
-    .then(state => {
-      isUpdateAvailable.value = state.updateAvailable
+  ipcRenderer
+    .invoke("update-provider", { command: "update-status" })
+    .then((state) => {
+      isUpdateAvailable.value = state.updateAvailable;
     })
-    .catch(err => reportError(err))
+    .catch((err) => reportError(err));
 
   // Also, listen for any changes in the update available state
-  ipcRenderer.on('update-provider', (event, command: string, updateState: UpdateState) => {
-    if (command === 'state-changed') {
-      isUpdateAvailable.value = updateState.updateAvailable
+  ipcRenderer.on("update-provider", (event, command: string, updateState: UpdateState) => {
+    if (command === "state-changed") {
+      isUpdateAvailable.value = updateState.updateAvailable;
     }
-  })
-})
+  });
+});
 
-function insertTable (spec: { rows: number, cols: number }): void {
+function insertTable(spec: { rows: number; cols: number }): void {
   // Generate a simple table based on the info, and insert it.
-  const align = new Array<'center'|'left'|'right'|null>(spec.cols).fill(null)
-  const row = (): string[] => new Array<string>(spec.cols).fill('')
-  const ast: string[][] = Array.from({ length: spec.rows }, row)
+  const align = new Array<"center" | "left" | "right" | null>(spec.cols).fill(null);
+  const row = (): string[] => new Array<string>(spec.cols).fill("");
+  const ast: string[][] = Array.from({ length: spec.rows }, row);
 
-  editorCommands.value.data = buildPipeMarkdownTable(ast, align)
-  editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection
+  editorCommands.value.data = buildPipeMarkdownTable(ast, align);
+  editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
 }
 
-function insertPandoc (spec: { type: string, attributes: string }): void {
-  editorCommands.value.data = spec
-  editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc
+function insertPandoc(spec: { type: string; attributes: string }): void {
+  editorCommands.value.data = spec;
+  editorCommands.value.insertPandoc = !editorCommands.value.insertPandoc;
 }
 
 /**
  * A panel row was clicked: open its document at the target range. An
  * annotation row also opens that annotation's thread in the editor.
  */
-function navigateToWorkspaceCollaboration (target: { documentPath: string, range?: SourceRange, annotationId?: string }): void {
+function navigateToWorkspaceCollaboration(target: {
+  documentPath: string;
+  range?: SourceRange;
+  annotationId?: string;
+}): void {
   if (target.annotationId !== undefined) {
-    collaborationStore.selectAnnotation(target.annotationId)
+    collaborationStore.selectAnnotation(target.annotationId);
   }
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: {
-      path: target.documentPath,
-      windowId,
-      leafId: lastLeafId.value,
-      newTab: false,
-      targetRange: target.range
-    }
-  })
-    .catch(err => reportError('[Annotations] Could not navigate to collaboration target', err))
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: target.documentPath,
+        windowId,
+        leafId: lastLeafId.value,
+        newTab: false,
+        targetRange: target.range,
+      },
+    })
+    .catch((err) => reportError("[Annotations] Could not navigate to collaboration target", err));
 }
 
-function genericJtl (lineNumber: number): void {
+function genericJtl(lineNumber: number): void {
   // This function is called from the sidebar where we already know the file
   // is open (because its editor component has provided the table of
   // contents in the first place).
-  const doc = documentTreeStore.lastLeafActiveFile
+  const doc = documentTreeStore.lastLeafActiveFile;
   if (doc !== undefined) {
-    editorCommands.value.data = { filePath: doc.path, lineNumber }
-    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine
+    editorCommands.value.data = { filePath: doc.path, lineNumber };
+    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine;
   }
 }
 
-function jtl (filePath: string, lineNumber: number, newTab: boolean): void {
+function jtl(filePath: string, lineNumber: number, newTab: boolean): void {
   // We need to make sure the given file is (a) open somewhere and (b) the
   // active file.
 
   // Simplest case: The file is already active somewhere
-  const activeFileLeaf = documentTreeStore.paneData
-    .find((pane: LeafNodeJSON) => pane.activeFile?.path === filePath)
+  const activeFileLeaf = documentTreeStore.paneData.find(
+    (pane: LeafNodeJSON) => pane.activeFile?.path === filePath,
+  );
   if (activeFileLeaf !== undefined) {
     // There is at least one leaf with the given file being active, so we
     // can simply emit the event
-    editorCommands.value.data = { filePath, lineNumber }
-    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine
-    return
+    editorCommands.value.data = { filePath, lineNumber };
+    editorCommands.value.jumpToLine = !editorCommands.value.jumpToLine;
+    return;
   }
 
-  const WAIT_TIME = 100 // How long to wait before re-executing the jtl()
+  const WAIT_TIME = 100; // How long to wait before re-executing the jtl()
 
   // Next, let's see if the file is at least open somewhere
-  const containingLeaf = documentTreeStore.paneData
-    .find((pane: LeafNodeJSON) => {
-      return pane.openFiles.find(doc => doc.path === filePath) !== undefined
-    })
+  const containingLeaf = documentTreeStore.paneData.find((pane: LeafNodeJSON) => {
+    return pane.openFiles.find((doc) => doc.path === filePath) !== undefined;
+  });
   if (containingLeaf !== undefined) {
     // Let's first make it the active file and then execute the command
-    ipcRenderer.invoke('documents-provider', {
-      command: 'open-file',
-      payload: { path: filePath, windowId, leafId: containingLeaf.id }
-    })
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "open-file",
+        payload: { path: filePath, windowId, leafId: containingLeaf.id },
+      })
       .then(() => {
         // Re-execute the jtl command
-        setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
+        setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME);
       })
-      .catch(e => reportError(e))
-    return
+      .catch((e) => reportError(e));
+    return;
   }
 
   // If we're here, the file was not open, so we have to do that first. At
   // least this both makes it an open file AND an active file somewhere in
   // the window.
-  ipcRenderer.invoke('documents-provider', {
-    command: 'open-file',
-    payload: {
-      path: filePath,
-      windowId,
-      leafId: lastLeafId.value,
-      newTab
-    }
-  })
+  ipcRenderer
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: filePath,
+        windowId,
+        leafId: lastLeafId.value,
+        newTab,
+      },
+    })
     .then(() => {
       // Re-execute the jtl command
-      setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME)
+      setTimeout(() => jtl(filePath, lineNumber, newTab), WAIT_TIME);
     })
-    .catch(e => reportError(e))
+    .catch((e) => reportError(e));
 }
 
 /**
  * An icon on the left activity bar: it opens the drawer on that view, or
  * closes the drawer when the view it already shows is pressed again.
  */
-function pressSidebarView (id: string): void {
+function pressSidebarView(id: string): void {
   if (isSidebarViewId(id)) {
-    configStore.setConfigValue('ui.sidebarView', id)
-    configStore.setConfigValue('window.fileManagerVisible', true)
-    return
+    configStore.setConfigValue("ui.sidebarView", id);
+    configStore.setConfigValue("window.fileManagerVisible", true);
+    return;
   }
-  configStore.setConfigValue('window.fileManagerVisible', false)
+  configStore.setConfigValue("window.fileManagerVisible", false);
 }
 
-function moveSection (data: { from: number, to: number }): void {
-  editorCommands.value.data = { from: data.from, to: data.to }
-  editorCommands.value.moveSection = !editorCommands.value.moveSection
+function moveSection(data: { from: number; to: number }): void {
+  editorCommands.value.data = { from: data.from, to: data.to };
+  editorCommands.value.moveSection = !editorCommands.value.moveSection;
 }
 
-async function startGlobalSearch (terms: string): Promise<void> {
-  await navigationSidebar.value?.startSearch(terms)
+async function startGlobalSearch(terms: string): Promise<void> {
+  await navigationSidebar.value?.startSearch(terms);
 }
 
-
-function setPomodoroConfig (config: PomodoroConfig): void {
+function setPomodoroConfig(config: PomodoroConfig): void {
   // Update the durations as necessary
-  pomodoro.value.durations.task = config.durations.task
-  pomodoro.value.durations.short = config.durations.short
-  pomodoro.value.durations.long = config.durations.long
+  pomodoro.value.durations.task = config.durations.task;
+  pomodoro.value.durations.short = config.durations.short;
+  pomodoro.value.durations.long = config.durations.long;
 
-  const effectChanged = config.currentEffectFile !== pomodoro.value.currentEffectFile
-  const volumeChanged = config.soundEffect.volume !== pomodoro.value.soundEffect.volume
+  const effectChanged = config.currentEffectFile !== pomodoro.value.currentEffectFile;
+  const volumeChanged = config.soundEffect.volume !== pomodoro.value.soundEffect.volume;
   if (effectChanged) {
-    pomodoro.value.currentEffectFile = config.currentEffectFile
-    pomodoro.value.soundEffect = new Audio(config.currentEffectFile)
-    pomodoro.value.soundEffect.volume = config.soundEffect.volume
+    pomodoro.value.currentEffectFile = config.currentEffectFile;
+    pomodoro.value.soundEffect = new Audio(config.currentEffectFile);
+    pomodoro.value.soundEffect.volume = config.soundEffect.volume;
   }
   if (!effectChanged && volumeChanged) {
-    pomodoro.value.soundEffect.volume = config.soundEffect.volume
+    pomodoro.value.soundEffect.volume = config.soundEffect.volume;
   }
 
   if (effectChanged || volumeChanged) {
-    pomodoro.value.soundEffect.pause()
-    pomodoro.value.soundEffect.currentTime = 0
-    pomodoro.value.soundEffect.play().catch(_e => {
+    pomodoro.value.soundEffect.pause();
+    pomodoro.value.soundEffect.currentTime = 0;
+    pomodoro.value.soundEffect.play().catch((_e) => {
       /* We will be getting errors when pausing quickly */
-    })
+    });
   }
 }
 
-
-function startPomodoro (): void {
-  pomodoro.value.soundEffect.pause()
-  pomodoro.value.soundEffect.currentTime = 0
+function startPomodoro(): void {
+  pomodoro.value.soundEffect.pause();
+  pomodoro.value.soundEffect.currentTime = 0;
   // Starts a new pomodoro timer
-  pomodoro.value.phase.type = 'task'
-  pomodoro.value.phase.elapsed = 0
+  pomodoro.value.phase.type = "task";
+  pomodoro.value.phase.elapsed = 0;
 
   pomodoro.value.intervalHandle = setInterval(() => {
-    pomodoroTick()
-  }, 1000)
+    pomodoroTick();
+  }, 1000);
 }
 
-function pomodoroTick (): void {
+function pomodoroTick(): void {
   // Progresses the pomodoro counter by one second
-  pomodoro.value.phase.elapsed += 1
+  pomodoro.value.phase.elapsed += 1;
 
-  const currentPhaseDur = pomodoro.value.durations[pomodoro.value.phase.type]
-  const phaseIsFinished = pomodoro.value.phase.elapsed === currentPhaseDur
+  const currentPhaseDur = pomodoro.value.durations[pomodoro.value.phase.type];
+  const phaseIsFinished = pomodoro.value.phase.elapsed === currentPhaseDur;
 
   if (phaseIsFinished) {
-    pomodoro.value.phase.elapsed = 0
-    pomodoro.value.counter[pomodoro.value.phase.type] += 1
+    pomodoro.value.phase.elapsed = 0;
+    pomodoro.value.counter[pomodoro.value.phase.type] += 1;
 
-    if (pomodoro.value.phase.type === 'task' && pomodoro.value.counter.task % 4 === 0) {
-      pomodoro.value.phase.type = 'long'
-    } else if (pomodoro.value.phase.type === 'task') {
-      pomodoro.value.phase.type = 'short'
+    if (pomodoro.value.phase.type === "task" && pomodoro.value.counter.task % 4 === 0) {
+      pomodoro.value.phase.type = "long";
+    } else if (pomodoro.value.phase.type === "task") {
+      pomodoro.value.phase.type = "short";
     } else {
       // Both breaks lead to a new task
-      pomodoro.value.phase.type = 'task'
+      pomodoro.value.phase.type = "task";
     }
 
-    pomodoro.value.soundEffect.play().catch(_e => { /* We will be getting errors when pausing quickly */ })
+    pomodoro.value.soundEffect.play().catch((_e) => {
+      /* We will be getting errors when pausing quickly */
+    });
   }
 }
 
-function stopPomodoro (): void {
-  pomodoro.value.soundEffect.pause()
-  pomodoro.value.soundEffect.currentTime = 0
+function stopPomodoro(): void {
+  pomodoro.value.soundEffect.pause();
+  pomodoro.value.soundEffect.currentTime = 0;
   // Stops the pomodoro timer
-  pomodoro.value.phase.type = 'task'
-  pomodoro.value.phase.elapsed = 0
-  pomodoro.value.counter.task = 0
-  pomodoro.value.counter.short = 0
-  pomodoro.value.counter.long = 0
+  pomodoro.value.phase.type = "task";
+  pomodoro.value.phase.elapsed = 0;
+  pomodoro.value.counter.task = 0;
+  pomodoro.value.counter.short = 0;
+  pomodoro.value.counter.long = 0;
 
   if (pomodoro.value.intervalHandle !== undefined) {
-    clearInterval(pomodoro.value.intervalHandle)
-    pomodoro.value.intervalHandle = undefined
+    clearInterval(pomodoro.value.intervalHandle);
+    pomodoro.value.intervalHandle = undefined;
   }
 }
-
 </script>
 
 <style lang="less">

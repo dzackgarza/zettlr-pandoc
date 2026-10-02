@@ -3,13 +3,13 @@ import { EditorState } from "@codemirror/state";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import {
   quiverReplacement,
   quiverSessionForBlock,
   quiverSourceForSession,
   sourceForQuiverExport,
 } from "tikz-workbench/src/quiver-bridge";
+import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
 
 function rawBlock(source: string): TikzSourceBlock & { authoredSource: string } {
@@ -86,7 +86,8 @@ describe("TikZ-cd ↔ Quiver source bridge", function () {
   });
 
   it("writes Quiver edits back into a list without changing its Markdown prefixes", function () {
-    const doc = "- Diagram:\n\n  \\begin{tikzcd}\n  X \\arrow[r] & Y\n  \\end{tikzcd}\n\n- Next item\n";
+    const doc =
+      "- Diagram:\n\n  \\begin{tikzcd}\n  X \\arrow[r] & Y\n  \\end{tikzcd}\n\n- Next item\n";
     const state = EditorState.create({
       doc,
       selection: { anchor: doc.indexOf("\\arrow") },

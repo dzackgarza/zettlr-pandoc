@@ -4,34 +4,34 @@
  */
 
 export type FixAllRequest =
-  | { scope: 'document', documentPath: string }
-  | { scope: 'open' }
-  | { scope: 'workspace' }
+  | { scope: "document"; documentPath: string }
+  | { scope: "open" }
+  | { scope: "workspace" };
 
 /** One machine-applicable fix, in the offsets of the text it was planned on. */
 export interface FixAllEdit {
-  from: number
-  to: number
-  insert: string
-  rule: string
+  from: number;
+  to: number;
+  insert: string;
+  rule: string;
 }
 
 export interface FixAllDocument {
-  documentPath: string
+  documentPath: string;
   /** hashDocumentSource of the text the edits were planned on. */
-  sourceHash: string
-  edits: FixAllEdit[]
+  sourceHash: string;
+  edits: FixAllEdit[];
 }
 
 export interface FixAllPlan {
   /** The documents with at least one fix. */
-  documents: FixAllDocument[]
+  documents: FixAllDocument[];
   /** How many documents the scope held. */
-  documentsChecked: number
+  documentsChecked: number;
   /** The documents Flowmark could not lint, so their fixes are unknown. */
-  unlinted: string[]
+  unlinted: string[];
 }
 
 export type FixAllOutcome =
-  | { status: 'applied', fixesApplied: number, documentsChanged: string[] }
-  | { status: 'conflict', documentPath: string }
+  | { status: "applied"; fixesApplied: number; documentsChanged: string[] }
+  | { status: "conflict"; documentPath: string };

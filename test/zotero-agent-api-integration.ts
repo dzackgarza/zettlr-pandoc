@@ -34,14 +34,16 @@ import http from "http";
 import type { AddressInfo } from "net";
 import os from "os";
 import path from "path";
+import ZoteroLibrary from "source/app/service-providers/agent-api/zotero-library";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
-import ZoteroLibrary from "source/app/service-providers/agent-api/zotero-library";
 
 const ZOTERO = "http://127.0.0.1:23119";
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 const MAIN_LIBRARY = (
-  JSON.parse(readFileSync(path.join(os.homedir(), ".config", "Zettlr-Pandoc", "config.json"), "utf8")) as {
+  JSON.parse(
+    readFileSync(path.join(os.homedir(), ".config", "Zettlr-Pandoc", "config.json"), "utf8"),
+  ) as {
     export: { cslLibrary: string };
   }
 ).export.cslLibrary;
@@ -55,7 +57,8 @@ async function zoteroItem(itemKey: string): Promise<{ citationKey: string; title
 /** A CSL title without the case-protection spans that Better BibTeX braces become. */
 function cslTitle(citeproc: CiteprocProvider, citationKey: string): string {
   const title = citeproc.getItem("main", citationKey)?.title;
-  if (typeof title !== "string") throw new Error(`The main library has no title for ${citationKey}`);
+  if (typeof title !== "string")
+    throw new Error(`The main library has no title for ${citationKey}`);
   return title.replace(/<span class="nocase">|<\/span>/g, "");
 }
 
@@ -72,15 +75,27 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
   before(async function () {
     citeproc = new CiteprocProvider(
       new LogProvider(),
-      { on: () => {}, get: () => ({ appLang: "en-US", export: { cslLibrary: MAIN_LIBRARY, cslStyle: CHICAGO_STYLE } }) },
-      { showErrorMessage: (title: string, message: string) => { throw new Error(`${title}: ${message}`); } },
+      {
+        on: () => {},
+        get: () => ({
+          appLang: "en-US",
+          export: { cslLibrary: MAIN_LIBRARY, cslStyle: CHICAGO_STYLE },
+        }),
+      },
+      {
+        showErrorMessage: (title: string, message: string) => {
+          throw new Error(`${title}: ${message}`);
+        },
+      },
     );
     await citeproc.boot();
     zotero = new ZoteroLibrary(citeproc);
     // A page with no metadata and no identifier: no method of Zotero can name the work.
     pageServer = http.createServer((_req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end('<!doctype html><html><head><meta charset="utf-8"><title>Nothing here</title></head><body><p>notes</p></body></html>');
+      res.end(
+        '<!doctype html><html><head><meta charset="utf-8"><title>Nothing here</title></head><body><p>notes</p></body></html>',
+      );
     });
     await new Promise<void>((resolve) => pageServer.listen(0, "127.0.0.1", resolve));
     pageOrigin = `http://127.0.0.1:${(pageServer.address() as AddressInfo).port}`;
@@ -124,7 +139,11 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
     const title = `Fallback Item ${uid.toUpperCase()}`;
     const saved = await zotero.importUrl({
       url,
-      fallbackMetadata: { title, creators: [{ firstName: "Ada", lastName: "Fallbackauthor" }], year: "2019" },
+      fallbackMetadata: {
+        title,
+        creators: [{ firstName: "Ada", lastName: "Fallbackauthor" }],
+        year: "2019",
+      },
     });
     assert.ok(saved.ok, JSON.stringify(saved));
     createdItemKeys.push(saved.body.item.itemKey);

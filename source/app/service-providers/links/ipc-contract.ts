@@ -14,30 +14,30 @@
  * END HEADER
  */
 
-import type { WikilinkResolution } from '@common/util/wikilink-resolution'
+import type { WikilinkResolution } from "@common/util/wikilink-resolution";
 
 /** A wikilink target, and the document it resolves to when it names exactly one. */
 export interface WikilinkEdge {
-  target: string
-  path: string|undefined
+  target: string;
+  path: string | undefined;
 }
 
 export type LinkProviderIPCContract = {
-  'get-inbound-links': {
-    request: { payload: { filePath: string } }
-    response: { inbound: string[], outbound: string[] }
-  }
-  'get-link-database': {
-    request: { payload?: undefined }
-    response: Record<string, WikilinkEdge[]>
-  }
-  'get-link-targets': {
-    request: { payload?: undefined }
-    response: Record<string, string>
-  }
+  "get-inbound-links": {
+    request: { payload: { filePath: string } };
+    response: { inbound: string[]; outbound: string[] };
+  };
+  "get-link-database": {
+    request: { payload?: undefined };
+    response: Record<string, WikilinkEdge[]>;
+  };
+  "get-link-targets": {
+    request: { payload?: undefined };
+    response: Record<string, string>;
+  };
   /** How each target, the text of a wikilink before `#` and `|`, resolves from `sourcePath`. */
-  'resolve-wikilinks': {
-    request: { payload: { sourcePath: string, targets: string[] } }
-    response: Record<string, WikilinkResolution>
-  }
-}
+  "resolve-wikilinks": {
+    request: { payload: { sourcePath: string; targets: string[] } };
+    response: Record<string, WikilinkResolution>;
+  };
+};

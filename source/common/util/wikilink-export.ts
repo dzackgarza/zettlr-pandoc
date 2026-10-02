@@ -14,23 +14,23 @@
  * END HEADER
  */
 
-import { extractASTNodes, markdownToAST } from '../modules/markdown-utils'
-import type { Heading, ZettelkastenLink } from '../modules/markdown-utils/markdown-ast'
-import { fragmentHeadingIndex, type WikilinkIndex } from './wikilink-resolution'
-import { splitWikilinkTarget } from './wikilink-target'
+import { extractASTNodes, markdownToAST } from "../modules/markdown-utils";
+import type { Heading, ZettelkastenLink } from "../modules/markdown-utils/markdown-ast";
+import { fragmentHeadingIndex, type WikilinkIndex } from "./wikilink-resolution";
+import { splitWikilinkTarget } from "./wikilink-target";
 
 /** One file of the export, in the order pandoc reads it. */
 export interface ExportInput {
-  path: string
-  markdown: string
+  path: string;
+  markdown: string;
 }
 
 /** The heading that a wikilink leads to: an input and a heading in it. */
 export interface WikilinkDestination {
   /** The 0-based index of the input. */
-  input: number
+  input: number;
   /** The 0-based index of the heading in that input. */
-  heading: number
+  heading: number;
 }
 
 /**
@@ -39,8 +39,8 @@ export interface WikilinkDestination {
  * whose target names no document of the export is not in it.
  */
 export interface WikilinkExportMap {
-  inputs: Array<{ headings: number }>
-  links: Record<string, WikilinkDestination>
+  inputs: Array<{ headings: number }>;
+  links: Record<string, WikilinkDestination>;
 }
 
 /**
@@ -50,38 +50,51 @@ export interface WikilinkExportMap {
  * raw target leads to two destinations, or a link leads to a document with no
  * heading.
  */
-export function wikilinkExportMap (inputs: ExportInput[], index: WikilinkIndex): WikilinkExportMap {
-  const headings = inputs.map(input => extractASTNodes(markdownToAST(input.markdown), 'Heading') as Heading[])
-  const links: Record<string, WikilinkDestination> = {}
+export function wikilinkExportMap(inputs: ExportInput[], index: WikilinkIndex): WikilinkExportMap {
+  const headings = inputs.map(
+    (input) => extractASTNodes(markdownToAST(input.markdown), "Heading") as Heading[],
+  );
+  const links: Record<string, WikilinkDestination> = {};
 
   for (const input of inputs) {
-    for (const link of extractASTNodes(markdownToAST(input.markdown), 'ZettelkastenLink') as ZettelkastenLink[]) {
-      const { target, fragment } = splitWikilinkTarget(link.target)
-      const resolution = index.resolve(target, input.path)
-      if (resolution.status !== 'resolved') {
-        continue
+    for (const link of extractASTNodes(
+      markdownToAST(input.markdown),
+      "ZettelkastenLink",
+    ) as ZettelkastenLink[]) {
+      const { target, fragment } = splitWikilinkTarget(link.target);
+      const resolution = index.resolve(target, input.path);
+      if (resolution.status !== "resolved") {
+        continue;
       }
-      const documentPath = resolution.path
-      const destinationInput = inputs.findIndex(candidate => candidate.path === documentPath)
+      const documentPath = resolution.path;
+      const destinationInput = inputs.findIndex((candidate) => candidate.path === documentPath);
       if (destinationInput < 0) {
-        continue
+        continue;
       }
-      const heading = fragment === undefined || fragment === ''
-        ? 0
-        : fragmentHeadingIndex(headings[destinationInput], fragment)
+      const heading =
+        fragment === undefined || fragment === ""
+          ? 0
+          : fragmentHeadingIndex(headings[destinationInput], fragment);
       if (heading < 0) {
-        continue
+        continue;
       }
       if (headings[destinationInput].length === 0) {
-        throw new Error(`The link [[${link.target}]] in ${input.path} names ${documentPath}, which has no heading to link to`)
+        throw new Error(
+          `The link [[${link.target}]] in ${input.path} names ${documentPath}, which has no heading to link to`,
+        );
       }
-      const previous = links[link.target]
-      if (previous !== undefined && (previous.input !== destinationInput || previous.heading !== heading)) {
-        throw new Error(`The link [[${link.target}]] leads to different places in the files of this export`)
+      const previous = links[link.target];
+      if (
+        previous !== undefined &&
+        (previous.input !== destinationInput || previous.heading !== heading)
+      ) {
+        throw new Error(
+          `The link [[${link.target}]] leads to different places in the files of this export`,
+        );
       }
-      links[link.target] = { input: destinationInput, heading }
+      links[link.target] = { input: destinationInput, heading };
     }
   }
 
-  return { inputs: headings.map(list => ({ headings: list.length })), links }
+  return { inputs: headings.map((list) => ({ headings: list.length })), links };
 }

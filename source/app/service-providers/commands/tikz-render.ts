@@ -20,9 +20,13 @@
 
 import { Mutex } from "async-mutex";
 import { app } from "electron";
+import {
+  renderTikz,
+  type TikzRenderRequest,
+  type TikzRenderResult,
+} from "tikz-workbench/src/tikz-render";
 import { type AppServiceContainer } from "../../app-service-container";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
-import { renderTikz, type TikzRenderRequest, type TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import ZettlrCommand from "./zettlr-command";
 
 export default class TikzRender extends ZettlrCommand {

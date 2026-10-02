@@ -12,32 +12,32 @@
  * END HEADER
  */
 
-import { type EditorState } from '@codemirror/state'
-import { type EditorView } from '@codemirror/view'
-import { trans } from '@common/i18n-renderer'
-import { type StatusbarItem } from '.'
-import { openLintPanel, closeLintPanel, forEachDiagnostic } from '@codemirror/lint'
+import { closeLintPanel, forEachDiagnostic, openLintPanel } from "@codemirror/lint";
+import { type EditorState } from "@codemirror/state";
+import { type EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
+import { type StatusbarItem } from ".";
 
 /** How many diagnostics of each severity a state carries. */
 export interface DiagnosticCounts {
-  info: number
-  warning: number
-  error: number
+  info: number;
+  warning: number;
+  error: number;
 }
 
 /** Counts the diagnostics of a state by severity. */
-export function countDiagnostics (state: EditorState): DiagnosticCounts {
-  const counts: DiagnosticCounts = { info: 0, warning: 0, error: 0 }
+export function countDiagnostics(state: EditorState): DiagnosticCounts {
+  const counts: DiagnosticCounts = { info: 0, warning: 0, error: 0 };
   forEachDiagnostic(state, (diagnostic, _from, _to) => {
-    if (diagnostic.severity === 'info') {
-      counts.info++
-    } else if (diagnostic.severity === 'warning') {
-      counts.warning++
+    if (diagnostic.severity === "info") {
+      counts.info++;
+    } else if (diagnostic.severity === "warning") {
+      counts.warning++;
     } else {
-      counts.error++
+      counts.error++;
     }
-  })
-  return counts
+  });
+  return counts;
 }
 
 /**
@@ -45,11 +45,11 @@ export function countDiagnostics (state: EditorState): DiagnosticCounts {
  * first because closeLintPanel() reports false on an already closed panel
  * while openLintPanel() only ever reports true.
  */
-export function toggleLintPanel (view: EditorView): boolean {
+export function toggleLintPanel(view: EditorView): boolean {
   if (!closeLintPanel(view)) {
-    openLintPanel(view)
+    openLintPanel(view);
   }
-  return true
+  return true;
 }
 
 /**
@@ -60,15 +60,15 @@ export function toggleLintPanel (view: EditorView): boolean {
  *
  * @return  {StatusbarItem}         Returns the element
  */
-export function diagnosticsStatus (state: EditorState, view: EditorView): StatusbarItem|null {
-  const { info, warning, error } = countDiagnostics(state)
+export function diagnosticsStatus(state: EditorState, view: EditorView): StatusbarItem | null {
+  const { info, warning, error } = countDiagnostics(state);
 
   return {
     content: `<cds-icon shape="help-info"></cds-icon> ${info} <cds-icon shape="warning-standard"></cds-icon> ${warning} <cds-icon shape="times-circle"></cds-icon> ${error}`,
     allowHtml: true,
-    title: trans('Toggle diagnostics panel'),
-    onClick (_event) {
-      toggleLintPanel(view)
-    }
-  }
+    title: trans("Toggle diagnostics panel"),
+    onClick(_event) {
+      toggleLintPanel(view);
+    },
+  };
 }

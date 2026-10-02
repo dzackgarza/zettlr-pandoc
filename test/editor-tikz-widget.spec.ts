@@ -32,7 +32,6 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetTikzRenderMemoForTests,
@@ -45,6 +44,7 @@ import {
   type EditorConfiguration,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
+import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 function polyfillJsdomForCodeMirror(): void {
   if (typeof globalThis.requestAnimationFrame !== "function") {
@@ -637,7 +637,8 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.ok(text.includes("Package metadata 0"), "the start of the log is available");
     assert.ok(text.includes("Package metadata 59"), "the end of the log is available");
     assert.ok(
-      view.dom.querySelector<HTMLButtonElement>(".tikz-error button")?.textContent === "Copy diagnostics",
+      view.dom.querySelector<HTMLButtonElement>(".tikz-error button")?.textContent ===
+        "Copy diagnostics",
       "the complete log has a copy action",
     );
     assert.ok(
@@ -687,11 +688,16 @@ describe("TikZ editor widgets (issue #14)", function () {
     assert.equal(view.state.selection.main.from, selectionBefore.from);
     assert.equal(view.state.selection.main.to, selectionBefore.to);
     assert.equal(getComputedStyle(box).userSelect, "text");
-    const edit = Array.from(box.querySelectorAll("button")).find((button) => button.textContent === "Edit source");
+    const edit = Array.from(box.querySelectorAll("button")).find(
+      (button) => button.textContent === "Edit source",
+    );
     assert.ok(edit, "failed figures expose their authored source");
     edit.click();
     assert.ok(view.state.selection.main.to > view.state.selection.main.from);
-    assert.match(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to), /\\begin\{tikzcd\}/u);
+    assert.match(
+      view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to),
+      /\\begin\{tikzcd\}/u,
+    );
   });
 
   it("names the missing tools when the toolchain is absent", async function () {

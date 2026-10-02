@@ -39,18 +39,18 @@
  * END HEADER
  */
 
-import { AccordionContent, AccordionItem } from 'reka-ui'
-import { useSlots } from 'vue'
-import SectionHeader from '@common/vue/chrome/SectionHeader.vue'
-import type { SidebarSectionId } from '@dts/common/sidebar-views'
+import SectionHeader from "@common/vue/chrome/SectionHeader.vue";
+import type { SidebarSectionId } from "@dts/common/sidebar-views";
+import { AccordionContent, AccordionItem } from "reka-ui";
+import { useSlots } from "vue";
 
 const props = defineProps<{
-  id: SidebarSectionId
-  label: string
-  count?: number
-}>()
+  id: SidebarSectionId;
+  label: string;
+  count?: number;
+}>();
 
-const slots = useSlots()
+const slots = useSlots();
 </script>
 
 <style lang="less">

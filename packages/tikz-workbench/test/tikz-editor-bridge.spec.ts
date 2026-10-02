@@ -1,8 +1,5 @@
 import { strict as assert } from "node:assert";
-import {
-  tikzEditorReplacement,
-  tikzEditorSessionForBlock,
-} from "../src/editor-bridge";
+import { tikzEditorReplacement, tikzEditorSessionForBlock } from "../src/editor-bridge";
 import type { TikzLivePreviewTarget } from "../src/live-preview";
 import { contiguousSourceLineRanges } from "../src/source-block";
 

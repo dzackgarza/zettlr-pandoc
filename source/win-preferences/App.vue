@@ -66,92 +66,93 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import FormBuilder from '@common/vue/form/FormBuilder.vue'
-import WindowChrome from '@common/vue/window/WindowChrome.vue'
-import { trans } from '@common/i18n-renderer'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { resolveLangCode } from "@common/util/map-lang-code";
+import SelectableList from "@common/vue/form/elements/SelectableList.vue";
+import TextControl from "@common/vue/form/elements/TextControl.vue";
+import FormBuilder from "@common/vue/form/FormBuilder.vue";
+import SplitView from "@common/vue/window/SplitView.vue";
+import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
+import { useConfigStore } from "source/pinia";
+import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
+import { getPreferenceFieldsets, getPreferenceGroups } from "./schema";
 
-import { ref, computed, watch, onMounted, onBeforeMount, nextTick } from 'vue'
-import { resolveLangCode } from '@common/util/map-lang-code'
-import SplitView from '@common/vue/window/SplitView.vue'
-import SelectableList from '@common/vue/form/elements/SelectableList.vue'
-import TextControl from '@common/vue/form/elements/TextControl.vue'
-import { useConfigStore } from 'source/pinia'
-import { getPreferenceFieldsets, getPreferenceGroups } from './schema'
-import { PreferencesGroups, type PreferenceNavigationTarget } from '@dts/common/preferences'
-
-const ipcRenderer = window.ipc
-const configStore = useConfigStore()
+const ipcRenderer = window.ipc;
+const configStore = useConfigStore();
 
 interface PreferencesCategoryFieldset {
-  group?: PreferencesGroups
-  title: string
-  help?: string
-  fields: unknown[]
+  group?: PreferencesGroups;
+  title: string;
+  help?: string;
+  fields: unknown[];
 }
 
 interface PreferencesListItem {
-  displayText: string
-  infoString?: string
-  icon?: string
+  displayText: string;
+  infoString?: string;
+  icon?: string;
 }
 
-function isStringArray (value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string')
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-const hasVibrancy = computed(() => configStore.config.window.vibrancy && process.platform === 'darwin')
+const hasVibrancy = computed(
+  () => configStore.config.window.vibrancy && process.platform === "darwin",
+);
 
-const currentGroup = ref(0)
-const query = ref('')
+const currentGroup = ref(0);
+const query = ref("");
 // Will be populated afterwards, contains the user dict
-const userDictionaryContents = ref<string[]>([])
+const userDictionaryContents = ref<string[]>([]);
 // Will be populated afterwards, contains all dictionaries
-const availableDictionaries = ref<Array<{ selected: boolean, value: string, key: string }>>([])
+const availableDictionaries = ref<Array<{ selected: boolean; value: string; key: string }>>([]);
 // Will be populated afterwards, contains the available languages
-const appLangOptions = ref<Record<string, string>>({})
+const appLangOptions = ref<Record<string, string>>({});
 
 // This will return the full object
-const config = computed(() => configStore.config)
+const config = computed(() => configStore.config);
 
-const noResultsMessage = computed(() => trans('No results for "%s"', query.value))
-const searchPlaceholder = trans('Search')
+const noResultsMessage = computed(() => trans('No results for "%s"', query.value));
+const searchPlaceholder = trans("Search");
 
 const schema = computed(() => {
   return {
     fieldsets: filteredFieldsets.value,
     getFieldsetCategory: (fieldset: PreferencesCategoryFieldset) => {
-      if (query.value === '') {
-        return undefined
+      if (query.value === "") {
+        return undefined;
       }
 
-      const group = groups.value.find(g => g.id === fieldset.group)
+      const group = groups.value.find((g) => g.id === fieldset.group);
 
       if (group !== undefined && group.icon !== undefined) {
-        return { icon: group.icon, title: group.displayText }
+        return { icon: group.icon, title: group.displayText };
       } else {
-        return undefined
+        return undefined;
       }
-    }
-  }
-})
+    },
+  };
+});
 
-const selectedItem = computed(() => query.value === '' ? currentGroup.value : -1)
+const selectedItem = computed(() => (query.value === "" ? currentGroup.value : -1));
 
 const fieldsets = computed(() => {
-  return getPreferenceFieldsets(configStore.config, appLangOptions.value)
-})
+  return getPreferenceFieldsets(configStore.config, appLangOptions.value);
+});
 
 const filteredFieldsets = computed(() => {
-  const q = query.value.toLowerCase().trim()
+  const q = query.value.toLowerCase().trim();
 
-  if (q === '') {
+  if (q === "") {
     // No active search, so simply return the currently active group
-    const activeGroup = groups.value[currentGroup.value].id
-    return fieldsets.value.filter(f => f.group === activeGroup)
+    const activeGroup = groups.value[currentGroup.value].id;
+    return fieldsets.value.filter((f) => f.group === activeGroup);
   }
 
-  return fieldsets.value.filter(f => {
+  return fieldsets.value.filter((f) => {
     // BUG: Somehow TypeScript (and ESLint!) knows that everything here works
     // out but STILL insists on explicitly casting everything to boolean. I
     // don't know why.
@@ -159,43 +160,43 @@ const filteredFieldsets = computed(() => {
     // Match relevancy:
     // 1. Search term is in card title
     if (Boolean(f.title.toLowerCase().includes(q))) {
-      return true
+      return true;
     }
 
-    if (Boolean((f.help?.toLowerCase().includes(q)))) {
-      return true
+    if (Boolean(f.help?.toLowerCase().includes(q))) {
+      return true;
     }
 
     for (const field of f.fields) {
-      if ('label' in field && (Boolean((field.label?.toLowerCase().includes(q))))) {
-        return true
-      } else if ('info' in field && (Boolean((field.info?.toLowerCase().includes(q))))) {
-        return true
-      } else if (field.type === 'radio' || field.type === 'select') {
+      if ("label" in field && Boolean(field.label?.toLowerCase().includes(q))) {
+        return true;
+      } else if ("info" in field && Boolean(field.info?.toLowerCase().includes(q))) {
+        return true;
+      } else if (field.type === "radio" || field.type === "select") {
         for (const option in field.options) {
           if (option.toLowerCase().includes(q)) {
-            return true
+            return true;
           }
         }
       }
     }
-    return false
-  })
-})
+    return false;
+  });
+});
 
 const groups = computed<Array<PreferencesListItem & { id: PreferencesGroups }>>(() => {
-  return getPreferenceGroups()
-})
+  return getPreferenceGroups();
+});
 
 const windowTitle = computed(() => {
-  if (query.value !== '') {
-    return trans('Searching: %s', query.value)
-  } else if (process.platform === 'darwin') {
-    return groups.value[currentGroup.value].displayText
+  if (query.value !== "") {
+    return trans("Searching: %s", query.value);
+  } else if (process.platform === "darwin") {
+    return groups.value[currentGroup.value].displayText;
   } else {
-    return trans('Preferences')
+    return trans("Preferences");
   }
-})
+});
 
 const model = computed(() => {
   // The model to be passed on will simply be a merger of custom values
@@ -205,100 +206,106 @@ const model = computed(() => {
   return {
     userDictionaryContents: userDictionaryContents.value,
     availableDictionaries: availableDictionaries.value,
-    ...config.value
-  }
-})
+    ...config.value,
+  };
+});
 
 /**
  * Switches out the preferences tab based on the value of currentTab.
  */
 watch(currentGroup, () => {
-  setTitle()
-  location.hash = '#' + currentGroup.value
-})
+  setTitle();
+  location.hash = "#" + currentGroup.value;
+});
 
 /**
  * Initialise values during component mount
  */
 onMounted(() => {
-  setTitle()
-  populateDynamicValues()
-  const startupTarget = preferenceTargetFromLocation()
+  setTitle();
+  populateDynamicValues();
+  const startupTarget = preferenceTargetFromLocation();
   if (startupTarget !== undefined) {
-    revealPreferenceTarget(startupTarget).catch(err => reportError('[Preferences] Could not reveal startup target', err))
-  } else if (location.hash !== '') {
-    const groupId = parseInt(location.hash.substring(1), 10)
+    revealPreferenceTarget(startupTarget).catch((err) =>
+      reportError("[Preferences] Could not reveal startup target", err),
+    );
+  } else if (location.hash !== "") {
+    const groupId = parseInt(location.hash.substring(1), 10);
     if (Object.values(PreferencesGroups).includes(groupId)) {
-      currentGroup.value = groupId
+      currentGroup.value = groupId;
     }
   }
-})
+});
 
 /** Initial cross-window deep-link encoded by the main-process window owner. */
-function preferenceTargetFromLocation (): PreferenceNavigationTarget | undefined {
-  const params = new URLSearchParams(location.search)
-  const rawGroup = params.get('group')
+function preferenceTargetFromLocation(): PreferenceNavigationTarget | undefined {
+  const params = new URLSearchParams(location.search);
+  const rawGroup = params.get("group");
   if (rawGroup === null) {
-    return undefined
+    return undefined;
   }
-  const group = Number.parseInt(rawGroup, 10)
+  const group = Number.parseInt(rawGroup, 10);
   if (!Object.values(PreferencesGroups).includes(group)) {
-    reportError(new Error(`Preferences URL names unknown group ${rawGroup}`))
-    return undefined
+    reportError(new Error(`Preferences URL names unknown group ${rawGroup}`));
+    return undefined;
   }
   return {
     group: group as PreferencesGroups,
-    fieldsetTitle: params.get('fieldset') ?? undefined,
-    model: params.get('model') ?? undefined
-  }
+    fieldsetTitle: params.get("fieldset") ?? undefined,
+    model: params.get("model") ?? undefined,
+  };
 }
 
 /**
-   * Listen to events in order to adapt display.
-   */
+ * Listen to events in order to adapt display.
+ */
 onBeforeMount(() => {
-  ipcRenderer.on('dictionary-provider', (event, message) => {
-    const { command } = message
-    if (command === 'invalidate-dict') {
-      populateDynamicValues()
+  ipcRenderer.on("dictionary-provider", (event, message) => {
+    const { command } = message;
+    if (command === "invalidate-dict") {
+      populateDynamicValues();
     }
-  })
-  ipcRenderer.on('preferences-navigate', (_event, target: PreferenceNavigationTarget) => {
-    revealPreferenceTarget(target).catch(err => reportError('[Preferences] Could not reveal preference target', err))
-  })
-})
+  });
+  ipcRenderer.on("preferences-navigate", (_event, target: PreferenceNavigationTarget) => {
+    revealPreferenceTarget(target).catch((err) =>
+      reportError("[Preferences] Could not reveal preference target", err),
+    );
+  });
+});
 
 /** Opens one launcher-selected Preferences group/control in this window. */
-async function revealPreferenceTarget (target: PreferenceNavigationTarget): Promise<void> {
-  const groupIndex = groups.value.findIndex(group => group.id === target.group)
+async function revealPreferenceTarget(target: PreferenceNavigationTarget): Promise<void> {
+  const groupIndex = groups.value.findIndex((group) => group.id === target.group);
   if (groupIndex < 0) {
-    throw new Error(`Unknown Preferences group ${target.group}`)
+    throw new Error(`Unknown Preferences group ${target.group}`);
   }
 
   // A launcher deep-link is navigation, not a Preferences text search. Clear a
   // previous search so the target's group is actually mounted.
-  query.value = ''
-  currentGroup.value = groupIndex
-  await nextTick()
+  query.value = "";
+  currentGroup.value = groupIndex;
+  await nextTick();
 
-  let destination: HTMLElement | undefined
+  let destination: HTMLElement | undefined;
   if (target.model !== undefined) {
-    destination = Array.from(document.querySelectorAll<HTMLElement>('[name]'))
-      .find(element => element.getAttribute('name') === target.model)
+    destination = Array.from(document.querySelectorAll<HTMLElement>("[name]")).find(
+      (element) => element.getAttribute("name") === target.model,
+    );
   }
   if (destination === undefined && target.fieldsetTitle !== undefined) {
-    destination = Array.from(document.querySelectorAll<HTMLElement>('[data-form-fieldset-title]'))
-      .find(element => element.dataset.formFieldsetTitle === target.fieldsetTitle)
+    destination = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-form-fieldset-title]"),
+    ).find((element) => element.dataset.formFieldsetTitle === target.fieldsetTitle);
   }
   if (destination === undefined) {
-    return
+    return;
   }
 
-  destination.scrollIntoView({ block: 'center' })
-  const focusTarget = destination.matches('input, select, textarea, button')
+  destination.scrollIntoView({ block: "center" });
+  const focusTarget = destination.matches("input, select, textarea, button")
     ? destination
-    : destination.querySelector<HTMLElement>('input, select, textarea, button')
-  focusTarget?.focus()
+    : destination.querySelector<HTMLElement>("input, select, textarea, button");
+  focusTarget?.focus();
 }
 
 /**
@@ -307,24 +314,26 @@ async function revealPreferenceTarget (target: PreferenceNavigationTarget): Prom
  * @param   {string}  prop  The property that has changed
  * @param   {any}     val   The value of that property.
  */
-function handleInput (prop: string, val: unknown): void {
+function handleInput(prop: string, val: unknown): void {
   // We do have an easy time here
-  if (prop === 'userDictionaryContents') {
+  if (prop === "userDictionaryContents") {
     // The user dictionary is not handled by the config
     if (!isStringArray(val)) {
-      reportError(new TypeError('The user dictionary form value was not a string array.'))
-      return
+      reportError(new TypeError("The user dictionary form value was not a string array."));
+      return;
     }
-    ipcRenderer.invoke('dictionary-provider', {
-      command: 'set-user-dictionary',
-      payload: val
-    })
-      .catch(err => reportError(err))
-  } else if (prop === 'availableDictionaries') {
+    ipcRenderer
+      .invoke("dictionary-provider", {
+        command: "set-user-dictionary",
+        payload: val,
+      })
+      .catch((err) => reportError(err));
+  } else if (prop === "availableDictionaries") {
     // We have to extract the selected dictionaries and send their keys only
-    const enabled = (val as Array<{ selected: boolean, value: string, key: string }>)
-      .filter(elem => elem.selected).map(elem => elem.key)
-    configStore.setConfigValue('selectedDicts', enabled)
+    const enabled = (val as Array<{ selected: boolean; value: string; key: string }>)
+      .filter((elem) => elem.selected)
+      .map((elem) => elem.key);
+    configStore.setConfigValue("selectedDicts", enabled);
     // Additionally, we have to backpropagate the new stuff down the pipe
     // so that the list view has them again
   } else {
@@ -336,18 +345,18 @@ function handleInput (prop: string, val: unknown): void {
     // do it the brute-force-way and stringify it. This will basically read
     // out every value from the proxy and store it in vanilla objects/arrays
     // again.
-    configStore.setConfigValue(prop, JSON.parse(JSON.stringify(val)))
+    configStore.setConfigValue(prop, JSON.parse(JSON.stringify(val)));
   }
 }
 
 /**
  * Sets the window title corresponding to the current tab.
  */
-function setTitle (): void {
-  if (process.platform === 'darwin') {
+function setTitle(): void {
+  if (process.platform === "darwin") {
     // Apple's Human Interface Guidelines state the window title should be
     // the current tab.
-    document.title = groups.value[currentGroup.value].displayText
+    document.title = groups.value[currentGroup.value].displayText;
   }
 }
 
@@ -355,56 +364,59 @@ function setTitle (): void {
  * Populates dynamic fields (that is, those configurations that are not
  * controlled by the configuration provider).
  */
-function populateDynamicValues (): void {
+function populateDynamicValues(): void {
   // Get a list of all available languages
-  ipcRenderer.invoke('application', {
-    command: 'get-available-languages'
-  })
-    .then((languages) => {
-      const options: Record<string, string> = {}
-      languages.map((lang: string) => {
-        options[lang] = resolveLangCode(lang, 'name')
-        return null
-      })
-      appLangOptions.value = options
+  ipcRenderer
+    .invoke("application", {
+      command: "get-available-languages",
     })
-    .catch(err => reportError(err))
+    .then((languages) => {
+      const options: Record<string, string> = {};
+      languages.map((lang: string) => {
+        options[lang] = resolveLangCode(lang, "name");
+        return null;
+      });
+      appLangOptions.value = options;
+    })
+    .catch((err) => reportError(err));
 
   // Also, get a list of all available dictionaries
-  ipcRenderer.invoke('application', {
-    command: 'get-available-dictionaries'
-  })
+  ipcRenderer
+    .invoke("application", {
+      command: "get-available-dictionaries",
+    })
     .then((dictionaries) => {
-      const values: Array<{ selected: boolean, value: string, key: string }> = []
+      const values: Array<{ selected: boolean; value: string; key: string }> = [];
       dictionaries.map((dict: string) => {
         values.push({
           selected: model.value.selectedDicts.includes(dict),
-          value: resolveLangCode(dict, 'name'),
-          key: dict
-        })
-        return null
-      })
+          value: resolveLangCode(dict, "name"),
+          key: dict,
+        });
+        return null;
+      });
 
-      availableDictionaries.value = values
+      availableDictionaries.value = values;
     })
-    .catch(err => reportError(err))
+    .catch((err) => reportError(err));
 
   // Retrieve the user dictionary
-  ipcRenderer.invoke('dictionary-provider', {
-    command: 'get-user-dictionary'
-  })
+  ipcRenderer
+    .invoke("dictionary-provider", {
+      command: "get-user-dictionary",
+    })
     .then((dictionary) => {
       if (!isStringArray(dictionary)) {
-        throw new TypeError('The dictionary provider returned a non-string array.')
+        throw new TypeError("The dictionary provider returned a non-string array.");
       }
-      userDictionaryContents.value = dictionary
+      userDictionaryContents.value = dictionary;
     })
-    .catch(err => reportError(err))
+    .catch((err) => reportError(err));
 }
 
-function selectGroup (which: number): void {
-  if (query.value === '') {
-    currentGroup.value = which
+function selectGroup(which: number): void {
+  if (query.value === "") {
+    currentGroup.value = which;
   }
 }
 </script>

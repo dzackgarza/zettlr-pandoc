@@ -18,7 +18,11 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
-import { rawTikzInput, tikzLanguageForFenceInfo, usesOwnedTikzTemplate } from "@common/util/tikz-source-blocks";
+import {
+  rawTikzInput,
+  tikzLanguageForFenceInfo,
+  usesOwnedTikzTemplate,
+} from "@common/util/tikz-source-blocks";
 import type { SyntaxNodeRef } from "@lezer/common";
 import {
   contiguousSourceLineRanges,

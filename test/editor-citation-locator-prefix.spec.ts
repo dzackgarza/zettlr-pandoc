@@ -33,7 +33,10 @@ import {
   configField,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
-import { installCitationIpcFromCallback, settleCitationWidgets } from "./citation-widget-test-helper";
+import {
+  installCitationIpcFromCallback,
+  settleCitationWidgets,
+} from "./citation-widget-test-helper";
 
 function polyfillJsdomForCodeMirror(): void {
   const global = globalThis as any;
@@ -87,7 +90,7 @@ function parseCitationItem(source: string): CiteItem {
 describe("Editor preserves citation suffixes beginning with Roman-numeral letters", function () {
   const views: EditorView[] = [];
   const originalCitationCallback = window.getCitationCallback;
-  let restoreCitationIpc: (() => void)|undefined;
+  let restoreCitationIpc: (() => void) | undefined;
 
   before(function () {
     polyfillJsdomForCodeMirror();

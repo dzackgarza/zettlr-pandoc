@@ -27,18 +27,9 @@
  * END HEADER
  */
 
-import { randomUUID } from "crypto";
-import { ChangeSet, Text, type ChangeDesc } from "@codemirror/state";
-import {
-  applyPatch,
-  diffWordsWithSpace,
-  formatPatch,
-  parsePatch,
-  reversePatch,
-  structuredPatch,
-  type StructuredPatch,
-} from "diff";
-import path from "path";
+import { type ChangeDesc, ChangeSet, Text } from "@codemirror/state";
+import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
+import { sha256Text } from "@common/util/sha256";
 import type {
   AgentEvent,
   AgentEventType,
@@ -47,17 +38,19 @@ import type {
   ReviewState,
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
-import type {
-  ActiveReviewState,
-  ReviewPacket,
-  ReviewSuggestion,
-} from "@dts/common/review-domain";
+import type { ActiveReviewState, ReviewPacket, ReviewSuggestion } from "@dts/common/review-domain";
+import { randomUUID } from "crypto";
 import {
-  classifyReviewState,
-  normalizeText,
-} from "./review-diff-store";
-import { sha256Text } from "@common/util/sha256";
-import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
+  applyPatch,
+  diffWordsWithSpace,
+  formatPatch,
+  parsePatch,
+  reversePatch,
+  type StructuredPatch,
+  structuredPatch,
+} from "diff";
+import path from "path";
+import { classifyReviewState, normalizeText } from "./review-diff-store";
 
 // ============================================================================
 // Plan and error shapes
@@ -273,8 +266,9 @@ function cloneReview<Review extends ActiveReviewState>(review: Review): Review {
  * each other form one hunk however the agent wrote its patch.
  */
 function hunkStartLines(before: string, after: string): number[] {
-  return structuredPatch("document", "document", before, after, "", "", { context: 3 })
-    .hunks.map((hunk) => hunk.newStart);
+  return structuredPatch("document", "document", before, after, "", "", { context: 3 }).hunks.map(
+    (hunk) => hunk.newStart,
+  );
 }
 
 /**
@@ -304,9 +298,7 @@ function suggestionForClaim(before: string, after: string, packetId: string): Re
   return {
     suggestionId: randomUUID(),
     packetId,
-    kind: removedText === ""
-      ? "insertion"
-      : addedLength === 0 ? "deletion" : "substitution",
+    kind: removedText === "" ? "insertion" : addedLength === 0 ? "deletion" : "substitution",
     removedText,
     restorations: removedText === "" ? [] : [{ at: prefix, text: removedText }],
     anchors: [{ from: prefix, to: prefix + addedLength }],
@@ -319,7 +311,7 @@ function changeSetForTextTransition(before: string, after: string): ChangeSet {
   const changes = diffWordsWithSpace(before, after);
   const specs: Array<{ from: number; to: number; insert: string }> = [];
   let beforeOffset = 0;
-  for (let index = 0; index < changes.length;) {
+  for (let index = 0; index < changes.length; ) {
     const change = changes[index];
     if (!change.added && !change.removed) {
       beforeOffset += change.value.length;
@@ -342,14 +334,13 @@ function changeSetForTextTransition(before: string, after: string): ChangeSet {
   return ChangeSet.of(specs, before.length);
 }
 
-function mapSuggestionAnchors(
-  suggestions: ReviewSuggestion[],
-  changes: ChangeDesc,
-): boolean {
+function mapSuggestionAnchors(suggestions: ReviewSuggestion[], changes: ChangeDesc): boolean {
   let changed = false;
 
   for (const suggestion of suggestions) {
-    if (suggestion.state !== "proposed") {continue;}
+    if (suggestion.state !== "proposed") {
+      continue;
+    }
     const mapped = mapSuggestionThroughChanges(suggestion, changes);
     changed ||= mapped.changed;
     suggestion.anchors = mapped.anchors;
@@ -361,33 +352,37 @@ function mapSuggestionAnchors(
     }
     // The restoration lands at the seam, and the kind follows what is left
     // of the agent's text.
-    suggestion.restorations = suggestion.removedText === ""
-      ? []
-      : [{ at: mapped.seam, text: suggestion.removedText }];
-    suggestion.kind = suggestion.removedText === ""
-      ? "insertion"
-      : mapped.anchors.every((anchor) => anchor.from === anchor.to)
-        ? "deletion"
-        : "substitution";
+    suggestion.restorations =
+      suggestion.removedText === "" ? [] : [{ at: mapped.seam, text: suggestion.removedText }];
+    suggestion.kind =
+      suggestion.removedText === ""
+        ? "insertion"
+        : mapped.anchors.every((anchor) => anchor.from === anchor.to)
+          ? "deletion"
+          : "substitution";
   }
   return changed;
 }
 
 function rejectSuggestions(review: ActiveReviewState, workingText: string): string {
   const proposed = review.suggestions.filter((suggestion) => suggestion.state === "proposed");
-  const operations = proposed.flatMap((suggestion) => [
-    ...suggestion.anchors.map((span) => ({ from: span.from, to: span.to, insert: "" })),
-    ...suggestion.restorations.map((restoration) => ({
-      from: restoration.at,
-      to: restoration.at,
-      insert: restoration.text,
-    })),
-  ]).sort((left, right) => right.from - left.from || right.to - left.to);
+  const operations = proposed
+    .flatMap((suggestion) => [
+      ...suggestion.anchors.map((span) => ({ from: span.from, to: span.to, insert: "" })),
+      ...suggestion.restorations.map((restoration) => ({
+        from: restoration.at,
+        to: restoration.at,
+        insert: restoration.text,
+      })),
+    ])
+    .sort((left, right) => right.from - left.from || right.to - left.to);
   let result = workingText;
   for (const operation of operations) {
     result = result.slice(0, operation.from) + operation.insert + result.slice(operation.to);
   }
-  for (const suggestion of proposed) {suggestion.state = "rejected";}
+  for (const suggestion of proposed) {
+    suggestion.state = "rejected";
+  }
   return result;
 }
 
@@ -397,13 +392,17 @@ function rejectionChangeSet(
 ): ChangeSet {
   const specs = suggestions
     .filter((suggestion) => suggestion.state === "proposed")
-    .flatMap((suggestion) => suggestion.anchors.map((anchor) => ({
-      from: anchor.from,
-      to: anchor.to,
-      insert: "",
-    })));
+    .flatMap((suggestion) =>
+      suggestion.anchors.map((anchor) => ({
+        from: anchor.from,
+        to: anchor.to,
+        insert: "",
+      })),
+    );
   for (const suggestion of suggestions) {
-    if (suggestion.state !== "proposed") {continue;}
+    if (suggestion.state !== "proposed") {
+      continue;
+    }
     for (const restoration of suggestion.restorations) {
       const replacement = specs.find((spec) => spec.from === restoration.at);
       if (replacement === undefined) {
@@ -429,10 +428,7 @@ function applyChangeSet(workingText: string, changes: ChangeSet): string {
  * Parse exactly one text-file patch and validate it. Reject binary, create,
  * delete, rename, copy, and mode changes.
  */
-export function validateAndParsePatch(
-  patchText: string,
-  documentPath: string,
-): StructuredPatch {
+export function validateAndParsePatch(patchText: string, documentPath: string): StructuredPatch {
   // Detect git binary patches before parsePatch (which doesn't parse them)
   if (patchText.includes("GIT binary patch")) {
     throw new Error("review-diff does not support binary patches");
@@ -443,13 +439,13 @@ export function validateAndParsePatch(
   } catch (err) {
     throw new Error(
       `Unified diff syntax error: ${err instanceof Error ? err.message : String(err)}. ` +
-      `Check hunk header line counts (@@ -old,count +new,count @@) and ensure all context lines begin with a space.`,
+        `Check hunk header line counts (@@ -old,count +new,count @@) and ensure all context lines begin with a space.`,
     );
   }
   if (patches.length === 0) {
     throw new Error(
       "review-diff could not parse patch: no file diff found. " +
-      "Ensure the patch begins with '--- document\n+++ document' and contains valid @@ hunk headers.",
+        "Ensure the patch begins with '--- document\n+++ document' and contains valid @@ hunk headers.",
     );
   }
   if (patches.length !== 1) {
@@ -468,9 +464,7 @@ export function validateAndParsePatch(
     patch.isCreate === true ||
     patch.isDelete === true
   ) {
-    throw new Error(
-      "review-diff does not support rename, copy, create, or delete patches",
-    );
+    throw new Error("review-diff does not support rename, copy, create, or delete patches");
   }
   if (patch.oldMode !== undefined || patch.newMode !== undefined) {
     throw new Error("review-diff does not support mode-change patches");
@@ -481,7 +475,7 @@ export function validateAndParsePatch(
   if (patch.oldFileName === undefined || patch.newFileName === undefined) {
     throw new Error(
       "review-diff patch has no '---'/'+++' file headers. " +
-      `Use '--- document\n+++ document' or the target path '${documentPath}'.`,
+        `Use '--- document\n+++ document' or the target path '${documentPath}'.`,
     );
   }
   // Headers must be either the exact canonical document URI or the generic
@@ -492,23 +486,16 @@ export function validateAndParsePatch(
   ) {
     throw new Error(
       `review-diff patch headers ('--- ${patch.oldFileName}', '+++ ${patch.newFileName}') ` +
-      `do not match the target document. Use '--- document\n+++ document' or the target path '${documentPath}'.`,
+        `do not match the target document. Use '--- document\n+++ document' or the target path '${documentPath}'.`,
     );
   }
   return patch;
 }
 
-function isAcceptableHeader(
-  fileName: string,
-  documentPath: string,
-): boolean {
+function isAcceptableHeader(fileName: string, documentPath: string): boolean {
   // Generic headers
   const normalized = fileName.replace(/\\/g, "/");
-  if (
-    normalized === "document" ||
-    normalized === "a/document" ||
-    normalized === "b/document"
-  ) {
+  if (normalized === "document" || normalized === "a/document" || normalized === "b/document") {
     return true;
   }
   // Exact canonical path. The contract accepts `document`, an absolute path, or
@@ -543,10 +530,7 @@ interface AppliedClaimStep {
  * Identifies the failing hunk, line number, and mismatch type (e.g.
  * indentation, trailing whitespace, or drifted line numbers).
  */
-export function diagnoseHunkFailure(
-  text: string,
-  patch: StructuredPatch,
-): string {
+export function diagnoseHunkFailure(text: string, patch: StructuredPatch): string {
   const doc = text.replace(/\r\n/g, "\n");
   const docLines = doc.split("\n");
   const currentLines = [...docLines];
@@ -805,10 +789,7 @@ export function prepareProposalSubmission(input: {
       applicationGeneration: next.generation + 1,
     };
     next.packets.push(packet);
-    mapSuggestionAnchors(
-      next.suggestions,
-      changeSetForTextTransition(textBefore, step.textAfter),
-    );
+    mapSuggestionAnchors(next.suggestions, changeSetForTextTransition(textBefore, step.textAfter));
     next.suggestions.push(suggestionForClaim(textBefore, step.textAfter, packetId));
     next.generation += 1;
     packetIds.push(packet.packetId);
@@ -816,7 +797,9 @@ export function prepareProposalSubmission(input: {
   }
 
   const nextWorkingText = sequence.steps[sequence.steps.length - 1].textAfter;
-  const unresolvedChunks = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+  const unresolvedChunks = next.suggestions.filter(
+    (suggestion) => suggestion.state === "proposed",
+  ).length;
 
   const response: SubmitProposalResponse = {
     packetId: packetIds[packetIds.length - 1],
@@ -902,15 +885,17 @@ export function prepareChunkDecision(input: {
     (candidate) => candidate.state === "proposed",
   ).length;
   next.generation += 1;
-  const events: AgentEventDraft[] = [{
-    event: "review.changed",
-    payload: {
-      reviewId: next.reviewId,
-      documentId: next.documentId,
-      generation: next.generation,
-      unresolvedChunks,
+  const events: AgentEventDraft[] = [
+    {
+      event: "review.changed",
+      payload: {
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        generation: next.generation,
+        unresolvedChunks,
+      },
     },
-  }];
+  ];
 
   if (unresolvedChunks === 0) {
     events.push({
@@ -994,18 +979,21 @@ export function prepareChunkComment(input: {
     });
   }
   next.generation += 1;
-  const events: AgentEventDraft[] = [{
-    event: "review.commented",
-    payload: {
-      reviewId: next.reviewId,
-      documentId: next.documentId,
-      chunkId: input.chunkId,
-      // Absent comment = the reviewer cleared the note off this chunk.
-      ...(input.text === "" ? {} : { comment: input.text }),
-      generation: next.generation,
-      unresolvedChunks: next.suggestions.filter((candidate) => candidate.state === "proposed").length,
+  const events: AgentEventDraft[] = [
+    {
+      event: "review.commented",
+      payload: {
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        chunkId: input.chunkId,
+        // Absent comment = the reviewer cleared the note off this chunk.
+        ...(input.text === "" ? {} : { comment: input.text }),
+        generation: next.generation,
+        unresolvedChunks: next.suggestions.filter((candidate) => candidate.state === "proposed")
+          .length,
+      },
     },
-  }];
+  ];
   return { nextReview: next, nextWorkingText: workingText, response: response(), events };
 }
 
@@ -1027,9 +1015,13 @@ export function prepareAcceptAll(input: {
   }
   const workingText = normalizeText(input.workingText);
   const next = cloneReview(input.review);
-  const proposedCount = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+  const proposedCount = next.suggestions.filter(
+    (suggestion) => suggestion.state === "proposed",
+  ).length;
   for (const suggestion of next.suggestions) {
-    if (suggestion.state === "proposed") {suggestion.state = "accepted";}
+    if (suggestion.state === "proposed") {
+      suggestion.state = "accepted";
+    }
   }
   next.generation += 1;
   const events: AgentEventDraft[] = [
@@ -1081,15 +1073,17 @@ export function prepareClear(input: {
   const workingText = normalizeText(input.workingText);
   const nextWorkingText = rejectSuggestions(next, workingText);
   next.generation += 1;
-  const events: AgentEventDraft[] = [{
-    event: "review.cleared",
-    payload: {
-      reviewId: next.reviewId,
-      documentId: next.documentId,
-      generation: next.generation,
-      unresolvedChunks: 0,
+  const events: AgentEventDraft[] = [
+    {
+      event: "review.cleared",
+      payload: {
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        generation: next.generation,
+        unresolvedChunks: 0,
+      },
     },
-  }];
+  ];
   return {
     nextReview: next,
     nextWorkingText,
@@ -1141,17 +1135,19 @@ export function prepareReapply(input: {
   const currentText = normalizeText(input.currentText);
   const frozenText = input.review.frozenText;
   const frozen = cloneReview(input.review);
-  const agentTextBefore = new Map(frozen.suggestions
-    .filter((suggestion) => suggestion.state === "proposed")
-    .map((suggestion) => [suggestion.suggestionId, anchoredText(suggestion, frozenText)]));
-  mapSuggestionAnchors(
-    frozen.suggestions,
-    changeSetForTextTransition(frozenText, currentText),
+  const agentTextBefore = new Map(
+    frozen.suggestions
+      .filter((suggestion) => suggestion.state === "proposed")
+      .map((suggestion) => [suggestion.suggestionId, anchoredText(suggestion, frozenText)]),
   );
+  mapSuggestionAnchors(frozen.suggestions, changeSetForTextTransition(frozenText, currentText));
   // Owner edits keep a suggestion whose agent text was partly written over.
   // Reapply revives only a suggestion whose agent text is all still there.
   for (const suggestion of frozen.suggestions) {
-    if (suggestion.state === "proposed" && anchoredText(suggestion, currentText) !== agentTextBefore.get(suggestion.suggestionId)) {
+    if (
+      suggestion.state === "proposed" &&
+      anchoredText(suggestion, currentText) !== agentTextBefore.get(suggestion.suggestionId)
+    ) {
       suggestion.state = "withdrawn";
     }
   }
@@ -1163,9 +1159,14 @@ export function prepareReapply(input: {
     diskFenceSha256: input.diskSha256,
     generation: frozen.generation + 1,
   };
-  const withdrawnChunkIds = proposedBefore.filter((suggestionId) =>
-    next.suggestions.find((suggestion) => suggestion.suggestionId === suggestionId)?.state === "withdrawn");
-  const unresolvedChunks = next.suggestions.filter((suggestion) => suggestion.state === "proposed").length;
+  const withdrawnChunkIds = proposedBefore.filter(
+    (suggestionId) =>
+      next.suggestions.find((suggestion) => suggestion.suggestionId === suggestionId)?.state ===
+      "withdrawn",
+  );
+  const unresolvedChunks = next.suggestions.filter(
+    (suggestion) => suggestion.state === "proposed",
+  ).length;
   return {
     nextReview: next,
     nextWorkingText: currentText,
@@ -1178,15 +1179,17 @@ export function prepareReapply(input: {
       withdrawnChunkIds,
       state: classifyReviewState(false, unresolvedChunks),
     },
-    events: [{
-      event: "review.changed",
-      payload: {
-        reviewId: next.reviewId,
-        documentId: next.documentId,
-        generation: next.generation,
-        unresolvedChunks,
+    events: [
+      {
+        event: "review.changed",
+        payload: {
+          reviewId: next.reviewId,
+          documentId: next.documentId,
+          generation: next.generation,
+          unresolvedChunks,
+        },
       },
-    }],
+    ],
   };
 }
 
@@ -1260,7 +1263,9 @@ export function prepareRetraction(input: {
   }
   const packet = input.review.packets[packetIndex];
   if (packet.applicationGeneration !== input.review.generation) {
-    return refuse("This proposal can no longer be retracted because the review changed after it was applied.");
+    return refuse(
+      "This proposal can no longer be retracted because the review changed after it was applied.",
+    );
   }
 
   const workingText = normalizeText(input.workingText);
@@ -1269,19 +1274,14 @@ export function prepareRetraction(input: {
     fuzzFactor: 0,
   });
   if (reverted === false) {
-    return refuse(
-      "This proposal can no longer be retracted because later changes overlap it.",
-    );
+    return refuse("This proposal can no longer be retracted because later changes overlap it.");
   }
 
   const next = cloneReview(input.review);
   const retractedSuggestions = next.suggestions.filter(
     (suggestion) => suggestion.packetId === input.packetId,
   );
-  const retractionChanges = rejectionChangeSet(
-    retractedSuggestions,
-    workingText.length,
-  );
+  const retractionChanges = rejectionChangeSet(retractedSuggestions, workingText.length);
   const exactReverted = applyChangeSet(workingText, retractionChanges);
   if (exactReverted !== normalizeText(reverted)) {
     return refuse("This proposal no longer matches the current review.");
@@ -1304,16 +1304,18 @@ export function prepareRetraction(input: {
   const unresolvedChunks = next.suggestions.filter(
     (suggestion) => suggestion.state === "proposed",
   ).length;
-  const events: AgentEventDraft[] = [{
-    event: "proposal.retracted",
-    payload: {
-      reviewId: next.reviewId,
-      documentId: next.documentId,
-      packetId: input.packetId,
-      generation: next.generation,
-      unresolvedChunks,
+  const events: AgentEventDraft[] = [
+    {
+      event: "proposal.retracted",
+      payload: {
+        reviewId: next.reviewId,
+        documentId: next.documentId,
+        packetId: input.packetId,
+        generation: next.generation,
+        unresolvedChunks,
+      },
     },
-  }];
+  ];
   return {
     nextReview: next,
     nextWorkingText,

@@ -23,17 +23,17 @@
  * END HEADER
  */
 
-import type { AnnotationSet } from './annotation-domain'
-import type { ReviewDiffSession } from './review-diff'
+import type { AnnotationSet } from "./annotation-domain";
+import type { ReviewDiffSession } from "./review-diff";
 
 export interface DocumentCollaborationSession {
-  documentId: string
-  documentPath: string
+  documentId: string;
+  documentPath: string;
   /** The provider-authoritative working bytes this snapshot was taken from. */
-  workingText: string
-  workingSha256: string
+  workingText: string;
+  workingSha256: string;
   /** Never absent: an annotation-only document reports an empty set. */
-  annotations: AnnotationSet
+  annotations: AnnotationSet;
   /** Absent when the document carries no active review. */
-  review: ReviewDiffSession | undefined
+  review: ReviewDiffSession | undefined;
 }

@@ -14,19 +14,25 @@
  * END HEADER
  */
 
-import { strict as assert } from 'assert'
-import { readFileSync } from 'fs'
-import path from 'path'
+import { strict as assert } from "assert";
+import { readFileSync } from "fs";
+import path from "path";
 
-describe('TikZ shared Pandoc-config authority', function () {
-  it('provisions current pandoc-config in CI without a per-project commit pin', function () {
-    const setupScript = readFileSync(path.join(process.cwd(), 'scripts/setup-ci-toolchain.sh'), 'utf8')
+describe("TikZ shared Pandoc-config authority", function () {
+  it("provisions current pandoc-config in CI without a per-project commit pin", function () {
+    const setupScript = readFileSync(
+      path.join(process.cwd(), "scripts/setup-ci-toolchain.sh"),
+      "utf8",
+    );
     assert.match(
       setupScript,
       /git clone --depth 1 https:\/\/github\.com\/dzackgarza\/pandoc-config\.git "\$\{pandoc_config_dir\}"/,
-      'CI must fetch the shared pandoc-config source directly'
-    )
-    assert.doesNotMatch(setupScript, /pandoc_config_commit|checkout --detach/,
-      'CI must not recreate a stale project-specific filter pin')
-  })
-})
+      "CI must fetch the shared pandoc-config source directly",
+    );
+    assert.doesNotMatch(
+      setupScript,
+      /pandoc_config_commit|checkout --detach/,
+      "CI must not recreate a stale project-specific filter pin",
+    );
+  });
+});

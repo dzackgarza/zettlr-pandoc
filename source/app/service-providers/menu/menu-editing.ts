@@ -18,15 +18,22 @@
  * END HEADER
  */
 
-import type { BaseWindow, BrowserWindow, MenuItemConstructorOptions } from 'electron'
-import { trans } from '@common/i18n-main'
-import { cmShortcutToElectron, getDefaultKeybinding } from 'source/common/util/shortcuts'
-import { defaultKeybindings, type EditorShortcutName } from 'source/common/modules/markdown-editor/keymaps/shortcuts'
-import type { EditorCommandName, InsertTablePayload, ShortcutName } from '@dts/common/shortcut-names'
-import type { MenuCommands, MenuConfig } from './menu-dependencies'
+import { trans } from "@common/i18n-main";
+import type {
+  EditorCommandName,
+  InsertTablePayload,
+  ShortcutName,
+} from "@dts/common/shortcut-names";
+import type { BaseWindow, BrowserWindow, MenuItemConstructorOptions } from "electron";
+import {
+  defaultKeybindings,
+  type EditorShortcutName,
+} from "source/common/modules/markdown-editor/keymaps/shortcuts";
+import { cmShortcutToElectron, getDefaultKeybinding } from "source/common/util/shortcuts";
+import type { MenuCommands, MenuConfig } from "./menu-dependencies";
 
 /** Electron types the focused window as possibly undefined; at runtime the provider also passes null. */
-type FocusedWindow = BrowserWindow | BaseWindow | undefined | null
+type FocusedWindow = BrowserWindow | BaseWindow | undefined | null;
 
 /**
  * Sends a window the typed shortcut name (and, for a table, its size).
@@ -34,211 +41,259 @@ type FocusedWindow = BrowserWindow | BaseWindow | undefined | null
  * The window comes from the item's click, where Electron passes the window
  * that held the focus. The item was picked, so one has to receive it.
  */
-export function sendShortcut (window: FocusedWindow, name: ShortcutName, payload?: InsertTablePayload): void {
-  if (window === undefined || window === null || !('webContents' in window)) {
+export function sendShortcut(
+  window: FocusedWindow,
+  name: ShortcutName,
+  payload?: InsertTablePayload,
+): void {
+  if (window === undefined || window === null || !("webContents" in window)) {
     throw new Error(
       `The menu item for the ${name} shortcut has no window to send it to: Electron passed ${String(window)}. ` +
-      'A menu item acts on the focused window, and the menu provider resolves the sender of click-menu-item ' +
-      'when the OS reports no focused window (source/app/service-providers/menu/index.ts). ' +
-      'Fix that resolution; the item cannot be carried out with no window.'
-    )
+        "A menu item acts on the focused window, and the menu provider resolves the sender of click-menu-item " +
+        "when the OS reports no focused window (source/app/service-providers/menu/index.ts). " +
+        "Fix that resolution; the item cannot be carried out with no window.",
+    );
   }
   if (payload === undefined) {
-    window.webContents.send('shortcut', name)
+    window.webContents.send("shortcut", name);
   } else {
-    window.webContents.send('shortcut', name, payload)
+    window.webContents.send("shortcut", name, payload);
   }
 }
 
 /** The Electron accelerator of an editor shortcut's default binding, if it has one. */
-function editorAccelerator (name: EditorShortcutName): string | undefined {
-  return cmShortcutToElectron(getDefaultKeybinding(name, defaultKeybindings))
+function editorAccelerator(name: EditorShortcutName): string | undefined {
+  return cmShortcutToElectron(getDefaultKeybinding(name, defaultKeybindings));
 }
 
 /** One Insert or Format item: its click sends the editor command it names. */
-function editorCommandItem (
+function editorCommandItem(
   id: string,
   label: string,
   command: EditorCommandName,
-  shortcut?: EditorShortcutName
+  shortcut?: EditorShortcutName,
 ): MenuItemConstructorOptions {
   return {
     id,
     label,
     accelerator: shortcut === undefined ? undefined : editorAccelerator(shortcut),
-    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, command) }
-  }
+    click: (_item, focusedWindow) => {
+      sendShortcut(focusedWindow, command);
+    },
+  };
 }
 
 /** View → Command launcher…: the window-level Ctrl+P. */
-export function commandLauncherItem (accelerator: string): MenuItemConstructorOptions {
+export function commandLauncherItem(accelerator: string): MenuItemConstructorOptions {
   return {
-    id: 'menu.command_launcher',
-    label: trans('Command launcher…'),
+    id: "menu.command_launcher",
+    label: trans("Command launcher…"),
     accelerator,
-    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-command-launcher') }
-  }
+    click: (_item, focusedWindow) => {
+      sendShortcut(focusedWindow, "open-command-launcher");
+    },
+  };
 }
 
 /** View → Go to file…: opens the launcher's existing workspace-file view directly. */
-export function fileLauncherItem (accelerator: string): MenuItemConstructorOptions {
+export function fileLauncherItem(accelerator: string): MenuItemConstructorOptions {
   return {
-    id: 'menu.file_launcher',
-    label: trans('Go to file…'),
+    id: "menu.file_launcher",
+    label: trans("Go to file…"),
     accelerator,
-    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-launcher') }
-  }
+    click: (_item, focusedWindow) => {
+      sendShortcut(focusedWindow, "open-file-launcher");
+    },
+  };
 }
 
 /** View → Writing statistics…: the statistics window. */
-export function statisticsItem (commands: MenuCommands): MenuItemConstructorOptions {
+export function statisticsItem(commands: MenuCommands): MenuItemConstructorOptions {
   return {
-    id: 'menu.statistics',
-    label: trans('Writing statistics…'),
-    click: () => { commands.run('open-stats-window', undefined) }
-  }
+    id: "menu.statistics",
+    label: trans("Writing statistics…"),
+    click: () => {
+      commands.run("open-stats-window", undefined);
+    },
+  };
 }
 
 /** Edit file filters…: the dialog that edits the ignore rules. */
-export function ignoreRulesItem (): MenuItemConstructorOptions {
+export function ignoreRulesItem(): MenuItemConstructorOptions {
   return {
-    id: 'menu.edit_ignore_rules',
-    label: trans('Edit file filters…'),
-    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'edit-ignore-rules') }
-  }
+    id: "menu.edit_ignore_rules",
+    label: trans("Edit file filters…"),
+    click: (_item, focusedWindow) => {
+      sendShortcut(focusedWindow, "edit-ignore-rules");
+    },
+  };
 }
 
 /** File-menu desktop actions. Their target is resolved by the focused renderer. */
-export function desktopFileItems (): MenuItemConstructorOptions[] {
+export function desktopFileItems(): MenuItemConstructorOptions[] {
   return [
     {
-      id: 'menu.open_terminal_here',
-      label: trans('Open terminal here'),
-      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-terminal-here') }
+      id: "menu.open_terminal_here",
+      label: trans("Open terminal here"),
+      click: (_item, focusedWindow) => {
+        sendShortcut(focusedWindow, "open-terminal-here");
+      },
     },
     {
-      id: 'menu.open_file_externally',
-      label: trans('Open file in external editor'),
-      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-externally') }
+      id: "menu.open_file_externally",
+      label: trans("Open file in external editor"),
+      click: (_item, focusedWindow) => {
+        sendShortcut(focusedWindow, "open-file-externally");
+      },
     },
     {
-      id: 'menu.open_file_browser_here',
-      label: trans('Open file browser here'),
-      click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'open-file-browser-here') }
-    }
-  ]
+      id: "menu.open_file_browser_here",
+      label: trans("Open file browser here"),
+      click: (_item, focusedWindow) => {
+        sendShortcut(focusedWindow, "open-file-browser-here");
+      },
+    },
+  ];
 }
 
 /** Edit-menu leaves for the two user-owned authoring source files. */
-export function authoringSourceItems (
-  config: MenuConfig
-): MenuItemConstructorOptions[] {
+export function authoringSourceItems(config: MenuConfig): MenuItemConstructorOptions[] {
   const sources = [
     {
-      id: 'menu.edit_snippets',
-      label: trans('Edit snippets'),
+      id: "menu.edit_snippets",
+      label: trans("Edit snippets"),
       filePath: config.get().editor.snippetsFile,
-      shortcut: 'edit-snippets' as const
+      shortcut: "edit-snippets" as const,
     },
     {
-      id: 'menu.edit_quicktex',
-      label: trans('Edit QuickTeX definitions'),
+      id: "menu.edit_quicktex",
+      label: trans("Edit QuickTeX definitions"),
       filePath: config.get().editor.quickTexFile,
-      shortcut: 'edit-quicktex' as const
-    }
-  ] as const
+      shortcut: "edit-quicktex" as const,
+    },
+  ] as const;
 
   return sources.map(({ id, label, filePath, shortcut }) => ({
     id,
     label,
-    enabled: filePath.trim() !== '',
-    click: (_item, focusedWindow) => { sendShortcut(focusedWindow, shortcut) }
-  }))
+    enabled: filePath.trim() !== "",
+    click: (_item, focusedWindow) => {
+      sendShortcut(focusedWindow, shortcut);
+    },
+  }));
 }
 
-const TABLE_SIZES = [ 2, 3, 4 ] as const
+const TABLE_SIZES = [2, 3, 4] as const;
 
 /** The Insert menu: links, images, tables, footnotes, comments, Pandoc blocks, task lists. */
-export function insertMenu (): MenuItemConstructorOptions {
-  const tableSizes: MenuItemConstructorOptions[] = []
+export function insertMenu(): MenuItemConstructorOptions {
+  const tableSizes: MenuItemConstructorOptions[] = [];
   for (const rows of TABLE_SIZES) {
     for (const cols of TABLE_SIZES) {
       tableSizes.push({
         id: `menu.insert_table_${rows}x${cols}`,
-        label: trans('%s rows × %s columns', rows, cols),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'insert-table', { rows, cols }) }
-      })
+        label: trans("%s rows × %s columns", rows, cols),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "insert-table", { rows, cols });
+        },
+      });
     }
   }
 
   return {
-    id: 'insert-menu',
-    label: trans('Insert'),
+    id: "insert-menu",
+    label: trans("Insert"),
     submenu: [
-      editorCommandItem('menu.insert_link', trans('Link'), 'markdownLink', 'md-insert-link'),
-      editorCommandItem('menu.insert_image', trans('Image'), 'markdownImage', 'md-insert-image'),
+      editorCommandItem("menu.insert_link", trans("Link"), "markdownLink", "md-insert-link"),
+      editorCommandItem("menu.insert_image", trans("Image"), "markdownImage", "md-insert-image"),
       {
-        id: 'menu.insert_table',
-        label: trans('Table'),
-        submenu: tableSizes
+        id: "menu.insert_table",
+        label: trans("Table"),
+        submenu: tableSizes,
       },
-      editorCommandItem('menu.insert_footnote', trans('Footnote'), 'insertFootnote', 'md-insert-footnote'),
-      editorCommandItem('menu.insert_comment', trans('Comment'), 'markdownComment', 'md-comment'),
-      { type: 'separator' },
+      editorCommandItem(
+        "menu.insert_footnote",
+        trans("Footnote"),
+        "insertFootnote",
+        "md-insert-footnote",
+      ),
+      editorCommandItem("menu.insert_comment", trans("Comment"), "markdownComment", "md-comment"),
+      { type: "separator" },
       {
-        id: 'menu.insert_pandoc_div',
-        label: trans('Pandoc div'),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'insert-pandoc-div') }
+        id: "menu.insert_pandoc_div",
+        label: trans("Pandoc div"),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "insert-pandoc-div");
+        },
       },
       {
-        id: 'menu.insert_pandoc_span',
-        label: trans('Pandoc span'),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'insert-pandoc-span') }
+        id: "menu.insert_pandoc_span",
+        label: trans("Pandoc span"),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "insert-pandoc-span");
+        },
       },
-      { type: 'separator' },
-      editorCommandItem('menu.insert_task_list', trans('Task list'), 'markdownMakeTaskList', 'md-task-list')
-    ]
-  }
+      { type: "separator" },
+      editorCommandItem(
+        "menu.insert_task_list",
+        trans("Task list"),
+        "markdownMakeTaskList",
+        "md-task-list",
+      ),
+    ],
+  };
 }
 
 /** The Format menu: headings, inline marks, lists and block quotes. */
-export function formatMenu (): MenuItemConstructorOptions {
-  const headings: MenuItemConstructorOptions[] = ([ 1, 2, 3, 4, 5, 6 ] as const).map(level => editorCommandItem(
-    `menu.format_heading_${level}`,
-    trans('Heading %s', level),
-    `markdownHeading${level}`
-  ))
+export function formatMenu(): MenuItemConstructorOptions {
+  const headings: MenuItemConstructorOptions[] = ([1, 2, 3, 4, 5, 6] as const).map((level) =>
+    editorCommandItem(
+      `menu.format_heading_${level}`,
+      trans("Heading %s", level),
+      `markdownHeading${level}`,
+    ),
+  );
 
   return {
-    id: 'format-menu',
-    label: trans('Format'),
+    id: "format-menu",
+    label: trans("Format"),
     submenu: [
       ...headings,
-      { type: 'separator' },
-      editorCommandItem('menu.format_bold', trans('Bold'), 'markdownBold', 'md-bold'),
-      editorCommandItem('menu.format_italic', trans('Italic'), 'markdownItalic', 'md-italic'),
-      editorCommandItem('menu.format_code', trans('Code'), 'markdownCode'),
-      editorCommandItem('menu.format_strikethrough', trans('Strikethrough'), 'markdownStrikethrough'),
-      { type: 'separator' },
-      editorCommandItem('menu.format_bullet_list', trans('Bullet list'), 'markdownBulletList'),
-      editorCommandItem('menu.format_ordered_list', trans('Numbered list'), 'markdownOrderedList'),
-      editorCommandItem('menu.format_blockquote', trans('Block quote'), 'markdownBlockquote'),
-      { type: 'separator' },
+      { type: "separator" },
+      editorCommandItem("menu.format_bold", trans("Bold"), "markdownBold", "md-bold"),
+      editorCommandItem("menu.format_italic", trans("Italic"), "markdownItalic", "md-italic"),
+      editorCommandItem("menu.format_code", trans("Code"), "markdownCode"),
+      editorCommandItem(
+        "menu.format_strikethrough",
+        trans("Strikethrough"),
+        "markdownStrikethrough",
+      ),
+      { type: "separator" },
+      editorCommandItem("menu.format_bullet_list", trans("Bullet list"), "markdownBulletList"),
+      editorCommandItem("menu.format_ordered_list", trans("Numbered list"), "markdownOrderedList"),
+      editorCommandItem("menu.format_blockquote", trans("Block quote"), "markdownBlockquote"),
+      { type: "separator" },
       {
-        id: 'menu.fix_all_document',
-        label: trans('Fix all auto-fixable issues in the document'),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-document') }
+        id: "menu.fix_all_document",
+        label: trans("Fix all auto-fixable issues in the document"),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "fix-all-document");
+        },
       },
       {
-        id: 'menu.fix_all_open',
-        label: trans('Fix all auto-fixable issues in open documents'),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-open') }
+        id: "menu.fix_all_open",
+        label: trans("Fix all auto-fixable issues in open documents"),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "fix-all-open");
+        },
       },
       {
-        id: 'menu.fix_all_workspace',
-        label: trans('Fix all auto-fixable issues in the workspace'),
-        click: (_item, focusedWindow) => { sendShortcut(focusedWindow, 'fix-all-workspace') }
-      }
-    ]
-  }
+        id: "menu.fix_all_workspace",
+        label: trans("Fix all auto-fixable issues in the workspace"),
+        click: (_item, focusedWindow) => {
+          sendShortcut(focusedWindow, "fix-all-workspace");
+        },
+      },
+    ],
+  };
 }

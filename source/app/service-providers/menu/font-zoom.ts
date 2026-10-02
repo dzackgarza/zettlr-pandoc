@@ -14,7 +14,7 @@
  * END HEADER
  */
 
-import type { MenuConfig } from './menu-dependencies'
+import type { MenuConfig } from "./menu-dependencies";
 
 /**
  * Depending on the direction given, increases or decreases the font size of the
@@ -23,12 +23,12 @@ import type { MenuConfig } from './menu-dependencies'
  * @param   {ConfigProvider}  config  The configuration provider
  * @param   {'in'|'out'}      dir     The direction of zoom
  */
-function fontZoom (config: MenuConfig, dir: 'in'|'out'): void {
-  const { fontSize } = config.get().editor
-  if (dir === 'in') {
-    config.set('editor.fontSize', fontSize + 1)
+function fontZoom(config: MenuConfig, dir: "in" | "out"): void {
+  const { fontSize } = config.get().editor;
+  if (dir === "in") {
+    config.set("editor.fontSize", fontSize + 1);
   } else {
-    config.set('editor.fontSize', fontSize - 1)
+    config.set("editor.fontSize", fontSize - 1);
   }
 }
 
@@ -39,10 +39,10 @@ function fontZoom (config: MenuConfig, dir: 'in'|'out'): void {
  *
  * @return  {Function}                A callback
  */
-export function zoomIn (config: MenuConfig): () => void {
+export function zoomIn(config: MenuConfig): () => void {
   return function () {
-    fontZoom(config, 'in')
-  }
+    fontZoom(config, "in");
+  };
 }
 
 /**
@@ -52,8 +52,8 @@ export function zoomIn (config: MenuConfig): () => void {
  *
  * @return  {Function}                A callback
  */
-export function zoomOut (config: MenuConfig): () => void {
+export function zoomOut(config: MenuConfig): () => void {
   return function () {
-    fontZoom(config, 'out')
-  }
+    fontZoom(config, "out");
+  };
 }

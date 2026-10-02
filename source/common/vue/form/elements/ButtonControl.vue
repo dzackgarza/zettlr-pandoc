@@ -32,19 +32,19 @@
  * END HEADER
  */
 
-import { computed } from 'vue'
+import { computed } from "vue";
 
 const props = defineProps<{
-  label?: string
-  icon?: string
-  direction?: string
-  name?: string
-  disabled?: boolean
-  inline?: boolean
-  primary?: boolean
-}>()
+  label?: string;
+  icon?: string;
+  direction?: string;
+  name?: string;
+  disabled?: boolean;
+  inline?: boolean;
+  primary?: boolean;
+}>();
 
-const fieldId = computed<string>(() => `form-button${props.name}`)
+const fieldId = computed<string>(() => `form-button${props.name}`);
 </script>
 
 <style lang="css" scoped>

@@ -95,111 +95,111 @@
  * END HEADER
  */
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { TikzWorkbenchHost, TikzWorkbenchTheme } from '../host'
-import type { TikzLivePreviewTarget } from '../live-preview'
-import {
-  defaultTikzPreviewMode,
-  type TikzPreviewModeId
-} from '../preview-modes'
-import {
-  TIKZ_PREVIEW_PROVIDERS,
-  type TikzPreviewProvider
-} from './providers'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { TikzWorkbenchHost, TikzWorkbenchTheme } from "../host";
+import type { TikzLivePreviewTarget } from "../live-preview";
+import { defaultTikzPreviewMode, type TikzPreviewModeId } from "../preview-modes";
+import { TIKZ_PREVIEW_PROVIDERS, type TikzPreviewProvider } from "./providers";
 
 const props = defineProps<{
-  target: TikzLivePreviewTarget
-  host: TikzWorkbenchHost
-  theme: TikzWorkbenchTheme
-}>()
+  target: TikzLivePreviewTarget;
+  host: TikzWorkbenchHost;
+  theme: TikzWorkbenchTheme;
+}>();
 
 // The host may lay itself out around the active mode; the visual editor, for
 // one, carries its own source pane.
 const emit = defineEmits<{
-  (e: 'mode', mode: TikzPreviewModeId): void
-}>()
+  (e: "mode", mode: TikzPreviewModeId): void;
+}>();
 
-const fullscreen = ref(false)
-const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target))
-const activeStatus = ref('')
-const activeBusy = ref(false)
-const copyError = ref('')
-const previewHandle = ref<{ refresh?: () => void }|null>(null)
-const providers: readonly TikzPreviewProvider[] = TIKZ_PREVIEW_PROVIDERS
-const displayMode = requestedMode
+const fullscreen = ref(false);
+const requestedMode = ref<TikzPreviewModeId>(defaultTikzPreviewMode(props.target));
+const activeStatus = ref("");
+const activeBusy = ref(false);
+const copyError = ref("");
+const previewHandle = ref<{ refresh?: () => void } | null>(null);
+const providers: readonly TikzPreviewProvider[] = TIKZ_PREVIEW_PROVIDERS;
+const displayMode = requestedMode;
 const activeProvider = computed(() => {
-  const provider = providers.find(candidate => candidate.id === displayMode.value)
+  const provider = providers.find((candidate) => candidate.id === displayMode.value);
   if (provider === undefined) {
-    throw new Error(`No TikZ preview provider registered for mode ${displayMode.value}`)
+    throw new Error(`No TikZ preview provider registered for mode ${displayMode.value}`);
   }
-  return provider
-})
-const unavailableMessage = computed(() => activeProvider.value.supports(props.target)
-  ? ''
-  : activeProvider.value.unavailableTitle(props.target))
+  return provider;
+});
+const unavailableMessage = computed(() =>
+  activeProvider.value.supports(props.target)
+    ? ""
+    : activeProvider.value.unavailableTitle(props.target),
+);
 
-watch([unavailableMessage, () => props.target.docPath, () => props.target.sourceFrom], ([message, docPath, sourceFrom]) => {
-  copyError.value = ''
-  if (message !== '') {
-    props.host.reportError(`TikZ editor mode unavailable in ${docPath}:${sourceFrom}`, message)
-  }
-}, { immediate: true })
+watch(
+  [unavailableMessage, () => props.target.docPath, () => props.target.sourceFrom],
+  ([message, docPath, sourceFrom]) => {
+    copyError.value = "";
+    if (message !== "") {
+      props.host.reportError(`TikZ editor mode unavailable in ${docPath}:${sourceFrom}`, message);
+    }
+  },
+  { immediate: true },
+);
 
-function copyUnavailableMessage (): void {
-  void navigator.clipboard.writeText(unavailableMessage.value).catch(error => {
-    copyError.value = error instanceof Error ? error.message : String(error)
-    props.host.reportError('Could not copy TikZ editor error', error)
-  })
+function copyUnavailableMessage(): void {
+  void navigator.clipboard.writeText(unavailableMessage.value).catch((error) => {
+    copyError.value = error instanceof Error ? error.message : String(error);
+    props.host.reportError("Could not copy TikZ editor error", error);
+  });
 }
 
-function targetIdentity (target: TikzLivePreviewTarget): string {
-  return `${target.docPath}\0${target.kind}\0${target.language}\0${target.from}`
+function targetIdentity(target: TikzLivePreviewTarget): string {
+  return `${target.docPath}\0${target.kind}\0${target.language}\0${target.from}`;
 }
 
 watch(
   () => targetIdentity(props.target),
   () => {
-    requestedMode.value = defaultTikzPreviewMode(props.target)
-    fullscreen.value = false
-  }
-)
+    requestedMode.value = defaultTikzPreviewMode(props.target);
+    fullscreen.value = false;
+  },
+);
 
 watch(
   displayMode,
-  mode => {
-    activeStatus.value = ''
-    activeBusy.value = false
-    emit('mode', mode)
+  (mode) => {
+    activeStatus.value = "";
+    activeBusy.value = false;
+    emit("mode", mode);
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 
-function selectProvider (mode: TikzPreviewModeId): void {
-  const provider = providers.find(candidate => candidate.id === mode)
+function selectProvider(mode: TikzPreviewModeId): void {
+  const provider = providers.find((candidate) => candidate.id === mode);
   if (provider?.supports(props.target) === true) {
-    requestedMode.value = mode
+    requestedMode.value = mode;
   }
 }
 
-function forceRefresh (): void {
-  previewHandle.value?.refresh?.()
+function forceRefresh(): void {
+  previewHandle.value?.refresh?.();
 }
 
-function onWindowKeydown (event: KeyboardEvent): void {
-  if (fullscreen.value && event.key === 'Escape') {
-    event.preventDefault()
-    event.stopPropagation()
-    fullscreen.value = false
+function onWindowKeydown(event: KeyboardEvent): void {
+  if (fullscreen.value && event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    fullscreen.value = false;
   }
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onWindowKeydown, true)
-})
+  window.addEventListener("keydown", onWindowKeydown, true);
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onWindowKeydown, true)
-})
+  window.removeEventListener("keydown", onWindowKeydown, true);
+});
 </script>
 
 <style scoped lang="less">

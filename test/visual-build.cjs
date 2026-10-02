@@ -1,4 +1,4 @@
-'use strict'
+"use strict";
 
 // Bundles one visual-capture entry point with the production renderer
 // webpack config (vue-loader, ts-loader, aliases) — every scene that mounts
@@ -9,52 +9,55 @@
 //
 // Usage: node visual-build.cjs <entry.ts> <bundle-filename.js> <output-dir>
 
-const path = require('path')
-const webpack = require('webpack')
-const rendererConfig = require('../webpack.renderer.config')
+const path = require("path");
+const webpack = require("webpack");
+const rendererConfig = require("../webpack.renderer.config");
 
-const [entryArg, bundleFilename, outputDirectoryArg] = process.argv.slice(2)
+const [entryArg, bundleFilename, outputDirectoryArg] = process.argv.slice(2);
 if (entryArg === undefined || bundleFilename === undefined || outputDirectoryArg === undefined) {
-  throw new Error('Usage: visual-build.cjs <entry> <bundle-filename> <output-dir>')
+  throw new Error("Usage: visual-build.cjs <entry> <bundle-filename> <output-dir>");
 }
 
-const outputDirectory = path.resolve(outputDirectoryArg)
+const outputDirectory = path.resolve(outputDirectoryArg);
 
-webpack({
-  ...rendererConfig,
-  module: {
-    ...rendererConfig.module,
-    rules: rendererConfig.module.rules.filter(rule => {
-      return rule.use?.loader !== '@vercel/webpack-asset-relocator-loader'
-    }),
+webpack(
+  {
+    ...rendererConfig,
+    module: {
+      ...rendererConfig.module,
+      rules: rendererConfig.module.rules.filter((rule) => {
+        return rule.use?.loader !== "@vercel/webpack-asset-relocator-loader";
+      }),
+    },
+    mode: "development",
+    devtool: false,
+    entry: path.resolve(entryArg),
+    output: {
+      path: outputDirectory,
+      filename: bundleFilename,
+    },
+    plugins: [
+      ...(rendererConfig.plugins ?? []),
+      // The app's preload exposes `process` to the renderer; a scene page has
+      // no preload, so the platform reads (shortcut display) get the capture
+      // platform at build time — as the esbuild registrations define it.
+      new webpack.DefinePlugin({ "process.platform": JSON.stringify("linux") }),
+    ],
   },
-  mode: 'development',
-  devtool: false,
-  entry: path.resolve(entryArg),
-  output: {
-    path: outputDirectory,
-    filename: bundleFilename,
+  (error, stats) => {
+    if (error !== null) {
+      process.stderr.write(`${error.stack ?? error.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const output = stats?.toString({ colors: false, chunks: false, modules: false }) ?? "";
+    if (stats?.hasErrors() === true) {
+      process.stderr.write(`${output}\n`);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(output);
   },
-  plugins: [
-    ...(rendererConfig.plugins ?? []),
-    // The app's preload exposes `process` to the renderer; a scene page has
-    // no preload, so the platform reads (shortcut display) get the capture
-    // platform at build time — as the esbuild registrations define it.
-    new webpack.DefinePlugin({ 'process.platform': JSON.stringify('linux') }),
-  ],
-}, (error, stats) => {
-  if (error !== null) {
-    process.stderr.write(`${error.stack ?? error.message}\n`)
-    process.exitCode = 1
-    return
-  }
-
-  const output = stats?.toString({ colors: false, chunks: false, modules: false }) ?? ''
-  if (stats?.hasErrors() === true) {
-    process.stderr.write(`${output}\n`)
-    process.exitCode = 1
-    return
-  }
-
-  console.log(output)
-})
+);

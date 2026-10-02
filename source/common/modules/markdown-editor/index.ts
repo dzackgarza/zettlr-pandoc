@@ -19,10 +19,11 @@
 
 // Import our additional styles we need to put here since we don't have a Vue
 // component for the editor itself.
-import './editor.css'
+import "./editor.css";
 
-import { foldEffect, foldState } from '@codemirror/language'
-import { closeSearchPanel, openSearchPanel, searchPanelOpen } from '@codemirror/search'
+import { foldEffect, foldState } from "@codemirror/language";
+import { forceLinting } from "@codemirror/lint";
+import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
   EditorSelection,
@@ -31,32 +32,32 @@ import {
   type SelectionRange,
   type StateEffect,
   Text,
-} from '@codemirror/state'
+} from "@codemirror/state";
 // CodeMirror imports
-import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
-import safeAssign from '@common/util/safe-assign'
-import { DocumentType } from '@dts/common/documents'
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
+import safeAssign from "@common/util/safe-assign";
+import type { TexMacroSource } from "@common/util/tex-context";
+import type { AnnotationSet } from "@dts/common/annotation-domain";
+import { DocumentType } from "@dts/common/documents";
+import type { QuickTexCatalogue } from "@dts/common/quicktex";
 import {
   type DocumentLocation,
   type ReferenceCompletionEntry,
   type SourceRange,
-} from '@dts/common/references'
-import type { ReviewDiffSession } from '@dts/common/review-diff'
-import type { UserSnippet } from '@dts/common/snippets'
-import type { QuickTexCatalogue } from '@dts/common/quicktex'
-import type { AnnotationSet } from '@dts/common/annotation-domain'
-
-import { type TagRecord } from '@providers/tags'
-import type { PhraseDictionaryEntry } from '@common/util/phrase-dictionary'
-import type { TexMacroSource } from '@common/util/tex-context'
+} from "@dts/common/references";
+import type { ReviewDiffSession } from "@dts/common/review-diff";
+import type { EditorCommandName } from "@dts/common/shortcut-names";
+import type { UserSnippet } from "@dts/common/snippets";
+import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
-import { emacs } from '@replit/codemirror-emacs'
+import { emacs } from "@replit/codemirror-emacs";
 /**
  * APIs
  */
-import EventEmitter from 'events'
-import _ from 'underscore'
-import { parsePandocAttributes } from 'source/common/pandoc-util/parse-pandoc-attributes'
+import EventEmitter from "events";
+import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
+import _ from "underscore";
 import {
   citekeyUpdate,
   filesUpdate,
@@ -65,14 +66,13 @@ import {
   snippetsUpdate,
   tagsUpdate,
   texMacroSourcesUpdate,
-} from './autocomplete'
-import { EMPTY_QUICKTEX, quickTexUpdate } from './quicktex'
-import { addNewFootnote } from './commands/footnotes'
+} from "./autocomplete";
+import { addNewFootnote } from "./commands/footnotes";
 import {
   type FormatResult,
   formatDocument,
   type MarkdownFormatter,
-} from './commands/format-document'
+} from "./commands/format-document";
 // Custom commands
 import {
   applyBlockquote,
@@ -93,9 +93,9 @@ import {
   applyTaskList,
   insertImage,
   insertLink,
-} from './commands/markdown'
-import { moveSection } from './commands/move-section'
-import type { EditorCommandName } from '@dts/common/shortcut-names'
+} from "./commands/markdown";
+import { moveSection } from "./commands/move-section";
+import { languageToolState, updateLTState } from "./diagnostics/language-tool-state";
 // Main configuration
 import {
   type CoreExtensionOptions,
@@ -105,70 +105,76 @@ import {
   getTexExtensions,
   getYAMLExtensions,
   inputModeCompartment,
-} from './editor-extension-sets'
-import { clickListeners } from './plugins/click-listeners'
+} from "./editor-extension-sets";
+import { clickListeners } from "./plugins/click-listeners";
+import {
+  collaborationControls,
+  type MountCollaborationControl,
+} from "./plugins/collaboration-controls";
 import {
   createReferenceLabel,
   openCreateReferenceLabelEffect,
-} from './plugins/create-reference-label'
-import { editorMetadataFacet } from './plugins/editor-metadata'
-import { syncCitationData } from './renderers/render-citations'
-import { formatDocumentEffect } from './plugins/format-document-effect'
-import { highlightRangesEffect } from './plugins/highlight-ranges'
-import { openPandocQuickHelpEffect } from './plugins/pandoc-quick-help-effect'
-import { type ProjectInfo, projectInfoField, projectInfoUpdateEffect } from './plugins/project-info-field'
-import { languageToolState, updateLTState } from './diagnostics/language-tool-state'
-import { forceLinting } from '@codemirror/lint'
-import { countDiagnostics, toggleLintPanel, type DiagnosticCounts } from './statusbar/diagnostics'
-import { toggleReadability } from './renderers/readability'
-import { openReferenceSearchEffect } from './plugins/reference-search-effect'
-import { openFileSearchEffect } from './plugins/file-search-effect'
+} from "./plugins/create-reference-label";
+import { editorMetadataFacet } from "./plugins/editor-metadata";
+import { openFileSearchEffect } from "./plugins/file-search-effect";
+import { formatDocumentEffect } from "./plugins/format-document-effect";
+import { highlightRangesEffect } from "./plugins/highlight-ranges";
+import { openPandocQuickHelpEffect } from "./plugins/pandoc-quick-help-effect";
+import {
+  type ProjectInfo,
+  projectInfoField,
+  projectInfoUpdateEffect,
+} from "./plugins/project-info-field";
+import { openReferenceSearchEffect } from "./plugins/reference-search-effect";
 import {
   type PullUpdateCallback,
   type PushUpdateCallback,
   reloadStateEffect,
-} from './plugins/remote-doc'
-import { markReviewChunksStale, reviewChunksExtension } from './plugins/review-chunks'
-import { collaborationControls, type MountCollaborationControl } from './plugins/collaboration-controls'
+} from "./plugins/remote-doc";
+import { markReviewChunksStale, reviewChunksExtension } from "./plugins/review-chunks";
+import { countField, updateWordCountEffect } from "./plugins/statistics-fields";
 import {
   annotationChipClickedEffect,
   clearAnnotationDraftEffect,
   setActiveAnnotationEffect,
   setAnnotationDraftEffect,
   setAnnotationSessionEffect,
-  showResolvedAnnotationsEffect
-} from './plugins/text-annotations'
-import { countField, updateWordCountEffect } from './plugins/statistics-fields'
-import { countRange } from './util/word-count'
-import { type ToCEntry, tocField } from './plugins/toc-field'
-import { vimPlugin } from './plugins/vim-mode'
-import {
-  type EditorWorkspaceReferences,
-  workspaceReferencesUpdate,
-} from './plugins/workspace-references-field'
+  showResolvedAnnotationsEffect,
+} from "./plugins/text-annotations";
+import { type ToCEntry, tocField } from "./plugins/toc-field";
+import { vimPlugin } from "./plugins/vim-mode";
 import {
   sameResolutions,
   type WikilinkResolutions,
   wikilinkResolutionsField,
   wikilinkResolutionsUpdate,
-} from './plugins/wikilink-resolutions-field'
-import { darkModeEffect, useDarkModeEditor } from './theme/dark-mode'
+} from "./plugins/wikilink-resolutions-field";
 import {
+  type EditorWorkspaceReferences,
+  workspaceReferencesUpdate,
+} from "./plugins/workspace-references-field";
+import { EMPTY_QUICKTEX, quickTexUpdate } from "./quicktex";
+import { toggleReadability } from "./renderers/readability";
+import { syncCitationData } from "./renderers/render-citations";
+import { countDiagnostics, type DiagnosticCounts, toggleLintPanel } from "./statusbar/diagnostics";
+import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
+import {
+  cloneEditorConfiguration,
   configField,
   configUpdateEffect,
-  cloneEditorConfiguration,
   type EditorConfigOptions,
   type EditorConfiguration,
   getDefaultConfig,
-} from './util/configuration'
+} from "./util/configuration";
 // Utilities
-import { copyAsHTML, pasteAsPlain } from './util/copy-paste-cut'
-import { whenAuthoritySynced } from './util/when-authority-synced'
+import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
+import { whenAuthoritySynced } from "./util/when-authority-synced";
+import { countRange } from "./util/word-count";
 
 export interface DocumentWrapper {
-  path: string
-  state: EditorState
-  type: DocumentType
+  path: string;
+  state: EditorState;
+  type: DocumentType;
 }
 
 /**
@@ -178,43 +184,43 @@ export interface DocumentWrapper {
  * offering that here.
  */
 export interface UserReadablePosition {
-  line: number
-  ch: number
+  line: number;
+  ch: number;
 }
 
 /** What the LanguageTool linter is doing, for the window's status bar. */
 export type LanguageToolStatus =
-  | { state: 'off' }
-  | { state: 'running' }
-  | { state: 'error', message: string }
-  | { state: 'idle', language: string, overrideLanguage: string, supportedLanguages: string[] }
+  | { state: "off" }
+  | { state: "running" }
+  | { state: "error"; message: string }
+  | { state: "idle"; language: string; overrideLanguage: string; supportedLanguages: string[] };
 
 /**
  * Everything the window's status bar shows about the active editor, derived
  * once here from the editor state on every document update.
  */
 export interface DocumentInfo {
-  words: number
-  chars: number
-  cursor: UserReadablePosition
+  words: number;
+  chars: number;
+  cursor: UserReadablePosition;
   /** The cursor's offset in the document */
-  offset: number
+  offset: number;
   selections: Array<{
-    anchor: UserReadablePosition
-    head: UserReadablePosition
-    words: number
-    chars: number
-  }>
-  readabilityMode: boolean
-  diagnostics: DiagnosticCounts
-  languageTool: LanguageToolStatus
+    anchor: UserReadablePosition;
+    head: UserReadablePosition;
+    words: number;
+    chars: number;
+  }>;
+  readabilityMode: boolean;
+  diagnostics: DiagnosticCounts;
+  languageTool: LanguageToolStatus;
   /** The project the document belongs to, if any */
-  project: ProjectInfo | undefined
+  project: ProjectInfo | undefined;
 }
 
 export type FetchDoc = (
   filePath: string,
-) => Promise<{ content: string; type: DocumentType; startVersion: number }>
+) => Promise<{ content: string; type: DocumentType; startVersion: number }>;
 
 /**
  * This interface is used to provide the editor with an API of where to fetch
@@ -225,15 +231,15 @@ export interface DocumentAuthorityAPI {
   /**
    * Used to fetch the document from the document authority
    */
-  fetchDoc: FetchDoc
+  fetchDoc: FetchDoc;
   /**
    * Used to pull new updates from the document authority
    */
-  pullUpdates: PullUpdateCallback
+  pullUpdates: PullUpdateCallback;
   /**
    * Used to push updates to the document authority
    */
-  pushUpdates: PushUpdateCallback
+  pushUpdates: PushUpdateCallback;
 }
 
 /**
@@ -251,17 +257,17 @@ export interface EditorViewPersistentState {
    * A scroll snapshot from the editor. Used to properly restore the scroll
    * position.
    */
-  scrollSnapshot: StateEffect<unknown>
+  scrollSnapshot: StateEffect<unknown>;
   /**
    * A selection object. Used to properly restore the cursor position and any
    * selections within the editor.
    */
-  selection: EditorSelection
+  selection: EditorSelection;
 
   /**
    * A decoration set containing currently folded ranges.
    */
-  foldedRanges: DecorationSet
+  foldedRanges: DecorationSet;
 }
 
 /**
@@ -289,8 +295,8 @@ const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> 
   markdownBulletList: applyBulletList,
   markdownOrderedList: applyOrderedList,
   toggleReadabilityMode: toggleReadability,
-  toggleLintPanel
-}
+  toggleLintPanel,
+};
 
 export default class MarkdownEditor extends EventEmitter {
   /**
@@ -298,31 +304,31 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @var {EditorView}
    */
-  private readonly _instance: EditorView
+  private readonly _instance: EditorView;
   /**
    * The absolute path to the document represented by this MainEditor instance.
    *
    * @var {string}
    */
-  private readonly representedDocument: string
+  private readonly representedDocument: string;
   /**
    * The API method used to synchronize the document with an authority.
    *
    * @var {DocumentAuthorityAPI}
    */
-  private readonly authority: DocumentAuthorityAPI
+  private readonly authority: DocumentAuthorityAPI;
   /**
    * The full editor configuration
    *
    * @var {EditorConfiguration}
    */
-  private config: EditorConfiguration
+  private config: EditorConfiguration;
 
   /**
    * Resolves when the initial document has been installed into CodeMirror.
    * Consumers must handle rejection and surface it to the user.
    */
-  public readonly ready: Promise<void>
+  public readonly ready: Promise<void>;
 
   /**
    * The database cache for the various autocompletes.
@@ -330,15 +336,15 @@ export default class MarkdownEditor extends EventEmitter {
    * @var {any}
    */
   private readonly databaseCache: {
-    tags: TagRecord[]
-    citations: Array<{ citekey: string; displayText: string }>
-    snippets: UserSnippet[]
-    phrases: PhraseDictionaryEntry[]
-    texMacroSources: TexMacroSource[]
-    quickTex: QuickTexCatalogue
-    files: Array<{ filename: string; displayName: string; id: string }>
-    references: ReferenceCompletionEntry[]
-  }
+    tags: TagRecord[];
+    citations: Array<{ citekey: string; displayText: string }>;
+    snippets: UserSnippet[];
+    phrases: PhraseDictionaryEntry[];
+    texMacroSources: TexMacroSource[];
+    quickTex: QuickTexCatalogue;
+    files: Array<{ filename: string; displayName: string; id: string }>;
+    references: ReferenceCompletionEntry[];
+  };
 
   /**
    * The last resolved workspace reference view pushed into this editor
@@ -346,16 +352,16 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @var {EditorWorkspaceReferences|null}
    */
-  private workspaceReferencesCache: EditorWorkspaceReferences | null
+  private workspaceReferencesCache: EditorWorkspaceReferences | null;
 
-  private readonly reviewDiffCompartment: Compartment
+  private readonly reviewDiffCompartment: Compartment;
 
-  private activeReviewDiffSession: ReviewDiffSession | null
-  private pendingReviewDiffSession: ReviewDiffSession | null = null
+  private activeReviewDiffSession: ReviewDiffSession | null;
+  private pendingReviewDiffSession: ReviewDiffSession | null = null;
 
   /** Holds the inline review and annotation controls once a host supplies them. */
-  private readonly collaborationControlsCompartment = new Compartment()
-  private collaborationControlMount: MountCollaborationControl | null = null
+  private readonly collaborationControlsCompartment = new Compartment();
+  private collaborationControlMount: MountCollaborationControl | null = null;
 
   /**
    * Creates a new MarkdownEditor instance associated with the given leafId and
@@ -382,7 +388,7 @@ export default class MarkdownEditor extends EventEmitter {
    *                                                      Should normally be the
    *                                                      IPC authority.
    */
-  constructor (
+  constructor(
     readonly leafId: string,
     readonly windowId: string,
     representedDocument: string,
@@ -390,10 +396,10 @@ export default class MarkdownEditor extends EventEmitter {
     configOverride?: Partial<EditorConfiguration>,
     persistentState?: EditorViewPersistentState,
   ) {
-    super() // Set up the event emitter
+    super(); // Set up the event emitter
 
-    this.authority = authorityAPI
-    this.representedDocument = representedDocument
+    this.authority = authorityAPI;
+    this.representedDocument = representedDocument;
 
     // Since the editor state needs to be rebuilt from scratch sometimes, we
     // cache the autocomplete databases so that we don't have to re-fetch them
@@ -407,35 +413,36 @@ export default class MarkdownEditor extends EventEmitter {
       quickTex: EMPTY_QUICKTEX,
       files: [],
       references: [],
-    }
-    this.workspaceReferencesCache = null
-    this.reviewDiffCompartment = new Compartment()
-    this.activeReviewDiffSession = null
+    };
+    this.workspaceReferencesCache = null;
+    this.reviewDiffCompartment = new Compartment();
+    this.activeReviewDiffSession = null;
 
     // Same goes for the config. Construction must start from the caller's
     // actual configuration, not from the defaults followed by an asynchronous
     // correction: the extension set (in particular the light/dark theme
     // compartment) is built during loadDocument(). Calling setOptions() here
     // would also be invalid because _instance does not exist yet.
-    const initialConfig = getDefaultConfig()
+    const initialConfig = getDefaultConfig();
     // TODO: This is bad style imho
-    initialConfig.metadata.path = representedDocument
+    initialConfig.metadata.path = representedDocument;
     // The editor sorts and changes its configuration. It keeps a copy, so the
     // configuration of the caller stays as the caller made it.
-    this.config = configOverride === undefined
-      ? initialConfig
-      : cloneEditorConfiguration(safeAssign(configOverride, initialConfig))
+    this.config =
+      configOverride === undefined
+        ? initialConfig
+        : cloneEditorConfiguration(safeAssign(configOverride, initialConfig));
 
     // Create the editor ...
     this._instance = new EditorView({
       state: undefined,
       parent: undefined,
-    })
+    });
 
     // ... and immediately begin loading the document. The owning renderer
     // awaits this promise so initialization failures cannot disappear into a
     // console-only catch while an empty EditorView remains visible.
-    this.ready = this.loadDocument(persistentState)
+    this.ready = this.loadDocument(persistentState);
   }
 
   /**
@@ -447,8 +454,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Extension[]}                 The extension set
    */
-  private _getExtensions (filePath: string, type: DocumentType, startVersion: number): Extension[] {
-    const editorInstance = this
+  private _getExtensions(filePath: string, type: DocumentType, startVersion: number): Extension[] {
+    const editorInstance = this;
 
     const options: CoreExtensionOptions = {
       initialConfig: cloneEditorConfiguration(this.config),
@@ -461,24 +468,24 @@ export default class MarkdownEditor extends EventEmitter {
       updateListener: (update) => {
         // Listen for changes and emit events appropriately
         if (update.docChanged) {
-          this.emit('change')
-          queueMicrotask(() => this.activatePendingReviewDiffSession())
+          this.emit("change");
+          queueMicrotask(() => this.activatePendingReviewDiffSession());
         }
 
         if (update.focusChanged && this._instance.hasFocus) {
-          this.emit('focus')
+          this.emit("focus");
         }
 
         if (update.selectionSet) {
-          this.emit('cursorActivity')
-          this.emit('docUpdate')
+          this.emit("cursorActivity");
+          this.emit("docUpdate");
         }
 
         for (const transaction of update.transactions) {
           for (const effect of transaction.effects) {
             // Listen for word count updates
             if (effect.is(updateWordCountEffect)) {
-              this.emit('docUpdate')
+              this.emit("docUpdate");
             }
 
             // Workspace reference search request — plain Mod-P (null) or a
@@ -487,25 +494,25 @@ export default class MarkdownEditor extends EventEmitter {
             // App.vue's overlay; dropping the payload here would break the
             // Phase 8 badge-keyed reverse lookup).
             if (effect.is(openReferenceSearchEffect)) {
-              this.emit('reference-search', effect.value)
+              this.emit("reference-search", effect.value);
             }
 
             if (effect.is(openFileSearchEffect)) {
-              this.emit('file-search')
+              this.emit("file-search");
             }
 
             // A gutter chip was clicked: the pane opens or closes that
             // annotation's inline thread. The editor never selects on its
             // own — it reports which chip was hit.
             if (effect.is(annotationChipClickedEffect)) {
-              this.emit('annotation-selected', effect.value)
+              this.emit("annotation-selected", effect.value);
             }
 
             // Create-reference-label request (issue #1 Phase 6): surface
             // the typed request to the shell (MainEditor.vue relays it up
             // to App.vue's CreateReferenceLabelDialog mount).
             if (effect.is(openCreateReferenceLabelEffect)) {
-              this.emit('create-reference-label', effect.value)
+              this.emit("create-reference-label", effect.value);
             }
 
             // Pandoc quick-help request (issue #1, review A2 / US-06): an
@@ -513,14 +520,14 @@ export default class MarkdownEditor extends EventEmitter {
             // the searchable quick help; MainEditor.vue relays it up to
             // App.vue's PandocQuickHelp mount.
             if (effect.is(openPandocQuickHelpEffect)) {
-              this.emit('pandoc-quick-help')
+              this.emit("pandoc-quick-help");
             }
 
             // A keystroke requested a flowmark format (issue #26). The actual
             // IPC format runs in the renderer (MainEditor.vue), which has
             // electron; the editor core only relays the request.
             if (effect.is(formatDocumentEffect)) {
-              this.emit('format-document')
+              this.emit("format-document");
             }
 
             // Listen for config updates, and parse them into the internal cache. We
@@ -531,49 +538,46 @@ export default class MarkdownEditor extends EventEmitter {
             if (effect.is(reloadStateEffect)) {
               // ATTENTION: The document state is out of sync with the document
               // authority, so we must reload it.
-              this.clearReviewDiffSession()
-              this.reload().catch((error) =>
-                this.emit('document-load-error', error),
-              )
-              return
+              this.clearReviewDiffSession();
+              this.reload().catch((error) => this.emit("document-load-error", error));
+              return;
             }
           }
         }
-
       },
-      onWikiLink (url) {
-        editorInstance.emit('zettelkasten-link', url)
+      onWikiLink(url) {
+        editorInstance.emit("zettelkasten-link", url);
       },
       domEventsListeners: clickListeners({
-        onWikiLink (url) {
-          editorInstance.emit('zettelkasten-link', url)
+        onWikiLink(url) {
+          editorInstance.emit("zettelkasten-link", url);
         },
-        onTag (tag) {
-          editorInstance.emit('zettelkasten-tag', tag)
+        onTag(tag) {
+          editorInstance.emit("zettelkasten-tag", tag);
         },
       }),
       referenceKeyEditListener: (intent) => {
         // The selection left a directly edited definition-id token: surface
         // the prompt intent to the shell (MainEditor.vue confirms and runs
         // the workspace rename protocol; declining keeps the local edit).
-        editorInstance.emit('reference-key-edit-prompt', intent)
+        editorInstance.emit("reference-key-edit-prompt", intent);
       },
-    }
+    };
 
-    let extensions: Extension[]
+    let extensions: Extension[];
     switch (type) {
       case DocumentType.Markdown:
-        extensions = getMarkdownExtensions(options)
-        break
+        extensions = getMarkdownExtensions(options);
+        break;
       case DocumentType.LaTeX:
-        extensions = getTexExtensions(options)
-        break
+        extensions = getTexExtensions(options);
+        break;
       case DocumentType.YAML:
-        extensions = getYAMLExtensions(options)
-        break
+        extensions = getYAMLExtensions(options);
+        break;
       case DocumentType.JSON:
-        extensions = getJSONExtensions(options)
-        break
+        extensions = getJSONExtensions(options);
+        break;
     }
 
     // Carry an open review across state rebuilds. Every reload builds a fresh
@@ -590,10 +594,12 @@ export default class MarkdownEditor extends EventEmitter {
           : this.buildReviewExtension(this.activeReviewDiffSession),
       ),
       this.collaborationControlsCompartment.of(
-        this.collaborationControlMount === null ? [] : collaborationControls(this.collaborationControlMount),
+        this.collaborationControlMount === null
+          ? []
+          : collaborationControls(this.collaborationControlMount),
       ),
-    )
-    return extensions
+    );
+    return extensions;
   }
 
   /**
@@ -601,12 +607,12 @@ export default class MarkdownEditor extends EventEmitter {
    * (see plugins/collaboration-controls.ts). The pane that shows this editor
    * supplies it; an editor without a host shows the change locators only.
    */
-  setCollaborationControls (mount: MountCollaborationControl): void {
-    this.collaborationControlMount = mount
+  setCollaborationControls(mount: MountCollaborationControl): void {
+    this.collaborationControlMount = mount;
     if (this.collaborationControlsCompartment.get(this._instance.state) !== undefined) {
       this._instance.dispatch({
         effects: this.collaborationControlsCompartment.reconfigure(collaborationControls(mount)),
-      })
+      });
     }
   }
 
@@ -614,26 +620,29 @@ export default class MarkdownEditor extends EventEmitter {
    * Loads the document from main and sets up everything required to display and
    * edit it.
    */
-  async loadDocument (persistentState?: EditorViewPersistentState): Promise<void> {
-    const { content, type, startVersion } = await this.authority.fetchDoc(this.representedDocument)
+  async loadDocument(persistentState?: EditorViewPersistentState): Promise<void> {
+    const { content, type, startVersion } = await this.authority.fetchDoc(this.representedDocument);
 
     // The documents contents have changed, so we must recreate the state
-    const extensions = this._getExtensions(this.representedDocument, type, startVersion)
+    const extensions = this._getExtensions(this.representedDocument, type, startVersion);
     // This particular editor type needs access to the window and leaf IDs
-    extensions.push(editorMetadataFacet.of({ windowId: this.windowId, leafId: this.leafId }))
+    extensions.push(editorMetadataFacet.of({ windowId: this.windowId, leafId: this.leafId }));
 
     const state = EditorState.create({
-      doc: Text.of(content.split('\n')),
+      doc: Text.of(content.split("\n")),
       extensions,
-    })
+    });
 
-    this._instance.setState(state)
+    this._instance.setState(state);
 
     // A rebuilt state reinstalls the active review as synced; if the
     // authority's text moved on meanwhile, its controls must not act until
     // the matching broadcast arrives.
-    if (this.activeReviewDiffSession !== null && content !== this.activeReviewDiffSession.workingText) {
-      this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
+    if (
+      this.activeReviewDiffSession !== null &&
+      content !== this.activeReviewDiffSession.workingText
+    ) {
+      this._instance.dispatch({ effects: markReviewChunksStale.of(null) });
     }
 
     if (persistentState !== undefined) {
@@ -647,17 +656,17 @@ export default class MarkdownEditor extends EventEmitter {
       // end, and the throw would land as a document-load error — the file
       // would simply refuse to open, over a cursor. So bring the positions
       // into this document instead of trusting them.
-      const { scrollSnapshot, selection, foldedRanges } = persistentState
-      const end = this._instance.state.doc.length
+      const { scrollSnapshot, selection, foldedRanges } = persistentState;
+      const end = this._instance.state.doc.length;
 
-      const effects: StateEffect<unknown>[] = [scrollSnapshot]
+      const effects: StateEffect<unknown>[] = [scrollSnapshot];
 
-      const cursor = foldedRanges.iter()
+      const cursor = foldedRanges.iter();
       while (cursor.value) {
         if (cursor.to <= end) {
-        effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }))
+          effects.push(foldEffect.of({ from: cursor.from, to: cursor.to }));
         }
-        cursor.next()
+        cursor.next();
       }
 
       this._instance.dispatch({
@@ -668,12 +677,12 @@ export default class MarkdownEditor extends EventEmitter {
           selection.mainIndex,
         ),
         effects,
-      })
+      });
     }
 
     // Ensure the theme switcher picks the state change up; this somehow doesn't
     // properly work after the document has been mounted to the DOM.
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
+    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
 
     // Provide the cached databases to the state (can be overridden by the
     // caller afterwards by calling setCompletionDatabase)
@@ -686,16 +695,16 @@ export default class MarkdownEditor extends EventEmitter {
       quickTexUpdate.of(this.databaseCache.quickTex),
       filesUpdate.of(this.databaseCache.files),
       referencesUpdate.of(this.databaseCache.references),
-    ]
+    ];
     if (this.workspaceReferencesCache !== null) {
-      cachedDatabases.push(workspaceReferencesUpdate.of(this.workspaceReferencesCache))
+      cachedDatabases.push(workspaceReferencesUpdate.of(this.workspaceReferencesCache));
     }
-    this._instance.dispatch({ effects: cachedDatabases })
+    this._instance.dispatch({ effects: cachedDatabases });
 
     // Determine if this is a code doc and add the corresponding class to the
     // outer content DOM so that we can style it.
     if (type !== DocumentType.Markdown) {
-      this._instance.contentDOM.classList.add('code')
+      this._instance.contentDOM.classList.add("code");
     }
 
     // A collaboration session can arrive while the authority fetch above is
@@ -703,11 +712,11 @@ export default class MarkdownEditor extends EventEmitter {
     // placeholder document cannot yet equal session.workingText. Loading the
     // authoritative state is itself the event that can satisfy that equality;
     // do not wait for an unrelated later edit to retry activation.
-    this.activatePendingReviewDiffSession()
+    this.activatePendingReviewDiffSession();
 
-    this._instance.focus()
+    this._instance.focus();
 
-    this.emit('loaded')
+    this.emit("loaded");
   }
 
   /**
@@ -718,28 +727,28 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {EditorViewPersistentState}  The persistent state object.
    */
-  public get persistentState (): EditorViewPersistentState {
+  public get persistentState(): EditorViewPersistentState {
     return {
       scrollSnapshot: this._instance.scrollSnapshot(),
       selection: this._instance.state.selection,
       foldedRanges: this._instance.state.field(foldState, false) ?? Decoration.set([]),
-    }
+    };
   }
 
   /**
    * This function allows to reload the full editor contents. This is useful if
    * a setting has changed that requires extensions to be fully reloaded.
    */
-  async reload (): Promise<void> {
-    await this.loadDocument()
+  async reload(): Promise<void> {
+    await this.loadDocument();
   }
 
   /**
    * Unmount the editor instance entirely. NOTE: After calling this, DO NO
    * LONGER USE THIS CLASS INSTANCE! Instantiate it anew!
    */
-  public unmount (): void {
-    this.instance.destroy()
+  public unmount(): void {
+    this.instance.destroy();
   }
 
   /**
@@ -747,23 +756,23 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param  {SelectionRange[]}  ranges  The ranges to highlight
    */
-  highlightRanges (ranges: SelectionRange[]): void {
-    this._instance.dispatch({ effects: highlightRangesEffect.of(ranges) })
+  highlightRanges(ranges: SelectionRange[]): void {
+    this._instance.dispatch({ effects: highlightRangesEffect.of(ranges) });
   }
 
   /**
    * Pastes the clipboard contents as plain text, regardless of any formatted
    * text present.
    */
-  pasteAsPlainText (): void {
-    pasteAsPlain(this._instance)
+  pasteAsPlainText(): void {
+    pasteAsPlain(this._instance);
   }
 
   /**
    * Copies the current editor contents into the clipboard as HTML
    */
-  copyAsHTML (): void {
-    copyAsHTML(this._instance)
+  copyAsHTML(): void {
+    copyAsHTML(this._instance);
   }
 
   /**
@@ -774,15 +783,15 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param  {number} line The line to pull into view
    */
-  jtl (line: number): void {
+  jtl(line: number): void {
     if (line > 0 && line <= this._instance.state.doc.lines) {
-      const lineDesc = this._instance.state.doc.line(line)
+      const lineDesc = this._instance.state.doc.line(line);
       this._instance.dispatch({
         selection: { anchor: lineDesc.from },
-        effects: EditorView.scrollIntoView(lineDesc.from, { y: 'center' }),
-      })
+        effects: EditorView.scrollIntoView(lineDesc.from, { y: "center" }),
+      });
     }
-    this._instance.focus()
+    this._instance.focus();
   }
 
   /**
@@ -794,20 +803,20 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {DocumentLocation}  location  The location to restore
    */
   restoreDocumentLocation(location: DocumentLocation): void {
-    const docLength = this._instance.state.doc.length
-    const { anchor, head } = location.selection
+    const docLength = this._instance.state.doc.length;
+    const { anchor, head } = location.selection;
     const effects = location.folds
       .filter((fold) => fold.from >= 0 && fold.to <= docLength && fold.from < fold.to)
-      .map((fold) => foldEffect.of({ from: fold.from, to: fold.to }))
+      .map((fold) => foldEffect.of({ from: fold.from, to: fold.to }));
 
     if (anchor >= 0 && anchor <= docLength && head >= 0 && head <= docLength) {
-      this._instance.dispatch({ selection: { anchor, head }, effects })
+      this._instance.dispatch({ selection: { anchor, head }, effects });
     } else if (effects.length > 0) {
-      this._instance.dispatch({ effects })
+      this._instance.dispatch({ effects });
     }
 
-    this._instance.scrollDOM.scrollTop = location.scrollTop
-    this._instance.focus()
+    this._instance.scrollDOM.scrollTop = location.scrollTop;
+    this._instance.focus();
   }
 
   /**
@@ -818,16 +827,16 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {SourceRange}  range  The range to select
    */
   selectSourceRange(range: SourceRange): void {
-    const docLength = this._instance.state.doc.length
+    const docLength = this._instance.state.doc.length;
     if (range.from < 0 || range.to > docLength || range.from > range.to) {
       return; // The document changed since the range was computed.
     }
 
     this._instance.dispatch({
       selection: { anchor: range.from, head: range.to },
-      effects: EditorView.scrollIntoView(range.from, { y: 'center' }),
-    })
-    this._instance.focus()
+      effects: EditorView.scrollIntoView(range.from, { y: "center" }),
+    });
+    this._instance.focus();
   }
 
   /**
@@ -837,20 +846,20 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {number}  from  The starting line (including the section heading)
    * @param   {number}  to    The target line for the section (is -1 if it should be moved to the end)
    */
-  moveSection (from: number, to: number): void {
-    const toc = this._instance.state.field(tocField)
-    const toLineNumber = to !== -1 ? to : this._instance.state.doc.lines
-    moveSection(toc, from, toLineNumber)(this._instance)
+  moveSection(from: number, to: number): void {
+    const toc = this._instance.state.field(tocField);
+    const toLineNumber = to !== -1 ? to : this._instance.state.doc.lines;
+    moveSection(toc, from, toLineNumber)(this._instance);
   }
 
   /**
    * Toggles the visibility of the search panel in this editor state.
    */
-  toggleSearchPanel () {
+  toggleSearchPanel() {
     if (searchPanelOpen(this.instance.state)) {
-      closeSearchPanel(this.instance)
+      closeSearchPanel(this.instance);
     } else {
-      openSearchPanel(this.instance)
+      openSearchPanel(this.instance);
     }
   }
 
@@ -859,7 +868,7 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {Object}  newOptions  The new options
    */
-  setOptions (newOptions: EditorConfigOptions): void {
+  setOptions(newOptions: EditorConfigOptions): void {
     // Here, we only trigger an update in the state itself. Then, we grab the
     // update via an effect to ensure we can cache the final, correct
     // configuration. However, in case there's no state (initial update), we
@@ -867,11 +876,11 @@ export default class MarkdownEditor extends EventEmitter {
     // firing yet.
 
     // Cache the current config first, and then apply it
-    this.onConfigUpdate(newOptions)
+    this.onConfigUpdate(newOptions);
 
-    this.config = cloneEditorConfiguration(safeAssign(newOptions, this.config))
+    this.config = cloneEditorConfiguration(safeAssign(newOptions, this.config));
 
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
+    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
   }
 
   /**
@@ -882,47 +891,51 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {Partial<EditorConfiguration>}  newOptions  The new options passed via the effect
    */
-  private onConfigUpdate (newOptions: Partial<EditorConfiguration>): void {
-    const inputModeChanged = newOptions.inputMode !== undefined && newOptions.inputMode !== this.config.inputMode
-    const darkModeChanged = newOptions.darkMode !== undefined && newOptions.darkMode !== this.config.darkMode
-    const editorModeChanged = newOptions.darkModeEditor !== undefined && newOptions.darkModeEditor !== this.config.darkModeEditor
-    const themeChanged = newOptions.theme !== undefined && newOptions.theme !== this.config.theme
+  private onConfigUpdate(newOptions: Partial<EditorConfiguration>): void {
+    const inputModeChanged =
+      newOptions.inputMode !== undefined && newOptions.inputMode !== this.config.inputMode;
+    const darkModeChanged =
+      newOptions.darkMode !== undefined && newOptions.darkMode !== this.config.darkMode;
+    const editorModeChanged =
+      newOptions.darkModeEditor !== undefined &&
+      newOptions.darkModeEditor !== this.config.darkModeEditor;
+    const themeChanged = newOptions.theme !== undefined && newOptions.theme !== this.config.theme;
 
     // Third: The input mode, if applicable
     if (inputModeChanged) {
-      if (newOptions.inputMode === 'emacs') {
+      if (newOptions.inputMode === "emacs") {
         this._instance.dispatch({
           effects: inputModeCompartment.reconfigure(emacs()),
-        })
-      } else if (newOptions.inputMode === 'vim') {
-        const vimFactory: unknown = vimPlugin
-        if (typeof vimFactory !== 'function') {
-          throw new TypeError('The Vim editor extension factory is unavailable.')
+        });
+      } else if (newOptions.inputMode === "vim") {
+        const vimFactory: unknown = vimPlugin;
+        if (typeof vimFactory !== "function") {
+          throw new TypeError("The Vim editor extension factory is unavailable.");
         }
-        const createVimExtension = vimFactory as () => Extension
+        const createVimExtension = vimFactory as () => Extension;
         this._instance.dispatch({
           effects: inputModeCompartment.reconfigure(createVimExtension()),
-        })
+        });
       } else {
         this._instance.dispatch({
           effects: inputModeCompartment.reconfigure([]),
-        })
+        });
       }
     }
 
     // Fourth: Switch theme, if applicable
     if (darkModeChanged || editorModeChanged || themeChanged) {
-      const themes = getMainEditorThemes()
+      const themes = getMainEditorThemes();
 
-      const darkMode = newOptions.darkMode ?? this.config.darkMode
-      const darkModeEditor = newOptions.darkModeEditor ?? this.config.darkModeEditor
+      const darkMode = newOptions.darkMode ?? this.config.darkMode;
+      const darkModeEditor = newOptions.darkModeEditor ?? this.config.darkModeEditor;
 
       this._instance.dispatch({
         effects: darkModeEffect.of({
           darkMode: useDarkModeEditor(darkMode, darkModeEditor),
           ...themes[newOptions.theme ?? this.config.theme],
         }),
-      })
+      });
     }
   }
 
@@ -933,10 +946,10 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {any}           The value of the key
    */
-  getOption (name: string) {
-    const config = this._instance.state.field(configField)
+  getOption(name: string) {
+    const config = this._instance.state.field(configField);
     if (name in config) {
-      return config[name as keyof EditorConfiguration]
+      return config[name as keyof EditorConfiguration];
     }
   }
 
@@ -947,8 +960,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {EditorCommandName}  cmd  The command to run
    */
-  runCommand (cmd: EditorCommandName): void {
-    EDITOR_COMMANDS[cmd](this._instance)
+  runCommand(cmd: EditorCommandName): void {
+    EDITOR_COMMANDS[cmd](this._instance);
   }
 
   /**
@@ -956,10 +969,10 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {string}  text  The text to replace the selection with
    */
-  replaceSelection (text: string): void {
-    const transaction = this._instance.state.replaceSelection(text)
-    this._instance.dispatch(transaction)
-    this._instance.focus()
+  replaceSelection(text: string): void {
+    const transaction = this._instance.state.replaceSelection(text);
+    this._instance.dispatch(transaction);
+    this._instance.focus();
   }
 
   /**
@@ -972,15 +985,15 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {string}  classes     Class attributes. Words are prepended with `.`
    * @param   {string}  attributes  Key=Value attributes.
    */
-  insertPandocDivOrSpan (type: 'div'|'span', attributes: string): void {
-    applyPandocDivOrSpan(this._instance, type, parsePandocAttributes(attributes))
+  insertPandocDivOrSpan(type: "div" | "span", attributes: string): void {
+    applyPandocDivOrSpan(this._instance, type, parsePandocAttributes(attributes));
   }
 
   /**
    * Issues a focus command to the underlying instance
    */
-  focus (): void {
-    this._instance.focus()
+  focus(): void {
+    this._instance.focus();
   }
 
   /**
@@ -988,8 +1001,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {boolean} The focus status
    */
-  hasFocus (): boolean {
-    return this._instance.hasFocus
+  hasFocus(): boolean {
+    return this._instance.hasFocus;
   }
 
   /**
@@ -998,25 +1011,25 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {boolean} The focus status
    */
-  hasFocusWithin (): boolean {
-    return this._instance.dom.contains(document.activeElement)
+  hasFocusWithin(): boolean {
+    return this._instance.dom.contains(document.activeElement);
   }
 
   /* Sets the project info field of the editor state to the provided value.
    *
    * @param   {ProjectInfo|null}  info  The data
    */
-  set projectInfo (info: ProjectInfo|null) {
+  set projectInfo(info: ProjectInfo | null) {
     if (!_.isEqual(info, this.projectInfo)) {
-      this._instance.dispatch({ effects: projectInfoUpdateEffect.of(info) })
+      this._instance.dispatch({ effects: projectInfoUpdateEffect.of(info) });
     }
   }
 
-  get projectInfo (): ProjectInfo|null {
+  get projectInfo(): ProjectInfo | null {
     // Only the Markdown extension set carries the field; another editor has
     // no project.
-    const info = this._instance.state.field(projectInfoField, false)
-    return info === undefined ? null : info
+    const info = this._instance.state.field(projectInfoField, false);
+    return info === undefined ? null : info;
   }
 
   /**
@@ -1026,85 +1039,85 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {String}  type      The type of the database
    * @param   {Object}  database  The show-hint-addon compatible database
    */
-  setCompletionDatabase (type: 'tags', database: TagRecord[]): void
+  setCompletionDatabase(type: "tags", database: TagRecord[]): void;
   setCompletionDatabase(
-    type: 'citations',
+    type: "citations",
     database: Array<{ citekey: string; displayText: string }>,
-  ): void
-  setCompletionDatabase(type: 'snippets', database: UserSnippet[]): void
-  setCompletionDatabase(type: 'phrases', database: PhraseDictionaryEntry[]): void
-  setCompletionDatabase(type: 'tex-macro-sources', database: TexMacroSource[]): void
+  ): void;
+  setCompletionDatabase(type: "snippets", database: UserSnippet[]): void;
+  setCompletionDatabase(type: "phrases", database: PhraseDictionaryEntry[]): void;
+  setCompletionDatabase(type: "tex-macro-sources", database: TexMacroSource[]): void;
   setCompletionDatabase(
-    type: 'files',
+    type: "files",
     database: Array<{ filename: string; displayName: string; id: string }>,
-  ): void
-  setCompletionDatabase(type: 'references', database: ReferenceCompletionEntry[]): void
+  ): void;
+  setCompletionDatabase(type: "references", database: ReferenceCompletionEntry[]): void;
   setCompletionDatabase(type: string, database: unknown): void {
     if (!Array.isArray(database)) {
-      throw new TypeError(`Completion database for ${type} must be an array.`)
+      throw new TypeError(`Completion database for ${type} must be an array.`);
     }
 
     switch (type) {
-      case 'tags':
-        if (_.isEqual(database, this.databaseCache.tags)) return
-        this.databaseCache.tags = database as TagRecord[]
+      case "tags":
+        if (_.isEqual(database, this.databaseCache.tags)) return;
+        this.databaseCache.tags = database as TagRecord[];
         this._instance.dispatch({
           effects: tagsUpdate.of(this.databaseCache.tags),
-        })
-        break
-      case 'citations':
-        if (_.isEqual(database, this.databaseCache.citations)) return
-        this.databaseCache.citations = database as Array<{ citekey: string; displayText: string }>
+        });
+        break;
+      case "citations":
+        if (_.isEqual(database, this.databaseCache.citations)) return;
+        this.databaseCache.citations = database as Array<{ citekey: string; displayText: string }>;
         this._instance.dispatch({
           effects: citekeyUpdate.of(this.databaseCache.citations),
-        })
-        break
-      case 'snippets':
-        if (_.isEqual(database, this.databaseCache.snippets)) return
-        this.databaseCache.snippets = database as UserSnippet[]
+        });
+        break;
+      case "snippets":
+        if (_.isEqual(database, this.databaseCache.snippets)) return;
+        this.databaseCache.snippets = database as UserSnippet[];
         this._instance.dispatch({
           effects: snippetsUpdate.of(this.databaseCache.snippets),
-        })
-        break
-      case 'phrases':
-        if (_.isEqual(database, this.databaseCache.phrases)) return
-        this.databaseCache.phrases = database as PhraseDictionaryEntry[]
+        });
+        break;
+      case "phrases":
+        if (_.isEqual(database, this.databaseCache.phrases)) return;
+        this.databaseCache.phrases = database as PhraseDictionaryEntry[];
         this._instance.dispatch({
           effects: phraseCompletionsUpdate.of(this.databaseCache.phrases),
-        })
-        break
-      case 'tex-macro-sources':
-        if (_.isEqual(database, this.databaseCache.texMacroSources)) return
-        this.databaseCache.texMacroSources = database as TexMacroSource[]
+        });
+        break;
+      case "tex-macro-sources":
+        if (_.isEqual(database, this.databaseCache.texMacroSources)) return;
+        this.databaseCache.texMacroSources = database as TexMacroSource[];
         this._instance.dispatch({
           effects: texMacroSourcesUpdate.of(this.databaseCache.texMacroSources),
-        })
-        forceLinting(this._instance)
-        break
-      case 'files':
-        if (_.isEqual(database, this.databaseCache.files)) return
+        });
+        forceLinting(this._instance);
+        break;
+      case "files":
+        if (_.isEqual(database, this.databaseCache.files)) return;
         this.databaseCache.files = database as Array<{
-          filename: string
-          displayName: string
-          id: string
-        }>
+          filename: string;
+          displayName: string;
+          id: string;
+        }>;
         this._instance.dispatch({
           effects: filesUpdate.of(this.databaseCache.files),
-        })
-        break
-      case 'references':
-        if (_.isEqual(database, this.databaseCache.references)) return
-        this.databaseCache.references = database as ReferenceCompletionEntry[]
+        });
+        break;
+      case "references":
+        if (_.isEqual(database, this.databaseCache.references)) return;
+        this.databaseCache.references = database as ReferenceCompletionEntry[];
         this._instance.dispatch({
           effects: referencesUpdate.of(this.databaseCache.references),
-        })
-        break
+        });
+        break;
     }
   }
 
-  setQuickTexCatalogue (catalogue: QuickTexCatalogue): void {
-    this.databaseCache.quickTex = catalogue
-    this._instance.dispatch({ effects: quickTexUpdate.of(catalogue) })
+  setQuickTexCatalogue(catalogue: QuickTexCatalogue): void {
+    this.databaseCache.quickTex = catalogue;
+    this._instance.dispatch({ effects: quickTexUpdate.of(catalogue) });
   }
 
   /**
@@ -1117,22 +1130,25 @@ export default class MarkdownEditor extends EventEmitter {
    * @param  {EditorWorkspaceReferences}   references   The resolved view
    * @param  {ReferenceCompletionEntry[]}  completions  The completion database
    */
-  setWorkspaceReferences(references: EditorWorkspaceReferences, completions: ReferenceCompletionEntry[]): void {
-    this.workspaceReferencesCache = references
-    const effects: Array<StateEffect<unknown>> = [workspaceReferencesUpdate.of(references)]
+  setWorkspaceReferences(
+    references: EditorWorkspaceReferences,
+    completions: ReferenceCompletionEntry[],
+  ): void {
+    this.workspaceReferencesCache = references;
+    const effects: Array<StateEffect<unknown>> = [workspaceReferencesUpdate.of(references)];
     if (!_.isEqual(completions, this.databaseCache.references)) {
-      this.databaseCache.references = completions
-      effects.push(referencesUpdate.of(completions))
+      this.databaseCache.references = completions;
+      effects.push(referencesUpdate.of(completions));
     }
-    this._instance.dispatch({ effects })
+    this._instance.dispatch({ effects });
   }
 
   /**
    * Draws the citations again when the citation database changed after the
    * editor drew them.
    */
-  syncCitationData (): void {
-    syncCitationData(this._instance)
+  syncCitationData(): void {
+    syncCitationData(this._instance);
   }
 
   /**
@@ -1140,24 +1156,24 @@ export default class MarkdownEditor extends EventEmitter {
    * wikilink target of the document, which the wikilink chips render.
    */
   setWikilinkResolutions(resolutions: WikilinkResolutions): void {
-    const shown = this._instance.state.field(wikilinkResolutionsField, false)
+    const shown = this._instance.state.field(wikilinkResolutionsField, false);
     if (shown === undefined || shown === null || !sameResolutions(shown, resolutions)) {
       this._instance.dispatch({
         effects: wikilinkResolutionsUpdate.of(resolutions),
-      })
+      });
     }
   }
 
   startReviewDiffSession(session: ReviewDiffSession): void {
     if (session.documentPath !== this.representedDocument) {
-      return
+      return;
     }
 
     // A frozen review's anchors index the text it was made in, not this
     // buffer. Its recovery actions live in the annotations panel.
     if (session.frozenText !== undefined) {
-      this.clearReviewDiffSession()
-      return
+      this.clearReviewDiffSession();
+      return;
     }
 
     // Never offer a decision over a renderer buffer that is not the
@@ -1166,29 +1182,29 @@ export default class MarkdownEditor extends EventEmitter {
     // on screen with its controls inert, so typing does not make every chunk
     // block vanish and reappear; a different review is taken down at once.
     if (this._instance.state.doc.toString() !== session.workingText) {
-      this.pendingReviewDiffSession = session
+      this.pendingReviewDiffSession = session;
       if (this.activeReviewDiffSession?.id === session.id) {
-        this._instance.dispatch({ effects: markReviewChunksStale.of(null) })
-        return
+        this._instance.dispatch({ effects: markReviewChunksStale.of(null) });
+        return;
       }
-      this.activeReviewDiffSession = null
-      this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) })
-      return
+      this.activeReviewDiffSession = null;
+      this._instance.dispatch({ effects: this.reviewDiffCompartment.reconfigure([]) });
+      return;
     }
-    const arriving = this.activeReviewDiffSession?.id !== session.id
-    this.pendingReviewDiffSession = null
-    this.activeReviewDiffSession = session
+    const arriving = this.activeReviewDiffSession?.id !== session.id;
+    this.pendingReviewDiffSession = null;
+    this.activeReviewDiffSession = session;
     // The review-diff-active styling scope rides in the extension itself
     // (an editorAttributes facet), so installing the compartment is what
     // styles the pane — nothing here to keep in sync.
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure(this.buildReviewExtension(session)),
-    })
+    });
     // Focus follows a review's arrival only. Every later broadcast of the
     // same review (a note, a reply, a keystroke elsewhere) would otherwise
     // pull focus out of the note or reply field the owner is typing in.
     if (arriving) {
-      this._instance.focus()
+      this._instance.focus();
     }
   }
 
@@ -1198,34 +1214,36 @@ export default class MarkdownEditor extends EventEmitter {
    * decide the same suggestions from the same broadcast, and the next
    * broadcast is the only thing that changes what is drawn here.
    */
-  private buildReviewExtension(session: ReviewDiffSession): ReturnType<typeof reviewChunksExtension> {
-    return reviewChunksExtension({ suggestions: session.suggestions })
+  private buildReviewExtension(
+    session: ReviewDiffSession,
+  ): ReturnType<typeof reviewChunksExtension> {
+    return reviewChunksExtension({ suggestions: session.suggestions });
   }
 
   private activatePendingReviewDiffSession(): void {
-    const session = this.pendingReviewDiffSession
+    const session = this.pendingReviewDiffSession;
     if (session !== null && this._instance.state.doc.toString() === session.workingText) {
-      this.startReviewDiffSession(session)
+      this.startReviewDiffSession(session);
     }
   }
 
   clearReviewDiffSession(sessionId?: string): void {
     if (this.activeReviewDiffSession === null) {
       if (sessionId === undefined || this.pendingReviewDiffSession?.id === sessionId) {
-        this.pendingReviewDiffSession = null
+        this.pendingReviewDiffSession = null;
       }
-      return
+      return;
     }
 
     if (sessionId !== undefined && this.activeReviewDiffSession.id !== sessionId) {
-      return
+      return;
     }
 
-    this.activeReviewDiffSession = null
-    this.pendingReviewDiffSession = null
+    this.activeReviewDiffSession = null;
+    this.pendingReviewDiffSession = null;
     this._instance.dispatch({
       effects: this.reviewDiffCompartment.reconfigure([]),
-    })
+    });
   }
 
   /**
@@ -1234,28 +1252,28 @@ export default class MarkdownEditor extends EventEmitter {
    * a plain effect dispatch, unlike the review compartment: there is nothing
    * to (re)configure, only new state to render from.
    */
-  setAnnotations (annotations: AnnotationSet): void {
-    this._instance.dispatch({ effects: setAnnotationSessionEffect.of(annotations) })
+  setAnnotations(annotations: AnnotationSet): void {
+    this._instance.dispatch({ effects: setAnnotationSessionEffect.of(annotations) });
   }
 
   /** Gives one annotation's marker and highlight the stronger "active" treatment; `null` clears it. */
-  setActiveAnnotation (annotationId: string | null): void {
-    this._instance.dispatch({ effects: setActiveAnnotationEffect.of(annotationId) })
+  setActiveAnnotation(annotationId: string | null): void {
+    this._instance.dispatch({ effects: setActiveAnnotationEffect.of(annotationId) });
   }
 
   /** Shows the transient drafting treatment over a range the creation composer is drafting. */
-  setAnnotationDraft (range: { from: number, to: number }): void {
-    this._instance.dispatch({ effects: setAnnotationDraftEffect.of(range) })
+  setAnnotationDraft(range: { from: number; to: number }): void {
+    this._instance.dispatch({ effects: setAnnotationDraftEffect.of(range) });
   }
 
   /** Clears the drafting treatment — the composer saved or was cancelled. */
-  clearAnnotationDraft (): void {
-    this._instance.dispatch({ effects: clearAnnotationDraftEffect.of(null) })
+  clearAnnotationDraft(): void {
+    this._instance.dispatch({ effects: clearAnnotationDraftEffect.of(null) });
   }
 
   /** Toggles whether resolved annotations render at all. */
-  setShowResolvedAnnotations (show: boolean): void {
-    this._instance.dispatch({ effects: showResolvedAnnotationsEffect.of(show) })
+  setShowResolvedAnnotations(show: boolean): void {
+    this._instance.dispatch({ effects: showResolvedAnnotationsEffect.of(show) });
   }
 
   /* * * * * * * * * * * *
@@ -1267,8 +1285,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return {Array} An array containing objects with all headings
    */
-  get tableOfContents (): ToCEntry[]|undefined {
-    return this._instance.state.field(tocField, false)
+  get tableOfContents(): ToCEntry[] | undefined {
+    return this._instance.state.field(tocField, false);
   }
 
   /**
@@ -1276,14 +1294,14 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Object}  An object containing, e.g., words, chars, selections.
    */
-  get documentInfo (): DocumentInfo {
+  get documentInfo(): DocumentInfo {
     // First, we need the main selection's main offset in the document and
     // compute the correct line number for that offset, in order to arrive at
     // a cursor position.
-    const mainOffset = this._instance.state.selection.main.head
-    const line = this._instance.state.doc.lineAt(mainOffset)
-    const locale = this._instance.state.field(configField).appLang
-    const project = this._instance.state.field(projectInfoField, false)
+    const mainOffset = this._instance.state.selection.main.head;
+    const line = this._instance.state.doc.lineAt(mainOffset);
+    const locale = this._instance.state.field(configField).appLang;
+    const project = this._instance.state.field(projectInfoField, false);
     return {
       words: this.wordCount ?? 0,
       chars: this.charCount ?? 0,
@@ -1294,15 +1312,15 @@ export default class MarkdownEditor extends EventEmitter {
       languageTool: this.languageToolStatus,
       project: project === null || project === undefined ? undefined : project,
       selections: this._instance.state.selection.ranges
-      // Remove cursor-only positions
+        // Remove cursor-only positions
         .filter((sel) => !sel.empty)
         // Then map to user readable ranges
         .map((sel) => {
           // Analogous to how we determine the cursor position we do it here for
           // each selection present.
-          const anchorLine = this._instance.state.doc.lineAt(sel.anchor)
-          const headLine = this._instance.state.doc.lineAt(sel.head)
-          const { words, chars } = countRange(this._instance.state, locale, sel.from, sel.to)
+          const anchorLine = this._instance.state.doc.lineAt(sel.anchor);
+          const headLine = this._instance.state.doc.lineAt(sel.head);
+          const { words, chars } = countRange(this._instance.state, locale, sel.from, sel.to);
           return {
             anchor: {
               line: anchorLine.number,
@@ -1311,9 +1329,9 @@ export default class MarkdownEditor extends EventEmitter {
             head: { line: headLine.number, ch: sel.to - headLine.from + 1 },
             words,
             chars,
-          }
+          };
         }),
-    }
+    };
   }
 
   /**
@@ -1321,8 +1339,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Boolean}  True if typewriter mode is active
    */
-  get hasTypewriterMode (): boolean {
-    return this.config.typewriterMode
+  get hasTypewriterMode(): boolean {
+    return this.config.typewriterMode;
   }
 
   /**
@@ -1330,11 +1348,11 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {Boolean}  shouldBeTypewriter  True or False
    */
-  set hasTypewriterMode (shouldBeTypewriter: boolean) {
-    this.config.typewriterMode = shouldBeTypewriter
+  set hasTypewriterMode(shouldBeTypewriter: boolean) {
+    this.config.typewriterMode = shouldBeTypewriter;
     this._instance.dispatch({
       effects: configUpdateEffect.of({ typewriterMode: shouldBeTypewriter }),
-    })
+    });
   }
 
   /**
@@ -1342,8 +1360,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {boolean}  True or false
    */
-  get distractionFree (): boolean {
-    return this._instance.state.field(configField, false)?.distractionFree ?? false
+  get distractionFree(): boolean {
+    return this._instance.state.field(configField, false)?.distractionFree ?? false;
   }
 
   /**
@@ -1351,9 +1369,11 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {boolean}  shouldBeFullscreen  Whether the editor should be in distraction free
    */
-  set distractionFree (shouldBeFullscreen: boolean) {
-    this.config.distractionFree = shouldBeFullscreen
-    this._instance.dispatch({ effects: configUpdateEffect.of({ distractionFree: shouldBeFullscreen }) })
+  set distractionFree(shouldBeFullscreen: boolean) {
+    this.config.distractionFree = shouldBeFullscreen;
+    this._instance.dispatch({
+      effects: configUpdateEffect.of({ distractionFree: shouldBeFullscreen }),
+    });
   }
 
   /**
@@ -1361,8 +1381,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {boolean}  True if the readability mode is active
    */
-  get readabilityMode (): boolean {
-    return this._instance.state.field(configField).readabilityMode
+  get readabilityMode(): boolean {
+    return this._instance.state.field(configField).readabilityMode;
   }
 
   /**
@@ -1370,30 +1390,33 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {boolean}  shouldBeReadability  Whether or not the mode should be active
    */
-  set readabilityMode (shouldBeReadability: boolean) {
-    this.config.readabilityMode = shouldBeReadability
-    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) })
+  set readabilityMode(shouldBeReadability: boolean) {
+    this.config.readabilityMode = shouldBeReadability;
+    this._instance.dispatch({ effects: configUpdateEffect.of(this.config) });
   }
 
   /** What the LanguageTool linter is doing right now, from its state field. */
-  get languageToolStatus (): LanguageToolStatus {
-    const state = this._instance.state
-    const ltState = state.field(languageToolState, false)
+  get languageToolStatus(): LanguageToolStatus {
+    const state = this._instance.state;
+    const ltState = state.field(languageToolState, false);
     if (!state.field(configField).lintLanguageTool || ltState === undefined) {
-      return { state: 'off' }
+      return { state: "off" };
     }
     if (ltState.running) {
-      return { state: 'running' }
+      return { state: "running" };
     }
     if (ltState.lastError !== undefined) {
-      return { state: 'error', message: ltState.lastError }
+      return { state: "error", message: ltState.lastError };
     }
     return {
-      state: 'idle',
-      language: ltState.overrideLanguage === 'auto' ? ltState.lastDetectedLanguage : ltState.overrideLanguage,
+      state: "idle",
+      language:
+        ltState.overrideLanguage === "auto"
+          ? ltState.lastDetectedLanguage
+          : ltState.overrideLanguage,
       overrideLanguage: ltState.overrideLanguage,
-      supportedLanguages: ltState.supportedLanguages
-    }
+      supportedLanguages: ltState.supportedLanguages,
+    };
   }
 
   /**
@@ -1402,9 +1425,9 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @param   {string}  language  A language code, or 'auto'
    */
-  setLanguageToolLanguage (language: string): void {
-    this._instance.dispatch({ effects: updateLTState.of({ overrideLanguage: language }) })
-    forceLinting(this._instance)
+  setLanguageToolLanguage(language: string): void {
+    this._instance.dispatch({ effects: updateLTState.of({ overrideLanguage: language }) });
+    forceLinting(this._instance);
   }
 
   /**
@@ -1412,8 +1435,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {String}  The editor contents
    */
-  get value (): string {
-    return [...this._instance.state.doc.iterLines()].join('\n')
+  get value(): string {
+    return [...this._instance.state.doc.iterLines()].join("\n");
   }
 
   /**
@@ -1428,7 +1451,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {Promise<FormatResult>}             The typed format result.
    */
   async runFormatter(formatter: MarkdownFormatter): Promise<FormatResult> {
-    return formatDocument(this._instance, formatter)
+    return formatDocument(this._instance, formatter);
   }
 
   /**
@@ -1444,7 +1467,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @return  {Promise<void>}
    */
   async whenSynced(timeout = 2000): Promise<void> {
-    await whenAuthoritySynced(() => this._instance.state, timeout)
+    await whenAuthoritySynced(() => this._instance.state, timeout);
   }
 
   /**
@@ -1452,8 +1475,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {HTMLElement}The editor wrapper
    */
-  get dom (): HTMLElement {
-    return this._instance.dom
+  get dom(): HTMLElement {
+    return this._instance.dom;
   }
 
   /**
@@ -1461,8 +1484,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Number}  The word count
    */
-  get wordCount (): number|undefined {
-    return this._instance.state.field(countField, false)?.words
+  get wordCount(): number | undefined {
+    return this._instance.state.field(countField, false)?.words;
   }
 
   /**
@@ -1470,8 +1493,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {Number}  The number of characters
    */
-  get charCount (): number|undefined {
-    return this._instance.state.field(countField, false)?.chars
+  get charCount(): number | undefined {
+    return this._instance.state.field(countField, false)?.chars;
   }
 
   /**
@@ -1479,8 +1502,8 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {EditorView}  The instance
    */
-  get instance (): EditorView {
-    return this._instance
+  get instance(): EditorView {
+    return this._instance;
   }
 
   /**
@@ -1488,7 +1511,7 @@ export default class MarkdownEditor extends EventEmitter {
    *
    * @return  {string}  the absolute path to the document.
    */
-  get documentPath (): string {
-    return this.representedDocument
+  get documentPath(): string {
+    return this.representedDocument;
   }
 }

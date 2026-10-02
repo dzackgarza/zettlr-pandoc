@@ -12,10 +12,10 @@
  * END HEADER
  */
 
-import type { OpenDocument } from '@dts/common/documents'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import { useConfigStore, useWorkspaceStore } from 'source/pinia'
-import type { AnyDescriptor, FileNameDisplay } from 'source/types/common/fsal'
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import type { OpenDocument } from "@dts/common/documents";
+import { useConfigStore, useWorkspaceStore } from "source/pinia";
+import type { AnyDescriptor, FileNameDisplay } from "source/types/common/fsal";
 
 /**
  * Returns an appropriate display title for the provided doc. Doc can be an
@@ -34,37 +34,38 @@ import type { AnyDescriptor, FileNameDisplay } from 'source/types/common/fsal'
  *
  * @return  {string}                                  The display title
  */
-export default function getDocumentTitle (
-  doc: OpenDocument|AnyDescriptor|string,
-  displayOverride?: FileNameDisplay
+export default function getDocumentTitle(
+  doc: OpenDocument | AnyDescriptor | string,
+  displayOverride?: FileNameDisplay,
 ): string {
-  const configStore = useConfigStore()
-  const workspaceStore = useWorkspaceStore()
-  const config = configStore.config
+  const configStore = useConfigStore();
+  const workspaceStore = useWorkspaceStore();
+  const config = configStore.config;
 
-  const descriptor = typeof doc === 'string'
-    ? workspaceStore.descriptorMap.get(doc)
-    : workspaceStore.descriptorMap.get(doc.path)
+  const descriptor =
+    typeof doc === "string"
+      ? workspaceStore.descriptorMap.get(doc)
+      : workspaceStore.descriptorMap.get(doc.path);
 
   if (descriptor === undefined) {
-    return typeof doc === 'string' ? pathBasename(doc) : pathBasename(doc.path)
+    return typeof doc === "string" ? pathBasename(doc) : pathBasename(doc.path);
   }
 
-  const fileNameDisplay = displayOverride ?? config.fileNameDisplay
-  const useTitle = fileNameDisplay.includes('title')
-  const useH1 = fileNameDisplay.includes('heading')
-  const displayMdExtensions = config.display.markdownFileExtensions
+  const fileNameDisplay = displayOverride ?? config.fileNameDisplay;
+  const useTitle = fileNameDisplay.includes("title");
+  const useH1 = fileNameDisplay.includes("heading");
+  const displayMdExtensions = config.display.markdownFileExtensions;
 
-  if (descriptor.type !== 'file') {
-    return descriptor.name
+  if (descriptor.type !== "file") {
+    return descriptor.name;
   } else if (useTitle && descriptor.yamlTitle !== undefined) {
-    return descriptor.yamlTitle
+    return descriptor.yamlTitle;
   } else if (useH1 && descriptor.firstHeading != null) {
-    return descriptor.firstHeading
+    return descriptor.firstHeading;
   } else if (displayMdExtensions) {
-    return descriptor.name
+    return descriptor.name;
   } else {
-    return descriptor.name.replace(descriptor.ext, '')
+    return descriptor.name.replace(descriptor.ext, "");
   }
 }
 
@@ -74,41 +75,39 @@ export default function getDocumentTitle (
  *
  * YAML title -> first authored heading -> first prose sentence -> filename.
  */
-export function getSemanticDocumentTitle (
-  doc: OpenDocument|AnyDescriptor|string
-): string {
-  const workspaceStore = useWorkspaceStore()
-  const descriptor = typeof doc === 'string'
-    ? workspaceStore.descriptorMap.get(doc)
-    : workspaceStore.descriptorMap.get(doc.path)
+export function getSemanticDocumentTitle(doc: OpenDocument | AnyDescriptor | string): string {
+  const workspaceStore = useWorkspaceStore();
+  const descriptor =
+    typeof doc === "string"
+      ? workspaceStore.descriptorMap.get(doc)
+      : workspaceStore.descriptorMap.get(doc.path);
 
   if (descriptor === undefined) {
-    return typeof doc === 'string' ? pathBasename(doc) : pathBasename(doc.path)
+    return typeof doc === "string" ? pathBasename(doc) : pathBasename(doc.path);
   }
 
-  return getSemanticDescriptorTitle(descriptor)
+  return getSemanticDescriptorTitle(descriptor);
 }
 
-export function getSemanticDescriptorTitle (descriptor: AnyDescriptor): string {
-
-  if (descriptor.type !== 'file') {
-    return descriptor.name
+export function getSemanticDescriptorTitle(descriptor: AnyDescriptor): string {
+  if (descriptor.type !== "file") {
+    return descriptor.name;
   }
 
-  const yamlTitle = descriptor.yamlTitle?.trim()
-  if (yamlTitle !== undefined && yamlTitle !== '') {
-    return yamlTitle
+  const yamlTitle = descriptor.yamlTitle?.trim();
+  if (yamlTitle !== undefined && yamlTitle !== "") {
+    return yamlTitle;
   }
 
-  const firstHeading = descriptor.firstHeading?.trim()
-  if (firstHeading !== undefined && firstHeading !== '') {
-    return firstHeading
+  const firstHeading = descriptor.firstHeading?.trim();
+  if (firstHeading !== undefined && firstHeading !== "") {
+    return firstHeading;
   }
 
-  const firstSentence = descriptor.firstSentence?.trim()
-  if (firstSentence !== undefined && firstSentence !== '') {
-    return firstSentence
+  const firstSentence = descriptor.firstSentence?.trim();
+  if (firstSentence !== undefined && firstSentence !== "") {
+    return firstSentence;
   }
 
-  return descriptor.name.replace(descriptor.ext, '')
+  return descriptor.name.replace(descriptor.ext, "");
 }

@@ -155,255 +155,292 @@
  * END HEADER
  */
 
-import { computed, ref, watch } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import { isInsideRoot, pathBasename, pathDirname } from '@common/util/renderer-path-polyfill'
-import type { MDFileDescriptor, ProjectNavigationItem } from '@dts/common/fsal'
-import { useWorkspaceStore } from 'source/pinia'
-import { buildQuartoBookOutline } from './quarto-book-outline'
-import { projectRelativePath } from '@common/util/explorer-ordering'
-import type { QuartoBookEdit, QuartoChapterPlacement } from 'source/app/util/quarto-book-editor'
-import { reportError } from '@common/util/error-reporting'
-import showToast from '@common/util/show-toast'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { projectRelativePath } from "@common/util/explorer-ordering";
+import { isInsideRoot, pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import type { MDFileDescriptor, ProjectNavigationItem } from "@dts/common/fsal";
+import type { QuartoBookEdit, QuartoChapterPlacement } from "source/app/util/quarto-book-editor";
+import { useWorkspaceStore } from "source/pinia";
+import { computed, ref, watch } from "vue";
+import { buildQuartoBookOutline } from "./quarto-book-outline";
 
-const workspaceStore = useWorkspaceStore()
+const workspaceStore = useWorkspaceStore();
 const props = defineProps<{
-  rootPath: string
-  navigation: ProjectNavigationItem[]
-  activeItem?: string
-}>()
-const emit = defineEmits<(event: 'jump', target: { filePath: string, line: number }) => void>()
+  rootPath: string;
+  navigation: ProjectNavigationItem[];
+  activeItem?: string;
+}>();
+const emit = defineEmits<(event: "jump", target: { filePath: string; line: number }) => void>();
 
-const previousLabel = trans('Previous')
-const nextLabel = trans('Next')
-const manageLabel = trans('Manage')
-const addChapterLabel = trans('Add to book')
-const newChapterLabel = trans('New chapter')
-const addPartLabel = trans('Add part')
-const chooseChapterLabel = trans('Choose a chapter…')
-const noOmittedLabel = trans('No omitted documents')
-const newChapterPlaceholder = trans('New chapter filename')
-const afterCurrentLabel = trans('After current')
-const endCurrentPartLabel = trans('End of current part')
-const endBookLabel = trans('End of book')
-const partTitlePlaceholder = trans('Part title')
-const dragHint = trans('Drag chapters to reorder them. Drop a chapter on a part heading to move it into that part, or on the end target to move it to top level.')
-const moveToBookEndLabel = trans('Move to end of book')
-const showAuthoringControls = ref(false)
-const omittedChapter = ref('')
-const newChapterName = ref('')
-const newChapterPlacement = ref<'after-active'|'part-end'|'book-end'>('after-active')
-const newPartTitle = ref('')
-const partChapter = ref('')
-const draggedChapter = ref<string>()
+const previousLabel = trans("Previous");
+const nextLabel = trans("Next");
+const manageLabel = trans("Manage");
+const addChapterLabel = trans("Add to book");
+const newChapterLabel = trans("New chapter");
+const addPartLabel = trans("Add part");
+const chooseChapterLabel = trans("Choose a chapter…");
+const noOmittedLabel = trans("No omitted documents");
+const newChapterPlaceholder = trans("New chapter filename");
+const afterCurrentLabel = trans("After current");
+const endCurrentPartLabel = trans("End of current part");
+const endBookLabel = trans("End of book");
+const partTitlePlaceholder = trans("Part title");
+const dragHint = trans(
+  "Drag chapters to reorder them. Drop a chapter on a part heading to move it into that part, or on the end target to move it to top level.",
+);
+const moveToBookEndLabel = trans("Move to end of book");
+const showAuthoringControls = ref(false);
+const omittedChapter = ref("");
+const newChapterName = ref("");
+const newChapterPlacement = ref<"after-active" | "part-end" | "book-end">("after-active");
+const newPartTitle = ref("");
+const partChapter = ref("");
+const draggedChapter = ref<string>();
 
-const outline = computed(() => buildQuartoBookOutline(props.rootPath, props.navigation, filePath => {
-  const descriptor = workspaceStore.descriptorMap.get(filePath)
-  if (descriptor?.type === 'file') {
-    return descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name
-  }
-  return pathBasename(filePath)
-}))
+const outline = computed(() =>
+  buildQuartoBookOutline(props.rootPath, props.navigation, (filePath) => {
+    const descriptor = workspaceStore.descriptorMap.get(filePath);
+    if (descriptor?.type === "file") {
+      return descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name;
+    }
+    return pathBasename(filePath);
+  }),
+);
 
-const activeIndex = computed(() => props.activeItem === undefined
-  ? -1
-  : outline.value.orderedPaths.indexOf(props.activeItem))
-const previousPath = computed(() => activeIndex.value > 0
-  ? outline.value.orderedPaths[activeIndex.value - 1]
-  : undefined)
-const nextPath = computed(() => activeIndex.value >= 0 && activeIndex.value < outline.value.orderedPaths.length - 1
-  ? outline.value.orderedPaths[activeIndex.value + 1]
-  : undefined)
-const currentPosition = computed(() => activeIndex.value < 0
-  ? ''
-  : `${activeIndex.value + 1} / ${outline.value.orderedPaths.length}`)
+const activeIndex = computed(() =>
+  props.activeItem === undefined ? -1 : outline.value.orderedPaths.indexOf(props.activeItem),
+);
+const previousPath = computed(() =>
+  activeIndex.value > 0 ? outline.value.orderedPaths[activeIndex.value - 1] : undefined,
+);
+const nextPath = computed(() =>
+  activeIndex.value >= 0 && activeIndex.value < outline.value.orderedPaths.length - 1
+    ? outline.value.orderedPaths[activeIndex.value + 1]
+    : undefined,
+);
+const currentPosition = computed(() =>
+  activeIndex.value < 0 ? "" : `${activeIndex.value + 1} / ${outline.value.orderedPaths.length}`,
+);
 
 const projectRoot = computed(() => {
-  const descriptor = workspaceStore.descriptorMap.get(props.rootPath)
-  return descriptor?.type === 'directory' ? descriptor : undefined
-})
+  const descriptor = workspaceStore.descriptorMap.get(props.rootPath);
+  return descriptor?.type === "directory" ? descriptor : undefined;
+});
 
 const project = computed(() => {
-  const settings = projectRoot.value?.settings.project
-  return settings?.manifest.kind === 'quarto' ? settings : undefined
-})
+  const settings = projectRoot.value?.settings.project;
+  return settings?.manifest.kind === "quarto" ? settings : undefined;
+});
 
 interface ChapterCandidate {
-  path: string
-  relativePath: string
-  label: string
+  path: string;
+  relativePath: string;
+  label: string;
 }
 
 const allMarkdownCandidates = computed<ChapterCandidate[]>(() => {
   return [...workspaceStore.descriptorMap.values()]
     .filter((descriptor): descriptor is MDFileDescriptor => {
-      return descriptor.type === 'file' && isInsideRoot(descriptor.path, props.rootPath)
+      return descriptor.type === "file" && isInsideRoot(descriptor.path, props.rootPath);
     })
-    .map(descriptor => ({
+    .map((descriptor) => ({
       path: descriptor.path,
       relativePath: projectRelativePath(descriptor.path, props.rootPath),
-      label: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name
+      label: descriptor.yamlTitle ?? descriptor.firstHeading ?? descriptor.name,
     }))
-    .sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }))
-})
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }));
+});
 
 const omittedCandidates = computed(() => {
-  const included = new Set(project.value?.files ?? [])
-  return allMarkdownCandidates.value.filter(candidate => !included.has(candidate.relativePath))
-})
+  const included = new Set(project.value?.files ?? []);
+  return allMarkdownCandidates.value.filter((candidate) => !included.has(candidate.relativePath));
+});
 
 const activeRelativePath = computed(() => {
-  const active = props.activeItem
+  const active = props.activeItem;
   return active !== undefined && isInsideRoot(active, props.rootPath)
     ? projectRelativePath(active, props.rootPath)
-    : undefined
-})
+    : undefined;
+});
 
 const currentPartIndex = computed(() => {
-  const active = activeRelativePath.value
-  if (active === undefined) return -1
-  return props.navigation.findIndex(item => item.kind === 'part' && item.chapters.includes(active))
-})
+  const active = activeRelativePath.value;
+  if (active === undefined) return -1;
+  return props.navigation.findIndex(
+    (item) => item.kind === "part" && item.chapters.includes(active),
+  );
+});
 
-watch([ activeRelativePath, currentPartIndex, project ], () => {
-  const active = activeRelativePath.value
-  if (newChapterPlacement.value === 'after-active' && (active === undefined || !project.value?.files.includes(active))) {
-    newChapterPlacement.value = currentPartIndex.value >= 0 ? 'part-end' : 'book-end'
-  } else if (newChapterPlacement.value === 'part-end' && currentPartIndex.value < 0) {
-    newChapterPlacement.value = active !== undefined && project.value?.files.includes(active) ? 'after-active' : 'book-end'
-  }
-}, { immediate: true })
+watch(
+  [activeRelativePath, currentPartIndex, project],
+  () => {
+    const active = activeRelativePath.value;
+    if (
+      newChapterPlacement.value === "after-active" &&
+      (active === undefined || !project.value?.files.includes(active))
+    ) {
+      newChapterPlacement.value = currentPartIndex.value >= 0 ? "part-end" : "book-end";
+    } else if (newChapterPlacement.value === "part-end" && currentPartIndex.value < 0) {
+      newChapterPlacement.value =
+        active !== undefined && project.value?.files.includes(active) ? "after-active" : "book-end";
+    }
+  },
+  { immediate: true },
+);
 
-watch(omittedCandidates, candidates => {
-  if (!candidates.some(candidate => candidate.relativePath === omittedChapter.value)) {
-    omittedChapter.value = candidates[0]?.relativePath ?? ''
-  }
-}, { immediate: true })
+watch(
+  omittedCandidates,
+  (candidates) => {
+    if (!candidates.some((candidate) => candidate.relativePath === omittedChapter.value)) {
+      omittedChapter.value = candidates[0]?.relativePath ?? "";
+    }
+  },
+  { immediate: true },
+);
 
-watch(allMarkdownCandidates, candidates => {
-  if (!candidates.some(candidate => candidate.relativePath === partChapter.value)) {
-    const active = activeRelativePath.value
-    partChapter.value = active !== undefined && candidates.some(candidate => candidate.relativePath === active)
-      ? active
-      : candidates[0]?.relativePath ?? ''
-  }
-}, { immediate: true })
+watch(
+  allMarkdownCandidates,
+  (candidates) => {
+    if (!candidates.some((candidate) => candidate.relativePath === partChapter.value)) {
+      const active = activeRelativePath.value;
+      partChapter.value =
+        active !== undefined && candidates.some((candidate) => candidate.relativePath === active)
+          ? active
+          : (candidates[0]?.relativePath ?? "");
+    }
+  },
+  { immediate: true },
+);
 
-function openPath (filePath: string|undefined, line = 1): void {
+function openPath(filePath: string | undefined, line = 1): void {
   if (filePath === undefined) {
-    return
+    return;
   }
-  emit('jump', { filePath, line })
+  emit("jump", { filePath, line });
 }
 
-function placementAfterActive (): QuartoChapterPlacement {
-  const active = activeRelativePath.value
+function placementAfterActive(): QuartoChapterPlacement {
+  const active = activeRelativePath.value;
   return active !== undefined && project.value?.files.includes(active)
-    ? { kind: 'after-chapter', chapterPath: active }
-    : { kind: 'book-end' }
+    ? { kind: "after-chapter", chapterPath: active }
+    : { kind: "book-end" };
 }
 
-function placementForNewChapter (): QuartoChapterPlacement {
-  if (newChapterPlacement.value === 'part-end' && currentPartIndex.value >= 0) {
-    return { kind: 'part-end', partIndex: currentPartIndex.value }
+function placementForNewChapter(): QuartoChapterPlacement {
+  if (newChapterPlacement.value === "part-end" && currentPartIndex.value >= 0) {
+    return { kind: "part-end", partIndex: currentPartIndex.value };
   }
-  if (newChapterPlacement.value === 'after-active') {
-    return placementAfterActive()
+  if (newChapterPlacement.value === "after-active") {
+    return placementAfterActive();
   }
-  return { kind: 'book-end' }
+  return { kind: "book-end" };
 }
 
-async function editBook (edit: QuartoBookEdit): Promise<void> {
+async function editBook(edit: QuartoBookEdit): Promise<void> {
   try {
     // The refreshed book reaches this view as the root directory's FSAL change event.
-    await window.ipc.invoke('application', {
-      command: 'quarto-book-edit',
-      payload: { rootPath: props.rootPath, edit }
-    })
+    await window.ipc.invoke("application", {
+      command: "quarto-book-edit",
+      payload: { rootPath: props.rootPath, edit },
+    });
   } catch (err) {
-    reportError('Could not edit the Quarto book', err)
+    reportError("Could not edit the Quarto book", err);
     showToast(
-      trans('Could not edit the Quarto book: %s', err instanceof Error ? err.message : String(err)),
-      'error'
-    )
+      trans("Could not edit the Quarto book: %s", err instanceof Error ? err.message : String(err)),
+      "error",
+    );
   }
 }
 
-async function addSelectedChapter (): Promise<void> {
-  if (omittedChapter.value === '') return
-  const chapterPath = omittedChapter.value
-  await editBook({ kind: 'add-chapter', chapterPath, placement: placementAfterActive() })
-  omittedChapter.value = ''
+async function addSelectedChapter(): Promise<void> {
+  if (omittedChapter.value === "") return;
+  const chapterPath = omittedChapter.value;
+  await editBook({ kind: "add-chapter", chapterPath, placement: placementAfterActive() });
+  omittedChapter.value = "";
 }
 
-async function createChapter (): Promise<void> {
-  const name = newChapterName.value.trim()
-  if (name === '') return
-  const active = props.activeItem
-  const placement = placementForNewChapter()
-  const targetDirectory = active !== undefined && isInsideRoot(active, props.rootPath)
-    ? pathDirname(active)
-    : props.rootPath
+async function createChapter(): Promise<void> {
+  const name = newChapterName.value.trim();
+  if (name === "") return;
+  const active = props.activeItem;
+  const placement = placementForNewChapter();
+  const targetDirectory =
+    active !== undefined && isInsideRoot(active, props.rootPath)
+      ? pathDirname(active)
+      : props.rootPath;
   try {
-    const created = await window.ipc.invoke('application', {
-      command: 'file-new',
-      payload: { path: targetDirectory, name }
-    })
-    if (created === undefined) return
+    const created = await window.ipc.invoke("application", {
+      command: "file-new",
+      payload: { path: targetDirectory, name },
+    });
+    if (created === undefined) return;
     await editBook({
-      kind: 'add-chapter',
+      kind: "add-chapter",
       chapterPath: projectRelativePath(created, props.rootPath),
-      placement
-    })
-    newChapterName.value = ''
+      placement,
+    });
+    newChapterName.value = "";
   } catch (err) {
-    reportError('Could not create a Quarto chapter', err)
+    reportError("Could not create a Quarto chapter", err);
     showToast(
-      trans('Could not create a Quarto chapter: %s', err instanceof Error ? err.message : String(err)),
-      'error'
-    )
+      trans(
+        "Could not create a Quarto chapter: %s",
+        err instanceof Error ? err.message : String(err),
+      ),
+      "error",
+    );
   }
 }
 
-async function addPart (): Promise<void> {
-  const title = newPartTitle.value.trim()
-  if (title === '' || partChapter.value === '') return
-  await editBook({ kind: 'add-part', title, chapterPath: partChapter.value })
-  newPartTitle.value = ''
+async function addPart(): Promise<void> {
+  const title = newPartTitle.value.trim();
+  if (title === "" || partChapter.value === "") return;
+  await editBook({ kind: "add-part", title, chapterPath: partChapter.value });
+  newPartTitle.value = "";
 }
 
-function beginChapterDrag (filePath: string, event: DragEvent): void {
-  draggedChapter.value = projectRelativePath(filePath, props.rootPath)
+function beginChapterDrag(filePath: string, event: DragEvent): void {
+  draggedChapter.value = projectRelativePath(filePath, props.rootPath);
   if (event.dataTransfer !== null) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/x-zettlr-quarto-chapter', draggedChapter.value)
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/x-zettlr-quarto-chapter", draggedChapter.value);
   }
 }
 
-function endChapterDrag (): void {
-  draggedChapter.value = undefined
+function endChapterDrag(): void {
+  draggedChapter.value = undefined;
 }
 
-async function dropBefore (filePath: string): Promise<void> {
-  const source = draggedChapter.value
-  const target = projectRelativePath(filePath, props.rootPath)
-  if (source === undefined || source === target) return
-  await editBook({ kind: 'move-chapter', chapterPath: source, placement: { kind: 'before-chapter', chapterPath: target } })
-  endChapterDrag()
+async function dropBefore(filePath: string): Promise<void> {
+  const source = draggedChapter.value;
+  const target = projectRelativePath(filePath, props.rootPath);
+  if (source === undefined || source === target) return;
+  await editBook({
+    kind: "move-chapter",
+    chapterPath: source,
+    placement: { kind: "before-chapter", chapterPath: target },
+  });
+  endChapterDrag();
 }
 
-async function dropIntoPart (partIndex: number): Promise<void> {
-  const source = draggedChapter.value
-  if (source === undefined) return
-  await editBook({ kind: 'move-chapter', chapterPath: source, placement: { kind: 'part-end', partIndex } })
-  endChapterDrag()
+async function dropIntoPart(partIndex: number): Promise<void> {
+  const source = draggedChapter.value;
+  if (source === undefined) return;
+  await editBook({
+    kind: "move-chapter",
+    chapterPath: source,
+    placement: { kind: "part-end", partIndex },
+  });
+  endChapterDrag();
 }
 
-async function dropAtBookEnd (): Promise<void> {
-  const source = draggedChapter.value
-  if (source === undefined) return
-  await editBook({ kind: 'move-chapter', chapterPath: source, placement: { kind: 'book-end' } })
-  endChapterDrag()
+async function dropAtBookEnd(): Promise<void> {
+  const source = draggedChapter.value;
+  if (source === undefined) return;
+  await editBook({ kind: "move-chapter", chapterPath: source, placement: { kind: "book-end" } });
+  endChapterDrag();
 }
 </script>
 

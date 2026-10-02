@@ -47,28 +47,33 @@
  * END HEADER
  */
 
-import { ComboboxItem } from 'reka-ui'
-import { computed } from 'vue'
-import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
-import { explodeAccelerator } from '@common/util/shortcuts'
+import { explodeAccelerator } from "@common/util/shortcuts";
+import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
+import { ComboboxItem } from "reka-ui";
+import { computed } from "vue";
 
-const props = withDefaults(defineProps<{
-  /** The row's stable identity within its list. */
-  value: string
-  label: string
-  breadcrumb?: readonly string[]
-  /** An Electron accelerator, rendered as a shortcut chip. */
-  accelerator?: string
-  disabled?: boolean
-  checked?: boolean
-}>(), {
-  breadcrumb: () => [],
-  accelerator: undefined,
-  disabled: false,
-  checked: undefined
-})
+const props = withDefaults(
+  defineProps<{
+    /** The row's stable identity within its list. */
+    value: string;
+    label: string;
+    breadcrumb?: readonly string[];
+    /** An Electron accelerator, rendered as a shortcut chip. */
+    accelerator?: string;
+    disabled?: boolean;
+    checked?: boolean;
+  }>(),
+  {
+    breadcrumb: () => [],
+    accelerator: undefined,
+    disabled: false,
+    checked: undefined,
+  },
+);
 
-const emit = defineEmits<(e: 'run') => void>()
+const emit = defineEmits<(e: "run") => void>();
 
-const shortcut = computed(() => props.accelerator === undefined ? undefined : explodeAccelerator(props.accelerator))
+const shortcut = computed(() =>
+  props.accelerator === undefined ? undefined : explodeAccelerator(props.accelerator),
+);
 </script>

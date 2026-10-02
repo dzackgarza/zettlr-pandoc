@@ -27,9 +27,9 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import showToast from '@common/util/show-toast'
-import { reportError } from '@common/util/error-reporting'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import showToast from "@common/util/show-toast";
 
 /**
  * Records a renderer failure in the main-process LogProvider. The log IPC is
@@ -37,14 +37,12 @@ import { reportError } from '@common/util/error-reporting'
  * independent diagnostic surface rather than recursively trying to log a log
  * failure.
  */
-export function recordRendererError (message: string, err: unknown): void {
-  reportError(message, err)
+export function recordRendererError(message: string, err: unknown): void {
+  reportError(message, err);
 }
 
 /** The typed outcome of a recoverable operation. */
-export type RecoverableOutcome<T> =
-  | { status: 'ok', value: T }
-  | { status: 'failed' }
+export type RecoverableOutcome<T> = { status: "ok"; value: T } | { status: "failed" };
 
 /**
  * Runs a recoverable operation, surfacing any rejection as one closable
@@ -58,20 +56,20 @@ export type RecoverableOutcome<T> =
  *
  * @return  {Promise<RecoverableOutcome<T>>}    The typed outcome
  */
-export async function runRecoverably<T> (
+export async function runRecoverably<T>(
   operation: () => Promise<T>,
-  operationLabel: string
+  operationLabel: string,
 ): Promise<RecoverableOutcome<T>> {
   return await operation()
-    .then((value): RecoverableOutcome<T> => ({ status: 'ok', value }))
+    .then((value): RecoverableOutcome<T> => ({ status: "ok", value }))
     .catch((err): RecoverableOutcome<T> => {
       // Exactly one closable error toast naming the failed operation, plus
       // the typed outcome. The rejection never escapes; the console line
       // keeps the raw diagnostic available.
-      const diagnostic = `Recoverable renderer operation failed (${operationLabel})`
-      reportError(diagnostic, err)
-      const detail = err instanceof Error ? err.message : String(err)
-      showToast(trans('%s failed: %s', operationLabel, detail), 'error')
-      return { status: 'failed' }
-    })
+      const diagnostic = `Recoverable renderer operation failed (${operationLabel})`;
+      reportError(diagnostic, err);
+      const detail = err instanceof Error ? err.message : String(err);
+      showToast(trans("%s failed: %s", operationLabel, detail), "error");
+      return { status: "failed" };
+    });
 }

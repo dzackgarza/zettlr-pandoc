@@ -5,15 +5,15 @@
  * authoritative semantic level; the node type deliberately does not encode it.
  */
 
-import type { SyntaxNode } from '@lezer/common'
+import type { SyntaxNode } from "@lezer/common";
 
-export function markdownHeadingLevel (node: SyntaxNode): number|null {
-  if (node.name === 'SetextHeading1') return 1
-  if (node.name === 'SetextHeading2') return 2
-  if (node.name !== 'ATXHeading') return null
+export function markdownHeadingLevel(node: SyntaxNode): number | null {
+  if (node.name === "SetextHeading1") return 1;
+  if (node.name === "SetextHeading2") return 2;
+  if (node.name !== "ATXHeading") return null;
 
-  const mark = node.getChild('HeaderMark')
-  if (mark === null) return null
-  const level = mark.to - mark.from
-  return level > 0 ? level : null
+  const mark = node.getChild("HeaderMark");
+  if (mark === null) return null;
+  const level = mark.to - mark.from;
+  return level > 0 ? level : null;
 }

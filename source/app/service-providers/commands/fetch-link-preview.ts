@@ -12,18 +12,18 @@
  * END HEADER
  */
 
-import { fetchLinkPreview, type LinkPreviewResult } from '@common/util/fetch-link-preview'
-import ZettlrCommand from './zettlr-command'
-import path from 'path'
-import extractYamlFrontmatter from '@common/util/extract-yaml-frontmatter'
-import { nativeImage } from 'electron'
-import type { AppServiceContainer } from 'source/app/app-service-container'
+import extractYamlFrontmatter from "@common/util/extract-yaml-frontmatter";
+import { fetchLinkPreview, type LinkPreviewResult } from "@common/util/fetch-link-preview";
+import { nativeImage } from "electron";
+import path from "path";
+import type { AppServiceContainer } from "source/app/app-service-container";
+import ZettlrCommand from "./zettlr-command";
 
-const MAX_FILE_PREVIEW_LENGTH = 300
+const MAX_FILE_PREVIEW_LENGTH = 300;
 
 export default class FetchLinkPreview extends ZettlrCommand {
-  constructor (app: AppServiceContainer) {
-    super(app, 'fetch-link-preview')
+  constructor(app: AppServiceContainer) {
+    super(app, "fetch-link-preview");
   }
 
   /**
@@ -34,96 +34,96 @@ export default class FetchLinkPreview extends ZettlrCommand {
    *
    * @return  {Promise<LinkPreviewResult|undefined>}       The result
    */
-  async run (evt: string, arg: string): Promise<LinkPreviewResult|undefined> {
-    const { editor } = this._app.config.getConfig()
+  async run(evt: string, arg: string): Promise<LinkPreviewResult | undefined> {
+    const { editor } = this._app.config.getConfig();
     if (!editor.showLinkPreviews) {
-      return undefined // No link previews wanted
+      return undefined; // No link previews wanted
     }
 
     // Catch a set of links that we can't fetch a preview for
-    if (arg.startsWith('mailto:')) {
-      return undefined
+    if (arg.startsWith("mailto:")) {
+      return undefined;
     }
 
     // Next, is it an absolute path to a file on the computer?
-    if (arg.startsWith('safe-file://')) {
-      arg = arg.slice(12)
+    if (arg.startsWith("safe-file://")) {
+      arg = arg.slice(12);
       // Due to the colons in the drive letters on Windows, the pathname will
       // look like this: /C:/Users/Documents/test.jpg
       // See: https://github.com/Zettlr/Zettlr/issues/5489
       if (/^\/[A-Z]:/i.test(arg)) {
-        arg = arg.slice(1)
+        arg = arg.slice(1);
       }
     }
 
-    arg = decodeURIComponent(arg)
+    arg = decodeURIComponent(arg);
 
     if (path.isAbsolute(arg)) {
       try {
-        const descriptor = await this._app.fsal.getDescriptorForAnySupportedFile(arg)
+        const descriptor = await this._app.fsal.getDescriptorForAnySupportedFile(arg);
         const returnValue: LinkPreviewResult = {
           title: descriptor.name,
           summary: undefined,
-          image: undefined
-        }
+          image: undefined,
+        };
 
-        if (descriptor.type === 'code') {
+        if (descriptor.type === "code") {
           // For code files, preview the first ten lines
-          const contents = await this._app.fsal.loadAnySupportedFile(arg)
-          const lines = contents.split('\n')
-          returnValue.summary = lines.slice(0, 10).join('\n')
-        } else if (descriptor.type === 'file') {
+          const contents = await this._app.fsal.loadAnySupportedFile(arg);
+          const lines = contents.split("\n");
+          returnValue.summary = lines.slice(0, 10).join("\n");
+        } else if (descriptor.type === "file") {
           // For Markdown files, use either an existing abstract from the
           // frontmatter, or until we have either ten lines, or at most 200
           // characters.
-          const rawContents = await this._app.fsal.loadAnySupportedFile(arg)
-          const { frontmatter, content } = extractYamlFrontmatter(rawContents)
+          const rawContents = await this._app.fsal.loadAnySupportedFile(arg);
+          const { frontmatter, content } = extractYamlFrontmatter(rawContents);
 
-          if (frontmatter !== null && 'abstract' in frontmatter) {
-            returnValue.summary = frontmatter.abstract
+          if (frontmatter !== null && "abstract" in frontmatter) {
+            returnValue.summary = frontmatter.abstract;
           } else {
-            const lines = content.split('\n')
-            returnValue.summary = ''
-            let i = 0
+            const lines = content.split("\n");
+            returnValue.summary = "";
+            let i = 0;
             while (returnValue.summary.length <= MAX_FILE_PREVIEW_LENGTH && i < 10) {
-              const remainingChars = MAX_FILE_PREVIEW_LENGTH - returnValue.summary.length
+              const remainingChars = MAX_FILE_PREVIEW_LENGTH - returnValue.summary.length;
               if (lines[i].length <= remainingChars) {
-                returnValue.summary += lines[i] + '\n'
+                returnValue.summary += lines[i] + "\n";
               } else {
-                returnValue.summary += lines[i].slice(0, remainingChars) + '…'
+                returnValue.summary += lines[i].slice(0, remainingChars) + "…";
               }
-              i++
+              i++;
             }
           }
         } else if (/\.(png|jpe?g)$/.test(descriptor.name)) {
           // Image file
-          const img = nativeImage.createFromPath(descriptor.path)
+          const img = nativeImage.createFromPath(descriptor.path);
           if (!img.isEmpty()) {
-            const { width, height } = img.getSize()
-            returnValue.summary = `${width}x${height}px`
+            const { width, height } = img.getSize();
+            returnValue.summary = `${width}x${height}px`;
 
             // Now resize so it's easier to load
-            const small = height > width
-              ? img.resize({ height: 100 })
-              : img.resize({ width: 100 })
+            const small = height > width ? img.resize({ height: 100 }) : img.resize({ width: 100 });
 
-            returnValue.image = small.toDataURL()
+            returnValue.image = small.toDataURL();
           }
         } // Else: Unsupported file, leave it at the title
 
-        return returnValue
+        return returnValue;
       } catch (err: unknown) {
-        return undefined
+        return undefined;
       }
     }
 
     try {
-      return await fetchLinkPreview(arg)
+      return await fetchLinkPreview(arg);
     } catch (err: unknown) {
       if (err instanceof Error) {
-        this._app.log.verbose(`[Application] Could not fetch link preview for URL ${arg}: ${err.message}`)
+        this._app.log.verbose(
+          `[Application] Could not fetch link preview for URL ${arg}: ${err.message}`,
+        );
       }
-      return undefined // Silently swallow errors
+      return undefined; // Silently swallow errors
     }
   }
 }

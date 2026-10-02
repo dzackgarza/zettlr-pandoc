@@ -4,10 +4,7 @@ import markdownParser from "source/common/modules/markdown-editor/parser/markdow
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
-import {
-  defaultTikzPreviewMode,
-  TIKZ_PREVIEW_MODES,
-} from "tikz-workbench/src/preview-modes";
+import { defaultTikzPreviewMode, TIKZ_PREVIEW_MODES } from "tikz-workbench/src/preview-modes";
 import { contiguousSourceLineRanges } from "tikz-workbench/src/source-block";
 
 function target(source: string, language: "tikz" | "tikzcd"): TikzLivePreviewTarget {
@@ -103,7 +100,14 @@ describe("TikZ preview mode capabilities", function () {
     const block = activeTikzBlock(state);
     assert.ok(block, "the editor recognizes the diagram");
     assert.equal(block.language, "tikzcd");
-    assert.equal(quiver?.supports({ ...block, authoredSource: doc.slice(block.sourceFrom, block.sourceTo), docPath: "/notes/diagram.md" }), true);
+    assert.equal(
+      quiver?.supports({
+        ...block,
+        authoredSource: doc.slice(block.sourceFrom, block.sourceTo),
+        docPath: "/notes/diagram.md",
+      }),
+      true,
+    );
   });
 
   it("offers Quiver for a tikzcd block inside a Markdown list", function () {
@@ -123,7 +127,14 @@ describe("TikZ preview mode capabilities", function () {
     });
     const block = activeTikzBlock(state);
     assert.ok(block);
-    assert.equal(quiver?.supports({ ...block, authoredSource: doc.slice(block.sourceFrom, block.sourceTo), docPath: "/notes/diagram.md" }), true);
+    assert.equal(
+      quiver?.supports({
+        ...block,
+        authoredSource: doc.slice(block.sourceFrom, block.sourceTo),
+        docPath: "/notes/diagram.md",
+      }),
+      true,
+    );
   });
 
   it("gives an explicit reason when a provider cannot edit the source", function () {
@@ -152,6 +163,9 @@ describe("TikZ preview mode capabilities", function () {
     mixed.authoredSource = mixed.authoredSource.replace("\n  \\end", "\n> \\end");
     assert.equal(defaultTikzPreviewMode(mixed), "quiver");
     assert.equal(quiver?.supports(mixed), false);
-    assert.match(quiver?.unavailableTitle(mixed) ?? "", /Diagram line 3 uses Markdown prefix "> "; the preceding diagram lines use "  "/u);
+    assert.match(
+      quiver?.unavailableTitle(mixed) ?? "",
+      /Diagram line 3 uses Markdown prefix "> "; the preceding diagram lines use "  "/u,
+    );
   });
 });

@@ -18,19 +18,19 @@
  * END HEADER
  */
 
+import { ChangeSet, Text } from "@codemirror/state";
+import serializeChangeSet from "@common/util/serialize-change-set";
+import { sha256Text } from "@common/util/sha256";
+import type { AgentEventType } from "@dts/common/agent-api";
+import type { SerializedUpdate } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ChangeSet, Text } from "@codemirror/state";
-import type { AgentEventType } from "@dts/common/agent-api";
-import type { SerializedUpdate } from "@dts/common/documents";
-import { sha256Text } from "@common/util/sha256";
-import serializeChangeSet from "@common/util/serialize-change-set";
 import {
-  CollaborationApplicationService,
   type AgentEventPayload,
   type AnnotationFailure,
+  CollaborationApplicationService,
   type CollaborationDocumentAuthority,
   type PreparedDocumentMutation,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
@@ -102,10 +102,7 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     return documentId === this.documentId ? sha256Text(this.diskText) : undefined;
   }
 
-  prepareWorkingTextReplacement(
-    documentId: string,
-    nextText: string,
-  ): PreparedDocumentMutation {
+  prepareWorkingTextReplacement(documentId: string, nextText: string): PreparedDocumentMutation {
     assert.equal(documentId, this.documentId);
     const currentText = this.text.toString();
     if (currentText === nextText) {
@@ -123,8 +120,7 @@ export class DocumentAuthority implements CollaborationDocumentAuthority {
     while (
       suffix < currentText.length - prefix &&
       suffix < nextText.length - prefix &&
-      currentText[currentText.length - suffix - 1] ===
-        nextText[nextText.length - suffix - 1]
+      currentText[currentText.length - suffix - 1] === nextText[nextText.length - suffix - 1]
     ) {
       suffix += 1;
     }

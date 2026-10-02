@@ -8,25 +8,29 @@
  *
  * @returns {WebGLShader}                     The compiled shader
  */
-export function compileShader (gl: WebGL2RenderingContext, type: 'vertex'|'fragment', source: string): WebGLShader {
-  const glType = type === 'vertex' ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER
-  const shader = gl.createShader(glType)
+export function compileShader(
+  gl: WebGL2RenderingContext,
+  type: "vertex" | "fragment",
+  source: string,
+): WebGLShader {
+  const glType = type === "vertex" ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER;
+  const shader = gl.createShader(glType);
 
   if (shader === null) {
-    throw new Error('Could not create shader from WebGL Context!')
+    throw new Error("Could not create shader from WebGL Context!");
   }
 
-  gl.shaderSource(shader, source)
-  gl.compileShader(shader)
-  const success: boolean = gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  const success: boolean = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
 
   if (success) {
-    return shader
+    return shader;
   }
 
-  const msg = `Error compiling "${type}" shader: ${gl.getShaderInfoLog(shader)}`
-  gl.deleteShader(shader)
-  throw new Error(msg)
+  const msg = `Error compiling "${type}" shader: ${gl.getShaderInfoLog(shader)}`;
+  gl.deleteShader(shader);
+  throw new Error(msg);
 }
 
 /**
@@ -36,12 +40,12 @@ export function compileShader (gl: WebGL2RenderingContext, type: 'vertex'|'fragm
  *
  * @return  {number}                      The MSAA samples (or undefined)
  */
-export function getMSAASamples (gl: WebGL2RenderingContext): number|undefined {
-  const msaaSamplesRaw = gl.getParameter(gl.MAX_SAMPLES)
-  if (typeof msaaSamplesRaw === 'number') {
-    return msaaSamplesRaw
+export function getMSAASamples(gl: WebGL2RenderingContext): number | undefined {
+  const msaaSamplesRaw = gl.getParameter(gl.MAX_SAMPLES);
+  if (typeof msaaSamplesRaw === "number") {
+    return msaaSamplesRaw;
   } else {
-    return undefined
+    return undefined;
   }
 }
 
@@ -55,20 +59,24 @@ export function getMSAASamples (gl: WebGL2RenderingContext): number|undefined {
  *
  * @return  {WebGLProgram}                            The program
  */
-export function compileProgram (gl: WebGL2RenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram {
-  const program = gl.createProgram()
-  gl.attachShader(program, vertexShader)
-  gl.attachShader(program, fragmentShader)
-  gl.linkProgram(program)
+export function compileProgram(
+  gl: WebGL2RenderingContext,
+  vertexShader: WebGLShader,
+  fragmentShader: WebGLShader,
+): WebGLProgram {
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
 
-  const success: boolean = gl.getProgramParameter(program, gl.LINK_STATUS)
+  const success: boolean = gl.getProgramParameter(program, gl.LINK_STATUS);
   if (success) {
-    return program
+    return program;
   }
 
-  const msg = `Could not link program: ${gl.getProgramInfoLog(program)}`
-  gl.deleteProgram(program)
-  throw new Error(msg)
+  const msg = `Could not link program: ${gl.getProgramInfoLog(program)}`;
+  gl.deleteProgram(program);
+  throw new Error(msg);
 }
 
 /**
@@ -77,19 +85,19 @@ export function compileProgram (gl: WebGL2RenderingContext, vertexShader: WebGLS
  *
  * @param  {HTMLCanvasElement}  canvas  The canvas to check
  */
-export function resizeCanvasToDisplaySize (canvas: HTMLCanvasElement) {
+export function resizeCanvasToDisplaySize(canvas: HTMLCanvasElement) {
   // Lookup the size the browser is displaying the canvas in CSS pixels.
-  const displayWidth  = canvas.clientWidth
-  const displayHeight = canvas.clientHeight
-  
+  const displayWidth = canvas.clientWidth;
+  const displayHeight = canvas.clientHeight;
+
   // Check if the canvas is not the same size.
-  const needResize = canvas.width !== displayWidth || canvas.height !== displayHeight
-  
+  const needResize = canvas.width !== displayWidth || canvas.height !== displayHeight;
+
   if (needResize) {
     // Make the canvas the same size
-    canvas.width  = displayWidth
-    canvas.height = displayHeight
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
   }
-  
-  return needResize
+
+  return needResize;
 }

@@ -16,13 +16,13 @@
  */
 
 import isFile from "@common/util/is-file";
+import { type Dirent, promises as fs } from "fs";
+import path from "path";
 import { type MathJaxMacro, parseMathJaxMacros } from "tikz-workbench/src/mathjax-config";
 import {
   texCommandDeclarationEntries,
   texCommandDeclarations,
 } from "tikz-workbench/src/tex-command-declarations";
-import { type Dirent, promises as fs } from "fs";
-import path from "path";
 
 export const MATHJAX_MACROS_FILENAME = "mathjax-macros.json";
 

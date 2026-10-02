@@ -58,16 +58,16 @@ import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
+import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
-import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import DocumentManager from "source/app/service-providers/documents";
-import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
+import { SearchProvider } from "source/app/service-providers/search";
 import { sha256Text } from "source/common/util/sha256";
+import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
 import { userData } from "./headless-electron-harness.cjs";
-import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 
 // ============================================================================
 // Contract conformance
@@ -687,10 +687,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(invalid.status, 404);
     assert.equal(JSON.parse(invalid.body).error.code, "ANNOTATION_NOT_FOUND");
-    const unchanged = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
     assert.equal(JSON.parse(unchanged.body).content, before);
     const unlinked = await httpRequest("GET", `/v1/annotations/${annotation.annotationId}`);
     assert.deepEqual(JSON.parse(unlinked.body).proposalActions, []);
@@ -863,7 +860,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
     const rawHelp = HELP_DOCUMENT;
     // The served guide is HELP.md with the theorem-family table filled in.
-    assert.ok(rawHelp.startsWith(readFileSync(path.join(__dirname, "../HELP.md"), "utf8").split("<!--")[0]));
+    assert.ok(
+      rawHelp.startsWith(readFileSync(path.join(__dirname, "../HELP.md"), "utf8").split("<!--")[0]),
+    );
     assert.ok(rawHelp.includes("| Lemma | `.lemma` | `#lem:key` |"));
 
     // Markdown by default
@@ -1183,7 +1182,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   it("serves the Zotero operations at /zotero/mcp and every other operation at /mcp", async function () {
     const filePath = path.join(scratch, "mcp.md");
     const docId = await openFile(filePath, "mcp content\n");
-    const operations = Object.values(openApiDocument.paths).flatMap((methods) => Object.values(methods));
+    const operations = Object.values(openApiDocument.paths).flatMap((methods) =>
+      Object.values(methods),
+    );
     const zoteroClient = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
     await zoteroClient.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
@@ -1273,11 +1274,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(closedSearch.status, 200, closedSearch.body);
     const closedHits = JSON.parse(closedSearch.body) as SearchDocumentResponse;
     assertMatchesSchema(closedHits, "SearchDocumentResponse");
-    assert.deepEqual(closedHits.hits.map((hit) => [hit.line, hit.column]), [[2, 9], [2, 23]]);
+    assert.deepEqual(
+      closedHits.hits.map((hit) => [hit.line, hit.column]),
+      [
+        [2, 9],
+        [2, 23],
+      ],
+    );
 
     const cased = JSON.parse(
-      (await httpRequest("GET", "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md"))
-        .body,
+      (
+        await httpRequest(
+          "GET",
+          "/v1/workspace/search?text=Lattice&matchCase=true&include=notes/*.md",
+        )
+      ).body,
     ) as WorkspaceSearchResponse;
     assert.deepEqual(
       cased.files.map((file) => file.path),
@@ -1511,10 +1522,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const submitted = await provider.submitProposal(
       documentId,
       sha256Text("alpha\nbeta\n"),
-      [{
-        description: "capitalize beta",
-        patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
-      }],
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
+        },
+      ],
       "frozen-review",
       0,
     );
@@ -1555,7 +1568,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       description: "capitalize beta",
       patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
     };
-    const first = await provider.submitProposal(documentId, sha256Text("alpha\nbeta\n"), [capitalize], "mcp-first", 0);
+    const first = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [capitalize],
+      "mcp-first",
+      0,
+    );
     if (!first.ok) {
       assert.fail(`The first proposal was refused: ${first.code}`);
     }
@@ -1667,21 +1686,27 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       mkdirSync(path.dirname(path.join(scratch, relative)), { recursive: true });
       writeFileSync(path.join(scratch, relative), "# Note\n", "utf8");
     }
-    links.index = new WikilinkIndex(relativePaths.map((relative) => ({
-      path: path.join(scratch, relative),
-      root: scratch,
-      id: "",
-      title: undefined,
-      aliases: [],
-    })));
+    links.index = new WikilinkIndex(
+      relativePaths.map((relative) => ({
+        path: path.join(scratch, relative),
+        root: scratch,
+        id: "",
+        title: undefined,
+        aliases: [],
+      })),
+    );
     try {
       const response = await httpRequest("GET", "/v1/workspace/files");
       assert.equal(response.status, 200);
-      const body = JSON.parse(response.body) as { files: Array<{ path: string; linkTarget?: string }> };
+      const body = JSON.parse(response.body) as {
+        files: Array<{ path: string; linkTarget?: string }>;
+      };
       assertMatchesSchema(body, "WorkspaceFilesResponse");
-      const linkTargets = Object.fromEntries(body.files
-        .filter((entry) => entry.linkTarget !== undefined)
-        .map((entry) => [path.relative(scratch, entry.path), entry.linkTarget]));
+      const linkTargets = Object.fromEntries(
+        body.files
+          .filter((entry) => entry.linkTarget !== undefined)
+          .map((entry) => [path.relative(scratch, entry.path), entry.linkTarget]),
+      );
       assert.deepEqual(linkTargets, {
         "programs/cusp-chain.md": "cusp-chain",
         "a/moduli.md": "a/moduli",
@@ -1909,9 +1934,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(documentPayload.documents[0].path, closedPath);
     assert.equal(documentPayload.documents[0].open, false);
     assert.ok(
-      documentPayload.documents[0].diagnostics.some((diagnostic) =>
-        diagnostic.rule === "document/authorial-residue" &&
-        diagnostic.data?.marker === "???",
+      documentPayload.documents[0].diagnostics.some(
+        (diagnostic) =>
+          diagnostic.rule === "document/authorial-residue" && diagnostic.data?.marker === "???",
       ),
     );
 

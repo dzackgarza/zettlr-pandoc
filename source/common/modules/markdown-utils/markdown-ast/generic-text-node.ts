@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { type TextNode } from '../markdown-ast'
+import { type TextNode } from "../markdown-ast";
 
 /**
  * Creates a generic text node; this is used to represent textual contents of
@@ -26,6 +26,11 @@ import { type TextNode } from '../markdown-ast'
  *
  * @return  {TextNode}                    The rendered TextNode
  */
-export function genericTextNode (from: number, to: number, value: string, whitespaceBefore = ''): TextNode {
-  return { type: 'Text', name: 'text', from, to, value, whitespaceBefore, attributes: {} }
+export function genericTextNode(
+  from: number,
+  to: number,
+  value: string,
+  whitespaceBefore = "",
+): TextNode {
+  return { type: "Text", name: "text", from, to, value, whitespaceBefore, attributes: {} };
 }

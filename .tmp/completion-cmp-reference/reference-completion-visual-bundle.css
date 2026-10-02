@@ -109,7 +109,7 @@
       font-style: normal;
       white-space: nowrap;
     }
-    li.zettlr-completion-option[aria-selected=true] {
+    li.zettlr-completion-option[aria-selected="true"] {
       background: #e3e6ea;
       color: #15171a;
       .cm-completionMatchedText {
@@ -117,7 +117,7 @@
       }
     }
   }
-  .cm-panel.cm-search label input[type=checkbox] {
+  .cm-panel.cm-search label input[type="checkbox"] {
     margin-right: 10px;
   }
   .cm-panel.cm-search {
@@ -155,7 +155,7 @@
   pre {
     padding: 0;
   }
-  input[type=checkbox] {
+  input[type="checkbox"] {
     transform: scale(1.2);
     margin: 0.2em;
     min-width: auto;
@@ -203,7 +203,7 @@
     color: black;
     background-color: #f5f5f5;
   }
-  .cm-panel.cm-panel-lint button[aria-label=close] {
+  .cm-panel.cm-panel-lint button[aria-label="close"] {
     color: #000000;
   }
   .cm-panel .cm-button {
@@ -253,7 +253,7 @@
     color: black;
     background-color: #f5f5f5;
   }
-  .cm-panel.cm-panel-lint button[aria-label=close] {
+  .cm-panel.cm-panel-lint button[aria-label="close"] {
     color: #000000;
   }
   .cm-panel .cm-button {
@@ -280,7 +280,7 @@ body.dark {
     color: white;
     background-color: #333333;
   }
-  .cm-panel.cm-panel-lint button[aria-label=close] {
+  .cm-panel.cm-panel-lint button[aria-label="close"] {
     color: #d7d7d7;
   }
   .cm-panel .cm-button {
@@ -302,7 +302,7 @@ body.dark {
     .zettlr-completion-source {
       color: #a8adb6;
     }
-    li.zettlr-completion-option[aria-selected=true] {
+    li.zettlr-completion-option[aria-selected="true"] {
       background: #414650;
       color: #f6f7f9;
       .cm-completionLabel {

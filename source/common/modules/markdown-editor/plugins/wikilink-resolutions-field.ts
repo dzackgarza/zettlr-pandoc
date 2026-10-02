@@ -15,25 +15,25 @@
  * END HEADER
  */
 
-import { Facet, StateEffect, StateField } from '@codemirror/state'
-import type { WikilinkResolution } from '@common/util/wikilink-resolution'
+import { Facet, StateEffect, StateField } from "@codemirror/state";
+import type { WikilinkResolution } from "@common/util/wikilink-resolution";
 
 /** Resolutions keyed by target, the text of a wikilink before `#` and `|`. */
-export type WikilinkResolutions = Map<string, WikilinkResolution>
+export type WikilinkResolutions = Map<string, WikilinkResolution>;
 
-export const wikilinkResolutionsUpdate = StateEffect.define<WikilinkResolutions>()
+export const wikilinkResolutionsUpdate = StateEffect.define<WikilinkResolutions>();
 
-export function sameResolutions (a: WikilinkResolutions, b: WikilinkResolutions): boolean {
+export function sameResolutions(a: WikilinkResolutions, b: WikilinkResolutions): boolean {
   if (a.size !== b.size) {
-    return false
+    return false;
   }
-  for (const [ target, resolution ] of a) {
-    const other = b.get(target)
+  for (const [target, resolution] of a) {
+    const other = b.get(target);
     if (other === undefined || JSON.stringify(other) !== JSON.stringify(resolution)) {
-      return false
+      return false;
     }
   }
-  return true
+  return true;
 }
 
 /**
@@ -41,21 +41,24 @@ export function sameResolutions (a: WikilinkResolutions, b: WikilinkResolutions)
  * The field keeps its map when new resolutions say the same, so a consumer
  * can compare the map objects of two states.
  */
-export const wikilinkResolutionsField = StateField.define<WikilinkResolutions|null>({
-  create () {
-    return null
+export const wikilinkResolutionsField = StateField.define<WikilinkResolutions | null>({
+  create() {
+    return null;
   },
-  update (value, transaction) {
+  update(value, transaction) {
     for (const effect of transaction.effects) {
       if (effect.is(wikilinkResolutionsUpdate)) {
-        return value !== null && sameResolutions(value, effect.value) ? value : effect.value
+        return value !== null && sameResolutions(value, effect.value) ? value : effect.value;
       }
     }
-    return value
-  }
-})
+    return value;
+  },
+});
 
 /** Opens the wikilink whose text before `|` is the argument. */
-export const wikilinkOpener = Facet.define<(linkContents: string) => void, ((linkContents: string) => void)|undefined>({
-  combine: values => values[0]
-})
+export const wikilinkOpener = Facet.define<
+  (linkContents: string) => void,
+  ((linkContents: string) => void) | undefined
+>({
+  combine: (values) => values[0],
+});

@@ -24,8 +24,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
-  CallToolRequestSchema,
   type CallToolRequest,
+  CallToolRequestSchema,
   type CallToolResult,
   ListToolsRequestSchema,
   type Tool,
@@ -75,7 +75,9 @@ function operationTool(operation: Operation): OperationTool {
       } else if (parameter.in === "query") {
         queryParameters.push(parameter.name);
       } else {
-        throw new Error(`Operation ${operationId} has a ${parameter.in} parameter; MCP tools carry none`);
+        throw new Error(
+          `Operation ${operationId} has a ${parameter.in} parameter; MCP tools carry none`,
+        );
       }
       properties[parameter.name] = {
         ...parameter.schema,
@@ -89,7 +91,9 @@ function operationTool(operation: Operation): OperationTool {
   const requestBody = operation.requestBody;
   if (requestBody !== undefined) {
     if ("$ref" in requestBody) {
-      throw new Error(`Operation ${operationId} has an unresolved request body ${requestBody.$ref}`);
+      throw new Error(
+        `Operation ${operationId} has an unresolved request body ${requestBody.$ref}`,
+      );
     }
     const schema = requestBody.content["application/json"]?.schema;
     if (schema === undefined) {

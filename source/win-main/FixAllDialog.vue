@@ -64,7 +64,11 @@
  * END HEADER
  */
 
-import { computed, ref, shallowRef } from 'vue'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
+import showToast from "@common/util/show-toast";
+import type { FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -73,95 +77,112 @@ import {
   AlertDialogOverlay,
   AlertDialogPortal,
   AlertDialogRoot,
-  AlertDialogTitle
-} from 'reka-ui'
-import { trans } from '@common/i18n-renderer'
-import showToast from '@common/util/show-toast'
-import { reportError } from '@common/util/error-reporting'
-import { pathBasename } from '@common/util/renderer-path-polyfill'
-import type { FixAllPlan, FixAllRequest } from '@dts/common/fix-all'
+  AlertDialogTitle,
+} from "reka-ui";
+import { computed, ref, shallowRef } from "vue";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
-const open = ref(false)
-const request = shallowRef<FixAllRequest|undefined>(undefined)
-const plan = shallowRef<FixAllPlan|undefined>(undefined)
+const open = ref(false);
+const request = shallowRef<FixAllRequest | undefined>(undefined);
+const plan = shallowRef<FixAllPlan | undefined>(undefined);
 
-const fixCount = computed(() => plan.value?.documents.reduce((sum, document) => sum + document.edits.length, 0) ?? 0)
+const fixCount = computed(
+  () => plan.value?.documents.reduce((sum, document) => sum + document.edits.length, 0) ?? 0,
+);
 
 const ruleCounts = computed(() => {
-  const counts = new Map<string, number>()
-  for (const edit of plan.value?.documents.flatMap(document => document.edits) ?? []) {
-    counts.set(edit.rule, (counts.get(edit.rule) ?? 0) + 1)
+  const counts = new Map<string, number>();
+  for (const edit of plan.value?.documents.flatMap((document) => document.edits) ?? []) {
+    counts.set(edit.rule, (counts.get(edit.rule) ?? 0) + 1);
   }
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-})
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+});
 
 const title = computed(() => {
   switch (request.value?.scope) {
-    case 'document': return trans('Fix all in the document')
-    case 'open': return trans('Fix all in open documents')
-    default: return trans('Fix all in the workspace')
+    case "document":
+      return trans("Fix all in the document");
+    case "open":
+      return trans("Fix all in open documents");
+    default:
+      return trans("Fix all in the workspace");
   }
-})
+});
 
-function fixesPhrase (count: number): string {
-  return count === 1 ? trans('1 fix') : trans('%s fixes', count)
+function fixesPhrase(count: number): string {
+  return count === 1 ? trans("1 fix") : trans("%s fixes", count);
 }
 
-function documentsPhrase (count: number): string {
-  return count === 1 ? trans('1 document') : trans('%s documents', count)
+function documentsPhrase(count: number): string {
+  return count === 1 ? trans("1 document") : trans("%s documents", count);
 }
 
 const summary = computed(() => {
   if (plan.value === undefined) {
-    return trans('Finding fixes…')
+    return trans("Finding fixes…");
   }
   if (fixCount.value === 0) {
-    return trans('No auto-fixable issues in %s.', documentsPhrase(plan.value.documentsChecked))
+    return trans("No auto-fixable issues in %s.", documentsPhrase(plan.value.documentsChecked));
   }
   return trans(
-    'Apply %s to %s of %s? Every fix keeps the meaning of the text.',
+    "Apply %s to %s of %s? Every fix keeps the meaning of the text.",
     fixesPhrase(fixCount.value),
     plan.value.documents.length,
-    documentsPhrase(plan.value.documentsChecked)
-  )
-})
+    documentsPhrase(plan.value.documentsChecked),
+  );
+});
 
 /** Opens the dialog on a scope and asks the main process for its plan. */
-function start (scope: FixAllRequest): void {
-  request.value = scope
-  plan.value = undefined
-  open.value = true
-  ipcRenderer.invoke('application', { command: 'preview-fix-all', payload: scope })
-    .then(result => {
+function start(scope: FixAllRequest): void {
+  request.value = scope;
+  plan.value = undefined;
+  open.value = true;
+  ipcRenderer
+    .invoke("application", { command: "preview-fix-all", payload: scope })
+    .then((result) => {
       if (request.value === scope) {
-        plan.value = result
+        plan.value = result;
       }
     })
-    .catch(error => {
-      open.value = false
-      reportError(error)
-    })
+    .catch((error) => {
+      open.value = false;
+      reportError(error);
+    });
 }
 
-function commit (): void {
-  const committed = plan.value
+function commit(): void {
+  const committed = plan.value;
   if (committed === undefined) {
-    return
+    return;
   }
-  ipcRenderer.invoke('application', { command: 'commit-fix-all', payload: { plan: committed } })
-    .then(outcome => {
-      if (outcome.status === 'conflict') {
-        showToast(trans('%s changed after the fixes were found. Nothing was changed; run Fix All again.', pathBasename(outcome.documentPath)), 'error')
-        return
+  ipcRenderer
+    .invoke("application", { command: "commit-fix-all", payload: { plan: committed } })
+    .then((outcome) => {
+      if (outcome.status === "conflict") {
+        showToast(
+          trans(
+            "%s changed after the fixes were found. Nothing was changed; run Fix All again.",
+            pathBasename(outcome.documentPath),
+          ),
+          "error",
+        );
+        return;
       }
-      showToast(trans('Applied %s to %s.', fixesPhrase(outcome.fixesApplied), documentsPhrase(outcome.documentsChanged.length)))
+      showToast(
+        trans(
+          "Applied %s to %s.",
+          fixesPhrase(outcome.fixesApplied),
+          documentsPhrase(outcome.documentsChanged.length),
+        ),
+      );
     })
-    .catch(error => { reportError(error) })
+    .catch((error) => {
+      reportError(error);
+    });
 }
 
-defineExpose({ start })
+defineExpose({ start });
 </script>
 
 <style lang="less">

@@ -48,7 +48,8 @@ function revisionOf(source: string): string {
 /** Serve `relative` from `root`; a path that resolves outside `root` is not found. */
 async function serveUnder(root: string, relative: string): Promise<Response> {
   const requested = path.resolve(root, `.${relative}`);
-  if (!requested.startsWith(`${root}${path.sep}`)) return new Response("Not found", { status: 404 });
+  if (!requested.startsWith(`${root}${path.sep}`))
+    return new Response("Not found", { status: 404 });
   let actual: string;
   try {
     actual = await realpath(requested);
@@ -73,7 +74,8 @@ async function handleDocument(request: Request): Promise<Response> {
   if (request.method !== "PUT") return new Response("Method not allowed", { status: 405 });
   const expected = request.headers.get("if-match");
   if (expected === null) return new Response("File revision required", { status: 428 });
-  if (expected !== revisionOf(current)) return new Response("The file changed on disk", { status: 412 });
+  if (expected !== revisionOf(current))
+    return new Response("The file changed on disk", { status: 412 });
   const next = await request.text();
   await writeFile(documentPath, next, "utf8");
   return new Response(null, { status: 204, headers: { etag: revisionOf(next) } });
@@ -107,16 +109,23 @@ const server = Bun.serve({
     const { pathname } = new URL(request.url);
     if (pathname === "/api/document") return await handleDocument(request);
     if (pathname === "/api/render" && request.method === "POST") return await handleRender(request);
-    if (pathname === "/api/quiver-macros" && request.method === "GET") return await handleQuiverMacros();
+    if (pathname === "/api/quiver-macros" && request.method === "GET")
+      return await handleQuiverMacros();
     if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
     if (pathname.startsWith("/tikz-image/")) {
       return await handleImage(`/${decodeURIComponent(pathname.slice("/tikz-image/".length))}`);
     }
     if (pathname.startsWith("/tikz-editor/")) {
-      return await serveUnder(path.join(packageRoot, "vendor", "tikz-editor", "src"), pathname.slice("/tikz-editor".length));
+      return await serveUnder(
+        path.join(packageRoot, "vendor", "tikz-editor", "src"),
+        pathname.slice("/tikz-editor".length),
+      );
     }
     if (pathname.startsWith("/quiver/")) {
-      return await serveUnder(path.join(packageRoot, "vendor", "quiver", "src"), pathname.slice("/quiver".length));
+      return await serveUnder(
+        path.join(packageRoot, "vendor", "quiver", "src"),
+        pathname.slice("/quiver".length),
+      );
     }
     return await serveUnder(pageRoot, pathname === "/" ? "/index.html" : pathname);
   },

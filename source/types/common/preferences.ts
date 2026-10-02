@@ -27,14 +27,14 @@ export enum PreferencesGroups {
   Snippets,
   Spellchecking,
   Zettelkasten,
-  Shortcuts
+  Shortcuts,
 }
 
 /** A destination inside the Preferences window. */
 export interface PreferenceNavigationTarget {
-  group: PreferencesGroups
+  group: PreferencesGroups;
   /** The fieldset heading to reveal. */
-  fieldsetTitle?: string
+  fieldsetTitle?: string;
   /** The underlying config model to focus when the field exposes one. */
-  model?: string
+  model?: string;
 }

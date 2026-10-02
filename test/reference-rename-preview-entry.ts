@@ -28,79 +28,95 @@
  *   only on 'apply'
  */
 
-import { createApp, nextTick } from 'vue'
-import { extractReferences } from 'source/common/pandoc-util/extract-references'
 import {
   buildRenamePreviewSummary,
   previewReferenceRename,
-  type RenamePreviewFileSummary
-} from 'source/common/pandoc-util/compute-reference-edits'
+  type RenamePreviewFileSummary,
+} from "source/common/pandoc-util/compute-reference-edits";
+import { extractReferences } from "source/common/pandoc-util/extract-references";
+import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {
-  path: string
-  content: string
+  path: string;
+  content: string;
 }
 
 interface MountReport {
-  componentAvailable: boolean
-  componentFailure: string|null
+  componentAvailable: boolean;
+  componentFailure: string | null;
   /** The summary computed with the real preview pipeline (the oracle input) */
-  expectedFiles: RenamePreviewFileSummary[]
+  expectedFiles: RenamePreviewFileSummary[];
 }
 
 interface DialogState {
-  oldKey: string|null
-  newKey: string|null
-  rows: Array<{ documentPath: string|null, editCount: number|null, snippets: string[] }>
-  applyPresent: boolean
-  cancelPresent: boolean
+  oldKey: string | null;
+  newKey: string | null;
+  rows: Array<{ documentPath: string | null; editCount: number | null; snippets: string[] }>;
+  applyPresent: boolean;
+  cancelPresent: boolean;
 }
 
 declare global {
   interface Window {
-    renamePreviewProbeMount: (documents: ProbeDocument[], oldKey: string, newKey: string) => Promise<MountReport>
-    renamePreviewProbeState: () => DialogState
-    renamePreviewProbeEvents: () => { applyCount: number, closeCount: number }
-    renamePreviewProbeClick: (selector: string) => boolean
+    renamePreviewProbeMount: (
+      documents: ProbeDocument[],
+      oldKey: string,
+      newKey: string,
+    ) => Promise<MountReport>;
+    renamePreviewProbeState: () => DialogState;
+    renamePreviewProbeEvents: () => { applyCount: number; closeCount: number };
+    renamePreviewProbeClick: (selector: string) => boolean;
   }
 }
 
 // Resolved through a context (not a static import) so the bundle builds and
 // reports structured absence while the dialog does not exist yet.
-const dialogContext = require.context('../source/win-main/', false, /RenameReferencePreviewDialog\.vue$/)
+const dialogContext = require.context(
+  "../source/win-main/",
+  false,
+  /RenameReferencePreviewDialog\.vue$/,
+);
 
-let applyCount = 0
-let closeCount = 0
+let applyCount = 0;
+let closeCount = 0;
 
-window.renamePreviewProbeMount = async (documents: ProbeDocument[], oldKey: string, newKey: string): Promise<MountReport> => {
-  const snapshots = documents.map(document => extractReferences(document.path, document.content))
-  const preview = previewReferenceRename(snapshots, oldKey, newKey)
-  if (preview.status !== 'ok') {
+window.renamePreviewProbeMount = async (
+  documents: ProbeDocument[],
+  oldKey: string,
+  newKey: string,
+): Promise<MountReport> => {
+  const snapshots = documents.map((document) => extractReferences(document.path, document.content));
+  const preview = previewReferenceRename(snapshots, oldKey, newKey);
+  if (preview.status !== "ok") {
     return {
       componentAvailable: false,
       componentFailure: `the fixture rename must preview cleanly, got rejection ${JSON.stringify(preview.reason)}`,
-      expectedFiles: []
-    }
+      expectedFiles: [],
+    };
   }
 
-  const expectedFiles = buildRenamePreviewSummary(preview.edit, snapshots, oldKey)
+  const expectedFiles = buildRenamePreviewSummary(preview.edit, snapshots, oldKey);
 
-  const dialogKey = dialogContext.keys().find(key => key.includes('RenameReferencePreviewDialog'))
+  const dialogKey = dialogContext
+    .keys()
+    .find((key) => key.includes("RenameReferencePreviewDialog"));
   if (dialogKey === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'source/win-main/RenameReferencePreviewDialog.vue does not exist yet (review A4 red)',
-      expectedFiles
-    }
+      componentFailure:
+        "source/win-main/RenameReferencePreviewDialog.vue does not exist yet (review A4 red)",
+      expectedFiles,
+    };
   }
 
-  const dialogModule = dialogContext(dialogKey) as { default?: unknown }
+  const dialogModule = dialogContext(dialogKey) as { default?: unknown };
   if (dialogModule.default === undefined) {
     return {
       componentAvailable: false,
-      componentFailure: 'RenameReferencePreviewDialog.vue exists but has no default component export',
-      expectedFiles
-    }
+      componentFailure:
+        "RenameReferencePreviewDialog.vue exists but has no default component export",
+      expectedFiles,
+    };
   }
 
   // The host contract: either intent closes the preview surface (the
@@ -113,48 +129,52 @@ window.renamePreviewProbeMount = async (documents: ProbeDocument[], oldKey: stri
     newKey,
     files: expectedFiles,
     onApply: () => {
-      applyCount++
-      app.unmount()
+      applyCount++;
+      app.unmount();
     },
     onClose: () => {
-      closeCount++
-      app.unmount()
-    }
-  })
-  app.mount('#app')
+      closeCount++;
+      app.unmount();
+    },
+  });
+  app.mount("#app");
 
-  await nextTick()
-  await document.fonts.ready
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+  await nextTick();
+  await document.fonts.ready;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
 
-  return { componentAvailable: true, componentFailure: null, expectedFiles }
-}
+  return { componentAvailable: true, componentFailure: null, expectedFiles };
+};
 
 window.renamePreviewProbeState = (): DialogState => {
-  const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-preview-path]'))
+  const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-preview-path]"));
   return {
-    oldKey: document.querySelector('[data-rename-old-key]')?.textContent?.trim() ?? null,
-    newKey: document.querySelector('[data-rename-new-key]')?.textContent?.trim() ?? null,
-    rows: rows.map(row => {
-      const count = row.getAttribute('data-preview-count')
+    oldKey: document.querySelector("[data-rename-old-key]")?.textContent?.trim() ?? null,
+    newKey: document.querySelector("[data-rename-new-key]")?.textContent?.trim() ?? null,
+    rows: rows.map((row) => {
+      const count = row.getAttribute("data-preview-count");
       return {
-        documentPath: row.getAttribute('data-preview-path'),
+        documentPath: row.getAttribute("data-preview-path"),
         editCount: count === null ? null : Number(count),
-        snippets: Array.from(row.querySelectorAll('.snippet')).map(snippet => snippet.textContent ?? '')
-      }
+        snippets: Array.from(row.querySelectorAll(".snippet")).map(
+          (snippet) => snippet.textContent ?? "",
+        ),
+      };
     }),
-    applyPresent: document.querySelector('.rename-preview-dialog [data-apply]') !== null,
-    cancelPresent: document.querySelector('.rename-preview-dialog [data-cancel]') !== null
-  }
-}
+    applyPresent: document.querySelector(".rename-preview-dialog [data-apply]") !== null,
+    cancelPresent: document.querySelector(".rename-preview-dialog [data-cancel]") !== null,
+  };
+};
 
-window.renamePreviewProbeEvents = () => ({ applyCount, closeCount })
+window.renamePreviewProbeEvents = () => ({ applyCount, closeCount });
 
 window.renamePreviewProbeClick = (selector: string): boolean => {
-  const element = document.querySelector<HTMLElement>(selector)
+  const element = document.querySelector<HTMLElement>(selector);
   if (element === null) {
-    return false
+    return false;
   }
-  element.click()
-  return true
-}
+  element.click();
+  return true;
+};

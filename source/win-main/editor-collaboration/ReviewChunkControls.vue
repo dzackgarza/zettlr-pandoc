@@ -74,24 +74,27 @@
  * END HEADER
  */
 
-import { trans } from '@common/i18n-renderer'
-import { ref, watch } from 'vue'
-import { chunkNoteCommit, type SuggestionCardView } from '../sidebar/annotations/annotation-panel-model'
+import { trans } from "@common/i18n-renderer";
+import { ref, watch } from "vue";
+import {
+  chunkNoteCommit,
+  type SuggestionCardView,
+} from "../sidebar/annotations/annotation-panel-model";
 
 const props = defineProps<{
-  card: SuggestionCardView
+  card: SuggestionCardView;
   /** True while a review action from this pane is in flight: every control
    *  locks for the round trip, so a second click cannot land on a chunk the
    *  first one already decided. */
-  busy: boolean
-}>()
+  busy: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'decide', chunkId: string, decision: 'accept' | 'reject'): void
-  (e: 'comment-chunk', chunkId: string, text: string): void
-}>()
+  (e: "decide", chunkId: string, decision: "accept" | "reject"): void;
+  (e: "comment-chunk", chunkId: string, text: string): void;
+}>();
 
-const noteField = ref<HTMLInputElement | null>(null)
+const noteField = ref<HTMLInputElement | null>(null);
 
 /**
  * The note field, seeded from the provider's note. Every commit is a review
@@ -99,17 +102,20 @@ const noteField = ref<HTMLInputElement | null>(null)
  * be typing; re-seeding the focused field would overwrite those unsent
  * characters, so only an unfocused field takes the provider's value.
  */
-const draft = ref(props.card.comment)
-watch(() => props.card.comment, comment => {
-  if (document.activeElement !== noteField.value) {
-    draft.value = comment
-  }
-})
+const draft = ref(props.card.comment);
+watch(
+  () => props.card.comment,
+  (comment) => {
+    if (document.activeElement !== noteField.value) {
+      draft.value = comment;
+    }
+  },
+);
 
-function commitNote (): void {
-  const text = chunkNoteCommit(props.card, draft.value)
+function commitNote(): void {
+  const text = chunkNoteCommit(props.card, draft.value);
   if (text !== undefined) {
-    emit('comment-chunk', props.card.suggestionId, text)
+    emit("comment-chunk", props.card.suggestionId, text);
   }
 }
 </script>

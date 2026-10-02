@@ -59,44 +59,44 @@
  * END HEADER
  */
 
-import { computed, ref } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import ShortcutDisplay from '@common/vue/ShortcutDisplay.vue'
-import { explodeAccelerator } from '@common/util/shortcuts'
-import { composerSubmission } from '../sidebar/annotations/annotation-presentation'
+import { trans } from "@common/i18n-renderer";
+import { explodeAccelerator } from "@common/util/shortcuts";
+import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
+import { computed, ref } from "vue";
+import { composerSubmission } from "../sidebar/annotations/annotation-presentation";
 
 const props = defineProps<{
   /** The document the reply belongs to, shown as the context chip. */
-  documentName?: string
-}>()
+  documentName?: string;
+}>();
 
-const emit = defineEmits<(e: 'submit', text: string) => void>()
+const emit = defineEmits<(e: "submit", text: string) => void>();
 
-const placeholder = trans('Ask a question or request changes…')
-const sendLabel = trans('Send')
+const placeholder = trans("Ask a question or request changes…");
+const sendLabel = trans("Send");
 // Cmd on macOS, Ctrl elsewhere — the same pair onKeydown accepts.
-const sendShortcut = explodeAccelerator('CmdOrCtrl+Enter')
+const sendShortcut = explodeAccelerator("CmdOrCtrl+Enter");
 
-const draft = ref('')
-const submission = computed(() => composerSubmission(draft.value))
-const contextLabel = computed(() => trans('Context: %s', props.documentName))
+const draft = ref("");
+const submission = computed(() => composerSubmission(draft.value));
+const contextLabel = computed(() => trans("Context: %s", props.documentName));
 
-function submit (): void {
-  const text = submission.value
+function submit(): void {
+  const text = submission.value;
   if (text === undefined) {
-    return
+    return;
   }
-  emit('submit', text)
-  draft.value = ''
+  emit("submit", text);
+  draft.value = "";
 }
 
-function onKeydown (event: KeyboardEvent): void {
-  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-    event.preventDefault()
-    submit()
-  } else if (event.key === 'Escape') {
-    event.preventDefault()
-    draft.value = ''
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    submit();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    draft.value = "";
   }
 }
 </script>

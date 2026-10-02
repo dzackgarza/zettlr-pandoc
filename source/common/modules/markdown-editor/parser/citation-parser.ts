@@ -4,21 +4,21 @@
  * syntax nodes into citeproc-facing objects and searches an EditorState.
  */
 
-import { syntaxTree } from '@codemirror/language'
-import type { EditorState } from '@codemirror/state'
-import type { SyntaxNode } from '@lezer/common'
+import { syntaxTree } from "@codemirror/language";
+import type { EditorState } from "@codemirror/state";
+import type { SyntaxNode } from "@lezer/common";
 import {
+  type Citation,
+  type CiteItem,
+  type CSL_LOCATOR_TERM,
   citationParser,
   CITATION_NODES as NODES,
   parseCitationLocator,
   parseCitationSuffix,
-  type Citation,
-  type CiteItem,
-  type CSL_LOCATOR_TERM,
-} from '@lezer/markdown'
+} from "@lezer/markdown";
 
-export { citationParser, NODES, parseCitationSuffix }
-export type { Citation, CiteItem, CSL_LOCATOR_TERM }
+export type { Citation, CiteItem, CSL_LOCATOR_TERM };
+export { citationParser, NODES, parseCitationSuffix };
 
 /**
  * Utility function that takes a Citation node and the Markdown source and turns
@@ -34,77 +34,86 @@ export type { Citation, CiteItem, CSL_LOCATOR_TERM }
  *
  * @return  {CiteItem[]}            The citation items.
  */
-export function nodeToCiteItem (node: SyntaxNode, markdown: string, offset: number = 0): Citation {
-  if (node.type.name !== 'Citation') {
-    throw new Error(`Expected a Citation node, received type ${node.type.name}`)
+export function nodeToCiteItem(node: SyntaxNode, markdown: string, offset: number = 0): Citation {
+  if (node.type.name !== "Citation") {
+    throw new Error(`Expected a Citation node, received type ${node.type.name}`);
   }
 
-  const textOf = (range: { from: number, to: number }): string => markdown.slice(range.from - offset, range.to - offset)
+  const textOf = (range: { from: number; to: number }): string =>
+    markdown.slice(range.from - offset, range.to - offset);
 
-  const items: CiteItem[] = []
+  const items: CiteItem[] = [];
 
   // Now, enter that node and iterate over its children. Citation nodes are flat
   // so that we can collect them one after another.
-  let child = node.firstChild
+  let child = node.firstChild;
 
   // Composite essentially just means an inline citation where the author
   // name(s) is/are part of the sentence [@AuthorYear has said -> Author (Year) has said]
-  const composite = child !== null && child.type.name !== NODES.MARK // Mark here implies square bracket open
+  const composite = child !== null && child.type.name !== NODES.MARK; // Mark here implies square bracket open
 
-  let prefix = undefined
-  let citekey = undefined
-  let locator = undefined
-  let label = undefined
-  let suffix = undefined
-  let suppressAuthor = undefined
+  let prefix = undefined;
+  let citekey = undefined;
+  let locator = undefined;
+  let label = undefined;
+  let suffix = undefined;
+  let suppressAuthor = undefined;
 
   while (child !== null) {
     if (child.type.name === NODES.PREFIX) {
-      prefix = textOf(child)
+      prefix = textOf(child);
     } else if (child.type.name === NODES.KEY) {
-      citekey = textOf(child)
+      citekey = textOf(child);
     } else if (child.type.name === NODES.LOCATOR) {
-      const parsed = parseCitationLocator(textOf(child))
-      locator = parsed.locator
-      label = parsed.label
+      const parsed = parseCitationLocator(textOf(child));
+      locator = parsed.locator;
+      label = parsed.label;
     } else if (child.type.name === NODES.SUFFIX) {
-      suffix = textOf(child)
+      suffix = textOf(child);
     } else if (child.type.name === NODES.AUTHORFLAG) {
-      suppressAuthor = true
-    } else if (child.type.name === NODES.MARK && textOf(child) === ';') {
+      suppressAuthor = true;
+    } else if (child.type.name === NODES.MARK && textOf(child) === ";") {
       // A mark can often be ignored, but if it's a semicolon, we have to flush
       // the state into the cite items and reset.
       if (citekey !== undefined) {
         items.push({
           id: citekey,
-          locator, prefix, suffix, label,
-          'suppress-author': suppressAuthor
-        })
+          locator,
+          prefix,
+          suffix,
+          label,
+          "suppress-author": suppressAuthor,
+        });
       }
-      prefix = undefined
-      citekey = undefined
-      locator = undefined
-      label = undefined
-      suffix = undefined
-      suppressAuthor = undefined
+      prefix = undefined;
+      citekey = undefined;
+      locator = undefined;
+      label = undefined;
+      suffix = undefined;
+      suppressAuthor = undefined;
     }
 
-    child = child.nextSibling
+    child = child.nextSibling;
   }
 
   if (citekey !== undefined) {
     items.push({
       id: citekey,
-      locator, prefix, suffix, label,
-      'suppress-author': suppressAuthor
-    })
+      locator,
+      prefix,
+      suffix,
+      label,
+      "suppress-author": suppressAuthor,
+    });
   }
 
   return {
-    from: node.from, to: node.to,
+    from: node.from,
+    to: node.to,
     source: textOf(node),
-    composite, items
-  }
+    composite,
+    items,
+  };
 }
 
 /**
@@ -116,16 +125,16 @@ export function nodeToCiteItem (node: SyntaxNode, markdown: string, offset: numb
  *
  * @return  {SyntaxNode[]}        A list of all found Citation nodes.
  */
-export function extractCitationNodes (state: EditorState): SyntaxNode[] {
-  const nodes: SyntaxNode[] = []
+export function extractCitationNodes(state: EditorState): SyntaxNode[] {
+  const nodes: SyntaxNode[] = [];
 
   syntaxTree(state).iterate({
-    enter (node) {
+    enter(node) {
       if (node.type.name === NODES.CITATION) {
-        nodes.push(node.node)
-        return false
+        nodes.push(node.node);
+        return false;
       }
-    }
-  })
-  return nodes
+    },
+  });
+  return nodes;
 }

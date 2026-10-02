@@ -17,31 +17,28 @@
  * END HEADER
  */
 
-import { spawn } from 'child_process'
-import { existsSync } from 'fs'
-import path from 'path'
+import { spawn } from "child_process";
+import { existsSync } from "fs";
+import path from "path";
 
-export type FlowmarkProcessFailureKind =
-  | 'flowmark-absent'
-  | 'flowmark-error'
-  | 'flowmark-timeout'
+export type FlowmarkProcessFailureKind = "flowmark-absent" | "flowmark-error" | "flowmark-timeout";
 
 export type FlowmarkProcessResult =
-  | { ok: true, stdout: string, stderr: string }
-  | { ok: false, kind: FlowmarkProcessFailureKind, message: string }
+  | { ok: true; stdout: string; stderr: string }
+  | { ok: false; kind: FlowmarkProcessFailureKind; message: string };
 
-const KILL_GRACE_MS = 2_000
+const KILL_GRACE_MS = 2_000;
 
 /** Locate a packaged/development external-linter process plugin. */
-export function externalLinterPluginPath (filename: string): string {
-  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+export function externalLinterPluginPath(filename: string): string {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
   if (resourcesPath !== undefined) {
-    const packaged = path.join(resourcesPath, 'linter-plugins', filename)
+    const packaged = path.join(resourcesPath, "linter-plugins", filename);
     if (existsSync(packaged)) {
-      return packaged
+      return packaged;
     }
   }
-  return path.resolve('linter-plugins', filename)
+  return path.resolve("linter-plugins", filename);
 }
 
 /**
@@ -49,64 +46,64 @@ export function externalLinterPluginPath (filename: string): string {
  * plugin that imports Flowmark (LanguageTool's) runs under it, so it sees the
  * same Flowmark as the `flowmark` and `flowmark-lint` commands.
  */
-export async function flowmarkToolPython (): Promise<string> {
-  toolPython ??= locateToolPython()
+export async function flowmarkToolPython(): Promise<string> {
+  toolPython ??= locateToolPython();
   try {
-    return await toolPython
+    return await toolPython;
   } catch (error) {
-    toolPython = undefined
-    throw error
+    toolPython = undefined;
+    throw error;
   }
 }
 
 // uv derives its tool directory from the environment of this process, which
 // does not change while the app runs. One `uv tool dir` process answers for
 // the session; a failed one is asked again.
-let toolPython: Promise<string>|undefined
+let toolPython: Promise<string> | undefined;
 
-async function locateToolPython (): Promise<string> {
+async function locateToolPython(): Promise<string> {
   const outcome = await runFlowmarkProcess({
-    command: 'uv',
-    argv: [ 'tool', 'dir' ],
-    timeoutMs: 30_000
-  })
+    command: "uv",
+    argv: ["tool", "dir"],
+    timeoutMs: 30_000,
+  });
   if (!outcome.ok) {
-    throw new Error(`Cannot locate the uv tool directory: ${outcome.message}`)
+    throw new Error(`Cannot locate the uv tool directory: ${outcome.message}`);
   }
-  return path.join(outcome.stdout.trim(), 'flowmark', 'bin', 'python')
+  return path.join(outcome.stdout.trim(), "flowmark", "bin", "python");
 }
 
 // PEP 610 records the source of a direct install, for a Git install the
 // resolved commit, in the distribution's direct_url.json.
 const INSTALL_IDENTITY_SCRIPT = [
-  'import importlib.metadata as m',
+  "import importlib.metadata as m",
   'd = m.distribution("flowmark")',
-  'print(d.version, d.read_text("direct_url.json") or "")'
-].join('\n')
+  'print(d.version, d.read_text("direct_url.json") or "")',
+].join("\n");
 
 /**
  * The exact installed Flowmark: its version and, for the Git install the app
  * maintains, the commit uv resolved. Lint results computed by one install do
  * not carry over to another.
  */
-export async function flowmarkInstallIdentity (): Promise<string> {
+export async function flowmarkInstallIdentity(): Promise<string> {
   const outcome = await runFlowmarkProcess({
     command: await flowmarkToolPython(),
-    argv: [ '-c', INSTALL_IDENTITY_SCRIPT ],
-    timeoutMs: 30_000
-  })
+    argv: ["-c", INSTALL_IDENTITY_SCRIPT],
+    timeoutMs: 30_000,
+  });
   if (!outcome.ok) {
-    throw new Error(`Cannot identify the installed Flowmark: ${outcome.message}`)
+    throw new Error(`Cannot identify the installed Flowmark: ${outcome.message}`);
   }
-  return outcome.stdout.trim()
+  return outcome.stdout.trim();
 }
 
 export interface FlowmarkProcessOptions {
-  command: string
-  argv: string[]
-  input?: string
-  env?: NodeJS.ProcessEnv
-  timeoutMs: number
+  command: string;
+  argv: string[];
+  input?: string;
+  env?: NodeJS.ProcessEnv;
+  timeoutMs: number;
 }
 
 /**
@@ -116,71 +113,76 @@ export interface FlowmarkProcessOptions {
  * SIGTERM, then SIGKILL after a short grace, and the promise resolves only
  * after the child has actually closed.
  */
-export async function runFlowmarkProcess (
-  options: FlowmarkProcessOptions
+export async function runFlowmarkProcess(
+  options: FlowmarkProcessOptions,
 ): Promise<FlowmarkProcessResult> {
-  const command = options.command
-  const env = options.env ?? process.env
+  const command = options.command;
+  const env = options.env ?? process.env;
 
   return await new Promise<FlowmarkProcessResult>((resolve) => {
-    const stdout: string[] = []
-    const stderr: string[] = []
-    const proc = spawn(command, options.argv, { env, shell: false })
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const proc = spawn(command, options.argv, { env, shell: false });
 
-    let settled = false
-    let timedOut = false
-    let boundTimer: NodeJS.Timeout | undefined
-    let graceTimer: NodeJS.Timeout | undefined
+    let settled = false;
+    let timedOut = false;
+    let boundTimer: NodeJS.Timeout | undefined;
+    let graceTimer: NodeJS.Timeout | undefined;
 
     const settle = (outcome: FlowmarkProcessResult): void => {
       if (settled) {
-        return
+        return;
       }
-      settled = true
+      settled = true;
       if (boundTimer !== undefined) {
-        clearTimeout(boundTimer)
+        clearTimeout(boundTimer);
       }
       if (graceTimer !== undefined) {
-        clearTimeout(graceTimer)
+        clearTimeout(graceTimer);
       }
-      resolve(outcome)
-    }
+      resolve(outcome);
+    };
 
-    proc.stdout?.on('data', data => { stdout.push(String(data)) })
-    proc.stderr?.on('data', data => { stderr.push(String(data)) })
-    proc.on('error', err => {
-      settle({ ok: false, kind: 'flowmark-absent', message: err.message })
-    })
-    proc.on('close', code => {
+    proc.stdout?.on("data", (data) => {
+      stdout.push(String(data));
+    });
+    proc.stderr?.on("data", (data) => {
+      stderr.push(String(data));
+    });
+    proc.on("error", (err) => {
+      settle({ ok: false, kind: "flowmark-absent", message: err.message });
+    });
+    proc.on("close", (code) => {
       if (timedOut) {
         settle({
           ok: false,
-          kind: 'flowmark-timeout',
-          message: `Markdown processing did not complete within ${String(options.timeoutMs)} ms`
-        })
+          kind: "flowmark-timeout",
+          message: `Markdown processing did not complete within ${String(options.timeoutMs)} ms`,
+        });
       } else if (code === 0) {
-        settle({ ok: true, stdout: stdout.join(''), stderr: stderr.join('') })
+        settle({ ok: true, stdout: stdout.join(""), stderr: stderr.join("") });
       } else {
         settle({
           ok: false,
-          kind: 'flowmark-error',
-          message: stderr.join('').trim() || `Markdown processing failed with exit code ${String(code)}`
-        })
+          kind: "flowmark-error",
+          message:
+            stderr.join("").trim() || `Markdown processing failed with exit code ${String(code)}`,
+        });
       }
-    })
+    });
 
     if (options.input !== undefined) {
-      proc.stdin?.end(options.input)
+      proc.stdin?.end(options.input);
     } else {
-      proc.stdin?.end()
+      proc.stdin?.end();
     }
 
     boundTimer = setTimeout(() => {
-      timedOut = true
-      proc.kill('SIGTERM')
+      timedOut = true;
+      proc.kill("SIGTERM");
       graceTimer = setTimeout(() => {
-        proc.kill('SIGKILL')
-      }, KILL_GRACE_MS)
-    }, options.timeoutMs)
-  })
+        proc.kill("SIGKILL");
+      }, KILL_GRACE_MS);
+    }, options.timeoutMs);
+  });
 }

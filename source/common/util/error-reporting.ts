@@ -18,50 +18,50 @@
  * END HEADER
  */
 
-export type ErrorReporter = (message: string, details?: unknown) => void
+export type ErrorReporter = (message: string, details?: unknown) => void;
 
-let installedReporter: ErrorReporter|undefined
+let installedReporter: ErrorReporter | undefined;
 
 /** Bind this process's direct durable sink (the main process installs LogProvider). */
-export function installErrorReporter (reporter: ErrorReporter): void {
-  installedReporter = reporter
+export function installErrorReporter(reporter: ErrorReporter): void {
+  installedReporter = reporter;
 }
 
-function describeErrorValue (value: unknown): string {
+function describeErrorValue(value: unknown): string {
   if (value instanceof Error) {
-    return value.stack ?? `${value.name}: ${value.message}`
+    return value.stack ?? `${value.name}: ${value.message}`;
   }
-  if (typeof value === 'string') {
-    return value
+  if (typeof value === "string") {
+    return value;
   }
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(value);
   } catch {
-    return String(value)
+    return String(value);
   }
 }
 
-function normalizeErrorArguments (args: readonly unknown[]): { message: string, details?: string } {
-  const [ first, ...rest ] = args
-  if (typeof first === 'string') {
+function normalizeErrorArguments(args: readonly unknown[]): { message: string; details?: string } {
+  const [first, ...rest] = args;
+  if (typeof first === "string") {
     return {
       message: first,
-      details: rest.length === 0 ? undefined : rest.map(describeErrorValue).join('\n')
-    }
+      details: rest.length === 0 ? undefined : rest.map(describeErrorValue).join("\n"),
+    };
   }
 
-  const values = first === undefined ? rest : [ first, ...rest ]
+  const values = first === undefined ? rest : [first, ...rest];
   return {
-    message: values.length === 0 ? 'Unknown application error' : describeErrorValue(values[0]),
-    details: values.length <= 1 ? undefined : values.slice(1).map(describeErrorValue).join('\n')
-  }
+    message: values.length === 0 ? "Unknown application error" : describeErrorValue(values[0]),
+    details: values.length <= 1 ? undefined : values.slice(1).map(describeErrorValue).join("\n"),
+  };
 }
 
 /** Final independent fallback that bypasses the application logger itself. */
-export function stderrError (...args: readonly unknown[]): void {
-  const text = args.map(describeErrorValue).join(' ')
-  if (typeof process !== 'undefined' && process.stderr !== undefined) {
-    process.stderr.write(`${text}\n`)
+export function stderrError(...args: readonly unknown[]): void {
+  const text = args.map(describeErrorValue).join(" ");
+  if (typeof process !== "undefined" && process.stderr !== undefined) {
+    process.stderr.write(`${text}\n`);
   }
 }
 
@@ -70,32 +70,34 @@ export function stderrError (...args: readonly unknown[]): void {
  * The function intentionally returns void so it can replace historical
  * direct console-error callbacks without changing control flow.
  */
-export function reportError (...args: readonly unknown[]): void {
-  const { message, details } = normalizeErrorArguments(args)
+export function reportError(...args: readonly unknown[]): void {
+  const { message, details } = normalizeErrorArguments(args);
 
   if (installedReporter !== undefined) {
     try {
-      installedReporter(message, details)
-      return
+      installedReporter(message, details);
+      return;
     } catch (loggingError) {
-      stderrError(`[Error reporter failed] ${message}`, loggingError)
-      return
+      stderrError(`[Error reporter failed] ${message}`, loggingError);
+      return;
     }
   }
 
   if (
-    typeof window !== 'undefined' &&
+    typeof window !== "undefined" &&
     window.ipc !== undefined &&
-    typeof window.ipc.invoke === 'function'
+    typeof window.ipc.invoke === "function"
   ) {
-    void window.ipc.invoke('log-provider', {
-      command: 'record-error',
-      payload: { message, details }
-    }).catch(loggingError => {
-      stderrError(`[Renderer logging failed] ${message}`, loggingError)
-    })
-    return
+    void window.ipc
+      .invoke("log-provider", {
+        command: "record-error",
+        payload: { message, details },
+      })
+      .catch((loggingError) => {
+        stderrError(`[Renderer logging failed] ${message}`, loggingError);
+      });
+    return;
   }
 
-  stderrError(message, details)
+  stderrError(message, details);
 }

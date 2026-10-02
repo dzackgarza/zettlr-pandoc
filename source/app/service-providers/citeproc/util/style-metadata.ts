@@ -7,57 +7,59 @@
  * number is deliberately not used here.
  */
 
-import { DOMParser } from '@xmldom/xmldom'
+import { DOMParser } from "@xmldom/xmldom";
 
-export type CslCitationFormat = 'author'|'author-date'|'label'|'numeric'|'note'
+export type CslCitationFormat = "author" | "author-date" | "label" | "numeric" | "note";
 
 export interface CslStyleMetadata {
-  citationFormat?: CslCitationFormat
+  citationFormat?: CslCitationFormat;
 }
 
 const CITATION_FORMATS = new Set<CslCitationFormat>([
-  'author',
-  'author-date',
-  'label',
-  'numeric',
-  'note',
-])
+  "author",
+  "author-date",
+  "label",
+  "numeric",
+  "note",
+]);
 
-export function parseCslStyleMetadata (source: string): CslStyleMetadata {
+export function parseCslStyleMetadata(source: string): CslStyleMetadata {
   const document = new DOMParser({
     onError: (level, message) => {
-      if (level !== 'warning') {
-        throw new Error(`Invalid CSL XML: ${message}`)
+      if (level !== "warning") {
+        throw new Error(`Invalid CSL XML: ${message}`);
       }
     },
-  }).parseFromString(source, 'application/xml')
+  }).parseFromString(source, "application/xml");
 
-  const formats = new Set<string>()
-  for (const category of Array.from(document.getElementsByTagName('category'))) {
-    const value = category.getAttribute('citation-format')
-    if (value !== null && value !== '') {
-      formats.add(value)
+  const formats = new Set<string>();
+  for (const category of Array.from(document.getElementsByTagName("category"))) {
+    const value = category.getAttribute("citation-format");
+    if (value !== null && value !== "") {
+      formats.add(value);
     }
   }
 
   if (formats.size > 1) {
-    throw new Error(`CSL style declares conflicting citation-format categories: ${[...formats].join(', ')}`)
+    throw new Error(
+      `CSL style declares conflicting citation-format categories: ${[...formats].join(", ")}`,
+    );
   }
-  const [format] = formats
+  const [format] = formats;
   if (format === undefined) {
-    return {}
+    return {};
   }
   if (!CITATION_FORMATS.has(format as CslCitationFormat)) {
-    throw new Error(`CSL style declares unsupported citation-format=${JSON.stringify(format)}`)
+    throw new Error(`CSL style declares unsupported citation-format=${JSON.stringify(format)}`);
   }
-  return { citationFormat: format as CslCitationFormat }
+  return { citationFormat: format as CslCitationFormat };
 }
 
 /** Whether citeproc's author-only + suppress-author composite mode is meaningful. */
-export function supportsNarrativeComposite (format: CslCitationFormat|undefined): boolean {
+export function supportsNarrativeComposite(format: CslCitationFormat | undefined): boolean {
   // Missing metadata is not silently reclassified. We attempt the CSL-native
   // composite request and let throw_on_empty reject styles that cannot supply
   // it. Known non-narrative formats never receive an incoherent author-only
   // request in the first place.
-  return format === undefined || format === 'author' || format === 'author-date'
+  return format === undefined || format === "author" || format === "author-date";
 }

@@ -24,18 +24,17 @@
 </template>
 
 <script setup lang="ts">
-import type { ExplodedShortcut } from '@common/util/shortcuts'
+import type { ExplodedShortcut } from "@common/util/shortcuts";
 
 // Proper key symbols based on platform
-const modKeySymbol = process.platform === 'darwin' ? '⌘' : '⊞'
-const altKeySymbol = process.platform === 'darwin' ? '⎇' : 'Alt'
-const ctrlKeySymbol = process.platform === 'darwin' ? '⌃' : 'Ctrl'
+const modKeySymbol = process.platform === "darwin" ? "⌘" : "⊞";
+const altKeySymbol = process.platform === "darwin" ? "⎇" : "Alt";
+const ctrlKeySymbol = process.platform === "darwin" ? "⌃" : "Ctrl";
 
 const props = defineProps<{
-  shortcut: ExplodedShortcut
-  display: 'muted'|'full'
-}>()
-
+  shortcut: ExplodedShortcut;
+  display: "muted" | "full";
+}>();
 </script>
 
 <style lang="css" scoped>

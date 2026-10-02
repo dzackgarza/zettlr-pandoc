@@ -4,7 +4,7 @@
  * Typescript that when we import the Nodehun.node library, we effectively
  * import the same thing as the nodehun module.
  */
-declare module 'nodehun/build/Release/Nodehun.node' {
-  import { Nodehun } from 'nodehun'
-  export = Nodehun
+declare module "nodehun/build/Release/Nodehun.node" {
+  import { Nodehun } from "nodehun";
+  export = Nodehun;
 }

@@ -18,9 +18,8 @@
  * END HEADER
  */
 
-import { userData } from "./headless-electron-harness.cjs";
-import Ajv2020 from "ajv/dist/2020";
-import { parse as parseYaml } from "yaml";
+import { sha256Text } from "@common/util/sha256";
+import { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
   AddAnnotationMessageResponse,
   AnnotationListResponse,
@@ -28,6 +27,7 @@ import type {
   SubmitProposalResponse,
 } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
+import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import {
@@ -45,10 +45,10 @@ import path from "path";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
-import { SearchProvider } from "source/app/service-providers/search";
 import LogProvider from "source/app/service-providers/log";
-import { WikilinkIndex } from "@common/util/wikilink-resolution";
-import { sha256Text } from "@common/util/sha256";
+import { SearchProvider } from "source/app/service-providers/search";
+import { parse as parseYaml } from "yaml";
+import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
 // Schema conformance — validates every response against the OpenAPI document
@@ -603,7 +603,11 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.equal(after.target.state, "range");
     assert.equal(after.target.from, 0);
     assert.equal(after.target.to, 20);
-    assert.equal(after.annotationGeneration, 1, "no refused attempt may have advanced the generation");
+    assert.equal(
+      after.annotationGeneration,
+      1,
+      "no refused attempt may have advanced the generation",
+    );
   });
 
   // ==========================================================================

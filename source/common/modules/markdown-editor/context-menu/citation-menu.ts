@@ -12,16 +12,18 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { type EditorView } from '@codemirror/view'
-import showPopupMenu, { type AnyMenuItem } from '@common/modules/window-register/application-menu-helper'
-import { configField } from '../util/configuration'
-import { trans } from 'source/common/i18n-renderer'
-import { CITEPROC_MAIN_DB } from 'source/types/common/citeproc'
-import { nodeToCiteItem } from '../parser/citation-parser'
-import type { SyntaxNode } from '@lezer/common'
+import { type EditorView } from "@codemirror/view";
+import showPopupMenu, {
+  type AnyMenuItem,
+} from "@common/modules/window-register/application-menu-helper";
+import { reportError } from "@common/util/error-reporting";
+import type { SyntaxNode } from "@lezer/common";
+import { trans } from "source/common/i18n-renderer";
+import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
+import { nodeToCiteItem } from "../parser/citation-parser";
+import { configField } from "../util/configuration";
 
-const ipcRenderer = window.ipc
+const ipcRenderer = window.ipc;
 
 /**
  * Displays a context menu appropriate for citations
@@ -31,51 +33,62 @@ const ipcRenderer = window.ipc
  * @param   {string[]}                  keys    The citation keys
  * @param   {string}                    label   An optional label
  */
-export function citationMenu (view: EditorView, coords: { x: number, y: number }, citationNode: SyntaxNode): void {
+export function citationMenu(
+  view: EditorView,
+  coords: { x: number; y: number },
+  citationNode: SyntaxNode,
+): void {
   // Calculate the relevant state
-  const config = view.state.field(configField).metadata.library
-  const callback = window.getCitationCallback(config === '' ? CITEPROC_MAIN_DB : config)
-  const citation = nodeToCiteItem(citationNode.node, view.state.sliceDoc())
-  let items: Record<string, string>
-  let label: string
+  const config = view.state.field(configField).metadata.library;
+  const callback = window.getCitationCallback(config === "" ? CITEPROC_MAIN_DB : config);
+  const citation = nodeToCiteItem(citationNode.node, view.state.sliceDoc());
+  let items: Record<string, string>;
+  let label: string;
   try {
-    items = Object.fromEntries(citation.items.map(({ id }) => {
-      return [ id, callback([{ id }], true) ?? id ]
-    }))
-    label = callback(citation.items, citation.composite) ?? view.state.sliceDoc(citationNode.from, citationNode.to)
+    items = Object.fromEntries(
+      citation.items.map(({ id }) => {
+        return [id, callback([{ id }], true) ?? id];
+      }),
+    );
+    label =
+      callback(citation.items, citation.composite) ??
+      view.state.sliceDoc(citationNode.from, citationNode.to);
   } catch (error) {
-    reportError('Could not render citation context menu', error)
-    return
+    reportError("Could not render citation context menu", error);
+    return;
   }
 
-  const tpl: AnyMenuItem[] = []
+  const tpl: AnyMenuItem[] = [];
 
-  if (label.trim() !== '') {
+  if (label.trim() !== "") {
+    tpl.push(
+      {
+        label,
+        type: "normal",
+        enabled: false,
+        id: label,
+      },
+      { type: "separator" },
+    );
+  }
+
+  const filePath = view.state.field(configField).metadata.path;
+
+  for (const [key, label] of Object.entries(items)) {
     tpl.push({
       label,
-      type: 'normal',
-      enabled: false,
-      id: label
-    },
-    { type: 'separator' })
+      sublabel: process.platform === "darwin" ? trans("Open PDF for %s", label) : undefined,
+      type: "normal",
+      action() {
+        ipcRenderer
+          .invoke("application", {
+            command: "open-attachment",
+            payload: { citekey: key, filePath },
+          })
+          .catch((err: unknown) => reportError(err));
+      },
+    });
   }
 
-  const filePath = view.state.field(configField).metadata.path
-
-  for (const [ key, label ] of Object.entries(items)) {
-    tpl.push({
-      label,
-      sublabel: process.platform === 'darwin' ? trans('Open PDF for %s', label) : undefined,
-      type: 'normal',
-      action () {
-        ipcRenderer.invoke('application', {
-          command: 'open-attachment',
-          payload: { citekey: key, filePath }
-        })
-          .catch((err: unknown) => reportError(err))
-      }
-    })
-  }
-
-  showPopupMenu(coords, tpl)
+  showPopupMenu(coords, tpl);
 }

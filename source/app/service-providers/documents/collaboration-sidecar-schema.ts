@@ -34,7 +34,7 @@
  * END HEADER
  */
 
-import { Type, type Static } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { AnnotationSetSchema } from "./annotation-domain-validation";
 
 const Sha256 = Type.String({ pattern: "^[0-9a-f]{64}$" });
@@ -308,4 +308,3 @@ export function liftEarlyV5Sidecar(v5: EarlyCollaborationSidecarV5Data): Collabo
     ...(v5.pendingSave === undefined ? {} : { pendingSave: v5.pendingSave }),
   };
 }
-

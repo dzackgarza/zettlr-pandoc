@@ -77,39 +77,45 @@
  * END HEADER
  */
 
-import { reportError } from '@common/util/error-reporting'
-import { ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxRoot, ComboboxViewport } from 'reka-ui'
-import { nextTick, ref, watch } from 'vue'
-import { trans } from '@common/i18n-renderer'
-import LauncherRow from './LauncherRow.vue'
-import { rowKey, type LauncherRow as LauncherRowModel } from './launcher-rows'
+import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
+import {
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxRoot,
+  ComboboxViewport,
+} from "reka-ui";
+import { nextTick, ref, watch } from "vue";
+import LauncherRow from "./LauncherRow.vue";
+import { type LauncherRow as LauncherRowModel, rowKey } from "./launcher-rows";
 
 const props = defineProps<{
-  rows: readonly LauncherRowModel[]
-  query: string
+  rows: readonly LauncherRowModel[];
+  query: string;
   /** The labels of the groups above the current view, root first. */
-  breadcrumb: readonly string[]
-}>()
+  breadcrumb: readonly string[];
+}>();
 
 const emit = defineEmits<{
-  (e: 'update:query', query: string): void
-  (e: 'run', row: LauncherRowModel): void
-  (e: 'back'): void
-  (e: 'close'): void
-}>()
+  (e: "update:query", query: string): void;
+  (e: "run", row: LauncherRowModel): void;
+  (e: "back"): void;
+  (e: "close"): void;
+}>();
 
-const placeholder = trans('Type a command…')
-const emptyLabel = trans('No matching commands')
+const placeholder = trans("Type a command…");
+const emptyLabel = trans("No matching commands");
 
 interface ComboboxHandle {
-  highlightFirstItem: () => void
+  highlightFirstItem: () => void;
 }
 
-const combobox = ref<ComboboxHandle | null>(null)
+const combobox = ref<ComboboxHandle | null>(null);
 
 /** A menu leaf reports its own enablement; every other row is always runnable. */
-function isDisabled (row: LauncherRowModel): boolean {
-  return (row.kind === 'menu-leaf' || row.kind === 'menu-group') && !row.enabled
+function isDisabled(row: LauncherRowModel): boolean {
+  return (row.kind === "menu-leaf" || row.kind === "menu-group") && !row.enabled;
 }
 
 /**
@@ -117,14 +123,14 @@ function isDisabled (row: LauncherRowModel): boolean {
  * own rows carry none, and leaves listed at the root by a query show their
  * whole path.
  */
-function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
-  if (row.kind === 'file' || row.kind === 'just-recipe' || row.kind === 'preference') {
-    return row.breadcrumb
+function rowBreadcrumb(row: LauncherRowModel): readonly string[] {
+  if (row.kind === "file" || row.kind === "just-recipe" || row.kind === "preference") {
+    return row.breadcrumb;
   }
-  if (row.kind === 'menu-leaf' || row.kind === 'menu-group') {
-    return row.breadcrumb.slice(props.breadcrumb.length)
+  if (row.kind === "menu-leaf" || row.kind === "menu-group") {
+    return row.breadcrumb.slice(props.breadcrumb.length);
   }
-  return []
+  return [];
 }
 
 /**
@@ -133,23 +139,25 @@ function rowBreadcrumb (row: LauncherRowModel): readonly string[] {
  * pointerleave when a shrinking list moves out from under a resting pointer,
  * so the highlight is restored there too, not only after ranking.
  */
-function highlightFirstRow (): void {
+function highlightFirstRow(): void {
   nextTick()
-    .then(() => { combobox.value?.highlightFirstItem() })
-    .catch(err => reportError('[MenuCommandsView] Could not highlight the first row', err))
+    .then(() => {
+      combobox.value?.highlightFirstItem();
+    })
+    .catch((err) => reportError("[MenuCommandsView] Could not highlight the first row", err));
 }
 
 // Ranking replaces the list on every keystroke.
-watch(() => props.rows, highlightFirstRow, { immediate: true })
+watch(() => props.rows, highlightFirstRow, { immediate: true });
 
-function onBackspace (): void {
-  if (props.query === '') {
-    emit('back')
+function onBackspace(): void {
+  if (props.query === "") {
+    emit("back");
   }
 }
 
-function onEscape (event: Event): void {
-  event.preventDefault()
-  emit('close')
+function onEscape(event: Event): void {
+  event.preventDefault();
+  emit("close");
 }
 </script>

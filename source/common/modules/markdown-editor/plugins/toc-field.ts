@@ -13,10 +13,10 @@
  * END HEADER
  */
 
-import { StateField, type EditorState } from '@codemirror/state'
-import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
-import { parsePandocAttributes } from '@common/pandoc-util/parse-pandoc-attributes'
-import { markdownHeadingLevel } from '../util/heading-level'
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { type EditorState, StateField } from "@codemirror/state";
+import { parsePandocAttributes } from "@common/pandoc-util/parse-pandoc-attributes";
+import { markdownHeadingLevel } from "../util/heading-level";
 
 /**
  * Takes a heading (the full line) and transforms it into an ID. This function
@@ -28,78 +28,78 @@ import { markdownHeadingLevel } from '../util/heading-level'
  *
  * @return  {string}                 The generated ID
  */
-function headingToID (headingString: string): string {
+function headingToID(headingString: string): string {
   // If there are Pandoc attributes inside this header, and they include an ID,
   // then we should use that one.
-  const pandocAttrs = /\{(.+)\}$/.exec(headingString)
+  const pandocAttrs = /\{(.+)\}$/.exec(headingString);
   if (pandocAttrs !== null) {
-    const { id } = parsePandocAttributes(pandocAttrs[0])
+    const { id } = parsePandocAttributes(pandocAttrs[0]);
     if (id !== undefined) {
-      return id
+      return id;
     }
   }
 
   // A named anchor is also a valid heading ID, so if there is one, return that.
-  const namedAnchor = /<a(?:.+)name=['"]?([^'"]+)['"]?(?:.*)>(?:.*)<\/a>/i.exec(headingString)
+  const namedAnchor = /<a(?:.+)name=['"]?([^'"]+)['"]?(?:.*)>(?:.*)<\/a>/i.exec(headingString);
   if (namedAnchor !== null) {
-    return namedAnchor[1]
+    return namedAnchor[1];
   }
 
   // If both of these "explicit" overriding methods work, transform what's left
   // of the content into an ID utilizing Pandoc's algorithm.
 
-  let text = headingString
+  let text = headingString;
   // Remove HTML elements
-  text = text.replace(/<.+>/i, '')
+  text = text.replace(/<.+>/i, "");
   // Remove all formatting, links, etc.
-  text = text.replace(/[*_]{1,3}(.+)[*_]{1,3}/g, '$1')
-  text = text.replace(/`[^`]+`/g, '$1')
-  text = text.replace(/\[.+\]\(.+\)/g, '')
+  text = text.replace(/[*_]{1,3}(.+)[*_]{1,3}/g, "$1");
+  text = text.replace(/`[^`]+`/g, "$1");
+  text = text.replace(/\[.+\]\(.+\)/g, "");
   // Remove all footnotes.
-  text = text.replace(/\[\^.+\]/g, '')
+  text = text.replace(/\[\^.+\]/g, "");
   // Replace all spaces and newlines with hyphens.
-  text = text.replace(/[\s\n]/g, '-')
+  text = text.replace(/[\s\n]/g, "-");
   // Remove all non-alphanumeric characters, except underscores, hyphens, and periods.
-  text = text.replace(/[^a-zA-Z0-9_.-]/g, '')
+  text = text.replace(/[^a-zA-Z0-9_.-]/g, "");
   // Convert all alphabetic characters to lowercase.
-  text = text.toLowerCase()
+  text = text.toLowerCase();
   // Remove everything up to the first letter (identifiers may not begin with a number or punctuation mark).
-  const letterMatch = /[a-z]/.exec(text)
-  const firstLetter = (letterMatch !== null) ? letterMatch.index : 0
-  text = text.substring(firstLetter)
+  const letterMatch = /[a-z]/.exec(text);
+  const firstLetter = letterMatch !== null ? letterMatch.index : 0;
+  text = text.substring(firstLetter);
   // If nothing is left after this, use the identifier section.
   if (text.length === 0) {
-    text = 'section'
+    text = "section";
   }
 
-  return text
+  return text;
 }
 
 export interface ToCEntry {
   /**
    * The one-indexed line number of the heading
    */
-  line: number
+  line: number;
   /**
    * The character where the entry begins
    */
-  pos: number
+  pos: number;
   /**
    * The text contents of the heading (without the heading formatting)
    */
-  text: string
+  text: string;
   /**
    * The level of the heading. Pandoc permits ATX heading levels above six.
    */
-  level: number
+  level: number;
   /**
    * A human-readable title numbering (e.g. 1.2, 2.5.1)
    */
-  renderedLevel: string
+  renderedLevel: string;
   /**
    * An ID used to link to this heading
    */
-  id: string
+  id: string;
 }
 
 /**
@@ -109,71 +109,71 @@ export interface ToCEntry {
  *
  * @return  {ToCEntry[]}          The ToC
  */
-function generateToc (state: EditorState): ToCEntry[] {
-  const toc: ToCEntry[] = []
-  const counters: number[] = []
+function generateToc(state: EditorState): ToCEntry[] {
+  const toc: ToCEntry[] = [];
+  const counters: number[] = [];
 
   // We try to retrieve the full syntax tree, and if that fails, fall back to
   // the (possibly incomplete) syntax tree. For the ToC we definitely want to
   // utilize the full tree.
-  let tree = ensureSyntaxTree(state, state.doc.length, 1000)
+  let tree = ensureSyntaxTree(state, state.doc.length, 1000);
   if (tree === null) {
-    tree = syntaxTree(state)
+    tree = syntaxTree(state);
   }
 
   tree.iterate({
-    enter (node) {
-      if (node.type.is('Document') || node.type.is('PandocDiv')) {
-        return
+    enter(node) {
+      if (node.type.is("Document") || node.type.is("PandocDiv")) {
+        return;
       }
 
-      const level = markdownHeadingLevel(node.node)
+      const level = markdownHeadingLevel(node.node);
       if (level === null) {
-        return false
+        return false;
       }
 
-      while (counters.length < level) counters.push(0)
-      counters[level - 1]++
-      for (let i = level; i < counters.length; i++) counters[i] = 0
+      while (counters.length < level) counters.push(0);
+      counters[level - 1]++;
+      for (let i = level; i < counters.length; i++) counters[i] = 0;
 
-      let from = node.from
-      let to = node.to
-      if (node.type.name === 'ATXHeading') {
-        const mark = node.node.getChild('HeaderMark')
-        if (mark === null) return false
-        from = mark.to
-        while (from < node.to && /[ \t]/u.test(state.doc.sliceString(from, from + 1))) from++
+      let from = node.from;
+      let to = node.to;
+      if (node.type.name === "ATXHeading") {
+        const mark = node.node.getChild("HeaderMark");
+        if (mark === null) return false;
+        from = mark.to;
+        while (from < node.to && /[ \t]/u.test(state.doc.sliceString(from, from + 1))) from++;
       } else {
-        const mark = node.node.getChild('HeaderMark')
-        if (mark === null) return false
-        to = mark.from
+        const mark = node.node.getChild("HeaderMark");
+        if (mark === null) return false;
+        to = mark.from;
       }
-      const text = state.doc.sliceString(from, to).trimEnd()
+      const text = state.doc.sliceString(from, to).trimEnd();
       toc.push({
         line: state.doc.lineAt(node.from).number,
         pos: node.from,
         text,
         level,
-        renderedLevel: counters.slice(0, level).join('.'),
-        id: headingToID(text)
-      })
-      return false
-    }
-  })
+        renderedLevel: counters.slice(0, level).join("."),
+        id: headingToID(text),
+      });
+      return false;
+    },
+  });
 
-  return toc
+  return toc;
 }
 
 export const tocField = StateField.define<ToCEntry[]>({
-  create (state) {
-    return generateToc(state)
+  create(state) {
+    return generateToc(state);
   },
 
-  update (value, transaction) {
+  update(value, transaction) {
     if (!transaction.docChanged) {
-      return value
+      return value;
     }
 
-    return generateToc(transaction.state)
-  }
-})
+    return generateToc(transaction.state);
+  },
+});

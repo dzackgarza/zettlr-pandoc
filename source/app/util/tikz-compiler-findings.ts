@@ -1,5 +1,5 @@
-import { tikzCompilerLogHeadline } from "tikz-workbench/src/compiler-log";
 import { tikzSourceBlocksInMarkdown } from "@common/util/tikz-source-blocks";
+import { tikzCompilerLogHeadline } from "tikz-workbench/src/compiler-log";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
@@ -40,7 +40,9 @@ export async function collectTikzCompilerFindings(
       for (const error of result.errors) {
         findings.push({
           ...lineRange(block, error.line),
-          message: "TikZ compilation failed: " + error.message +
+          message:
+            "TikZ compilation failed: " +
+            error.message +
             (error.sourceLine === "" ? "" : " — " + error.sourceLine),
         });
       }
