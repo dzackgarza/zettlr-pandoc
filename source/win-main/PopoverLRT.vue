@@ -55,9 +55,9 @@
 import type { LRTIPCSyncMessage } from "source/app/service-providers/long-running-tasks";
 import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
 import { trans } from "source/common/i18n-renderer";
-import TaskProgressIndicator from "source/common/vue/TaskProgressIndicator.vue";
 import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
 import PopoverWrapper from "source/common/vue/PopoverWrapper.vue";
+import TaskProgressIndicator from "source/common/vue/TaskProgressIndicator.vue";
 import { useLRTStore } from "source/pinia";
 import { TaskStatus } from "source/pinia/lrt-store";
 import { computed } from "vue";
@@ -103,7 +103,6 @@ function interactTask(id: string) {
     payload: { id },
   } as LRTIPCSyncMessage);
 }
-
 </script>
 
 

@@ -224,8 +224,8 @@ import showPopupMenu, {
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import localiseNumber from "@common/util/localise-number";
 import IrisIndicator from "@common/vue/IrisIndicator.vue";
-import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
 import TaskProgressIndicator from "@common/vue/TaskProgressIndicator.vue";
+import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
 import {
   useConfigStore,
   useDocumentTreeStore,
