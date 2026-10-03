@@ -32,9 +32,9 @@ import type {
   ReferenceOccurrence,
   SourceRange,
 } from "@dts/common/references";
+import { createPinia } from "pinia";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import ReferenceSearchView from "source/win-main/launcher/ReferenceSearchView.vue";
-import { createPinia } from "pinia";
 import { createApp, nextTick } from "vue";
 
 interface ProbeDocument {

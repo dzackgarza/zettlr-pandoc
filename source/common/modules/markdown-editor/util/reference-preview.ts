@@ -27,7 +27,10 @@ export function referencePreviewMarkdown(definition: PreviewSource): string {
   const line = lines.join("\n");
   const brace = line.lastIndexOf("{");
   const clean = brace === -1 ? line : line.slice(0, brace);
-  return clean.replace(/^#+\s*/, "").replace(/^:\s*/, "").trim();
+  return clean
+    .replace(/^#+\s*/, "")
+    .replace(/^:\s*/, "")
+    .trim();
 }
 
 /** Render the same bounded Markdown excerpt used by reference hovers. */

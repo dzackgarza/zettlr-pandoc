@@ -138,8 +138,8 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { renderReferencePreview } from "@common/modules/markdown-editor/util/reference-preview";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
+import { renderReferencePreview } from "@common/modules/markdown-editor/util/reference-preview";
 import {
   isCurrentProjectDefinition,
   searchWorkspaceDefinitions,
@@ -162,8 +162,8 @@ import {
   ComboboxRoot,
   ComboboxViewport,
 } from "reka-ui";
-import { computed, nextTick, ref, watch } from "vue";
 import { useConfigStore } from "source/pinia";
+import { computed, nextTick, ref, watch } from "vue";
 // The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
 // where both vue-tsc and the type-aware linter can resolve it (issue #50).
 import type { ReferenceJumpIntent } from "../component-contracts";
@@ -247,18 +247,24 @@ const matches = computed<ReferenceDefinition[]>(() => {
 });
 
 const activeDefinition = computed(() => {
-  const highlighted = matches.value.find((definition) => rowKey(definition) === highlightedKey.value);
-  return highlighted === undefined ? matches.value[0] ?? null : highlighted;
+  const highlighted = matches.value.find(
+    (definition) => rowKey(definition) === highlightedKey.value,
+  );
+  return highlighted === undefined ? (matches.value[0] ?? null) : highlighted;
 });
 
-watch(activeDefinition, (definition) => {
-  if (!props.browse || definition === null) return;
-  void nextTick().then(() => {
-    if (previewElement.value !== null) {
-      renderReferencePreview(previewElement.value, definition, configStore.config.zkn.linkFormat);
-    }
-  });
-}, { immediate: true });
+watch(
+  activeDefinition,
+  (definition) => {
+    if (!props.browse || definition === null) return;
+    void nextTick().then(() => {
+      if (previewElement.value !== null) {
+        renderReferencePreview(previewElement.value, definition, configStore.config.zkn.linkFormat);
+      }
+    });
+  },
+  { immediate: true },
+);
 
 /**
  * The Project marker of a result row (review A3, US-16): current-Project
