@@ -7,10 +7,10 @@
     v-bind:reset-search-term-on-blur="false"
     v-bind:reset-search-term-on-select="false"
     model-value=""
-    v-bind:data-search-mode="mode"
+    :data-search-mode="mode"
     v-bind:aria-label="breadcrumbLabel"
     v-on:pointerleave="highlightFirstRow"
-    v-on:highlight="highlightedKey = $event ? String($event.value) : ''"
+    @highlight="highlightedKey = $event ? String($event.value) : ''"
   >
     <div class="launcher-query-row">
       <span class="launcher-breadcrumb">{{ breadcrumbLabel }}</span>
@@ -19,8 +19,8 @@
         data-command-launcher-input
         v-bind:auto-focus="true"
         v-bind:model-value="query"
-        v-bind:placeholder="props.browse ? trans('Find a document block…') : trans('Search references…')"
-        v-bind:aria-label="props.browse ? trans('Document block search') : trans('Reference search')"
+        :placeholder="props.browse ? trans('Find a document block…') : trans('Search references…')"
+        :aria-label="props.browse ? trans('Document block search') : trans('Reference search')"
         v-on:update:model-value="query = $event"
         v-on:keydown.backspace="onBackspace"
       ></ComboboxInput>
@@ -63,8 +63,8 @@
         <template v-else>
           <LauncherRow
             v-for="definition in matches"
-            v-bind:key="rowKey(definition)"
-            v-bind:value="rowKey(definition)"
+            :key="rowKey(definition)"
+            :value="rowKey(definition)"
             v-bind:label="definition.key"
             class="reference-row"
             v-bind:data-reference-key="definition.key"
@@ -93,9 +93,17 @@
       class="document-block-preview"
       data-document-block-preview
     >
-      <div class="document-block-preview-heading">{{ typeAndTitle(activeDefinition) }}</div>
-      <div ref="previewElement" class="document-block-preview-body" data-reference-excerpt></div>
-      <div class="document-block-preview-path">{{ activeDefinition.documentPath }}</div>
+      <div class="document-block-preview-heading">
+        {{ typeAndTitle(activeDefinition) }}
+      </div>
+      <div
+        ref="previewElement"
+        class="document-block-preview-body"
+        data-reference-excerpt
+      />
+      <div class="document-block-preview-path">
+        {{ activeDefinition.documentPath }}
+      </div>
     </div>
   </ComboboxRoot>
 </template>
