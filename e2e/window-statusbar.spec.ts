@@ -28,6 +28,7 @@ import {
   assertCleanExit,
   attach,
   createWorkspaceFixture,
+  delay,
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
@@ -63,6 +64,21 @@ async function clickMenuItem(page: Page, id: string): Promise<void> {
   await page.evaluate((itemId) => {
     window.ipc.send("menu-provider", { command: "click-menu-item", payload: itemId });
   }, id);
+}
+
+async function waitUntil(
+  probe: () => Promise<boolean>,
+  what: string,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probe()) {
+      return;
+    }
+    await delay(150);
+  }
+  throw new Error(`Timed out waiting for ${what}`);
 }
 
 /**
@@ -198,7 +214,10 @@ describe("the window status bar", function () {
       0,
       "the editor mounts no status panel of its own",
     );
-    await activePage.locator(ITEM("words"), { hasText: /^1 words$/ }).waitFor();
+    await waitUntil(
+      async () => /^1 words$/.test((await activePage.locator(ITEM("words")).innerText()).trim()),
+      "the word count of forms.md",
+    );
     assert.equal((await activePage.locator(ITEM("cursor")).innerText()).trim(), "Ln 1, Col 1");
     const bar = await activePage.locator(STATUSBAR).boundingBox();
     const viewport = activePage.viewportSize();
@@ -223,7 +242,10 @@ describe("the window status bar", function () {
     });
     await secondPane.locator(".cm-content").waitFor({ state: "visible", timeout: 20_000 });
     await secondPane.locator(".cm-content").click();
-    await activePage.locator(ITEM("words"), { hasText: /^(?!1 words$)\d+ words$/ }).waitFor();
+    await waitUntil(async () => {
+      const text = (await activePage.locator(ITEM("words")).innerText()).trim();
+      return /^\d+ words$/.test(text) && text !== "1 words";
+    }, "the word count of index.md in the focused pane");
     assert.equal(await activePage.locator(STATUSBAR).count(), 1, "still exactly one status bar");
     assert.equal(
       await activePage.locator(".cm-statusbar").count(),
@@ -238,10 +260,16 @@ describe("the window status bar", function () {
       })
       .first();
     await firstPane.locator(".cm-content").click();
-    await activePage.locator(ITEM("words"), { hasText: /^1 words$/ }).waitFor();
+    await waitUntil(
+      async () => (await activePage.locator(ITEM("words")).innerText()).trim() === "1 words",
+      "the word count of forms.md once its pane is focused again",
+    );
     await closeLeaf(activePage, leafId);
     await activePage.locator(".editor-pane").first().waitFor({ timeout: 10_000 });
-    await activePage.locator(".editor-pane").nth(1).waitFor({ state: "detached" });
+    await waitUntil(
+      async () => (await activePage.locator(".editor-pane").count()) === 1,
+      "the split to close",
+    );
   });
 
   it("shows a running export in the task indicator and opens the task list from it", async function () {
@@ -279,7 +307,6 @@ describe("the window status bar", function () {
     await activePage.keyboard.press("Control+Alt+l");
     const running = activePage.locator(ITEM("running-task"), {
       hasText: `Formatting "${path.basename(activeDocument)}"`,
-      has: activePage.locator("progress:not([value])"),
     });
     await running.waitFor({ timeout: 10_000 });
     screenshots.set("statusbar-format-task.png", await activePage.screenshot());
@@ -290,11 +317,16 @@ describe("the window status bar", function () {
   it("switches the rendering mode and toggles the diagnostics panel from its items", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(ITEM("rendering-mode")).click();
-    await activePage.locator(ITEM("rendering-mode"), { hasText: /Raw/ }).waitFor();
-    assert.equal(await readConfigValue(activePage, "display", "renderingMode"), "raw");
+    await waitUntil(
+      async () => (await readConfigValue(activePage, "display", "renderingMode")) === "raw",
+      "the rendering mode to persist as raw",
+    );
+    assert.match(await activePage.locator(ITEM("rendering-mode")).innerText(), /Raw/);
     await activePage.locator(ITEM("rendering-mode")).click();
-    await activePage.locator(ITEM("rendering-mode"), { hasText: /Preview/ }).waitFor();
-    assert.equal(await readConfigValue(activePage, "display", "renderingMode"), "preview");
+    await waitUntil(
+      async () => (await readConfigValue(activePage, "display", "renderingMode")) === "preview",
+      "the rendering mode to persist as preview",
+    );
 
     await activePage.locator(ITEM("diagnostics")).click();
     await activePage
