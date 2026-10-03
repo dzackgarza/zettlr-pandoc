@@ -25,10 +25,15 @@ export function zettlrTikzWorkbenchHost(view: EditorView): TikzWorkbenchHost {
     writeSource: (from, to, insert) => {
       view.dispatch({ changes: { from, to, insert } });
     },
-    render: async (request) =>
-      await window.ipc.invoke("application", { command: "tikz-render", payload: request }),
-    quiverMacros: async () => await window.ipc.invoke("quiver-macros"),
-    figureUrl: (figure) => makeValidUri(figure.svgPath),
+    rendering: {
+      render: async (request) =>
+        await window.ipc.invoke("application", { command: "tikz-render", payload: request }),
+      figureUrl: (figure) => makeValidUri(figure.svgPath),
+    },
+    quiver: {
+      macros: async () => await window.ipc.invoke("quiver-macros"),
+      url: "./quiver/zettlr-host.html",
+    },
     imageBaseUrl: (docPath) =>
       docPath === ""
         ? ""
@@ -38,7 +43,6 @@ export function zettlrTikzWorkbenchHost(view: EditorView): TikzWorkbenchHost {
           ).href,
     // webpack.renderer.config.js copies the pinned pages beside the main window.
     editorUrl: "./tikz-editor/index.html",
-    quiverUrl: "./quiver/zettlr-host.html",
     reportError,
   };
 }
