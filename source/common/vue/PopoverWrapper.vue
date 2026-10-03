@@ -200,18 +200,12 @@ function place(): void {
   // Check where we can place the popover. Usually this will yield more than one
   // `true` value.
   const placementMargins = DOCUMENT_MARGIN + arrowSize;
-  const canPlaceBelow =
-    spaceBelow > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
+  const canPlaceBelow = spaceBelow > wrapperHeight + placementMargins;
   const canPlaceRight =
     spaceRight > wrapperWidth + placementMargins &&
     spaceAbove > placementMargins &&
     spaceBelow > placementMargins;
-  const canPlaceAbove =
-    spaceAbove > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
+  const canPlaceAbove = spaceAbove > wrapperHeight + placementMargins;
   const canPlaceLeft =
     spaceLeft > wrapperWidth + placementMargins &&
     spaceAbove > placementMargins &&
