@@ -32,10 +32,13 @@
         <TaskProgressIndicator
           v-if="task.status === TaskStatus.ongoing"
           class="progress"
-          v-bind:label="task.title"
-          v-bind:percentage="task.currentTaskPercentage"
+          :label="task.title"
+          :percentage="task.currentTaskPercentage"
         />
-        <div v-else class="status">
+        <div
+          v-else
+          class="status"
+        >
           <template v-if="task.status === TaskStatus.error">
             <cds-icon shape="exclamation-triangle"></cds-icon>
           </template>

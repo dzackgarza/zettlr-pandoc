@@ -159,8 +159,8 @@
         >
           <span>{{ runningLabel }}</span>
           <TaskProgressIndicator
-            v-bind:label="newestTask.title"
-            v-bind:percentage="newestTask.currentTaskPercentage"
+            :label="newestTask.title"
+            :percentage="newestTask.currentTaskPercentage"
             compact
           />
         </button>

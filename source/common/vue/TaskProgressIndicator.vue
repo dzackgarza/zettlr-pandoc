@@ -1,12 +1,22 @@
 <template>
-  <span class="task-progress" v-bind:class="{ compact: props.compact }">
+  <span
+    class="task-progress"
+    :class="{ compact: props.compact }"
+  >
     <LoadingSpinner
-      v-bind:spinner-size="props.compact ? 14 : 18"
+      :spinner-size="props.compact ? 14 : 18"
       spinner-color="var(--system-accent-color, #2388ff)"
       aria-hidden="true"
     />
-    <progress v-bind:value="props.percentage" max="1" v-bind:aria-label="props.label"></progress>
-    <span v-if="props.percentage !== undefined" class="percentage">
+    <progress
+      :value="props.percentage"
+      max="1"
+      :aria-label="props.label"
+    />
+    <span
+      v-if="props.percentage !== undefined"
+      class="percentage"
+    >
       {{ Math.round(props.percentage * 100) }}%
     </span>
   </span>
