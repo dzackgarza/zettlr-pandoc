@@ -15,12 +15,12 @@ export function referencePreviewMarkdown(definition: PreviewSource): string {
     return lines.slice(1, last).join("\n").trim();
   }
 
-  if (definition.family === "lst" && lines.length > 1) {
+  if (definition.family === "lst") {
     const last = lines[lines.length - 1].trim().startsWith("```") ? -1 : undefined;
     return lines.slice(1, last).join("\n").trim();
   }
 
-  if (definition.family === "tbl" && lines.length > 1) {
+  if (definition.family === "tbl") {
     return definition.previewSource.replace(/\s*\{#tbl[:-][^}]+\}\s*$/u, "").trim();
   }
 

@@ -368,6 +368,20 @@ export function extractReferencesFromAST(
     }
   };
 
+  const tablePreviewSource = (
+    captionNode: ASTNode,
+    precedingNode: ASTNode | undefined,
+    family: ReturnType<typeof referenceFamilyOf>,
+  ): string | undefined => {
+    if (family !== "tbl" || precedingNode?.type !== "Table") {
+      return undefined;
+    }
+    if (markdown.slice(precedingNode.to, captionNode.from).trim() !== "") {
+      return undefined;
+    }
+    return markdown.slice(precedingNode.from, captionNode.to);
+  };
+
   // Handles attributes the parser attached to an enclosing block (table
   // caption lines, display math paragraphs, image paragraphs): the attribute
   // list trails the structure.
@@ -393,12 +407,7 @@ export function extractReferencesFromAST(
       }
     }
 
-    const tableSource =
-      family === "tbl" &&
-      previousSibling?.type === "Table" &&
-      markdown.slice(previousSibling.to, node.from).trim() === ""
-        ? markdown.slice(previousSibling.from, node.to)
-        : undefined;
+    const tableSource = tablePreviewSource(node, previousSibling, family);
     pushDefinition(
       located,
       "crossref-attr",
