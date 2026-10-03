@@ -1,6 +1,6 @@
 // Drives the standalone TikZ workbench page served by
 // packages/tikz-workbench/standalone/server.ts. It opens the visual editor
-// (which hides the page source pane), compiles the file, edits the source pane,
+// compiles the file, edits the source pane,
 // saves, and then saves again after the file changed on disk. It prints a JSON
 // report and leaves one screenshot per state in the output directory.
 //
@@ -50,7 +50,7 @@ try {
   const visualStatus = await page.locator(".tikz-live-preview-status").textContent();
   await scene.capture("01-visual-editor");
   const sourcePaneVisibleInVisualMode = await page.locator(".tikz-source-editor").isVisible();
-  await page.getByRole("button", { name: "Compiled preview" }).click();
+  await page.getByRole("button", { name: "TeX render" }).click();
   const figure = page.locator(".tikz-live-preview-figure");
   await figure.waitFor({ timeout: 60_000 });
   await page
@@ -76,12 +76,12 @@ try {
   await writeFile(documentPath, externalEdit, "utf8");
   await page.keyboard.type("\n% stale edit");
   await page.keyboard.press("Control+s");
-  await page.waitForFunction(() => {
-    const status = document.querySelector(".tikz-standalone-status")?.textContent ?? "";
-    return status !== "Unsaved changes" && status !== "Saved";
-  });
+  await page.waitForFunction(() =>
+    document.querySelector(".tikz-standalone-status")?.textContent?.includes("412 Precondition Failed"),
+  );
   const fileAfterStaleSave = await readFile(documentPath, "utf8");
-  const staleSaveButtonEnabled = await page.getByRole("button", { name: "Save" }).isEnabled();
+  await page.locator(".file-menu summary").click();
+  const staleSaveButtonEnabled = await page.getByRole("button", { name: "Save", exact: true }).isEnabled();
   await scene.capture("04-stale-save-refused");
 
   console.log(
@@ -101,5 +101,6 @@ try {
   console.error(`page text:\n${pageText}\npage log:\n${pageLog.join("\n")}`);
   throw error;
 } finally {
+  await scene.page.close({ runBeforeUnload: false });
   await scene.close();
 }
