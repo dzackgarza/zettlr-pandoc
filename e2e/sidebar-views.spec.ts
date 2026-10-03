@@ -46,8 +46,8 @@ const VIEW = (view: string): string => `${DRAWER}[data-view="${view}"]`;
 const SECTION = (id: string): string => `${DRAWER} [data-section="${id}"]`;
 const SECTION_HEADER = (id: string): string => `${SECTION(id)} .chrome-section-trigger`;
 
-async function readConfig(page: Page): Promise<Record<string, unknown>> {
-  return await page.evaluate(() => {
+function readConfig(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(() => {
     const config: unknown = window.ipc.sendSync("config-provider", {
       command: "get-config",
     });
@@ -75,8 +75,8 @@ async function clickMenuItem(page: Page, id: string): Promise<void> {
   }, id);
 }
 
-async function pressedIcons(page: Page): Promise<string[]> {
-  return await page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll((elements) =>
+function pressedIcons(page: Page): Promise<string[]> {
+  return page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll((elements) =>
     elements.map((element) => {
       const activity = element.getAttribute("data-activity");
       if (activity === null) {
