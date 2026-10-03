@@ -131,6 +131,8 @@ function workspaceEntries(): ReferenceCompletionEntry[] {
       family: definition.family,
       title: definition.title,
       documentPath: definition.documentPath,
+      sourceKind: definition.sourceKind,
+      previewSource: definition.previewSource,
     })),
   );
   return annotateCompletionEntries(raw, ACTIVE_PATH, PROJECT_ROOTS);

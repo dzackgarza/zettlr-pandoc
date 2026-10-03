@@ -21,6 +21,7 @@
  * END HEADER
  */
 
+import "./provision-renderer-window-seams";
 import { type Completion, CompletionContext } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type StateEffect } from "@codemirror/state";
@@ -50,6 +51,8 @@ function referenceEntries(): ReferenceCompletionEntry[] {
     family: definition.family,
     title: definition.title,
     documentPath: definition.documentPath,
+    sourceKind: definition.sourceKind,
+    previewSource: definition.previewSource,
   }));
 }
 
