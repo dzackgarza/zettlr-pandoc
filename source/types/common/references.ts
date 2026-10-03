@@ -304,6 +304,8 @@ export interface ReferenceCompletionEntry {
   /** The authored title/caption, or undefined when nothing was authored */
   title: string | undefined;
   documentPath: string;
+  sourceKind: ReferenceSourceKind;
+  previewSource: string;
   /** Optional Project-membership status; undefined until Phase 7 computes it */
   projectStatus?: ProjectReferenceStatus;
   /** The append-and-continue plan, present exactly on omitted entries */

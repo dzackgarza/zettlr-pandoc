@@ -47,14 +47,10 @@
  */
 
 import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
-import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import {
   computeProjectReferenceStatus,
   projectStatusDisplayName,
 } from "@common/pandoc-util/project-reference-status";
-import { reportError } from "@common/util/error-reporting";
-import { setSanitizedHTML } from "@common/util/sanitize-html";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import {
   type ProjectRootSpec,
   type ReferenceDefinition,
@@ -62,42 +58,7 @@ import {
 } from "@dts/common/references";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "../util/configuration";
-
-/**
- * The bounded excerpt source of a definition: the previewSource with its
- * fence machinery stripped, so the excerpt never shows raw fence markers or
- * the attribute block. The excerpt stays bounded to the definition's own
- * preview — never the whole defining document.
- *
- * @param   {ReferenceDefinition}  definition  The resolved definition
- *
- * @return  {string}                           The excerpt markdown source
- */
-function excerptSource(definition: ReferenceDefinition): string {
-  const lines = definition.previewSource.split("\n");
-
-  if (definition.sourceKind === "theorem-div") {
-    // Drop the opening `::: {...}` line and the closing `:::` line.
-    const last = lines[lines.length - 1].trim().startsWith(":::") ? -1 : undefined;
-    return lines.slice(1, last).join("\n").trim();
-  }
-
-  if (definition.family === "lst" && lines.length > 1) {
-    // Drop the fence lines of the listing's fenced code block.
-    const last = lines[lines.length - 1].trim().startsWith("```") ? -1 : undefined;
-    return lines.slice(1, last).join("\n").trim();
-  }
-
-  // A single authored line bearing the id attribute: strip the trailing
-  // attribute block plus caption/heading sigils.
-  const line = lines.join("\n");
-  const brace = line.lastIndexOf("{");
-  const clean = brace === -1 ? line : line.slice(0, brace);
-  return clean
-    .replace(/^#+\s*/, "")
-    .replace(/^:\s*/, "")
-    .trim();
-}
+import { renderReferencePreview } from "../util/reference-preview";
 
 /**
  * The hover source for workspace reference occurrences: the specs drive this
@@ -211,17 +172,7 @@ function getPreviewElement(
   // is the production preload bridge, present in every renderer window
   // (review B9: no existence probe — the headless specs provision the same
   // seam).
-  const source = excerptSource(definition);
-  excerpt.textContent = source;
-
-  md2html(source, {
-    zknLinkFormat: view.state.field(configField).zknLinkFormat,
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-  })
-    .then((html) => {
-      setSanitizedHTML(excerpt, html, "document");
-    })
-    .catch((err) => reportError("Could not render the reference excerpt", err));
+  renderReferencePreview(excerpt, definition, view.state.field(configField).zknLinkFormat);
 
   const expand = document.createElement("button");
   expand.classList.add("reference-hover-expand");

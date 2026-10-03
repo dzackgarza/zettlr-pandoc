@@ -91,13 +91,14 @@ export function searchWorkspaceDefinitions(
   definitions: ReferenceDefinition[],
   query: string,
   context?: WorkspaceSearchContext,
+  searchText: (definition: ReferenceDefinition) => string = (definition) => definition.key,
 ): ReferenceDefinition[] {
   let matches: ReferenceDefinition[];
   if (query === "") {
     matches = [...definitions];
   } else {
     const fzf = new Fzf(definitions, {
-      selector: (definition) => definition.key,
+      selector: searchText,
     });
     matches = fzf.find(query).map((result) => result.item);
   }

@@ -71,6 +71,8 @@ function entriesOf(documentPath: string): ReferenceCompletionEntry[] {
     family: definition.family,
     title: definition.title,
     documentPath: definition.documentPath,
+    sourceKind: definition.sourceKind,
+    previewSource: definition.previewSource,
   }));
 }
 

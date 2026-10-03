@@ -1657,6 +1657,8 @@ async function updateReferenceEntries(): Promise<void> {
       family: definition.family,
       title: definition.title,
       documentPath: definition.documentPath,
+      sourceKind: definition.sourceKind,
+      previewSource: definition.previewSource,
     }));
   const entries = annotateCompletionEntries(rawEntries, props.file.path, projectRoots);
 

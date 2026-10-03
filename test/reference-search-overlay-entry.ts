@@ -24,12 +24,15 @@
  *   Phase 5; the emitted intent object is the assertion target now)
  */
 
+import "./provision-renderer-window-seams";
+
 import type {
   ProjectRootSpec,
   ReferenceDefinition,
   ReferenceOccurrence,
   SourceRange,
 } from "@dts/common/references";
+import { createPinia } from "pinia";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import ReferenceSearchView from "source/win-main/launcher/ReferenceSearchView.vue";
 import { createApp, nextTick } from "vue";
@@ -143,7 +146,7 @@ window.referenceSearchProbeMount = async (
       recordedOpenHelpCount++;
     },
   });
-  overlayApp.mount("#app");
+  overlayApp.use(createPinia()).mount("#app");
 
   await nextTick();
   await document.fonts.ready;
@@ -236,7 +239,7 @@ window.referenceSearchProbeMountKeyed = async (
       keyedApp.unmount();
     },
   });
-  keyedApp.mount("#app");
+  keyedApp.use(createPinia()).mount("#app");
 
   await nextTick();
   await document.fonts.ready;

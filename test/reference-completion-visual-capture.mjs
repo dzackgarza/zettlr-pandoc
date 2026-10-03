@@ -123,6 +123,10 @@ async function capture(view, spec) {
     const info = document.querySelector(".cm-completionInfo");
     const tooltipRect = tooltip === null ? null : tooltip.getBoundingClientRect();
     const infoRect = info === null ? null : info.getBoundingClientRect();
+    const infoIsVisible =
+      infoRect !== null &&
+      info !== null &&
+      info.contains(document.elementFromPoint(infoRect.left + 10, infoRect.top + 10));
     return {
       infoBesideList:
         tooltipRect !== null &&
@@ -146,6 +150,7 @@ async function capture(view, spec) {
           ?.querySelector(".cm-completionLabel")?.textContent ?? null,
       details,
       infoText: info === null ? null : info.textContent,
+      infoIsVisible,
       infoHasHelpLink: document.querySelector(".cm-completionInfo [data-open-help]") !== null,
     };
   });
@@ -221,6 +226,13 @@ async function capture(view, spec) {
     throw new Error(
       `${spec.name}: the info panel overlaps the option list instead of docking beside it`,
     );
+  }
+  if (
+    spec.select === "thm:torelli" &&
+    (diagnostics.infoIsVisible !== true ||
+      !diagnostics.infoText?.includes("Two complex Enriques surfaces are isomorphic"))
+  ) {
+    throw new Error(`${spec.name}: the rendered theorem preview is not visible beside the list`);
   }
 
   await view.capture(spec.name);

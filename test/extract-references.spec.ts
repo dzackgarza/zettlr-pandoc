@@ -150,6 +150,12 @@ describe("extractReferences()", function () {
   it("extracts every crossref-attr definition with exact ranges, captions, and sections", function () {
     const fixture = loadFixture(path.join("ProjectA", "Coble_Lattice_Table.md"));
     const snapshot = extractReferences(fixture.documentPath, fixture.content);
+    const tableStart = fixture.content.indexOf("| Lattice");
+    const tableCaption = lineAt(fixture.content, "#tbl:coble-lattices");
+    const tablePreview = fixture.content.slice(
+      tableStart,
+      fixture.content.indexOf(tableCaption, tableStart) + tableCaption.length,
+    );
 
     assert.deepStrictEqual(snapshot.definitions, [
       definition(
@@ -167,7 +173,7 @@ describe("extractReferences()", function () {
         "crossref-attr",
         [],
         "Coble lattices of Halphen type",
-        lineAt(fixture.content, "#tbl:coble-lattices"),
+        tablePreview,
         "Moduli of marked surfaces",
       ),
       definition(

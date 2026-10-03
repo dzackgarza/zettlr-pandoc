@@ -63,6 +63,8 @@ import {
   referenceFamilyDisplayName,
 } from "@dts/common/references";
 import { requestPandocQuickHelp } from "../plugins/pandoc-quick-help-effect";
+import { configField } from "../util/configuration";
+import { renderReferencePreview } from "../util/reference-preview";
 import { type AutocompletePlugin } from ".";
 import { citations, citekeyUpdateField } from "./citations";
 import type { PresentedCompletion } from "./completion-presentation";
@@ -107,13 +109,24 @@ interface ReferenceLabelCompletion extends Completion {
  *
  * @return  {HTMLElement}     The info panel element
  */
-function labelInfoPanel(detail: string, view: EditorView | undefined): HTMLElement {
+function labelInfoPanel(
+  detail: string,
+  entry: ReferenceCompletionEntry,
+  zknLinkFormat: "link|title" | "title|link",
+  view: EditorView | undefined,
+): HTMLElement {
   const panel = document.createElement("div");
-  panel.className = "reference-completion-info";
+  panel.className = "zettlr-completion-info reference-completion-info";
 
   const description = document.createElement("div");
   description.textContent = detail;
   panel.appendChild(description);
+
+  const excerpt = document.createElement("div");
+  excerpt.className = "reference-completion-excerpt";
+  excerpt.dataset.referenceExcerpt = "true";
+  renderReferencePreview(excerpt, entry, zknLinkFormat);
+  panel.appendChild(excerpt);
 
   const link = document.createElement("button");
   link.type = "button";
@@ -269,7 +282,8 @@ export const atSymbols: AutocompletePlugin = {
           // US-06 (review A2): every label option links to the searchable
           // quick help from its info panel. Citation options never carry
           // this — their objects pass through byte-identically.
-          info: () => labelInfoPanel(detail, ctx.view),
+          info: () =>
+            labelInfoPanel(detail, entry, ctx.state.field(configField).zknLinkFormat, ctx.view),
           referenceAffordance,
           zettlrSource: "Ref" as const,
         };

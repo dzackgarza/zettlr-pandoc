@@ -104,6 +104,8 @@ function annotatedEntries(): ReferenceCompletionEntry[] {
       family: definition.family,
       title: definition.title,
       documentPath: definition.documentPath,
+      sourceKind: definition.sourceKind,
+      previewSource: definition.previewSource,
       projectStatus: statusOf[documentPath],
       appendPlan: documentPath === COBLE ? COBLE_APPEND_PLAN : undefined,
     }));
@@ -252,6 +254,8 @@ describe("Project-status completion gating (issue #1 Phase 7)", function () {
         family: entry.family,
         title: entry.title,
         documentPath: entry.documentPath,
+        sourceKind: entry.sourceKind,
+        previewSource: entry.previewSource,
       })),
     );
 

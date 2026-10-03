@@ -69,10 +69,10 @@ interface SerializedMenuNode {
 }
 
 /** The application menu as the menu provider serialises it for this window. */
-async function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
-  return await page.evaluate(
-    async () =>
-      await new Promise<SerializedMenuNode[]>((resolve) => {
+function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
+  return page.evaluate(
+    () =>
+      new Promise<SerializedMenuNode[]>((resolve) => {
         window.ipc.on(
           "menu-provider",
           (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
@@ -122,8 +122,8 @@ async function findPreferencesPage(browser: Browser, timeoutMs = 20_000): Promis
   throw new Error("Preferences window did not open");
 }
 
-async function readConfig(page: Page): Promise<{ fileManagerVisible: boolean }> {
-  return await page.evaluate(() => {
+function readConfig(page: Page): Promise<{ fileManagerVisible: boolean }> {
+  return page.evaluate(() => {
     const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
     if (typeof config !== "object" || config === null || !("window" in config)) {
       throw new Error("The config provider returned no window section");
@@ -150,8 +150,8 @@ function activeEditor(page: Page): Locator {
   return page.locator(".cm-content").filter({ visible: true });
 }
 
-async function readEditorDocument(page: Page): Promise<string> {
-  return await activeEditor(page).evaluate((content) => {
+function readEditorDocument(page: Page): Promise<string> {
+  return activeEditor(page).evaluate((content) => {
     const tile = (
       content as HTMLElement & {
         cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } };
@@ -165,8 +165,8 @@ async function readEditorDocument(page: Page): Promise<string> {
   });
 }
 
-async function readCursorLine(page: Page): Promise<number> {
-  return await activeEditor(page).evaluate((content) => {
+function readCursorLine(page: Page): Promise<number> {
+  return activeEditor(page).evaluate((content) => {
     const tile = (
       content as HTMLElement & {
         cmTile?: {
@@ -541,6 +541,44 @@ describe("the Ctrl+P command launcher", function () {
     await waitUntil(
       async () => (await readCursorLine(activePage)) === definitionLine,
       `the cursor on line ${definitionLine}`,
+    );
+  });
+
+  it("previews and opens a document block from Ctrl+P", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const targetPath = path.join(
+      requireInitialized(fixtureRoot, "fixture"),
+      "workspace",
+      "foundations",
+      "categories.md",
+    );
+    const targetText = await readFile(targetPath, "utf8");
+
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "Browse document blocks", "Browse document blocks");
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(`${LAUNCHER} [data-search-mode="browse"]`).waitFor();
+    await activePage.locator(LAUNCHER_INPUT).fill("maximal subgroupoid");
+    await activePage
+      .locator(`${LAUNCHER} [data-launcher-row][data-reference-key="def-core"]`)
+      .waitFor();
+    const preview = activePage.locator("[data-document-block-preview] [data-reference-excerpt]");
+    await preview.locator("p").waitFor();
+    const previewText = await preview.textContent();
+    assert.ok(previewText !== null);
+    assert.match(previewText, /The maximal subgroupoid/);
+    screenshots.set("launcher-document-block-preview.png", await activePage.screenshot());
+
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached" });
+    await waitUntil(
+      async () => (await readEditorDocument(activePage)) === targetText,
+      "the selected block's document to become active",
+    );
+    await waitUntil(
+      async () => (await readCursorLine(activePage)) === 1,
+      "the cursor on the selected block",
     );
   });
 

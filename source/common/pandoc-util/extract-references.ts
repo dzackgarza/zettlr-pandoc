@@ -368,10 +368,24 @@ export function extractReferencesFromAST(
     }
   };
 
+  const tablePreviewSource = (
+    captionNode: ASTNode,
+    precedingNode: ASTNode | undefined,
+    family: ReturnType<typeof referenceFamilyOf>,
+  ): string | undefined => {
+    if (family !== "tbl" || precedingNode?.type !== "Table") {
+      return undefined;
+    }
+    if (markdown.slice(precedingNode.to, captionNode.from).trim() !== "") {
+      return undefined;
+    }
+    return markdown.slice(precedingNode.from, captionNode.to);
+  };
+
   // Handles attributes the parser attached to an enclosing block (table
   // caption lines, display math paragraphs, image paragraphs): the attribute
   // list trails the structure.
-  const visitAttributedBlock = (node: ASTNode): void => {
+  const visitAttributedBlock = (node: ASTNode, previousSibling: ASTNode | undefined): void => {
     if (node.attributeRange === undefined) {
       return;
     }
@@ -393,10 +407,16 @@ export function extractReferencesFromAST(
       }
     }
 
-    pushDefinition(located, "crossref-attr", title, lineAt(markdown, located.range.from));
+    const tableSource = tablePreviewSource(node, previousSibling, family);
+    pushDefinition(
+      located,
+      "crossref-attr",
+      title,
+      tableSource === undefined ? lineAt(markdown, located.range.from) : tableSource,
+    );
   };
 
-  const visit = (node: ASTNode): void => {
+  const visit = (node: ASTNode, previousSibling?: ASTNode): void => {
     switch (node.type) {
       case "Heading":
         visitHeading(node);
@@ -440,11 +460,13 @@ export function extractReferencesFromAST(
         break;
       }
       default:
-        visitAttributedBlock(node);
+        visitAttributedBlock(node, previousSibling);
     }
 
+    let previousChild: ASTNode | undefined;
     for (const child of childrenOf(node)) {
-      visit(child);
+      visit(child, previousChild);
+      previousChild = child;
     }
   };
 
