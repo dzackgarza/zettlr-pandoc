@@ -77,11 +77,15 @@ try {
   await page.keyboard.type("\n% stale edit");
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() =>
-    document.querySelector(".tikz-standalone-status")?.textContent?.includes("412 Precondition Failed"),
+    document
+      .querySelector(".tikz-standalone-status")
+      ?.textContent?.includes("412 Precondition Failed"),
   );
   const fileAfterStaleSave = await readFile(documentPath, "utf8");
   await page.locator(".file-menu summary").click();
-  const staleSaveButtonEnabled = await page.getByRole("button", { name: "Save", exact: true }).isEnabled();
+  const staleSaveButtonEnabled = await page
+    .getByRole("button", { name: "Save", exact: true })
+    .isEnabled();
   await scene.capture("04-stale-save-refused");
 
   console.log(
