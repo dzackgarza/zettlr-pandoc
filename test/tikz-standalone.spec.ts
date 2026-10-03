@@ -112,9 +112,9 @@ describe("standalone TikZ workbench", function () {
     assert.ok(width / height > 1.3, `figure is ${width} x ${height}`);
   });
 
-  it("loads the file into the pinned visual editor, which replaces the source pane", function () {
+  it("loads the file into the pinned visual editor beside the source pane", function () {
     assert.equal(report.visualStatus, "Synced");
-    assert.equal(report.sourcePaneVisibleInVisualMode, false);
+    assert.equal(report.sourcePaneVisibleInVisualMode, true);
   });
 
   it("saves source-pane edits to the file", function () {

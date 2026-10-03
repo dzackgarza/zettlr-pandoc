@@ -26,7 +26,7 @@ try {
   await scene.open("tikz-editor-fullscreen.html", html);
   await scene.page.evaluate(() => window.tikzEditorFullscreenReady);
 
-  const visualButton = scene.page.getByRole("button", { name: "Visual" });
+  const visualButton = scene.page.getByRole("button", { name: "Drawing canvas" });
   await visualButton.click();
   const frame = scene.page.frameLocator(".tikz-editor-frame");
   await frame.locator("body").waitFor();

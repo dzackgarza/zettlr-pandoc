@@ -274,6 +274,10 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   diagnostics — plus the TeX compiler (`src/tikz-render.ts`), the Quiver macro
   projection, and the vendored forks `vendor/tikz-editor` and `vendor/quiver`. It must
   import nothing from `source/`; Zettlr imports it as `tikz-workbench/src/…`.
+  This path is a submodule of `dzackgarza/visual-tikz-editor`. Commit workbench
+  changes there and update the submodule commit in this repository.
+  Zettlr starts ordinary TikZ in compiled preview. The standalone host starts
+  `tikzpicture` in the visual editor. Both start `tikzcd` in Quiver.
 - **Host contract:** `src/host.ts` (`TikzWorkbenchHost`). Zettlr's host is
   `source/win-main/tikz-workbench-host.ts` (a CodeMirror range + IPC), mounted by
   `MainEditor.vue`. The standalone host is `standalone/` (`just tikz-standalone
