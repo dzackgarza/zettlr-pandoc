@@ -95,6 +95,7 @@ function clickMenuItem(
   sent: Send[];
   commandCalls: Array<[string, unknown]>;
   loggedErrors: string[];
+  accelerator: string | undefined;
 } {
   const commandCalls: Array<[string, unknown]> = [];
   const loggedErrors: string[] = [];
@@ -151,6 +152,7 @@ function clickMenuItem(
     sent: sentMessagesFor(focusedWindow),
     commandCalls,
     loggedErrors,
+    accelerator: item.accelerator,
   };
 }
 
@@ -166,6 +168,7 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-back"]],
         commandCalls: [],
         loggedErrors: [],
+        accelerator: platform === "darwin" ? "Cmd+[" : "Ctrl+[",
       });
     });
 
@@ -174,7 +177,23 @@ describe("File ▸ Previous/Next file menu navigation", function () {
         sent: [["shortcut", "navigate-forward"]],
         commandCalls: [],
         loggedErrors: [],
+        accelerator: platform === "darwin" ? "Cmd+]" : "Ctrl+]",
       });
+    });
+  }
+});
+
+describe("Window ▸ Reopen Closed Tab", () => {
+  const platforms: Array<[string, MenuBuilder, string]> = [
+    ["win32/linux", getWin32Menu, "Ctrl+Shift+T"],
+    ["darwin", getDarwinMenu, "Cmd+Shift+T"],
+  ];
+
+  for (const [platform, getMenu, accelerator] of platforms) {
+    it(`${platform}: dispatches the reopen command from the standard accelerator`, () => {
+      const result = clickMenuItem(getMenu, "menu.tab_reopen_closed");
+      assert.deepEqual(result.sent, [["shortcut", "reopen-closed-tab"]]);
+      assert.equal(result.accelerator, accelerator);
     });
   }
 });

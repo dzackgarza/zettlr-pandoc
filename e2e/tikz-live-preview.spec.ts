@@ -499,6 +499,23 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       0,
       "inline figures have no competing fullscreen control",
     );
+    await inlineTikzCd.locator("..").getByRole("button", { name: "Open Quiver editor" }).click();
+    await preview.waitFor({ state: "visible", timeout: 20_000 });
+    assert.strictEqual(
+      await preview
+        .getByRole("button", { name: "Quiver editor", exact: true })
+        .getAttribute("aria-pressed"),
+      "true",
+      "the inline tikzcd control opens Quiver",
+    );
+    await page.evaluate(`(() => {
+      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
+      if (!view) throw new Error('CodeMirror view disappeared')
+      view.dispatch({ selection: { anchor: 1 } })
+      view.focus()
+    })()`);
+    await preview.waitFor({ state: "detached", timeout: 20_000 });
+    await inlineTikzCd.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
     await inlineTikzCd.locator("svg").click();
     await preview.waitFor({ state: "visible", timeout: 20_000 });
 
@@ -749,6 +766,27 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     })()`);
     await preview.waitFor({ state: "detached", timeout: 20_000 });
     const ordinaryFigure = page.locator('.tikz-figure[data-tikz-language="tikz"]');
+    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
+    const ordinaryFigureBlock = ordinaryFigure.locator("..");
+    await ordinaryFigureBlock.getByRole("button", { name: "Rebuild TikZ figure" }).click();
+    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
+    await preview.waitFor({ state: "detached", timeout: 20_000 });
+    await ordinaryFigureBlock.getByRole("button", { name: "Open visual editor" }).click();
+    await preview.waitFor({ state: "visible", timeout: 20_000 });
+    assert.strictEqual(
+      await preview
+        .getByRole("button", { name: "Visual editor", exact: true })
+        .getAttribute("aria-pressed"),
+      "true",
+      "the inline visual control opens the matching provider",
+    );
+    await page.evaluate(`(() => {
+      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
+      if (!view) throw new Error('CodeMirror view disappeared')
+      view.dispatch({ selection: { anchor: 1 } })
+      view.focus()
+    })()`);
+    await preview.waitFor({ state: "detached", timeout: 20_000 });
     await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
     await ordinaryFigure.locator("svg").click();
     await preview.waitFor({ state: "visible", timeout: 20_000 });

@@ -356,6 +356,10 @@ export type DocumentManagerIPCContract = {
     request: { payload: LeafLoc & { path: string } };
     response: boolean;
   };
+  "reopen-closed-tab": {
+    request: { payload: { windowId: string } };
+    response: boolean;
+  };
   "close-all-tabs": {
     request: { payload: { windowId: string } };
     response: boolean;
@@ -597,6 +601,7 @@ export default class DocumentManager
    * @var {DocumentTree[]}
    */
   private readonly _windows: DocumentWindows;
+  private readonly _closedTabs: Map<string, string[]>;
   /**
    * The event emitter helps broadcast events across the main process
    *
@@ -697,6 +702,7 @@ export default class DocumentManager
     const containerPath = path.join(app.getPath("userData"), "documents.yaml");
 
     this._windows = {};
+    this._closedTabs = new Map();
     this._emitter = new EventEmitter();
     this._config = new PersistentDataContainer(containerPath, "yaml");
     this._ignoreChanges = [];
@@ -966,6 +972,9 @@ export default class DocumentManager
         case "close-file": {
           const { windowId, leafId, path } = payload;
           return await this.closeFile(windowId, leafId, path);
+        }
+        case "reopen-closed-tab": {
+          return await this.reopenClosedTab(payload.windowId);
         }
         case "close-all-tabs": {
           return await this.closeAllTabs(payload.windowId);
@@ -1368,6 +1377,7 @@ export default class DocumentManager
       }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
+      this._closedTabs.delete(windowId);
       this.syncToConfig();
       this.syncWatchedFilePaths();
     }
@@ -1393,7 +1403,7 @@ export default class DocumentManager
     // still hold on to some memory after the Electron process itself shuts down
     // which will result in a crash report appearing on macOS.
     await this._watcher.shutdown();
-    this._config.shutdown();
+    await this._config.shutdown();
   }
 
   private broadcastEvent(event: DP_EVENTS, context?: DocumentsUpdateContext): void {
@@ -2075,6 +2085,12 @@ current contents from the editor somewhere else, and restart the application.`,
 
     const ret = leaf.tabMan.closeFile(filePath);
     if (ret) {
+      let history = this._closedTabs.get(windowId);
+      if (history === undefined) {
+        history = [];
+        this._closedTabs.set(windowId, history);
+      }
+      history.push(filePath);
       this.syncToConfig();
       this.syncWatchedFilePaths();
       this.broadcastEvent(DP_EVENTS.CLOSE_FILE, { windowId, leafId, filePath });
@@ -2093,6 +2109,19 @@ current contents from the editor somewhere else, and restart the application.`,
       await this.synchronizeDatabases();
     }
     return ret;
+  }
+
+  public async reopenClosedTab(windowId: string): Promise<boolean> {
+    const history = this._closedTabs.get(windowId);
+    if (history === undefined || history.length === 0) {
+      return false;
+    }
+    const filePath = history[history.length - 1];
+    const reopened = await this.openFile(windowId, undefined, filePath, true);
+    if (reopened) {
+      history.pop();
+    }
+    return reopened;
   }
 
   /**

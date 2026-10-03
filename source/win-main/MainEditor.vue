@@ -30,6 +30,7 @@
         <TikzWorkbench
           :target="tikzPreviewTarget"
           :host="tikzWorkbenchHost"
+          :requested-mode="tikzRequestedMode"
           :theme="configStore.config.darkMode ? 'dark' : 'light'"
         />
       </SplitterPanel>
@@ -101,6 +102,7 @@ import {
   selectNextReviewChunk,
   selectPreviousReviewChunk,
 } from "@common/modules/markdown-editor/plugins/review-chunks";
+import { OPEN_TIKZ_VISUAL_EDITOR_EVENT } from "@common/modules/markdown-editor/renderers/render-tikz";
 import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
@@ -175,6 +177,7 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
+import type { TikzPreviewModeId } from "tikz-workbench/src/preview-modes";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
 import _ from "underscore";
@@ -404,6 +407,14 @@ async function updateTexMacroSources(
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
 const activeEditorView = shallowRef<EditorView | null>(null);
+const tikzRequestedMode = ref<TikzPreviewModeId>("tikz");
+
+function openInlineTikzVisualEditor(event: Event): void {
+  if (!(event instanceof CustomEvent)) {
+    return;
+  }
+  tikzRequestedMode.value = event.detail === "tikzcd" ? "quiver" : "visual";
+}
 
 function ownsWindowActiveState(
   editor: MarkdownEditor | null = currentEditor,
@@ -420,7 +431,11 @@ function updateActiveTikzSource(editor: MarkdownEditor): void {
   if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
     return;
   }
-  activeTikzSource.value = findActiveTikzBlock(editor.instance.state);
+  const next = findActiveTikzBlock(editor.instance.state);
+  if (next?.from !== activeTikzSource.value?.from) {
+    tikzRequestedMode.value = next?.language === "tikzcd" ? "quiver" : "tikz";
+  }
+  activeTikzSource.value = next;
 }
 
 function publishActiveEditorState(editor: MarkdownEditor): void {
@@ -726,6 +741,7 @@ const stopLinkUpdates = ipcRenderer.on("links", (_e) => {
 // MOUNTED HOOK
 onMounted(() => {
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
+  editorHost.value?.addEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (isActiveTab.value) {
     activateTab().catch(reportDocumentLoadError);
   }
@@ -747,6 +763,7 @@ onBeforeUnmount(() => {
   activeTikzSource.value = null;
   activeEditorView.value = null;
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
+  editorHost.value?.removeEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (currentEditor !== null) {
     currentEditor.unmount();
   }

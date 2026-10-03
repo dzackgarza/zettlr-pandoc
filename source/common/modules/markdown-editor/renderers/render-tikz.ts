@@ -20,8 +20,8 @@
  *                  telling the user to install it; a render killed by a signal
  *                  names the signal. Clicking a rendered figure follows the
  *                  editor's ordinary edit-first semantics and reveals its
- *                  source; a separate corner control opens the full-screen
- *                  lightbox with the servable SVG file.
+ *                  source. Overlay controls rebuild the figure or open its
+ *                  visual editor (Quiver for tikzcd).
  *
  * END HEADER
  */
@@ -38,6 +38,8 @@ import { tikzWidthEm } from "../tikz-display-size";
 import { requestTikzRender } from "../tikz-render-client";
 import { configField } from "../util/configuration";
 import { renderBlockWidgets } from "./base-renderer";
+
+export const OPEN_TIKZ_VISUAL_EDITOR_EVENT = "open-tikz-visual-editor";
 
 /**
  * One in-flight render per figure source. Settled requests are removed: the
@@ -113,16 +115,14 @@ function populate(
   result: TikzRenderResult,
   editTitle: string,
   editSource: () => void,
+  actions: HTMLElement,
 ): void {
   if (result.ok) {
     const figure = figureNodes(result.html);
     const frame = document.createElement("div");
     frame.classList.add("tikz-rendered-frame");
-    frame.append(...figure);
+    frame.append(...figure, actions);
     normalizeSvgTypography(frame, result.svg, result.texFontSizePt);
-
-    // Editing is the only inline action. Fullscreen belongs to the unified
-    // RHS preview pane so rendered widgets do not expose a second preview path.
 
     elem.classList.remove("tikz-pending");
     elem.classList.add("tikz-rendered");
@@ -230,6 +230,7 @@ function populate(
   edit.addEventListener("click", editSource);
   box.insertBefore(edit, title);
 
+  box.append(actions);
   elem.replaceChildren(box);
 }
 
@@ -276,41 +277,82 @@ class TikzWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: from, head: from + this.blockLength } });
     };
-    requestTikzRender({
-      source: this.source,
-      kind: this.kind,
-      language: this.language,
-      docPath,
-    }).then(
-      (result) => {
-        populate(elem, result, editTitle, editSource);
-      },
-      // Only the IPC round-trip is handled here. A failure to reach the main
-      // process is a render failure the user must see; a failure raised by
-      // populate is a broken service/widget contract and must not be dressed
-      // up as one of the render service's outcomes.
-      (err: unknown) => {
-        reportError("TikZ inline render IPC failed", err);
-        populate(
-          elem,
-          {
-            ok: false,
-            kind: "pandoc-error",
-            log: err instanceof Error ? err.message : String(err),
-          },
-          editTitle,
-          editSource,
-        );
-      },
-    );
+    let renderVersion = 0;
+    const render = (cachePolicy: "use" | "refresh"): void => {
+      const version = ++renderVersion;
+      elem.classList.add("tikz-pending");
+      requestTikzRender({
+        source: this.source,
+        kind: this.kind,
+        language: this.language,
+        docPath,
+        cachePolicy,
+      }).then(
+        (result) => {
+          if (version !== renderVersion) {
+            return;
+          }
+          populate(elem, result, editTitle, editSource, actions);
+        },
+        // Only the IPC round-trip is handled here. A failure to reach the main
+        // process is a render failure the user must see; a failure raised by
+        // populate is a broken service/widget contract and must not be dressed
+        // up as one of the render service's outcomes.
+        (err: unknown) => {
+          if (version !== renderVersion) {
+            return;
+          }
+          reportError("TikZ inline render IPC failed", err);
+          populate(
+            elem,
+            {
+              ok: false,
+              kind: "pandoc-error",
+              log: err instanceof Error ? err.message : String(err),
+            },
+            editTitle,
+            editSource,
+            actions,
+          );
+        },
+      );
+    };
+    const actions = document.createElement("div");
+    actions.className = "tikz-figure-actions";
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "tikz-figure-action";
+    refresh.textContent = "↻";
+    refresh.title = "Rebuild TikZ figure";
+    refresh.setAttribute("aria-label", "Rebuild TikZ figure");
+    refresh.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      render("refresh");
+    });
+    const visual = document.createElement("button");
+    visual.type = "button";
+    visual.className = "tikz-figure-action";
+    visual.textContent = this.language === "tikzcd" ? "Quiver" : "Visual";
+    visual.title = this.language === "tikzcd" ? "Open Quiver editor" : "Open visual editor";
+    visual.setAttribute("aria-label", visual.title);
+    visual.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      editSource();
+      view.dom.dispatchEvent(
+        new CustomEvent(OPEN_TIKZ_VISUAL_EDITOR_EVENT, { bubbles: true, detail: this.language }),
+      );
+    });
+    actions.append(refresh, visual);
+    elem.append(actions);
+    render("use");
 
-    // Every rendered TikZ figure now has one edit-first activation path:
-    // select its authored source and let the unified RHS preview choose the
-    // appropriate renderer. tikzcd defaults to Quiver there; ordinary TikZ is
-    // locked to the vanilla renderer.
+    // A click on the figure selects its authored source. The overlay buttons
+    // have their own actions and do not enter source editing.
     elem.addEventListener("click", (event) => {
       const target = event.target;
-      if (target instanceof Element && target.closest(".tikz-error") !== null) {
+      if (target instanceof Element && target.closest("button, .tikz-error") !== null) {
         return;
       }
       event.preventDefault();
@@ -352,8 +394,30 @@ export const renderTikzFigures = [
       display: "block",
       padding: "0.35em 0",
     },
+    ".tikz-figure-actions": {
+      position: "absolute",
+      bottom: "100%",
+      right: "0",
+      display: "flex",
+      gap: "0.3em",
+      opacity: "0.42",
+      transition: "opacity 120ms ease",
+    },
+    ".tikz-figure-block:hover .tikz-figure-actions, .tikz-figure-actions:focus-within": {
+      opacity: "1",
+    },
+    ".tikz-figure-action": {
+      border: "1px solid currentColor",
+      borderRadius: "0.3em",
+      background: "Canvas",
+      color: "inherit",
+      cursor: "pointer",
+      font: "inherit",
+      padding: "0.15em 0.45em",
+    },
     ".tikz-figure": {
       display: "block",
+      position: "relative",
       textAlign: "center",
       padding: "0.8em 0 0.4em",
       cursor: "default",
@@ -367,7 +431,7 @@ export const renderTikzFigures = [
       // Keep the original figure measure exactly: the delineation must not
       // steal horizontal space from a wide diagram. An inset stroke is visual
       // only, unlike a border plus horizontal padding.
-      padding: "0.8em 0 0.4em",
+      padding: "1.8em 0 0.4em",
       borderRadius: "0.35em",
       boxShadow: "inset 0 0 0 1px color-mix(in srgb, currentColor 13%, transparent)",
       backgroundColor: "color-mix(in srgb, currentColor 1.8%, transparent)",
@@ -406,6 +470,7 @@ export const renderTikzFigures = [
       fontStyle: "italic",
     },
     ".tikz-error": {
+      position: "relative",
       display: "inline-block",
       textAlign: "left",
       border: "1px solid #c0392b",
