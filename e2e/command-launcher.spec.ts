@@ -69,10 +69,10 @@ interface SerializedMenuNode {
 }
 
 /** The application menu as the menu provider serialises it for this window. */
-async function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
-  return await page.evaluate(
-    async () =>
-      await new Promise<SerializedMenuNode[]>((resolve) => {
+function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
+  return page.evaluate(
+    () =>
+      new Promise<SerializedMenuNode[]>((resolve) => {
         window.ipc.on(
           "menu-provider",
           (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
@@ -122,8 +122,8 @@ async function findPreferencesPage(browser: Browser, timeoutMs = 20_000): Promis
   throw new Error("Preferences window did not open");
 }
 
-async function readConfig(page: Page): Promise<{ fileManagerVisible: boolean }> {
-  return await page.evaluate(() => {
+function readConfig(page: Page): Promise<{ fileManagerVisible: boolean }> {
+  return page.evaluate(() => {
     const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
     if (typeof config !== "object" || config === null || !("window" in config)) {
       throw new Error("The config provider returned no window section");
@@ -150,8 +150,8 @@ function activeEditor(page: Page): Locator {
   return page.locator(".cm-content").filter({ visible: true });
 }
 
-async function readEditorDocument(page: Page): Promise<string> {
-  return await activeEditor(page).evaluate((content) => {
+function readEditorDocument(page: Page): Promise<string> {
+  return activeEditor(page).evaluate((content) => {
     const tile = (
       content as HTMLElement & {
         cmTile?: { root?: { view?: { state?: { doc?: { toString(): string } } } } };
@@ -165,8 +165,8 @@ async function readEditorDocument(page: Page): Promise<string> {
   });
 }
 
-async function readCursorLine(page: Page): Promise<number> {
-  return await activeEditor(page).evaluate((content) => {
+function readCursorLine(page: Page): Promise<number> {
+  return activeEditor(page).evaluate((content) => {
     const tile = (
       content as HTMLElement & {
         cmTile?: {
