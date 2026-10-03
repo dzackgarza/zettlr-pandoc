@@ -279,9 +279,9 @@ describe("the window status bar", function () {
     await activePage.keyboard.press("Control+Alt+l");
     const running = activePage.locator(ITEM("running-task"), {
       hasText: `Formatting "${path.basename(activeDocument)}"`,
+      has: activePage.locator("progress:not([value])"),
     });
     await running.waitFor({ timeout: 10_000 });
-    await running.locator("progress:not([value])").waitFor({ state: "visible" });
     screenshots.set("statusbar-format-task.png", await activePage.screenshot());
     // A successful format leaves nothing to report, so its task leaves the bar.
     await running.waitFor({ state: "detached", timeout: 60_000 });
