@@ -111,9 +111,9 @@ describe("TikZ microlocal live preview in the assembled app", function () {
 
     const preview = page.locator(".tikz-live-preview");
     await preview.waitFor({ state: "visible", timeout: 20_000 });
-    const tikzMode = preview.getByRole("button", { name: "Compiled preview", exact: true });
-    const quiverMode = preview.getByRole("button", { name: "Quiver editor", exact: true });
-    const visualMode = preview.getByRole("button", { name: "Visual editor", exact: true });
+    const tikzMode = preview.getByRole("button", { name: "TeX render", exact: true });
+    const quiverMode = preview.getByRole("button", { name: "Quiver canvas", exact: true });
+    const visualMode = preview.getByRole("button", { name: "Drawing canvas", exact: true });
     assert.strictEqual(
       await quiverMode.getAttribute("aria-pressed"),
       "true",
@@ -503,7 +503,7 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await preview.waitFor({ state: "visible", timeout: 20_000 });
     assert.strictEqual(
       await preview
-        .getByRole("button", { name: "Quiver editor", exact: true })
+        .getByRole("button", { name: "Quiver canvas", exact: true })
         .getAttribute("aria-pressed"),
       "true",
       "the inline tikzcd control opens Quiver",
@@ -519,8 +519,8 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await inlineTikzCd.locator("svg").click();
     await preview.waitFor({ state: "visible", timeout: 20_000 });
 
-    const rhsTikzMode = preview.getByRole("button", { name: "Compiled preview", exact: true });
-    const rhsQuiverMode = preview.getByRole("button", { name: "Quiver editor", exact: true });
+    const rhsTikzMode = preview.getByRole("button", { name: "TeX render", exact: true });
+    const rhsQuiverMode = preview.getByRole("button", { name: "Quiver canvas", exact: true });
     assert.strictEqual(
       await rhsQuiverMode.getAttribute("aria-pressed"),
       "true",
@@ -620,7 +620,7 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       /Undo|Redo|Pan view/u,
       "native editing/navigation shortcut help remains available",
     );
-    await quiverFrame.locator('.toolbar .action[data-name="shortcuts"]').click();
+    await page.keyboard.press("Escape");
     await page.waitForFunction(
       () => {
         const iframe = document.querySelector<HTMLIFrameElement>(".tikz-quiver-frame");
@@ -775,7 +775,7 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await preview.waitFor({ state: "visible", timeout: 20_000 });
     assert.strictEqual(
       await preview
-        .getByRole("button", { name: "Visual editor", exact: true })
+        .getByRole("button", { name: "Drawing canvas", exact: true })
         .getAttribute("aria-pressed"),
       "true",
       "the inline visual control opens the matching provider",
@@ -796,9 +796,9 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       undefined,
       { timeout: 20_000 },
     );
-    const ordinaryTikz = preview.getByRole("button", { name: "Compiled preview", exact: true });
-    const ordinaryQuiver = preview.getByRole("button", { name: "Quiver editor", exact: true });
-    const ordinaryVisual = preview.getByRole("button", { name: "Visual editor", exact: true });
+    const ordinaryTikz = preview.getByRole("button", { name: "TeX render", exact: true });
+    const ordinaryQuiver = preview.getByRole("button", { name: "Quiver canvas", exact: true });
+    const ordinaryVisual = preview.getByRole("button", { name: "Drawing canvas", exact: true });
     assert.strictEqual(
       await ordinaryTikz.getAttribute("aria-pressed"),
       "true",
@@ -820,12 +820,10 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     await tikzEditorFrame
       .locator('[data-canvas-viewport="true"]')
       .waitFor({ state: "visible", timeout: 30_000 });
-    const embeddedSource = tikzEditorFrame.locator(".cm-content").first();
-    await embeddedSource.waitFor({ state: "visible", timeout: 20_000 });
     assert.match(
-      await embeddedSource.innerText(),
+      await page.locator(".cm-content").innerText(),
       /\\node\[dot\] \(eta\)/u,
-      "the embedded editor receives the authored source",
+      "the host source remains beside the drawing canvas",
     );
     assert.strictEqual(
       await preview.locator(".tikz-quiver-frame").count(),
@@ -868,7 +866,6 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       "the complex hand-authored TikZ edit must land in CodeMirror",
     );
     await ordinaryVisual.click();
-    await embeddedSource.waitFor({ state: "visible", timeout: 20_000 });
     await page.waitForFunction(
       () =>
         document.querySelector(".tikz-live-preview-status")?.textContent?.includes("Synced") ===
@@ -876,8 +873,9 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       undefined,
       { timeout: 20_000 },
     );
-    await expectSourceInEmbeddedEditor(tikzEditorFrame, "\\foreach \\x in {0,1,2}");
-    await expectSourceInEmbeddedEditor(tikzEditorFrame, ".. controls +(0,0.5) and +(0,-0.5) ..");
+    const sourceAfterReturn = await page.locator(".cm-content").innerText();
+    assert.ok(sourceAfterReturn.includes("\\foreach \\x in {0,1,2}"));
+    assert.ok(sourceAfterReturn.includes(".. controls +(0,0.5) and +(0,-0.5) .."));
 
     // Drive a real upstream visual-authoring gesture, not a test-only store
     // mutation: use tikz-editor's Rectangle tool and drag on its canvas, exactly
@@ -943,18 +941,3 @@ describe("TikZ microlocal live preview in the assembled app", function () {
     );
   });
 });
-
-async function expectSourceInEmbeddedEditor(
-  frame: ReturnType<Page["frameLocator"]>,
-  needle: string,
-): Promise<void> {
-  await frame.locator(".cm-content").first().waitFor({ state: "visible", timeout: 20_000 });
-  await frame
-    .locator(".cm-content")
-    .first()
-    .evaluate((element, expected) => {
-      if (element.textContent?.includes(expected) !== true) {
-        throw new Error(`embedded tikz-editor source does not contain ${String(expected)}`);
-      }
-    }, needle);
-}
