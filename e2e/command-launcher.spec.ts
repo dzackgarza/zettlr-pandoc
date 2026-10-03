@@ -544,6 +544,44 @@ describe("the Ctrl+P command launcher", function () {
     );
   });
 
+  it("previews and opens a document block from Ctrl+P", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const targetPath = path.join(
+      requireInitialized(fixtureRoot, "fixture"),
+      "workspace",
+      "foundations",
+      "categories.md",
+    );
+    const targetText = await readFile(targetPath, "utf8");
+
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await typeAndWaitForHighlight(activePage, "Browse document blocks", "Browse document blocks");
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(`${LAUNCHER} [data-search-mode="browse"]`).waitFor();
+    await activePage.locator(LAUNCHER_INPUT).fill("maximal subgroupoid");
+    await activePage
+      .locator(`${LAUNCHER} [data-launcher-row][data-reference-key="def-core"]`)
+      .waitFor();
+    const preview = activePage.locator("[data-document-block-preview] [data-reference-excerpt]");
+    await preview.locator("p").waitFor();
+    const previewText = await preview.textContent();
+    assert.ok(previewText !== null);
+    assert.match(previewText, /The maximal subgroupoid/);
+    screenshots.set("launcher-document-block-preview.png", await activePage.screenshot());
+
+    await activePage.keyboard.press("Enter");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached" });
+    await waitUntil(
+      async () => (await readEditorDocument(activePage)) === targetText,
+      "the selected block's document to become active",
+    );
+    await waitUntil(
+      async () => (await readCursorLine(activePage)) === 1,
+      "the cursor on the selected block",
+    );
+  });
+
   it("opens the quick-file navigator directly with Ctrl+Shift+P and switches documents", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     const indexPath = path.join(

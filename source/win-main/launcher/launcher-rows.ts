@@ -32,6 +32,7 @@ export type DynamicGroupId =
   | "recent-edited"
   | "go-to-heading"
   | "search-references"
+  | "browse-content"
   | "preferences"
   | "justfile"
   | "export";

@@ -16,12 +16,13 @@
         </DialogTitle>
         <template v-if="state.open">
           <ReferenceSearchView
-            v-if="state.view.kind === 'references'"
+            v-if="state.view.kind === 'references' || state.view.kind === 'browse-content'"
             v-bind:definitions="referenceDefinitions"
             v-bind:occurrences="referenceOccurrences"
-            v-bind:initial-request="state.view.request"
+            v-bind:initial-request="state.view.kind === 'references' ? state.view.request : null"
             v-bind:project-roots="referenceProjectRoots"
             v-bind:active-document-path="referenceActiveDocumentPath"
+            v-bind:browse="state.view.kind === 'browse-content'"
             v-on:jump="onReferenceJump"
             v-on:close="close"
             v-on:back="back"
@@ -175,6 +176,7 @@ const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: "dynamic-group", id: "recent-edited", label: trans("Recently edited files") },
   { kind: "dynamic-group", id: "go-to-heading", label: trans("Go to heading") },
   { kind: "dynamic-group", id: "search-references", label: trans("Search references") },
+  { kind: "dynamic-group", id: "browse-content", label: trans("Browse document blocks") },
   { kind: "dynamic-group", id: "preferences", label: trans("Preferences") },
   { kind: "dynamic-group", id: "export", label: trans("Export as…") },
 ];
@@ -408,6 +410,7 @@ function viewRows(view: LauncherView, query: string): LauncherRow[] {
     case "dynamic-group":
       return dynamicGroupRows[view.id].value;
     case "references":
+    case "browse-content":
       return [];
     case "just-arguments":
       return [];
@@ -419,15 +422,20 @@ const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>
   "recent-opened": loadRecentFiles,
   "recent-edited": loadRecentFiles,
   "search-references": loadReferences,
+  "browse-content": loadReferences,
   justfile: loadJustfileCommands,
   export: loadExportProfiles,
 };
 
 /** The view a dynamic group row drills into. */
 function dynamicGroupView(id: DynamicGroupId): LauncherView {
-  return id === "search-references"
-    ? { kind: "references", request: null }
-    : { kind: "dynamic-group", id };
+  if (id === "search-references") {
+    return { kind: "references", request: null };
+  }
+  if (id === "browse-content") {
+    return { kind: "browse-content" };
+  }
+  return { kind: "dynamic-group", id };
 }
 
 const rows = computed<LauncherRow[]>(() => {
@@ -495,7 +503,7 @@ async function open(view: LauncherView): Promise<void> {
   if (view.kind === "root") {
     await loadJustfileCommands();
   }
-  if (view.kind === "references" && !(await loadReferences())) {
+  if ((view.kind === "references" || view.kind === "browse-content") && !(await loadReferences())) {
     return;
   }
   if (view.kind === "dynamic-group") {

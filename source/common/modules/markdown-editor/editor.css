@@ -71,6 +71,14 @@
     line-height: 1.38;
   }
 
+  .reference-completion-excerpt {
+    max-height: 15rem;
+    margin-top: 8px;
+    overflow: auto;
+    font-family: var(--zettlr-editor-font), serif;
+    white-space: normal;
+  }
+
   .zettlr-completion-info-header {
     display: flex;
     gap: 0.65rem;

@@ -21,8 +21,9 @@ import type { DynamicGroupId, GroupPath, JustRecipeRow } from "./launcher-rows";
 export type LauncherView =
   | { kind: "root" }
   | { kind: "menu-group"; path: GroupPath }
-  | { kind: "dynamic-group"; id: Exclude<DynamicGroupId, "search-references"> }
+  | { kind: "dynamic-group"; id: Exclude<DynamicGroupId, "search-references" | "browse-content"> }
   | { kind: "references"; request: ReferenceSearchRequest }
+  | { kind: "browse-content" }
   | { kind: "just-arguments"; recipe: JustRecipeRow };
 
 export type LauncherState =

@@ -8,8 +8,9 @@
     v-bind:reset-search-term-on-select="false"
     model-value=""
     v-bind:data-search-mode="mode"
-    v-bind:aria-label="mode === 'citing-locations' ? trans('Reference uses') : trans('Search references')"
+    v-bind:aria-label="breadcrumbLabel"
     v-on:pointerleave="highlightFirstRow"
+    v-on:highlight="highlightedKey = $event ? String($event.value) : ''"
   >
     <div class="launcher-query-row">
       <span class="launcher-breadcrumb">{{ breadcrumbLabel }}</span>
@@ -18,12 +19,13 @@
         data-command-launcher-input
         v-bind:auto-focus="true"
         v-bind:model-value="query"
-        v-bind:placeholder="trans('Search references…')"
-        v-bind:aria-label="trans('Reference search')"
+        v-bind:placeholder="props.browse ? trans('Find a document block…') : trans('Search references…')"
+        v-bind:aria-label="props.browse ? trans('Document block search') : trans('Reference search')"
         v-on:update:model-value="query = $event"
         v-on:keydown.backspace="onBackspace"
       ></ComboboxInput>
       <button
+        v-if="!props.browse"
         class="reference-search-help"
         data-open-help
         type="button"
@@ -61,8 +63,8 @@
         <template v-else>
           <LauncherRow
             v-for="definition in matches"
-            v-bind:key="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
-            v-bind:value="`${definition.documentPath}:${definition.key}:${definition.range.from}`"
+            v-bind:key="rowKey(definition)"
+            v-bind:value="rowKey(definition)"
             v-bind:label="definition.key"
             class="reference-row"
             v-bind:data-reference-key="definition.key"
@@ -81,11 +83,20 @@
             <span class="path">{{ definition.documentPath }}</span>
           </LauncherRow>
           <ComboboxEmpty class="launcher-empty">
-            {{ trans('No matching references') }}
+            {{ props.browse ? trans('No matching document blocks') : trans('No matching references') }}
           </ComboboxEmpty>
         </template>
       </ComboboxViewport>
     </ComboboxContent>
+    <div
+      v-if="props.browse && activeDefinition !== null"
+      class="document-block-preview"
+      data-document-block-preview
+    >
+      <div class="document-block-preview-heading">{{ typeAndTitle(activeDefinition) }}</div>
+      <div ref="previewElement" class="document-block-preview-body" data-reference-excerpt></div>
+      <div class="document-block-preview-path">{{ activeDefinition.documentPath }}</div>
+    </div>
   </ComboboxRoot>
 </template>
 
@@ -127,6 +138,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { renderReferencePreview } from "@common/modules/markdown-editor/util/reference-preview";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import {
   isCurrentProjectDefinition,
@@ -151,6 +163,7 @@ import {
   ComboboxViewport,
 } from "reka-ui";
 import { computed, nextTick, ref, watch } from "vue";
+import { useConfigStore } from "source/pinia";
 // The emitted ReferenceJumpIntent contract lives in component-contracts.ts,
 // where both vue-tsc and the type-aware linter can resolve it (issue #50).
 import type { ReferenceJumpIntent } from "../component-contracts";
@@ -167,12 +180,14 @@ const props = withDefaults(
     projectRoots?: ProjectRootSpec[];
     /** The document the search was invoked from (review A3) */
     activeDocumentPath?: string;
+    browse?: boolean;
   }>(),
   {
     occurrences: () => [],
     initialRequest: null,
     projectRoots: () => [],
     activeDocumentPath: undefined,
+    browse: false,
   },
 );
 
@@ -188,6 +203,13 @@ interface ComboboxHandle {
 }
 
 const combobox = ref<ComboboxHandle | null>(null);
+const configStore = useConfigStore();
+const previewElement = ref<HTMLElement | null>(null);
+const highlightedKey = ref("");
+
+function rowKey(definition: ReferenceDefinition): string {
+  return `${definition.documentPath}:${definition.key}:${definition.range.from}`;
+}
 
 /** The US-16 ranking context, when the host names the invoking document. */
 const searchContext = computed<WorkspaceSearchContext | undefined>(() => {
@@ -197,19 +219,46 @@ const searchContext = computed<WorkspaceSearchContext | undefined>(() => {
 });
 
 /** A keyed request opens the reverse lookup; null keeps definition search. */
-const mode = computed<"definitions" | "citing-locations">(() => {
+const mode = computed<"browse" | "definitions" | "citing-locations">(() => {
+  if (props.browse) return "browse";
   return props.initialRequest === null ? "definitions" : "citing-locations";
 });
 
 const breadcrumbLabel = computed(() =>
-  mode.value === "citing-locations" ? trans("Reference uses") : trans("Search references"),
+  mode.value === "citing-locations"
+    ? trans("Reference uses")
+    : props.browse
+      ? trans("Browse document blocks")
+      : trans("Search references"),
 );
 
 const query = ref<string>(props.initialRequest?.key ?? "");
 
 const matches = computed<ReferenceDefinition[]>(() => {
-  return searchWorkspaceDefinitions(props.definitions, query.value, searchContext.value);
+  return searchWorkspaceDefinitions(
+    props.definitions,
+    query.value,
+    searchContext.value,
+    props.browse
+      ? (definition) =>
+          `${referenceFamilyDisplayName(definition.family)} ${definition.title ?? ""} ${definition.key} ${definition.previewSource}`
+      : (definition) => definition.key,
+  );
 });
+
+const activeDefinition = computed(() => {
+  const highlighted = matches.value.find((definition) => rowKey(definition) === highlightedKey.value);
+  return highlighted === undefined ? matches.value[0] ?? null : highlighted;
+});
+
+watch(activeDefinition, (definition) => {
+  if (!props.browse || definition === null) return;
+  void nextTick().then(() => {
+    if (previewElement.value !== null) {
+      renderReferencePreview(previewElement.value, definition, configStore.config.zkn.linkFormat);
+    }
+  });
+}, { immediate: true });
 
 /**
  * The Project marker of a result row (review A3, US-16): current-Project
@@ -375,6 +424,30 @@ function onEscape(event: Event): void {
     font: 500 12.5px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
     white-space: nowrap;
     text-overflow: ellipsis;
+  }
+
+  .document-block-preview {
+    flex: 0 0 auto;
+    max-height: min(240px, 38vh);
+    padding: 12px 16px;
+    overflow: auto;
+    border-top: 1px solid var(--chrome-border);
+  }
+
+  .document-block-preview-heading {
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .document-block-preview-body {
+    line-height: 1.5;
+  }
+
+  .document-block-preview-path {
+    margin-top: 8px;
+    color: var(--chrome-text-muted);
+    font-size: var(--chrome-section-font-size);
+    overflow-wrap: anywhere;
   }
 }
 </style>

@@ -371,7 +371,7 @@ export function extractReferencesFromAST(
   // Handles attributes the parser attached to an enclosing block (table
   // caption lines, display math paragraphs, image paragraphs): the attribute
   // list trails the structure.
-  const visitAttributedBlock = (node: ASTNode): void => {
+  const visitAttributedBlock = (node: ASTNode, previousSibling: ASTNode | undefined): void => {
     if (node.attributeRange === undefined) {
       return;
     }
@@ -393,10 +393,21 @@ export function extractReferencesFromAST(
       }
     }
 
-    pushDefinition(located, "crossref-attr", title, lineAt(markdown, located.range.from));
+    const tableSource =
+      family === "tbl" &&
+      previousSibling?.type === "Table" &&
+      markdown.slice(previousSibling.to, node.from).trim() === ""
+        ? markdown.slice(previousSibling.from, node.to)
+        : undefined;
+    pushDefinition(
+      located,
+      "crossref-attr",
+      title,
+      tableSource === undefined ? lineAt(markdown, located.range.from) : tableSource,
+    );
   };
 
-  const visit = (node: ASTNode): void => {
+  const visit = (node: ASTNode, previousSibling?: ASTNode): void => {
     switch (node.type) {
       case "Heading":
         visitHeading(node);
@@ -440,11 +451,13 @@ export function extractReferencesFromAST(
         break;
       }
       default:
-        visitAttributedBlock(node);
+        visitAttributedBlock(node, previousSibling);
     }
 
+    let previousChild: ASTNode | undefined;
     for (const child of childrenOf(node)) {
-      visit(child);
+      visit(child, previousChild);
+      previousChild = child;
     }
   };
 

@@ -116,7 +116,7 @@ function labelInfoPanel(
   view: EditorView | undefined,
 ): HTMLElement {
   const panel = document.createElement("div");
-  panel.className = "reference-completion-info";
+  panel.className = "zettlr-completion-info reference-completion-info";
 
   const description = document.createElement("div");
   description.textContent = detail;
