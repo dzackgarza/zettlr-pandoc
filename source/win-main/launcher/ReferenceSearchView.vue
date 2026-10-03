@@ -8,7 +8,7 @@
     v-bind:reset-search-term-on-select="false"
     model-value=""
     :data-search-mode="mode"
-    v-bind:aria-label="breadcrumbLabel"
+    :aria-label="breadcrumbLabel"
     v-on:pointerleave="highlightFirstRow"
     @highlight="highlightedKey = $event ? String($event.value) : ''"
   >

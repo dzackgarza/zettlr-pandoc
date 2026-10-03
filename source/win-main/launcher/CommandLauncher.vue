@@ -19,7 +19,7 @@
             v-if="state.view.kind === 'references' || state.view.kind === 'browse-content'"
             :definitions="referenceDefinitions"
             v-bind:occurrences="referenceOccurrences"
-            v-bind:initial-request="state.view.kind === 'references' ? state.view.request : null"
+            :initial-request="state.view.kind === 'references' ? state.view.request : null"
             v-bind:project-roots="referenceProjectRoots"
             v-bind:active-document-path="referenceActiveDocumentPath"
             :browse="state.view.kind === 'browse-content'"
