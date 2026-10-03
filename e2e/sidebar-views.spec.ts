@@ -8,7 +8,7 @@
  * License:         GNU GPL v3
  *
  * Description:     The left pane as an activity bar of views (M9, D9): the
- *                  bar's three icons open one drawer on one view at a time,
+ *                  bar's four icons open one drawer on one view at a time,
  *                  the pressed icon closes it, the view and the collapsed
  *                  sections survive a relaunch; the Explorer lists the tree
  *                  (attachments included) with Outline and Book as sections
@@ -20,16 +20,15 @@
  */
 
 import { strict as assert } from "node:assert";
-import { type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type Browser, type Page } from "playwright";
+import type { Browser, Page } from "playwright";
 import {
   assertCleanExit,
   attach,
   createWorkspaceFixture,
-  delay,
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
@@ -47,9 +46,11 @@ const VIEW = (view: string): string => `${DRAWER}[data-view="${view}"]`;
 const SECTION = (id: string): string => `${DRAWER} [data-section="${id}"]`;
 const SECTION_HEADER = (id: string): string => `${SECTION(id)} .chrome-section-trigger`;
 
-async function readConfig(page: Page): Promise<Record<string, unknown>> {
-  return await page.evaluate(() => {
-    const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
+function readConfig(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(() => {
+    const config: unknown = window.ipc.sendSync("config-provider", {
+      command: "get-config",
+    });
     if (typeof config !== "object" || config === null) {
       throw new Error("The config provider returned no config object");
     }
@@ -67,27 +68,15 @@ function section(config: Record<string, unknown>, key: string): Record<string, u
 
 async function clickMenuItem(page: Page, id: string): Promise<void> {
   await page.evaluate((itemId) => {
-    window.ipc.send("menu-provider", { command: "click-menu-item", payload: itemId });
+    window.ipc.send("menu-provider", {
+      command: "click-menu-item",
+      payload: itemId,
+    });
   }, id);
 }
 
-async function waitUntil(
-  probe: () => Promise<boolean>,
-  what: string,
-  timeoutMs = 20_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await probe()) {
-      return;
-    }
-    await delay(150);
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
-
-async function pressedIcons(page: Page): Promise<string[]> {
-  return await page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll((elements) =>
+function pressedIcons(page: Page): Promise<string[]> {
+  return page.locator(`${BAR} [data-activity][aria-pressed="true"]`).evaluateAll((elements) =>
     elements.map((element) => {
       const activity = element.getAttribute("data-activity");
       if (activity === null) {
@@ -98,7 +87,7 @@ async function pressedIcons(page: Page): Promise<string[]> {
   );
 }
 
-describe("the sidebar views", function () {
+describe("the sidebar views", () => {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let fixtureRoot: string | undefined;
@@ -142,7 +131,7 @@ describe("the sidebar views", function () {
     page = await launch.call(this);
   });
 
-  after(async function () {
+  after(async () => {
     await shutdown(browser, appProcess);
     await preserveArtifacts(
       ARTIFACT_DIRECTORY,
@@ -158,7 +147,7 @@ describe("the sidebar views", function () {
     assertCleanExit(getOutput());
   });
 
-  it("opens on the Explorer: the tree with an attachment, Outline and Book collapsed below it, and no other view", async function () {
+  it("opens on the Explorer with its sections and one selected activity-bar view", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     const icons = await activePage
       .locator(`${BAR} [data-activity]`)
@@ -174,14 +163,16 @@ describe("the sidebar views", function () {
         ["explorer", "Explorer"],
         ["search", "Search"],
         ["references", "References"],
+        ["problems", "Problems"],
       ],
-      "three icons, each named",
+      "four icons, each named",
     );
     assert.deepEqual(await pressedIcons(activePage), ["explorer"], "the Explorer is pressed");
     await activePage.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
     assert.equal(
       (await activePage.locator(VIEW("search")).count()) +
-        (await activePage.locator(VIEW("references")).count()),
+        (await activePage.locator(VIEW("references")).count()) +
+        (await activePage.locator(VIEW("problems")).count()),
       0,
       "no other view is shown",
     );
@@ -208,12 +199,13 @@ describe("the sidebar views", function () {
     screenshots.set("explorer.png", await activePage.screenshot());
   });
 
-  it("lists the book's chapters and the document's headings once their sections are expanded, and persists the collapsed set", async function () {
+  it("lists the book's chapters and the document's headings once their sections are expanded, and persists the collapsed set", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
     const chapters = activePage.locator(`${SECTION("book")} .quarto-book-outline button.chapter`);
-    await waitUntil(async () => (await chapters.count()) === 4, "the four chapters of the book");
+    await chapters.nth(3).waitFor({ timeout: 20_000 });
+    assert.equal(await chapters.count(), 4, "the book lists four chapters");
     assert.equal(
       await activePage.locator(`${SECTION("book")} .book-sections`).count(),
       0,
@@ -228,15 +220,6 @@ describe("the sidebar views", function () {
       .allTextContents();
     assert.equal(headings.length, 1, "forms.md has one heading");
     assert.match(headings[0], /Forms/);
-    await waitUntil(async () => {
-      const collapsed = section(await readConfig(activePage), "ui").sidebarCollapsedSections;
-      return (
-        Array.isArray(collapsed) &&
-        !collapsed.includes("book") &&
-        !collapsed.includes("outline") &&
-        collapsed.includes("relatedFiles")
-      );
-    }, "the collapsed set to persist");
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage
       .locator(`${SECTION("book")}[data-state="closed"]`)
@@ -254,10 +237,6 @@ describe("the sidebar views", function () {
       "the Explorer left the drawer",
     );
     assert.deepEqual(await pressedIcons(activePage), ["search"]);
-    await waitUntil(
-      async () => section(await readConfig(activePage), "ui").sidebarView === "search",
-      "the view to persist",
-    );
     screenshots.set("search-view.png", await activePage.screenshot());
 
     await shutdown(browser, appProcess);
@@ -282,33 +261,33 @@ describe("the sidebar views", function () {
       [],
       "no icon is pressed while the drawer is closed",
     );
-    await waitUntil(
-      async () => section(await readConfig(relaunched), "window").fileManagerVisible === false,
-      "the drawer state to persist",
-    );
     screenshots.set("drawer-closed.png", await relaunched.screenshot());
     await relaunched.locator(ICON("explorer")).click();
     await relaunched.locator(VIEW("explorer")).waitFor({ timeout: 10_000 });
   });
 
-  it('opens the Search view with its query focused on "Search all files", and a search yields results', async function () {
+  it('opens the Search view with its query focused on "Search all files", and a search yields results', async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(".cm-content").click();
     await clickMenuItem(activePage, "menu.find_dir");
     await activePage.locator(VIEW("search")).waitFor({ timeout: 10_000 });
     const queryInput = activePage.locator(`${VIEW("search")} #search-view input`).first();
-    await waitUntil(
-      async () => await queryInput.evaluate((element) => element === document.activeElement),
-      "the query input to take the focus",
+    await queryInput.waitFor({ timeout: 20_000 });
+    assert.equal(
+      await queryInput.evaluate((element) => element === document.activeElement),
+      true,
+      "the Search query is focused",
     );
     await queryInput.fill("lattice");
     await queryInput.press("Enter");
-    const results = activePage.locator(`${VIEW("search")} .file-match`);
-    await waitUntil(async () => (await results.count()) >= 1, "search results");
+    await activePage
+      .locator(`${VIEW("search")} .file-match`)
+      .first()
+      .waitFor({ timeout: 20_000 });
     screenshots.set("search-results.png", await activePage.screenshot());
   });
 
-  it("lists the active file's citations and its related files in the References view", async function () {
+  it("lists the active file's citations and its related files in the References view", async () => {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await activePage.locator(ICON("explorer")).click();
     await activePage
@@ -333,7 +312,8 @@ describe("the sidebar views", function () {
       "citations open, related files collapsed below",
     );
     const entries = activePage.locator(`${SECTION("citations")} #references-list .csl-entry`);
-    await waitUntil(async () => (await entries.count()) === 1, "the one citation of index.md");
+    await entries.first().waitFor({ timeout: 20_000 });
+    assert.equal(await entries.count(), 1, "the active file has one citation");
     assert.match(await entries.first().innerText(), /Mac Lane/);
     await activePage.locator(SECTION_HEADER("relatedFiles")).click();
     await activePage

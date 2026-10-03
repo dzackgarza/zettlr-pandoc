@@ -1,34 +1,34 @@
 <template>
   <div
     id="navigation-sidebar"
-    v-bind:data-view="view.id"
+    :data-view="view.id"
   >
     <ViewContainer
       v-if="view.id === 'explorer'"
       ref="explorerContainer"
-      v-bind:sections="explorerSections"
-      v-bind:counts="explorerCounts"
+      :sections="explorerSections"
+      :counts="explorerCounts"
     >
       <template #files>
         <FileManager
-          v-bind:window-id="props.windowId"
-          v-on:jump-to-line="emit('jump-to-line', $event)"
-        ></FileManager>
+          :window-id="props.windowId"
+          @jump-to-line="emit('jump-to-line', $event)"
+        />
       </template>
       <template #outline>
         <ToCTab
-          v-on:jump-to-line="emit('jump-to-active-line', $event)"
-          v-on:move-section="emit('move-section', $event)"
-        ></ToCTab>
+          @jump-to-line="emit('jump-to-active-line', $event)"
+          @move-section="emit('move-section', $event)"
+        />
       </template>
       <template #book>
         <QuartoBookOutline
           v-if="book !== undefined"
-          v-bind:root-path="book.path"
-          v-bind:navigation="book.navigation"
-          v-bind:active-item="activeFilePath"
-          v-on:jump="emit('jump-to-line', $event)"
-        ></QuartoBookOutline>
+          :root-path="book.path"
+          :navigation="book.navigation"
+          :active-item="activeFilePath"
+          @jump="emit('jump-to-line', $event)"
+        />
       </template>
     </ViewContainer>
     <div
@@ -37,20 +37,32 @@
     >
       <SearchView
         ref="globalSearch"
-        v-bind:window-id="props.windowId"
-        v-on:jtl="(filePath: string, lineNumber: number, newTab: boolean) => emit('jtl', filePath, lineNumber, newTab)"
-      ></SearchView>
+        :window-id="props.windowId"
+        @jtl="(filePath: string, lineNumber: number, newTab: boolean) => emit('jtl', filePath, lineNumber, newTab)"
+      />
     </div>
+    <ViewContainer
+      v-else-if="view.id === 'problems'"
+      ref="problemsContainer"
+      :sections="problemsSections"
+    >
+      <template #problems>
+        <ProblemsView
+          @navigate="emit('navigate-problem', $event)"
+          @count="emit('problems-count', $event)"
+        />
+      </template>
+    </ViewContainer>
     <ViewContainer
       v-else
       ref="referencesContainer"
-      v-bind:sections="referencesSections"
+      :sections="referencesSections"
     >
       <template #citations>
-        <ReferencesTab></ReferencesTab>
+        <ReferencesTab />
       </template>
       <template #relatedFiles>
-        <RelatedFilesTab></RelatedFilesTab>
+        <RelatedFilesTab />
       </template>
     </ViewContainer>
   </div>
@@ -90,6 +102,7 @@ import {
 import { computed, nextTick, ref } from "vue";
 import FileManager from "../file-manager/FileManager.vue";
 import QuartoBookOutline from "../file-manager/QuartoBookOutline.vue";
+import ProblemsView from "./ProblemsView.vue";
 import ReferencesTab from "./ReferencesTab.vue";
 import RelatedFilesTab from "./RelatedFilesTab.vue";
 import SearchView from "./SearchView.vue";
@@ -107,6 +120,8 @@ const emit = defineEmits<{
   /** A jump within the active document (the outline). */
   (e: "jump-to-active-line", line: number): void;
   (e: "move-section", data: { from: number; to: number }): void;
+  (e: "navigate-problem", target: { path: string; from: number; to: number }): void;
+  (e: "problems-count", count: number): void;
 }>();
 
 const configStore = useConfigStore();
@@ -125,6 +140,7 @@ interface ViewContainerHandle {
 const globalSearch = ref<GlobalSearchHandle | null>(null);
 const explorerContainer = ref<ViewContainerHandle | null>(null);
 const referencesContainer = ref<ViewContainerHandle | null>(null);
+const problemsContainer = ref<ViewContainerHandle | null>(null);
 
 const view = computed(() => sidebarView(configStore.config.ui.sidebarView));
 
@@ -161,6 +177,7 @@ const explorerSections = computed(() =>
 );
 
 const referencesSections = computed(() => sidebarView("references").sections.map(sidebarSection));
+const problemsSections = computed(() => sidebarView("problems").sections.map(sidebarSection));
 
 const explorerCounts = computed<Partial<Record<SidebarSectionId, number>>>(() => {
   const toc = windowStateStore.tableOfContents;
@@ -174,7 +191,11 @@ async function reveal(target: RevealTarget): Promise<void> {
   await nextTick();
   if (target.section !== undefined) {
     const container =
-      target.view === "explorer" ? explorerContainer.value : referencesContainer.value;
+      target.view === "explorer"
+        ? explorerContainer.value
+        : target.view === "problems"
+          ? problemsContainer.value
+          : referencesContainer.value;
     if (container === null) {
       throw new Error(
         `The ${target.view} view holds no section container after the drawer was revealed, so ` +
@@ -215,7 +236,8 @@ async function searchView(): Promise<GlobalSearchHandle> {
 /** Reveals the Search view and runs a search for the given terms. */
 async function startSearch(terms: string): Promise<void> {
   await reveal({ view: "search", focus: "none" });
-  await (await searchView()).startSearch(terms);
+  const search = await searchView();
+  search.startSearch(terms);
 }
 
 defineExpose({ reveal, startSearch });

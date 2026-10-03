@@ -81,6 +81,7 @@ export const WINDOW_SHORTCUT_NAMES = [
   "pandoc-quick-help",
   "paste-as-plain",
   "previous-tab",
+  "problems-reveal",
   "print",
   "rename-file",
   "reopen-closed-tab",

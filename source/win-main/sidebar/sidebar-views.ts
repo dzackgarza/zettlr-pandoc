@@ -57,6 +57,12 @@ export const SIDEBAR_VIEWS: readonly SidebarViewDefinition[] = [
     icon: "library",
     sections: ["citations", "relatedFiles"],
   },
+  {
+    id: "problems",
+    label: () => trans("Problems"),
+    icon: "error-standard",
+    sections: ["problems"],
+  },
 ];
 
 /**
@@ -76,6 +82,7 @@ export const SIDEBAR_SECTIONS: readonly SidebarSectionDefinition[] = [
   { id: "book", label: () => trans("Book") },
   { id: "citations", label: () => trans("Citations") },
   { id: "relatedFiles", label: () => trans("Related files") },
+  { id: "problems", label: () => trans("Problems") },
 ];
 
 export function sidebarView(id: SidebarViewId): SidebarViewDefinition {

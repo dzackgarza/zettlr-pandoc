@@ -32,6 +32,11 @@ import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-a
 import type { ProjectSettings } from "@dts/common/fsal";
 import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
+import type {
+  ApplyProblemFixRequest,
+  ListProblemsRequest,
+  WorkspaceProblems,
+} from "@dts/common/problems";
 import type { WorkspaceReferenceEdit } from "@dts/common/references";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, shell } from "electron";
@@ -157,6 +162,14 @@ export const commands = [
  * only by narrowing the command it dispatches to.
  */
 export type ApplicationIPCContract = {
+  "list-workspace-lint": {
+    request: { payload: ListProblemsRequest };
+    response: WorkspaceProblems;
+  };
+  "apply-lint-fix": {
+    request: { payload: ApplyProblemFixRequest };
+    response: FixAllOutcome;
+  };
   "add-language-tool-ignore-rule": {
     request: { payload: LanguageToolIgnoredRuleEntry };
     response: unknown;

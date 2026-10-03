@@ -142,6 +142,19 @@ const THEOREM_FIXTURE_DEFINITIONS: Array<{
 ];
 
 describe("extractReferences()", function () {
+  it("uses the caption inside a table div as the reference title", function () {
+    const source =
+      "::: {#tbl:measurements}\n\n" +
+      "| Name | Value |\n|:-----|------:|\n| one | 1 |\n\n" +
+      ": Measurements\n\n:::\n";
+    const snapshot = extractReferences("wrapped-table.md", source);
+
+    assert.deepStrictEqual(
+      snapshot.definitions.map(({ key, title, sourceKind }) => ({ key, title, sourceKind })),
+      [{ key: "tbl:measurements", title: "Measurements", sourceKind: "crossref-attr" }],
+    );
+  });
+
   it("fixture covers every supported theorem prefix exactly once", function () {
     const covered = THEOREM_FIXTURE_DEFINITIONS.map((entry) => entry.family).sort();
     assert.deepStrictEqual(covered, [...THEOREM_FAMILIES].sort());

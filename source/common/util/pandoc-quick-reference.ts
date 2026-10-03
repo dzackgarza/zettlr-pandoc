@@ -26,7 +26,7 @@ export const PANDOC_CROSS_REFERENCE_EXAMPLES = [
     kind: "table",
     prefix: "tbl",
     displayName: "Table",
-    label: ": Caption {#tbl:key}",
+    label: "::: {#tbl:key}\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n: Caption\n\n:::",
     reference: "@tbl:key",
   },
   {

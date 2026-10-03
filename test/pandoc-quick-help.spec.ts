@@ -53,6 +53,14 @@ describe("Pandoc quick reference", function () {
     }
   });
 
+  it("shows the table ID on a fence around its caption", function () {
+    const table = PANDOC_CROSS_REFERENCE_EXAMPLES.find((example) => example.kind === "table");
+    assert.equal(
+      table?.label,
+      "::: {#tbl:key}\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n: Caption\n\n:::",
+    );
+  });
+
   it("covers citation locators, prefixes, suffixes, groups, and author suppression", function () {
     const syntax = PANDOC_CITATION_EXAMPLES.map((example) => example.syntax);
 

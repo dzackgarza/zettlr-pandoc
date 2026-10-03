@@ -77,22 +77,29 @@ all render as plain paragraph text, in the editor and in the PDF. Write
 
 ## Tables
 
-Write a pipe table, a blank line, then a caption paragraph that starts with
-`:` and ends with the ID:
+Put the table and its caption inside a fenced div. Put the ID on the opening
+fence. In a pandoc-crossref document, the caption starts with `:`:
 
 ```markdown
+::: {#tbl:coble-lattices}
+
 | $n$ | Lattice $M$         | $\operatorname{rank} M$ |
 |----:|:--------------------|------------------------:|
 |   1 | $U \oplus E_8(2)$   |                      10 |
 |   2 | $U(2) \oplus E_8(2)$ |                      10 |
 
-: Lattices $M$ for $n$ boundary components. {#tbl:coble-lattices}
+: Lattices $M$ for $n$ boundary components.
+
+:::
 ```
+
+In a Quarto document, use `{#tbl-coble-lattices}` on the opening fence and
+write the caption as an ordinary final paragraph inside the div.
 
 - Every table has a header row and a delimiter row. Colons in the delimiter row
   set alignment: `:---` left, `---:` right, `:---:` centred. Right-align numbers.
 - The caption comes after the table, is one paragraph, and may contain math.
-  Only the caption carries the ID; do not put an ID on the table rows.
+  The opening fence carries the ID.
 - A pipe-table cell holds inline content only: text, math, citations. A cell
   that needs several paragraphs, a list or display math needs a grid table
   instead (Pandoc manual, "Tables").

@@ -2,7 +2,7 @@
 // installs the headless Electron module shim that those imports consume.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
@@ -110,6 +110,29 @@ describe("document lint cache", function () {
     assert.equal(lookup.record?.lintedAt, linted.lintedAt);
     assert.deepEqual(lookup.record?.diagnostics, linted.diagnostics);
     assert.equal((await second.lint(documentPath, text)).lintedAt, linted.lintedAt);
+  });
+
+  it("reports a background cache write failure to cache readers and shutdown", async function () {
+    const provider = createProvider();
+    await provider.boot();
+    await rename(userDataDirectory, `${userDataDirectory}-moved`);
+    await writeFile(userDataDirectory, "The cache directory is unavailable");
+    await provider.lint(documentPath, text);
+
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      try {
+        await provider.lookup([{ path: documentPath, text }]);
+      } catch (error) {
+        assert.match(String(error), /ENOTDIR/);
+        break;
+      }
+      assert.ok(Date.now() < deadline, "the failed cache write was not reported to readers");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    await assert.rejects(provider.shutdown(), /ENOTDIR/);
+    providers.splice(providers.indexOf(provider), 1);
   });
 
   it("keeps a persisted result when a restart writes the same macro sources again", async function () {

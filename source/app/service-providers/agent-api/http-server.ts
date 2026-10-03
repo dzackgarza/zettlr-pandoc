@@ -85,6 +85,7 @@ import OpenAPIBackend, {
   type Operation,
 } from "openapi-backend";
 import path from "path";
+import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { fileURLToPath } from "url";
 import { type Document, parseDocument } from "yaml";
 import {
@@ -2474,7 +2475,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (scope === "workspace" || scope === "all") {
         // A workspace answers from the lint cache; the background linter
         // brings every outdated or pending document current.
-        const lookups = await this._app.documentLint.lookup(sources);
+        const lookups = await workspaceLintRows(this._app.documentLint, sources);
         lookups.forEach((lookup, index) => {
           const target = targets[index];
           if (lookup.record === undefined) {

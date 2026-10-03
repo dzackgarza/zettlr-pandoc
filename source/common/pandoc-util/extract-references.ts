@@ -12,6 +12,7 @@ import {
   CROSSREF_FAMILIES,
   type DocumentReferenceSnapshot,
   type ReferenceDefinition,
+  type ReferenceFamily,
   type ReferenceOccurrence,
   referenceFamilyOf,
   type SourceRange,
@@ -266,7 +267,7 @@ export function extractReferencesFromAST(
    * image descendant. Subfigure groups author it below the images; wrapped
    * listings author it above the code block.
    */
-  const wrappingDivCaption = (node: PandocDiv): string | undefined => {
+  const wrappingDivCaption = (node: PandocDiv, family: ReferenceFamily): string | undefined => {
     const children = childrenOf(node);
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
@@ -277,7 +278,7 @@ export function extractReferencesFromAST(
       if (text === "" || /^:{3,}/.test(text)) {
         continue; // Empty inter-block runs and the div's own fence lines
       }
-      return text;
+      return family === "tbl" && text.startsWith(":") ? text.slice(1).trim() : text;
     }
     return undefined;
   };
@@ -338,7 +339,7 @@ export function extractReferencesFromAST(
           "crossref-attr",
           located.attributes.properties?.title ??
             located.attributes.properties?.name ??
-            wrappingDivCaption(node),
+            wrappingDivCaption(node, family),
           markdown.slice(lineStart(markdown, node.from), node.to),
         );
       } else if ((THEOREM_FAMILIES as readonly string[]).includes(family)) {
