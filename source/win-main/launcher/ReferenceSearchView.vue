@@ -220,7 +220,9 @@ const searchContext = computed<WorkspaceSearchContext | undefined>(() => {
 
 /** A keyed request opens the reverse lookup; null keeps definition search. */
 const mode = computed<"browse" | "definitions" | "citing-locations">(() => {
-  if (props.browse) return "browse";
+  if (props.browse) {
+    return "browse";
+  }
   return props.initialRequest === null ? "definitions" : "citing-locations";
 });
 
@@ -256,7 +258,9 @@ const activeDefinition = computed(() => {
 watch(
   activeDefinition,
   (definition) => {
-    if (!props.browse || definition === null) return;
+    if (!props.browse || definition === null) {
+      return;
+    }
     void nextTick().then(() => {
       if (previewElement.value !== null) {
         renderReferencePreview(previewElement.value, definition, configStore.config.zkn.linkFormat);
