@@ -29,22 +29,14 @@
             {{ task.error.name + ': ' + task.error.message }}
           </span>
         </div>
-        <div class="metadata">
-          <template v-if="task.currentTaskPercentage !== undefined && task.status === TaskStatus.ongoing">
-            {{ formatPercentage(task.currentTaskPercentage) }}
-          </template>
-          <template v-else-if="task.status === TaskStatus.ongoing">
-            {{ getDuration(task.startTime, currentTime, true) }}
-          </template>
-          <template v-else>
-            {{ getDuration(task.startTime, task.endTime) }}
-          </template>
-        </div>
-        <div class="status">
-          <template v-if="task.status === TaskStatus.ongoing">
-            <LoadingSpinner v-bind:spinner-size="16"></LoadingSpinner>
-          </template>
-          <template v-else-if="task.status === TaskStatus.error">
+        <TaskProgressIndicator
+          v-if="task.status === TaskStatus.ongoing"
+          class="progress"
+          v-bind:label="task.title"
+          v-bind:percentage="task.currentTaskPercentage"
+        />
+        <div v-else class="status">
+          <template v-if="task.status === TaskStatus.error">
             <cds-icon shape="exclamation-triangle"></cds-icon>
           </template>
           <template v-else-if="task.status === TaskStatus.finished">
@@ -60,21 +52,17 @@
 </template>
 
 <script setup lang="ts">
-import { DateTime } from "luxon";
 import type { LRTIPCSyncMessage } from "source/app/service-providers/long-running-tasks";
 import type { LRT_JSON } from "source/app/service-providers/long-running-tasks/task";
 import { trans } from "source/common/i18n-renderer";
+import TaskProgressIndicator from "source/common/vue/TaskProgressIndicator.vue";
 import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
-import LoadingSpinner from "source/common/vue/LoadingSpinner.vue";
 import PopoverWrapper from "source/common/vue/PopoverWrapper.vue";
 import { useLRTStore } from "source/pinia";
 import { TaskStatus } from "source/pinia/lrt-store";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed } from "vue";
 
 const ipcRenderer = window.ipc;
-
-// Time in ms when running tasks should be updating
-const REFRESH_INTERVAL = 100;
 
 const clearLabel = trans("Clear finished tasks");
 
@@ -93,35 +81,12 @@ const sortedTasks = computed<LRT_JSON[]>(() => {
     }
 
     // Next sorting: time
-    const aST = DateTime.fromISO(a.startTime);
-    const bST = DateTime.fromISO(b.startTime);
-
-    return aST.diff(bST).milliseconds;
+    return a.startTime.localeCompare(b.startTime);
   });
-});
-
-const hasRunningTasks = computed(() => {
-  return LRTStore.tasks.some((t) => t.status === TaskStatus.ongoing);
 });
 
 const hasFinishedTasks = computed(() => {
   return LRTStore.tasks.some((t) => t.status !== TaskStatus.ongoing);
-});
-
-const currentTime = ref(DateTime.now().toISO());
-
-let intervalTimer: NodeJS.Timeout | undefined;
-
-onMounted(() => {
-  intervalTimer = setInterval(() => {
-    if (hasRunningTasks.value) {
-      currentTime.value = DateTime.now().toISO();
-    }
-  }, REFRESH_INTERVAL);
-});
-
-onBeforeUnmount(() => {
-  clearInterval(intervalTimer);
 });
 
 function clearFinishedTasks() {
@@ -139,47 +104,6 @@ function interactTask(id: string) {
   } as LRTIPCSyncMessage);
 }
 
-/**
- * Should return a human-readable version of the difference between start and end.
- *
- * @param   {string}   start     The start time
- * @param   {string}   end       The end time
- * @param   {boolean}  highPrec  Whether to return fractional seconds
- *
- * @return  {string}             The duration as a string
- */
-function getDuration(start: string, end: string | undefined, highPrec = false): string {
-  const st = DateTime.fromISO(start);
-  const et = end !== undefined ? DateTime.fromISO(end) : DateTime.now();
-
-  const debug = et.diff(st, ["minutes", "seconds"]);
-  if (!debug.isValid) {
-    console.warn(debug.invalidReason, debug.invalidExplanation);
-    console.log({ start, st: st.toISO(), et: et.toISO() });
-  }
-
-  if (highPrec) {
-    return et
-      .diff(st, ["minutes", "seconds"]) // Calculate the difference
-      .toHuman({ unitDisplay: "short" }); // Convert to string
-  } else {
-    return et
-      .diff(st, ["minutes", "seconds", "milliseconds"]) // Calculate the difference
-      .set({ milliseconds: 0 }) // Avoid fractional seconds if asked
-      .rescale() // Ensure the duration uses the most compact format (seconds, minutes, or hours)
-      .toHuman({ unitDisplay: "short" }); // Convert to string
-  }
-}
-
-function formatPercentage(perc: number, roundTo = 2): string {
-  // First, percentages in the LRT provider are always fractions.
-  perc *= 100;
-
-  const factor = 10 ** roundTo;
-  perc = Math.round(perc * factor) / factor;
-
-  return `${perc}%`;
-}
 </script>
 
 
@@ -193,42 +117,43 @@ function formatPercentage(perc: number, roundTo = 2): string {
     min-width: 200px;
     display: grid;
     padding: 5px;
-    border: 1px solid rgb(220, 220, 220);
+    border: 1px solid var(--chrome-border);
     border-radius: 5px;
-    grid-template-areas: "title title" "info info" "metadata status";
-    grid-template-columns: auto 24px;
+    grid-template-areas: "title status" "info info" "progress progress";
+    grid-template-columns: minmax(0, 1fr) 24px;
     gap: 5px;
-    background-color: rgb(235, 255, 235);
+    background-color: var(--chrome-surface);
+    color: var(--chrome-text);
 
     &.interactable { cursor: pointer; }
 
     &.error {
-      background-color: rgb(255, 235, 245);
+      border-left: 3px solid var(--accent-red);
     }
 
     &.in-progress {
-      background-color: rgb(225, 235, 255);
+      border-left: 3px solid var(--chrome-row-accent);
     }
 
     &.aborted {
-      background-color: rgb(230, 230, 230);
+      opacity: 0.7;
     }
 
     .title {
       grid-area: title;
       font-size: 1em;
+      color: inherit;
     }
 
     .info {
       grid-area: info;
       font-size: 0.8em;
 
-      color: rgb(100, 100, 100);
+      color: var(--chrome-text-muted);
     }
 
-    .metadata {
-      font-size: 0.8em;
-      grid-area: metadata;
+    .progress {
+      grid-area: progress;
     }
 
     .status {
@@ -238,26 +163,4 @@ function formatPercentage(perc: number, roundTo = 2): string {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  #lrt-wrapper .lrt {
-    .info {
-      color: rgb(142 142 142);
-    }
-
-    background-color: rgb(25, 65, 0);
-    border-color: rgb(15, 15, 15);
-
-    &.error {
-      background-color: rgb(65, 10, 25);
-    }
-
-    &.in-progress {
-      background-color: rgb(10, 45, 65);
-    }
-
-    &.aborted {
-      background-color: rgb(45, 45, 45);
-    }
-  }
-}
 </style>

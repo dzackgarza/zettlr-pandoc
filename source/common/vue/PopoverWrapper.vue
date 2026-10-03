@@ -201,17 +201,13 @@ function place(): void {
   // `true` value.
   const placementMargins = DOCUMENT_MARGIN + arrowSize;
   const canPlaceBelow =
-    spaceBelow > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
+    spaceBelow > wrapperHeight + placementMargins;
   const canPlaceRight =
     spaceRight > wrapperWidth + placementMargins &&
     spaceAbove > placementMargins &&
     spaceBelow > placementMargins;
   const canPlaceAbove =
-    spaceAbove > wrapperHeight + placementMargins &&
-    spaceLeft > placementMargins &&
-    spaceRight > placementMargins;
+    spaceAbove > wrapperHeight + placementMargins;
   const canPlaceLeft =
     spaceLeft > wrapperWidth + placementMargins &&
     spaceAbove > placementMargins &&

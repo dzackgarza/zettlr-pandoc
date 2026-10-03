@@ -200,6 +200,32 @@ describe("assembled app: Problems view", function () {
         ),
       ),
     );
+    const running = page.locator('[data-statusbar-item="running-task"]', {
+      hasText: "Linting workspace documents",
+    });
+    await running.waitFor({ state: "visible", timeout: 20_000 });
+    assert.match(await running.innerText(), /\d+%/, "the active lint reports completion");
+    await running.locator("progress").waitFor({ state: "visible" });
+    screenshots.set("workspace-lint-progress.png", await page.screenshot());
+    await running.click();
+    const task = page.locator("#lrt-wrapper .lrt.in-progress", {
+      hasText: "Linting workspace documents",
+    });
+    await task.waitFor({ state: "visible" });
+    assert.match(await task.innerText(), /\d+ of \d+ documents[\s\S]*\d+%/);
+    const taskBox = await task.boundingBox();
+    const viewport = page.viewportSize();
+    assert.ok(
+      taskBox !== null &&
+        viewport !== null &&
+        taskBox.x >= 0 &&
+        taskBox.y >= 0 &&
+        taskBox.x + taskBox.width <= viewport.width &&
+        taskBox.y + taskBox.height <= viewport.height,
+      "the active task card stays in the window",
+    );
+    screenshots.set("workspace-lint-task.png", await task.screenshot());
+    await page.keyboard.press("Escape");
     const pending = page.locator("[data-problems-pending]");
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline && (await pending.count()) === 0) {
