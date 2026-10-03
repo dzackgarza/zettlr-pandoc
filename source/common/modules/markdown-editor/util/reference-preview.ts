@@ -21,7 +21,7 @@ export function referencePreviewMarkdown(definition: PreviewSource): string {
   }
 
   if (definition.family === "tbl" && lines.length > 1) {
-    return definition.previewSource.replace(/\s*\{#tbl:[^}]+\}\s*$/u, "").trim();
+    return definition.previewSource.replace(/\s*\{#tbl[:-][^}]+\}\s*$/u, "").trim();
   }
 
   const line = lines.join("\n");
