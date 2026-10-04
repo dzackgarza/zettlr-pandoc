@@ -27,7 +27,11 @@ import type {
   SearchDocumentRequest,
   SearchDocumentResponse,
   ViewSummary,
+  WorkspaceDirectoriesResponse,
+  WorkspaceDirectoryEntry,
   WorkspaceDocumentEntry,
+  WorkspaceEntryCreateRequest,
+  WorkspaceEntryResponse,
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
@@ -104,7 +108,31 @@ export interface AgentDocumentQueryHost {
     get: () => { app: { openWorkspaces: string[] } };
   };
   links: { readonly index: WikilinkIndex };
+  /**
+   * The filesystem seam the workspace-entry operations need. Optional so a
+   * host that only reads documents keeps compiling; a request that creates an
+   * entry or lists directories answers PERSISTENCE_FAILED without it.
+   */
+  fsal?: {
+    pathExists: (absPath: string) => Promise<boolean>;
+    isDir: (absPath: string) => Promise<boolean>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    createDir: (dirPath: string) => Promise<void>;
+    createFile: (filePath: string, content: string) => Promise<void>;
+  };
 }
+
+/** Why a workspace-entry creation was refused, mapped to a wire error code. */
+export type WorkspaceEntryFailureCode =
+  | "WORKSPACE_NOT_FOUND"
+  | "WORKSPACE_OUTSIDE_SCOPE"
+  | "WORKSPACE_ENTRY_EXISTS"
+  | "INVALID_PARAMS"
+  | "PERSISTENCE_FAILED";
+
+export type WorkspaceEntryCreation =
+  | { ok: true; entry: WorkspaceEntryResponse }
+  | { ok: false; code: WorkspaceEntryFailureCode; message: string };
 
 /**
  * Read-only annotation projections for transport providers. Annotation
@@ -325,10 +353,13 @@ export default class AgentDocumentQueries {
    * lookup `GET /v1/annotations/{annotationId}` and the reply endpoint both
    * need, since neither carries a documentId.
    */
-  public async findAnnotationQuery(
-    annotationId: string,
-  ): Promise<
-    { documentId: string; annotation: TextAnnotation; annotationGeneration: number } | undefined
+  public async findAnnotationQuery(annotationId: string): Promise<
+    | {
+        documentId: string;
+        annotation: TextAnnotation;
+        annotationGeneration: number;
+      }
+    | undefined
   > {
     for (const document of this.documents.loadedDocuments) {
       const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
@@ -411,20 +442,41 @@ export default class AgentDocumentQueries {
     }));
   }
 
-  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
+  /**
+   * Every file a workspace holds, flat, open or not. Undefined when
+   * `workspacePath` names no configured workspace, so the route can answer 404
+   * rather than an empty listing.
+   */
+  public async listWorkspaceFilesByWorkspace(
+    workspacePath: string,
+  ): Promise<WorkspaceFileEntry[] | undefined> {
+    if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
+      return undefined;
+    }
     const files: WorkspaceFileEntry[] = [];
     const wikilinks = this.app.links.index;
+    for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
+      files.push({
+        documentId: this.documents.ensureDocumentId(filePath),
+        path: filePath,
+        name: path.basename(filePath),
+        workspaceId: workspacePath,
+        open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
+        ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
+      });
+    }
+    return files;
+  }
+
+  /**
+   * Every file across every configured workspace, flat, open or not. The
+   * orientation projection behind `getContext`; the per-workspace
+   * `include=files` listing shares its entry shape.
+   */
+  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
+    const files: WorkspaceFileEntry[] = [];
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
-        files.push({
-          documentId: this.documents.ensureDocumentId(filePath),
-          path: filePath,
-          name: path.basename(filePath),
-          workspaceId: workspacePath,
-          open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
-          ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
-        });
-      }
+      files.push(...((await this.listWorkspaceFilesByWorkspace(workspacePath)) ?? []));
     }
     return files;
   }
@@ -502,7 +554,12 @@ export default class AgentDocumentQueries {
       };
     }
     const working = normalizeText(await this.documents.readSupportedFile(filePath));
-    return { attached: false, working, reference: working, reviewGeneration: 0 };
+    return {
+      attached: false,
+      working,
+      reference: working,
+      reviewGeneration: 0,
+    };
   }
 
   public async readDocumentContent(
@@ -583,6 +640,152 @@ export default class AgentDocumentQueries {
       hits: collected.hits,
       truncated: collected.truncated,
     };
+  }
+
+  /**
+   * Every folder a workspace holds, recursively, relative to the workspace
+   * root. A folder whose name the ignore rules hide does not enter the walk
+   * (`readDirectoryRecursively`), so the listing is the same set the file
+   * manager shows. The workspace root itself is not a child and is not listed.
+   */
+  public async listWorkspaceDirectories(
+    workspacePath: string,
+  ): Promise<WorkspaceDirectoriesResponse | undefined> {
+    if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
+      return undefined;
+    }
+    const fsal = this.app.fsal;
+    if (fsal === undefined) {
+      throw new Error("The workspace directory listing has no filesystem access");
+    }
+    const allPaths = await fsal.readDirectoryRecursively(workspacePath);
+    const directories: WorkspaceDirectoryEntry[] = [];
+    for (const candidate of allPaths) {
+      if (candidate === workspacePath || !(await fsal.isDir(candidate))) {
+        continue;
+      }
+      directories.push({
+        path: candidate,
+        name: path.basename(candidate),
+        workspaceId: workspacePath,
+        parent: path.dirname(candidate),
+      });
+    }
+    return { workspaceId: workspacePath, directories };
+  }
+
+  /**
+   * Creates one file or folder inside a workspace. `path` is absolute or
+   * relative to `workspaceId`; the destination folder must already exist, so
+   * one call creates one entry. Containment is enforced on the realpath of the
+   * destination itself (its parent for a new file or folder), which is what
+   * makes a symlinked workspace root and a `..` in a relative path both safe.
+   */
+  public async createWorkspaceEntry(
+    request: WorkspaceEntryCreateRequest,
+  ): Promise<WorkspaceEntryCreation> {
+    if (request.kind !== "file" && request.kind !== "folder") {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: "kind must be 'file' or 'folder'",
+      };
+    }
+
+    let targetPath: string;
+    if (path.isAbsolute(request.path)) {
+      targetPath = path.normalize(request.path);
+    } else if (request.workspaceId !== undefined && request.workspaceId !== "") {
+      if (!this.app.config.get().app.openWorkspaces.includes(request.workspaceId)) {
+        return {
+          ok: false,
+          code: "WORKSPACE_NOT_FOUND",
+          message: `Workspace not found: ${request.workspaceId}`,
+        };
+      }
+      targetPath = path.resolve(request.workspaceId, request.path);
+    } else {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: "A relative path requires workspaceId",
+      };
+    }
+
+    const fsal = this.app.fsal;
+    if (fsal === undefined) {
+      return {
+        ok: false,
+        code: "PERSISTENCE_FAILED",
+        message: "The workspace entry creation has no filesystem access",
+      };
+    }
+
+    // The destination folder must exist before containment can be judged: a
+    // new file or folder is created *inside* a folder that is already there.
+    const parentDirectory = path.dirname(targetPath);
+    if (!(await fsal.isDir(parentDirectory))) {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: `The destination folder does not exist: ${parentDirectory}`,
+      };
+    }
+
+    const workspace = await this.containingWorkspace(parentDirectory);
+    if (workspace === undefined) {
+      return {
+        ok: false,
+        code: "WORKSPACE_OUTSIDE_SCOPE",
+        message: "The destination is outside every configured workspace",
+      };
+    }
+
+    if (await fsal.pathExists(targetPath)) {
+      return {
+        ok: false,
+        code: "WORKSPACE_ENTRY_EXISTS",
+        message: `An entry already exists at ${targetPath}`,
+      };
+    }
+
+    if (request.kind === "folder") {
+      await fsal.createDir(targetPath);
+    } else {
+      if (request.content === undefined) {
+        return {
+          ok: false,
+          code: "INVALID_PARAMS",
+          message: "content is required for a file",
+        };
+      }
+      await fsal.createFile(targetPath, request.content);
+    }
+
+    return {
+      ok: true,
+      entry: {
+        kind: request.kind,
+        path: targetPath,
+        name: path.basename(targetPath),
+        workspaceId: workspace,
+      },
+    };
+  }
+
+  /**
+   * The configured workspace that contains `absPath`, or undefined. Both sides
+   * are realpath'd so a symlinked workspace root compares against a symlinked
+   * target; a destination that does not exist yet canonicalizes through its
+   * existing parent.
+   */
+  private async containingWorkspace(absPath: string): Promise<string | undefined> {
+    for (const workspacePath of this.app.config.get().app.openWorkspaces) {
+      if (await this.isOpenableInWorkspace(absPath, workspacePath)) {
+        return workspacePath;
+      }
+    }
+    return undefined;
   }
 
   public async isOpenable(filePath: string): Promise<boolean> {

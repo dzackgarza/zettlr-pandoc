@@ -532,7 +532,7 @@ describe("a review that cannot be persisted", function () {
         }),
       activePath,
     );
-    const workspaceFiles = await activeApi.get("/v1/workspace/files");
+    const workspaceFiles = await activeApi.get("/v1/workspaces?include=files");
     assert.ok(isRecord(workspaceFiles) && Array.isArray(workspaceFiles.files));
     const entry = workspaceFiles.files.find((file) => isRecord(file) && file.path === activePath);
     await activeApi.post(`/v1/documents/${stringField(entry, "documentId")}/focus`, {});

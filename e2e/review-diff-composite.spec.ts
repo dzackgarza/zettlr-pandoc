@@ -105,7 +105,7 @@ function documentIdOf(payload: unknown): string {
 
 /** The id the workspace listing hands out for a path, open or closed. */
 async function workspaceDocumentId(api: AgentClient, filePath: string): Promise<string> {
-  const payload = await api.get("/v1/workspace/files");
+  const payload = await api.get("/v1/workspaces?include=files");
   assert.ok(isRecord(payload) && Array.isArray(payload.files));
   const entry = payload.files.find((file) => isRecord(file) && file.path === filePath);
   assert.ok(isRecord(entry), `workspace listing carried no entry for ${filePath}`);

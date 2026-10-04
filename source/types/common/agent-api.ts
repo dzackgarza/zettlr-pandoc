@@ -79,6 +79,10 @@ export type WorkspaceDocumentEntry = Schemas["WorkspaceDocumentSummary"];
 export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
+export type WorkspaceDirectoryEntry = Schemas["WorkspaceDirectoryEntry"];
+export type WorkspaceDirectoriesResponse = Schemas["WorkspaceDirectoriesResponse"];
+export type WorkspaceEntryCreateRequest = Schemas["WorkspaceEntryCreateRequest"];
+export type WorkspaceEntryResponse = Schemas["WorkspaceEntryResponse"];
 export type HelpResponse = Schemas["HelpResponse"];
 export type PingResponse = Schemas["PingResponse"];
 export type CapabilitiesResponse = Schemas["CapabilitiesResponse"];
@@ -141,7 +145,9 @@ type JsonBody<Response> = Response extends {
  */
 export type AgentApiResponseBody = operations[keyof operations] extends infer Operation
   ? Operation extends { responses: infer Responses }
-    ? { [Status in keyof Responses]: JsonBody<Responses[Status]> }[keyof Responses]
+    ? {
+        [Status in keyof Responses]: JsonBody<Responses[Status]>;
+      }[keyof Responses]
     : never
   : never;
 

@@ -48,6 +48,7 @@ import type {
   ReviewSubmissionRequest,
   SearchDocumentRequest,
   SubmitProposalRequest,
+  WorkspaceEntryCreateRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
@@ -222,6 +223,9 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   CITATION_NOT_FOUND: 404,
   FIGURE_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
+  WORKSPACE_NOT_FOUND: 404,
+  WORKSPACE_OUTSIDE_SCOPE: 403,
+  WORKSPACE_ENTRY_EXISTS: 409,
   DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
   ZOTERO_UNAVAILABLE: 503,
@@ -321,13 +325,28 @@ export interface AgentApiHost {
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
       tikz: ConfigOptions["tikz"];
-      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
+      editor: {
+        lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
+      };
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
   documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+  /**
+   * The filesystem operations the workspace-entry routes need, kept separate
+   * from `fsal` because the cross-reference reader may be wired without them.
+   * The real service container exposes the whole FSAL through `fsal`; this
+   * seam names only the five methods those routes call.
+   */
+  workspaceFsal?: {
+    pathExists: (absPath: string) => Promise<boolean>;
+    isDir: (absPath: string) => Promise<boolean>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    createDir: (dirPath: string) => Promise<void>;
+    createFile: (filePath: string, content: string) => Promise<void>;
+  };
   links: { readonly index: WikilinkIndex };
 }
 
@@ -399,7 +418,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       _documents,
       _documents.reviewQueries,
       _documents.annotationQueries,
-      _app,
+      { ..._app, fsal: _app.workspaceFsal },
       _log,
     );
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
@@ -819,7 +838,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
       searchWorkspace: (
         c: DefaultedOperationContext<
           "searchWorkspace",
@@ -828,16 +846,37 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleSearchWorkspace(res, c.request.query),
-      listWorkspaces: (c: OperationContext<"listWorkspaces">, _req, res: http.ServerResponse) => {
-        if (c.request.query.workspaceId) {
-          return this.handleListWorkspaceDocuments(
-            res,
-            c.request.query.workspaceId,
-            c.request.query.query,
-          );
+      listWorkspaces: (
+        c: DefaultedOperationContext<"listWorkspaces", "include">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const { workspaceId, include } = c.request.query;
+        if (include === "summary") {
+          return this.handleGetWorkspaces(res);
         }
-        return this.handleGetWorkspaces(res);
+        // A files listing without a workspaceId is the orientation projection
+        // across every workspace, the shape the retired flat route served.
+        if (include === "files" && (workspaceId === undefined || workspaceId === "")) {
+          return this.handleListWorkspaceFiles(res);
+        }
+        if (workspaceId === undefined || workspaceId === "") {
+          this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
+          return;
+        }
+        if (include === "documents") {
+          return this.handleListWorkspaceDocuments(res, workspaceId, c.request.query.query);
+        }
+        if (include === "directories") {
+          return this.handleListWorkspaceDirectories(res, workspaceId);
+        }
+        return this.handleListWorkspaceFilesInWorkspace(res, workspaceId);
       },
+      createWorkspaceEntry: (
+        c: OperationContext<"createWorkspaceEntry">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleCreateWorkspaceEntry(res, c.request.requestBody),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
       getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
@@ -1116,14 +1155,16 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * GET /v1/workspace/files — the orientation loop's first question: what
-   * exists. Every file across the configured workspaces, flat, open or not.
-   * Main already walks directories for the workspace listings; this is a
-   * route over that walk, not a subsystem.
+   * GET /v1/workspaces?include=files (no workspaceId) — the orientation loop's
+   * first question: what exists. Every file across every configured workspace,
+   * flat, open or not. Main already walks directories for the workspace
+   * listings; this is a route over that walk, not a subsystem.
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
     try {
-      this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
+      this.sendJson(res, 200, {
+        files: await this._queries.listWorkspaceFiles(),
+      });
     } catch (error) {
       this.sendError(
         res,
@@ -1132,6 +1173,74 @@ export default class AgentHTTPProvider extends ProviderContract {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /**
+   * GET /v1/workspaces?workspaceId=…&include=files — the same listing
+   * restricted to one workspace, 404 when the id names no configured one.
+   */
+  private async handleListWorkspaceFilesInWorkspace(
+    res: http.ServerResponse,
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const files = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+      if (files === undefined) {
+        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, { files });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /**
+   * GET /v1/workspaces?include=directories — every folder the workspace holds,
+   * recursively, so a client can see the shape of the tree rather than only
+   * the files in it.
+   */
+  private async handleListWorkspaceDirectories(
+    res: http.ServerResponse,
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const directories = await this._queries.listWorkspaceDirectories(workspaceId);
+      if (directories === undefined) {
+        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, directories);
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /**
+   * POST /v1/workspace/entries — create one file or folder inside a workspace.
+   * The provider owns containment and the already-exists refusal; this handler
+   * only translates its outcome to the wire.
+   */
+  private async handleCreateWorkspaceEntry(
+    res: http.ServerResponse,
+    body: WorkspaceEntryCreateRequest,
+  ): Promise<void> {
+    const outcome = await this._queries.createWorkspaceEntry(body);
+    if (outcome.ok) {
+      this.sendJson(res, 201, outcome.entry);
+      return;
+    }
+    this.sendError(res, STATUS_BY_CODE[outcome.code], outcome.code, outcome.message);
   }
 
   /**
@@ -1854,7 +1963,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    this.sendJson(res, 200, { reviewId: result.reviewId, documentId: result.documentId });
+    this.sendJson(res, 200, {
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+    });
   }
 
   /**
@@ -2194,7 +2306,11 @@ export default class AgentHTTPProvider extends ProviderContract {
                   declaration.context.toLocaleLowerCase("en-US").includes(needle),
               );
             });
-      this.sendJson(res, 200, { root: inventory.root, count: macros.length, macros });
+      this.sendJson(res, 200, {
+        root: inventory.root,
+        count: macros.length,
+        macros,
+      });
     } catch (error) {
       this.sendError(
         res,
@@ -2479,7 +2595,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         lookups.forEach((lookup, index) => {
           const target = targets[index];
           if (lookup.record === undefined) {
-            pending.push({ documentId: target.documentId, path: target.path, name: target.name });
+            pending.push({
+              documentId: target.documentId,
+              path: target.path,
+              name: target.name,
+            });
           } else {
             documents.push(result(target, lookup.record, lookup.current));
           }

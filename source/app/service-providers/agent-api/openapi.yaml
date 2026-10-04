@@ -354,6 +354,9 @@ components:
             - CITATION_NOT_FOUND
             - FIGURE_NOT_FOUND
             - FIGURE_ALREADY_EXISTS
+            - WORKSPACE_NOT_FOUND
+            - WORKSPACE_OUTSIDE_SCOPE
+            - WORKSPACE_ENTRY_EXISTS
             - DUPLICATE_CLAIM_DESCRIPTION
             - BASELINE_MISMATCH
             - ZOTERO_UNAVAILABLE
@@ -695,6 +698,85 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceFileEntry'
+    WorkspaceDirectoryEntry:
+      type: object
+      required:
+        - path
+        - name
+        - workspaceId
+        - parent
+      properties:
+        path:
+          type: string
+          description: Absolute path of the folder.
+        name:
+          type: string
+        workspaceId:
+          type: string
+        parent:
+          type: string
+          description: >-
+            Absolute path of the containing folder, or the workspace root for a
+            top-level folder.
+    WorkspaceDirectoriesResponse:
+      type: object
+      required:
+        - workspaceId
+        - directories
+      properties:
+        workspaceId:
+          type: string
+        directories:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceDirectoryEntry'
+    WorkspaceEntryCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - kind
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: >-
+            Absolute destination path, or a path relative to the target
+            workspace. The destination folder must exist.
+        kind:
+          type: string
+          enum:
+            - file
+            - folder
+          description: Create a file or a folder.
+        content:
+          type: string
+          description: File content as UTF-8; required when kind is file.
+        workspaceId:
+          type: string
+          description: >-
+            Workspace root a relative `path` resolves against. Required when
+            `path` is not absolute.
+    WorkspaceEntryResponse:
+      type: object
+      required:
+        - kind
+        - path
+        - name
+        - workspaceId
+      properties:
+        kind:
+          type: string
+          enum:
+            - file
+            - folder
+        path:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
     WorkspaceSearchMatch:
       type: object
       required:
@@ -2436,21 +2518,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ViewsResponse'
-  /v1/workspace/files:
-    get:
-      operationId: listWorkspaceFiles
-      x-openai-isConsequential: false
-      summary: List every file across the configured workspaces
-      description: >-
-        The agent's orientation entry point — all files the editor can see,
-        flat, open or not. Files here can be read and reviewed immediately.
-      responses:
-        '200':
-          description: All workspace files.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceFilesResponse'
   /v1/workspace/search:
     get:
       operationId: searchWorkspace
@@ -2533,14 +2600,14 @@ paths:
     get:
       operationId: listWorkspaces
       x-openai-isConsequential: false
-      summary: List configured workspaces or documents within a workspace
+      summary: List configured workspaces, or a workspace's documents, directories, or files
       parameters:
         - name: workspaceId
           in: query
           required: false
           schema:
             type: string
-          description: Optional workspace ID to inspect documents in that workspace.
+          description: Optional workspace ID to inspect within that workspace.
         - name: include
           in: query
           required: false
@@ -2549,8 +2616,13 @@ paths:
             enum:
               - summary
               - documents
+              - directories
+              - files
             default: summary
-          description: Whether to return workspace summaries or documents.
+          description: >-
+            summary: the configured workspaces. documents and directories
+            require a workspaceId. files lists every supported file, flat,
+            open or not — across all workspaces, or the one workspaceId names.
         - name: query
           in: query
           required: false
@@ -2559,13 +2631,63 @@ paths:
           description: Optional search term when listing workspace documents.
       responses:
         '200':
-          description: Workspace listing or document list.
+          description: Workspace listing, document list, directory list, or file list.
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/WorkspacesResponse'
                   - $ref: '#/components/schemas/WorkspaceDocumentsResponse'
+                  - $ref: '#/components/schemas/WorkspaceDirectoriesResponse'
+                  - $ref: '#/components/schemas/WorkspaceFilesResponse'
+  /v1/workspace/entries:
+    post:
+      operationId: createWorkspaceEntry
+      x-openai-isConsequential: false
+      summary: Create a file or folder inside a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceEntryCreateRequest'
+      responses:
+        '201':
+          description: Entry created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceEntryResponse'
+        '400':
+          description: Invalid path or missing file content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '403':
+          description: Destination is outside every configured workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '404':
+          description: Named workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '409':
+          description: An entry already exists at the destination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
+        '500':
+          description: Persistence failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentErrorResponse'
   /v1/documents:
     get:
       operationId: listDocuments

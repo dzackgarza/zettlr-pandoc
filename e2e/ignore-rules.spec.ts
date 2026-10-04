@@ -97,7 +97,9 @@ describe("assembled app: gitignore rules filter the workspace", function () {
   /** The files the Agent API lists, relative to the workspace root, sorted. */
   async function apiFiles(): Promise<string[]> {
     assert.ok(api !== undefined, "The Agent API must be reachable");
-    const listing = (await api.get("/v1/workspace/files")) as { files: Array<{ path: string }> };
+    const listing = (await api.get("/v1/workspaces?include=files")) as {
+      files: Array<{ path: string }>;
+    };
     return listing.files.map((file) => path.relative(workspace, file.path)).sort();
   }
 

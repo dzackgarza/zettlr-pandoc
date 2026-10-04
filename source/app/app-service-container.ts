@@ -14,7 +14,7 @@
  */
 
 import { installErrorReporter } from "@common/util/error-reporting";
-import AgentHTTPProvider from "@providers/agent-api/http-server";
+import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
 import AppearanceProvider from "@providers/appearance";
 import AssetsProvider from "@providers/assets";
@@ -367,6 +367,16 @@ export class AppServiceContainer {
   }
   public get fsal(): FSAL {
     return this._fsal;
+  }
+  /** The FSAL slice the Agent API's workspace-entry routes call. */
+  public get workspaceFsal(): AgentApiHost["workspaceFsal"] {
+    return {
+      pathExists: this._fsal.pathExists.bind(this._fsal),
+      isDir: this._fsal.isDir.bind(this._fsal),
+      readDirectoryRecursively: this._fsal.readDirectoryRecursively.bind(this._fsal),
+      createDir: this._fsal.createDir.bind(this._fsal),
+      createFile: this._fsal.createFile.bind(this._fsal),
+    };
   }
   public get documents(): DocumentManager {
     return this._documentManager;

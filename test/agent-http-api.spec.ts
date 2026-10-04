@@ -548,6 +548,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         search: createSearch(),
         documentLint,
         links,
+        // The workspace-entry routes create against the real filesystem, so a
+        // test creates an entry and then reads it back rather than asserting a
+        // call was made. Containment is the provider's, not the seam's.
+        workspaceFsal: {
+          createFile: async (filePath: string, content: string) => {
+            writeFileSync(filePath, content, "utf8");
+          },
+          createDir: async (dirPath: string) => {
+            mkdirSync(dirPath);
+          },
+          pathExists: async (absPath: string) => existsSync(absPath),
+          isDir: async (absPath: string) => {
+            try {
+              return statSync(absPath).isDirectory();
+            } catch {
+              return false;
+            }
+          },
+          readDirectoryRecursively: async (workspacePath: string) =>
+            readdirSync(workspacePath, {
+              recursive: true,
+              withFileTypes: true,
+            }).map((entry) => path.join(entry.parentPath, entry.name)),
+        },
       },
       undefined,
       undefined,
@@ -667,10 +691,17 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         patch: createPatch(filePath, before, middle),
         addressesAnnotationIds: [annotation.annotationId],
       },
-      { description: "Specify the field.", patch: createPatch(filePath, middle, after) },
+      {
+        description: "Specify the field.",
+        patch: createPatch(filePath, middle, after),
+      },
     ];
     const outside = await httpRequest("POST", "/v1/review-submissions", {
-      body: JSON.stringify({ document: { uri: __filename }, claims, clientRequestId: "outside" }),
+      body: JSON.stringify({
+        document: { uri: __filename },
+        claims,
+        clientRequestId: "outside",
+      }),
     });
     assert.equal(outside.status, 404);
     const invalid = await httpRequest("POST", "/v1/review-submissions", {
@@ -1006,7 +1037,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               { name: "Stream-Cursor", in: "header" },
             ],
             responses: {
-              "200": { content: { "application/json": { schema: { type: "object" } } } },
+              "200": {
+                content: { "application/json": { schema: { type: "object" } } },
+              },
             },
           },
         },
@@ -1114,7 +1147,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(invalidWorkspace, "workspace path is a file\n", "utf8");
     openWorkspaces = [invalidWorkspace];
 
-    const response = await httpRequest("GET", "/v1/workspace/files");
+    const response = await httpRequest(
+      "GET",
+      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=files`,
+    );
     assert.equal(response.status, 500);
     const body = parseAs(response.body, "AgentErrorResponse");
     assert.equal(body.error.code, "INTERNAL_ERROR");
@@ -1165,7 +1201,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const operations = Object.values(openApiDocument.paths).flatMap((methods) =>
       Object.values(methods),
     );
-    const zoteroClient = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    const zoteroClient = new Client({
+      name: "agent-http-api-spec",
+      version: "1.0.0",
+    });
     await zoteroClient.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
     );
@@ -1179,7 +1218,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await zoteroClient.close();
     }
-    const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    const client = new Client({
+      name: "agent-http-api-spec",
+      version: "1.0.0",
+    });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
     );
@@ -1465,7 +1507,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       [
         {
           description: "save-close review",
-          patch: createPatch("document", "before\n", "after\n", "", "", { context: 0 }),
+          patch: createPatch("document", "before\n", "after\n", "", "", {
+            context: 0,
+          }),
         },
       ],
       "save-close-review",
@@ -1507,7 +1551,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       assert.fail(`The review proposal was refused: ${submitted.code}`);
     }
     const live = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/reapply`, {
-      body: JSON.stringify({ expectedReviewGeneration: submitted.reviewGeneration }),
+      body: JSON.stringify({
+        expectedReviewGeneration: submitted.reviewGeneration,
+      }),
     });
     assert.equal(live.status, 409);
     assert.equal(parseAs(live.body, "AgentErrorResponse").error.code, "REVIEW_NOT_INVALIDATED");
@@ -1523,7 +1569,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(parseAs(chunks.body, "ReviewChunksResponse").chunks.length, 1);
 
     const reapplied = await httpRequest("POST", `/v1/reviews/${submitted.reviewId}/reapply`, {
-      body: JSON.stringify({ expectedReviewGeneration: frozenBody.generation }),
+      body: JSON.stringify({
+        expectedReviewGeneration: frozenBody.generation,
+      }),
     });
     assert.equal(reapplied.status, 200, reapplied.body);
     const body = parseAs(reapplied.body, "ReapplyReviewResponse");
@@ -1537,7 +1585,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const documentId = await openInPane(filePath, "alpha\nbeta\n");
     const capitalize = {
       description: "capitalize beta",
-      patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", { context: 0 }),
+      patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+        context: 0,
+      }),
     };
     const first = await provider.submitProposal(
       documentId,
@@ -1549,7 +1599,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     if (!first.ok) {
       assert.fail(`The first proposal was refused: ${first.code}`);
     }
-    const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    const client = new Client({
+      name: "agent-http-api-spec",
+      version: "1.0.0",
+    });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
     );
@@ -1560,7 +1613,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     ): Promise<{ isError: boolean; body: AgentApiSchemas[N] }> => {
       const result = await client.callTool({ name, arguments: args });
       const [content] = result.content as Array<{ type: "text"; text: string }>;
-      return { isError: result.isError === true, body: parseAs(content.text, schemaName) };
+      return {
+        isError: result.isError === true,
+        body: parseAs(content.text, schemaName),
+      };
     };
     try {
       const retracted = await call(
@@ -1655,7 +1711,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       documents.documents.some((document) => document.path === filePath),
       false,
     );
-    const content = await httpRequest("GET", "/v1/workspace/files");
+    const content = await httpRequest(
+      "GET",
+      `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+    );
     assert.equal(content.status, 200);
     const files = parseAs(content.body, "WorkspaceFilesResponse");
     const file = files.files.find((entry) => entry.path === filePath);
@@ -1663,10 +1722,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(file.open, false);
   });
 
-  it("GET /v1/workspace/files names each Markdown file by its shortest unique wikilink", async function () {
+  it("GET /v1/workspaces?include=files names each Markdown file by its shortest unique wikilink", async function () {
     const relativePaths = ["programs/cusp-chain.md", "a/moduli.md", "b/moduli.md"];
     for (const relative of relativePaths) {
-      mkdirSync(path.dirname(path.join(scratch, relative)), { recursive: true });
+      mkdirSync(path.dirname(path.join(scratch, relative)), {
+        recursive: true,
+      });
       writeFileSync(path.join(scratch, relative), "# Note\n", "utf8");
     }
     links.index = new WikilinkIndex(
@@ -1679,7 +1740,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       })),
     );
     try {
-      const response = await httpRequest("GET", "/v1/workspace/files");
+      const response = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+      );
       assert.equal(response.status, 200);
       const body = parseAs(response.body, "WorkspaceFilesResponse");
       const linkTargets = Object.fromEntries(
@@ -1695,6 +1759,160 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       links.index = new WikilinkIndex([]);
     }
+  });
+
+  it("GET /v1/workspaces?include=directories lists every folder recursively", async function () {
+    mkdirSync(path.join(scratch, "books", "volumes", "one"), {
+      recursive: true,
+    });
+    mkdirSync(path.join(scratch, "notes"), { recursive: true });
+    writeFileSync(path.join(scratch, "notes", "a.md"), "# A\n", "utf8");
+
+    const response = await httpRequest(
+      "GET",
+      `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=directories`,
+    );
+    assert.equal(response.status, 200, response.body);
+    const body = parseAs(response.body, "WorkspaceDirectoriesResponse");
+    assert.equal(body.workspaceId, scratch);
+    const byRelative = body.directories.map((entry) => path.relative(scratch, entry.path)).sort();
+    assert.deepEqual(byRelative, ["books", "books/volumes", "books/volumes/one", "notes"]);
+
+    const nested = body.directories.find(
+      (entry) => path.relative(scratch, entry.path) === "books/volumes",
+    );
+    assert.ok(nested !== undefined);
+    assert.equal(nested.name, "volumes");
+    assert.equal(nested.workspaceId, scratch);
+    assert.equal(nested.parent, path.join(scratch, "books"));
+
+    const unknown = await httpRequest(
+      "GET",
+      `/v1/workspaces?workspaceId=${encodeURIComponent(path.join(scratch, "nope"))}&include=directories`,
+    );
+    assert.equal(unknown.status, 404);
+    assert.equal(parseAs(unknown.body, "AgentErrorResponse").error.code, "WORKSPACE_NOT_FOUND");
+
+    const missingWorkspace = await httpRequest("GET", "/v1/workspaces?include=directories");
+    assert.equal(missingWorkspace.status, 400);
+    assert.equal(parseAs(missingWorkspace.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+  });
+
+  it("creates files and folders inside a workspace and refuses a duplicate or a traversal", async function () {
+    mkdirSync(path.join(scratch, "notes"), { recursive: true });
+
+    // Relative path with an explicit workspaceId.
+    const file = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: scratch,
+        path: "notes/new.md",
+        kind: "file",
+        content: "# New\n",
+      }),
+    });
+    assert.equal(file.status, 201, file.body);
+    const created = parseAs(file.body, "WorkspaceEntryResponse");
+    assert.equal(created.kind, "file");
+    assert.equal(created.path, path.join(scratch, "notes", "new.md"));
+    assert.equal(created.workspaceId, scratch);
+    assert.equal(readFileSync(path.join(scratch, "notes", "new.md"), "utf8"), "# New\n");
+
+    // Absolute path with a folder kind.
+    const folder = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: path.join(scratch, "notes", "projects"),
+        kind: "folder",
+      }),
+    });
+    assert.equal(folder.status, 201, folder.body);
+    assert.equal(statSync(path.join(scratch, "notes", "projects")).isDirectory(), true);
+
+    // A second create at the same path is a conflict, never a silent replace.
+    const duplicate = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: scratch,
+        path: "notes/new.md",
+        kind: "file",
+        content: "x",
+      }),
+    });
+    assert.equal(duplicate.status, 409, duplicate.body);
+    assert.equal(
+      parseAs(duplicate.body, "AgentErrorResponse").error.code,
+      "WORKSPACE_ENTRY_EXISTS",
+    );
+    assert.equal(readFileSync(path.join(scratch, "notes", "new.md"), "utf8"), "# New\n");
+
+    // `..` escapes are refused, not followed.
+    const escape = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: scratch,
+        path: "notes/../../outside.md",
+        kind: "file",
+        content: "x",
+      }),
+    });
+    assert.equal(escape.status, 403, escape.body);
+    assert.equal(parseAs(escape.body, "AgentErrorResponse").error.code, "WORKSPACE_OUTSIDE_SCOPE");
+    assert.equal(existsSync(path.join(path.dirname(scratch), "outside.md")), false);
+
+    // An absolute target outside every workspace is refused too.
+    const outside = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        path: path.join(authoringHome, "elsewhere.md"),
+        kind: "file",
+        content: "x",
+      }),
+    });
+    assert.equal(outside.status, 403, outside.body);
+    assert.equal(parseAs(outside.body, "AgentErrorResponse").error.code, "WORKSPACE_OUTSIDE_SCOPE");
+    assert.equal(existsSync(path.join(authoringHome, "elsewhere.md")), false);
+
+    // A missing destination folder and a file without content are both 400.
+    const missingParent = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: scratch,
+        path: "absent/child.md",
+        kind: "file",
+        content: "x",
+      }),
+    });
+    assert.equal(missingParent.status, 400, missingParent.body);
+    assert.equal(parseAs(missingParent.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+
+    const noContent = await httpRequest("POST", "/v1/workspace/entries", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: scratch,
+        path: "notes/empty.md",
+        kind: "file",
+      }),
+    });
+    assert.equal(noContent.status, 400, noContent.body);
+    assert.equal(parseAs(noContent.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    assert.equal(existsSync(path.join(scratch, "notes", "empty.md")), false);
+
+    // The created entries are visible through the directory listing.
+    const listing = parseAs(
+      (
+        await httpRequest(
+          "GET",
+          `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=directories`,
+        )
+      ).body,
+      "WorkspaceDirectoriesResponse",
+    );
+    assert.ok(
+      listing.directories.some(
+        (entry) => path.relative(scratch, entry.path) === path.join("notes", "projects"),
+      ),
+    );
   });
 
   it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
@@ -1781,7 +1999,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const source = "\\begin{tikzpicture}\n\\draw (0,0) -- (1,1);\n\\end{tikzpicture}\n";
     const created = await httpRequest("POST", "/v1/figures", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: source }),
+      body: JSON.stringify({
+        path: "generated/nested/new-figure.tikz",
+        content: source,
+      }),
     });
     assert.equal(created.status, 201, created.body);
     const payload = parseAs(created.body, "FigureFileResponse");
@@ -1810,7 +2031,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const replacement = "\\begin{tikzpicture}\n\\node {replacement};\n\\end{tikzpicture}\n";
     const collision = await httpRequest("POST", "/v1/figures", {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "generated/nested/new-figure.tikz", content: replacement }),
+      body: JSON.stringify({
+        path: "generated/nested/new-figure.tikz",
+        content: replacement,
+      }),
     });
     assert.equal(collision.status, 409, collision.body);
     assert.equal(parseAs(collision.body, "AgentErrorResponse").error.code, "FIGURE_ALREADY_EXISTS");
@@ -1887,7 +2111,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(openPayload.documents.some((document) => document.path === otherOpenPath));
 
     const workspaceFiles = parseAs(
-      (await httpRequest("GET", "/v1/workspace/files")).body,
+      (
+        await httpRequest(
+          "GET",
+          `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+        )
+      ).body,
       "WorkspaceFilesResponse",
     );
     const closedId = workspaceFiles.files.find((file) => file.path === closedPath)?.documentId;
@@ -2077,7 +2306,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     it("answers an oversized body with structured 413 and logs the refusal", async function () {
       const logBoundary = await markLogBoundary();
-      const body = JSON.stringify({ clientRequestId: "x".repeat(25 * 1024 * 1024) });
+      const body = JSON.stringify({
+        clientRequestId: "x".repeat(25 * 1024 * 1024),
+      });
       const response = await new Promise<{
         status: number;
         body: string;

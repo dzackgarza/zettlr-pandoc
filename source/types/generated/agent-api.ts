@@ -92,26 +92,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/workspace/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List every file across the configured workspaces
-     * @description The agent's orientation entry point — all files the editor can see, flat, open or not. Files here can be read and reviewed immediately.
-     */
-    get: operations["listWorkspaceFiles"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/v1/workspace/search": {
     parameters: {
       query?: never;
@@ -139,10 +119,27 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List configured workspaces or documents within a workspace */
+    /** List configured workspaces, or a workspace's documents, directories, or files */
     get: operations["listWorkspaces"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/workspace/entries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a file or folder inside a workspace */
+    post: operations["createWorkspaceEntry"];
     delete?: never;
     options?: never;
     head?: never;
@@ -722,6 +719,9 @@ export interface components {
         | "CITATION_NOT_FOUND"
         | "FIGURE_NOT_FOUND"
         | "FIGURE_ALREADY_EXISTS"
+        | "WORKSPACE_NOT_FOUND"
+        | "WORKSPACE_OUTSIDE_SCOPE"
+        | "WORKSPACE_ENTRY_EXISTS"
         | "DUPLICATE_CLAIM_DESCRIPTION"
         | "BASELINE_MISMATCH"
         | "ZOTERO_UNAVAILABLE"
@@ -871,6 +871,38 @@ export interface components {
     };
     WorkspaceFilesResponse: {
       files: components["schemas"]["WorkspaceFileEntry"][];
+    };
+    WorkspaceDirectoryEntry: {
+      /** @description Absolute path of the folder. */
+      path: string;
+      name: string;
+      workspaceId: string;
+      /** @description Absolute path of the containing folder, or the workspace root for a top-level folder. */
+      parent: string;
+    };
+    WorkspaceDirectoriesResponse: {
+      workspaceId: string;
+      directories: components["schemas"]["WorkspaceDirectoryEntry"][];
+    };
+    WorkspaceEntryCreateRequest: {
+      /** @description Absolute destination path, or a path relative to the target workspace. The destination folder must exist. */
+      path: string;
+      /**
+       * @description Create a file or a folder.
+       * @enum {string}
+       */
+      kind: "file" | "folder";
+      /** @description File content as UTF-8; required when kind is file. */
+      content?: string;
+      /** @description Workspace root a relative `path` resolves against. Required when `path` is not absolute. */
+      workspaceId?: string;
+    };
+    WorkspaceEntryResponse: {
+      /** @enum {string} */
+      kind: "file" | "folder";
+      path: string;
+      name: string;
+      workspaceId: string;
     };
     WorkspaceSearchMatch: {
       /** @description Character offsets into the file text, end exclusive. */
@@ -1615,26 +1647,6 @@ export interface operations {
       };
     };
   };
-  listWorkspaceFiles: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description All workspace files. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WorkspaceFilesResponse"];
-        };
-      };
-    };
-  };
   searchWorkspace: {
     parameters: {
       query: {
@@ -1691,10 +1703,10 @@ export interface operations {
   listWorkspaces: {
     parameters: {
       query?: {
-        /** @description Optional workspace ID to inspect documents in that workspace. */
+        /** @description Optional workspace ID to inspect within that workspace. */
         workspaceId?: string;
-        /** @description Whether to return workspace summaries or documents. */
-        include?: "summary" | "documents";
+        /** @description summary: the configured workspaces. documents and directories require a workspaceId. files lists every supported file, flat, open or not — across all workspaces, or the one workspaceId names. */
+        include?: "summary" | "documents" | "directories" | "files";
         /** @description Optional search term when listing workspace documents. */
         query?: string;
       };
@@ -1704,7 +1716,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Workspace listing or document list. */
+      /** @description Workspace listing, document list, directory list, or file list. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -1712,7 +1724,78 @@ export interface operations {
         content: {
           "application/json":
             | components["schemas"]["WorkspacesResponse"]
-            | components["schemas"]["WorkspaceDocumentsResponse"];
+            | components["schemas"]["WorkspaceDocumentsResponse"]
+            | components["schemas"]["WorkspaceDirectoriesResponse"]
+            | components["schemas"]["WorkspaceFilesResponse"];
+        };
+      };
+    };
+  };
+  createWorkspaceEntry: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WorkspaceEntryCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Entry created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceEntryResponse"];
+        };
+      };
+      /** @description Invalid path or missing file content */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Destination is outside every configured workspace */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Named workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description An entry already exists at the destination */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Persistence failed */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
     };
