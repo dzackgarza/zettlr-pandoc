@@ -418,7 +418,19 @@ export default class AgentHTTPProvider extends ProviderContract {
       _documents,
       _documents.reviewQueries,
       _documents.annotationQueries,
-      { ..._app, fsal: _app.workspaceFsal },
+      {
+        // Spread loses `config` and `links`: they are prototype getters on
+        // the service container, and object spread copies only own enumerable
+        // properties. Define them as live getters so the query host keeps a
+        // working view of the container.
+        get config() {
+          return _app.config;
+        },
+        get links() {
+          return _app.links;
+        },
+        fsal: _app.workspaceFsal,
+      },
       _log,
     );
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)

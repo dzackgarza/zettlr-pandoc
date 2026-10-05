@@ -540,39 +540,46 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       userDataDirectory: lintUserData,
     });
     await documentLint.boot();
-    httpProvider = new AgentHTTPProvider(
-      new LogProvider(),
-      provider,
-      {
-        config,
-        search: createSearch(),
-        documentLint,
-        links,
+    const agentHost = new (class {
+      public get config() {
+        return config;
+      }
+
+      public get links() {
+        return links;
+      }
+
+      public readonly search = createSearch();
+      public readonly documentLint = documentLint;
+      public readonly workspaceFsal = {
         // The workspace-entry routes create against the real filesystem, so a
         // test creates an entry and then reads it back rather than asserting a
         // call was made. Containment is the provider's, not the seam's.
-        workspaceFsal: {
-          createFile: async (filePath: string, content: string) => {
-            writeFileSync(filePath, content, "utf8");
-          },
-          createDir: async (dirPath: string) => {
-            mkdirSync(dirPath);
-          },
-          pathExists: async (absPath: string) => existsSync(absPath),
-          isDir: async (absPath: string) => {
-            try {
-              return statSync(absPath).isDirectory();
-            } catch {
-              return false;
-            }
-          },
-          readDirectoryRecursively: async (workspacePath: string) =>
-            readdirSync(workspacePath, {
-              recursive: true,
-              withFileTypes: true,
-            }).map((entry) => path.join(entry.parentPath, entry.name)),
+        createFile: async (filePath: string, content: string) => {
+          writeFileSync(filePath, content, "utf8");
         },
-      },
+        createDir: async (dirPath: string) => {
+          mkdirSync(dirPath);
+        },
+        pathExists: async (absPath: string) => existsSync(absPath),
+        isDir: async (absPath: string) => {
+          try {
+            return statSync(absPath).isDirectory();
+          } catch {
+            return false;
+          }
+        },
+        readDirectoryRecursively: async (workspacePath: string) =>
+          readdirSync(workspacePath, {
+            recursive: true,
+            withFileTypes: true,
+          }).map((entry) => path.join(entry.parentPath, entry.name)),
+      };
+    })();
+    httpProvider = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      agentHost,
       undefined,
       undefined,
       {
