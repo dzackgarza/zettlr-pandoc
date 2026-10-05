@@ -96,6 +96,14 @@ describe("Utility#mathJaxToHTML()", function () {
     assert.doesNotMatch(stylesheet.textContent ?? "", /cdn\.jsdelivr\.net|@mathjax\//);
   });
 
+  it("renders the MathJax boldsymbol package instead of an undefined control sequence", function () {
+    const html = mathJaxToHTML("\\boldsymbol{\\iota}_L", "inline");
+    const rendered = new DOMParser().parseFromString(html, "text/html").body;
+
+    assert.doesNotMatch(rendered.textContent ?? "", /\\boldsymbol/);
+    assert.equal(rendered.querySelector('mjx-mtext[style*="color: red"]'), null);
+  });
+
   it("inserts CommonHTML into the supplied element synchronously", function () {
     const element = document.createElement("div");
 

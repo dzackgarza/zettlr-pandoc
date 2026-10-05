@@ -82,7 +82,10 @@ describe("Pandoc math export headers", function () {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(window.MathJax?.tex?.inlineMath?.["[+]"])), [
       ["$", "$"],
     ]);
-    assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), ["[tex]/mhchem"]);
+    assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [
+      "[tex]/boldsymbol",
+      "[tex]/mhchem",
+    ]);
     assert.strictEqual(
       window.MathJax?.loader?.paths?.tex,
       `${pathToFileURL(path.join(path.dirname(component), "mathjax-tex-extensions")).href}/`,
@@ -93,6 +96,7 @@ describe("Pandoc math export headers", function () {
     );
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.["[+]"] ?? []), [
       "ams",
+      "boldsymbol",
       "configmacros",
       "mhchem",
       "newcommand",
@@ -107,7 +111,7 @@ describe("Pandoc math export headers", function () {
     assert.ok(html.includes("file:///"));
   });
 
-  it("renders canonical macros and mhchem in a local Chromium HTML export", async function () {
+  it("renders canonical macros, boldsymbol, and mhchem in a local Chromium HTML export", async function () {
     this.timeout(30000);
     const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-browser-"));
     const inputFile = path.join(directory, "input.md");
@@ -133,7 +137,7 @@ describe("Pandoc math export headers", function () {
       recursive: true,
     });
     await cp("node_modules/@mathjax/mathjax-newcm-font/chtml", fontDirectory, { recursive: true });
-    await writeFile(inputFile, "$\\RR$ and $\\ce{H2O}$\n");
+    await writeFile(inputFile, "$\\RR$ and $\\boldsymbol{\\iota}$ and $\\ce{H2O}$\n");
 
     const config = {
       export: {
@@ -182,9 +186,12 @@ describe("Pandoc math export headers", function () {
     assert.ok(!mathJaxConfig.includes("https://"));
     assert.ok(!mathJaxConfig.includes("http://"));
     assert.ok(!html.includes("$\\RR$"));
+    assert.ok(!html.includes("$\\boldsymbol{\\iota}$"));
     assert.ok(!html.includes("$\\ce{H2O}$"));
     assert.ok(html.includes('data-latex="\\mathbb{R}"'));
+    assert.ok(html.includes("<strong>ι</strong>"));
     assert.ok(html.includes('data-latex="\\ce{H2O}"'));
+    assert.ok(!stderr.includes("MathJax Warning: Package 'boldsymbol' not found"));
     assert.ok(!stderr.includes("MathJax Warning: Package 'mhchem' not found"));
   });
   it("writes copied Reveal defaults through the exporter seam before real Pandoc output", async function () {

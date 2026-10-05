@@ -17,10 +17,14 @@ function pandocMathKinds(source: string): MathKind[] {
   const kinds: MathKind[] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
-      for (const child of value) visit(child);
+      for (const child of value) {
+        visit(child);
+      }
       return;
     }
-    if (typeof value !== "object" || value === null) return;
+    if (typeof value !== "object" || value === null) {
+      return;
+    }
     const record = value as Record<string, unknown>;
     if (record.t === "Math" && Array.isArray(record.c)) {
       const kind = record.c[0];
@@ -28,7 +32,9 @@ function pandocMathKinds(source: string): MathKind[] {
         kinds.push((kind as { t?: string }).t === "DisplayMath" ? "display" : "inline");
       }
     }
-    for (const child of Object.values(record)) visit(child);
+    for (const child of Object.values(record)) {
+      visit(child);
+    }
   };
   visit(document);
   return kinds;
@@ -41,9 +47,13 @@ function editorMathKinds(source: string): MathKind[] {
   const kinds: MathKind[] = [];
   tree.iterate({
     enter(node) {
-      if (node.name !== "InlineCode" && node.name !== "FencedCode") return;
+      if (node.name !== "InlineCode" && node.name !== "FencedCode") {
+        return;
+      }
       const parsed = stripMathDelimiters(state.sliceDoc(node.from, node.to));
-      if (parsed !== null) kinds.push(parsed.display ? "display" : "inline");
+      if (parsed !== null) {
+        kinds.push(parsed.display ? "display" : "inline");
+      }
     },
   });
   return kinds;
@@ -91,6 +101,59 @@ Then $H_i(\\tau_{\\ge n}C)=H_i(C)$ for $i\\ge n$ and vanishes for $i<n$, while $
 :::
 `;
 
+const DISCRIMINANT_DEFINITION = `::: {.definition #def:discriminant title="Bilinear and quadratic discriminant forms"}
+
+The **discriminant bilinear form** of $L$ is the cokernel in the abelian category of bilinear modules:
+$$
+A_L
+\\definedas
+\\coker_{\\mathbf{BilMod}_{\\bZ}}(\\boldsymbol\\iota_L).
+$$
+It is canonically represented by
+$$
+A_L
+\\isoto
+\\left(
+L^\\#/L,;
+\\tfrac1N\\bZ/\\bZ,;
+\\bar\\beta_L
+\\right),
+$$
+where
+
+$$
+\\bar\\beta_L\\colon
+(L^\\#/L)\\tensor_\\bZ(L^\\#/L)
+\\too
+\\tfrac1N\\bZ/\\bZ,
+\\qquad
+\\bar\\beta_L(x+L,y+L)
+=
+\\beta_{L_\\bQ}(x,y)+\\bZ.
+$$
+
+Thus $A_L$ always denotes the bilinear discriminant object.
+
+If $L$ is even, its **quadratic discriminant form** is
+$$
+A_{L,q}
+\\definedas
+\\left(
+L^\\#/L,;
+\\tfrac2N\\bZ/2\\bZ,;
+q_L
+\\right),
+$$
+with
+$$
+q_L(x+L)
+=
+\\beta_{L_\\bQ}(x,x)+2\\bZ.
+$$
+The level condition gives $q_L(L^\\#/L)\\iscontainedin\\tfrac2N\\bZ/2\\bZ$, and evenness makes this independent of the representative [@Nik80, §1.1].
+:::
+`;
+
 describe("Pandoc math differential oracle", function () {
   this.timeout(60000);
 
@@ -111,7 +174,9 @@ describe("Pandoc math differential oracle", function () {
     tree.iterate({
       enter(node) {
         names.push(node.name);
-        if (node.name === "PandocDivMark") divMarks++;
+        if (node.name === "PandocDivMark") {
+          divMarks++;
+        }
       },
     });
     assert.equal(divMarks, 2, "the closing fenced-div marker must survive the display-math parse");
@@ -125,12 +190,27 @@ describe("Pandoc math differential oracle", function () {
     );
   });
 
+  it("matches Pandoc for the discriminant-definition display-math regression", function () {
+    assert.deepEqual(
+      editorMathKinds(DISCRIMINANT_DEFINITION),
+      pandocMathKinds(DISCRIMINANT_DEFINITION),
+    );
+  });
+
   it("does not consume later blocks when a standalone display opener has no close", function () {
     const source = "$$\nunclosed\n\n## Still here\n";
     assert.deepEqual(editorMathKinds(source), pandocMathKinds(source));
     const state = EditorState.create({ doc: source, extensions: [markdownParser()] });
     const tree = ensureSyntaxTree(state, source.length, 5000);
     assert.ok(tree !== null);
-    assert.match(tree.toString(), /ATXHeading/u);
+    let hasHeading = false;
+    tree.iterate({
+      enter(node) {
+        if (node.name === "ATXHeading1" || node.name === "ATXHeading") {
+          hasHeading = true;
+        }
+      },
+    });
+    assert.equal(hasHeading, true);
   });
 });

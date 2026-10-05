@@ -33,13 +33,21 @@ function pandocTypeCount(document: unknown, type: string): number {
   let count = 0;
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
-      for (const child of value) visit(child);
+      for (const child of value) {
+        visit(child);
+      }
       return;
     }
-    if (typeof value !== "object" || value === null) return;
+    if (typeof value !== "object" || value === null) {
+      return;
+    }
     const record = value as Record<string, unknown>;
-    if (record.t === type) count++;
-    for (const child of Object.values(record)) visit(child);
+    if (record.t === type) {
+      count++;
+    }
+    for (const child of Object.values(record)) {
+      visit(child);
+    }
   };
   visit(document);
   return count;
@@ -49,13 +57,21 @@ function pandocTaskMarkerCount(document: unknown): number {
   let count = 0;
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
-      for (const child of value) visit(child);
+      for (const child of value) {
+        visit(child);
+      }
       return;
     }
-    if (typeof value !== "object" || value === null) return;
+    if (typeof value !== "object" || value === null) {
+      return;
+    }
     const record = value as Record<string, unknown>;
-    if (record.t === "Str" && (record.c === "☐" || record.c === "☒")) count++;
-    for (const child of Object.values(record)) visit(child);
+    if (record.t === "Str" && (record.c === "☐" || record.c === "☒")) {
+      count++;
+    }
+    for (const child of Object.values(record)) {
+      visit(child);
+    }
   };
   visit(document);
   return count;
@@ -69,7 +85,9 @@ function editorNodeCount(source: string, nodeName: string): number {
   let count = 0;
   syntaxTree(state).iterate({
     enter(node) {
-      if (node.name === nodeName) count++;
+      if (node.name === nodeName) {
+        count++;
+      }
     },
   });
   return count;
@@ -83,14 +101,18 @@ function editorNodeRanges(source: string, nodeName: string): Array<{ from: numbe
   const ranges: Array<{ from: number; to: number }> = [];
   syntaxTree(state).iterate({
     enter(node) {
-      if (node.name === nodeName) ranges.push({ from: node.from, to: node.to });
+      if (node.name === nodeName) {
+        ranges.push({ from: node.from, to: node.to });
+      }
     },
   });
   return ranges;
 }
 
 function pandocMetaKeys(document: unknown): string[] {
-  if (typeof document !== "object" || document === null) return [];
+  if (typeof document !== "object" || document === null) {
+    return [];
+  }
   const meta = (document as { meta?: unknown }).meta;
   return typeof meta === "object" && meta !== null ? Object.keys(meta).sort() : [];
 }
@@ -175,5 +197,17 @@ describe("Pandoc core syntax differential oracle", function () {
     const source = "- [ ] todo\n- [x] done\n- ordinary\n";
     const pandoc = pandocDocument(source);
     assert.equal(editorNodeCount(source, "Task"), pandocTaskMarkerCount(pandoc));
+  });
+
+  it("matches Pandoc Setext admission after one line but not a multiline paragraph", function () {
+    const singleLine = "Title\n=====\n";
+    assert.equal(
+      editorNodeCount(singleLine, "SetextHeading1"),
+      pandocTypeCount(pandocDocument(singleLine), "Header"),
+    );
+
+    const multiline = "first line\nsecond line\n=====\n";
+    assert.equal(pandocTypeCount(pandocDocument(multiline), "Header"), 0);
+    assert.equal(editorNodeCount(multiline, "SetextHeading1"), 0);
   });
 });

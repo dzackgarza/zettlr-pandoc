@@ -237,6 +237,72 @@ outside`;
     );
   });
 
+  it("renders every equation in the discriminant-form definition regression", function () {
+    const doc = String.raw`::: {.definition #def:discriminant title="Bilinear and quadratic discriminant forms"}
+
+The **discriminant bilinear form** of $L$ is the cokernel in the abelian category of bilinear modules:
+$$
+A_L
+\definedas
+\coker_{\mathbf{BilMod}_{\bZ}}(\boldsymbol\iota_L).
+$$
+It is canonically represented by
+$$
+A_L
+\isoto
+\left(
+L^\#/L,;
+\tfrac1N\bZ/\bZ,;
+\bar\beta_L
+\right),
+$$
+where
+
+$$
+\bar\beta_L\colon
+(L^\#/L)\tensor_\bZ(L^\#/L)
+\too
+\tfrac1N\bZ/\bZ,
+\qquad
+\bar\beta_L(x+L,y+L)
+=
+\beta_{L_\bQ}(x,y)+\bZ.
+$$
+
+Thus $A_L$ always denotes the bilinear discriminant object.
+
+If $L$ is even, its **quadratic discriminant form** is
+$$
+A_{L,q}
+\definedas
+\left(
+L^\#/L,;
+\tfrac2N\bZ/2\bZ,;
+q_L
+\right),
+$$
+with
+$$
+q_L(x+L)
+=
+\beta_{L_\bQ}(x,x)+2\bZ.
+$$
+The level condition gives $q_L(L^\#/L)\iscontainedin\tfrac2N\bZ/2\bZ$, and evenness makes this independent of the representative [@Nik80, §1.1].
+:::
+
+outside`;
+    const view = createEditor(doc, doc.length, hybridPreviewExtensions);
+    const panel = view.dom.querySelector('pandoc-div-wrapper[data-pandoc-div-family="definition"]');
+    assert.ok(panel !== null, `expected the definition body to render: ${view.dom.innerHTML}`);
+
+    const equations = [...panel.querySelectorAll<HTMLElement>(".preview-math")].map(
+      (element) => element.dataset.equation ?? "",
+    );
+    assert.equal(equations.length, 9);
+    assert.ok(equations.some((equation) => equation.includes("\\bar\\beta_L\\colon")));
+    assert.ok(equations.some((equation) => equation.includes("q_L(x+L)")));
+  });
+
   it("reveals the div shell while preserving cursor-local nested preview behavior", function () {
     const view = createEditor(
       hybridPreviewDoc,
