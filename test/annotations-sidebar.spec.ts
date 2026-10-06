@@ -646,14 +646,30 @@ describe("useDocumentCollaborationStore review surface", function () {
     });
   });
 
-  it("hands a provider refusal back as a value the panel can surface, without touching the cache", async function () {
+  it("recovers a stale review decision by rereading the authoritative session and retrying once", async function () {
     const store = await hydratedStore();
-    const before = store.getSession(session.documentPath);
-    captureNextRequest({
-      ok: false,
-      code: "REVIEW_GENERATION_MISMATCH",
-      message: "The review is at generation 5, not 4.",
-      reviewGeneration: 5,
+    const freshSession = {
+      ...session,
+      workingSha256: "b".repeat(64),
+      review: { ...session.review!, reviewGeneration: SCENE_REVIEW_GENERATION + 1 },
+    };
+    const decisions: unknown[] = [];
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      if (message.command === "documents:decide-review-chunk") {
+        decisions.push(message.payload);
+        return decisions.length === 1
+          ? {
+              ok: false,
+              code: "REVIEW_GENERATION_MISMATCH",
+              message: "The review changed while the action was being applied. Try the action again.",
+              reviewGeneration: SCENE_REVIEW_GENERATION + 1,
+            }
+          : { ok: true, chunkId: SCENE_CHUNK_TASKS_ID };
+      }
+      if (message.command === "get-collaboration-session") {
+        return freshSession;
+      }
+      return undefined;
     });
 
     const result = await store.decideReviewChunk(
@@ -662,8 +678,24 @@ describe("useDocumentCollaborationStore review surface", function () {
       "accept",
     );
 
-    assert.equal(result.ok, false);
-    assert.deepEqual(store.getSession(session.documentPath), before);
+    assert.equal(result.ok, true);
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 2);
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("documents:decide-review-chunk"), 2);
+    assert.deepEqual(decisions, [
+      {
+        ...fence,
+        chunkId: SCENE_CHUNK_TASKS_ID,
+        decision: "accept",
+      },
+      {
+        reviewId: SCENE_REVIEW_ID,
+        expectedReviewGeneration: SCENE_REVIEW_GENERATION + 1,
+        expectedWorkingSha256: "b".repeat(64),
+        chunkId: SCENE_CHUNK_TASKS_ID,
+        decision: "accept",
+      },
+    ]);
+    assert.deepEqual(store.getSession(session.documentPath), freshSession);
   });
 
   it("fences against the snapshot on screen now, not the one the panel first rendered", async function () {
@@ -744,13 +776,29 @@ describe("useDocumentCollaborationStore review surface", function () {
 
   it("accepts all outstanding review chunks for one workspace document through the workspace channel", async function () {
     const seen: Array<{ command: string; payload: unknown }> = [];
+    const freshSession = {
+      ...session,
+      workingSha256: "c".repeat(64),
+      review: { ...session.review!, reviewGeneration: SCENE_REVIEW_GENERATION + 1 },
+    };
+    let acceptanceAttempts = 0;
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seen.push({ command: message.command, payload: message.payload });
       if (message.command === "get-workspace-collaboration-sessions") {
-        return [session];
+        return acceptanceAttempts === 0 ? [session] : [freshSession];
+      }
+      if (message.command === "get-collaboration-session") {
+        return freshSession;
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
-        return { ok: true, acceptedChunks: 2 };
+        acceptanceAttempts += 1;
+        return acceptanceAttempts === 1
+          ? {
+              ok: false,
+              code: "REVISION_MISMATCH",
+              message: "The document changed while the action was being applied. Try the action again.",
+            }
+          : { ok: true, acceptedChunks: 2 };
       }
       return undefined;
     });
@@ -759,13 +807,65 @@ describe("useDocumentCollaborationStore review surface", function () {
 
     await store.acceptAllWorkspaceReviewChunks(session.documentPath);
 
-    const request = seen.find(
+    const requests = seen.filter(
       (item) => item.command === "documents:accept-all-workspace-review-chunks",
     );
-    assert.deepEqual(request?.payload, { path: session.documentPath, ...fence });
+    assert.deepEqual(requests.map((request) => request.payload), [
+      { path: session.documentPath, ...fence },
+      {
+        path: session.documentPath,
+        reviewId: SCENE_REVIEW_ID,
+        expectedReviewGeneration: SCENE_REVIEW_GENERATION + 1,
+        expectedWorkingSha256: "c".repeat(64),
+      },
+    ]);
+    assert.equal(acceptanceAttempts, 2);
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 1);
     assert.equal(
       documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions"),
       2,
+    );
+  });
+
+  it("recovers a stale detached workspace review through the detached-session source without opening it", async function () {
+    const freshSession = {
+      ...session,
+      workingSha256: "e".repeat(64),
+      review: { ...session.review!, reviewGeneration: SCENE_REVIEW_GENERATION + 2 },
+    };
+    let acceptanceAttempts = 0;
+    let workspaceReads = 0;
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      if (message.command === "get-collaboration-session") {
+        return undefined; // detached: there is no live editor session
+      }
+      if (message.command === "get-workspace-collaboration-sessions") {
+        workspaceReads += 1;
+        return workspaceReads === 1 ? [session] : [freshSession];
+      }
+      if (message.command === "documents:accept-all-workspace-review-chunks") {
+        acceptanceAttempts += 1;
+        return acceptanceAttempts === 1
+          ? {
+              ok: false,
+              code: "REVIEW_GENERATION_MISMATCH",
+              message: "The review changed while the action was being applied. Try the action again.",
+            }
+          : { ok: true, acceptedChunks: 2 };
+      }
+      return undefined;
+    });
+    const store = useDocumentCollaborationStore();
+    await store.refreshWorkspaceSessions([session.documentPath]);
+
+    const result = await store.acceptAllWorkspaceReviewChunks(session.documentPath);
+
+    assert.equal(result.ok, true);
+    assert.equal(acceptanceAttempts, 2);
+    assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 1);
+    assert.ok(
+      workspaceReads >= 2,
+      "detached recovery must reread the workspace-session source before retrying",
     );
   });
 

@@ -1142,7 +1142,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed after it was opened. Reload it and try again.",
+        message: "This review changed while the action was being applied. Try the action again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1154,8 +1154,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message:
-          "The document changed after this decision was prepared. Reload the review and try again.",
+        message: "The document changed while the action was being applied. Try the action again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1348,7 +1347,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed. Reload it and try again.",
+        message: "This review changed while the proposal was being applied. Read the current review state and try again.",
       };
     }
 
@@ -1861,7 +1860,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed after it was opened. Reload it and try again.",
+        message: "This review changed while the recovery action was being applied. Read the current review state and try again.",
         reviewGeneration: review.generation,
       };
     }
