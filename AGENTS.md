@@ -266,6 +266,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   refreshed. A contract change (a new operation, a new request body) reaches
   ChatGPT only after Refresh on the app's settings page and a new
   conversation. Until then the model calls the old tool shapes.
+- `agentApi.skillsDirectory` in `config.json` is a read-only filesystem
+  capability exposed through the existing `getHelp` MCP tool: use
+  `resource=skills`, with `action=list` or `action=read` plus a relative `.md`
+  `path`. Symlinks, traversal, and non-Markdown files are not exposed. The
+  ChatGPT connector has a hard 30-tool limit; `/mcp` itself must therefore stay
+  at 30 tools rather than hiding extra operations only from `/openapi.json`.
 
 ### 7. TikZ workbench module
 

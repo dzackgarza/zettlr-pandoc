@@ -40,6 +40,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "fs";
 import http from "http";
@@ -224,6 +225,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let httpPort: number;
   let authoringHome: string;
   let figuresRoot: string;
+  let skillsRoot: string;
+  let configuredSkillsDirectory: string | null;
   let saveDialogResponse = 2;
   let peerServers: http.Server[] = [];
   // The configured workspace set, read live by the config seam so a test can
@@ -475,6 +478,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     scratch = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-api-"));
     authoringHome = mkdtempSync(path.join(os.tmpdir(), "zettlr-http-authoring-"));
     figuresRoot = path.join(authoringHome, "central-figures");
+    skillsRoot = path.join(authoringHome, "skills");
+    configuredSkillsDirectory = skillsRoot;
     openWorkspaces = [scratch];
 
     const macroRoot = path.join(authoringHome, ".pandoc", "styles", "macros");
@@ -508,6 +513,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     writeFileSync(path.join(figuresRoot, "images", "pixel.bin"), Buffer.from([0, 255, 1, 254]));
 
+    mkdirSync(path.join(skillsRoot, "proofs", "nested"), { recursive: true });
+    writeFileSync(path.join(skillsRoot, "SKILL.md"), "# Root skill\n\nUse exact maps.\n", "utf8");
+    writeFileSync(
+      path.join(skillsRoot, "proofs", "proof-style.md"),
+      "# Proof style\n\nPrefer diagrams to prose.\n",
+      "utf8",
+    );
+    writeFileSync(path.join(skillsRoot, "proofs", "ignore.txt"), "not a skill\n", "utf8");
+    writeFileSync(path.join(skillsRoot, "proofs", "nested", "notes.md"), "# Notes\n", "utf8");
+    writeFileSync(path.join(authoringHome, "outside-skill.md"), "# Outside\n", "utf8");
+    symlinkSync(
+      path.join(authoringHome, "outside-skill.md"),
+      path.join(skillsRoot, "proofs", "outside.md"),
+    );
+
     provider = await createProvider();
     const config = {
       get: () => ({
@@ -521,6 +541,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           // actual port, so no reservation can race the listener.
           port: 0,
           claimDescriptionSimilarityThreshold: 0.94,
+          skillsDirectory: configuredSkillsDirectory,
         },
         tikz: {
           dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
@@ -847,6 +868,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             enabled: true,
             port: takenPort,
             claimDescriptionSimilarityThreshold: 0.94,
+            skillsDirectory: null,
           },
         }),
       },
@@ -1238,6 +1260,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         .filter((operation) => operation.tags?.includes("zotero") !== true)
         .map((operation) => operation.operationId);
       assert.deepEqual(tools.map((tool) => tool.name).sort(), operationIds.sort());
+      assert.equal(tools.length, 30, "the ChatGPT MCP connector must remain within 30 tools");
 
       const read = await client.callTool({
         name: "getDocument",
@@ -1247,6 +1270,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const [content] = read.content as Array<{ type: "text"; text: string }>;
       const document = parseAs(content.text, "ReadDocumentResponse");
       assert.equal(document.content, "mcp content\n");
+
+      const skills = await client.callTool({
+        name: "getHelp",
+        arguments: { resource: "skills", action: "list" },
+      });
+      assert.equal(skills.isError, false);
+      const [skillsContent] = skills.content as Array<{ type: "text"; text: string }>;
+      const skillsList = parseAs(skillsContent.text, "SkillsListResponse");
+      assert.ok(skillsList.entries.some((entry) => entry.path === "SKILL.md"));
+
+      const skillFile = await client.callTool({
+        name: "getHelp",
+        arguments: {
+          resource: "skills",
+          action: "read",
+          path: "proofs/proof-style.md",
+        },
+      });
+      assert.equal(skillFile.isError, false);
+      const [skillFileContent] = skillFile.content as Array<{ type: "text"; text: string }>;
+      assert.equal(
+        parseAs(skillFileContent.text, "SkillFileResponse").content,
+        "# Proof style\n\nPrefer diagrams to prose.\n",
+      );
 
       const missing = await client.callTool({
         name: "getDocument",
@@ -2036,6 +2083,82 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("lists only the configured skills subtree and reads any Markdown file through getHelp", async function () {
+    const listed = await httpRequest("GET", "/help?resource=skills&action=list");
+    assert.equal(listed.status, 200, listed.body);
+    const listPayload = parseAs(listed.body, "SkillsListResponse");
+    assert.equal(listPayload.root, skillsRoot);
+    assert.deepEqual(
+      listPayload.entries.map((entry) => [entry.path, entry.kind]),
+      [
+        ["proofs", "directory"],
+        ["SKILL.md", "markdown"],
+        ["proofs/nested", "directory"],
+        ["proofs/proof-style.md", "markdown"],
+        ["proofs/nested/notes.md", "markdown"],
+      ],
+    );
+    assert.equal(
+      listPayload.entries.some((entry) => entry.path === "proofs/ignore.txt"),
+      false,
+    );
+    assert.equal(
+      listPayload.entries.some((entry) => entry.path === "proofs/outside.md"),
+      false,
+    );
+
+    const read = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=proofs%2Fproof-style.md",
+    );
+    assert.equal(read.status, 200, read.body);
+    const readPayload = parseAs(read.body, "SkillFileResponse");
+    assert.equal(readPayload.root, skillsRoot);
+    assert.equal(readPayload.path, "proofs/proof-style.md");
+    assert.equal(readPayload.content, "# Proof style\n\nPrefer diagrams to prose.\n");
+  });
+
+  it("confines skills reads to Markdown files physically below the configured root", async function () {
+    const traversal = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=..%2Foutside.md",
+    );
+    assert.equal(traversal.status, 400, traversal.body);
+    assert.equal(parseAs(traversal.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+
+    const nonMarkdown = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=proofs%2Fignore.txt",
+    );
+    assert.equal(nonMarkdown.status, 400, nonMarkdown.body);
+    assert.equal(
+      parseAs(nonMarkdown.body, "AgentErrorResponse").error.code,
+      "INVALID_PARAMS",
+    );
+
+    const symlink = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=proofs%2Foutside.md",
+    );
+    assert.equal(symlink.status, 400, symlink.body);
+    assert.equal(parseAs(symlink.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+
+    const missing = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=missing.md",
+    );
+    assert.equal(missing.status, 404, missing.body);
+    assert.equal(parseAs(missing.body, "AgentErrorResponse").error.code, "SKILL_NOT_FOUND");
+
+    configuredSkillsDirectory = null;
+    const disabled = await httpRequest("GET", "/help?resource=skills&action=list");
+    assert.equal(disabled.status, 503, disabled.body);
+    assert.equal(
+      parseAs(disabled.body, "AgentErrorResponse").error.code,
+      "SKILLS_NOT_CONFIGURED",
+    );
+  });
+
   it("lists and reads text and binary files from the configured centralized figures directory", async function () {
     const listed = await httpRequest("GET", "/v1/figures");
     assert.equal(listed.status, 200, listed.body);
@@ -2313,6 +2436,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
                 enabled: true,
                 port: lifecyclePort,
                 claimDescriptionSimilarityThreshold: 0.94,
+                skillsDirectory: null,
               },
             }),
           },

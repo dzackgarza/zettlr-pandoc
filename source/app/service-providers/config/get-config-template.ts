@@ -103,6 +103,12 @@ export type AgentApiConfig = {
    * is refused with DUPLICATE_CLAIM_DESCRIPTION.
    */
   claimDescriptionSimilarityThreshold: number;
+  /**
+   * Read-only root exposed by the Agent API skills endpoint. `null` disables
+   * that capability. The endpoint accepts only physical descendants and `.md`
+   * files under this directory.
+   */
+  skillsDirectory: string | null;
 };
 
 export type ReferenceConfig = { authorityReportDebounceMs: number };
@@ -657,6 +663,7 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       enabled: true,
       port: 27412,
       claimDescriptionSimilarityThreshold: 0.94,
+      skillsDirectory: null,
     },
     references: {
       authorityReportDebounceMs: 500,
