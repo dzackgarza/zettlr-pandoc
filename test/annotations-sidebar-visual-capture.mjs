@@ -210,6 +210,12 @@ assert.deepStrictEqual(
   [SCENE_PROPOSAL_ID],
   "05: the row opens that annotation's thread in the editor",
 );
+assert.equal(diag.threadLifecycle, "Acted", "05: agent work state is distinct from owner resolution");
+assert.equal(
+  diag.actedDispositionCount,
+  1,
+  "05: the acted state points at exactly one agent disposition in the thread",
+);
 assert.equal(diag.showProposalLabel, "Show diff", "05: the proposal card's one affordance");
 await scene.capture("05-linked-proposal-pending");
 

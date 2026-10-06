@@ -9,7 +9,7 @@
       <span class="annotation-ordinal">{{ card.ordinal }}</span>
       <span
         class="annotation-lifecycle-pill"
-        v-bind:class="card.annotation.state"
+        v-bind:class="lifecycleClass"
       >{{ lifecycleLabel }}</span>
       <span class="annotation-inline-thread-spacer"></span>
       <button
@@ -36,6 +36,7 @@
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
       v-bind:now="now"
+      v-bind:acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
     ></AnnotationThread>
 
     <ProposalActionCard
@@ -183,9 +184,15 @@ const emit = defineEmits<{
 const confirmingDelete = ref(false);
 
 const actionRow = computed(() => deriveActionRow(props.card.annotation));
-const lifecycleLabel = computed(() =>
-  props.card.annotation.state === "resolved" ? trans("Resolved") : trans("Open"),
+const lifecycleClass = computed(() =>
+  props.card.annotation.state === "resolved" ? "resolved" : props.card.annotation.agentStatus.state,
 );
+const lifecycleLabel = computed(() => {
+  if (props.card.annotation.state === "resolved") {
+    return trans("Resolved");
+  }
+  return props.card.annotation.agentStatus.state === "acted" ? trans("Acted") : trans("Open");
+});
 const resolveLabel = computed(() =>
   actionRow.value.resolveLabel === "Reopen" ? trans("Reopen") : trans("Resolve"),
 );

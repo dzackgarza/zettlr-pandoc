@@ -39,6 +39,7 @@ function generateAnnotations(count: number, docLength: number): TextAnnotation[]
         quotedText: `Sample quoted passage number ${i}`,
       },
       state: i % 5 === 0 ? "resolved" : "open",
+      agentStatus: { state: "pending" },
       messages: [
         {
           messageId: `msg-${i}-1`,

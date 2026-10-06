@@ -150,6 +150,7 @@ function annotation(annotationId: string): TextAnnotation {
     documentId: "doc-1",
     anchor: { state: "range", from: 0, to: 5, quotedText: "ALPHA" },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "message-1",
@@ -498,6 +499,22 @@ describe("CollaborationSidecarStore", function () {
     };
     await store.write(withAnnotation);
     assert.deepEqual(await store.read(documentPath), withAnnotation);
+  });
+
+  it("lifts an installed version-5 annotation without agentStatus to pending and writes it back", async function () {
+    const { agentStatus: _agentStatus, ...legacyAnnotation } = annotation("annotation-1");
+    persistRaw({
+      ...sidecar(documentPath),
+      review: null,
+      annotations: { generation: 1, items: [legacyAnnotation] },
+    });
+
+    const lifted = await store.read(documentPath);
+    assert.deepEqual(lifted?.annotations.items[0].agentStatus, { state: "pending" });
+    const persisted = JSON.parse(
+      readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
+    ) as CollaborationSidecarData;
+    assert.deepEqual(persisted.annotations.items[0].agentStatus, { state: "pending" });
   });
 
   it("rejects a duplicate annotation id", async function () {

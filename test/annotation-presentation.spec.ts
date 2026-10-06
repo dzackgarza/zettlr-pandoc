@@ -116,6 +116,7 @@ describe("annotation-presentation", function () {
       documentId: "doc",
       anchor: { state: "range", from: 12, to: 40, quotedText: workingText.slice(12, 40) },
       state: "open",
+      agentStatus: { state: "pending" },
       messages: [message],
       proposalActions: [],
       createdAt: "2026-05-20T10:00:00.000Z",

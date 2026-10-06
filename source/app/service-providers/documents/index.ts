@@ -297,7 +297,13 @@ export type DocumentAuthorityIPCContract = {
     response: SerializedUpdate[] | false;
   };
   "push-updates": {
-    request: { payload: { filePath: string; version: number; updates: SerializedUpdate[] } };
+    request: {
+      payload: {
+        filePath: string;
+        version: number;
+        updates: SerializedUpdate[];
+      };
+    };
     response: boolean;
   };
 };
@@ -428,7 +434,9 @@ export type DocumentManagerIPCContract = {
   "close-leaf": { request: { payload: LeafLoc }; response: undefined };
   "focus-leaf": { request: { payload: LeafLoc }; response: undefined };
   "set-branch-sizes": {
-    request: { payload: { windowId: string; branchId: string; sizes: number[] } };
+    request: {
+      payload: { windowId: string; branchId: string; sizes: number[] };
+    };
     response: undefined;
   };
   // location is additive (issue #1 Phase 5): the current DocumentLocation of
@@ -475,14 +483,18 @@ export type ReviewChunkCommentInput = {
 } & ReviewMutationPrecondition;
 
 /** Accepting every remaining chunk, under the same fence one decision uses. */
-export type ReviewAcceptAllInput = { reviewId: string } & ReviewMutationPrecondition;
+export type ReviewAcceptAllInput = {
+  reviewId: string;
+} & ReviewMutationPrecondition;
 export type WorkspaceReviewAcceptAllInput = {
   path: string;
   reviewId: string;
 } & ReviewMutationPrecondition;
 
 /** Discarding a review, under the same fence one decision uses. */
-export type ReviewClearInput = { reviewId: string } & ReviewMutationPrecondition;
+export type ReviewClearInput = {
+  reviewId: string;
+} & ReviewMutationPrecondition;
 
 /**
  * A comment adjudicates nothing and moves no text, so it fences on the review
@@ -3062,7 +3074,10 @@ current contents from the editor somewhere else, and restart the application.`,
       documentPath,
       change: {
         changes,
-        update: { changes: serializeChangeSet(changes), clientID: "review-diff-store" },
+        update: {
+          changes: serializeChangeSet(changes),
+          clientID: "review-diff-store",
+        },
         nextText: Text.of(nextText.split("\n")),
         nextVersion: doc.currentVersion + 1,
       },
@@ -3202,7 +3217,11 @@ current contents from the editor somewhere else, and restart the application.`,
   ): Promise<ReviewRecoveryInput | ReviewFailure> {
     const query = await this._reviewApplication.findReviewQuery(reviewId);
     if (query === undefined) {
-      return { ok: false, code: "REVIEW_NOT_FOUND", message: `Review ${reviewId} not found.` };
+      return {
+        ok: false,
+        code: "REVIEW_NOT_FOUND",
+        message: `Review ${reviewId} not found.`,
+      };
     }
     if (query.attached) {
       return {
@@ -3792,9 +3811,10 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * One more turn of an annotation thread. The only annotation mutation the
-   * agent HTTP API exposes — every other move routes through `actor` and is
-   * refused by the pure transition (I3).
+   * One more turn of an annotation thread. The agent HTTP API exposes this
+   * mutation and may mark its own reply as the acted disposition; owner
+   * resolution, anchor and deletion lifecycle still route through the
+   * owner-only transitions.
    */
   public async addAnnotationMessage(
     documentId: string,
@@ -3803,6 +3823,7 @@ current contents from the editor somewhere else, and restart the application.`,
     text: string,
     clientRequestId: string | undefined,
     expectedAnnotationGeneration: number,
+    markActed?: boolean,
   ): Promise<AnnotationMessage | AnnotationFailure> {
     return this._reviewApplication.addAnnotationMessage({
       documentId,
@@ -3810,6 +3831,7 @@ current contents from the editor somewhere else, and restart the application.`,
       actor,
       text,
       clientRequestId,
+      markActed,
       expectedAnnotationGeneration,
     });
   }
@@ -3891,7 +3913,10 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /** Read-only annotation projections for transport providers. */
-  public get annotationQueries(): Pick<CollaborationApplicationService, "getAnnotations"> {
+  public get annotationQueries(): Pick<
+    CollaborationApplicationService,
+    "getAnnotations" | "listCollaborationSidecars"
+  > {
     return this._reviewApplication;
   }
 

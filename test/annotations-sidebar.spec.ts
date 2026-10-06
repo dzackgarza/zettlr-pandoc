@@ -125,6 +125,7 @@ describe("annotation-panel-model", function () {
       documentId: session.documentId,
       anchor: { state: "orphaned", quotedText: "vanished text", reason: "external-drift" },
       state: "open",
+      agentStatus: { state: "pending" },
       messages: [
         {
           messageId: "m",

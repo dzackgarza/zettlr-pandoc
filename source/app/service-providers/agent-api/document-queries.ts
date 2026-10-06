@@ -138,8 +138,28 @@ export type WorkspaceEntryCreation =
  * Read-only annotation projections for transport providers. Annotation
  * mutation is a separate, narrower surface (DocumentManager.addAnnotationMessage)
  * — the only annotation write the agent HTTP API exposes (I3).
+ *
+ * `listCollaborationSidecars` is what closes the read contract: without it a
+ * closed document's annotations — everything the UI workspace panel shows —
+ * would be invisible to an agent, and the only mutation would 404 on an
+ * annotation the listing never produced. Same enumeration the workspace
+ * projection and `listReviewQueries` already serve detached reviews through.
  */
-export type AnnotationQueryPort = Pick<CollaborationApplicationService, "getAnnotations">;
+export type AnnotationQueryPort = Pick<
+  CollaborationApplicationService,
+  "getAnnotations" | "listCollaborationSidecars"
+>;
+
+/** One annotation read, located: which document it belongs to and where its
+ * text lives — the live buffer of an open document, or the persisted working
+ * text of a detached sidecar.
+ */
+interface LocatedAnnotation {
+  documentId: string;
+  annotation: TextAnnotation;
+  annotationGeneration: number;
+  workingText: string;
+}
 
 /** A document's working text, and the text its review started from. */
 interface DocumentText {
@@ -212,6 +232,7 @@ function buildAnnotationResponse(
     documentId: annotation.documentId,
     target: buildAnnotationTarget(annotation.anchor, workingText),
     state: annotation.state,
+    agentStatus: annotation.agentStatus,
     messages: annotation.messages,
     proposalActions: annotation.proposalActions,
     annotationGeneration,
@@ -298,10 +319,11 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Every annotation of one open document. Undefined when documentId names no
-   * document this manager knows — the caller's signal to answer
-   * DOCUMENT_NOT_FOUND rather than an empty list. A known-but-closed document
-   * has no queryable annotation state: the sidecar is not scanned here.
+   * The annotations of one document, open or closed. Undefined when
+   * documentId names no document this manager knows — the caller's signal
+   * to answer DOCUMENT_NOT_FOUND rather than an empty list. A closed
+   * document's annotations come from its persisted sidecar, so what the
+   * UI workspace panel shows for that file is exactly what this answers.
    */
   public async listDocumentAnnotations(
     documentId: string,
@@ -311,37 +333,38 @@ export default class AgentDocumentQueries {
     if (filePath === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find(
-      (candidate) => candidate.documentId === documentId,
-    );
-    if (document === undefined) {
+    const located = await this._annotationDocument(documentId);
+    if (located === undefined) {
       return { annotations: [] };
     }
-    const workingText = document.document.toString();
-    const set: AnnotationSet = this.annotations.getAnnotations(documentId);
     const items =
-      state === undefined ? set.items : set.items.filter((item) => item.state === state);
+      state === undefined
+        ? located.annotations.items
+        : located.annotations.items.filter((item) => item.state === state);
     return {
-      annotations: items.map((item) => buildAnnotationResponse(item, set.generation, workingText)),
+      annotations: items.map((item) =>
+        buildAnnotationResponse(item, located.annotations.generation, located.workingText),
+      ),
     };
   }
 
   /**
-   * Every annotation across every currently open document. `state` narrows to
-   * one lifecycle state and defaults to `open` — the annotations with a
-   * thread to read or reply to, matching the OpenAPI document's declared
-   * default.
+   * Every annotation across the workspace — the same set the UI annotations
+   * panel can show. Open documents read their live state; closed documents
+   * read their persisted sidecars. With no `state` filter this returns every
+   * annotation, including resolved ones; callers may explicitly narrow to one
+   * lifecycle state.
    */
   public async listAnnotations(
-    state: "open" | "resolved" = "open",
+    state: "open" | "resolved" | undefined,
   ): Promise<AnnotationListResponse> {
     const annotations: AnnotationResponse[] = [];
-    for (const document of this.documents.loadedDocuments) {
-      const workingText = document.document.toString();
-      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
-      for (const item of set.items) {
-        if (item.state === state) {
-          annotations.push(buildAnnotationResponse(item, set.generation, workingText));
+    for (const located of await this._annotationDocuments()) {
+      for (const item of located.annotations.items) {
+        if (state === undefined || item.state === state) {
+          annotations.push(
+            buildAnnotationResponse(item, located.annotations.generation, located.workingText),
+          );
         }
       }
     }
@@ -349,43 +372,149 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Locate one annotation by id alone, across every open document — the
+   * Locate one annotation by id alone, across the whole workspace — the
    * lookup `GET /v1/annotations/{annotationId}` and the reply endpoint both
    * need, since neither carries a documentId.
    */
-  public async findAnnotationQuery(annotationId: string): Promise<
-    | {
-        documentId: string;
-        annotation: TextAnnotation;
-        annotationGeneration: number;
-      }
-    | undefined
-  > {
-    for (const document of this.documents.loadedDocuments) {
-      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
-      const found = set.items.find((item) => item.annotationId === annotationId);
+  public async findAnnotationQuery(
+    annotationId: string,
+  ): Promise<LocatedAnnotation | undefined> {
+    for (const located of await this._annotationDocuments()) {
+      const found = located.annotations.items.find((item) => item.annotationId === annotationId);
       if (found !== undefined) {
         return {
-          documentId: document.documentId,
+          documentId: located.documentId,
           annotation: found,
-          annotationGeneration: set.generation,
+          annotationGeneration: located.annotations.generation,
+          workingText: located.workingText,
         };
       }
     }
     return undefined;
   }
 
-  /** One annotation's full detail, wire-shaped, or undefined if unknown. */
+  /**
+   * Every document that has annotation state, open or closed — the merged
+   * projection behind the annotations routes. Open documents read their live
+   * state; closed documents read the sidecar that carries exactly what the
+   * UI workspace panel shows for them.
+   *
+   * A sidecar outside every configured workspace is not served: the sidecar
+   * directory is keyed by path hash, not provenance, and a workspace removed
+   * since the sidecar was written must not leak into an agent's answer.
+   */
+  private async _annotationDocuments(): Promise<
+    Array<{
+      documentId: string;
+      open: boolean;
+      workingText: string;
+      annotations: AnnotationSet;
+    }>
+  > {
+    const documents: Array<{
+      documentId: string;
+      open: boolean;
+      workingText: string;
+      annotations: AnnotationSet;
+    }> = [];
+    const detachedPaths = new Set<string>();
+    for (const document of this.documents.loadedDocuments) {
+      documents.push({
+        documentId: document.documentId,
+        open: true,
+        workingText: document.document.toString(),
+        annotations: this.annotations.getAnnotations(document.documentId),
+      });
+      detachedPaths.add(path.resolve(document.filePath));
+    }
+    for (const sidecar of await this.annotations.listCollaborationSidecars()) {
+      if (detachedPaths.has(path.resolve(sidecar.documentPath))) {
+        continue;
+      }
+      if (!(await this.isOpenable(sidecar.documentPath))) {
+        continue;
+      }
+      documents.push({
+        documentId: this.documents.ensureDocumentId(sidecar.documentPath),
+        open: false,
+        workingText: sidecar.workingText,
+        annotations: sidecar.annotations,
+      });
+    }
+    return documents;
+  }
+
+  /**
+   * One document's annotation-bearing projection, whatever it is: the live
+   * state of an open document, or the persisted sidecar of a closed one.
+   * Undefined when neither half holds annotations — a document with no
+   * annotation state is the caller's empty answer, not this function's.
+   */
+  private async _annotationDocument(
+    documentId: string,
+  ): Promise<{ open: boolean; workingText: string; annotations: AnnotationSet } | undefined> {
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath !== undefined) {
+      const document = this.documents.loadedDocuments.find(
+        (candidate) => candidate.documentId === documentId,
+      );
+      if (document !== undefined) {
+        return {
+          open: true,
+          workingText: document.document.toString(),
+          annotations: this.annotations.getAnnotations(documentId),
+        };
+      }
+      if (!(await this.isOpenable(filePath))) {
+        return undefined;
+      }
+      const sidecar = await this.annotations
+        .listCollaborationSidecars()
+        .then((sidecars) =>
+          sidecars.find(
+            (candidate) => path.resolve(candidate.documentPath) === path.resolve(filePath),
+          ),
+        );
+      if (sidecar !== undefined) {
+        return {
+          open: false,
+          workingText: sidecar.workingText,
+          annotations: sidecar.annotations,
+        };
+      }
+    }
+    // The id may have been minted for a closed document this manager has
+    // never seen open (a workspace listing hands those out). Scan the
+    // sidecars for it rather than returning nothing: findAnnotationQuery
+    // serves those ids, so per-document reads must too.
+    for (const sidecar of await this.annotations.listCollaborationSidecars()) {
+      if (this.documents.ensureDocumentId(sidecar.documentPath) === documentId) {
+        if (!(await this.isOpenable(sidecar.documentPath))) {
+          return undefined;
+        }
+        return {
+          open: false,
+          workingText: sidecar.workingText,
+          annotations: sidecar.annotations,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * One annotation's full detail, wire-shaped, or undefined if unknown.
+   */
   public async getAnnotation(annotationId: string): Promise<AnnotationResponse | undefined> {
     const located = await this.findAnnotationQuery(annotationId);
     if (located === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find(
-      (candidate) => candidate.documentId === located.documentId,
+    return buildAnnotationResponse(
+      located.annotation,
+      located.annotationGeneration,
+      located.workingText,
     );
-    const workingText = document === undefined ? "" : document.document.toString();
-    return buildAnnotationResponse(located.annotation, located.annotationGeneration, workingText);
   }
 
   public async getContext(): Promise<EditorContext> {

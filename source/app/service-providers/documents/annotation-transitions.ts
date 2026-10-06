@@ -23,11 +23,12 @@
  *                  Operation rules are enforced here rather than at each
  *                  transport. Candidate AnnotationSet values are admitted
  *                  only through annotation-domain-validation.ts, the same
- *                  schema/semantic validator used by persistence. Lifecycle
- *                  is owner-only: an agent request may add a
- *                  reply and link a proposal, and can reach no transition
- *                  that moves an annotation between open and resolved or
- *                  moves its anchor. And `quotedText` is never rewritten,
+ *                  schema/semantic validator used by persistence. Owner
+ *                  lifecycle is owner-only: an agent request may add a
+ *                  reply, mark that reply as its acted disposition, and link
+ *                  a proposal, but can reach no transition that moves an
+ *                  annotation between open and resolved or moves its anchor.
+ *                  And `quotedText` is never rewritten,
  *                  not by mapping, not by reattachment — the card must keep
  *                  showing what was commented on however far the document
  *                  has moved since.
@@ -109,7 +110,7 @@ function checkGeneration(
   return {
     ok: false,
     code: "ANNOTATION_GENERATION_MISMATCH",
-    message: "The annotations changed after they were opened. Reload them and try again.",
+    message: "The annotations changed while the action was being applied. Try the action again.",
   };
 }
 
@@ -217,6 +218,7 @@ export function prepareAnnotationCreation(input: {
       quotedText: input.workingText.slice(input.from, input.to),
     },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: randomUUID(),
@@ -260,6 +262,7 @@ export function prepareAnnotationMessage(input: {
   annotationId: string;
   text: string;
   clientRequestId?: string;
+  markActed?: boolean;
   expectedAnnotationGeneration: number;
 }): AnnotationMutationPlan<AnnotationMessage> | AnnotationTransitionError {
   const located = locate(input.annotations.items, input.annotationId);
@@ -275,7 +278,42 @@ export function prepareAnnotationMessage(input: {
       (message) => message.author === "agent" && message.clientRequestId === input.clientRequestId,
     );
     if (replayed !== undefined) {
-      return validatedPlan(input.annotations, replayed, []);
+      if (!input.markActed ||
+          (located.agentStatus.state === "acted" && located.agentStatus.messageId === replayed.messageId)) {
+        return validatedPlan(input.annotations, replayed, []);
+      }
+      const staleReplay = checkGeneration(input.annotations, input.expectedAnnotationGeneration);
+      if (staleReplay !== undefined) {
+        return staleReplay;
+      }
+      if (located.state === "resolved") {
+        return {
+          ok: false,
+          code: "ANNOTATION_RESOLVED",
+          message: "This annotation is already resolved.",
+        };
+      }
+      const actedAt = new Date().toISOString();
+      const replayItems = cloneItems(input.annotations);
+      const replayTarget = replayItems.find(
+        (candidate) => candidate.annotationId === input.annotationId,
+      )!;
+      replayTarget.agentStatus = { state: "acted", messageId: replayed.messageId, actedAt };
+      replayTarget.updatedAt = actedAt;
+      const replayAnnotations: AnnotationSet = {
+        generation: input.annotations.generation + 1,
+        items: replayItems,
+      };
+      return validatedPlan(replayAnnotations, replayed, [
+        {
+          event: "annotation.acted",
+          payload: {
+            documentId: replayTarget.documentId,
+            annotationId: replayTarget.annotationId,
+            annotationGeneration: replayAnnotations.generation,
+          },
+        },
+      ]);
     }
   }
 
@@ -285,6 +323,9 @@ export function prepareAnnotationMessage(input: {
   }
   if (input.text.trim() === "") {
     return invalid("A message needs text.");
+  }
+  if (input.actor === "owner" && input.markActed) {
+    return invalid("Only an agent message can mark an annotation acted.");
   }
   if (located.state === "resolved") {
     return {
@@ -309,13 +350,18 @@ export function prepareAnnotationMessage(input: {
   const items = cloneItems(input.annotations);
   const target = items.find((candidate) => candidate.annotationId === input.annotationId)!;
   target.messages = [...target.messages, message] as TextAnnotation["messages"];
+  if (input.actor === "owner") {
+    target.agentStatus = { state: "pending" };
+  } else if (input.markActed) {
+    target.agentStatus = { state: "acted", messageId: message.messageId, actedAt: createdAt };
+  }
   target.updatedAt = createdAt;
 
   const nextAnnotations: AnnotationSet = {
     generation: input.annotations.generation + 1,
     items,
   };
-  return validatedPlan(nextAnnotations, message, [
+  const events: AgentEventDraft[] = [
     {
       event: "annotation.message-added",
       payload: {
@@ -324,7 +370,18 @@ export function prepareAnnotationMessage(input: {
         annotationGeneration: nextAnnotations.generation,
       },
     },
-  ]);
+  ];
+  if (input.actor === "agent" && input.markActed) {
+    events.push({
+      event: "annotation.acted",
+      payload: {
+        documentId: target.documentId,
+        annotationId: target.annotationId,
+        annotationGeneration: nextAnnotations.generation,
+      },
+    });
+  }
+  return validatedPlan(nextAnnotations, message, events);
 }
 
 /** The one shape the four owner-only lifecycle moves share. */
@@ -411,6 +468,7 @@ export function prepareAnnotationReopen(input: {
       return invalid("This annotation is already open.");
     }
     target.state = "open";
+    target.agentStatus = { state: "pending" };
     delete target.resolvedAt;
     target.updatedAt = now;
     return items;

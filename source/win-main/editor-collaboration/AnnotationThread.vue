@@ -20,6 +20,10 @@
         </AvatarRoot>
         <span class="annotation-message-author">{{ message.authorLabel }}</span>
         <span class="annotation-message-time annotation-muted">{{ message.relativeTime }}</span>
+        <span
+          v-if="message.messageId === actedMessageId"
+          class="annotation-lifecycle-pill acted"
+        >{{ trans("Acted") }}</span>
       </div>
       <p class="annotation-message-text">{{ message.text }}</p>
     </div>
@@ -56,6 +60,7 @@ import { threadMessageView } from "../sidebar/annotations/annotation-presentatio
 const props = defineProps<{
   messages: AnnotationMessage[];
   now: DateTime;
+  actedMessageId?: string;
 }>();
 
 const labels = { owner: trans("You"), agent: trans("AI"), justNow: trans("Just now") };

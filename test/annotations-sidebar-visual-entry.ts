@@ -233,6 +233,7 @@ function editorStateAnnotation(
     documentId: "scene-12-editor-states",
     anchor,
     state,
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: `editor-state-msg-${editorStateIdCounter}`,
@@ -797,6 +798,8 @@ async function mount(): Promise<void> {
       ),
       threadLifecycle:
         thread?.querySelector(".annotation-lifecycle-pill")?.textContent?.trim() ?? "",
+      actedDispositionCount:
+        thread?.querySelectorAll(".annotation-message .annotation-lifecycle-pill.acted").length ?? 0,
       composerPresent:
         thread !== null && thread.querySelector(".annotation-composer textarea") !== null,
       resolveCount: paneHost.querySelectorAll(

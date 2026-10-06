@@ -94,6 +94,10 @@
               class="annotation-workspace-context"
             >“{{ card.quotedText }}”</span>
           </span>
+          <span
+            class="annotation-lifecycle-pill"
+            v-bind:class="card.annotation.agentStatus.state"
+          >{{ card.annotation.agentStatus.state === 'acted' ? trans('Acted') : trans('Open') }}</span>
         </button>
 
         <button
@@ -442,7 +446,7 @@ body {
     display: grid;
     content-visibility: auto;
     contain-intrinsic-size: auto 28px;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
     gap: 6px;
     width: 100%;

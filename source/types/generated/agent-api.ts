@@ -12,8 +12,8 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Serve authoring help documentation
-     * @description Returns authoring documentation from HELP.md in Markdown or JSON format.
+     * Read authoring help or the configured skills subtree
+     * @description Returns HELP.md by default. With resource=skills, lists the configured skills subtree or reads one relative .md file from it.
      */
     get: operations["getHelp"];
     put?: never;
@@ -264,7 +264,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List annotations across the workspace or for one document */
+    /**
+     * List annotations across the workspace or for one document
+     * @description List open and resolved annotations from open documents and persisted sidecars for closed documents. `documentId` and `state` are optional filters; omitting `state` returns both lifecycle states.
+     */
     get: operations["listAnnotations"];
     put?: never;
     post?: never;
@@ -300,7 +303,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Append a message to an annotation conversation thread */
+    /**
+     * Append a message to an annotation conversation thread
+     * @description Append an agent message. Set markActed=true when this message is the agent's remediation disposition. The annotation remains owner-open; the owner can inspect the linked disposition and then resolve or reply.
+     */
     post: operations["addAnnotationMessage"];
     delete?: never;
     options?: never;
@@ -593,7 +599,12 @@ export interface components {
      * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
      * @enum {string}
      */
-    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+    ReviewState:
+      | "active"
+      | "resolved-awaiting-save"
+      | "completed"
+      | "cleared"
+      | "invalidated";
     ReviewSummary: {
       reviewId: string;
       state: components["schemas"]["ReviewState"];
@@ -719,6 +730,8 @@ export interface components {
         | "CITATION_NOT_FOUND"
         | "FIGURE_NOT_FOUND"
         | "FIGURE_ALREADY_EXISTS"
+        | "SKILLS_NOT_CONFIGURED"
+        | "SKILL_NOT_FOUND"
         | "WORKSPACE_NOT_FOUND"
         | "WORKSPACE_OUTSIDE_SCOPE"
         | "WORKSPACE_ENTRY_EXISTS"
@@ -759,6 +772,7 @@ export interface components {
         | "proposal.retracted"
         | "annotation.created"
         | "annotation.message-added"
+        | "annotation.acted"
         | "annotation.target-changed"
         | "annotation.orphaned"
         | "annotation.resolved"
@@ -1135,15 +1149,29 @@ export interface components {
       reviewId: string;
       linkedAt: string;
       /** @enum {string} */
-      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+      terminalOutcome?:
+        "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
     };
-    /** @description A comment thread attached to part of a document. Only the document owner can create, resolve, reopen, reattach, or delete annotations; agents may only reply to an open thread. */
+    AnnotationAgentStatus:
+      | {
+          /** @enum {string} */
+          state: "pending";
+        }
+      | {
+          /** @enum {string} */
+          state: "acted";
+          /** @description Agent-authored disposition message that claims the remediation. */
+          messageId: string;
+          actedAt: string;
+        };
+    /** @description A comment thread attached to part of a document. Only the document owner can create, resolve, reopen, reattach, or delete annotations; agents may reply to an open thread and mark their own remediation disposition acted. Agent action never resolves the annotation: the owner inspects it and independently resolves or replies. */
     AnnotationResponse: {
       annotationId: string;
       documentId: string;
       target: components["schemas"]["AnnotationTarget"];
       /** @enum {string} */
       state: "open" | "resolved";
+      agentStatus: components["schemas"]["AnnotationAgentStatus"];
       /** @description The thread, owner-first, in creation order. */
       messages: components["schemas"]["AnnotationMessage"][];
       proposalActions: components["schemas"]["AnnotationProposalAction"][];
@@ -1160,6 +1188,11 @@ export interface components {
       text: string;
       /** @description Client-chosen request ID. Repeating the same request returns the original message instead of posting it twice. */
       clientRequestId: string;
+      /**
+       * @description When true, this agent message is also the remediation disposition: the annotation's agentStatus becomes acted and points at this message. This does not resolve the annotation. Replaying the same clientRequestId with markActed=true can mark an already-posted disposition acted without duplicating the message.
+       * @default false
+       */
+      markActed: boolean;
       /** @description annotationGeneration from the latest annotation read. A stale value is rejected as ANNOTATION_GENERATION_MISMATCH. */
       expectedAnnotationGeneration: number;
     };
@@ -1167,6 +1200,7 @@ export interface components {
       annotationId: string;
       documentId: string;
       message: components["schemas"]["AnnotationMessage"];
+      agentStatus: components["schemas"]["AnnotationAgentStatus"];
       annotationGeneration: number;
     };
     ReviewSubmissionRequest: {
@@ -1300,6 +1334,30 @@ export interface components {
       root: string;
       count: number;
       macros: components["schemas"]["MacroEntry"][];
+    };
+    SkillTreeEntry: {
+      /** @description Path relative to the configured skills directory. */
+      path: string;
+      /** @enum {string} */
+      kind: "directory" | "markdown";
+      size: number;
+      modifiedAt: string;
+    };
+    SkillsListResponse: {
+      /** @description Canonical absolute path of the configured skills directory. */
+      root: string;
+      count: number;
+      entries: components["schemas"]["SkillTreeEntry"][];
+    };
+    SkillFileResponse: {
+      /** @description Canonical absolute path of the configured skills directory. */
+      root: string;
+      /** @description Markdown file path relative to the configured skills directory. */
+      path: string;
+      size: number;
+      modifiedAt: string;
+      sha256: string;
+      content: string;
     };
     FigureEntry: {
       /** @description Path relative to the configured figures directory. */
@@ -1545,8 +1603,14 @@ export interface operations {
   getHelp: {
     parameters: {
       query?: {
+        /** @description Read built-in authoring help or the configured skills subtree. */
+        resource?: "help" | "skills";
         /** @description Response format (markdown or json) */
         format?: "markdown" | "json";
+        /** @description For resource=skills, list the subtree or read one Markdown file. */
+        action?: "list" | "read";
+        /** @description Relative .md path when resource=skills and action=read. */
+        path?: string;
       };
       header?: never;
       path?: never;
@@ -1554,7 +1618,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Authoring help documentation in Markdown or JSON */
+      /** @description Authoring help, skills subtree listing, or Markdown file contents. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -1562,7 +1626,37 @@ export interface operations {
         content: {
           "text/markdown": string;
           "text/plain": string;
-          "application/json": components["schemas"]["HelpResponse"];
+          "application/json":
+            | components["schemas"]["HelpResponse"]
+            | components["schemas"]["SkillsListResponse"]
+            | components["schemas"]["SkillFileResponse"];
+        };
+      };
+      /** @description Invalid, non-Markdown, or symlinked skill path. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Skill Markdown file not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description No usable skills directory is configured. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
     };
@@ -2108,6 +2202,7 @@ export interface operations {
       query?: {
         /** @description Optional document ID to filter annotations. */
         documentId?: string;
+        /** @description Optional lifecycle state filter. Omit it to return both open and resolved annotations. */
         state?: "open" | "resolved";
       };
       header?: never;
@@ -2200,7 +2295,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Document is closed */
+      /** @description The document is closed (DOCUMENT_CLOSED). A closed document's annotations are readable from their sidecar, but replying needs the document open; open it, then retry with a fresh read. */
       409: {
         headers: {
           [name: string]: unknown;

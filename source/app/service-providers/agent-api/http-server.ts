@@ -109,6 +109,14 @@ import AgentDocumentQueries, {
 } from "./document-queries";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
+import {
+  listSkillTree,
+  readSkillMarkdown,
+  resolveSkillsDirectory,
+  SkillFileNotFoundError,
+  SkillsDirectoryUnavailableError,
+  SkillsPathInputError,
+} from "./skills-store";
 import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
@@ -207,10 +215,10 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   ANNOTATION_GENERATION_MISMATCH: 409,
   ANNOTATION_RESOLVED: 409,
   ANNOTATION_ORPHANED: 409,
-  // Unreachable through addAnnotationMessage, the only route that consults
-  // this code (I3: lifecycle is owner-only, and that route never checks
-  // ownership) — kept here because the Record is exhaustive, not as a
-  // defense-in-depth branch a reviewer has to trust by inspection.
+  // Unreachable through addAnnotationMessage, the only annotation write the
+  // agent API exposes. That route may mark the agent's own disposition acted,
+  // but it cannot move owner resolution/anchor lifecycle state and therefore
+  // never asks an owner-only transition to run.
   ANNOTATION_OWNER_ONLY: 403,
   IDEMPOTENCY_CONFLICT: 409,
   REQUEST_TOO_LARGE: 413,
@@ -223,6 +231,8 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   CITATION_NOT_FOUND: 404,
   FIGURE_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
+  SKILLS_NOT_CONFIGURED: 503,
+  SKILL_NOT_FOUND: 404,
   WORKSPACE_NOT_FOUND: 404,
   WORKSPACE_OUTSIDE_SCOPE: 403,
   WORKSPACE_ENTRY_EXISTS: 409,
@@ -690,8 +700,24 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
-      this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
-      this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+      // Log the stack and which operation failed; `${err}` alone drops both,
+      // leaving six identical "reading 'get'" lines with no fault site. The
+      // response gets the message so a caller sees the real failure, but the
+      // stack stays server-side.
+      const operation = method + " " + pathname;
+      if (err instanceof Error) {
+        this._log.error(
+          `[AgentHTTPProvider] Unhandled error in ${operation}: ${err.message}\n${err.stack ?? "(no stack)"}`,
+        );
+      } else {
+        this._log.error(`[AgentHTTPProvider] Unhandled error in ${operation}: ${String(err)}`);
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        err instanceof Error ? err.message : "Internal server error",
+      );
     });
   }
 
@@ -835,8 +861,28 @@ export default class AgentHTTPProvider extends ProviderContract {
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
     return {
-      getHelp: (c: OperationContext<"getHelp">, req, res: http.ServerResponse) =>
-        this.serveHelp(res, req.headers.accept, c.request.query.format === "json"),
+      getHelp: (
+        c: DefaultedOperationContext<"getHelp", "resource" | "action">,
+        req,
+        res: http.ServerResponse,
+      ) => {
+        if (c.request.query.resource === "skills") {
+          if (c.request.query.action === "read") {
+            if (!c.request.query.path) {
+              this.sendError(
+                res,
+                400,
+                "INVALID_PARAMS",
+                "Query parameter 'path' is required when resource=skills and action=read",
+              );
+              return;
+            }
+            return this.handleReadSkill(res, c.request.query.path);
+          }
+          return this.handleListSkills(res);
+        }
+        return this.serveHelp(res, req.headers.accept, c.request.query.format === "json");
+      },
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {
@@ -1714,9 +1760,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   // ==========================================================================
-  // Annotations — read and reply only. Lifecycle (resolve, reopen, reattach,
-  // delete, create) is owner-only (I3) and has no operationId in the
-  // published document: the API cannot express it, not merely refuse it.
+  // Annotations — read, reply, and record agent action. A reply may mark
+  // itself as the acted disposition; owner lifecycle (resolve, reopen,
+  // reattach, delete, create) remains absent from the published document.
   // ==========================================================================
 
   private async handleListAnnotations(
@@ -1771,19 +1817,22 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.text,
         body.clientRequestId,
         body.expectedAnnotationGeneration,
+        body.markActed,
       );
     if (!("messageId" in result)) {
       this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
       return;
     }
-    const annotationGeneration = this._documents.annotationQueries.getAnnotations(
-      located.documentId,
-    ).generation;
+    const annotation = await this._queries.getAnnotation(annotationId);
+    if (annotation === undefined) {
+      throw new Error(`Annotation ${annotationId} disappeared after its message was committed`);
+    }
     this.sendJson(res, 200, {
       annotationId,
       documentId: located.documentId,
       message: result,
-      annotationGeneration,
+      annotationGeneration: annotation.annotationGeneration,
+      agentStatus: annotation.agentStatus,
     });
   }
 
@@ -2293,6 +2342,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     );
   }
 
+  private skillsDirectory(): string {
+    return resolveSkillsDirectory(
+      this._app.config.get().agentApi.skillsDirectory,
+      this.authoringHomeDirectory(),
+    );
+  }
+
   private async handleListMacros(
     res: http.ServerResponse,
     query: string | undefined,
@@ -2324,6 +2380,49 @@ export default class AgentHTTPProvider extends ProviderContract {
         macros,
       });
     } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleListSkills(res: http.ServerResponse): Promise<void> {
+    try {
+      const { root, entries } = await listSkillTree(this.skillsDirectory());
+      this.sendJson(res, 200, { root, count: entries.length, entries });
+    } catch (error) {
+      if (error instanceof SkillsDirectoryUnavailableError) {
+        this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleReadSkill(res: http.ServerResponse, relativePath: string): Promise<void> {
+    try {
+      this.sendJson(res, 200, await readSkillMarkdown(this.skillsDirectory(), relativePath));
+    } catch (error) {
+      if (error instanceof SkillsDirectoryUnavailableError) {
+        this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
+        return;
+      }
+      if (error instanceof SkillFileNotFoundError) {
+        this.sendError(res, 404, "SKILL_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof SkillsPathInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,

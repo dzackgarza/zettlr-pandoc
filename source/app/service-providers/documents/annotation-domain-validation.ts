@@ -17,6 +17,7 @@
  */
 
 import type {
+  AnnotationAgentStatus,
   AnnotationAnchor,
   AnnotationMessage,
   AnnotationProposalAction,
@@ -105,6 +106,20 @@ export const AnnotationProposalActionSchema = Type.Unsafe<AnnotationProposalActi
   ),
 );
 
+export const AnnotationAgentStatusSchema = Type.Unsafe<AnnotationAgentStatus>(
+  Type.Union([
+    Type.Object({ state: Type.Literal("pending") }, { additionalProperties: false }),
+    Type.Object(
+      {
+        state: Type.Literal("acted"),
+        messageId: Type.String({ minLength: 1 }),
+        actedAt: Type.String(),
+      },
+      { additionalProperties: false },
+    ),
+  ]),
+);
+
 export const TextAnnotationSchema = Type.Unsafe<TextAnnotation>(
   Type.Object(
     {
@@ -112,6 +127,7 @@ export const TextAnnotationSchema = Type.Unsafe<TextAnnotation>(
       documentId: Type.String({ minLength: 1 }),
       anchor: AnnotationAnchorSchema,
       state: Type.Union([Type.Literal("open"), Type.Literal("resolved")]),
+      agentStatus: AnnotationAgentStatusSchema,
       messages: Type.Array(AnnotationMessageSchema, { minItems: 1 }),
       proposalActions: Type.Array(AnnotationProposalActionSchema),
       createdAt: Type.String(),
@@ -241,6 +257,20 @@ export function annotationSetValidationIssue(
         };
       }
       messageIds.add(message.messageId);
+    }
+
+    if (annotation.agentStatus.state === "acted") {
+      const dispositionMessageId = annotation.agentStatus.messageId;
+      const disposition = annotation.messages.find(
+        (message) => message.messageId === dispositionMessageId,
+      );
+      if (disposition?.author !== "agent") {
+        return {
+          code: "ANNOTATION_SCHEMA_INVALID",
+          message: `Annotation ${annotation.annotationId} marks itself acted without an agent disposition message.`,
+          annotationIds: [annotation.annotationId],
+        };
+      }
     }
 
     for (const action of annotation.proposalActions) {
