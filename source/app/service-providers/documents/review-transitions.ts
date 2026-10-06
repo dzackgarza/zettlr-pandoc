@@ -43,10 +43,8 @@ import type { ActiveReviewState, ReviewPacket, ReviewSuggestion } from "@dts/com
 import { randomUUID } from "crypto";
 import {
   applyPatch,
-  diffWordsWithSpace,
-  formatPatch,
+  diffChars,
   parsePatch,
-  reversePatch,
   type StructuredPatch,
   structuredPatch,
 } from "diff";
@@ -309,7 +307,7 @@ function suggestionForClaim(before: string, after: string, packetId: string): Re
 }
 
 function changeSetForTextTransition(before: string, after: string): ChangeSet {
-  const changes = diffWordsWithSpace(before, after);
+  const changes = diffChars(before, after);
   const specs: Array<{ from: number; to: number; insert: string }> = [];
   let beforeOffset = 0;
   for (let index = 0; index < changes.length; ) {
@@ -673,8 +671,8 @@ export function applyClaimSequence(
       };
     }
     const textAfter = normalizeText(applied);
-    // A no-op that is allowed through still burns a generation and becomes
-    // the newest packet, which blocks retraction of the real one underneath.
+    // A no-op that is allowed through still burns a generation and creates a
+    // packet with no reviewable suggestion, so reject it at the claim boundary.
     if (textAfter === text) {
       return {
         ok: false,
@@ -703,14 +701,6 @@ export function applyClaimSequence(
     text = textAfter;
   }
   return { ok: true, steps };
-}
-
-function invertPatch(patchText: string): string {
-  const patches = parsePatch(patchText);
-  if (patches.length !== 1) {
-    throw new Error("Cannot invert a multi-file patch");
-  }
-  return formatPatch(reversePatch(patches)[0]);
 }
 
 /**
@@ -1237,9 +1227,10 @@ export function prepareReviewComment(input: {
 }
 
 /**
- * Retract a proposal packet. Conservative: only the newest packet, no
- * subsequent packets or user decisions touching its ranges, and its inverse
- * must apply exactly.
+ * Retract any unresolved proposal packet. Suggestions are stable entities in
+ * current-buffer coordinates, so later proposals and owner edits do not make
+ * an older packet immutable: removing its suggestion changes only the agent
+ * text that still belongs to that packet and restores only what it removed.
  */
 export function prepareRetraction(input: {
   review: ActiveReviewState;
@@ -1259,39 +1250,22 @@ export function prepareRetraction(input: {
   if (packetIndex === -1) {
     return refuse("Proposal not found.");
   }
-  if (packetIndex !== input.review.packets.length - 1) {
-    return refuse("A newer proposal was applied after this one.");
-  }
-  const packet = input.review.packets[packetIndex];
-  if (packet.applicationGeneration !== input.review.generation) {
-    return refuse(
-      "This proposal can no longer be retracted because the review changed after it was applied.",
-    );
-  }
-
   const workingText = normalizeText(input.workingText);
-  const reverted = applyPatch(workingText, invertPatch(packet.patch), {
-    autoConvertLineEndings: true,
-    fuzzFactor: 0,
-  });
-  if (reverted === false) {
-    return refuse("This proposal can no longer be retracted because later changes overlap it.");
-  }
-
   const next = cloneReview(input.review);
   const retractedSuggestions = next.suggestions.filter(
     (suggestion) => suggestion.packetId === input.packetId,
   );
-  const retractionChanges = rejectionChangeSet(retractedSuggestions, workingText.length);
-  const exactReverted = applyChangeSet(workingText, retractionChanges);
-  if (exactReverted !== normalizeText(reverted)) {
-    return refuse("This proposal no longer matches the current review.");
+  if (
+    retractedSuggestions.length === 0 ||
+    retractedSuggestions.some((suggestion) => suggestion.state !== "proposed")
+  ) {
+    return refuse("Only an unresolved proposal can be retracted.");
   }
-  next.packets.pop();
+  const retractionChanges = rejectionChangeSet(retractedSuggestions, workingText.length);
+  const nextWorkingText = applyChangeSet(workingText, retractionChanges);
+  next.packets.splice(packetIndex, 1);
   const retractedSuggestionIds = new Set(
-    next.suggestions
-      .filter((suggestion) => suggestion.packetId === input.packetId)
-      .map((suggestion) => suggestion.suggestionId),
+    retractedSuggestions.map((suggestion) => suggestion.suggestionId),
   );
   next.suggestions = next.suggestions.filter(
     (suggestion) => suggestion.packetId !== input.packetId,
@@ -1300,7 +1274,6 @@ export function prepareRetraction(input: {
     (comment) => !retractedSuggestionIds.has(comment.chunkId),
   );
   next.generation += 1;
-  const nextWorkingText = normalizeText(reverted);
   mapSuggestionAnchors(next.suggestions, retractionChanges);
   const unresolvedChunks = next.suggestions.filter(
     (suggestion) => suggestion.state === "proposed",

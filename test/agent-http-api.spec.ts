@@ -1587,6 +1587,93 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.state, "active");
   });
 
+  it("retracts an older overlapping proposal through MCP", async function () {
+    const filePath = path.join(scratch, "mcp-older-retraction.md");
+    const documentId = await openInPane(filePath, "alpha\n");
+    const first = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\n"),
+      [
+        {
+          description: "capitalize alpha",
+          patch: createPatch("document", "alpha\n", "ALPHA\n", "", "", { context: 0 }),
+        },
+      ],
+      "mcp-older-first",
+      0,
+    );
+    if (!first.ok) {
+      assert.fail(`The first proposal was refused: ${first.code}`);
+    }
+    const second = await provider.submitProposal(
+      documentId,
+      sha256Text("ALPHA\n"),
+      [
+        {
+          description: "insert a hyphen",
+          patch: createPatch("document", "ALPHA\n", "AL-PHA\n", "", "", { context: 0 }),
+        },
+      ],
+      "mcp-older-second",
+      first.reviewGeneration,
+    );
+    if (!second.ok) {
+      assert.fail(`The second proposal was refused: ${second.code}`);
+    }
+
+    const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+    );
+    const call = async <N extends keyof AgentApiSchemas & string>(
+      name: string,
+      args: Record<string, string | ReviewMutationPrecondition>,
+      schemaName: N,
+    ): Promise<{ isError: boolean; body: AgentApiSchemas[N] }> => {
+      const result = await client.callTool({ name, arguments: args });
+      const [content] = result.content as Array<{ type: "text"; text: string }>;
+      return {
+        isError: result.isError === true,
+        body: parseAs(content.text, schemaName),
+      };
+    };
+    try {
+      const retracted = await call(
+        "retractProposal",
+        {
+          packetId: first.packetIds[0],
+          body: {
+            expectedReviewGeneration: second.reviewGeneration,
+            expectedWorkingSha256: sha256Text("AL-PHA\n"),
+          },
+        },
+        "RetractProposalResponse",
+      );
+      assert.equal(retracted.isError, false, JSON.stringify(retracted.body));
+      assert.equal(retracted.body.documentRevision.sha256, sha256Text("alpha-\n"));
+
+      const current = await call(
+        "getDocument",
+        { documentId, includeContent: "true" },
+        "ReadDocumentResponse",
+      );
+      assert.equal(current.isError, false, JSON.stringify(current.body));
+      assert.equal(current.body.content, "alpha-\n");
+
+      const review = await call(
+        "getReview",
+        { reviewId: second.reviewId, view: "chunks" },
+        "ReviewChunksResponse",
+      );
+      assert.equal(review.isError, false, JSON.stringify(review.body));
+      assert.equal(review.body.chunks.length, 1);
+      assert.equal(review.body.chunks[0].workingText, "-");
+      assert.deepEqual(review.body.chunks[0].descriptions, ["insert a hyphen"]);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("retracts a proposal and discards a frozen review through MCP", async function () {
     const filePath = path.join(scratch, "mcp-recovery.md");
     const documentId = await openInPane(filePath, "alpha\nbeta\n");

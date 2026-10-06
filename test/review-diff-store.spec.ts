@@ -228,8 +228,9 @@ describe("pure review transitions", function () {
     assert.equal(cleared.nextWorkingText, "alpha\nbeta\n");
   });
 
-  it("retracts only the newest untouched packet", function () {
+  it("retracts an older unresolved packet without discarding a later overlapping proposal", function () {
     const first = committedProposal("alpha\n", "ALPHA\n");
+    const firstPacket = first.nextReview!.packets.at(-1)!.packetId;
     const second = prepareProposalSubmission({
       review: first.nextReview,
       documentId: DOCUMENT_ID,
@@ -238,29 +239,52 @@ describe("pure review transitions", function () {
       diskSha256: first.nextReview!.diskFenceSha256,
       claims: [
         {
-          patch: patch(first.nextWorkingText, "prefix ALPHA\n"),
-          description: "prefix",
+          patch: patch(first.nextWorkingText, "AL-PHA\n"),
+          description: "insert a hyphen inside the first proposal",
         },
       ],
       clientRequestId: "request-2",
       requestFingerprint: sha256Text("request-2"),
     });
     assert.ok(!isTransitionError(second));
-    const latest = second.nextReview!.packets.at(-1)!.packetId;
+    const laterPacket = second.nextReview!.packets.at(-1)!.packetId;
     const retracted = prepareRetraction({
       review: second.nextReview!,
       workingText: second.nextWorkingText,
-      packetId: latest,
+      packetId: firstPacket,
     });
     assert.ok(!isTransitionError(retracted));
-    assert.equal(retracted.nextWorkingText, first.nextWorkingText);
+    assert.equal(retracted.nextWorkingText, "alpha-\n");
     assert.equal(retracted.nextReview?.packets.length, 1);
+    assert.equal(retracted.nextReview?.packets[0].packetId, laterPacket);
     const store = new ReviewDiffStore();
     store.replaceReview(DOCUMENT_ID, retracted.nextReview!);
     assert.equal(
       store.getOutstandingChunks(DOCUMENT_ID, retracted.nextWorkingText)?.[0].workingText,
-      "ALPHA",
+      "-",
     );
+  });
+
+  it("refuses retraction after the proposal was adjudicated", function () {
+    const { review, workingText } = withReview("alpha\n", "ALPHA\n");
+    const packetId = review.packets[0].packetId;
+    const store = new ReviewDiffStore();
+    store.replaceReview(DOCUMENT_ID, review);
+    const chunk = store.getOutstandingChunks(DOCUMENT_ID, workingText)![0];
+    const accepted = prepareChunkDecision({
+      review,
+      workingText,
+      chunkId: chunk.chunkId,
+      decision: "accept",
+    });
+    assert.ok(!isTransitionError(accepted));
+
+    const refused = prepareRetraction({
+      review: accepted.nextReview!,
+      workingText: accepted.nextWorkingText,
+      packetId,
+    });
+    assertTransitionError(refused, "PACKET_NOT_RETRACTABLE");
   });
 
   it("keeps preparation pure and drafts events without emitting them", function () {

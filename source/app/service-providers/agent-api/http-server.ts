@@ -2093,8 +2093,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
     } else {
       // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
-      // 409: the packet is live but no longer the retractable one, or its file
-      // is closed. Both name the review that owns the packet, which is the
+      // 409: the packet has already reached a terminal state, or its file is
+      // closed. Both name the review that owns the packet, which is the
       // only thing the caller can re-read from — disposing of the suggestions
       // is the reviewer's.
       this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {

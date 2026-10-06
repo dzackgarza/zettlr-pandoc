@@ -8,8 +8,8 @@ info:
     and use the returned revision hash. If a patch no longer applies, read the
     document again and rebuild the patch. Accepted edits already appear in the
     working text. The reviewer accepts or rejects changes in the editor; an
-    agent may submit new proposals, add comments, or retract its newest
-    untouched proposal.
+    agent may submit new proposals, add comments, or retract any unresolved
+    proposal it previously submitted.
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -3240,7 +3240,7 @@ paths:
     post:
       operationId: retractProposal
       x-openai-isConsequential: false
-      summary: Retract the newest untouched proposal
+      summary: Retract an unresolved proposal
       parameters:
         - name: packetId
           in: path

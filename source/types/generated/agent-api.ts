@@ -408,7 +408,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Retract the newest untouched proposal */
+    /** Retract an unresolved proposal */
     post: operations["retractProposal"];
     delete?: never;
     options?: never;
