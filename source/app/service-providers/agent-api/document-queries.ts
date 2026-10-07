@@ -605,7 +605,7 @@ export default class AgentDocumentQueries {
   public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
     const files: WorkspaceFileEntry[] = [];
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      files.push(...((await this.listWorkspaceFilesByWorkspace(workspacePath)) ?? []));
+      files.push(...(await this.listWorkspaceFilesByWorkspace(workspacePath)));
     }
     return files;
   }

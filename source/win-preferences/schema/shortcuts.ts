@@ -46,7 +46,10 @@ export function getShortcutFields(
   const fieldsByGroup = new Map<CommandGroup, PreferencesFieldset["fields"]>();
 
   for (const command of commandRegistry.all()) {
-    const fields = fieldsByGroup.get(command.group) ?? [];
+    let fields = fieldsByGroup.get(command.group);
+    if (fields === undefined) {
+      fields = [];
+    }
     fields.push({
       type: "shortcut",
       label: trans(command.label),

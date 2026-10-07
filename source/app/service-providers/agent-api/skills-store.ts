@@ -53,7 +53,9 @@ export function resolveSkillsDirectory(
   configuredDirectory: string | null | undefined,
   homeDirectory: string,
 ): string {
-  const configured = configuredDirectory?.trim() ?? "";
+  const configured = configuredDirectory === null || configuredDirectory === undefined
+    ? ""
+    : configuredDirectory.trim();
   if (configured === "") {
     throw new SkillsDirectoryUnavailableError(
       "No skills directory is configured; set agentApi.skillsDirectory to an absolute path",

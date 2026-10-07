@@ -706,8 +706,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       // stack stays server-side.
       const operation = method + " " + pathname;
       if (err instanceof Error) {
+        const stack = err.stack === undefined ? "(no stack)" : err.stack;
         this._log.error(
-          `[AgentHTTPProvider] Unhandled error in ${operation}: ${err.message}\n${err.stack ?? "(no stack)"}`,
+          `[AgentHTTPProvider] Unhandled error in ${operation}: ${err.message}\n${stack}`,
         );
       } else {
         this._log.error(`[AgentHTTPProvider] Unhandled error in ${operation}: ${String(err)}`);
