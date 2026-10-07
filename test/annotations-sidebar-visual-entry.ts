@@ -159,6 +159,8 @@ declare global {
       /** The annotation ids whose thread is open in the pane. */
       threadIds: string[];
       threadLifecycle: string;
+      /** Acted disposition pills in the open thread; null when no thread is open. */
+      actedDispositionCount: number | null;
       /** The composer is mounted with the thread, not behind a Reply click. */
       composerPresent: boolean;
       /** Resolve (or Reopen) renders exactly once, in the thread. */
@@ -799,8 +801,9 @@ async function mount(): Promise<void> {
       threadLifecycle:
         thread?.querySelector(".annotation-lifecycle-pill")?.textContent?.trim() ?? "",
       actedDispositionCount:
-        thread?.querySelectorAll(".annotation-message .annotation-lifecycle-pill.acted").length ??
-        0,
+        thread === null
+          ? null
+          : thread.querySelectorAll(".annotation-message .annotation-lifecycle-pill.acted").length,
       composerPresent:
         thread !== null && thread.querySelector(".annotation-composer textarea") !== null,
       resolveCount: paneHost.querySelectorAll(

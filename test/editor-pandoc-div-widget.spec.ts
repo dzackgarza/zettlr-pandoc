@@ -295,9 +295,14 @@ outside`;
     const panel = view.dom.querySelector('pandoc-div-wrapper[data-pandoc-div-family="definition"]');
     assert.ok(panel !== null, `expected the definition body to render: ${view.dom.innerHTML}`);
 
-    const equations = [...panel.querySelectorAll<HTMLElement>(".preview-math")].map(
-      (element) => element.dataset.equation ?? "",
-    );
+    const equations = [...panel.querySelectorAll<HTMLElement>(".preview-math")].map((element) => {
+      const equation = element.dataset.equation;
+      assert.ok(
+        equation !== undefined,
+        `expected data-equation on every math preview: ${panel.innerHTML}`,
+      );
+      return equation;
+    });
     assert.equal(equations.length, 9);
     assert.ok(equations.some((equation) => equation.includes("\\bar\\beta_L\\colon")));
     assert.ok(equations.some((equation) => equation.includes("q_L(x+L)")));
