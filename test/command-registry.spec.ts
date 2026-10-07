@@ -53,11 +53,7 @@ describe("Registered commands", function () {
     const shortcuts = createShortcutConfig();
     assert.equal(shortcuts.editor["annotate-selection"], "");
 
-    const config = {
-      ...getDefaultConfig(),
-      shortcuts,
-    };
-    const fields = getShortcutFields(config as never).flatMap((fieldset) => fieldset.fields);
+    const fields = getShortcutFields({ shortcuts }).flatMap((fieldset) => fieldset.fields);
     assert.ok(
       fields.some(
         (field) =>

@@ -36,7 +36,11 @@
           v-bind:value="rowKey(row)"
           v-bind:label="row.label"
           v-bind:breadcrumb="rowBreadcrumb(row)"
-          v-bind:accelerator="row.kind === 'menu-leaf' ? row.accelerator : undefined"
+          v-bind:accelerator="
+            row.kind === 'menu-leaf' || row.kind === 'registered-command'
+              ? row.accelerator
+              : undefined
+          "
           v-bind:disabled="isDisabled(row)"
           v-bind:checked="row.kind === 'menu-leaf' ? row.checked : undefined"
           v-bind:data-row-kind="row.kind"

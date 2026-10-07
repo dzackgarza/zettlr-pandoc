@@ -16,6 +16,7 @@
  */
 
 import type { JustRecipeCommand, JustRecipeParameter } from "@dts/common/justfile-commands";
+import type { CommandId } from "@common/commands/command-registry";
 import type { PreferencesGroups } from "@dts/common/preferences";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
 import type { ValidPandocProfile } from "@providers/assets";
@@ -61,6 +62,14 @@ export interface DynamicGroupRow {
   kind: "dynamic-group";
   id: DynamicGroupId;
   label: string;
+}
+
+export interface RegisteredCommandRow {
+  kind: "registered-command";
+  id: CommandId;
+  label: string;
+  accelerator?: string;
+  breadcrumb: readonly string[];
 }
 
 export interface FileRow {
@@ -118,6 +127,7 @@ export type LauncherRow =
   | MenuLeafRow
   | MenuGroupRow
   | DynamicGroupRow
+  | RegisteredCommandRow
   | FileRow
   | HeadingRow
   | ExportProfileRow
@@ -169,6 +179,8 @@ export function rowKey(row: LauncherRow): string {
       return `menu-group:${row.path.join("/")}`;
     case "dynamic-group":
       return `dynamic-group:${row.id}`;
+    case "registered-command":
+      return `registered-command:${row.id}`;
     case "file":
       return `file:${row.path}`;
     case "heading":
@@ -331,6 +343,7 @@ export function launcherRowSearchText(row: LauncherRow): string {
     case "menu-leaf":
     case "menu-group":
     case "just-recipe":
+    case "registered-command":
       return [...row.breadcrumb, row.label].join(" ");
     case "file":
       // A file's display label is often its YAML title or first heading, so

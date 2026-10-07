@@ -13,15 +13,18 @@
  */
 
 import { MD_EXT } from "@common/util/file-extention-checks";
+import {
+  createShortcutConfig,
+  type EditorCommandId,
+  type WindowCommandId,
+} from "@common/commands/command-registry";
 import getLanguageFile from "@common/util/get-language-file";
 import type { SidebarSectionId, SidebarViewId } from "@dts/common/sidebar-views";
 import * as bcp47 from "bcp-47";
 import { app, nativeTheme } from "electron";
 import path from "path";
-import type { EditorShortcutName } from "source/common/modules/markdown-editor/keymaps/shortcuts";
 import type { Get, Paths } from "type-fest";
 import { v4 as uuid4 } from "uuid";
-import { type MenuShortcutName } from "../menu/shortcuts";
 import AUTOCORRECT_REPLACEMENTS from "./autocorrect-replacements.json";
 
 export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
@@ -35,37 +38,8 @@ export const DEFAULT_FILE_FILTER_INCLUDE = [...MD_EXT];
 // properties.
 type FileTypeSettings<F = boolean, O = "zettlr" | "system"> = { showInFilemanager: F; openWith: O };
 
-// The following lines make a subset of all available editor/UI shortcuts
-// configurable. This way, we do not have to specify *all* shortcuts, but only
-// those that are actually configurable.
-type Extends<T, U extends T> = U; // Helper type to allow for autocomplete
-export type ConfigurableEditorShortcuts = Extends<
-  EditorShortcutName,
-  | "nav-history-back"
-  | "nav-history-forward"
-  | "table-align"
-  | "table-align-col-center"
-  | "table-align-col-left"
-  | "table-align-col-right"
-  | "tr-zap-gremlins"
-  | "tr-emdash-add-spaces"
-  | "tr-double-quotes-to-single"
-  | "tr-emdash-remove-spaces"
-  | "tr-ensure-double-quotes"
-  | "tr-italics-to-quotes"
-  | "tr-quotes-to-italics"
-  | "tr-quotes-to-magic"
-  | "tr-remove-line-breaks"
-  | "tr-sentence-case"
-  | "tr-single-quotes-to-double"
-  | "tr-straighten-quotes"
-  | "tr-strip-duplicate-spaces"
-  | "tr-title-case"
->;
-export type ConfigurableUIShortcuts = Extends<
-  MenuShortcutName,
-  "previous-tab" | "next-tab" | "filter-files"
->;
+export type ConfigurableEditorShortcuts = EditorCommandId;
+export type ConfigurableUIShortcuts = WindowCommandId;
 
 /**
  * This type describes an entry of the ignored rules array in the config. We
@@ -369,8 +343,8 @@ export type ConfigOptions = {
     zoomBehavior: "gui" | "editor";
   };
   shortcuts: {
-    editor: Record<ConfigurableEditorShortcuts, string>;
-    ui: Record<MenuShortcutName, string>;
+    editor: Record<string, string>;
+    ui: Record<string, string>;
   };
 };
 
@@ -628,35 +602,7 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       zoomBehavior: "gui", // Used to determine what gets zoomed: The GUI or the editor
     },
     checkForBeta: false, // Should the user be notified of beta releases?
-    shortcuts: {
-      ui: {
-        "next-tab": "",
-        "previous-tab": "",
-        "filter-files": "",
-      },
-      editor: {
-        "nav-history-back": "",
-        "nav-history-forward": "",
-        "table-align": "",
-        "table-align-col-left": "",
-        "table-align-col-center": "",
-        "table-align-col-right": "",
-        "tr-double-quotes-to-single": "",
-        "tr-single-quotes-to-double": "",
-        "tr-emdash-add-spaces": "",
-        "tr-emdash-remove-spaces": "",
-        "tr-ensure-double-quotes": "",
-        "tr-italics-to-quotes": "",
-        "tr-quotes-to-italics": "",
-        "tr-quotes-to-magic": "",
-        "tr-remove-line-breaks": "",
-        "tr-sentence-case": "",
-        "tr-straighten-quotes": "",
-        "tr-strip-duplicate-spaces": "",
-        "tr-title-case": "",
-        "tr-zap-gremlins": "",
-      },
-    },
+    shortcuts: createShortcutConfig(),
     uuid: uuid4(), // The app's unique anonymous identifier
     // Agent API HTTP server (OpenAPI / REST) — spec: Zettlr-Pandoc Editor Agent API
     agentApi: {

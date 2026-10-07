@@ -78,9 +78,15 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import {
+  type CommandId,
+  commandRegistry,
+  getConfiguredShortcut,
+} from "@common/commands/command-registry";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
+import { cmShortcutToElectron } from "@common/util/shortcuts";
 import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";
 import showToast from "@common/util/show-toast";
 import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
@@ -145,6 +151,7 @@ const emit = defineEmits<{
   (e: "jump", intent: ReferenceJumpIntent): void;
   (e: "open-help"): void;
   (e: "export", request: ExportRequest): void;
+  (e: "run-command", id: CommandId): void;
 }>();
 
 const configStore = useConfigStore();
@@ -159,6 +166,21 @@ const state = ref<LauncherState>(CLOSED_LAUNCHER);
 // The serialised application menu, parsed once at the IPC boundary and
 // refreshed whenever the provider rebuilds the menu.
 const menu = ref<SerializedMenuItem[]>([]);
+
+const registeredCommandRows = computed<LauncherRow[]>(() =>
+  commandRegistry
+    .all()
+    .filter((command) => command.palette)
+    .map((command) => ({
+      kind: "registered-command",
+      id: command.id,
+      label: trans(command.label),
+      accelerator: cmShortcutToElectron(
+        getConfiguredShortcut(command.id, configStore.config.shortcuts),
+      ),
+      breadcrumb: [trans(command.group)],
+    })),
+);
 
 onBeforeMount(() => {
   ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
@@ -402,7 +424,13 @@ function viewRows(view: LauncherView, query: string): LauncherRow[] {
     case "root": {
       const groups = menuGroupRows(menu.value, []);
       const indexedRows =
-        query === "" ? [] : [...allMenuLeafRows(menu.value), ...preferenceRows.value];
+        query === ""
+          ? registeredCommandRows.value
+          : [
+              ...registeredCommandRows.value,
+              ...allMenuLeafRows(menu.value),
+              ...preferenceRows.value,
+            ];
       return [...groups, ...dynamicGroups.value, ...indexedRows];
     }
     case "menu-group":
@@ -550,6 +578,10 @@ async function run(row: LauncherRow): Promise<void> {
     case "menu-leaf":
       close();
       ipcRenderer.send("menu-provider", { command: "click-menu-item", payload: row.id });
+      return;
+    case "registered-command":
+      close();
+      emit("run-command", row.id);
       return;
     case "file":
       close();

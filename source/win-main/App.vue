@@ -167,6 +167,7 @@
     @jump="handleReferenceJump($event)"
     @open-help="showPandocQuickHelp = true"
     @export="runExport($event)"
+    @run-command="runEditorCommand($event)"
   />
   <CreateReferenceLabelDialog
     v-if="createLabelPrompt !== undefined"
@@ -196,6 +197,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import type { CommandId } from "@common/commands/command-registry";
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent,
@@ -385,7 +387,7 @@ function toggleTasksPopover(): void {
 }
 
 /** Runs a named editor command in the last focused pane. */
-function runEditorCommand(name: EditorCommandName): void {
+function runEditorCommand(name: EditorCommandName | CommandId): void {
   editorCommands.value.data = name;
   editorCommands.value.executeCommand = !editorCommands.value.executeCommand;
 }

@@ -12,7 +12,12 @@
  * END HEADER
  */
 
-import { type DefaultShortcut, getDefaultKeybinding } from "source/common/util/shortcuts";
+import {
+  commandRegistry,
+  getConfiguredShortcut,
+  type WindowCommandId,
+} from "@common/commands/command-registry";
+import type { DefaultShortcut } from "source/common/util/shortcuts";
 import { type ConfigOptions } from "../config/get-config-template";
 
 /**
@@ -25,17 +30,18 @@ import { type ConfigOptions } from "../config/get-config-template";
  * 5. Add it to a section in the preferences.
  */
 
-export type MenuShortcutName = "previous-tab" | "next-tab" | "filter-files";
+export type MenuShortcutName = WindowCommandId;
 
 /**
  * Default keybindings for all commands. May be empty (in which case there is no
  * default shortcut assigned.)
  */
-export const defaultKeybindings: Record<MenuShortcutName, DefaultShortcut> = {
-  "previous-tab": { key: "Ctrl-Shift-Tab" },
-  "next-tab": { key: "Ctrl-Tab" },
-  "filter-files": { key: "Ctrl-Shift-p", mac: "Cmd-Shift-p" },
-};
+export const defaultKeybindings: Record<MenuShortcutName, DefaultShortcut> = Object.fromEntries(
+  commandRegistry
+    .all()
+    .filter((command) => command.scope === "window")
+    .map((command) => [command.id, command.defaultKeybinding]),
+);
 
 /**
  * Retrieves a custom shortcut based on the shortcut name, the available map of
@@ -52,9 +58,8 @@ export function getCustomShortcut(
   map: ConfigOptions["shortcuts"]["ui"],
 ): string | undefined {
   const candidate = map[name];
-  if (candidate === undefined || candidate.trim() === "") {
-    return getDefaultKeybinding(name, defaultKeybindings);
-  } else {
-    return candidate;
-  }
+  return getConfiguredShortcut(name, {
+    editor: {},
+    ui: candidate === undefined ? {} : { [name]: candidate },
+  });
 }

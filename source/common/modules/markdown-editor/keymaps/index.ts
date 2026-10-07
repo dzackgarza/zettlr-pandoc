@@ -14,6 +14,7 @@
 
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
+import { registeredEditorKeybindings } from "@common/commands/command-registry";
 import _ from "underscore";
 import { configField, configUpdateEffect, type EditorConfiguration } from "../util/configuration";
 import { mainEditorKeybindings } from "./default";
@@ -30,7 +31,10 @@ const keybindingsTransactionExtender = EditorState.transactionExtender.of((tr) =
       effect.is(configUpdateEffect) &&
       !_.isEqual(effect.value.shortcuts, tr.startState.field(configField).shortcuts)
     ) {
-      const keys = mainEditorKeybindings(effect.value.shortcuts, tr.state.field(configField));
+      const keys = [
+        ...registeredEditorKeybindings(effect.value.shortcuts),
+        ...mainEditorKeybindings(effect.value.shortcuts, tr.state.field(configField)),
+      ];
       extendedTransaction = {
         effects: keymapCompartment.reconfigure(keymap.of(keys)),
       };
@@ -54,6 +58,11 @@ export function zettlrKeymap(
 ): Extension {
   return [
     keybindingsTransactionExtender,
-    keymapCompartment.of(keymap.of(mainEditorKeybindings(customShortcutMap, config))),
+    keymapCompartment.of(
+      keymap.of([
+        ...registeredEditorKeybindings(customShortcutMap),
+        ...mainEditorKeybindings(customShortcutMap, config),
+      ]),
+    ),
   ];
 }
