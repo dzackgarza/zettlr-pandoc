@@ -30,7 +30,7 @@ import ProviderContract from "@providers/provider-contract";
 import type { EventName } from "chokidar/handler.js";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
-import { constants as FS_CONSTANTS, promises as fs, type Stats } from "fs";
+import { constants as FS_CONSTANTS, promises as fs, lstatSync, type Stats } from "fs";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
@@ -869,12 +869,9 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a dir
    */
   public async isDir(absPath: string): Promise<boolean> {
-    try {
-      const stat = await fs.lstat(absPath);
-      return stat.isDirectory();
-    } catch (err: unknown) {
-      return false;
-    }
+    // A missing entry is the only answer of "no"; any other lstat error throws.
+    const stat = lstatSync(absPath, { throwIfNoEntry: false });
+    return stat !== undefined && stat.isDirectory();
   }
 
   /**
@@ -885,12 +882,9 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a file
    */
   public async isFile(absPath: string): Promise<boolean> {
-    try {
-      const stat = await fs.lstat(absPath);
-      return stat.isFile();
-    } catch (err: unknown) {
-      return false;
-    }
+    // A missing entry is the only answer of "no"; any other lstat error throws.
+    const stat = lstatSync(absPath, { throwIfNoEntry: false });
+    return stat !== undefined && stat.isFile();
   }
 
   /**
