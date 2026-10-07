@@ -942,12 +942,15 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleGetDocument(res, c.request.params.documentId);
       },
-      focusDocument: (c: OperationContext<"focusDocument">, _req, res: http.ServerResponse) =>
-        this.handleFocusDocument(res, c.request.params.documentId),
       searchDocument: (c: OperationContext<"searchDocument">, _req, res: http.ServerResponse) =>
         this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
       submitProposal: (c: OperationContext<"submitProposal">, _req, res: http.ServerResponse) =>
-        this.handleSubmitProposal(res, c.request.params.documentId, c.request.requestBody),
+        this.handleSubmitProposal(
+          res,
+          c.request.params.documentId,
+          c.request.requestBody,
+          "REVISION_MISMATCH",
+        ),
       submitReview: (c: OperationContext<"submitReview">, _req, res: http.ServerResponse) =>
         this.handleReviewSubmission(res, c.request.requestBody),
 
@@ -1411,26 +1414,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     };
   }
 
-  private async handleFocusDocument(res: http.ServerResponse, documentId: string): Promise<void> {
-    const filePath = this._documents.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
-      return;
-    }
-    if (!(await this._queries.isOpenable(filePath))) {
-      this.sendError(
-        res,
-        404,
-        "DOCUMENT_NOT_FOUND",
-        "Document is outside configured workspace scope",
-      );
-      return;
-    }
-    // Focus is a renderer-side action; the provider can open the file
-    await this._documents.openFile(undefined, undefined, filePath, true);
-    this.sendJson(res, 200, { focused: true, documentId });
-  }
-
   /**
    * The read route answers for every documentId the workspace listing hands
    * out, open or closed. Workspace containment is checked here rather than
@@ -1636,15 +1619,25 @@ export default class AgentHTTPProvider extends ProviderContract {
         claims,
         clientRequestId: request.clientRequestId,
       },
-      request.focus,
+      "BASELINE_MISMATCH",
     );
   }
 
+  /**
+   * A submission changes the document and its review, never the user's view:
+   * the review reaches the annotation panel and any editor that already shows
+   * the document, and no tab opens or takes focus.
+   *
+   * @param   {string}  staleBaselineCode  The code of a stale revision: the
+   *                                       path route names the baseline it
+   *                                       took, the document route the
+   *                                       revision the caller sent.
+   */
   private async handleSubmitProposal(
     res: http.ServerResponse,
     documentId: string,
     proposal: SubmitProposalRequest,
-    focus?: boolean,
+    staleBaselineCode: "REVISION_MISMATCH" | "BASELINE_MISMATCH",
   ): Promise<void> {
     const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
     const descriptionCollision = findClaimDescriptionCollision(
@@ -1715,12 +1708,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (current !== undefined) {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
-        this.sendError(
-          res,
-          412,
-          focus === undefined ? "REVISION_MISMATCH" : "BASELINE_MISMATCH",
-          result.message,
-        );
+        this.sendError(res, 412, staleBaselineCode, result.message);
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
@@ -1749,15 +1737,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
     }
     res.setHeader("ETag", `"sha256:${sha256Text(applied.document.toString())}"`);
-    if (focus === true) {
-      const view = this._documents.getFocusedView();
-      const opened = await this._documents.openFile(view?.windowId, view?.leafId, filePath, true);
-      if (!opened) {
-        throw new Error(
-          `Review ${result.reviewId} committed, but document ${documentId} could not be focused`,
-        );
-      }
-    }
     this.sendJson(res, 200, {
       packetId: result.packetId,
       packetIds: result.packetIds,
@@ -1767,7 +1746,6 @@ export default class AgentHTTPProvider extends ProviderContract {
       reviewGeneration: result.reviewGeneration,
       unresolvedChunks: result.unresolvedChunks,
       state: result.state,
-      ...(focus === undefined ? {} : { focused: focus }),
     });
   }
 

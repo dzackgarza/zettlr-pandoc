@@ -103,15 +103,6 @@ function documentIdOf(payload: unknown): string {
   return stringField(document, "documentId");
 }
 
-/** The id the workspace listing hands out for a path, open or closed. */
-async function workspaceDocumentId(api: AgentClient, filePath: string): Promise<string> {
-  const payload = await api.get("/v1/workspaces?include=files");
-  assert.ok(isRecord(payload) && Array.isArray(payload.files));
-  const entry = payload.files.find((file) => isRecord(file) && file.path === filePath);
-  assert.ok(isRecord(entry), `workspace listing carried no entry for ${filePath}`);
-  return stringField(entry, "documentId");
-}
-
 async function invokeSave(page: Page, filePath: string): Promise<unknown> {
   return page.evaluate(
     async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
@@ -449,9 +440,15 @@ describe("review-diff closure contract composite lifecycle", function () {
         }),
       documentPath,
     );
-    // Focus is now the only operation that deliberately takes a pane, and
-    // opening the file is what reattaches its sidecar-backed review.
-    await api.post(`/v1/documents/${await workspaceDocumentId(api, documentPath)}/focus`, {});
+    // The user opens the file again, which reattaches its sidecar-backed review.
+    await page.evaluate(
+      async (pathInPage) =>
+        await window.ipc.invoke("documents-provider", {
+          command: "open-file",
+          payload: { path: pathInPage, newTab: true },
+        }),
+      documentPath,
+    );
     await waitForReview(page);
     assert.equal(
       await (await cardWithText(page, "Rewrite the display-math environment"))
