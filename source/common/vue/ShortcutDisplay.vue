@@ -27,7 +27,7 @@
 import type { ExplodedShortcut } from "@common/util/shortcuts";
 
 // Proper key symbols based on platform
-const modKeySymbol = process.platform === "darwin" ? "⌘" : "⊞";
+const modKeySymbol = process.platform === "darwin" ? "⌘" : "Ctrl";
 const altKeySymbol = process.platform === "darwin" ? "⎇" : "Alt";
 const ctrlKeySymbol = process.platform === "darwin" ? "⌃" : "Ctrl";
 

@@ -423,7 +423,9 @@ describe("the Ctrl+P command launcher", function () {
       const headers = await preferencesPage
         .locator("[data-keybindings-table] [role=columnheader]")
         .allTextContents();
-      assert.deepEqual(headers, ["Command", "Keybinding", "When", "Source", ""]);
+      assert.deepEqual(headers, ["Command", "Keybinding", "When", "Source", "Actions"]);
+      await search.scrollIntoViewIfNeeded();
+      screenshots.set("keyboard-shortcuts.png", await preferencesPage.screenshot());
 
       await search.fill("annotate");
       const row = preferencesPage.locator('[data-command-id="annotate-selection"]');
@@ -438,7 +440,7 @@ describe("the Ctrl+P command launcher", function () {
       await capture.press("Control+Shift+1");
       await capture.press("Enter");
       assert.match(await row.innerText(), /User/);
-      assert.match(await row.innerText(), /Ctrl/);
+      assert.match(await row.innerText(), /Ctrl/i);
 
       await row.locator("[data-reset-keybinding]").click();
       assert.match(await row.innerText(), /Default/);
