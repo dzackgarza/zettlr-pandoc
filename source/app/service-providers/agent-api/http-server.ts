@@ -909,26 +909,21 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const { workspaceId, include } = c.request.query;
+        const { include, query } = c.request.query;
+        const workspaceId =
+          c.request.query.workspaceId === "" ? undefined : c.request.query.workspaceId;
         if (include === "summary") {
           return this.handleGetWorkspaces(res);
         }
+        if (workspaceId !== undefined) {
+          return this.handleListInWorkspace(res, include, workspaceId, query);
+        }
         // A files listing without a workspaceId is the orientation projection
         // across every workspace, the shape the retired flat route served.
-        if (include === "files" && (workspaceId === undefined || workspaceId === "")) {
+        if (include === "files") {
           return this.handleListWorkspaceFiles(res);
         }
-        if (workspaceId === undefined || workspaceId === "") {
-          this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
-          return;
-        }
-        if (include === "documents") {
-          return this.handleListWorkspaceDocuments(res, workspaceId, c.request.query.query);
-        }
-        if (include === "directories") {
-          return this.handleListWorkspaceDirectories(res, workspaceId);
-        }
-        return this.handleListWorkspaceFilesInWorkspace(res, workspaceId);
+        this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
       },
       createWorkspaceEntry: (
         c: OperationContext<"createWorkspaceEntry">,
@@ -1237,6 +1232,23 @@ export default class AgentHTTPProvider extends ProviderContract {
    * GET /v1/workspaces?workspaceId=…&include=files — the same listing
    * restricted to one workspace, 404 when the id names no configured one.
    */
+  /** One workspace's documents, directories or files, as `include` names. */
+  private async handleListInWorkspace(
+    res: http.ServerResponse,
+    include: "documents" | "directories" | "files",
+    workspaceId: string,
+    query: string | undefined,
+  ): Promise<void> {
+    switch (include) {
+      case "documents":
+        return this.handleListWorkspaceDocuments(res, workspaceId, query);
+      case "directories":
+        return this.handleListWorkspaceDirectories(res, workspaceId);
+      case "files":
+        return this.handleListWorkspaceFilesInWorkspace(res, workspaceId);
+    }
+  }
+
   private async handleListWorkspaceFilesInWorkspace(
     res: http.ServerResponse,
     workspaceId: string,

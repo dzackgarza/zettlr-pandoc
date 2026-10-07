@@ -15,6 +15,7 @@
  * END HEADER
  */
 
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { createHash } from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -107,6 +108,34 @@ async function realSkillsRoot(root: string): Promise<string> {
   return realRoot;
 }
 
+async function validateSkillPathEntry(
+  absolutePath: string,
+  normalizedPath: string,
+  isLast: boolean,
+): Promise<void> {
+  let stats;
+  try {
+    stats = await fs.lstat(absolutePath);
+  } catch (error) {
+    if (hasErrnoCode(error, "ENOENT")) {
+      throw new SkillFileNotFoundError(`Skill file not found: ${normalizedPath}`);
+    }
+    throw error;
+  }
+  if (stats.isSymbolicLink()) {
+    throw new SkillsPathInputError("Skill paths may not traverse symbolic links");
+  }
+  if (isLast) {
+    if (!stats.isFile()) {
+      throw new SkillsPathInputError("Skill path does not name a Markdown file");
+    }
+    return;
+  }
+  if (!stats.isDirectory()) {
+    throw new SkillFileNotFoundError(`Skill file not found: ${normalizedPath}`);
+  }
+}
+
 async function resolveMarkdownFile(
   root: string,
   relativePath: string,
@@ -120,27 +149,38 @@ async function resolveMarkdownFile(
   let current = realRoot;
   for (let index = 0; index < segments.length; index += 1) {
     current = path.join(current, segments[index]);
-    let stats;
-    try {
-      stats = await fs.lstat(current);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new SkillFileNotFoundError(`Skill file not found: ${normalized}`);
-      }
-      throw error;
-    }
-    if (stats.isSymbolicLink()) {
-      throw new SkillsPathInputError("Skill paths may not traverse symbolic links");
-    }
-    const isLast = index === segments.length - 1;
-    if (!isLast && !stats.isDirectory()) {
-      throw new SkillFileNotFoundError(`Skill file not found: ${normalized}`);
-    }
-    if (isLast && !stats.isFile()) {
-      throw new SkillsPathInputError("Skill path does not name a Markdown file");
-    }
+    await validateSkillPathEntry(current, normalized, index === segments.length - 1);
   }
   return { root: realRoot, path: current, relativePath: normalized };
+}
+
+async function appendSkillTreeEntry(
+  absolute: string,
+  relative: string,
+  entries: SkillTreeEntry[],
+): Promise<boolean> {
+  const stats = await fs.lstat(absolute);
+  if (stats.isSymbolicLink()) {
+    return false;
+  }
+  if (stats.isDirectory()) {
+    entries.push({
+      path: relative,
+      kind: "directory",
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+    });
+    return true;
+  }
+  if (stats.isFile() && isMarkdownPath(relative)) {
+    entries.push({
+      path: relative,
+      kind: "markdown",
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+    });
+  }
+  return false;
 }
 
 export async function listSkillTree(
@@ -161,27 +201,8 @@ export async function listSkillTree(
     for (const child of children) {
       const absolute = path.join(current.absolute, child.name);
       const relative = current.relative === "" ? child.name : `${current.relative}/${child.name}`;
-      const stats = await fs.lstat(absolute);
-      if (stats.isSymbolicLink()) {
-        continue;
-      }
-      if (stats.isDirectory()) {
-        entries.push({
-          path: relative,
-          kind: "directory",
-          size: stats.size,
-          modifiedAt: stats.mtime.toISOString(),
-        });
+      if (await appendSkillTreeEntry(absolute, relative, entries)) {
         queue.push({ absolute, relative });
-        continue;
-      }
-      if (stats.isFile() && isMarkdownPath(relative)) {
-        entries.push({
-          path: relative,
-          kind: "markdown",
-          size: stats.size,
-          modifiedAt: stats.mtime.toISOString(),
-        });
       }
     }
   }
