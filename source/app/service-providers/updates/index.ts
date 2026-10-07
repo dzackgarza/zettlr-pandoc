@@ -20,7 +20,7 @@ import { initializeMathJax } from "@common/util/mathtex-to-html";
 import { showNativeNotification } from "@common/util/show-notification";
 import type ConfigProvider from "@providers/config";
 import crypto from "crypto";
-import { app, dialog, ipcMain, net, shell } from "electron";
+import { app, ipcMain, net, shell } from "electron";
 import { createWriteStream, promises as fs, type WriteStream } from "fs";
 import got, { RequestError, type Response } from "got";
 import path from "path";
@@ -365,17 +365,19 @@ export default class UpdateProvider extends ProviderContract {
    *
    * @param   {string}   code          The error code
    * @param   {string}   message       The error message
-   * @param   {boolean}  showErrorBox  Whether to display an error box to the user
+   * @param   {boolean}  notify        Whether to show a desktop notification,
+   *                                   which opens the update window on click
    */
-  private _reportError(code: string, message: string, showErrorBox: boolean): void {
+  private _reportError(code: string, message: string, notify: boolean): void {
     this._logger.error(`[Update Provider] ${code}: ${message}`);
     this._updateState.lastErrorCode = code;
     this._updateState.lastErrorMessage = message;
     broadcastIpcMessage("update-provider", "state-changed", this._updateState);
-    if (showErrorBox) {
-      dialog.showErrorBox(
-        trans("Cannot check for update"),
+    if (notify) {
+      showNativeNotification(
         trans("There was an error while checking for updates. %s: %s", code, message),
+        trans("Cannot check for update"),
+        () => this._windows.showUpdateWindow(),
       );
     }
   }
@@ -434,23 +436,13 @@ export default class UpdateProvider extends ProviderContract {
         // Immediately retrieve the SHA checksum file so we have it available.
         await this._retrieveSHA256Sums();
 
-        // Then notify the user
+        // Then notify the user; a click opens the updater
         const { tagName } = this.getUpdateState();
-        const result = await dialog.showMessageBox({
-          type: "info",
-          title: trans("Update available"),
-          message: trans("An update to version %s is available!", tagName),
-          detail: trans(
-            "Please update at your earliest convenience. You can open the updater now, or update later.",
-          ),
-          buttons: [trans("Open updater"), trans("Not now")],
-          defaultId: 0,
-          cancelId: 1,
-        });
-
-        if (result.response === 0) {
-          this._windows.showUpdateWindow();
-        }
+        showNativeNotification(
+          trans("An update to version %s is available!", tagName),
+          trans("Update available"),
+          () => this._windows.showUpdateWindow(),
+        );
       } else {
         this._logger.verbose(
           `[Update Provider] No new update available. Current version is ${this._updateState.tagName}.`,

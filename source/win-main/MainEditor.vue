@@ -2,6 +2,7 @@
   <div
     ref="mainEditorWrapper"
     class="main-editor-wrapper"
+    :data-leaf-id="props.leafId"
     role="region"
     :aria-label="`Editing ${pathBasename(props.file.path)}`"
     :style="{ 'font-size': `${fontSize}px` }"
@@ -1540,6 +1541,29 @@ function refreshActiveEditorAuxiliaryState(): void {
   }
 }
 
+/**
+ * A tab can become active without the user asking for it: a file that is
+ * removed or renamed on disk activates its neighbour. The editor must not
+ * take the keyboard from a text entry that the user types into elsewhere,
+ * such as a sidebar filter or the editor of another pane.
+ */
+function isTypingOutsideLeaf(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) {
+    return false;
+  }
+  const isTextEntry =
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement ||
+    active instanceof HTMLSelectElement ||
+    active.isContentEditable;
+  if (!isTextEntry) {
+    return false;
+  }
+  const leaf = active.closest<HTMLElement>("[data-leaf-id]");
+  return leaf?.dataset.leafId !== props.leafId;
+}
+
 async function activateTab(): Promise<void> {
   const loadedNow = await ensureEditorLoaded();
   const editor = currentEditor;
@@ -1549,7 +1573,7 @@ async function activateTab(): Promise<void> {
 
   publishActiveEditorState(editor);
   applyPendingNavigation();
-  if (!editor.hasFocus()) {
+  if (!editor.hasFocus() && !isTypingOutsideLeaf()) {
     editor.focus();
   }
   if (!loadedNow) {

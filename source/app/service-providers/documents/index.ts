@@ -43,6 +43,8 @@ import {
   DP_EVENTS,
   type LeafNodeJSON,
   type OpenDocument,
+  REMOTE_CHANGE_KEPT_CHANNEL,
+  type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
   type SaveFileResult,
   type SaveRefusal,
@@ -382,6 +384,10 @@ export type DocumentManagerIPCContract = {
     request: { payload: { path: string } };
     response: undefined;
   };
+  "load-from-disk": {
+    request: { payload: { path: string } };
+    response: undefined;
+  };
   "get-open-workspace-files": {
     request: { payload: { path: string } };
     response: string[];
@@ -644,12 +650,11 @@ export default class DocumentManager
   private readonly _ignoreChanges: string[];
 
   /**
-   * This array allows us to prevent showing multiple "Reload changes?" dialogs
-   * for a single file open in the app.
-   *
-   * @var {string[]}
+   * The disk modification time of the last remote change announced for each
+   * kept document. A watcher emits several events for one change; the user
+   * hears of each disk version once.
    */
-  private readonly _remoteChangeDialogShownFor: string[];
+  private readonly _announcedRemoteModtime: Map<string, number>;
 
   /**
    * Paths whose most recent remote reload failure has already been surfaced.
@@ -718,7 +723,7 @@ export default class DocumentManager
     this._emitter = new EventEmitter();
     this._config = new PersistentDataContainer(containerPath, "yaml");
     this._ignoreChanges = [];
-    this._remoteChangeDialogShownFor = [];
+    this._announcedRemoteModtime = new Map();
     this._remoteChangeErrorShownFor = [];
     this._reviewApplication = new CollaborationApplicationService({
       authority: this,
@@ -1000,6 +1005,13 @@ export default class DocumentManager
         case "close-file-everywhere": {
           const { path } = payload;
           return this.closeFileEverywhere(path);
+        }
+        case "load-from-disk": {
+          if (!this.documents.some((doc) => doc.filePath === payload.path)) {
+            return; // The document was closed; the next open reads the disk.
+          }
+          await this.notifyRemoteChange(payload.path);
+          return;
         }
         case "get-open-workspace-files": {
           const { path } = payload;
@@ -1744,6 +1756,15 @@ current contents from the editor somewhere else, and restart the application.`,
           // refusal reaches here, and the document stayed dirty with nothing
           // recorded anywhere. The buffer is preserved either way — this
           // makes the reason findable instead of inventing a silent success.
+          // A failed disk write leaves the text only in memory, so the user
+          // learns of it now, through the same toast as a refused close.
+          if (result.refusal?.reason === "write-failed") {
+            const payload: SaveRefusedBroadcast = {
+              filePath: doc.filePath,
+              refusal: result.refusal,
+            };
+            broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+          }
           const reason =
             result.refusal === undefined
               ? "no reason reported"
@@ -2344,54 +2365,20 @@ current contents from the editor somewhere else, and restart the application.`,
     const isModified = doc.lastSavedVersion !== doc.currentVersion;
     const { alwaysReloadFiles } = this._app.config.get();
     if (isModified || !alwaysReloadFiles) {
-      // The file is modified in buffer, or the user does not want to simply
-      // reload changes, so we cannot just overwrite anything
-      // Prevent multiple instances of the dialog, just ask once. The logic
-      // always retrieves the most recent version either way
-      if (this._remoteChangeDialogShownFor.includes(filePath)) {
+      // The buffer has unsaved changes, or the user does not reload changes
+      // automatically. The editor keeps its contents, which now differ from
+      // the disk, and the renderer offers to load the disk version.
+      if ((this._announcedRemoteModtime.get(filePath) ?? -Infinity) >= modtime) {
         return;
       }
-
-      this._remoteChangeDialogShownFor.push(filePath);
-      const filename = doc.descriptor.name;
-
-      // Ask the user if we should replace the file
-      const response = await dialog.showMessageBox({
-        title: trans("File changed on disk"),
-        message: trans("%s changed on disk", filename),
-        detail: isModified
-          ? trans(
-              "%s has changed on disk, but the editor contains unsaved changes. Do you want to keep the current editor contents or load the file from disk?",
-              filename,
-            )
-          : trans("Do you want to keep the current editor contents or load the file from disk?"),
-        type: "question",
-        buttons: [trans("Keep editor contents"), trans("Load changes from disk")],
-        defaultId: 0,
-        checkboxLabel: trans(
-          "Always load changes from disk if there are no unsaved changes in the editor",
-        ),
-        checkboxChecked: alwaysReloadFiles,
+      this._announcedRemoteModtime.set(filePath, modtime);
+      doc.lastSavedVersion--;
+      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+        filePath,
+        status: "modification",
       });
-
-      this._remoteChangeDialogShownFor.splice(
-        this._remoteChangeDialogShownFor.indexOf(filePath),
-        1,
-      );
-
-      this._app.config.set("alwaysReloadFiles", response.checkboxChecked);
-
-      if (response.response === 0) {
-        // User does not want to load the disk contents. To ensure that the
-        // proper status is indicated, set the "lastSavedVersion" to one minus.
-        doc.lastSavedVersion--;
-        this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
-          filePath,
-          status: "modification",
-        });
-      } else {
-        await this.notifyRemoteChange(filePath);
-      }
+      const payload: RemoteChangeKeptBroadcast = { filePath, unsavedChanges: isModified };
+      broadcastIpcMessage(REMOTE_CHANGE_KEPT_CHANNEL, payload);
     } else {
       // The user has activated the setting to alwaysReloadFiles.
       await this.notifyRemoteChange(filePath);
@@ -2620,6 +2607,7 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const idx = this.documents.findIndex((file) => file.filePath === filePath);
     this.documents.splice(idx, 1);
+    this._announcedRemoteModtime.delete(filePath);
     // The reloading renderers re-trigger getDocument, which reports the
     // fresh buffer; until then the saved FSAL snapshot is the truth.
     this._app.references.dropAuthorityBuffer(filePath);
@@ -3383,14 +3371,15 @@ current contents from the editor somewhere else, and restart the application.`,
         )) as CodeFileDescriptor;
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        dialog.showErrorBox(
-          trans("Could not save file"),
-          trans("Could not save file %s: %s", doc.descriptor.name, err.message),
-        );
-      }
-
-      throw err;
+      const reason = err instanceof Error ? err.message : String(err);
+      this._app.log.error(`[DocumentManager] Could not write ${filePath}: ${reason}`, err);
+      return {
+        ok: false,
+        refusal: {
+          reason: "write-failed",
+          message: trans("Could not save file %s: %s", doc.descriptor.name, reason),
+        },
+      };
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);

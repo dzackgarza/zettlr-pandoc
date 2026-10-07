@@ -214,6 +214,8 @@ import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
   DocumentType,
   type LeafNodeJSON,
+  REMOTE_CHANGE_KEPT_CHANNEL,
+  type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
   type SaveRefusedBroadcast,
 } from "@dts/common/documents";
@@ -1051,6 +1053,36 @@ onMounted(() => {
         ? trans('Could not save "%s".', name)
         : `${name}: ${payload.refusal.message}`;
     showToast(message, "error", 12000);
+  });
+
+  // A loaded file changed on disk and the editor kept its contents. The user
+  // decides, when they choose, whether the disk version replaces them.
+  ipcRenderer.on(REMOTE_CHANGE_KEPT_CHANNEL, (event, payload: RemoteChangeKeptBroadcast) => {
+    const name = pathBasename(payload.filePath);
+    const message = payload.unsavedChanges
+      ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
+      : trans("%s changed on disk. The editor keeps its contents.", name);
+    showToast(message, "info", 12000, {
+      label: trans("Load from disk"),
+      onAction: () => {
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "load-from-disk",
+            payload: { path: payload.filePath },
+          })
+          .catch((err: unknown) => {
+            showToast(
+              trans(
+                "Could not load %s from disk: %s",
+                name,
+                err instanceof Error ? err.message : String(err),
+              ),
+              "error",
+              12000,
+            );
+          });
+      },
+    });
   });
 
   // The window-level shortcuts this component owns, by their typed name. The

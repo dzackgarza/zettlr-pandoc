@@ -14,7 +14,6 @@
  */
 
 import { trans } from "@common/i18n-main";
-import { showNativeNotification } from "@common/util/show-notification";
 import type { EnvironmentInfo } from "@dts/common/environment";
 import { app, ipcMain } from "electron";
 // Developer tools
@@ -98,7 +97,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     log.warning(`[Flowmark] Could not update from pandoc-flowmark main: ${outcome.message}`);
     const reason = outcome.message.trim().split("\n").pop() ?? outcome.message;
     appServiceContainer.lrt.settleTask(flowmarkTask, new Error(reason));
-    showNativeNotification(`Could not update Flowmark from GitHub: ${reason}`, "Flowmark");
   });
 
   // Before we begin, let's load the Vue.js DevTools for debugging
