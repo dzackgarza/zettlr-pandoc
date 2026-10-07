@@ -37,7 +37,7 @@ export interface CustomEditorShortcut {
  * default shortcut assigned.) This is used to collect all keybindings at a
  * central place and allow configuration of a subset of them.
  */
-export const defaultKeybindings: Record<EditorShortcutName, DefaultShortcut> = Object.fromEntries(
+export const defaultKeybindings: Record<string, DefaultShortcut> = Object.fromEntries(
   commandRegistry
     .all()
     .filter((command) => command.scope === "editor")

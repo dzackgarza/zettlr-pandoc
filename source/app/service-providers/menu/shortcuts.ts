@@ -36,7 +36,7 @@ export type MenuShortcutName = WindowCommandId;
  * Default keybindings for all commands. May be empty (in which case there is no
  * default shortcut assigned.)
  */
-export const defaultKeybindings: Record<MenuShortcutName, DefaultShortcut> = Object.fromEntries(
+export const defaultKeybindings: Record<string, DefaultShortcut> = Object.fromEntries(
   commandRegistry
     .all()
     .filter((command) => command.scope === "window")

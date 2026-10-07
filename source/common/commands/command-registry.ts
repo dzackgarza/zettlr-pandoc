@@ -47,7 +47,7 @@ export interface CommandRegistration<Id extends string = string> {
 /** Keeps every registration literal so its id remains a useful union type. */
 export function registerCommand<const Registration extends CommandRegistration>(
   registration: Registration,
-): Registration {
+): Registration & CommandRegistration<Registration["id"]> {
   return registration;
 }
 
