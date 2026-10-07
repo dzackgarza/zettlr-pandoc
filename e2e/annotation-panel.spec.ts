@@ -52,7 +52,7 @@ const EDITOR = ".main-editor-wrapper .cm-editor";
 
 /** Long enough that a panel row which cut it short would show it. */
 const LATTICE_INSTRUCTION =
-  "Say which lattices these are, name the bilinear form each one carries, and state whether the notes mean the even unimodular ones throughout.";
+  "Say which lattices $L$ these are, name the bilinear form each one carries, and state whether the notes mean the even unimodular ones throughout.";
 const REPLY = "Only the even unimodular ones, please.";
 
 /** The one open thread for an annotation, inside the editor. */
@@ -300,7 +300,7 @@ describe("the annotation review panel pane", function () {
 
   it("opens and closes the annotation's thread in the editor from its gutter chip", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
-    // index.md reads `# Lattice Notes`: the annotation targets "Lattice".
+    // index.md reads `# Lattice $L$ Notes`: the annotation targets "Lattice $L$".
     // Opening it from the tree makes it the active, loaded document.
     await activePage
       .locator(`${SIDEBAR} [data-section="files"] .tree-item.file[data-path$="/index.md"]`)
@@ -310,7 +310,7 @@ describe("the annotation review panel pane", function () {
       "index.md to be the active document",
     );
 
-    lattice = await createAnnotation(activePage, 2, 9, LATTICE_INSTRUCTION);
+    lattice = await createAnnotation(activePage, 2, 13, LATTICE_INSTRUCTION);
 
     const chip = activePage.locator(".cm-textAnnotation-gutterMarker");
     await chip.waitFor({ state: "visible", timeout: 10_000 });
@@ -319,8 +319,13 @@ describe("the annotation review panel pane", function () {
     await thread.waitFor({ state: "visible", timeout: 10_000 });
     assert.match(
       await thread.innerText(),
-      /Say which lattices these are/,
+      /Say which lattices/,
       "the chip's annotation is the one opened",
+    );
+    assert.equal(
+      await thread.locator(".annotation-message-text mjx-container").count(),
+      1,
+      "the annotation message renders its inline mathematics",
     );
     assert.equal(
       await activePage.locator(`${EDITOR} [data-annotation-detail]`).count(),
@@ -357,6 +362,16 @@ describe("the annotation review panel pane", function () {
     // off, however narrow the panel is.
     const summary = row.locator(".annotation-workspace-summary");
     assert.equal(await summary.innerText(), LATTICE_INSTRUCTION);
+    assert.equal(
+      await row.locator(".annotation-workspace-summary mjx-container").count(),
+      1,
+      "the annotation summary renders its inline mathematics",
+    );
+    assert.equal(
+      await row.locator(".annotation-workspace-context mjx-container").count(),
+      1,
+      "the annotation target renders its inline mathematics",
+    );
     assert.ok(
       await summary.evaluate(
         (element) =>
