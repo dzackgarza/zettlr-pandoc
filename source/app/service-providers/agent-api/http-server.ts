@@ -869,7 +869,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         if (c.request.query.resource === "skills") {
           if (c.request.query.action === "read") {
-            if (!c.request.query.path) {
+            if (c.request.query.path === undefined || c.request.query.path === "") {
               this.sendError(
                 res,
                 400,

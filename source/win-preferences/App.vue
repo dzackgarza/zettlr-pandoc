@@ -36,7 +36,7 @@
         </div>
       </template>
       <template #view2>
-        <KeyboardShortcutsEditor v-if="showKeyboardShortcutsEditor"></KeyboardShortcutsEditor>
+        <KeyboardShortcutsEditor v-if="showKeyboardShortcutsEditor" />
         <FormBuilder
           v-else-if="schema.fieldsets.length > 0"
           ref="form"

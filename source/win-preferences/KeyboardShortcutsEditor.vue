@@ -1,8 +1,13 @@
 <template>
-  <section class="keybindings-editor" aria-labelledby="keybindings-title">
+  <section
+    class="keybindings-editor"
+    aria-labelledby="keybindings-title"
+  >
     <header class="keybindings-toolbar">
       <div>
-        <h1 id="keybindings-title">{{ title }}</h1>
+        <h1 id="keybindings-title">
+          {{ title }}
+        </h1>
         <p>{{ summary }}</p>
       </div>
       <label class="keybindings-search">
@@ -11,89 +16,114 @@
           v-model="query"
           data-keybindings-search
           type="search"
-          v-bind:placeholder="searchPlaceholder"
-        />
+          :placeholder="searchPlaceholder"
+        >
       </label>
     </header>
 
-    <div data-keybindings-table class="keybindings-table" role="table">
-      <div class="keybindings-row keybindings-header" role="row">
+    <div
+      data-keybindings-table
+      class="keybindings-table"
+      role="table"
+    >
+      <div
+        class="keybindings-row keybindings-header"
+        role="row"
+      >
         <span role="columnheader">{{ commandLabel }}</span>
         <span role="columnheader">{{ keybindingLabel }}</span>
         <span role="columnheader">{{ whenLabel }}</span>
         <span role="columnheader">{{ sourceLabel }}</span>
-        <span role="columnheader"
-          ><span class="sr-only">{{ actionsLabel }}</span></span
-        >
+        <span role="columnheader"><span class="sr-only">{{ actionsLabel }}</span></span>
       </div>
 
       <div
         v-for="command in filteredCommands"
-        v-bind:key="command.id"
+        :key="command.id"
         data-keybinding-row
-        v-bind:data-command-id="command.id"
-        v-bind:name="configPath(command)"
-        v-bind:class="{ conflict: conflicts(command.id).length > 0 }"
+        :data-command-id="command.id"
+        :name="configPath(command)"
+        :class="{ conflict: conflicts(command.id).length > 0 }"
         class="keybindings-row"
         role="row"
       >
-        <span class="command-cell" role="cell">
+        <span
+          class="command-cell"
+          role="cell"
+        >
           <strong>{{ trans(command.label) }}</strong>
           <code>{{ command.id }}</code>
         </span>
-        <span class="keybinding-cell" role="cell">
+        <span
+          class="keybinding-cell"
+          role="cell"
+        >
           <input
             v-if="editingCommand === command.id"
             ref="captureInputs"
             data-keybinding-capture
             class="keybinding-capture"
             readonly
-            v-bind:value="captureText"
-            v-bind:aria-label="captureLabel"
-            v-on:keydown.prevent.stop="captureKeybinding"
-          />
+            :value="captureText"
+            :aria-label="captureLabel"
+            @keydown.prevent.stop="captureKeybinding"
+          >
           <ShortcutDisplay
             v-else-if="resolvedShortcut(command.id) !== undefined"
-            v-bind:shortcut="
+            :shortcut="
               explodeShortcut(resolvedShortcut(command.id) ?? '')
             "
             display="full"
-          ></ShortcutDisplay>
-          <span v-else class="unassigned">{{ unassignedLabel }}</span>
+          />
+          <span
+            v-else
+            class="unassigned"
+          >{{ unassignedLabel }}</span>
           <span
             v-if="conflicts(command.id).length > 0"
             class="conflict-indicator"
-            v-bind:title="conflictMessage(command.id)"
+            :title="conflictMessage(command.id)"
             aria-label="Shortcut conflict"
-            >!</span
-          >
+          >!</span>
         </span>
-        <code class="when-cell" role="cell">{{ command.when }}</code>
-        <span class="source-cell" role="cell">{{ sourceFor(command) }}</span>
-        <span class="actions-cell" role="cell">
+        <code
+          class="when-cell"
+          role="cell"
+        >{{ command.when }}</code>
+        <span
+          class="source-cell"
+          role="cell"
+        >{{ sourceFor(command) }}</span>
+        <span
+          class="actions-cell"
+          role="cell"
+        >
           <button
             data-edit-keybinding
             type="button"
-            v-bind:aria-label="`${editLabel}: ${trans(command.label)}`"
-            v-bind:title="editLabel"
-            v-on:click="startEditing(command.id)"
+            :aria-label="`${editLabel}: ${trans(command.label)}`"
+            :title="editLabel"
+            @click="startEditing(command.id)"
           >
             ✎
           </button>
           <button
             data-reset-keybinding
             type="button"
-            v-bind:disabled="!isUserBinding(command)"
-            v-bind:aria-label="`${resetLabel}: ${trans(command.label)}`"
-            v-bind:title="resetLabel"
-            v-on:click="resetBinding(command)"
+            :disabled="!isUserBinding(command)"
+            :aria-label="`${resetLabel}: ${trans(command.label)}`"
+            :title="resetLabel"
+            @click="resetBinding(command)"
           >
             ↺
           </button>
         </span>
       </div>
 
-      <p v-if="filteredCommands.length === 0" class="empty-results">
+      <p
+        v-if="filteredCommands.length === 0"
+        class="empty-results"
+      >
         {{ noResultsLabel }}
       </p>
     </div>

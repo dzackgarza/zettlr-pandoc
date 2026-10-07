@@ -1,12 +1,15 @@
 <template>
-  <DialogRoot v-bind:open="state.open" v-on:update:open="onOpenChange">
+  <DialogRoot
+    :open="state.open"
+    @update:open="onOpenChange"
+  >
     <DialogPortal>
-      <DialogOverlay class="command-launcher-backdrop"></DialogOverlay>
+      <DialogOverlay class="command-launcher-backdrop" />
       <DialogContent
         class="command-launcher"
         data-command-launcher
-        v-bind:aria-label="dialogLabel"
-        v-bind:aria-describedby="undefined"
+        :aria-label="dialogLabel"
+        :aria-describedby="undefined"
       >
         <DialogTitle class="command-launcher-title">
           {{ dialogLabel }}
@@ -15,40 +18,40 @@
           <ReferenceSearchView
             v-if="
               state.view.kind === 'references' ||
-              state.view.kind === 'browse-content'
+                state.view.kind === 'browse-content'
             "
             :definitions="referenceDefinitions"
-            v-bind:occurrences="referenceOccurrences"
+            :occurrences="referenceOccurrences"
             :initial-request="
               state.view.kind === 'references' ? state.view.request : null
             "
-            v-bind:project-roots="referenceProjectRoots"
-            v-bind:active-document-path="referenceActiveDocumentPath"
+            :project-roots="referenceProjectRoots"
+            :active-document-path="referenceActiveDocumentPath"
             :browse="state.view.kind === 'browse-content'"
-            v-on:jump="onReferenceJump"
-            v-on:close="close"
-            v-on:back="back"
-            v-on:open-help="onOpenHelp"
-          ></ReferenceSearchView>
+            @jump="onReferenceJump"
+            @close="close"
+            @back="back"
+            @open-help="onOpenHelp"
+          />
           <JustRecipeArgumentsView
             v-else-if="state.view.kind === 'just-arguments'"
-            v-bind:recipe="state.view.recipe"
-            v-bind:query="state.query"
-            v-on:update:query="setLauncherQuery"
-            v-on:run="runJustRecipe(state.view.recipe, $event)"
-            v-on:back="back"
-            v-on:close="close"
-          ></JustRecipeArgumentsView>
+            :recipe="state.view.recipe"
+            :query="state.query"
+            @update:query="setLauncherQuery"
+            @run="runJustRecipe(state.view.recipe, $event)"
+            @back="back"
+            @close="close"
+          />
           <MenuCommandsView
             v-else
-            v-bind:rows="rows"
-            v-bind:query="state.query"
-            v-bind:breadcrumb="breadcrumb"
-            v-on:update:query="setLauncherQuery"
-            v-on:run="run"
-            v-on:back="back"
-            v-on:close="close"
-          ></MenuCommandsView>
+            :rows="rows"
+            :query="state.query"
+            :breadcrumb="breadcrumb"
+            @update:query="setLauncherQuery"
+            @run="run"
+            @back="back"
+            @close="close"
+          />
         </template>
       </DialogContent>
     </DialogPortal>
@@ -86,7 +89,6 @@ import {
   getConfiguredShortcut,
 } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
-import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";

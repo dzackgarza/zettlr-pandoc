@@ -91,16 +91,16 @@
             <div
               v-annotation-markdown="card.instructionText"
               class="annotation-workspace-summary"
-            ></div>
+            />
             <div
               v-if="card.quotedText.length > 0"
               v-annotation-markdown="card.quotedText"
               class="annotation-workspace-context"
-            ></div>
+            />
           </span>
           <span
             class="annotation-lifecycle-pill"
-            v-bind:class="card.annotation.agentStatus.state"
+            :class="card.annotation.agentStatus.state"
           >{{ card.annotation.agentStatus.state === 'acted' ? trans('Acted') : trans('Open') }}</span>
         </button>
 

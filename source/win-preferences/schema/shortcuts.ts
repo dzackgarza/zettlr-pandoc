@@ -41,31 +41,24 @@ function groupTitle(group: CommandGroup): string {
 
 export function getShortcutFields(config: Pick<ConfigOptions, "shortcuts">): PreferencesFieldset[] {
   const shortcuts: ShortcutConfig = config.shortcuts;
-  const fieldsByGroup = new Map<CommandGroup, PreferencesFieldset["fields"]>();
-
-  for (const command of commandRegistry.all()) {
-    let fields = fieldsByGroup.get(command.group);
-    if (fields === undefined) {
-      fields = [];
-    }
-    fields.push({
-      type: "shortcut",
-      label: trans(command.label),
-      model: `shortcuts.${command.scope === "editor" ? "editor" : "ui"}.${command.id}`,
-      defaultShortcut: getConfiguredShortcut(command.id, { editor: {}, ui: {} }),
-      conflicts: getCommandConflicts(command.id, shortcuts).map((id) => {
-        const conflict = commandRegistry.get(id);
-        return conflict === undefined ? id : trans(conflict.label);
-      }),
-    });
-    fieldsByGroup.set(command.group, fields);
-  }
-
-  return [...fieldsByGroup.entries()].map(([group, fields]) => ({
+  const commands = commandRegistry.all();
+  const groups = [...new Set(commands.map((command) => command.group))];
+  return groups.map((group) => ({
     title: groupTitle(group),
     infoString: trans("Customize keyboard shortcuts for %s commands.", group.toLowerCase()),
     group: PreferencesGroups.Shortcuts,
     help: undefined,
-    fields,
+    fields: commands
+      .filter((command) => command.group === group)
+      .map((command) => ({
+        type: "shortcut" as const,
+        label: trans(command.label),
+        model: `shortcuts.${command.scope === "editor" ? "editor" : "ui"}.${command.id}`,
+        defaultShortcut: getConfiguredShortcut(command.id, { editor: {}, ui: {} }),
+        conflicts: getCommandConflicts(command.id, shortcuts).map((id) => {
+          const conflict = commandRegistry.get(id);
+          return conflict === undefined ? id : trans(conflict.label);
+        }),
+      })),
   }));
 }

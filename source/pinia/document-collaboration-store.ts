@@ -213,8 +213,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       session = detached.find((candidate) => candidate.documentPath === documentPath);
     }
     if (session === undefined) {
-      delete sessionsByDocumentPath[documentPath];
-      delete cardsByDocumentPath[documentPath];
+      Reflect.deleteProperty(sessionsByDocumentPath, documentPath);
+      Reflect.deleteProperty(cardsByDocumentPath, documentPath);
       return;
     }
     sessionsByDocumentPath[documentPath] = session;

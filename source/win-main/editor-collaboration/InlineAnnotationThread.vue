@@ -9,7 +9,7 @@
       <span class="annotation-ordinal">{{ card.ordinal }}</span>
       <span
         class="annotation-lifecycle-pill"
-        v-bind:class="lifecycleClass"
+        :class="lifecycleClass"
       >{{ lifecycleLabel }}</span>
       <span class="annotation-inline-thread-spacer"></span>
       <button
@@ -32,12 +32,12 @@
       v-if="actionRow.canReattach"
       v-annotation-markdown="card.quotedText"
       class="annotation-selected-quote"
-    ></blockquote>
+    />
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
       v-bind:now="now"
-      v-bind:acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
+      :acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
     ></AnnotationThread>
 
     <ProposalActionCard

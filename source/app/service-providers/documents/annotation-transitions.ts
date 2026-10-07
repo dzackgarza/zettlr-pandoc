@@ -279,7 +279,7 @@ export function prepareAnnotationMessage(input: {
     );
     if (replayed !== undefined) {
       if (
-        !input.markActed ||
+        input.markActed !== true ||
         (located.agentStatus.state === "acted" &&
           located.agentStatus.messageId === replayed.messageId)
       ) {
@@ -327,7 +327,7 @@ export function prepareAnnotationMessage(input: {
   if (input.text.trim() === "") {
     return invalid("A message needs text.");
   }
-  if (input.actor === "owner" && input.markActed) {
+  if (input.actor === "owner" && input.markActed === true) {
     return invalid("Only an agent message can mark an annotation acted.");
   }
   if (located.state === "resolved") {
@@ -355,7 +355,7 @@ export function prepareAnnotationMessage(input: {
   target.messages = [...target.messages, message] as TextAnnotation["messages"];
   if (input.actor === "owner") {
     target.agentStatus = { state: "pending" };
-  } else if (input.markActed) {
+  } else if (input.markActed === true) {
     target.agentStatus = { state: "acted", messageId: message.messageId, actedAt: createdAt };
   }
   target.updatedAt = createdAt;
@@ -374,7 +374,7 @@ export function prepareAnnotationMessage(input: {
       },
     },
   ];
-  if (input.actor === "agent" && input.markActed) {
+  if (input.actor === "agent" && input.markActed === true) {
     events.push({
       event: "annotation.acted",
       payload: {

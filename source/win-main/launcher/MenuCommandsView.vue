@@ -36,7 +36,7 @@
           v-bind:value="rowKey(row)"
           v-bind:label="row.label"
           v-bind:breadcrumb="rowBreadcrumb(row)"
-          v-bind:accelerator="
+          :accelerator="
             row.kind === 'menu-leaf' || row.kind === 'registered-command'
               ? row.accelerator
               : undefined

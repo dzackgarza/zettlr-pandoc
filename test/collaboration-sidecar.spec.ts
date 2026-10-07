@@ -502,7 +502,8 @@ describe("CollaborationSidecarStore", function () {
   });
 
   it("lifts an installed version-5 annotation without agentStatus to pending and writes it back", async function () {
-    const { agentStatus: _agentStatus, ...legacyAnnotation } = annotation("annotation-1");
+    const legacyAnnotation = structuredClone(annotation("annotation-1"));
+    Reflect.deleteProperty(legacyAnnotation, "agentStatus");
     persistRaw({
       ...sidecar(documentPath),
       review: null,

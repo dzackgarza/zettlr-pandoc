@@ -28,7 +28,7 @@
       <div
         v-annotation-markdown="message.text"
         class="annotation-message-text"
-      ></div>
+      />
     </div>
   </div>
 </template>
