@@ -16,6 +16,8 @@ interface StandaloneReport {
   figureSvg: string;
   visualStatus: string;
   sourcePaneVisibleInVisualMode: boolean;
+  tabletTwoPane: boolean;
+  propertiesPreservePanes: boolean;
   dirtyStatus: string;
   savedFile: string;
   externalEdit: string;
@@ -115,6 +117,11 @@ describe("standalone TikZ workbench", function () {
   it("loads the file into the pinned visual editor beside the source pane", function () {
     assert.equal(report.visualStatus, "Synced");
     assert.equal(report.sourcePaneVisibleInVisualMode, true);
+  });
+
+  it("keeps source beside the diagram when the tablet inspector opens", function () {
+    assert.equal(report.tabletTwoPane, true);
+    assert.equal(report.propertiesPreservePanes, true);
   });
 
   it("saves source-pane edits to the file", function () {

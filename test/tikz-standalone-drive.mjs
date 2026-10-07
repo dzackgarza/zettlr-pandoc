@@ -50,6 +50,28 @@ try {
   const visualStatus = await page.locator(".tikz-live-preview-status").textContent();
   await scene.capture("01-visual-editor");
   const sourcePaneVisibleInVisualMode = await page.locator(".tikz-source-editor").isVisible();
+  await page.setViewportSize({ width: 768, height: 1024 });
+  const sourceBounds = await page.locator(".tikz-standalone-source").boundingBox();
+  const viewBounds = await page.locator(".tikz-standalone-workbench").boundingBox();
+  const tabletTwoPane =
+    sourceBounds !== null &&
+    viewBounds !== null &&
+    sourceBounds.width >= 220 &&
+    viewBounds.width >= 350 &&
+    Math.abs(sourceBounds.x + sourceBounds.width - viewBounds.x) <= 1;
+  await scene.capture("02-tablet-two-pane");
+  await page.getByRole("button", { name: "Properties" }).click();
+  await editorFrame.getByRole("tab", { name: "Properties" }).waitFor();
+  const sourceWithProperties = await page.locator(".tikz-standalone-source").boundingBox();
+  const viewWithProperties = await page.locator(".tikz-standalone-workbench").boundingBox();
+  const propertiesPreservePanes =
+    sourceWithProperties !== null &&
+    viewWithProperties !== null &&
+    sourceWithProperties.width === sourceBounds?.width &&
+    viewWithProperties.width === viewBounds?.width;
+  await scene.capture("03-tablet-properties");
+  await editorFrame.getByRole("button", { name: "Close properties" }).click();
+  await page.setViewportSize({ width: 1400, height: 900 });
   await page.getByRole("button", { name: "TeX render" }).click();
   const figure = page.locator(".tikz-live-preview-figure");
   await figure.waitFor({ timeout: 60_000 });
@@ -93,6 +115,8 @@ try {
       figureSvg,
       visualStatus,
       sourcePaneVisibleInVisualMode,
+      tabletTwoPane,
+      propertiesPreservePanes,
       dirtyStatus,
       savedFile,
       externalEdit,
