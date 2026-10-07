@@ -16,6 +16,7 @@
  */
 
 import { hasErrnoCode } from "@common/util/is-errno-exception";
+import { isUtf8 } from "buffer";
 import { createHash } from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -215,14 +216,12 @@ export async function readSkillMarkdown(
 ): Promise<SkillMarkdownFile> {
   const resolved = await resolveMarkdownFile(root, relativePath);
   const [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
-  let content: string;
-  try {
-    content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-  } catch {
+  if (!isUtf8(buffer)) {
     throw new SkillsPathInputError(
       `Skill file is not valid UTF-8 Markdown: ${resolved.relativePath}`,
     );
   }
+  const content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
   return {
     root: resolved.root,
     path: resolved.relativePath,

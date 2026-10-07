@@ -2139,6 +2139,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(symlink.status, 400, symlink.body);
     assert.equal(parseAs(symlink.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
 
+    writeFileSync(path.join(skillsRoot, "proofs", "latin1.md"), Buffer.from([0x23, 0x20, 0xe9]));
+    const invalidUtf8 = await httpRequest(
+      "GET",
+      "/help?resource=skills&action=read&path=proofs%2Flatin1.md",
+    );
+    assert.equal(invalidUtf8.status, 400, invalidUtf8.body);
+    assert.equal(parseAs(invalidUtf8.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+
     const missing = await httpRequest("GET", "/help?resource=skills&action=read&path=missing.md");
     assert.equal(missing.status, 404, missing.body);
     assert.equal(parseAs(missing.body, "AgentErrorResponse").error.code, "SKILL_NOT_FOUND");
