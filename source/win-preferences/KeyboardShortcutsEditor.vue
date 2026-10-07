@@ -22,7 +22,9 @@
         <span role="columnheader">{{ keybindingLabel }}</span>
         <span role="columnheader">{{ whenLabel }}</span>
         <span role="columnheader">{{ sourceLabel }}</span>
-        <span role="columnheader"><span class="sr-only">{{ actionsLabel }}</span></span>
+        <span role="columnheader"
+          ><span class="sr-only">{{ actionsLabel }}</span></span
+        >
       </div>
 
       <div
@@ -52,7 +54,9 @@
           />
           <ShortcutDisplay
             v-else-if="resolvedShortcut(command.id) !== undefined"
-            v-bind:shortcut="explodeShortcut(resolvedShortcut(command.id) ?? '')"
+            v-bind:shortcut="
+              explodeShortcut(resolvedShortcut(command.id) ?? '')
+            "
             display="full"
           ></ShortcutDisplay>
           <span v-else class="unassigned">{{ unassignedLabel }}</span>
@@ -61,7 +65,8 @@
             class="conflict-indicator"
             v-bind:title="conflictMessage(command.id)"
             aria-label="Shortcut conflict"
-          >!</span>
+            >!</span
+          >
         </span>
         <code class="when-cell" role="cell">{{ command.when }}</code>
         <span class="source-cell" role="cell">{{ sourceFor(command) }}</span>
@@ -146,16 +151,23 @@ const filteredCommands = computed(() => {
   }
   return commands.filter((command) => {
     const shortcut = resolvedShortcut(command.id) ?? "";
-    return [command.label, command.id, command.group, command.when, shortcut].some((value) =>
-      value.toLowerCase().includes(search),
-    );
+    return [
+      command.label,
+      command.id,
+      command.group,
+      command.when,
+      shortcut,
+    ].some((value) => value.toLowerCase().includes(search));
   });
 });
 
 const captureText = computed(() => capturedShortcut.value || captureLabel);
 
 function configuredValue(command: CommandRegistration): string {
-  const target = command.scope === "editor" ? configStore.config.shortcuts.editor : configStore.config.shortcuts.ui;
+  const target =
+    command.scope === "editor"
+      ? configStore.config.shortcuts.editor
+      : configStore.config.shortcuts.ui;
   return target[command.id] ?? "";
 }
 
@@ -203,17 +215,26 @@ function captureKeybinding(event: KeyboardEvent): void {
     capturedShortcut.value = "";
     return;
   }
-  if (event.key === "Enter") {
-    const command = commands.find((candidate) => candidate.id === editingCommand.value);
+  const hasModifier =
+    event.altKey || event.shiftKey || event.metaKey || event.ctrlKey;
+  if (event.key === "Enter" && !hasModifier && capturedShortcut.value !== "") {
+    const command = commands.find(
+      (candidate) => candidate.id === editingCommand.value,
+    );
     if (command !== undefined && capturedShortcut.value !== "") {
-      configStore.setConfigFromForm(configPath(command), capturedShortcut.value);
+      configStore.setConfigFromForm(
+        configPath(command),
+        capturedShortcut.value,
+      );
     }
     editingCommand.value = undefined;
     capturedShortcut.value = "";
     return;
   }
 
-  const isNonTerminalKey = ["Alt", "Shift", "Meta", "Control", "Dead"].includes(event.key);
+  const isNonTerminalKey = ["Alt", "Shift", "Meta", "Control", "Dead"].includes(
+    event.key,
+  );
   if (isNonTerminalKey || event.key === "Unidentified") {
     return;
   }
@@ -285,7 +306,10 @@ function captureKeybinding(event: KeyboardEvent): void {
 .keybindings-row {
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(145px, 2fr) minmax(100px, 1.2fr) minmax(90px, 1fr) 72px 68px;
+  grid-template-columns: minmax(145px, 2fr) minmax(100px, 1.2fr) minmax(
+      90px,
+      1fr
+    ) 72px 68px;
   min-height: 46px;
   border-bottom: 1px solid var(--grey-1);
 
@@ -436,6 +460,5 @@ function captureKeybinding(event: KeyboardEvent): void {
   .keybindings-search {
     flex-basis: auto;
   }
-
 }
 </style>
