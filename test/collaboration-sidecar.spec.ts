@@ -514,7 +514,9 @@ describe("CollaborationSidecarStore", function () {
     await assert.rejects(store.read(documentPath));
     await assert.rejects(store.list());
     assert.deepEqual(
-      JSON.parse(readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8")),
+      JSON.parse(
+        readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
+      ),
       invalid,
     );
   });
