@@ -14,6 +14,7 @@
  */
 
 import { Text } from "@codemirror/state";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -114,7 +115,6 @@ export interface AgentDocumentQueryHost {
    * entry or lists directories answers PERSISTENCE_FAILED without it.
    */
   fsal?: {
-    pathExists: (absPath: string) => Promise<boolean>;
     isDir: (absPath: string) => Promise<boolean>;
     readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
     createDir: (dirPath: string) => Promise<void>;
@@ -871,14 +871,6 @@ export default class AgentDocumentQueries {
       };
     }
 
-    if (await fsal.pathExists(targetPath)) {
-      return {
-        ok: false,
-        code: "WORKSPACE_ENTRY_EXISTS",
-        message: `An entry already exists at ${targetPath}`,
-      };
-    }
-
     try {
       if (request.kind === "folder") {
         await fsal.createDir(targetPath);
@@ -893,7 +885,7 @@ export default class AgentDocumentQueries {
         await fsal.createFile(targetPath, request.content);
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      if (hasErrnoCode(error, "EEXIST")) {
         return {
           ok: false,
           code: "WORKSPACE_ENTRY_EXISTS",

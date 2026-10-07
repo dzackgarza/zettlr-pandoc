@@ -371,7 +371,6 @@ export class AppServiceContainer {
   /** The FSAL slice the Agent API's workspace-entry routes call. */
   public get workspaceFsal(): AgentApiHost["workspaceFsal"] {
     return {
-      pathExists: this._fsal.pathExists.bind(this._fsal),
       isDir: this._fsal.isDir.bind(this._fsal),
       readDirectoryRecursively: this._fsal.readDirectoryRecursively.bind(this._fsal),
       createDir: this._fsal.createDir.bind(this._fsal),

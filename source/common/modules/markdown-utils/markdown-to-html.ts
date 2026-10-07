@@ -435,12 +435,6 @@ function footnotesToHTML(fn: FootnoteRef[], options: MD2HTMLOptions): string {
  * @return  {string}                      The resulting HTML
  */
 export async function md2html(markdown: string, options: MD2HTMLOptions): Promise<string> {
-  const html = markdownFragmentToHTML(markdown, options);
-
-  if (options.onBibliography === undefined) {
-    return html; // No bibliography wanted
-  }
-
   const config: MarkdownParserConfig = {
     zknLinkParserConfig: { format: options.zknLinkFormat },
   };
@@ -449,6 +443,16 @@ export async function md2html(markdown: string, options: MD2HTMLOptions): Promis
 
   if (ast.type !== "Document") {
     throw new Error("Could not turn Markdown to HTML: No Document top node returned from parser.");
+  }
+
+  const noFootnotes = ast.children.filter((node) => node.type !== "FootnoteRef");
+  const onlyFootnotes = ast.children.filter((node) => node.type === "FootnoteRef");
+  const html = nodeToHTML(noFootnotes, options);
+  const footnotes =
+    onlyFootnotes.length > 0 ? "\n<hr>\n" + footnotesToHTML(onlyFootnotes, options) : "";
+
+  if (options.onBibliography === undefined) {
+    return html + footnotes;
   }
 
   // Prepare and include a bibliography at the end.
@@ -464,30 +468,8 @@ export async function md2html(markdown: string, options: MD2HTMLOptions): Promis
         ? `<h1>${options.referenceSectionTitle}</h1>`
         : "";
 
-    return html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n");
+    return html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n") + footnotes;
   }
 
-  return html;
-}
-
-/**
- * Converts Markdown to an HTML fragment without an asynchronous bibliography.
- * Renderer components use this path when their source can contain citations
- * but does not own a bibliography section.
- */
-export function markdownFragmentToHTML(markdown: string, options: MD2HTMLOptions): string {
-  const config: MarkdownParserConfig = {
-    zknLinkParserConfig: { format: options.zknLinkFormat },
-  };
-  const ast = markdownToAST(markdown, undefined, config);
-
-  if (ast.type !== "Document") {
-    throw new Error("Could not turn Markdown to HTML: No Document top node returned from parser.");
-  }
-
-  const noFootnotes = ast.children.filter((node) => node.type !== "FootnoteRef");
-  const onlyFootnotes = ast.children.filter((node) => node.type === "FootnoteRef");
-  const footnotes =
-    onlyFootnotes.length > 0 ? "\n<hr>\n" + footnotesToHTML(onlyFootnotes, options) : "";
-  return nodeToHTML(noFootnotes, options) + footnotes;
+  return html + footnotes;
 }

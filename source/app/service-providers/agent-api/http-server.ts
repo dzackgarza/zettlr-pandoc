@@ -348,10 +348,9 @@ export interface AgentApiHost {
    * The filesystem operations the workspace-entry routes need, kept separate
    * from `fsal` because the cross-reference reader may be wired without them.
    * The real service container exposes the whole FSAL through `fsal`; this
-   * seam names only the five methods those routes call.
+   * seam names only the four methods those routes call.
    */
   workspaceFsal?: {
-    pathExists: (absPath: string) => Promise<boolean>;
     isDir: (absPath: string) => Promise<boolean>;
     readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
     createDir: (dirPath: string) => Promise<void>;

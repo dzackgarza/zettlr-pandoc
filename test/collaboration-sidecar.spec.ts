@@ -501,21 +501,22 @@ describe("CollaborationSidecarStore", function () {
     assert.deepEqual(await store.read(documentPath), withAnnotation);
   });
 
-  it("lifts an installed version-5 annotation without agentStatus to pending and writes it back", async function () {
-    const legacyAnnotation = structuredClone(annotation("annotation-1"));
-    Reflect.deleteProperty(legacyAnnotation, "agentStatus");
-    persistRaw({
+  it("rejects a version-5 annotation without required agentStatus", async function () {
+    const incompleteAnnotation = structuredClone(annotation("annotation-1"));
+    Reflect.deleteProperty(incompleteAnnotation, "agentStatus");
+    const invalid = {
       ...sidecar(documentPath),
       review: null,
-      annotations: { generation: 1, items: [legacyAnnotation] },
-    });
+      annotations: { generation: 1, items: [incompleteAnnotation] },
+    };
+    persistRaw(invalid);
 
-    const lifted = await store.read(documentPath);
-    assert.deepEqual(lifted?.annotations.items[0].agentStatus, { state: "pending" });
-    const persisted = JSON.parse(
-      readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
-    ) as CollaborationSidecarData;
-    assert.deepEqual(persisted.annotations.items[0].agentStatus, { state: "pending" });
+    await assert.rejects(store.read(documentPath));
+    await assert.rejects(store.list());
+    assert.deepEqual(
+      JSON.parse(readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8")),
+      invalid,
+    );
   });
 
   it("rejects a duplicate annotation id", async function () {

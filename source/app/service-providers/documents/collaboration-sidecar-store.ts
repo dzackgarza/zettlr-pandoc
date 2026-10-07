@@ -73,53 +73,6 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-/**
- * Version 5 gained annotation work-state without changing the outer sidecar
- * container. Older version-5 annotation records therefore need one
- * deterministic lift before schema validation: absence means no agent has
- * claimed a remediation yet, i.e. `pending`. The fully lifted value is still
- * validated by the canonical sidecar and annotation schemas before use.
- */
-function liftMissingAnnotationAgentStatus(value: unknown): { value: unknown; changed: boolean } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return { value, changed: false };
-  }
-  const root = value as Record<string, unknown>;
-  if (root.version !== 5) {
-    return { value, changed: false };
-  }
-  const annotations = root.annotations;
-  if (typeof annotations !== "object" || annotations === null || Array.isArray(annotations)) {
-    return { value, changed: false };
-  }
-  const items = (annotations as Record<string, unknown>).items;
-  if (
-    !Array.isArray(items) ||
-    !items.some(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        !Array.isArray(item) &&
-        !("agentStatus" in item),
-    )
-  ) {
-    return { value, changed: false };
-  }
-  const lifted = structuredClone(root);
-  const liftedItems = (lifted.annotations as Record<string, unknown>).items as unknown[];
-  for (const item of liftedItems) {
-    if (
-      typeof item === "object" &&
-      item !== null &&
-      !Array.isArray(item) &&
-      !("agentStatus" in item)
-    ) {
-      (item as Record<string, unknown>).agentStatus = { state: "pending" };
-    }
-  }
-  return { value: lifted, changed: true };
-}
-
 const validateCollaborationSidecar = new Ajv({ allErrors: true }).compile<CollaborationSidecarData>(
   CollaborationSidecarSchema,
 );
@@ -425,15 +378,14 @@ export class CollaborationSidecarStore {
       await this.write(migrated);
       return migrated;
     }
-    const annotationLift = liftMissingAnnotationAgentStatus(parsed);
-    if (validateEarlyCollaborationSidecarV5(annotationLift.value)) {
-      const lifted = liftEarlyV5Sidecar(annotationLift.value);
+    if (validateEarlyCollaborationSidecarV5(parsed)) {
+      const lifted = liftEarlyV5Sidecar(parsed);
       assertCollaborationSidecarSemantics(lifted, target);
       assertMatchesFilename(lifted, target);
       await this.write(lifted);
       return lifted;
     }
-    if (!validateCollaborationSidecar(annotationLift.value)) {
+    if (!validateCollaborationSidecar(parsed)) {
       throw new Error(
         `Collaboration sidecar ${target} is not a valid collaboration sidecar: ` +
           (validateCollaborationSidecar.errors ?? [])
@@ -441,12 +393,9 @@ export class CollaborationSidecarStore {
             .join("; "),
       );
     }
-    assertCollaborationSidecarSemantics(annotationLift.value, target);
-    assertMatchesFilename(annotationLift.value, target);
-    if (annotationLift.changed) {
-      await this.write(annotationLift.value);
-    }
-    return annotationLift.value;
+    assertCollaborationSidecarSemantics(parsed, target);
+    assertMatchesFilename(parsed, target);
+    return parsed;
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */

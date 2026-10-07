@@ -577,12 +577,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         // test creates an entry and then reads it back rather than asserting a
         // call was made. Containment is the provider's, not the seam's.
         createFile: async (filePath: string, content: string) => {
-          writeFileSync(filePath, content, "utf8");
+          writeFileSync(filePath, content, { encoding: "utf8", flag: "wx" });
         },
         createDir: async (dirPath: string) => {
           mkdirSync(dirPath);
         },
-        pathExists: async (absPath: string) => existsSync(absPath),
         isDir: async (absPath: string) => {
           try {
             return statSync(absPath).isDirectory();
