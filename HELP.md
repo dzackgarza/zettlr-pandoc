@@ -173,8 +173,7 @@ In a Quarto document the caption attribute is `lst-cap`:
 
 Theorem-like blocks use one syntax in every document, in the Quarto book and
 in the pandoc-crossref papers. A block is a fenced div with the family's full
-lowercase class and an ID with the family's prefix and a colon. The title is
-optional:
+lowercase class, an ID with the family's prefix and a colon, and a title:
 
 ```markdown
 ::: {.theorem #thm:nikulin title="Nikulin"}
