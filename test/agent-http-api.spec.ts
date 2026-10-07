@@ -2131,10 +2131,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       "/help?resource=skills&action=read&path=proofs%2Fignore.txt",
     );
     assert.equal(nonMarkdown.status, 400, nonMarkdown.body);
-    assert.equal(
-      parseAs(nonMarkdown.body, "AgentErrorResponse").error.code,
-      "INVALID_PARAMS",
-    );
+    assert.equal(parseAs(nonMarkdown.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
 
     const symlink = await httpRequest(
       "GET",
@@ -2143,20 +2140,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(symlink.status, 400, symlink.body);
     assert.equal(parseAs(symlink.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
 
-    const missing = await httpRequest(
-      "GET",
-      "/help?resource=skills&action=read&path=missing.md",
-    );
+    const missing = await httpRequest("GET", "/help?resource=skills&action=read&path=missing.md");
     assert.equal(missing.status, 404, missing.body);
     assert.equal(parseAs(missing.body, "AgentErrorResponse").error.code, "SKILL_NOT_FOUND");
 
     configuredSkillsDirectory = null;
     const disabled = await httpRequest("GET", "/help?resource=skills&action=list");
     assert.equal(disabled.status, 503, disabled.body);
-    assert.equal(
-      parseAs(disabled.body, "AgentErrorResponse").error.code,
-      "SKILLS_NOT_CONFIGURED",
-    );
+    assert.equal(parseAs(disabled.body, "AgentErrorResponse").error.code, "SKILLS_NOT_CONFIGURED");
   });
 
   it("lists and reads text and binary files from the configured centralized figures directory", async function () {

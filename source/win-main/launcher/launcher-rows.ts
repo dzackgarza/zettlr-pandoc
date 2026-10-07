@@ -15,8 +15,8 @@
  * END HEADER
  */
 
-import type { JustRecipeCommand, JustRecipeParameter } from "@dts/common/justfile-commands";
 import type { CommandId } from "@common/commands/command-registry";
+import type { JustRecipeCommand, JustRecipeParameter } from "@dts/common/justfile-commands";
 import type { PreferencesGroups } from "@dts/common/preferences";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
 import type { ValidPandocProfile } from "@providers/assets";

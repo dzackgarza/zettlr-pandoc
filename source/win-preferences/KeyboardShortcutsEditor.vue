@@ -109,11 +109,7 @@ import {
   getConfiguredShortcut,
 } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
-import {
-  type ExplodedShortcut,
-  explodeShortcut,
-  implodeShortcut,
-} from "@common/util/shortcuts";
+import { type ExplodedShortcut, explodeShortcut, implodeShortcut } from "@common/util/shortcuts";
 import ShortcutDisplay from "@common/vue/ShortcutDisplay.vue";
 import { useConfigStore } from "source/pinia";
 import { computed, nextTick, ref } from "vue";
@@ -151,13 +147,9 @@ const filteredCommands = computed(() => {
   }
   return commands.filter((command) => {
     const shortcut = resolvedShortcut(command.id) ?? "";
-    return [
-      command.label,
-      command.id,
-      command.group,
-      command.when,
-      shortcut,
-    ].some((value) => value.toLowerCase().includes(search));
+    return [command.label, command.id, command.group, command.when, shortcut].some((value) =>
+      value.toLowerCase().includes(search),
+    );
   });
 });
 
@@ -215,26 +207,18 @@ function captureKeybinding(event: KeyboardEvent): void {
     capturedShortcut.value = "";
     return;
   }
-  const hasModifier =
-    event.altKey || event.shiftKey || event.metaKey || event.ctrlKey;
+  const hasModifier = event.altKey || event.shiftKey || event.metaKey || event.ctrlKey;
   if (event.key === "Enter" && !hasModifier && capturedShortcut.value !== "") {
-    const command = commands.find(
-      (candidate) => candidate.id === editingCommand.value,
-    );
+    const command = commands.find((candidate) => candidate.id === editingCommand.value);
     if (command !== undefined && capturedShortcut.value !== "") {
-      configStore.setConfigFromForm(
-        configPath(command),
-        capturedShortcut.value,
-      );
+      configStore.setConfigFromForm(configPath(command), capturedShortcut.value);
     }
     editingCommand.value = undefined;
     capturedShortcut.value = "";
     return;
   }
 
-  const isNonTerminalKey = ["Alt", "Shift", "Meta", "Control", "Dead"].includes(
-    event.key,
-  );
+  const isNonTerminalKey = ["Alt", "Shift", "Meta", "Control", "Dead"].includes(event.key);
   if (isNonTerminalKey || event.key === "Unidentified") {
     return;
   }

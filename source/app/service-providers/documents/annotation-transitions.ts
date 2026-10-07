@@ -278,8 +278,11 @@ export function prepareAnnotationMessage(input: {
       (message) => message.author === "agent" && message.clientRequestId === input.clientRequestId,
     );
     if (replayed !== undefined) {
-      if (!input.markActed ||
-          (located.agentStatus.state === "acted" && located.agentStatus.messageId === replayed.messageId)) {
+      if (
+        !input.markActed ||
+        (located.agentStatus.state === "acted" &&
+          located.agentStatus.messageId === replayed.messageId)
+      ) {
         return validatedPlan(input.annotations, replayed, []);
       }
       const staleReplay = checkGeneration(input.annotations, input.expectedAnnotationGeneration);

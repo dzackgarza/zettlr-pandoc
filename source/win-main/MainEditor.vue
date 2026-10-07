@@ -82,10 +82,7 @@
 
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import {
-  isCommandId,
-  runRegisteredEditorCommand,
-} from "@common/commands/command-registry";
+import { isCommandId, runRegisteredEditorCommand } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import MarkdownEditor from "@common/modules/markdown-editor";
 import {

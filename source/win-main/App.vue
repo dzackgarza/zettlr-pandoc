@@ -196,8 +196,8 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
 import type { CommandId } from "@common/commands/command-registry";
+import { trans } from "@common/i18n-renderer";
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent,

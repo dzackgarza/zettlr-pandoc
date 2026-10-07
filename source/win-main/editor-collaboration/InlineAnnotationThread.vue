@@ -163,8 +163,8 @@ import {
 } from "../sidebar/annotations/annotation-panel-model";
 import AnnotationComposer from "./AnnotationComposer.vue";
 import AnnotationThread from "./AnnotationThread.vue";
-import ProposalActionCard from "./ProposalActionCard.vue";
 import { vAnnotationMarkdown } from "./annotation-markdown";
+import ProposalActionCard from "./ProposalActionCard.vue";
 
 const props = defineProps<{
   card: AnnotationCardView;

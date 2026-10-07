@@ -93,15 +93,27 @@ function liftMissingAnnotationAgentStatus(value: unknown): { value: unknown; cha
     return { value, changed: false };
   }
   const items = (annotations as Record<string, unknown>).items;
-  if (!Array.isArray(items) || !items.some((item) =>
-    typeof item === "object" && item !== null && !Array.isArray(item) && !("agentStatus" in item),
-  )) {
+  if (
+    !Array.isArray(items) ||
+    !items.some(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        !Array.isArray(item) &&
+        !("agentStatus" in item),
+    )
+  ) {
     return { value, changed: false };
   }
   const lifted = structuredClone(root);
-  const liftedItems = ((lifted.annotations as Record<string, unknown>).items as unknown[]);
+  const liftedItems = (lifted.annotations as Record<string, unknown>).items as unknown[];
   for (const item of liftedItems) {
-    if (typeof item === "object" && item !== null && !Array.isArray(item) && !("agentStatus" in item)) {
+    if (
+      typeof item === "object" &&
+      item !== null &&
+      !Array.isArray(item) &&
+      !("agentStatus" in item)
+    ) {
       (item as Record<string, unknown>).agentStatus = { state: "pending" };
     }
   }

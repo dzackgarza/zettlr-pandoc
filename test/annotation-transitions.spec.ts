@@ -354,7 +354,10 @@ describe("pure annotation transitions", function () {
       annotation.agentStatus.state === "acted" ? annotation.agentStatus.messageId : undefined,
       posted.response.messageId,
     );
-    assert.deepEqual(acted.events.map((event) => event.event), ["annotation.acted"]);
+    assert.deepEqual(
+      acted.events.map((event) => event.event),
+      ["annotation.acted"],
+    );
   });
 
   it("an owner reply reopens the agent work state without changing owner resolution state", function () {

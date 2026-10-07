@@ -157,8 +157,8 @@ import type { SourceRange } from "@dts/common/references";
 import type { ReviewFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { useDocumentCollaborationStore } from "source/pinia";
 import { computed, reactive, ref, watch } from "vue";
-import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
+import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
   buildSuggestionNavigatorRows,

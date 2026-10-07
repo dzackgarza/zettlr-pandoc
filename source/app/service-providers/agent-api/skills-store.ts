@@ -53,9 +53,10 @@ export function resolveSkillsDirectory(
   configuredDirectory: string | null | undefined,
   homeDirectory: string,
 ): string {
-  const configured = configuredDirectory === null || configuredDirectory === undefined
-    ? ""
-    : configuredDirectory.trim();
+  const configured =
+    configuredDirectory === null || configuredDirectory === undefined
+      ? ""
+      : configuredDirectory.trim();
   if (configured === "") {
     throw new SkillsDirectoryUnavailableError(
       "No skills directory is configured; set agentApi.skillsDirectory to an absolute path",
@@ -101,9 +102,7 @@ async function realSkillsRoot(root: string): Promise<string> {
   }
   const stats = await fs.stat(realRoot);
   if (!stats.isDirectory()) {
-    throw new SkillsDirectoryUnavailableError(
-      `Configured skills path is not a directory: ${root}`,
-    );
+    throw new SkillsDirectoryUnavailableError(`Configured skills path is not a directory: ${root}`);
   }
   return realRoot;
 }
@@ -161,8 +160,7 @@ export async function listSkillTree(
     children.sort((left, right) => left.name.localeCompare(right.name));
     for (const child of children) {
       const absolute = path.join(current.absolute, child.name);
-      const relative =
-        current.relative === "" ? child.name : `${current.relative}/${child.name}`;
+      const relative = current.relative === "" ? child.name : `${current.relative}/${child.name}`;
       const stats = await fs.lstat(absolute);
       if (stats.isSymbolicLink()) {
         continue;
@@ -195,10 +193,7 @@ export async function readSkillMarkdown(
   relativePath: string,
 ): Promise<SkillMarkdownFile> {
   const resolved = await resolveMarkdownFile(root, relativePath);
-  const [buffer, stats] = await Promise.all([
-    fs.readFile(resolved.path),
-    fs.stat(resolved.path),
-  ]);
+  const [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
   let content: string;
   try {
     content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);

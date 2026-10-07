@@ -439,12 +439,14 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     decision: "accept" | "reject",
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await withFreshReviewRetry(documentPath, async () =>
-      await ipcRenderer.invoke("documents:decide-review-chunk", {
-        ...reviewFence(documentPath),
-        chunkId,
-        decision,
-      }),
+    return await withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:decide-review-chunk", {
+          ...reviewFence(documentPath),
+          chunkId,
+          decision,
+        }),
     );
   }
 
@@ -454,34 +456,37 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     text: string,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await withFreshReviewRetry(documentPath, async () =>
-      await ipcRenderer.invoke("documents:comment-review-chunk", {
-        ...reviewFence(documentPath),
-        chunkId,
-        text,
-      }),
+    return await withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:comment-review-chunk", {
+          ...reviewFence(documentPath),
+          chunkId,
+          text,
+        }),
     );
   }
 
   async function acceptAllReviewChunks(
     documentPath: string,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await withFreshReviewRetry(documentPath, async () =>
-      await ipcRenderer.invoke(
-        "documents:accept-all-review-chunks",
-        reviewFence(documentPath),
-      ),
+    return await withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:accept-all-review-chunks", reviewFence(documentPath)),
     );
   }
 
   async function acceptAllWorkspaceReviewChunks(
     documentPath: string,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    const result = await withFreshReviewRetry(documentPath, async () =>
-      (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
-        path: documentPath,
-        ...reviewFence(documentPath),
-      })) as AcceptAllChunksResponse | ReviewFailure,
+    const result = await withFreshReviewRetry(
+      documentPath,
+      async () =>
+        (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+          path: documentPath,
+          ...reviewFence(documentPath),
+        })) as AcceptAllChunksResponse | ReviewFailure,
     );
     if (result.ok) {
       await refreshWorkspaceSessions(workspaceDocumentPaths.value);
@@ -506,11 +511,13 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       .map((session) => session.documentPath);
     const results: Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }> = [];
     for (const path of targets) {
-      const result = await withFreshReviewRetry(path, async () =>
-        (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
-          path,
-          ...reviewFence(path),
-        })) as AcceptAllChunksResponse | ReviewFailure,
+      const result = await withFreshReviewRetry(
+        path,
+        async () =>
+          (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+            path,
+            ...reviewFence(path),
+          })) as AcceptAllChunksResponse | ReviewFailure,
       );
       results.push({ path, result });
     }
@@ -523,8 +530,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   async function clearReview(documentPath: string): Promise<ClearReviewResponse | ReviewFailure> {
-    return await withFreshReviewRetry(documentPath, async () =>
-      await ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath)),
+    return await withFreshReviewRetry(
+      documentPath,
+      async () => await ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath)),
     );
   }
 

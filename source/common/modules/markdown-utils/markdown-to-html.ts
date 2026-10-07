@@ -464,9 +464,7 @@ export async function md2html(markdown: string, options: MD2HTMLOptions): Promis
         ? `<h1>${options.referenceSectionTitle}</h1>`
         : "";
 
-    return (
-      html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n")
-    );
+    return html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n");
   }
 
   return html;

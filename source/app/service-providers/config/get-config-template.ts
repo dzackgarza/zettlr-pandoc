@@ -12,12 +12,12 @@
  * END HEADER
  */
 
-import { MD_EXT } from "@common/util/file-extention-checks";
 import {
   createShortcutConfig,
   type EditorCommandId,
   type WindowCommandId,
 } from "@common/commands/command-registry";
+import { MD_EXT } from "@common/util/file-extention-checks";
 import getLanguageFile from "@common/util/get-language-file";
 import type { SidebarSectionId, SidebarViewId } from "@dts/common/sidebar-views";
 import * as bcp47 from "bcp-47";

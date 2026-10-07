@@ -41,13 +41,7 @@ import type {
 } from "@dts/common/agent-api";
 import type { ActiveReviewState, ReviewPacket, ReviewSuggestion } from "@dts/common/review-domain";
 import { randomUUID } from "crypto";
-import {
-  applyPatch,
-  diffChars,
-  parsePatch,
-  type StructuredPatch,
-  structuredPatch,
-} from "diff";
+import { applyPatch, diffChars, parsePatch, type StructuredPatch, structuredPatch } from "diff";
 import path from "path";
 import { classifyReviewState, normalizeText } from "./review-diff-store";
 

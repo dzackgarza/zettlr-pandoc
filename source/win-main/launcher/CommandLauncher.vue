@@ -79,46 +79,28 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-renderer";
 import {
   type CommandId,
   type CommandRegistration,
   commandRegistry,
   getConfiguredShortcut,
 } from "@common/commands/command-registry";
+import { trans } from "@common/i18n-renderer";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
+import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";
 import { cmShortcutToElectron } from "@common/util/shortcuts";
-import {
-  pathBasename,
-  relativePath,
-} from "@common/util/renderer-path-polyfill";
 import showToast from "@common/util/show-toast";
-import type {
-  JustRepositoryCommands,
-  RunJustRecipeRequest,
-} from "@dts/common/justfile-commands";
+import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type {
   ProjectRootSpec,
   ReferenceDefinition,
   ReferenceOccurrence,
 } from "@dts/common/references";
-import {
-  menuProviderMessageSchema,
-  type SerializedMenuItem,
-} from "@dts/common/serialized-menu";
-import type {
-  PandocProfileMetadata,
-  ValidPandocProfile,
-} from "@providers/assets";
-import {
-  DialogContent,
-  DialogOverlay,
-  DialogPortal,
-  DialogRoot,
-  DialogTitle,
-} from "reka-ui";
+import { menuProviderMessageSchema, type SerializedMenuItem } from "@dts/common/serialized-menu";
+import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
+import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import type { RecentFiles } from "source/app/service-providers/recent-docs";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
@@ -304,17 +286,12 @@ const exportProfiles = ref<ValidPandocProfile[]>([]);
 
 /** Loads the export profiles Zettlr can run on its own documents. */
 async function loadExportProfiles(): Promise<boolean> {
-  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke(
-    "assets-provider",
-    {
-      command: "list-export-profiles",
-    },
-  );
+  const listed: PandocProfileMetadata[] = await ipcRenderer.invoke("assets-provider", {
+    command: "list-export-profiles",
+  });
   exportProfiles.value = listed
     .filter((profile): profile is ValidPandocProfile => !profile.isInvalid)
-    .filter((profile) =>
-      SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name),
-    );
+    .filter((profile) => SUPPORTED_READERS.includes(parseReaderWriter(profile.reader).name));
   return true;
 }
 
@@ -329,28 +306,25 @@ const rememberedExportProfile = computed<string>(() => {
   const entry = configStore.config.export.selectedProfiles.find(
     (item) => item.filePath === activePath,
   );
-  return entry === undefined
-    ? configStore.config.export.lastUsedProfile
-    : entry.profile;
+  return entry === undefined ? configStore.config.export.lastUsedProfile : entry.profile;
 });
 
 /** The export rows, the remembered profile first so Enter re-exports. */
 const exportRows = computed<LauncherRow[]>(() => {
   const commandLabel = trans("command");
-  const profileRows: ExportProfileRow[] = exportProfiles.value.map(
-    (profile) => ({
-      kind: "export-profile",
-      profile,
-      label: exportProfileLabel(profile),
-    }),
-  );
-  const commandRows: ExportCommandRow[] =
-    configStore.config.export.customCommands.map((command) => ({
+  const profileRows: ExportProfileRow[] = exportProfiles.value.map((profile) => ({
+    kind: "export-profile",
+    profile,
+    label: exportProfileLabel(profile),
+  }));
+  const commandRows: ExportCommandRow[] = configStore.config.export.customCommands.map(
+    (command) => ({
       kind: "export-command",
       displayName: command.displayName,
       command: command.command,
       label: `${command.displayName} (${commandLabel})`,
-    }));
+    }),
+  );
   const rows: LauncherRow[] = [...profileRows, ...commandRows];
   const remembered = rememberedExportProfile.value;
   const first = rows.findIndex(
@@ -379,10 +353,7 @@ function rememberExportProfile(profile: string): void {
   const previous = configStore.config.export.selectedProfiles
     .filter((item) => item.filePath !== filePath)
     .slice(-(rememberedProfilesLimit - 1));
-  configStore.setConfigValue("export.selectedProfiles", [
-    ...previous,
-    { filePath, profile },
-  ]);
+  configStore.setConfigValue("export.selectedProfiles", [...previous, { filePath, profile }]);
   configStore.setConfigValue("export.lastUsedProfile", profile);
 }
 
@@ -393,8 +364,7 @@ function rememberExportProfile(profile: string): void {
 function fileRowFor(filePath: string): FileRow {
   const descriptor = workspaceStore.descriptorMap.get(filePath);
   const label =
-    descriptor !== undefined &&
-    (descriptor.type === "file" || descriptor.type === "code")
+    descriptor !== undefined && (descriptor.type === "file" || descriptor.type === "code")
       ? getDocumentTitle(descriptor)
       : pathBasename(filePath);
   const root = workspaceStore.rootDescriptors
@@ -420,14 +390,10 @@ const fileRows = computed<FileRow[]>(() => {
 });
 
 /** The recently opened files, newest first; the empty query keeps that order. */
-const recentOpenedRows = computed<FileRow[]>(() =>
-  recentFiles.value.opened.map(fileRowFor),
-);
+const recentOpenedRows = computed<FileRow[]>(() => recentFiles.value.opened.map(fileRowFor));
 
 /** The recently edited files, newest save first. */
-const recentEditedRows = computed<FileRow[]>(() =>
-  recentFiles.value.edited.map(fileRowFor),
-);
+const recentEditedRows = computed<FileRow[]>(() => recentFiles.value.edited.map(fileRowFor));
 
 /** The active document's headings, in document order. */
 const headingRows = computed<HeadingRow[]>(() => {
@@ -474,9 +440,7 @@ const preferenceRows = computed<PreferenceRow[]>(() =>
     label: entry.label,
     breadcrumb: [
       entry.groupLabel,
-      ...(entry.label === entry.fieldsetTitle
-        ? []
-        : [entry.fieldsetTitle ?? entry.label]),
+      ...(entry.label === entry.fieldsetTitle ? [] : [entry.fieldsetTitle ?? entry.label]),
     ],
     aliases: entry.aliases,
   })),
@@ -521,9 +485,7 @@ function viewRows(view: LauncherView, query: string): LauncherRow[] {
 }
 
 /** The data a dynamic group fetches before it opens; the others read stores. */
-const dynamicGroupLoaders: Partial<
-  Record<DynamicGroupId, () => Promise<boolean>>
-> = {
+const dynamicGroupLoaders: Partial<Record<DynamicGroupId, () => Promise<boolean>>> = {
   "recent-opened": loadRecentFiles,
   "recent-edited": loadRecentFiles,
   "search-references": loadReferences,
@@ -547,10 +509,7 @@ const rows = computed<LauncherRow[]>(() => {
   if (!state.value.open) {
     return [];
   }
-  return rankRows(
-    viewRows(state.value.view, state.value.query),
-    state.value.query,
-  );
+  return rankRows(viewRows(state.value.view, state.value.query), state.value.query);
 });
 
 const breadcrumb = computed<readonly string[]>(() => {
@@ -582,10 +541,7 @@ const referenceActiveDocumentPath = ref<string | undefined>(undefined);
 function collectProjectRoots(): ProjectRootSpec[] {
   const roots: ProjectRootSpec[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (
-      descriptor.type === "directory" &&
-      descriptor.settings.project !== null
-    ) {
+    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
       roots.push({
         rootPath: descriptor.path,
         files: [...descriptor.settings.project.files],
@@ -597,24 +553,18 @@ function collectProjectRoots(): ProjectRootSpec[] {
 
 /** Loads the workspace reference snapshot; a failed fetch surfaces its own toast and returns false. */
 async function loadReferences(): Promise<boolean> {
-  const outcome =
-    await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-      async (channel, message) => await ipcRenderer.invoke(channel, message),
-      { command: "get-snapshot" },
-      trans("Loading workspace references"),
-    );
+  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
+    async (channel, message) => await ipcRenderer.invoke(channel, message),
+    { command: "get-snapshot" },
+    trans("Loading workspace references"),
+  );
   if (outcome.status === "failed") {
     return false;
   }
-  referenceDefinitions.value = outcome.value.snapshots.flatMap(
-    (snapshot) => snapshot.definitions,
-  );
-  referenceOccurrences.value = outcome.value.snapshots.flatMap(
-    (snapshot) => snapshot.occurrences,
-  );
+  referenceDefinitions.value = outcome.value.snapshots.flatMap((snapshot) => snapshot.definitions);
+  referenceOccurrences.value = outcome.value.snapshots.flatMap((snapshot) => snapshot.occurrences);
   referenceProjectRoots.value = collectProjectRoots();
-  referenceActiveDocumentPath.value =
-    documentTreeStore.lastLeafActiveFile?.path;
+  referenceActiveDocumentPath.value = documentTreeStore.lastLeafActiveFile?.path;
   return true;
 }
 
@@ -623,10 +573,7 @@ async function open(view: LauncherView): Promise<void> {
   if (view.kind === "root") {
     await loadJustfileCommands();
   }
-  if (
-    (view.kind === "references" || view.kind === "browse-content") &&
-    !(await loadReferences())
-  ) {
+  if ((view.kind === "references" || view.kind === "browse-content") && !(await loadReferences())) {
     return;
   }
   if (view.kind === "dynamic-group") {
@@ -730,10 +677,7 @@ async function run(row: LauncherRow): Promise<void> {
 }
 
 /** Launches the selected recipe in a detached kitty terminal at its Git root. */
-async function runJustRecipe(
-  recipe: JustRecipeRow,
-  args: string[],
-): Promise<void> {
+async function runJustRecipe(recipe: JustRecipeRow, args: string[]): Promise<void> {
   close();
   try {
     const error = await ipcRenderer.invoke("application", {
@@ -745,10 +689,7 @@ async function runJustRecipe(
       } satisfies RunJustRecipeRequest,
     });
     if (error !== "") {
-      showToast(
-        trans("Could not launch Just recipe %s: %s", recipe.name, error),
-        "error",
-      );
+      showToast(trans("Could not launch Just recipe %s: %s", recipe.name, error), "error");
     }
   } catch (err: unknown) {
     showToast(

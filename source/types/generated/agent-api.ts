@@ -599,12 +599,7 @@ export interface components {
      * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
      * @enum {string}
      */
-    ReviewState:
-      | "active"
-      | "resolved-awaiting-save"
-      | "completed"
-      | "cleared"
-      | "invalidated";
+    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
     ReviewSummary: {
       reviewId: string;
       state: components["schemas"]["ReviewState"];
@@ -1149,8 +1144,7 @@ export interface components {
       reviewId: string;
       linkedAt: string;
       /** @enum {string} */
-      terminalOutcome?:
-        "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
     };
     AnnotationAgentStatus:
       | {

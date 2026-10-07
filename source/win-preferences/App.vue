@@ -142,8 +142,7 @@ const schema = computed(() => {
 const selectedItem = computed(() => (query.value === "" ? currentGroup.value : -1));
 
 const showKeyboardShortcutsEditor = computed(
-  () =>
-    query.value === "" && groups.value[currentGroup.value].id === PreferencesGroups.Shortcuts,
+  () => query.value === "" && groups.value[currentGroup.value].id === PreferencesGroups.Shortcuts,
 );
 
 const fieldsets = computed(() => {

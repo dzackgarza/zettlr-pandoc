@@ -34,20 +34,14 @@ import type {
   WorkspaceEntryResponse,
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
-import type {
-  AnnotationSet,
-  TextAnnotation,
-} from "@dts/common/annotation-domain";
+import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
 import type DocumentManager from "@providers/documents";
 import type {
   CollaborationApplicationService,
   ReviewQueryPort,
 } from "@providers/documents/document-collaboration-application-service";
-import {
-  normalizeText,
-  reviewReferenceText,
-} from "@providers/documents/review-diff-store";
+import { normalizeText, reviewReferenceText } from "@providers/documents/review-diff-store";
 import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
@@ -98,9 +92,7 @@ function collectSearchHits(
         column: found + 1,
         length: hitLength,
         contextBefore: lines.slice(Math.max(0, i - contextSize), i).join("\n"),
-        contextAfter: lines
-          .slice(i + 1, Math.min(lines.length, i + 1 + contextSize))
-          .join("\n"),
+        contextAfter: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextSize)).join("\n"),
       });
       if (searchRegex.lastIndex >= lines[i].length) {
         break;
@@ -184,10 +176,7 @@ interface DocumentText {
  * reaching this function comes from a validated anchor, so that is the
  * correct failure mode, not a defect to work around.
  */
-function offsetToLineColumn(
-  text: string,
-  offset: number,
-): { line: number; column: number } {
+function offsetToLineColumn(text: string, offset: number): { line: number; column: number } {
   const line = Text.of(text.split("\n")).lineAt(offset);
   return { line: line.number, column: offset - line.from + 1 };
 }
@@ -262,9 +251,7 @@ export default class AgentDocumentQueries {
     private readonly log: LogProvider,
   ) {}
 
-  public async getDocumentSummary(
-    documentId: string,
-  ): Promise<DocumentSummary | undefined> {
+  public async getDocumentSummary(documentId: string): Promise<DocumentSummary | undefined> {
     const filePath = this.documents.getDocumentPath(documentId);
     if (filePath === undefined) {
       return undefined;
@@ -292,15 +279,12 @@ export default class AgentDocumentQueries {
     };
   }
 
-  public async getViewsForDocument(
-    documentId: string,
-  ): Promise<EditorViewSummary[]> {
+  public async getViewsForDocument(documentId: string): Promise<EditorViewSummary[]> {
     const focusedView = this.documents.getFocusedView();
     const views: EditorViewSummary[] = [];
     await this.documents.forEachLeaf(async (tabMan, windowId, leafId) => {
       const isOpenHere = tabMan.openFiles.some(
-        (openFile) =>
-          this.documents.getDocumentId(openFile.path) === documentId,
+        (openFile) => this.documents.getDocumentId(openFile.path) === documentId,
       );
       if (!isOpenHere) {
         return false;
@@ -359,11 +343,7 @@ export default class AgentDocumentQueries {
         : located.annotations.items.filter((item) => item.state === state);
     return {
       annotations: items.map((item) =>
-        buildAnnotationResponse(
-          item,
-          located.annotations.generation,
-          located.workingText,
-        ),
+        buildAnnotationResponse(item, located.annotations.generation, located.workingText),
       ),
     };
   }
@@ -383,11 +363,7 @@ export default class AgentDocumentQueries {
       for (const item of located.annotations.items) {
         if (state === undefined || item.state === state) {
           annotations.push(
-            buildAnnotationResponse(
-              item,
-              located.annotations.generation,
-              located.workingText,
-            ),
+            buildAnnotationResponse(item, located.annotations.generation, located.workingText),
           );
         }
       }
@@ -400,13 +376,9 @@ export default class AgentDocumentQueries {
    * lookup `GET /v1/annotations/{annotationId}` and the reply endpoint both
    * need, since neither carries a documentId.
    */
-  public async findAnnotationQuery(
-    annotationId: string,
-  ): Promise<LocatedAnnotation | undefined> {
+  public async findAnnotationQuery(annotationId: string): Promise<LocatedAnnotation | undefined> {
     for (const located of await this._annotationDocuments()) {
-      const found = located.annotations.items.find(
-        (item) => item.annotationId === annotationId,
-      );
+      const found = located.annotations.items.find((item) => item.annotationId === annotationId);
       if (found !== undefined) {
         return {
           documentId: located.documentId,
@@ -478,10 +450,7 @@ export default class AgentDocumentQueries {
    */
   private async _annotationDocument(
     documentId: string,
-  ): Promise<
-    | { open: boolean; workingText: string; annotations: AnnotationSet }
-    | undefined
-  > {
+  ): Promise<{ open: boolean; workingText: string; annotations: AnnotationSet } | undefined> {
     const filePath = this.documents.getDocumentPath(documentId);
     if (filePath !== undefined) {
       const document = this.documents.loadedDocuments.find(
@@ -501,8 +470,7 @@ export default class AgentDocumentQueries {
         .listCollaborationSidecars()
         .then((sidecars) =>
           sidecars.find(
-            (candidate) =>
-              path.resolve(candidate.documentPath) === path.resolve(filePath),
+            (candidate) => path.resolve(candidate.documentPath) === path.resolve(filePath),
           ),
         );
       if (sidecar !== undefined) {
@@ -518,9 +486,7 @@ export default class AgentDocumentQueries {
     // sidecars for it rather than returning nothing: findAnnotationQuery
     // serves those ids, so per-document reads must too.
     for (const sidecar of await this.annotations.listCollaborationSidecars()) {
-      if (
-        this.documents.ensureDocumentId(sidecar.documentPath) === documentId
-      ) {
+      if (this.documents.ensureDocumentId(sidecar.documentPath) === documentId) {
         if (!(await this.isOpenable(sidecar.documentPath))) {
           return undefined;
         }
@@ -537,9 +503,7 @@ export default class AgentDocumentQueries {
   /**
    * One annotation's full detail, wire-shaped, or undefined if unknown.
    */
-  public async getAnnotation(
-    annotationId: string,
-  ): Promise<AnnotationResponse | undefined> {
+  public async getAnnotation(annotationId: string): Promise<AnnotationResponse | undefined> {
     const located = await this.findAnnotationQuery(annotationId);
     if (located === undefined) {
       return undefined;
@@ -585,10 +549,7 @@ export default class AgentDocumentQueries {
         viewId: `view-${windowId}-${leafId}`,
         windowId,
         leafId,
-        documentId:
-          activePath === undefined
-            ? undefined
-            : this.documents.getDocumentId(activePath),
+        documentId: activePath === undefined ? undefined : this.documents.getDocumentId(activePath),
         focused: isFocused,
         active: isFocused,
         documents: tabMan.openFiles.map((openFile) => ({
@@ -621,20 +582,14 @@ export default class AgentDocumentQueries {
     }
     const files: WorkspaceFileEntry[] = [];
     const wikilinks = this.app.links.index;
-    for (const filePath of await this.documents.getFilesForWorkspace(
-      workspacePath,
-    )) {
+    for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
       files.push({
         documentId: this.documents.ensureDocumentId(filePath),
         path: filePath,
         name: path.basename(filePath),
         workspaceId: workspacePath,
-        open: this.documents.loadedDocuments.some(
-          (document) => document.filePath === filePath,
-        ),
-        ...(wikilinks.has(filePath)
-          ? { linkTarget: wikilinks.canonical(filePath) }
-          : {}),
+        open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
+        ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
       });
     }
     return files;
@@ -648,8 +603,7 @@ export default class AgentDocumentQueries {
   public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
     const files: WorkspaceFileEntry[] = [];
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      const workspaceFiles =
-        await this.listWorkspaceFilesByWorkspace(workspacePath);
+      const workspaceFiles = await this.listWorkspaceFilesByWorkspace(workspacePath);
       if (workspaceFiles !== undefined) {
         files.push(...workspaceFiles);
       }
@@ -660,23 +614,15 @@ export default class AgentDocumentQueries {
   public async listWorkspaceDocuments(
     workspacePath: string,
     query: string | undefined,
-  ): Promise<
-    { workspaceId: string; documents: WorkspaceDocumentEntry[] } | undefined
-  > {
+  ): Promise<{ workspaceId: string; documents: WorkspaceDocumentEntry[] } | undefined> {
     if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
       return undefined;
     }
-    const normalizedQuery =
-      query === undefined ? "" : query.toLowerCase().trim();
+    const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
     const documents: WorkspaceDocumentEntry[] = [];
-    for (const documentPath of await this.documents.getFilesForWorkspace(
-      workspacePath,
-    )) {
+    for (const documentPath of await this.documents.getFilesForWorkspace(workspacePath)) {
       const documentId = this.documents.ensureDocumentId(documentPath);
-      if (
-        normalizedQuery.length > 0 &&
-        !documentPath.toLowerCase().includes(normalizedQuery)
-      ) {
+      if (normalizedQuery.length > 0 && !documentPath.toLowerCase().includes(normalizedQuery)) {
         continue;
       }
       const summary = await this.getDocumentSummary(documentId);
@@ -720,9 +666,7 @@ export default class AgentDocumentQueries {
         attached: true,
         working,
         reference:
-          review === undefined
-            ? working
-            : reviewReferenceText(review.suggestions, working),
+          review === undefined ? working : reviewReferenceText(review.suggestions, working),
         reviewGeneration: review?.generation ?? 0,
       };
     }
@@ -739,9 +683,7 @@ export default class AgentDocumentQueries {
         reviewGeneration: sidecar.review?.generation ?? 0,
       };
     }
-    const working = normalizeText(
-      await this.documents.readSupportedFile(filePath),
-    );
+    const working = normalizeText(await this.documents.readSupportedFile(filePath));
     return {
       attached: false,
       working,
@@ -817,9 +759,7 @@ export default class AgentDocumentQueries {
         { timeout: SEARCH_DEADLINE_MS },
       ) as ReturnType<typeof collectSearchHits>;
     } catch (error) {
-      if (
-        (error as NodeJS.ErrnoException).code === "ERR_SCRIPT_EXECUTION_TIMEOUT"
-      ) {
+      if ((error as NodeJS.ErrnoException).code === "ERR_SCRIPT_EXECUTION_TIMEOUT") {
         throw new SearchTimeoutError();
       }
       throw error;
@@ -846,9 +786,7 @@ export default class AgentDocumentQueries {
     }
     const fsal = this.app.fsal;
     if (fsal === undefined) {
-      throw new Error(
-        "The workspace directory listing has no filesystem access",
-      );
+      throw new Error("The workspace directory listing has no filesystem access");
     }
     const allPaths = await fsal.readDirectoryRecursively(workspacePath);
     const directories: WorkspaceDirectoryEntry[] = [];
@@ -887,13 +825,8 @@ export default class AgentDocumentQueries {
     let targetPath: string;
     if (path.isAbsolute(request.path)) {
       targetPath = path.normalize(request.path);
-    } else if (
-      request.workspaceId !== undefined &&
-      request.workspaceId !== ""
-    ) {
-      if (
-        !this.app.config.get().app.openWorkspaces.includes(request.workspaceId)
-      ) {
+    } else if (request.workspaceId !== undefined && request.workspaceId !== "") {
+      if (!this.app.config.get().app.openWorkspaces.includes(request.workspaceId)) {
         return {
           ok: false,
           code: "WORKSPACE_NOT_FOUND",
@@ -987,9 +920,7 @@ export default class AgentDocumentQueries {
    * target; a destination that does not exist yet canonicalizes through its
    * existing parent.
    */
-  private async containingWorkspace(
-    absPath: string,
-  ): Promise<string | undefined> {
+  private async containingWorkspace(absPath: string): Promise<string | undefined> {
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
       if (await this.isOpenableInWorkspace(absPath, workspacePath)) {
         return workspacePath;
@@ -1001,9 +932,7 @@ export default class AgentDocumentQueries {
   public async isOpenable(filePath: string): Promise<boolean> {
     const workspaces = this.app.config.get().app.openWorkspaces;
     if (workspaces.length === 0) {
-      return this.documents.loadedDocuments.some(
-        (document) => document.filePath === filePath,
-      );
+      return this.documents.loadedDocuments.some((document) => document.filePath === filePath);
     }
     for (const workspacePath of workspaces) {
       if (await this.isOpenableInWorkspace(filePath, workspacePath)) {
@@ -1013,10 +942,7 @@ export default class AgentDocumentQueries {
     return false;
   }
 
-  private async isOpenableInWorkspace(
-    filePath: string,
-    workspacePath: string,
-  ): Promise<boolean> {
+  private async isOpenableInWorkspace(filePath: string, workspacePath: string): Promise<boolean> {
     let canonicalFilePath: string;
     try {
       canonicalFilePath = await fs.promises.realpath(filePath);
@@ -1039,10 +965,7 @@ export default class AgentDocumentQueries {
       );
       return false;
     }
-    const relativePath = path.relative(
-      canonicalWorkspacePath,
-      canonicalFilePath,
-    );
+    const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
     return (
       relativePath === "" ||
       (!relativePath.startsWith(`..${path.sep}`) &&

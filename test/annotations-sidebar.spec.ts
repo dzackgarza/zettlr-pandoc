@@ -662,7 +662,8 @@ describe("useDocumentCollaborationStore review surface", function () {
           ? {
               ok: false,
               code: "REVIEW_GENERATION_MISMATCH",
-              message: "The review changed while the action was being applied. Try the action again.",
+              message:
+                "The review changed while the action was being applied. Try the action again.",
               reviewGeneration: SCENE_REVIEW_GENERATION + 1,
             }
           : { ok: true, chunkId: SCENE_CHUNK_TASKS_ID };
@@ -681,7 +682,10 @@ describe("useDocumentCollaborationStore review surface", function () {
 
     assert.equal(result.ok, true);
     assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 2);
-    assert.equal(documentCollaborationIpcDouble.invokeCallCount("documents:decide-review-chunk"), 2);
+    assert.equal(
+      documentCollaborationIpcDouble.invokeCallCount("documents:decide-review-chunk"),
+      2,
+    );
     assert.deepEqual(decisions, [
       {
         ...fence,
@@ -797,7 +801,8 @@ describe("useDocumentCollaborationStore review surface", function () {
           ? {
               ok: false,
               code: "REVISION_MISMATCH",
-              message: "The document changed while the action was being applied. Try the action again.",
+              message:
+                "The document changed while the action was being applied. Try the action again.",
             }
           : { ok: true, acceptedChunks: 2 };
       }
@@ -811,15 +816,18 @@ describe("useDocumentCollaborationStore review surface", function () {
     const requests = seen.filter(
       (item) => item.command === "documents:accept-all-workspace-review-chunks",
     );
-    assert.deepEqual(requests.map((request) => request.payload), [
-      { path: session.documentPath, ...fence },
-      {
-        path: session.documentPath,
-        reviewId: SCENE_REVIEW_ID,
-        expectedReviewGeneration: SCENE_REVIEW_GENERATION + 1,
-        expectedWorkingSha256: "c".repeat(64),
-      },
-    ]);
+    assert.deepEqual(
+      requests.map((request) => request.payload),
+      [
+        { path: session.documentPath, ...fence },
+        {
+          path: session.documentPath,
+          reviewId: SCENE_REVIEW_ID,
+          expectedReviewGeneration: SCENE_REVIEW_GENERATION + 1,
+          expectedWorkingSha256: "c".repeat(64),
+        },
+      ],
+    );
     assert.equal(acceptanceAttempts, 2);
     assert.equal(documentCollaborationIpcDouble.invokeCallCount("get-collaboration-session"), 1);
     assert.equal(
@@ -850,7 +858,8 @@ describe("useDocumentCollaborationStore review surface", function () {
           ? {
               ok: false,
               code: "REVIEW_GENERATION_MISMATCH",
-              message: "The review changed while the action was being applied. Try the action again.",
+              message:
+                "The review changed while the action was being applied. Try the action again.",
             }
           : { ok: true, acceptedChunks: 2 };
       }

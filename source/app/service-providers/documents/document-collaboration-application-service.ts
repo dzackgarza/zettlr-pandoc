@@ -1347,7 +1347,8 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed while the proposal was being applied. Read the current review state and try again.",
+        message:
+          "This review changed while the proposal was being applied. Read the current review state and try again.",
       };
     }
 
@@ -1860,7 +1861,8 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed while the recovery action was being applied. Read the current review state and try again.",
+        message:
+          "This review changed while the recovery action was being applied. Read the current review state and try again.",
         reviewGeneration: review.generation,
       };
     }

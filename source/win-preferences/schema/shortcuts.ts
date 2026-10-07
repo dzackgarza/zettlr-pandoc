@@ -39,9 +39,7 @@ function groupTitle(group: CommandGroup): string {
   return trans("%s Shortcuts", group);
 }
 
-export function getShortcutFields(
-  config: Pick<ConfigOptions, "shortcuts">,
-): PreferencesFieldset[] {
+export function getShortcutFields(config: Pick<ConfigOptions, "shortcuts">): PreferencesFieldset[] {
   const shortcuts: ShortcutConfig = config.shortcuts;
   const fieldsByGroup = new Map<CommandGroup, PreferencesFieldset["fields"]>();
 

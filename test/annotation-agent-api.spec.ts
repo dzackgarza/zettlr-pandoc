@@ -54,23 +54,17 @@ import { userData } from "./headless-electron-harness.cjs";
 
 const openApiDocument = parseYaml(
   readFileSync(
-    path.join(
-      __dirname,
-      "../source/app/service-providers/agent-api/openapi.yaml",
-    ),
+    path.join(__dirname, "../source/app/service-providers/agent-api/openapi.yaml"),
     "utf8",
   ),
 ) as { components: { schemas: Record<string, unknown> } };
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
-for (const [name, schema] of Object.entries(
-  openApiDocument.components.schemas,
-)) {
+for (const [name, schema] of Object.entries(openApiDocument.components.schemas)) {
   ajv.addSchema(schema as object, `#/components/schemas/${name}`);
 }
 
-type JsonValue =
-  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type AgentApiSchemas = AgentApiComponents["schemas"];
 
 /** Parse a response body and prove that it conforms to the named OpenAPI schema. */
@@ -79,24 +73,14 @@ function parseAs<N extends keyof AgentApiSchemas & string>(
   schemaName: N,
 ): AgentApiSchemas[N] {
   const value: JsonValue = JSON.parse(body);
-  if (
-    ajv.validate<AgentApiSchemas[N]>(
-      `#/components/schemas/${schemaName}`,
-      value,
-    )
-  ) {
+  if (ajv.validate<AgentApiSchemas[N]>(`#/components/schemas/${schemaName}`, value)) {
     return value;
   }
-  assert.fail(
-    `Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`,
-  );
+  assert.fail(`Response does not conform to ${schemaName}: ${ajv.errorsText()}\n${body}`);
 }
 
 /** Line/column computed independently of the server's own offsetToLineColumn. */
-function referenceLineColumn(
-  text: string,
-  offset: number,
-): { line: number; column: number } {
+function referenceLineColumn(text: string, offset: number): { line: number; column: number } {
   const before = text.slice(0, offset).split("\n");
   return { line: before.length, column: before[before.length - 1].length + 1 };
 }
@@ -131,10 +115,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   }
 
   async function createProvider(): Promise<DocumentManager> {
-    const userDataDir = path.join(
-      os.tmpdir(),
-      "zettlr-pandoc-annotation-api-test",
-    );
+    const userDataDir = path.join(os.tmpdir(), "zettlr-pandoc-annotation-api-test");
     mkdirSync(userDataDir, { recursive: true });
     mkdirSync(path.join(userDataDir, "logs"), { recursive: true });
     rmSync(path.join(userDataDir, "documents.yaml"), { force: true });
@@ -168,10 +149,8 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       fsal: {
         getWatchdog: () => watcherSeam,
         testAccess: async () => true,
-        getDescriptorForAnySupportedFile: async (filePath: string) =>
-          descriptorFor(filePath),
-        loadAnySupportedFile: async (filePath: string) =>
-          normalizedRead(filePath),
+        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+        loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
         writeTextFile: async (filePath: string, content: string) => {
           writeFileSync(filePath, content, "utf8");
         },
@@ -220,10 +199,8 @@ describe("Annotation Agent API (/v1/annotations)", function () {
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
         isFile: async (filePath: string) => statSync(filePath).isFile(),
-        getDescriptorForAnySupportedFile: async (filePath: string) =>
-          descriptorFor(filePath),
-        loadAnySupportedFile: async (filePath: string) =>
-          normalizedRead(filePath),
+        getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+        loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
       },
       { get: () => ({ app: { openWorkspaces, openFiles: [] } }) },
       provider,
@@ -256,9 +233,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         (res) => {
           let data = "";
           res.on("data", (chunk: Buffer) => (data += chunk.toString("utf8")));
-          res.on("end", () =>
-            resolve({ status: res.statusCode ?? 0, body: data }),
-          );
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, body: data }));
         },
       );
       req.on("error", reject);
@@ -387,32 +362,18 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.equal(annotation.target.endColumn, expectedEnd.column);
     assert.equal(annotation.messages.length, 1);
     assert.equal(annotation.messages[0].author, "owner");
-    assert.equal(
-      annotation.messages[0].text,
-      "Rewrite this to name the actual animal.",
-    );
+    assert.equal(annotation.messages[0].text, "Rewrite this to name the actual animal.");
   });
 
   it("computes line and column correctly for a target that crosses a line break", async function () {
-    const content =
-      "First line here.\nSecond line has the target inside it.\nThird.\n";
+    const content = "First line here.\nSecond line has the target inside it.\nThird.\n";
     const filePath = path.join(scratch, "multiline.md");
     const documentId = await openFile(filePath, content);
     const from = content.indexOf("here.\nSecond line");
     const to = from + "here.\nSecond line".length;
-    await provider.createAnnotation(
-      documentId,
-      "owner",
-      from,
-      to,
-      "Spans two lines.",
-      0,
-    );
+    await provider.createAnnotation(documentId, "owner", from, to, "Spans two lines.", 0);
 
-    const response = await httpRequest(
-      "GET",
-      `/v1/annotations?documentId=${documentId}`,
-    );
+    const response = await httpRequest("GET", `/v1/annotations?documentId=${documentId}`);
     assert.equal(response.status, 200);
     const parsed = parseAs(response.body, "AnnotationListResponse");
     const [annotation] = parsed.annotations;
@@ -434,10 +395,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     await provider.createAnnotation(docA, "owner", 0, 8, "About A.", 0);
     await provider.createAnnotation(docB, "owner", 0, 8, "About B.", 0);
 
-    const onlyA = await httpRequest(
-      "GET",
-      `/v1/annotations?documentId=${docA}`,
-    );
+    const onlyA = await httpRequest("GET", `/v1/annotations?documentId=${docA}`);
     const parsedA = parseAs(onlyA.body, "AnnotationListResponse");
     assert.equal(parsedA.annotations.length, 1);
     assert.equal(parsedA.annotations[0].documentId, docA);
@@ -450,20 +408,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   it("GET /v1/annotations/{annotationId} returns full detail and 404s for an unknown id", async function () {
     const content = "Some document text to annotate.\n";
     const documentId = await openFile(path.join(scratch, "detail.md"), content);
-    const created = await provider.createAnnotation(
-      documentId,
-      "owner",
-      0,
-      4,
-      "Note.",
-      0,
-    );
+    const created = await provider.createAnnotation(documentId, "owner", 0, 4, "Note.", 0);
     assert.ok("annotationId" in created);
 
-    const found = await httpRequest(
-      "GET",
-      `/v1/annotations/${created.annotationId}`,
-    );
+    const found = await httpRequest("GET", `/v1/annotations/${created.annotationId}`);
     assert.equal(found.status, 200);
     const parsed = parseAs(found.body, "AnnotationResponse");
     assert.equal(parsed.annotationId, created.annotationId);
@@ -577,8 +525,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
 
     // Scoped reads agree, and by-id detail agrees.
     const scoped = parseAs(
-      (await httpRequest("GET", `/v1/annotations?documentId=${documentId}`))
-        .body,
+      (await httpRequest("GET", `/v1/annotations?documentId=${documentId}`)).body,
       "AnnotationListResponse",
     );
     assert.equal(scoped.annotations.length, 1);
@@ -619,11 +566,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
       "AnnotationResponse",
     );
-    assert.equal(
-      afterReopen.annotationGeneration,
-      2,
-      "reopen must not move the generation",
-    );
+    assert.equal(afterReopen.annotationGeneration, 2, "reopen must not move the generation");
     assert.equal(afterReopen.messages.length, 2);
     assert.deepEqual(afterReopen.agentStatus, actedBody.agentStatus);
   });
@@ -633,10 +576,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     // store keys by path hash and knows nothing about provenance. The listing
     // must not serve it: the workspace gate is the only provenance check.
     const content = "A sidecar from another workspace must not appear.\n";
-    const outsidePath = path.join(
-      os.tmpdir(),
-      "zettlr-annotation-api-outside-workspace.md",
-    );
+    const outsidePath = path.join(os.tmpdir(), "zettlr-annotation-api-outside-workspace.md");
     writeFileSync(outsidePath, content, "utf8");
     try {
       const outsideId = await openFile(outsidePath, content);
@@ -656,16 +596,12 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         "AnnotationListResponse",
       );
       assert.equal(
-        listed.annotations.some(
-          (annotation) => annotation.annotationId === created.annotationId,
-        ),
+        listed.annotations.some((annotation) => annotation.annotationId === created.annotationId),
         false,
         "a closed document outside every configured workspace must not be listed",
       );
       assert.equal(
-        listed.annotations.some(
-          (annotation) => annotation.documentId === outsideId,
-        ),
+        listed.annotations.some((annotation) => annotation.documentId === outsideId),
         false,
       );
     } finally {
@@ -680,14 +616,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   it("posts exactly one message for a repeated clientRequestId, and a fresh one for a new id", async function () {
     const content = "Please look at this specific sentence.\n";
     const documentId = await openFile(path.join(scratch, "reply.md"), content);
-    const created = await provider.createAnnotation(
-      documentId,
-      "owner",
-      0,
-      6,
-      "Explain this.",
-      0,
-    );
+    const created = await provider.createAnnotation(documentId, "owner", 0, 6, "Explain this.", 0);
     assert.ok("annotationId" in created);
     const annotationId = created.annotationId;
 
@@ -721,10 +650,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     );
     // Owner's opening message + exactly one agent reply, despite two POSTs.
     assert.equal(afterReplay.messages.length, 2);
-    assert.equal(
-      afterReplay.messages.filter((m) => m.author === "agent").length,
-      1,
-    );
+    assert.equal(afterReplay.messages.filter((m) => m.author === "agent").length, 1);
 
     // A genuinely new clientRequestId is a genuinely new message.
     const second = await postMessage(annotationId, {
@@ -738,10 +664,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       "AnnotationResponse",
     );
     assert.equal(afterSecond.messages.length, 3);
-    assert.equal(
-      afterSecond.messages.filter((m) => m.author === "agent").length,
-      2,
-    );
+    assert.equal(afterSecond.messages.filter((m) => m.author === "agent").length, 2);
   });
 
   it("marks an agent disposition acted while leaving owner resolution open and linking the exact message", async function () {
@@ -831,14 +754,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   it("refuses a stale expectedAnnotationGeneration with 409 and persists nothing", async function () {
     const content = "Generation fencing check sentence.\n";
     const documentId = await openFile(path.join(scratch, "fence.md"), content);
-    const created = await provider.createAnnotation(
-      documentId,
-      "owner",
-      0,
-      10,
-      "Check this.",
-      0,
-    );
+    const created = await provider.createAnnotation(documentId, "owner", 0, 10, "Check this.", 0);
     assert.ok("annotationId" in created);
     const annotationId = created.annotationId;
 
@@ -855,24 +771,13 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       (await httpRequest("GET", `/v1/annotations/${annotationId}`)).body,
       "AnnotationResponse",
     );
-    assert.equal(
-      after.messages.length,
-      1,
-      "the refused attempt must not have posted anything",
-    );
+    assert.equal(after.messages.length, 1, "the refused attempt must not have posted anything");
   });
 
   it("refuses whitespace-only message text with 400 INVALID_PARAMS", async function () {
     const content = "Empty message body check.\n";
     const documentId = await openFile(path.join(scratch, "empty.md"), content);
-    const created = await provider.createAnnotation(
-      documentId,
-      "owner",
-      0,
-      5,
-      "Check.",
-      0,
-    );
+    const created = await provider.createAnnotation(documentId, "owner", 0, 5, "Check.", 0);
     assert.ok("annotationId" in created);
 
     const result = await postMessage(created.annotationId, {
@@ -913,9 +818,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       "reattachAnnotation",
       "deleteAnnotation",
     ];
-    const document = JSON.parse(
-      (await httpRequest("GET", "/openapi.json")).body,
-    ) as {
+    const document = JSON.parse((await httpRequest("GET", "/openapi.json")).body) as {
       paths: Record<string, Record<string, { operationId?: string }>>;
     };
     const declared = Object.values(document.paths).flatMap((methods) =>
@@ -924,53 +827,27 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     assert.ok(declared.includes("listAnnotations"));
     assert.ok(declared.includes("addAnnotationMessage"));
     for (const operationId of ownerOnly) {
-      assert.ok(
-        !declared.includes(operationId),
-        `must not declare ${operationId}`,
-      );
+      assert.ok(!declared.includes(operationId), `must not declare ${operationId}`);
     }
   });
 
   it("refuses an agent's resolve, reopen, reattach, and delete attempt on the real, sidecar-backed pipeline", async function () {
     const content = "This annotation must stay exactly as the owner left it.\n";
     const documentId = await openFile(path.join(scratch, "i3.md"), content);
-    const created = await provider.createAnnotation(
-      documentId,
-      "owner",
-      0,
-      20,
-      "Owner's note.",
-      0,
-    );
+    const created = await provider.createAnnotation(documentId, "owner", 0, 20, "Owner's note.", 0);
     assert.ok("annotationId" in created);
     const annotationId = created.annotationId;
 
-    const resolveAttempt = await provider.resolveAnnotation(
-      documentId,
-      annotationId,
-      "agent",
-      1,
-    );
+    const resolveAttempt = await provider.resolveAnnotation(documentId, annotationId, "agent", 1);
     assert.deepEqual(
       "ok" in resolveAttempt ? resolveAttempt.ok : true,
       false,
       "an agent resolve must be refused",
     );
-    assert.equal(
-      (resolveAttempt as { code: string }).code,
-      "ANNOTATION_OWNER_ONLY",
-    );
+    assert.equal((resolveAttempt as { code: string }).code, "ANNOTATION_OWNER_ONLY");
 
-    const reopenAttempt = await provider.reopenAnnotation(
-      documentId,
-      annotationId,
-      "agent",
-      1,
-    );
-    assert.equal(
-      (reopenAttempt as { code: string }).code,
-      "ANNOTATION_OWNER_ONLY",
-    );
+    const reopenAttempt = await provider.reopenAnnotation(documentId, annotationId, "agent", 1);
+    assert.equal((reopenAttempt as { code: string }).code, "ANNOTATION_OWNER_ONLY");
 
     const reattachAttempt = await provider.reattachAnnotation(
       documentId,
@@ -980,21 +857,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       5,
       1,
     );
-    assert.equal(
-      (reattachAttempt as { code: string }).code,
-      "ANNOTATION_OWNER_ONLY",
-    );
+    assert.equal((reattachAttempt as { code: string }).code, "ANNOTATION_OWNER_ONLY");
 
-    const deleteAttempt = await provider.deleteAnnotation(
-      documentId,
-      annotationId,
-      "agent",
-      1,
-    );
-    assert.equal(
-      (deleteAttempt as { code: string }).code,
-      "ANNOTATION_OWNER_ONLY",
-    );
+    const deleteAttempt = await provider.deleteAnnotation(documentId, annotationId, "agent", 1);
+    assert.equal((deleteAttempt as { code: string }).code, "ANNOTATION_OWNER_ONLY");
 
     // Every refusal above ran against the exact DocumentManager instance
     // backing the live HTTP server, with real sidecar persistence wired in.
@@ -1024,10 +890,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   it("links a submitted proposal to the annotation it addresses", async function () {
     const original = "The quick brown fox jumps over the lazy dog.\n";
     const revised = "The quick red fox jumps over the lazy dog.\n";
-    const documentId = await openFile(
-      path.join(scratch, "linked.md"),
-      original,
-    );
+    const documentId = await openFile(path.join(scratch, "linked.md"), original);
     const from = original.indexOf("brown fox");
     const to = from + "brown fox".length;
     const created = await provider.createAnnotation(
@@ -1076,10 +939,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
   it("refuses a claim addressing a non-open annotation, committing neither the packet nor the annotation", async function () {
     const original = "The quick brown fox jumps over the lazy dog.\n";
     const revised = "The quick red fox jumps over the lazy dog.\n";
-    const documentId = await openFile(
-      path.join(scratch, "refused-link.md"),
-      original,
-    );
+    const documentId = await openFile(path.join(scratch, "refused-link.md"), original);
     const from = original.indexOf("brown fox");
     const to = from + "brown fox".length;
     const created = await provider.createAnnotation(
@@ -1092,12 +952,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     );
     assert.ok("annotationId" in created);
     const annotationId = created.annotationId;
-    const resolved = await provider.resolveAnnotation(
-      documentId,
-      annotationId,
-      "owner",
-      1,
-    );
+    const resolved = await provider.resolveAnnotation(documentId, annotationId, "owner", 1);
     assert.ok("annotationId" in resolved);
 
     const submitted = await postProposal(documentId, {
@@ -1127,12 +982,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     );
     assert.equal(document.review, undefined);
     const content = parseAs(
-      (
-        await httpRequest(
-          "GET",
-          `/v1/documents/${documentId}?includeContent=true`,
-        )
-      ).body,
+      (await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`)).body,
       "ReadDocumentResponse",
     );
     assert.equal(content.content.trimEnd(), original.trimEnd());
