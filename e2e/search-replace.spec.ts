@@ -91,6 +91,11 @@ function matchRows(page: Page, name: string): Locator {
   return page.locator(`${VIEW} .line-match[data-path$="/${name}"]`);
 }
 
+/** The results list recycles its rows, so DOM order is not line order. */
+function matchRowAt(page: Page, name: string, line: number): Locator {
+  return page.locator(`${VIEW} .line-match[data-path$="/${name}"][data-line="${line}"]`);
+}
+
 describe("the Search view", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
@@ -176,7 +181,7 @@ describe("the Search view", function () {
       "the badge counts that file's matches",
     );
 
-    const firstSageMatch = matchRows(activePage, "sage.md").first();
+    const firstSageMatch = matchRowAt(activePage, "sage.md", 3);
     assert.equal(await firstSageMatch.locator(".match-before").innerText(), "Compute the maximal ");
     assert.equal(await firstSageMatch.locator(".match-inside").innerText(), TERM);
     assert.equal(await firstSageMatch.locator(".match-after").innerText(), " with Sage.");
