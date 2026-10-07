@@ -19,8 +19,8 @@
  *              the renderer, the fence is formed out of a main-process
  *              broadcast, and the hash comparison lives in main. Both
  *              outcomes they produce together — a decision that lands on the
- *              edited chunk, and one refused for text main was never told
- *              about — appear nowhere below the two processes.
+ *              edited chunk, and one whose stale fence the store recovers
+ *              from — appear nowhere below the two processes.
  *
  * END HEADER
  */
@@ -696,7 +696,7 @@ describe("a review decision waits for the document authority", function () {
     assert.deepEqual(await toastMessages(activePage), []);
   });
 
-  it("refuses a decision when another pane changed the document after the sync", async function () {
+  it("applies a decision that another pane's edit made stale", async function () {
     const activeApi = requireInitialized(api, "the Agent API client must be initialized");
     const activePage = requireInitialized(page, "the editor page must be initialized");
     const activePath = requireInitialized(documentPath, "the document path must be initialized");
@@ -763,9 +763,10 @@ describe("a review decision waits for the document authority", function () {
 
     // The second pane's edit is issued first and travels the same ordered IPC
     // channel, so it takes the provider's per-document lock before the
-    // decision does. The first pane.s fence was formed in that same renderer task,
-    // out of the snapshot it was drawn with — and names text that no longer
-    // exists by the time the decision is applied.
+    // decision does. The first pane's fence was formed in that same renderer
+    // task, out of the snapshot it was drawn with, and names text that no
+    // longer exists when main checks it. Main refuses that fence; the store
+    // reads the current session, forms a new fence, and decides again.
     await editLines(activePage, {
       editPane: 1,
       line: "# Authority sync",
@@ -776,43 +777,17 @@ describe("a review decision waits for the document authority", function () {
       },
     });
 
-    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
-    await toast.first().waitFor({ state: "visible", timeout: 30_000 });
-    assert.equal(
-      await toast.first().locator("span").first().innerText(),
-      "The document changed after this decision was prepared. Reload the review and try again.",
-      "the refusal must name the hash precondition, not a generic failure",
-    );
-
-    const afterDecision = await chunkListing(activeApi, staleReviewId);
-    assert.equal(
-      afterDecision.generation,
-      beforeDecision.generation,
-      "a refused decision must not advance the review generation",
-    );
-    assert.ok(
-      afterDecision.chunks.some((chunk) => chunk.chunkId === beforeDecision.chunks[0].chunkId),
-      "the chunk the refused decision named must still be outstanding",
-    );
     await waitFor(
       async () => await workingText(activeApi),
-      (text) => text.includes("# Authority sync edited twice"),
-      "the authority to hold the other pane's edits",
+      (text) => text.includes("# Authority sync edited twice") && text.includes("delta final"),
+      "the authority to hold the other pane's edits and the accepted chunk",
     );
-
-    // Leave the window closable: resolve the review and flush the buffer.
-    await toast.first().locator('button[aria-label="Dismiss"]').click();
-    // Disposing of the remaining chunks is the reviewer's: the review bar's
-    // own control, which is the only surface that offers it. The other
-    // pane's edits reach this pane as remote changes, so its bar is inert
-    // until the broadcast for them lands; only then does its fence name the
-    // text main holds.
-    const liveClear = reviewPane(activePage).locator(
-      ".cm-collaborationControl-review-bar:not([inert]) .suggestion-clear",
-    );
-    await liveClear.waitFor({ state: "visible", timeout: 30_000 });
-    await liveClear.click();
     await waitForNoCards(activePage);
+    assert.deepEqual(
+      await toastMessages(activePage),
+      [],
+      "a decision that recovers from a stale snapshot reports no failure",
+    );
     assert.deepEqual(
       await activePage.evaluate(
         async (pathInPage: string) =>
