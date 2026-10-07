@@ -418,7 +418,17 @@ function applyChangeSet(workingText: string, changes: ChangeSet): string {
 // ============================================================================
 
 /** A parsed patch, or the reason the patch text is not one reviewable patch. */
-type PatchValidation = { ok: true; patch: StructuredPatch } | { ok: false; reason: string };
+type PatchValidation = ValidPatch | InvalidPatch;
+
+interface ValidPatch {
+  ok: true;
+  patch: StructuredPatch;
+}
+
+interface InvalidPatch {
+  ok: false;
+  reason: string;
+}
 
 /**
  * Parse exactly one text-file patch and validate it. Reject binary, create,
