@@ -25,7 +25,10 @@
           class="annotation-lifecycle-pill acted"
         >{{ trans("Acted") }}</span>
       </div>
-      <p class="annotation-message-text">{{ message.text }}</p>
+      <div
+        v-annotation-markdown="message.text"
+        class="annotation-message-text"
+      ></div>
     </div>
   </div>
 </template>
@@ -56,6 +59,7 @@ import type { DateTime } from "luxon";
 import { AvatarFallback, AvatarRoot } from "reka-ui";
 import { computed } from "vue";
 import { threadMessageView } from "../sidebar/annotations/annotation-presentation";
+import { vAnnotationMarkdown } from "./annotation-markdown";
 
 const props = defineProps<{
   messages: AnnotationMessage[];
@@ -98,6 +102,14 @@ body {
     .annotation-message-text {
       margin: 0 0 0 26px;
       white-space: pre-wrap;
+
+      > :first-child {
+        margin-top: 0;
+      }
+
+      > :last-child {
+        margin-bottom: 0;
+      }
     }
   }
 

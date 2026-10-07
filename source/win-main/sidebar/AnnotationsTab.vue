@@ -88,11 +88,15 @@
         >
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
           <span class="annotation-workspace-copy">
-            <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
-            <span
+            <div
+              v-annotation-markdown="card.instructionText"
+              class="annotation-workspace-summary"
+            ></div>
+            <div
               v-if="card.quotedText.length > 0"
+              v-annotation-markdown="card.quotedText"
               class="annotation-workspace-context"
-            >“{{ card.quotedText }}”</span>
+            ></div>
           </span>
           <span
             class="annotation-lifecycle-pill"
@@ -154,6 +158,7 @@ import type { ReviewFailure } from "source/app/service-providers/documents/docum
 import { useDocumentCollaborationStore } from "source/pinia";
 import { computed, reactive, ref, watch } from "vue";
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
+import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
 import {
   type AnnotationCardView,
   buildSuggestionNavigatorRows,

@@ -361,7 +361,7 @@ describe("the annotation review panel pane", function () {
     // The row leads with the owner's whole reason: nothing about it is cut
     // off, however narrow the panel is.
     const summary = row.locator(".annotation-workspace-summary");
-    assert.equal(await summary.innerText(), LATTICE_INSTRUCTION);
+    assert.equal(await summary.innerText(), LATTICE_INSTRUCTION.replace("$L$", "𝐿"));
     assert.equal(
       await row.locator(".annotation-workspace-summary mjx-container").count(),
       1,
@@ -420,7 +420,7 @@ describe("the annotation review panel pane", function () {
   it("resolves an annotation from its thread", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     // "See" opens line 3, so this annotation has a chip of its own.
-    const see = await createAnnotation(activePage, 17, 20, "Name the definition this refers to.");
+    const see = await createAnnotation(activePage, 21, 24, "Name the definition this refers to.");
     await activePage.locator(".cm-textAnnotation-gutterMarker").nth(1).click();
     const thread = inlineThread(activePage, see);
     await thread.waitFor({ state: "visible", timeout: 10_000 });

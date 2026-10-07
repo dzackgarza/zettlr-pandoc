@@ -30,8 +30,9 @@
          one needs its text spelled out, since nothing marks it any more. -->
     <blockquote
       v-if="actionRow.canReattach"
+      v-annotation-markdown="card.quotedText"
       class="annotation-selected-quote"
-    >{{ card.quotedText }}</blockquote>
+    ></blockquote>
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
@@ -163,6 +164,7 @@ import {
 import AnnotationComposer from "./AnnotationComposer.vue";
 import AnnotationThread from "./AnnotationThread.vue";
 import ProposalActionCard from "./ProposalActionCard.vue";
+import { vAnnotationMarkdown } from "./annotation-markdown";
 
 const props = defineProps<{
   card: AnnotationCardView;
