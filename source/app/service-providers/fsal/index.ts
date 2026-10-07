@@ -30,7 +30,7 @@ import ProviderContract from "@providers/provider-contract";
 import type { EventName } from "chokidar/handler.js";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
-import { constants as FS_CONSTANTS, promises as fs, type Stats } from "fs";
+import { constants as FS_CONSTANTS, promises as fs, lstatSync, type Stats } from "fs";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
@@ -110,7 +110,10 @@ export {
   getFilesystemMetadata,
 };
 
-export type FSALEventPayloadUnlink = { event: "unlink" | "unlinkDir"; path: string };
+export type FSALEventPayloadUnlink = {
+  event: "unlink" | "unlinkDir";
+  path: string;
+};
 
 export interface FSALEventPayloadChange {
   event: "add" | "addDir" | "change";
@@ -456,7 +459,10 @@ export default class FSAL extends ProviderContract {
 
         try {
           const descriptor = await this.getDescriptorFor(change.path);
-          this.publishEvent({ event: change.isDirectory ? "addDir" : "add", descriptor });
+          this.publishEvent({
+            event: change.isDirectory ? "addDir" : "add",
+            descriptor,
+          });
         } catch (err: unknown) {
           this._logger.error(
             `[FSAL] Could not list ${change.path} after an ignore rule change`,
@@ -652,7 +658,10 @@ export default class FSAL extends ProviderContract {
       );
     }
     start = performance.now();
-    task?.update({ info: trans("Indexing %s paths…", pathsToIndex.length), percentage: 0 });
+    task?.update({
+      info: trans("Indexing %s paths…", pathsToIndex.length),
+      percentage: 0,
+    });
 
     // Round the increment to 4 digits after the period.
     const roundToDigits = 4;
@@ -817,7 +826,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<string>}            Resolves with UTF-8 encoded content.
    */
   public async readTextFile(filePath: string): Promise<string> {
-    return await fs.readFile(filePath, "utf-8");
+    return fs.readFile(filePath, "utf-8");
   }
 
   /**
@@ -860,12 +869,9 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a dir
    */
   public async isDir(absPath: string): Promise<boolean> {
-    try {
-      const stat = await fs.lstat(absPath);
-      return stat.isDirectory();
-    } catch (err: unknown) {
-      return false;
-    }
+    // A missing entry is the only answer of "no"; any other lstat error throws.
+    const stat = lstatSync(absPath, { throwIfNoEntry: false });
+    return stat !== undefined && stat.isDirectory();
   }
 
   /**
@@ -876,12 +882,9 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a file
    */
   public async isFile(absPath: string): Promise<boolean> {
-    try {
-      const stat = await fs.lstat(absPath);
-      return stat.isFile();
-    } catch (err: unknown) {
-      return false;
-    }
+    // A missing entry is the only answer of "no"; any other lstat error throws.
+    const stat = lstatSync(absPath, { throwIfNoEntry: false });
+    return stat !== undefined && stat.isFile();
   }
 
   /**
@@ -892,7 +895,8 @@ export default class FSAL extends ProviderContract {
    * @deprecated  Use `writeTextFile` instead
    */
   public async createFile(filePath: string, content: string): Promise<void> {
-    return await this.writeTextFile(filePath, content);
+    await this._cache.del(filePath);
+    await fs.writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
   }
 
   /**
@@ -901,8 +905,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  sourceFile  The source file
    * @param  {string}  targetFile  The target path
    */
-  public async copyFile(sourceFile: string, targetFile: string): Promise<void> {
-    return await fs.copyFile(sourceFile, targetFile);
+  public copyFile(sourceFile: string, targetFile: string): Promise<void> {
+    return fs.copyFile(sourceFile, targetFile);
   }
 
   /**
@@ -912,8 +916,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}            newName  The new name for the file
    * @deprecated
    */
-  public async renameFile(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public renameFile(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -962,7 +966,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<string[]>}           The files in the directory.
    */
   public async readdir(dirPath: string): Promise<string[]> {
-    return await fs.readdir(dirPath, "utf-8");
+    return fs.readdir(dirPath, "utf-8");
   }
 
   /**
@@ -987,11 +991,11 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
    */
-  public async bindQuartoManifest(
+  public bindQuartoManifest(
     src: DirDescriptor,
     manifestPath: string,
   ): Promise<FSALDir.QuartoManifestBinding> {
-    return await FSALDir.bindQuartoManifest(src, manifestPath);
+    return FSALDir.bindQuartoManifest(src, manifestPath);
   }
 
   /**
@@ -1067,8 +1071,8 @@ export default class FSAL extends ProviderContract {
    * @param   {string}         newName  The new name for the dir
    * @deprecated
    */
-  public async renameDir(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public renameDir(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -1106,8 +1110,8 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}        target  Where to move it
    * @deprecated
    */
-  public async move(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public move(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -1264,8 +1268,8 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<FilesystemMetadata>}           Returns the metadata.
    * @throws
    */
-  public async getFilesystemMetadata(absPath: string): Promise<FilesystemMetadata> {
-    return await getFilesystemMetadata(absPath);
+  public getFilesystemMetadata(absPath: string): Promise<FilesystemMetadata> {
+    return getFilesystemMetadata(absPath);
   }
 
   // *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
@@ -1302,7 +1306,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
-    return await readDirectoryFromDisk(
+    return readDirectoryFromDisk(
       absPath,
       this.listingRules(),
       this.deadWorkspaces.has(absPath),

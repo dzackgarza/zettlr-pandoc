@@ -26,6 +26,10 @@
  */
 
 import type { EditorView } from "@codemirror/view";
+import {
+  ANNOTATE_SELECTION_EVENT,
+  runRegisteredEditorCommand,
+} from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import { type AnyMenuItem } from "@common/modules/window-register/application-menu-helper";
 
@@ -34,7 +38,7 @@ import { type AnyMenuItem } from "@common/modules/window-register/application-me
  * as opposed to the menu item's translated label, which a locale change
  * could alter without touching the command's actual identity.
  */
-export const ANNOTATE_SELECTION_EVENT = "zettlr-annotate-selection";
+export { ANNOTATE_SELECTION_EVENT };
 
 /**
  * Resolves the "Annotate for AI…" menu item at the view's CURRENT
@@ -52,18 +56,7 @@ export function resolveAnnotateSelectionMenuItem(view: EditorView): AnyMenuItem 
     label: trans("Annotate for AI…"),
     type: "normal",
     action() {
-      // The element's OWN realm's CustomEvent, not the ambient global one:
-      // under jsdom (test/setup.js copies window onto global but a native
-      // Node CustomEvent shadows jsdom's own), dispatching an event built
-      // from the wrong realm's constructor throws. Production's single
-      // window realm makes this the same constructor either way.
-      const ownerWindow = view.dom.ownerDocument.defaultView ?? window;
-      view.dom.dispatchEvent(
-        new ownerWindow.CustomEvent(ANNOTATE_SELECTION_EVENT, {
-          bubbles: true,
-          detail: { from: selection.from, to: selection.to },
-        }),
-      );
+      runRegisteredEditorCommand("annotate-selection", view);
     },
   };
 }

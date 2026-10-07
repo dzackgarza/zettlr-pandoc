@@ -88,12 +88,20 @@
         >
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
           <span class="annotation-workspace-copy">
-            <span class="annotation-workspace-summary">{{ card.instructionText }}</span>
-            <span
+            <div
+              v-annotation-markdown="card.instructionText"
+              class="annotation-workspace-summary"
+            />
+            <div
               v-if="card.quotedText.length > 0"
+              v-annotation-markdown="card.quotedText"
               class="annotation-workspace-context"
-            >“{{ card.quotedText }}”</span>
+            />
           </span>
+          <span
+            class="annotation-lifecycle-pill"
+            :class="card.annotation.agentStatus.state"
+          >{{ card.annotation.agentStatus.state === 'acted' ? trans('Acted') : trans('Open') }}</span>
         </button>
 
         <button
@@ -149,6 +157,7 @@ import type { SourceRange } from "@dts/common/references";
 import type { ReviewFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { useDocumentCollaborationStore } from "source/pinia";
 import { computed, reactive, ref, watch } from "vue";
+import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
@@ -442,7 +451,7 @@ body {
     display: grid;
     content-visibility: auto;
     contain-intrinsic-size: auto 28px;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
     gap: 6px;
     width: 100%;

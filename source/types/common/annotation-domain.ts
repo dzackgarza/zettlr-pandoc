@@ -65,11 +65,22 @@ export interface AnnotationProposalAction {
   terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
 }
 
+/**
+ * The agent's own work state is deliberately separate from the owner's
+ * resolution state. `acted` is a claim by the agent that it performed the
+ * requested remediation; `messageId` points at the agent-authored disposition
+ * the owner should inspect before resolving the annotation.
+ */
+export type AnnotationAgentStatus =
+  | { state: "pending" }
+  | { state: "acted"; messageId: string; actedAt: string };
+
 export interface TextAnnotation {
   annotationId: string;
   documentId: string;
   anchor: AnnotationAnchor;
   state: "open" | "resolved";
+  agentStatus: AnnotationAgentStatus;
   /** Never empty: an annotation is created by its first message. */
   messages: [AnnotationMessage, ...AnnotationMessage[]];
   proposalActions: AnnotationProposalAction[];
@@ -90,7 +101,8 @@ export interface AnnotationSet {
 }
 
 /**
- * Who asked for a mutation. Lifecycle belongs to the owner alone; an agent
- * may query, reply, and submit proposals, and nothing else.
+ * Who asked for a mutation. Resolution, reattachment, deletion and creation
+ * belong to the owner. An agent may query, reply, submit proposals, and mark
+ * an open annotation acted after attaching a disposition message.
  */
 export type AnnotationActor = "owner" | "agent";

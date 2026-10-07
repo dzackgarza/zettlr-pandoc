@@ -36,8 +36,9 @@
         </div>
       </template>
       <template #view2>
+        <KeyboardShortcutsEditor v-if="showKeyboardShortcutsEditor" />
         <FormBuilder
-          v-if="schema.fieldsets.length > 0"
+          v-else-if="schema.fieldsets.length > 0"
           ref="form"
           v-bind:model="model"
           v-bind:schema="schema"
@@ -77,6 +78,7 @@ import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
 import { useConfigStore } from "source/pinia";
 import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
+import KeyboardShortcutsEditor from "./KeyboardShortcutsEditor.vue";
 import { getPreferenceFieldsets, getPreferenceGroups } from "./schema";
 
 const ipcRenderer = window.ipc;
@@ -138,6 +140,10 @@ const schema = computed(() => {
 });
 
 const selectedItem = computed(() => (query.value === "" ? currentGroup.value : -1));
+
+const showKeyboardShortcutsEditor = computed(
+  () => query.value === "" && groups.value[currentGroup.value].id === PreferencesGroups.Shortcuts,
+);
 
 const fieldsets = computed(() => {
   return getPreferenceFieldsets(configStore.config, appLangOptions.value);

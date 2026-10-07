@@ -405,6 +405,51 @@ describe("the Ctrl+P command launcher", function () {
     await preferencesPage.close();
   });
 
+  it("edits registered shortcuts in a searchable keybindings table", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const activeBrowser = requireInitialized(browser, "The browser must be initialized");
+
+    await activePage.evaluate(async () => {
+      await window.ipc.invoke("application", {
+        command: "open-preferences",
+        payload: { group: 11, model: "shortcuts.editor.annotate-selection" },
+      });
+    });
+    const preferencesPage = await findPreferencesPage(activeBrowser);
+    try {
+      const search = preferencesPage.locator("[data-keybindings-search]");
+      await search.waitFor({ state: "visible", timeout: 20_000 });
+
+      const headers = await preferencesPage
+        .locator("[data-keybindings-table] [role=columnheader]")
+        .allTextContents();
+      assert.deepEqual(headers, ["Command", "Keybinding", "When", "Source", "Actions"]);
+      await search.scrollIntoViewIfNeeded();
+      screenshots.set("keyboard-shortcuts.png", await preferencesPage.screenshot());
+
+      await search.fill("annotate");
+      const row = preferencesPage.locator('[data-command-id="annotate-selection"]');
+      await row.waitFor({ state: "visible" });
+      assert.equal(await preferencesPage.locator("[data-keybinding-row]").count(), 1);
+      assert.match(await row.innerText(), /Annotate for AI/);
+      assert.match(await row.innerText(), /editorHasSelection/);
+      assert.match(await row.innerText(), /Default/);
+
+      await row.locator("[data-edit-keybinding]").click();
+      const capture = row.locator("[data-keybinding-capture]");
+      await capture.press("Control+Shift+1");
+      await capture.press("Enter");
+      assert.match(await row.innerText(), /User/);
+      assert.match(await row.innerText(), /Ctrl/i);
+
+      await row.locator("[data-reset-keybinding]").click();
+      assert.match(await row.innerText(), /Default/);
+      assert.match(await row.innerText(), /Unassigned/);
+    } finally {
+      await preferencesPage.close();
+    }
+  });
+
   it("discovers the workspace Git root and browses its public Justfile recipes", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await focusOutsideEditor(activePage);

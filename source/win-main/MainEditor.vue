@@ -82,6 +82,7 @@
 
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import { isCommandId, runRegisteredEditorCommand } from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
 import MarkdownEditor from "@common/modules/markdown-editor";
 import {
@@ -1059,10 +1060,16 @@ watch(toRef(props.editorCommands, "executeCommand"), () => {
   }
 
   const data = props.editorCommands.data;
-  if (typeof data !== "string" || !isEditorCommandName(data)) {
+  if (typeof data !== "string") {
     return; // The toggled command carried no editor command name
   }
-  currentEditor.runCommand(data);
+  if (isEditorCommandName(data)) {
+    currentEditor.runCommand(data);
+  } else if (isCommandId(data)) {
+    runRegisteredEditorCommand(data, currentEditor.instance);
+  } else {
+    throw new Error(`The editor received an unknown command: ${data}`);
+  }
   currentEditor.focus();
 });
 

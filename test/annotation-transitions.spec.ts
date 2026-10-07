@@ -155,6 +155,7 @@ describe("pure annotation transitions", function () {
     assert.equal(annotation.messages[0].author, "owner");
     assert.equal(annotation.messages[0].text, INSTRUCTION);
     assert.equal(annotation.state, "open");
+    assert.deepEqual(annotation.agentStatus, { state: "pending" });
     assert.deepEqual(annotation.proposalActions, []);
     assert.equal(annotation.createdAt, annotation.updatedAt);
     assert.equal(annotation.resolvedAt, undefined);
@@ -292,6 +293,99 @@ describe("pure annotation transitions", function () {
     );
     assert.equal(only(plan.nextAnnotations).messages.length, 2);
     assert.equal(plan.nextAnnotations.generation, 2);
+    assert.deepEqual(only(plan.nextAnnotations).agentStatus, { state: "pending" });
+  });
+
+  it("lets the agent mark its disposition acted without resolving the owner's annotation", function () {
+    const annotations = oneAnnotation();
+    const plan = planned(
+      prepareAnnotationMessage({
+        annotations,
+        actor: "agent",
+        annotationId: only(annotations).annotationId,
+        text: "Implemented the requested correction in commit abc123.",
+        clientRequestId: "agent-disposition-1",
+        markActed: true,
+        expectedAnnotationGeneration: 1,
+      }),
+    );
+    const annotation = only(plan.nextAnnotations);
+    assert.equal(annotation.state, "open", "agent action must not resolve owner lifecycle state");
+    assert.deepEqual(annotation.agentStatus, {
+      state: "acted",
+      messageId: plan.response.messageId,
+      actedAt: annotation.updatedAt,
+    });
+    assert.deepEqual(
+      plan.events.map((event) => event.event),
+      ["annotation.message-added", "annotation.acted"],
+    );
+  });
+
+  it("upgrades an already-posted agent disposition to acted on idempotent replay, without duplicating it", function () {
+    const annotations = oneAnnotation();
+    const annotationId = only(annotations).annotationId;
+    const posted = planned(
+      prepareAnnotationMessage({
+        annotations,
+        actor: "agent",
+        annotationId,
+        text: "Implemented the requested correction in commit abc123.",
+        clientRequestId: "agent-disposition-upgrade",
+        expectedAnnotationGeneration: 1,
+      }),
+    );
+    const acted = planned(
+      prepareAnnotationMessage({
+        annotations: posted.nextAnnotations,
+        actor: "agent",
+        annotationId,
+        text: "Implemented the requested correction in commit abc123.",
+        clientRequestId: "agent-disposition-upgrade",
+        markActed: true,
+        expectedAnnotationGeneration: posted.nextAnnotations.generation,
+      }),
+    );
+    const annotation = only(acted.nextAnnotations);
+    assert.equal(annotation.messages.length, 2);
+    assert.equal(acted.response.messageId, posted.response.messageId);
+    assert.equal(annotation.agentStatus.state, "acted");
+    assert.equal(
+      annotation.agentStatus.state === "acted" ? annotation.agentStatus.messageId : undefined,
+      posted.response.messageId,
+    );
+    assert.deepEqual(
+      acted.events.map((event) => event.event),
+      ["annotation.acted"],
+    );
+  });
+
+  it("an owner reply reopens the agent work state without changing owner resolution state", function () {
+    const annotations = oneAnnotation();
+    const annotationId = only(annotations).annotationId;
+    const acted = planned(
+      prepareAnnotationMessage({
+        annotations,
+        actor: "agent",
+        annotationId,
+        text: "Implemented the requested correction.",
+        clientRequestId: "agent-disposition-owner-followup",
+        markActed: true,
+        expectedAnnotationGeneration: 1,
+      }),
+    );
+    const replied = planned(
+      prepareAnnotationMessage({
+        annotations: acted.nextAnnotations,
+        actor: "owner",
+        annotationId,
+        text: "This still does not address the normalization issue.",
+        expectedAnnotationGeneration: acted.nextAnnotations.generation,
+      }),
+    );
+    const annotation = only(replied.nextAnnotations);
+    assert.equal(annotation.state, "open");
+    assert.deepEqual(annotation.agentStatus, { state: "pending" });
   });
 
   it("answers a replayed clientRequestId with the message it already posted, without a second turn", function () {
@@ -403,6 +497,7 @@ describe("pure annotation transitions", function () {
       }),
     ).nextAnnotations;
     assert.equal(only(reopenedSet).state, "open");
+    assert.deepEqual(only(reopenedSet).agentStatus, { state: "pending" });
     assert.equal(only(reopenedSet).resolvedAt, undefined);
     assert.equal(reopenedSet.generation, 3);
   });

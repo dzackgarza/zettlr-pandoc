@@ -60,6 +60,7 @@ export type ReviewListResponse = Schemas["ReviewListResponse"];
 export type AnnotationTarget = Schemas["AnnotationTarget"];
 export type AnnotationMessage = Schemas["AnnotationMessage"];
 export type AnnotationProposalAction = Schemas["AnnotationProposalAction"];
+export type AnnotationAgentStatus = Schemas["AnnotationAgentStatus"];
 export type AnnotationResponse = Schemas["AnnotationResponse"];
 export type AnnotationListResponse = Schemas["AnnotationListResponse"];
 export type AddAnnotationMessageRequest = Schemas["AddAnnotationMessageRequest"];
@@ -79,6 +80,10 @@ export type WorkspaceDocumentEntry = Schemas["WorkspaceDocumentSummary"];
 export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
+export type WorkspaceDirectoryEntry = Schemas["WorkspaceDirectoryEntry"];
+export type WorkspaceDirectoriesResponse = Schemas["WorkspaceDirectoriesResponse"];
+export type WorkspaceEntryCreateRequest = Schemas["WorkspaceEntryCreateRequest"];
+export type WorkspaceEntryResponse = Schemas["WorkspaceEntryResponse"];
 export type HelpResponse = Schemas["HelpResponse"];
 export type PingResponse = Schemas["PingResponse"];
 export type CapabilitiesResponse = Schemas["CapabilitiesResponse"];
@@ -94,6 +99,9 @@ export type MacroMathJaxDefinition = Schemas["MacroMathJaxDefinition"];
 export type MacroDeclaration = Schemas["MacroDeclaration"];
 export type MacroEntry = Schemas["MacroEntry"];
 export type MacroInventoryResponse = Schemas["MacroInventoryResponse"];
+export type SkillTreeEntry = Schemas["SkillTreeEntry"];
+export type SkillsListResponse = Schemas["SkillsListResponse"];
+export type SkillFileResponse = Schemas["SkillFileResponse"];
 export type FigureEntry = Schemas["FigureEntry"];
 export type FigureListResponse = Schemas["FigureListResponse"];
 export type FigureFileResponse = Schemas["FigureFileResponse"];
@@ -141,7 +149,9 @@ type JsonBody<Response> = Response extends {
  */
 export type AgentApiResponseBody = operations[keyof operations] extends infer Operation
   ? Operation extends { responses: infer Responses }
-    ? { [Status in keyof Responses]: JsonBody<Responses[Status]> }[keyof Responses]
+    ? {
+        [Status in keyof Responses]: JsonBody<Responses[Status]>;
+      }[keyof Responses]
     : never
   : never;
 

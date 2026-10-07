@@ -63,7 +63,7 @@
  * END HEADER
  */
 
-import { type ExplodedShortcut, explodeShortcut } from "@common/util/shortcuts";
+import { type ExplodedShortcut, explodeShortcut, implodeShortcut } from "@common/util/shortcuts";
 import { trans } from "source/common/i18n-renderer";
 import { computed, ref } from "vue";
 import { base, keyName } from "w3c-keyname";
@@ -173,25 +173,6 @@ function handleKeydown(event: KeyboardEvent): void {
     console.log("Finished shortcut:", implodeShortcut(newShortcut.value));
     stopRecording(event);
   }
-}
-
-function implodeShortcut(shortcut: ExplodedShortcut): string {
-  let returnVal = shortcut.key;
-
-  if (shortcut.altKey) {
-    returnVal = `Alt-${returnVal}`;
-  }
-  if (shortcut.shiftKey) {
-    returnVal = `Shift-${returnVal}`;
-  }
-  if (shortcut.modKey) {
-    returnVal = `Mod-${returnVal}`;
-  }
-  if (shortcut.ctrlKey) {
-    returnVal = `Ctrl-${returnVal}`;
-  }
-
-  return returnVal;
 }
 </script>
 

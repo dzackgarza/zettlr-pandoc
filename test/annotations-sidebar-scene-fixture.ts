@@ -76,6 +76,7 @@ export function buildSceneAnnotations(): TextAnnotation[] {
       quotedText: "framing problems, judgment, empathy, and meaning-making.",
     },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "msg-1",
@@ -101,6 +102,7 @@ export function buildSceneAnnotations(): TextAnnotation[] {
     documentId: SCENE_DOCUMENT_ID,
     anchor: { state: "range", ...proposalTarget, quotedText: "resistant to full automation." },
     state: "open",
+    agentStatus: { state: "acted", messageId: "msg-4", actedAt: at(11) },
     messages: [
       {
         messageId: "msg-3",
@@ -128,6 +130,7 @@ export function buildSceneAnnotations(): TextAnnotation[] {
     documentId: SCENE_DOCUMENT_ID,
     anchor: { state: "range", ...resolvedTarget, quotedText: "work with it." },
     state: "resolved",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "msg-5",
@@ -231,6 +234,7 @@ function buildMultiTurnAnnotation(): TextAnnotation {
       quotedText: "premium will be on human abilities that are difficult to automate",
     },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "mt-1",
@@ -279,6 +283,7 @@ function buildPartialProposalAnnotation(): TextAnnotation {
     documentId: SCENE_DOCUMENT_ID,
     anchor: { state: "range", ...target, quotedText: "Automation excels at well-defined tasks" },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       { messageId: "pp-1", author: "owner", text: "Which tasks, specifically?", createdAt: at(15) },
       {
@@ -350,6 +355,7 @@ function buildOrphanedAnnotation(): TextAnnotation {
       reason: "external-drift",
     },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "msg-6",

@@ -209,7 +209,7 @@ async function main() {
   }
 
   const listed = success(
-    await request(port, "GET", "/v1/workspace/files"),
+    await request(port, "GET", "/v1/workspaces?include=files"),
     200,
     "workspace file listing",
   );

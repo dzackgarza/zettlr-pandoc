@@ -19,6 +19,7 @@ import { TeX } from "@mathjax/src/cjs/input/tex.js";
 import { mathjax } from "@mathjax/src/cjs/mathjax.js";
 import { CHTML } from "@mathjax/src/cjs/output/chtml.js";
 import "@mathjax/src/cjs/input/tex/ams/AmsConfiguration.js";
+import "@mathjax/src/cjs/input/tex/boldsymbol/BoldsymbolConfiguration.js";
 import "@mathjax/src/cjs/input/tex/configmacros/ConfigMacrosConfiguration.js";
 import "@mathjax/src/cjs/input/tex/mhchem/MhchemConfiguration.js";
 import "@mathjax/src/cjs/input/tex/newcommand/NewcommandConfiguration.js";
@@ -125,8 +126,17 @@ function mapKeysForHandler<N, T, D>(tex: TeX<N, T, D>, handlerType: HandlerType)
     // MathJax exposes no public enumeration of a parse map; its table is the
     // `private map: Map<string, K>` of AbstractParseMap
     // (mathjax/MathJax-src ts/input/tex/TokenMap.ts). Element access reads
-    // that declared field with its declared type.
-    keys.push(...tokenMap["map"].keys());
+    // that runtime field through the narrow structural type missing from the
+    // public declaration.
+    const enumerableMap: unknown = Reflect.get(tokenMap, "map");
+    if (!(enumerableMap instanceof Map)) {
+      continue;
+    }
+    for (const key of enumerableMap.keys()) {
+      if (typeof key === "string") {
+        keys.push(key);
+      }
+    }
   }
   return keys;
 }

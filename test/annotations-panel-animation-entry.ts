@@ -5,6 +5,7 @@
 
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./document-collaboration-ipc-double";
+import "./provision-renderer-window-seams";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { textAnnotationsExtension } from "@common/modules/markdown-editor/plugins/text-annotations";
@@ -39,6 +40,7 @@ function generateAnnotations(count: number, docLength: number): TextAnnotation[]
         quotedText: `Sample quoted passage number ${i}`,
       },
       state: i % 5 === 0 ? "resolved" : "open",
+      agentStatus: { state: "pending" },
       messages: [
         {
           messageId: `msg-${i}-1`,

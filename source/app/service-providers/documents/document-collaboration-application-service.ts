@@ -327,6 +327,13 @@ interface AnnotationDocumentState {
 /** The refusal an annotation mutation answers with when it never ran. */
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
 
+/** Plans one annotation mutation against the text and annotations it reads. */
+type AnnotationMutationPrepare<Response> = (context: {
+  documentPath: string;
+  workingText: string;
+  annotations: AnnotationSet;
+}) => AnnotationMutationPlan<Response> | AnnotationTransitionError;
+
 /** Every refusal of a decision on a frozen review names its recovery. */
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
@@ -1142,7 +1149,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed after it was opened. Reload it and try again.",
+        message: "This review changed while the action was being applied. Try the action again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1154,8 +1161,7 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVISION_MISMATCH",
-        message:
-          "The document changed after this decision was prepared. Reload the review and try again.",
+        message: "The document changed while the action was being applied. Try the action again.",
         actual: { sha256: actualSha256 },
         reviewGeneration: context.review.generation,
       };
@@ -1348,7 +1354,8 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed. Reload it and try again.",
+        message:
+          "This review changed while the proposal was being applied. Read the current review state and try again.",
       };
     }
 
@@ -1648,7 +1655,7 @@ export class CollaborationApplicationService {
   public async reapplyReview(
     input: ReviewRecoveryInput,
   ): Promise<ReapplyReviewResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -1725,7 +1732,7 @@ export class CollaborationApplicationService {
   public async discardInvalidatedReview(
     input: ReviewRecoveryInput,
   ): Promise<DiscardReviewResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -1779,7 +1786,7 @@ export class CollaborationApplicationService {
   public async returnInvalidatedReview(
     input: ReviewRecoveryInput,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -1861,7 +1868,8 @@ export class CollaborationApplicationService {
       return {
         ok: false,
         code: "REVIEW_GENERATION_MISMATCH",
-        message: "This review changed after it was opened. Reload it and try again.",
+        message:
+          "This review changed while the recovery action was being applied. Read the current review state and try again.",
         reviewGeneration: review.generation,
       };
     }
@@ -1987,8 +1995,8 @@ export class CollaborationApplicationService {
   // ==========================================================================
 
   /**
-   * The one ordering every annotation mutation obeys, and the twin of
-   * commitReviewMutation above.
+   * The one ordering every annotation mutation of an open document obeys,
+   * and the twin of commitReviewMutation above.
    *
    * `prepare` is pure and may refuse; a refusal reaches the caller having
    * touched nothing, because the only thing that can make a plan true is the
@@ -2002,13 +2010,9 @@ export class CollaborationApplicationService {
    */
   private async commitAnnotationMutation<Response>(
     documentId: string,
-    prepare: (context: {
-      documentPath: string;
-      workingText: string;
-      annotations: AnnotationSet;
-    }) => AnnotationMutationPlan<Response> | AnnotationTransitionError,
+    prepare: AnnotationMutationPrepare<Response>,
   ): Promise<Response | AnnotationFailure> {
-    return await this.withDocumentLock(documentId, async () => {
+    return this.withDocumentLock(documentId, async () => {
       const documentPath = this.deps.authority.resolveDocumentPath(documentId);
       const workingText = this.deps.authority.readWorkingText(documentId);
       if (documentPath === undefined || workingText === undefined) {
@@ -2018,52 +2022,131 @@ export class CollaborationApplicationService {
           message: "The document containing this annotation is no longer open.",
         };
       }
-      const normalized = normalizeText(workingText);
-      const state = this.annotationStates.get(documentId);
-      const plan = prepare({
+      return await this.commitOpenDocumentAnnotationMutation(
+        documentId,
         documentPath,
-        workingText: normalized,
-        annotations: state?.annotations ?? emptyAnnotationSet(),
-      });
-      if (isTransitionError(plan)) {
-        return { ok: false as const, code: plan.code, message: plan.message };
-      }
-
-      const review = this.reviews.getReview(documentId);
-      const diskFenceSha256 =
-        state?.diskFenceSha256 ??
-        review?.diskFenceSha256 ??
-        sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
-
-      try {
-        await this.sidecars.write(
-          this.sidecarFor(documentId, {
-            documentPath,
-            workingText: normalized,
-            review,
-            annotations: plan.nextAnnotations,
-            diskFenceSha256,
-          }),
-        );
-      } catch (error) {
-        return persistenceFailure("the annotation change", error);
-      }
-
-      // The entry stays even when the last annotation goes: the generation a
-      // client just read has to keep meaning what it meant, and a counter
-      // that restarted at zero would answer a stale fence as a fresh one.
-      // Closing the document is what retires it.
-      this.commitAnnotations(documentId, {
-        documentPath,
-        diskFenceSha256,
-        annotations: plan.nextAnnotations,
-      });
-      for (const draft of plan.events) {
-        this.deps.emit(draft.event, draft.payload);
-      }
-      this.deps.authority.broadcastCollaborationState(documentId);
-      return plan.response;
+        workingText,
+        prepare,
+      );
     });
+  }
+
+  /**
+   * An annotation mutation that also reaches a closed document. An open
+   * document takes the ordering of commitAnnotationMutation; a closed one
+   * has no editor state, so its sidecar is both what `prepare` reads and
+   * what the mutation writes.
+   */
+  private async commitAnnotationMutationOnOpenOrClosedDocument<Response>(
+    documentId: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    return this.withDocumentLock(documentId, async () => {
+      const documentPath = this.deps.authority.resolveDocumentPath(documentId);
+      if (documentPath === undefined) {
+        return {
+          ok: false as const,
+          code: "DOCUMENT_NOT_FOUND" as const,
+          message: "The document containing this annotation was not found.",
+        };
+      }
+      const workingText = this.deps.authority.readWorkingText(documentId);
+      if (workingText === undefined) {
+        return await this.commitClosedDocumentAnnotationMutation(documentPath, prepare);
+      }
+      return await this.commitOpenDocumentAnnotationMutation(
+        documentId,
+        documentPath,
+        workingText,
+        prepare,
+      );
+    });
+  }
+
+  /** Runs under the document lock of its caller. */
+  private async commitOpenDocumentAnnotationMutation<Response>(
+    documentId: string,
+    documentPath: string,
+    workingText: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    const normalized = normalizeText(workingText);
+    const state = this.annotationStates.get(documentId);
+    const plan = prepare({
+      documentPath,
+      workingText: normalized,
+      annotations: state?.annotations ?? emptyAnnotationSet(),
+    });
+    if (isTransitionError(plan)) {
+      return { ok: false as const, code: plan.code, message: plan.message };
+    }
+
+    const review = this.reviews.getReview(documentId);
+    const diskFenceSha256 =
+      state?.diskFenceSha256 ??
+      review?.diskFenceSha256 ??
+      sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
+
+    try {
+      await this.sidecars.write(
+        this.sidecarFor(documentId, {
+          documentPath,
+          workingText: normalized,
+          review,
+          annotations: plan.nextAnnotations,
+          diskFenceSha256,
+        }),
+      );
+    } catch (error) {
+      return persistenceFailure("the annotation change", error);
+    }
+
+    // The entry stays even when the last annotation goes: the generation a
+    // client just read has to keep meaning what it meant, and a counter
+    // that restarted at zero would answer a stale fence as a fresh one.
+    // Closing the document is what retires it.
+    this.commitAnnotations(documentId, {
+      documentPath,
+      diskFenceSha256,
+      annotations: plan.nextAnnotations,
+    });
+    for (const draft of plan.events) {
+      this.deps.emit(draft.event, draft.payload);
+    }
+    this.deps.authority.broadcastCollaborationState(documentId);
+    return plan.response;
+  }
+
+  /** Runs under the document lock of its caller. */
+  private async commitClosedDocumentAnnotationMutation<Response>(
+    documentPath: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    const sidecar = await this.sidecars.read(documentPath);
+    if (sidecar === undefined) {
+      return {
+        ok: false as const,
+        code: "ANNOTATION_NOT_FOUND" as const,
+        message: "The annotation is no longer present.",
+      };
+    }
+    const plan = prepare({
+      documentPath,
+      workingText: sidecar.workingText,
+      annotations: sidecar.annotations,
+    });
+    if (isTransitionError(plan)) {
+      return { ok: false as const, code: plan.code, message: plan.message };
+    }
+    try {
+      await this.sidecars.write({ ...sidecar, annotations: plan.nextAnnotations });
+    } catch (error) {
+      return persistenceFailure("the annotation change", error);
+    }
+    for (const draft of plan.events) {
+      this.deps.emit(draft.event, draft.payload);
+    }
+    return plan.response;
   }
 
   /** The owner comments on a stretch of the document. */
@@ -2075,7 +2158,7 @@ export class CollaborationApplicationService {
     instruction: string;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationCreation({
         annotations: context.annotations,
         actor: input.actor,
@@ -2096,15 +2179,17 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     text: string;
     clientRequestId?: string;
+    markActed?: boolean;
     expectedAnnotationGeneration: number;
   }): Promise<AnnotationMessage | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
       prepareAnnotationMessage({
         annotations: context.annotations,
         actor: input.actor,
         annotationId: input.annotationId,
         text: input.text,
         clientRequestId: input.clientRequestId,
+        markActed: input.markActed,
         expectedAnnotationGeneration: input.expectedAnnotationGeneration,
       }),
     );
@@ -2116,7 +2201,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationResolution({ ...input, annotations: context.annotations }),
     );
   }
@@ -2127,7 +2212,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReopen({ ...input, annotations: context.annotations }),
     );
   }
@@ -2138,7 +2223,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationDeletion({ ...input, annotations: context.annotations }),
     );
   }
@@ -2152,7 +2237,7 @@ export class CollaborationApplicationService {
     to: number;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReattachment({
         annotations: context.annotations,
         actor: input.actor,

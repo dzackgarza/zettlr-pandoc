@@ -447,13 +447,12 @@ export async function md2html(markdown: string, options: MD2HTMLOptions): Promis
 
   const noFootnotes = ast.children.filter((node) => node.type !== "FootnoteRef");
   const onlyFootnotes = ast.children.filter((node) => node.type === "FootnoteRef");
-
   const html = nodeToHTML(noFootnotes, options);
-  const fnHTML =
+  const footnotes =
     onlyFootnotes.length > 0 ? "\n<hr>\n" + footnotesToHTML(onlyFootnotes, options) : "";
 
   if (options.onBibliography === undefined) {
-    return html + fnHTML; // No bibliography wanted
+    return html + footnotes;
   }
 
   // Prepare and include a bibliography at the end.
@@ -470,9 +469,12 @@ export async function md2html(markdown: string, options: MD2HTMLOptions): Promis
         : "";
 
     return (
-      html + h1 + ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n") + fnHTML
+      html +
+      h1 +
+      ["\n", bibHTML[0].bibstart, ...bibHTML[1], bibHTML[0].bibend].join("\n") +
+      footnotes
     );
   }
 
-  return html + fnHTML;
+  return html + footnotes;
 }

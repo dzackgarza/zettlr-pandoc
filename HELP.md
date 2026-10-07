@@ -173,8 +173,7 @@ In a Quarto document the caption attribute is `lst-cap`:
 
 Theorem-like blocks use one syntax in every document, in the Quarto book and
 in the pandoc-crossref papers. A block is a fenced div with the family's full
-lowercase class and an ID with the family's prefix and a colon. The title is
-optional:
+lowercase class, an ID with the family's prefix and a colon, and a title:
 
 ```markdown
 ::: {.theorem #thm:nikulin title="Nikulin"}
@@ -226,8 +225,8 @@ decides:
 4. an entry of the document's YAML `aliases`;
 5. the document's YAML `title`.
 
-Write the shortest name that matches one document only; `GET /v1/workspace/files`
-gives it for each file as `linkTarget`. A name survives a move
+Write the shortest name that matches one document only;
+`GET /v1/workspaces?include=files` gives it for each file as `linkTarget`. A name survives a move
 of either file; a relative path such as `[[../programs/cusp-correspondence.md]]`
 does not. `#` and a heading after the name go to that heading:
 `[[cusp-correspondence#Main result]]`.

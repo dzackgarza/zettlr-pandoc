@@ -8,8 +8,8 @@ info:
     and use the returned revision hash. If a patch no longer applies, read the
     document again and rebuild the patch. Accepted edits already appear in the
     working text. The reviewer accepts or rejects changes in the editor; an
-    agent may submit new proposals, add comments, or retract its newest
-    untouched proposal.
+    agent may submit new proposals, add comments, or retract any unresolved
+    proposal it previously submitted.
   license:
     name: GPL-3.0
     url: https://www.gnu.org/licenses/gpl-3.0.html
@@ -26,7 +26,7 @@ components:
       properties:
         sha256:
           type: string
-          pattern: '^[0-9a-f]{64}$'
+          pattern: "^[0-9a-f]{64}$"
     ReviewState:
       type: string
       description: >-
@@ -52,7 +52,7 @@ components:
         reviewId:
           type: string
         state:
-          $ref: '#/components/schemas/ReviewState'
+          $ref: "#/components/schemas/ReviewState"
         generation:
           type: integer
         unresolvedChunks:
@@ -120,7 +120,7 @@ components:
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -128,7 +128,7 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/EditorViewSummary'
+            $ref: "#/components/schemas/EditorViewSummary"
         crossReferences:
           type: string
           enum:
@@ -139,18 +139,18 @@ components:
             the ID syntax: quarto for documents in a Quarto project (#tbl-key),
             pandoc-crossref for everything else (#tbl:key). GET /help shows both.
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     EditorContext:
       type: object
       properties:
         focusedView:
-          $ref: '#/components/schemas/FocusedViewSummary'
+          $ref: "#/components/schemas/FocusedViewSummary"
         focusedDocument:
-          $ref: '#/components/schemas/DocumentSummary'
+          $ref: "#/components/schemas/DocumentSummary"
         openDocuments:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentSummary'
+            $ref: "#/components/schemas/DocumentSummary"
       required:
         - openDocuments
     ReadDocumentResponse:
@@ -177,7 +177,7 @@ components:
             - working
             - reference
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
           minimum: 0
@@ -250,7 +250,7 @@ components:
       properties:
         baselineSha256:
           type: string
-          pattern: '^[0-9a-f]{64}$'
+          pattern: "^[0-9a-f]{64}$"
           description: >-
             SHA-256 returned by the most recent working-content read. It pins
             the exact text the patches must apply to; a stale hash is refused
@@ -272,7 +272,7 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/ProposalClaim'
+            $ref: "#/components/schemas/ProposalClaim"
           description: >-
             Claims are applied in order against the supplied revision. All
             claims succeed or none are applied. Each claim becomes a separate
@@ -305,13 +305,13 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
           type: integer
         state:
-          $ref: '#/components/schemas/ReviewState'
+          $ref: "#/components/schemas/ReviewState"
     AgentError:
       type: object
       required:
@@ -354,6 +354,11 @@ components:
             - CITATION_NOT_FOUND
             - FIGURE_NOT_FOUND
             - FIGURE_ALREADY_EXISTS
+            - SKILLS_NOT_CONFIGURED
+            - SKILL_NOT_FOUND
+            - WORKSPACE_NOT_FOUND
+            - WORKSPACE_OUTSIDE_SCOPE
+            - WORKSPACE_ENTRY_EXISTS
             - DUPLICATE_CLAIM_DESCRIPTION
             - BASELINE_MISMATCH
             - ZOTERO_UNAVAILABLE
@@ -364,9 +369,9 @@ components:
         documentId:
           type: string
         expected:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         actual:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewId:
           type: string
         reviewGeneration:
@@ -392,14 +397,14 @@ components:
             DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of
             the conflicting pair, where an exact match is 1.0.
         remediation:
-          $ref: '#/components/schemas/ZoteroSourceRemediation'
+          $ref: "#/components/schemas/ZoteroSourceRemediation"
     AgentErrorResponse:
       type: object
       required:
         - error
       properties:
         error:
-          $ref: '#/components/schemas/AgentError'
+          $ref: "#/components/schemas/AgentError"
     AgentEvent:
       type: object
       required:
@@ -422,6 +427,7 @@ components:
             - proposal.retracted
             - annotation.created
             - annotation.message-added
+            - annotation.acted
             - annotation.target-changed
             - annotation.orphaned
             - annotation.resolved
@@ -435,7 +441,7 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
@@ -476,11 +482,11 @@ components:
         reviewId:
           type: string
         status:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
         events:
           type: array
           items:
-            $ref: '#/components/schemas/AgentEvent'
+            $ref: "#/components/schemas/AgentEvent"
         timedOut:
           type: boolean
           description: True if the request reached its timeout before a status change.
@@ -540,7 +546,7 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/ViewSummary'
+            $ref: "#/components/schemas/ViewSummary"
     WorkspaceSummary:
       type: object
       required:
@@ -559,7 +565,7 @@ components:
         workspaces:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceSummary'
+            $ref: "#/components/schemas/WorkspaceSummary"
     LoadedWorkspaceDocumentSummary:
       type: object
       required:
@@ -598,7 +604,7 @@ components:
         dirty:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         lineCount:
           type: integer
         byteLength:
@@ -606,9 +612,9 @@ components:
         views:
           type: array
           items:
-            $ref: '#/components/schemas/EditorViewSummary'
+            $ref: "#/components/schemas/EditorViewSummary"
         review:
-          $ref: '#/components/schemas/ReviewSummary'
+          $ref: "#/components/schemas/ReviewSummary"
     UnloadedWorkspaceDocumentSummary:
       type: object
       required:
@@ -636,8 +642,8 @@ components:
       additionalProperties: false
     WorkspaceDocumentSummary:
       oneOf:
-        - $ref: '#/components/schemas/LoadedWorkspaceDocumentSummary'
-        - $ref: '#/components/schemas/UnloadedWorkspaceDocumentSummary'
+        - $ref: "#/components/schemas/LoadedWorkspaceDocumentSummary"
+        - $ref: "#/components/schemas/UnloadedWorkspaceDocumentSummary"
     FocusDocumentResponse:
       type: object
       required:
@@ -660,7 +666,7 @@ components:
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceDocumentSummary'
+            $ref: "#/components/schemas/WorkspaceDocumentSummary"
     WorkspaceFileEntry:
       type: object
       required:
@@ -694,7 +700,86 @@ components:
         files:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceFileEntry'
+            $ref: "#/components/schemas/WorkspaceFileEntry"
+    WorkspaceDirectoryEntry:
+      type: object
+      required:
+        - path
+        - name
+        - workspaceId
+        - parent
+      properties:
+        path:
+          type: string
+          description: Absolute path of the folder.
+        name:
+          type: string
+        workspaceId:
+          type: string
+        parent:
+          type: string
+          description: >-
+            Absolute path of the containing folder, or the workspace root for a
+            top-level folder.
+    WorkspaceDirectoriesResponse:
+      type: object
+      required:
+        - workspaceId
+        - directories
+      properties:
+        workspaceId:
+          type: string
+        directories:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceDirectoryEntry"
+    WorkspaceEntryCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - kind
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: >-
+            Absolute destination path, or a path relative to the target
+            workspace. The destination folder must exist.
+        kind:
+          type: string
+          enum:
+            - file
+            - folder
+          description: Create a file or a folder.
+        content:
+          type: string
+          description: File content as UTF-8; required when kind is file.
+        workspaceId:
+          type: string
+          description: >-
+            Workspace root a relative `path` resolves against. Required when
+            `path` is not absolute.
+    WorkspaceEntryResponse:
+      type: object
+      required:
+        - kind
+        - path
+        - name
+        - workspaceId
+      properties:
+        kind:
+          type: string
+          enum:
+            - file
+            - folder
+        path:
+          type: string
+        name:
+          type: string
+        workspaceId:
+          type: string
     WorkspaceSearchMatch:
       type: object
       required:
@@ -718,8 +803,9 @@ components:
           description: One-based line of the match start.
         preview:
           type: object
-          description: 'The line of the match: text before it (trimmed), the match, and
-            text after it.'
+          description:
+            "The line of the match: text before it (trimmed), the match, and
+            text after it."
           required:
             - before
             - inside
@@ -748,7 +834,8 @@ components:
           type: string
         workspaceId:
           type: string
-          description: The workspace that holds the file; absent for an open file outside
+          description:
+            The workspace that holds the file; absent for an open file outside
             every workspace.
         open:
           type: boolean
@@ -756,7 +843,7 @@ components:
         matches:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceSearchMatch'
+            $ref: "#/components/schemas/WorkspaceSearchMatch"
     WorkspaceSearchResponse:
       type: object
       required:
@@ -767,12 +854,13 @@ components:
         files:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceSearchFile'
+            $ref: "#/components/schemas/WorkspaceSearchFile"
         matchCount:
           type: integer
         truncated:
           type: boolean
-          description: True when the search stopped at maxMatches; narrow the query or the
+          description:
+            True when the search stopped at maxMatches; narrow the query or the
             globs.
     SearchDocumentResponse:
       type: object
@@ -785,7 +873,7 @@ components:
         documentId:
           type: string
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         hits:
           type: array
           maxItems: 1000
@@ -827,7 +915,7 @@ components:
         reviewId:
           type: string
         state:
-          $ref: '#/components/schemas/ReviewState'
+          $ref: "#/components/schemas/ReviewState"
         generation:
           type: integer
         unresolvedChunks:
@@ -839,7 +927,7 @@ components:
         comments:
           type: array
           items:
-            $ref: '#/components/schemas/ReviewComment'
+            $ref: "#/components/schemas/ReviewComment"
           description: >-
             Review-level comments in creation order.
         attached:
@@ -848,7 +936,7 @@ components:
             True while the reviewed document is open. Reviews for closed files
             remain readable but cannot be changed until the file is reopened.
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
           description: >-
             Current document revision. Absent while the reviewed file is closed.
     ReviewDiffResponse:
@@ -883,7 +971,7 @@ components:
           type: integer
         workingSha256:
           type: string
-          pattern: '^[0-9a-f]{64}$'
+          pattern: "^[0-9a-f]{64}$"
           description: >-
             SHA-256 of the current text containing these changes. Use it as
             expectedWorkingSha256 when retracting a related proposal. Absent
@@ -891,7 +979,7 @@ components:
         chunks:
           type: array
           items:
-            $ref: '#/components/schemas/OutstandingChunk'
+            $ref: "#/components/schemas/OutstandingChunk"
     ReviewPacketsResponse:
       type: object
       required:
@@ -906,7 +994,7 @@ components:
         packets:
           type: array
           items:
-            $ref: '#/components/schemas/ProposalPacket'
+            $ref: "#/components/schemas/ProposalPacket"
     ReapplyReviewRequest:
       type: object
       additionalProperties: false
@@ -947,7 +1035,7 @@ components:
           items:
             type: string
         state:
-          $ref: '#/components/schemas/ReviewState'
+          $ref: "#/components/schemas/ReviewState"
     DiscardReviewResponse:
       type: object
       additionalProperties: false
@@ -984,7 +1072,7 @@ components:
         unresolvedChunks:
           type: integer
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
     OutstandingChunk:
       type: object
       required:
@@ -1055,7 +1143,7 @@ components:
             as REVIEW_GENERATION_MISMATCH.
         expectedWorkingSha256:
           type: string
-          pattern: '^[0-9a-f]{64}$'
+          pattern: "^[0-9a-f]{64}$"
           description: >-
             workingSha256 from the latest chunk read. A stale hash is rejected
             as REVISION_MISMATCH.
@@ -1090,7 +1178,7 @@ components:
         reviewGeneration:
           type: integer
         comment:
-          $ref: '#/components/schemas/ReviewComment'
+          $ref: "#/components/schemas/ReviewComment"
     ProposalPacket:
       type: object
       required:
@@ -1179,10 +1267,10 @@ components:
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentSummary'
+            $ref: "#/components/schemas/DocumentSummary"
     ReviewListEntry:
       allOf:
-        - $ref: '#/components/schemas/ReviewSummary'
+        - $ref: "#/components/schemas/ReviewSummary"
         - type: object
           required:
             - documentPath
@@ -1208,7 +1296,7 @@ components:
         reviews:
           type: array
           items:
-            $ref: '#/components/schemas/ReviewListEntry'
+            $ref: "#/components/schemas/ReviewListEntry"
     AnnotationTarget:
       type: object
       additionalProperties: false
@@ -1312,18 +1400,48 @@ components:
             - mixed
             - withdrawn
             - cleared
+    AnnotationAgentStatus:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - state
+          properties:
+            state:
+              type: string
+              enum:
+                - pending
+        - type: object
+          additionalProperties: false
+          required:
+            - state
+            - messageId
+            - actedAt
+          properties:
+            state:
+              type: string
+              enum:
+                - acted
+            messageId:
+              type: string
+              description: Agent-authored disposition message that claims the remediation.
+            actedAt:
+              type: string
     AnnotationResponse:
       type: object
       additionalProperties: false
       description: >-
         A comment thread attached to part of a document. Only the document
         owner can create, resolve, reopen, reattach, or delete annotations;
-        agents may only reply to an open thread.
+        agents may reply to an open thread and mark their own remediation
+        disposition acted. Agent action never resolves the annotation: the
+        owner inspects it and independently resolves or replies.
       required:
         - annotationId
         - documentId
         - target
         - state
+        - agentStatus
         - messages
         - proposalActions
         - annotationGeneration
@@ -1335,22 +1453,24 @@ components:
         documentId:
           type: string
         target:
-          $ref: '#/components/schemas/AnnotationTarget'
+          $ref: "#/components/schemas/AnnotationTarget"
         state:
           type: string
           enum:
             - open
             - resolved
+        agentStatus:
+          $ref: "#/components/schemas/AnnotationAgentStatus"
         messages:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/AnnotationMessage'
+            $ref: "#/components/schemas/AnnotationMessage"
           description: The thread, owner-first, in creation order.
         proposalActions:
           type: array
           items:
-            $ref: '#/components/schemas/AnnotationProposalAction'
+            $ref: "#/components/schemas/AnnotationProposalAction"
         annotationGeneration:
           type: integer
           description: >-
@@ -1371,7 +1491,7 @@ components:
         annotations:
           type: array
           items:
-            $ref: '#/components/schemas/AnnotationResponse'
+            $ref: "#/components/schemas/AnnotationResponse"
     AddAnnotationMessageRequest:
       type: object
       additionalProperties: false
@@ -1389,6 +1509,15 @@ components:
           description: >-
             Client-chosen request ID. Repeating the same request returns the
             original message instead of posting it twice.
+        markActed:
+          type: boolean
+          default: false
+          description: >-
+            When true, this agent message is also the remediation disposition:
+            the annotation's agentStatus becomes acted and points at this
+            message. This does not resolve the annotation. Replaying the same
+            clientRequestId with markActed=true can mark an already-posted
+            disposition acted without duplicating the message.
         expectedAnnotationGeneration:
           type: integer
           minimum: 0
@@ -1402,6 +1531,7 @@ components:
         - annotationId
         - documentId
         - message
+        - agentStatus
         - annotationGeneration
       properties:
         annotationId:
@@ -1409,7 +1539,9 @@ components:
         documentId:
           type: string
         message:
-          $ref: '#/components/schemas/AnnotationMessage'
+          $ref: "#/components/schemas/AnnotationMessage"
+        agentStatus:
+          $ref: "#/components/schemas/AnnotationAgentStatus"
         annotationGeneration:
           type: integer
     ReviewSubmissionRequest:
@@ -1447,7 +1579,7 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/ProposalClaim'
+            $ref: "#/components/schemas/ProposalClaim"
           description: >-
             Ordered edits built against the same document revision. All
             claims succeed or none are applied. Each claim becomes a separate
@@ -1470,7 +1602,7 @@ components:
               type: array
               minItems: 1
               items:
-                $ref: '#/components/schemas/ProposalClaim'
+                $ref: "#/components/schemas/ProposalClaim"
               description: >-
                 Ordered edits built against the same document revision. All
                 claims succeed or none are applied. Each claim becomes a
@@ -1512,13 +1644,13 @@ components:
         documentId:
           type: string
         documentRevision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         reviewGeneration:
           type: integer
         unresolvedChunks:
           type: integer
         state:
-          $ref: '#/components/schemas/ReviewState'
+          $ref: "#/components/schemas/ReviewState"
         focused:
           type: boolean
     CitationDatabaseSummary:
@@ -1579,7 +1711,7 @@ components:
         citations:
           type: array
           items:
-            $ref: '#/components/schemas/CiteItemInput'
+            $ref: "#/components/schemas/CiteItemInput"
         composite:
           type: boolean
           default: false
@@ -1614,7 +1746,7 @@ components:
         citations:
           type: array
           items:
-            $ref: '#/components/schemas/CiteItemInput'
+            $ref: "#/components/schemas/CiteItemInput"
         composite:
           type: boolean
           default: false
@@ -1631,7 +1763,7 @@ components:
         databases:
           type: array
           items:
-            $ref: '#/components/schemas/CitationDatabaseSummary'
+            $ref: "#/components/schemas/CitationDatabaseSummary"
     CitationItemsResponse:
       type: object
       required:
@@ -1642,7 +1774,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CitationItem'
+            $ref: "#/components/schemas/CitationItem"
         count:
           type: integer
     RenderCitationResponse:
@@ -1718,9 +1850,9 @@ components:
         declarations:
           type: array
           items:
-            $ref: '#/components/schemas/MacroDeclaration'
+            $ref: "#/components/schemas/MacroDeclaration"
         mathjax:
-          $ref: '#/components/schemas/MacroMathJaxDefinition'
+          $ref: "#/components/schemas/MacroMathJaxDefinition"
     MacroInventoryResponse:
       type: object
       additionalProperties: false
@@ -1738,7 +1870,74 @@ components:
         macros:
           type: array
           items:
-            $ref: '#/components/schemas/MacroEntry'
+            $ref: "#/components/schemas/MacroEntry"
+    SkillTreeEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - kind
+        - size
+        - modifiedAt
+      properties:
+        path:
+          type: string
+          description: Path relative to the configured skills directory.
+        kind:
+          type: string
+          enum:
+            - directory
+            - markdown
+        size:
+          type: integer
+          minimum: 0
+        modifiedAt:
+          type: string
+    SkillsListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - root
+        - count
+        - entries
+      properties:
+        root:
+          type: string
+          description: Canonical absolute path of the configured skills directory.
+        count:
+          type: integer
+          minimum: 0
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillTreeEntry"
+    SkillFileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - root
+        - path
+        - size
+        - modifiedAt
+        - sha256
+        - content
+      properties:
+        root:
+          type: string
+          description: Canonical absolute path of the configured skills directory.
+        path:
+          type: string
+          description: Markdown file path relative to the configured skills directory.
+        size:
+          type: integer
+          minimum: 0
+        modifiedAt:
+          type: string
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        content:
+          type: string
     FigureEntry:
       type: object
       additionalProperties: false
@@ -1779,7 +1978,7 @@ components:
         entries:
           type: array
           items:
-            $ref: '#/components/schemas/FigureEntry'
+            $ref: "#/components/schemas/FigureEntry"
     FigureFileResponse:
       type: object
       additionalProperties: false
@@ -1800,7 +1999,7 @@ components:
           type: string
         sha256:
           type: string
-          pattern: '^[0-9a-f]{64}$'
+          pattern: "^[0-9a-f]{64}$"
         encoding:
           type: string
           enum:
@@ -1905,7 +2104,7 @@ components:
         hits:
           type: array
           items:
-            $ref: '#/components/schemas/FigureSearchHit'
+            $ref: "#/components/schemas/FigureSearchHit"
         truncated:
           type: boolean
     LintSeverityCounts:
@@ -2028,7 +2227,7 @@ components:
         focused:
           type: boolean
         revision:
-          $ref: '#/components/schemas/DocumentRevision'
+          $ref: "#/components/schemas/DocumentRevision"
         current:
           type: boolean
           description: >-
@@ -2044,9 +2243,9 @@ components:
         diagnostics:
           type: array
           items:
-            $ref: '#/components/schemas/LintDiagnostic'
+            $ref: "#/components/schemas/LintDiagnostic"
         counts:
-          $ref: '#/components/schemas/LintSeverityCounts'
+          $ref: "#/components/schemas/LintSeverityCounts"
     LintResponse:
       type: object
       additionalProperties: false
@@ -2069,7 +2268,7 @@ components:
         documents:
           type: array
           items:
-            $ref: '#/components/schemas/DocumentLintResult'
+            $ref: "#/components/schemas/DocumentLintResult"
         documentCount:
           type: integer
           minimum: 0
@@ -2097,7 +2296,7 @@ components:
           type: integer
           minimum: 0
         counts:
-          $ref: '#/components/schemas/LintSeverityCounts'
+          $ref: "#/components/schemas/LintSeverityCounts"
     ZoteroCreator:
       type: object
       description: >-
@@ -2143,7 +2342,7 @@ components:
         creators:
           type: array
           items:
-            $ref: '#/components/schemas/ZoteroCreator'
+            $ref: "#/components/schemas/ZoteroCreator"
         date:
           type: string
           description: The date as Zotero stores it, for example 1962 or 8/1962.
@@ -2172,7 +2371,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/ZoteroSearchItem'
+            $ref: "#/components/schemas/ZoteroSearchItem"
     ZoteroAddedItem:
       type: object
       required:
@@ -2224,7 +2423,7 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/ZoteroAddedItem'
+            $ref: "#/components/schemas/ZoteroAddedItem"
     ZoteroFallbackMetadata:
       type: object
       description: >-
@@ -2257,7 +2456,7 @@ components:
                 minLength: 1
         year:
           type: string
-          pattern: '^[0-9]{4}$'
+          pattern: "^[0-9]{4}$"
     ZoteroUrlImportRequest:
       type: object
       required:
@@ -2276,7 +2475,7 @@ components:
             type: string
           description: Zotero collection keys to add the new item to.
         fallbackMetadata:
-          $ref: '#/components/schemas/ZoteroFallbackMetadata'
+          $ref: "#/components/schemas/ZoteroFallbackMetadata"
     ZoteroUrlImportResponse:
       type: object
       required:
@@ -2288,7 +2487,7 @@ components:
       additionalProperties: false
       properties:
         item:
-          $ref: '#/components/schemas/ZoteroAddedItem'
+          $ref: "#/components/schemas/ZoteroAddedItem"
         existing:
           type: boolean
           description: >-
@@ -2363,9 +2562,21 @@ paths:
     get:
       operationId: getHelp
       x-openai-isConsequential: false
-      summary: Serve authoring help documentation
-      description: Returns authoring documentation from HELP.md in Markdown or JSON format.
+      summary: Read authoring help or the configured skills subtree
+      description: >-
+        Returns HELP.md by default. With resource=skills, lists the configured
+        skills subtree or reads one relative .md file from it.
       parameters:
+        - name: resource
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - help
+              - skills
+            default: help
+          description: Read built-in authoring help or the configured skills subtree.
         - name: format
           in: query
           required: false
@@ -2375,9 +2586,26 @@ paths:
             enum:
               - markdown
               - json
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - list
+              - read
+            default: list
+          description: For resource=skills, list the subtree or read one Markdown file.
+        - name: path
+          in: query
+          required: false
+          description: Relative .md path when resource=skills and action=read.
+          schema:
+            type: string
+            maxLength: 4096
       responses:
-        '200':
-          description: Authoring help documentation in Markdown or JSON
+        "200":
+          description: Authoring help, skills subtree listing, or Markdown file contents.
           content:
             text/markdown:
               schema:
@@ -2387,70 +2615,76 @@ paths:
                 type: string
             application/json:
               schema:
-                $ref: '#/components/schemas/HelpResponse'
+                oneOf:
+                  - $ref: "#/components/schemas/HelpResponse"
+                  - $ref: "#/components/schemas/SkillsListResponse"
+                  - $ref: "#/components/schemas/SkillFileResponse"
+        "400":
+          description: Invalid, non-Markdown, or symlinked skill path.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
+          description: Skill Markdown file not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
+          description: No usable skills directory is configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/ping:
     get:
       operationId: ping
       x-openai-isConsequential: false
       summary: Protocol version, instance ID, and PID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PingResponse'
+                $ref: "#/components/schemas/PingResponse"
   /v1/capabilities:
     get:
       operationId: getCapabilities
       x-openai-isConsequential: false
       summary: Report supported Agent API capabilities and formats
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CapabilitiesResponse'
+                $ref: "#/components/schemas/CapabilitiesResponse"
   /v1/context:
     get:
       operationId: getContext
       x-openai-isConsequential: false
       summary: High-level overview of active editor views and open documents
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EditorContext'
+                $ref: "#/components/schemas/EditorContext"
   /v1/views:
     get:
       operationId: listViews
       x-openai-isConsequential: false
       summary: List active editor views
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ViewsResponse'
-  /v1/workspace/files:
-    get:
-      operationId: listWorkspaceFiles
-      x-openai-isConsequential: false
-      summary: List every file across the configured workspaces
-      description: >-
-        The agent's orientation entry point — all files the editor can see,
-        flat, open or not. Files here can be read and reviewed immediately.
-      responses:
-        '200':
-          description: All workspace files.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkspaceFilesResponse'
+                $ref: "#/components/schemas/ViewsResponse"
   /v1/workspace/search:
     get:
       operationId: searchWorkspace
@@ -2492,15 +2726,16 @@ paths:
           in: query
           schema:
             type: string
-            default: ''
-          description: Comma-separated globs relative to the workspace root; a file must
+            default: ""
+          description:
+            Comma-separated globs relative to the workspace root; a file must
             match one. A glob without a slash matches at any depth, for example
             `*.md`.
         - name: exclude
           in: query
           schema:
             type: string
-            default: ''
+            default: ""
           description: Comma-separated globs; a file that matches one is skipped.
         - name: maxMatches
           in: query
@@ -2511,36 +2746,36 @@ paths:
             maximum: 1000
           description: The search stops after this many matches and sets truncated.
       responses:
-        '200':
+        "200":
           description: The matching files, in workspace order.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceSearchResponse'
-        '400':
+                $ref: "#/components/schemas/WorkspaceSearchResponse"
+        "400":
           description: Empty text or invalid regular expression
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '422':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "422":
           description: Matching one file did not finish within the server deadline
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/workspaces:
     get:
       operationId: listWorkspaces
       x-openai-isConsequential: false
-      summary: List configured workspaces or documents within a workspace
+      summary: List configured workspaces, or a workspace's documents, directories, or files
       parameters:
         - name: workspaceId
           in: query
           required: false
           schema:
             type: string
-          description: Optional workspace ID to inspect documents in that workspace.
+          description: Optional workspace ID to inspect within that workspace.
         - name: include
           in: query
           required: false
@@ -2549,8 +2784,13 @@ paths:
             enum:
               - summary
               - documents
+              - directories
+              - files
             default: summary
-          description: Whether to return workspace summaries or documents.
+          description: >-
+            summary: the configured workspaces. documents and directories
+            require a workspaceId. files lists every supported file, flat,
+            open or not — across all workspaces, or the one workspaceId names.
         - name: query
           in: query
           required: false
@@ -2558,14 +2798,64 @@ paths:
             type: string
           description: Optional search term when listing workspace documents.
       responses:
-        '200':
-          description: Workspace listing or document list.
+        "200":
+          description: Workspace listing, document list, directory list, or file list.
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/WorkspacesResponse'
-                  - $ref: '#/components/schemas/WorkspaceDocumentsResponse'
+                  - $ref: "#/components/schemas/WorkspacesResponse"
+                  - $ref: "#/components/schemas/WorkspaceDocumentsResponse"
+                  - $ref: "#/components/schemas/WorkspaceDirectoriesResponse"
+                  - $ref: "#/components/schemas/WorkspaceFilesResponse"
+  /v1/workspace/entries:
+    post: # nosemgrep: yaml.openapi.security.openai-consequential-action-false.openai-consequential-action-false -- exception: https://github.com/dzackgarza/zettlr-pandoc/pull/175#issuecomment-6039509818
+      operationId: createWorkspaceEntry
+      x-openai-isConsequential: false
+      summary: Create a file or folder inside a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceEntryCreateRequest"
+      responses:
+        "201":
+          description: Entry created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceEntryResponse"
+        "400":
+          description: Invalid path or missing file content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "403":
+          description: Destination is outside every configured workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
+          description: Named workspace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: An entry already exists at the destination
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
+          description: Persistence failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents:
     get:
       operationId: listDocuments
@@ -2582,12 +2872,12 @@ paths:
             default: open
           description: Reserved document-state filter.
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DocumentListResponse'
+                $ref: "#/components/schemas/DocumentListResponse"
   /v1/documents/{documentId}:
     get:
       operationId: getDocument
@@ -2627,7 +2917,7 @@ paths:
           schema:
             type: integer
       responses:
-        '200':
+        "200":
           description: OK
           headers:
             ETag:
@@ -2637,14 +2927,14 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/DocumentSummary'
-                  - $ref: '#/components/schemas/ReadDocumentResponse'
-        '404':
+                  - $ref: "#/components/schemas/DocumentSummary"
+                  - $ref: "#/components/schemas/ReadDocumentResponse"
+        "404":
           description: Document not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents/{documentId}/focus:
     post:
       operationId: focusDocument
@@ -2657,18 +2947,18 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FocusDocumentResponse'
-        '404':
+                $ref: "#/components/schemas/FocusDocumentResponse"
+        "404":
           description: Document not found or outside workspace
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -2702,30 +2992,30 @@ paths:
                   minimum: 0
                   maximum: 100
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchDocumentResponse'
-        '400':
+                $ref: "#/components/schemas/SearchDocumentResponse"
+        "400":
           description: Invalid regex pattern
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: Document not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '408':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "408":
           description: Search timed out
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents/{documentId}/proposals:
     post:
       operationId: submitProposal
@@ -2742,9 +3032,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitProposalRequest'
+              $ref: "#/components/schemas/SubmitProposalRequest"
       responses:
-        '200':
+        "200":
           description: Proposal accepted into review
           headers:
             ETag:
@@ -2753,26 +3043,26 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitProposalResponse'
-        '400':
+                $ref: "#/components/schemas/SubmitProposalResponse"
+        "400":
           description: Invalid request payload or claims
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: Document not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Revision mismatch or document closed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '412':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "412":
           description: Precondition failed
           headers:
             ETag:
@@ -2781,19 +3071,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '422':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "422":
           description: Patch does not apply
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
           description: Internal error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/review-submissions:
     post:
       operationId: submitReview
@@ -2808,49 +3098,53 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReviewSubmissionRequest'
+              $ref: "#/components/schemas/ReviewSubmissionRequest"
       responses:
-        '200':
+        "200":
           description: Review submission applied
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewSubmissionResponse'
-        '400':
+                $ref: "#/components/schemas/ReviewSubmissionResponse"
+        "400":
           description: Invalid payload or claims
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: File not found in workspace
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Conflict or mismatch
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '412':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "412":
           description: Baseline mismatch
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '422':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "422":
           description: Patch does not apply
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/annotations:
     get:
       operationId: listAnnotations
       x-openai-isConsequential: false
       summary: List annotations across the workspace or for one document
+      description: >-
+        List open and resolved annotations from open documents and persisted
+        sidecars for closed documents. `documentId` and `state` are optional
+        filters; omitting `state` returns both lifecycle states.
       parameters:
         - name: documentId
           in: query
@@ -2866,19 +3160,22 @@ paths:
             enum:
               - open
               - resolved
+          description: >-
+            Optional lifecycle state filter. Omit it to return both open and
+            resolved annotations.
       responses:
-        '200':
+        "200":
           description: Annotations list.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnnotationListResponse'
-        '404':
+                $ref: "#/components/schemas/AnnotationListResponse"
+        "404":
           description: Document not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/annotations/{annotationId}:
     get:
       operationId: getAnnotation
@@ -2891,23 +3188,27 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: The annotation.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnnotationResponse'
-        '404':
+                $ref: "#/components/schemas/AnnotationResponse"
+        "404":
           description: Annotation not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/annotations/{annotationId}/messages:
     post:
       operationId: addAnnotationMessage
       x-openai-isConsequential: false
       summary: Append a message to an annotation conversation thread
+      description: >-
+        Append an agent message. Set markActed=true when this message is the
+        agent's remediation disposition. The annotation remains owner-open;
+        the owner can inspect the linked disposition and then resolve or reply.
       parameters:
         - name: annotationId
           in: path
@@ -2919,38 +3220,40 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddAnnotationMessageRequest'
+              $ref: "#/components/schemas/AddAnnotationMessageRequest"
       responses:
-        '200':
+        "200":
           description: Appended message
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AddAnnotationMessageResponse'
-        '404':
+                $ref: "#/components/schemas/AddAnnotationMessageResponse"
+        "404":
           description: Annotation not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
-          description: Document is closed
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: >-
+            The annotation is resolved or its generation changed before the
+            message was committed.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/reviews:
     get:
       operationId: listReviews
       x-openai-isConsequential: false
       summary: List reviews for open and closed workspace files
       responses:
-        '200':
+        "200":
           description: Review summaries.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewListResponse'
+                $ref: "#/components/schemas/ReviewListResponse"
   /v1/reviews/{reviewId}:
     get:
       operationId: getReview
@@ -2975,28 +3278,28 @@ paths:
             default: detail
           description: Which slice of the review to return.
       responses:
-        '200':
+        "200":
           description: Review slice.
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/ReviewDetailResponse'
-                  - $ref: '#/components/schemas/ReviewDiffResponse'
-                  - $ref: '#/components/schemas/ReviewChunksResponse'
-                  - $ref: '#/components/schemas/ReviewPacketsResponse'
-        '404':
+                  - $ref: "#/components/schemas/ReviewDetailResponse"
+                  - $ref: "#/components/schemas/ReviewDiffResponse"
+                  - $ref: "#/components/schemas/ReviewChunksResponse"
+                  - $ref: "#/components/schemas/ReviewPacketsResponse"
+        "404":
           description: Review not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Document closed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/reviews/{reviewId}/comments:
     post:
       operationId: addReviewComment
@@ -3013,26 +3316,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddReviewCommentRequest'
+              $ref: "#/components/schemas/AddReviewCommentRequest"
       responses:
-        '200':
+        "200":
           description: The review with the comment appended.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewDetailResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewDetailResponse"
+        "404":
           description: Review not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Document closed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/reviews/{reviewId}/reapply:
     post:
       operationId: reapplyReview
@@ -3054,26 +3357,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReapplyReviewRequest'
+              $ref: "#/components/schemas/ReapplyReviewRequest"
       responses:
-        '200':
+        "200":
           description: The review is live again.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReapplyReviewResponse'
-        '404':
+                $ref: "#/components/schemas/ReapplyReviewResponse"
+        "404":
           description: Review not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: The review is still current, or its generation moved.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/reviews/{reviewId}/discard:
     post:
       operationId: discardReview
@@ -3094,31 +3397,31 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReapplyReviewRequest'
+              $ref: "#/components/schemas/ReapplyReviewRequest"
       responses:
-        '200':
+        "200":
           description: The review is discarded.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DiscardReviewResponse'
-        '404':
+                $ref: "#/components/schemas/DiscardReviewResponse"
+        "404":
           description: Review not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: The review is still current, or its generation moved.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/proposals/{packetId}/retract:
     post:
       operationId: retractProposal
       x-openai-isConsequential: false
-      summary: Retract the newest untouched proposal
+      summary: Retract an unresolved proposal
       parameters:
         - name: packetId
           in: path
@@ -3130,9 +3433,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReviewMutationPrecondition'
+              $ref: "#/components/schemas/ReviewMutationPrecondition"
       responses:
-        '200':
+        "200":
           description: Proposal retracted
           headers:
             ETag:
@@ -3141,19 +3444,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RetractProposalResponse'
-        '404':
+                $ref: "#/components/schemas/RetractProposalResponse"
+        "404":
           description: Proposal not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Proposal cannot be retracted or document is closed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/reviews/{reviewId}/events:
     get:
       operationId: waitForReviewEvents
@@ -3187,18 +3490,18 @@ paths:
             maximum: 120
             default: 30
       responses:
-        '200':
+        "200":
           description: Advance events or current status.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewEventsResponse'
-        '404':
+                $ref: "#/components/schemas/ReviewEventsResponse"
+        "404":
           description: Review not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/citations:
     get:
       operationId: queryCitations
@@ -3228,21 +3531,21 @@ paths:
             type: string
           description: Lookup a specific citation item by key.
       responses:
-        '200':
+        "200":
           description: Citation query results.
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/CitationItemsResponse'
-                  - $ref: '#/components/schemas/CitationDatabasesResponse'
-                  - $ref: '#/components/schemas/CitationItem'
-        '404':
+                  - $ref: "#/components/schemas/CitationItemsResponse"
+                  - $ref: "#/components/schemas/CitationDatabasesResponse"
+                  - $ref: "#/components/schemas/CitationItem"
+        "404":
           description: Database or cite key not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/citations/render:
     post:
       operationId: renderCitations
@@ -3253,28 +3556,28 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RenderCitationsRequest'
+              $ref: "#/components/schemas/RenderCitationsRequest"
       responses:
-        '200':
+        "200":
           description: Rendered citations or bibliography
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/RenderCitationResponse'
-                  - $ref: '#/components/schemas/RenderBibliographyResponse'
-        '400':
+                  - $ref: "#/components/schemas/RenderCitationResponse"
+                  - $ref: "#/components/schemas/RenderBibliographyResponse"
+        "400":
           description: No citations or citekeys to render
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: Database not loaded, or a citation key not in it
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/macros:
     get:
       operationId: listMacros
@@ -3288,18 +3591,18 @@ paths:
             type: string
             maxLength: 256
       responses:
-        '200':
+        "200":
           description: Configured macro inventory.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MacroInventoryResponse'
-        '500':
+                $ref: "#/components/schemas/MacroInventoryResponse"
+        "500":
           description: Macro inspection failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/figures:
     get:
       operationId: queryFigures
@@ -3331,33 +3634,33 @@ paths:
             maxLength: 4096
           description: Relative path when action=read.
       responses:
-        '200':
+        "200":
           description: Figure listing, search results, or file contents.
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/FigureListResponse'
-                  - $ref: '#/components/schemas/FigureSearchResponse'
-                  - $ref: '#/components/schemas/FigureFileResponse'
-        '400':
+                  - $ref: "#/components/schemas/FigureListResponse"
+                  - $ref: "#/components/schemas/FigureSearchResponse"
+                  - $ref: "#/components/schemas/FigureFileResponse"
+        "400":
           description: Invalid path or search parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: Figure file not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
           description: Figure operation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
     post:
       operationId: saveFigure
       x-openai-isConsequential: false
@@ -3367,38 +3670,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/FigureSaveRequest'
+              $ref: "#/components/schemas/FigureSaveRequest"
       responses:
-        '200':
+        "200":
           description: Figure saved
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FigureFileResponse'
-        '201':
+                $ref: "#/components/schemas/FigureFileResponse"
+        "201":
           description: Figure created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FigureFileResponse'
-        '400':
+                $ref: "#/components/schemas/FigureFileResponse"
+        "400":
           description: Invalid path or content
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '409':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
           description: Figure already exists
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
           description: Figure persistence failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/lint:
     get:
       operationId: lintDocuments
@@ -3439,30 +3742,30 @@ paths:
               - error
             default: info
       responses:
-        '200':
+        "200":
           description: Lint diagnostics.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LintResponse'
-        '400':
+                $ref: "#/components/schemas/LintResponse"
+        "400":
           description: Missing scope parameters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: Document or workspace not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '500':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "500":
           description: Lint failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/zotero/items:
     get:
       operationId: searchZoteroItems
@@ -3491,26 +3794,26 @@ paths:
             maximum: 100
             default: 25
       responses:
-        '200':
+        "200":
           description: >-
             At most limit matching items, most recently added first. Standalone
             notes are left out.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoteroSearchResponse'
-        '502':
+                $ref: "#/components/schemas/ZoteroSearchResponse"
+        "502":
           description: Zotero answered with an error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '503':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
           description: Zotero or the citation database is not available
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/zotero/imports/identifier:
     post:
       operationId: importZoteroIdentifier
@@ -3527,38 +3830,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ZoteroIdentifierImportRequest'
+              $ref: "#/components/schemas/ZoteroIdentifierImportRequest"
       responses:
-        '200':
+        "200":
           description: The new items
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoteroIdentifierImportResponse'
-        '400':
+                $ref: "#/components/schemas/ZoteroIdentifierImportResponse"
+        "400":
           description: The request or the identifier is not valid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: No registry has the identifier, or a collection key does not exist
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '502':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "502":
           description: Zotero answered with an error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '503':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
           description: Zotero or the citation database is not available
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/zotero/imports/url:
     post:
       operationId: importZoteroUrl
@@ -3580,41 +3883,41 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ZoteroUrlImportRequest'
+              $ref: "#/components/schemas/ZoteroUrlImportRequest"
       responses:
-        '200':
+        "200":
           description: The new or existing item
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ZoteroUrlImportResponse'
-        '400':
+                $ref: "#/components/schemas/ZoteroUrlImportResponse"
+        "400":
           description: The request is not valid
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '404':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "404":
           description: A collection key does not exist
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '422':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "422":
           description: ZOTERO_SOURCE_NOT_IDENTIFIED, with error.remediation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '502':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "502":
           description: Zotero could not fetch the source, or answered with an error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
-        '503':
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
           description: Zotero or the citation database is not available
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentErrorResponse'
+                $ref: "#/components/schemas/AgentErrorResponse"

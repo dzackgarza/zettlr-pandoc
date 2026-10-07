@@ -47,7 +47,7 @@ export async function injectPandocMathHeaders(
               path.join(path.dirname(mathJaxComponent), "mathjax-sre", "mathmaps"),
             ).href,
           },
-          load: ["[tex]/mhchem"],
+          load: ["[tex]/boldsymbol", "[tex]/mhchem"],
         },
         options: {
           enableSpeech: false,

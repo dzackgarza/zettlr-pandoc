@@ -96,6 +96,28 @@ export function explodeShortcut(shortcut: string): ExplodedShortcut {
 }
 
 /**
+ * Serialises a captured shortcut in CodeMirror's normalized modifier order.
+ */
+export function implodeShortcut(shortcut: ExplodedShortcut): string {
+  let returnVal = shortcut.key;
+
+  if (shortcut.altKey) {
+    returnVal = `Alt-${returnVal}`;
+  }
+  if (shortcut.shiftKey) {
+    returnVal = `Shift-${returnVal}`;
+  }
+  if (shortcut.modKey) {
+    returnVal = `Mod-${returnVal}`;
+  }
+  if (shortcut.ctrlKey) {
+    returnVal = `Ctrl-${returnVal}`;
+  }
+
+  return returnVal;
+}
+
+/**
  * Returns the assigned default keyboard shortcut for the provided action. NOTE
  * that these default keybindings can be custom per platform. The function
  * checks the platform for that.

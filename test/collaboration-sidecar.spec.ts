@@ -150,6 +150,7 @@ function annotation(annotationId: string): TextAnnotation {
     documentId: "doc-1",
     anchor: { state: "range", from: 0, to: 5, quotedText: "ALPHA" },
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: "message-1",
@@ -498,6 +499,26 @@ describe("CollaborationSidecarStore", function () {
     };
     await store.write(withAnnotation);
     assert.deepEqual(await store.read(documentPath), withAnnotation);
+  });
+
+  it("rejects a version-5 annotation without required agentStatus", async function () {
+    const incompleteAnnotation = structuredClone(annotation("annotation-1"));
+    Reflect.deleteProperty(incompleteAnnotation, "agentStatus");
+    const invalid = {
+      ...sidecar(documentPath),
+      review: null,
+      annotations: { generation: 1, items: [incompleteAnnotation] },
+    };
+    persistRaw(invalid);
+
+    await assert.rejects(store.read(documentPath));
+    await assert.rejects(store.list());
+    assert.deepEqual(
+      JSON.parse(
+        readFileSync(collaborationSidecarFilePath(sidecarDirectory, documentPath), "utf8"),
+      ),
+      invalid,
+    );
   });
 
   it("rejects a duplicate annotation id", async function () {

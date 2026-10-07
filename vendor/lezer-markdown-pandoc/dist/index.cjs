@@ -747,6 +747,13 @@ function lineEnd$1(text, pos) {
 }
 class SetextHeadingParser {
     nextLine(cx, line, leaf) {
+        // Pandoc's Markdown reader only admits a Setext heading when the heading
+        // text is the immediately preceding physical line. CommonMark admits a
+        // multi-line paragraph here, but Pandoc does not. In particular, treating
+        // a later `=` line as a Setext underline can consume an open `$$ ... $$`
+        // expression before the inline math parser gets to see it.
+        if (cx.parser.pandocParagraphContinuation && leaf.content.includes('\n'))
+            return false;
         let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line);
         let next = line.next;
         if (underline < 0)

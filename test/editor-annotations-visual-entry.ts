@@ -52,6 +52,7 @@ function annotation(
     documentId: "visual-capture",
     anchor,
     state,
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: `msg-${idCounter}`,

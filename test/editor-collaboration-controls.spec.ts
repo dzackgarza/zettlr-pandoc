@@ -87,6 +87,7 @@ function annotation(
     documentId: "doc-1",
     anchor: { state: "range", from, to, quotedText: WORKING.slice(from, to) },
     state,
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: `${annotationId}-m1`,

@@ -1,52 +1,57 @@
 <template>
   <DialogRoot
-    v-bind:open="state.open"
-    v-on:update:open="onOpenChange"
+    :open="state.open"
+    @update:open="onOpenChange"
   >
     <DialogPortal>
-      <DialogOverlay class="command-launcher-backdrop"></DialogOverlay>
+      <DialogOverlay class="command-launcher-backdrop" />
       <DialogContent
         class="command-launcher"
         data-command-launcher
-        v-bind:aria-label="dialogLabel"
-        v-bind:aria-describedby="undefined"
+        :aria-label="dialogLabel"
+        :aria-describedby="undefined"
       >
         <DialogTitle class="command-launcher-title">
           {{ dialogLabel }}
         </DialogTitle>
         <template v-if="state.open">
           <ReferenceSearchView
-            v-if="state.view.kind === 'references' || state.view.kind === 'browse-content'"
+            v-if="
+              state.view.kind === 'references' ||
+                state.view.kind === 'browse-content'
+            "
             :definitions="referenceDefinitions"
-            v-bind:occurrences="referenceOccurrences"
-            :initial-request="state.view.kind === 'references' ? state.view.request : null"
-            v-bind:project-roots="referenceProjectRoots"
-            v-bind:active-document-path="referenceActiveDocumentPath"
+            :occurrences="referenceOccurrences"
+            :initial-request="
+              state.view.kind === 'references' ? state.view.request : null
+            "
+            :project-roots="referenceProjectRoots"
+            :active-document-path="referenceActiveDocumentPath"
             :browse="state.view.kind === 'browse-content'"
-            v-on:jump="onReferenceJump"
-            v-on:close="close"
-            v-on:back="back"
-            v-on:open-help="onOpenHelp"
-          ></ReferenceSearchView>
+            @jump="onReferenceJump"
+            @close="close"
+            @back="back"
+            @open-help="onOpenHelp"
+          />
           <JustRecipeArgumentsView
             v-else-if="state.view.kind === 'just-arguments'"
-            v-bind:recipe="state.view.recipe"
-            v-bind:query="state.query"
-            v-on:update:query="setLauncherQuery"
-            v-on:run="runJustRecipe(state.view.recipe, $event)"
-            v-on:back="back"
-            v-on:close="close"
-          ></JustRecipeArgumentsView>
+            :recipe="state.view.recipe"
+            :query="state.query"
+            @update:query="setLauncherQuery"
+            @run="runJustRecipe(state.view.recipe, $event)"
+            @back="back"
+            @close="close"
+          />
           <MenuCommandsView
             v-else
-            v-bind:rows="rows"
-            v-bind:query="state.query"
-            v-bind:breadcrumb="breadcrumb"
-            v-on:update:query="setLauncherQuery"
-            v-on:run="run"
-            v-on:back="back"
-            v-on:close="close"
-          ></MenuCommandsView>
+            :rows="rows"
+            :query="state.query"
+            :breadcrumb="breadcrumb"
+            @update:query="setLauncherQuery"
+            @run="run"
+            @back="back"
+            @close="close"
+          />
         </template>
       </DialogContent>
     </DialogPortal>
@@ -77,11 +82,17 @@
  * END HEADER
  */
 
+import {
+  type CommandId,
+  type CommandRegistration,
+  commandRegistry,
+  getConfiguredShortcut,
+} from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
-import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
 import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";
+import { cmShortcutToElectron } from "@common/util/shortcuts";
 import showToast from "@common/util/show-toast";
 import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type {
@@ -145,6 +156,7 @@ const emit = defineEmits<{
   (e: "jump", intent: ReferenceJumpIntent): void;
   (e: "open-help"): void;
   (e: "export", request: ExportRequest): void;
+  (e: "run-command", id: CommandId): void;
 }>();
 
 const configStore = useConfigStore();
@@ -160,6 +172,35 @@ const state = ref<LauncherState>(CLOSED_LAUNCHER);
 // refreshed whenever the provider rebuilds the menu.
 const menu = ref<SerializedMenuItem[]>([]);
 
+function commandContextIsActive(command: CommandRegistration): boolean {
+  if (command.when === "window") {
+    return true;
+  }
+  const documentInfo = windowStateStore.activeDocumentInfo;
+  if (documentInfo === undefined) {
+    return false;
+  }
+  return (
+    command.when === "editorFocus" ||
+    documentInfo.selections.some((selection) => selection.chars > 0)
+  );
+}
+
+const registeredCommandRows = computed<LauncherRow[]>(() =>
+  commandRegistry
+    .all()
+    .filter((command) => command.palette && commandContextIsActive(command))
+    .map((command) => ({
+      kind: "registered-command",
+      id: command.id,
+      label: trans(command.label),
+      accelerator: cmShortcutToElectron(
+        getConfiguredShortcut(command.id, configStore.config.shortcuts),
+      ),
+      breadcrumb: [trans(command.group)],
+    })),
+);
+
 onBeforeMount(() => {
   ipcRenderer.on("menu-provider", (_event, payload: unknown) => {
     const message = menuProviderMessageSchema.parse(payload);
@@ -172,11 +213,27 @@ onBeforeMount(() => {
 
 const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: "dynamic-group", id: "go-to-file", label: trans("Go to file") },
-  { kind: "dynamic-group", id: "recent-opened", label: trans("Recently opened files") },
-  { kind: "dynamic-group", id: "recent-edited", label: trans("Recently edited files") },
+  {
+    kind: "dynamic-group",
+    id: "recent-opened",
+    label: trans("Recently opened files"),
+  },
+  {
+    kind: "dynamic-group",
+    id: "recent-edited",
+    label: trans("Recently edited files"),
+  },
   { kind: "dynamic-group", id: "go-to-heading", label: trans("Go to heading") },
-  { kind: "dynamic-group", id: "search-references", label: trans("Search references") },
-  { kind: "dynamic-group", id: "browse-content", label: trans("Browse document blocks") },
+  {
+    kind: "dynamic-group",
+    id: "search-references",
+    label: trans("Search references"),
+  },
+  {
+    kind: "dynamic-group",
+    id: "browse-content",
+    label: trans("Browse document blocks"),
+  },
   { kind: "dynamic-group", id: "preferences", label: trans("Preferences") },
   { kind: "dynamic-group", id: "export", label: trans("Export as…") },
 ];
@@ -191,7 +248,11 @@ const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
   const exportAt = BASE_DYNAMIC_GROUPS.findIndex((row) => row.id === "export");
   return [
     ...BASE_DYNAMIC_GROUPS.slice(0, exportAt),
-    { kind: "dynamic-group", id: "justfile", label: trans("Justfile commands") },
+    {
+      kind: "dynamic-group",
+      id: "justfile",
+      label: trans("Justfile commands"),
+    },
     ...BASE_DYNAMIC_GROUPS.slice(exportAt),
   ];
 });
@@ -201,7 +262,9 @@ const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
 const recentFiles = ref<RecentFiles>({ opened: [], edited: [] });
 
 async function loadRecentFiles(): Promise<boolean> {
-  recentFiles.value = await ipcRenderer.invoke("application", { command: "list-recent-files" });
+  recentFiles.value = await ipcRenderer.invoke("application", {
+    command: "list-recent-files",
+  });
   return true;
 }
 
@@ -402,7 +465,13 @@ function viewRows(view: LauncherView, query: string): LauncherRow[] {
     case "root": {
       const groups = menuGroupRows(menu.value, []);
       const indexedRows =
-        query === "" ? [] : [...allMenuLeafRows(menu.value), ...preferenceRows.value];
+        query === ""
+          ? registeredCommandRows.value
+          : [
+              ...registeredCommandRows.value,
+              ...allMenuLeafRows(menu.value),
+              ...preferenceRows.value,
+            ];
       return [...groups, ...dynamicGroups.value, ...indexedRows];
     }
     case "menu-group":
@@ -475,7 +544,10 @@ function collectProjectRoots(): ProjectRootSpec[] {
   const roots: ProjectRootSpec[] = [];
   for (const descriptor of workspaceStore.descriptorMap.values()) {
     if (descriptor.type === "directory" && descriptor.settings.project !== null) {
-      roots.push({ rootPath: descriptor.path, files: [...descriptor.settings.project.files] });
+      roots.push({
+        rootPath: descriptor.path,
+        files: [...descriptor.settings.project.files],
+      });
     }
   }
   return roots;
@@ -537,7 +609,10 @@ function onOpenChange(open: boolean): void {
 async function run(row: LauncherRow): Promise<void> {
   switch (row.kind) {
     case "menu-group":
-      state.value = drillInto(state.value, { kind: "menu-group", path: row.path });
+      state.value = drillInto(state.value, {
+        kind: "menu-group",
+        path: row.path,
+      });
       return;
     case "dynamic-group": {
       const load = dynamicGroupLoaders[row.id];
@@ -549,7 +624,14 @@ async function run(row: LauncherRow): Promise<void> {
     }
     case "menu-leaf":
       close();
-      ipcRenderer.send("menu-provider", { command: "click-menu-item", payload: row.id });
+      ipcRenderer.send("menu-provider", {
+        command: "click-menu-item",
+        payload: row.id,
+      });
+      return;
+    case "registered-command":
+      close();
+      emit("run-command", row.id);
       return;
     case "file":
       close();
@@ -566,14 +648,21 @@ async function run(row: LauncherRow): Promise<void> {
       return;
     case "export-command":
       close();
-      emit("export", { kind: "command", displayName: row.displayName, command: row.command });
+      emit("export", {
+        kind: "command",
+        displayName: row.displayName,
+        command: row.command,
+      });
       return;
     case "just-recipe":
       if (row.parameters.length === 0) {
         await runJustRecipe(row, []);
         return;
       }
-      state.value = drillInto(state.value, { kind: "just-arguments", recipe: row });
+      state.value = drillInto(state.value, {
+        kind: "just-arguments",
+        recipe: row,
+      });
       return;
     case "preference":
       close();

@@ -149,7 +149,7 @@ function documentIdOf(payload: unknown): string {
  * only open documents, so reopening resolves through the workspace listing.
  */
 async function workspaceDocumentId(client: AgentClient, documentPath: string): Promise<string> {
-  const payload = await client.get("/v1/workspace/files");
+  const payload = await client.get("/v1/workspaces?include=files");
   assert.ok(
     payload !== null &&
       typeof payload === "object" &&

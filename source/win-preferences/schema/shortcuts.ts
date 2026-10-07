@@ -7,311 +7,58 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Exports the shortcut tab schema.
+ * Description:     Generates the shortcut tab from the command registry.
  *
  * END HEADER
  */
 
+import {
+  type CommandGroup,
+  type CommandId,
+  commandRegistry,
+  getCommandConflicts,
+  getConfiguredShortcut,
+  type ShortcutConfig,
+} from "@common/commands/command-registry";
 import { trans } from "@common/i18n-renderer";
-import {
-  type CustomEditorShortcut,
-  getCustomShortcut as customEditorShortcut,
-  type EditorShortcutName,
-  defaultKeybindings as editorDefaults,
-} from "@common/modules/markdown-editor/keymaps/shortcuts";
-import { getDefaultKeybinding } from "@common/util/shortcuts";
-import type {
-  ConfigOptions,
-  ConfigurableEditorShortcuts,
-  ConfigurableUIShortcuts,
-} from "source/app/service-providers/config/get-config-template.js";
-import {
-  getCustomShortcut as customMenuShortcut,
-  type MenuShortcutName,
-  defaultKeybindings as menuDefaults,
-} from "source/app/service-providers/menu/shortcuts";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template.js";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
 
-/**
- * Utility function that checks the shortcut list for conflicts. For this,
- * provide the shortcut to search for conflicts as well as the lists of custom
- * shortcuts. It then checks all lists of available shortcuts and returns
- * all those shortcut names which have the same shortcut assigned (both by
- * default and from the custom shortcut maps).
- *
- * @param   {EditorShortcutName|MenuShortcutName}  name       The shortcut ID in question
- * @param   {CustomEditorShortcut[]}               editorMap  A list of custom editor shortcuts
- * @param   {ConfigOptions["shortcuts"]["ui"]}     menuMap    A list of custom menu shortcuts
- *
- * @return  {string[]}                                        All conflicting shortcut names.
- */
+/** Returns commands in the same scope that currently use this command's key. */
 export function getConflicts(
-  name: EditorShortcutName | MenuShortcutName,
-  editorMap: CustomEditorShortcut[],
+  id: CommandId,
+  editorMap: Array<{ name: CommandId; shortcut: string }>,
   menuMap: ConfigOptions["shortcuts"]["ui"],
-): string[] {
-  let thisShortcut: string | undefined;
-  if (Object.keys(editorDefaults).includes(name)) {
-    thisShortcut = customEditorShortcut(name as EditorShortcutName, editorMap);
-  } else {
-    thisShortcut = customMenuShortcut(name as MenuShortcutName, menuMap);
-  }
-
-  if (thisShortcut === undefined) {
-    return [];
-  }
-
-  const editorConflicts: EditorShortcutName[] = [];
-
-  for (const shortcutName of Object.keys(editorDefaults) as EditorShortcutName[]) {
-    if (shortcutName === name) {
-      continue;
-    }
-
-    const shortcut = customEditorShortcut(shortcutName, editorMap);
-
-    if (shortcut !== undefined && shortcut === thisShortcut) {
-      editorConflicts.push(shortcutName);
-    }
-  }
-
-  const menuConflicts: MenuShortcutName[] = [];
-
-  for (const shortcutName of Object.keys(menuDefaults) as MenuShortcutName[]) {
-    if (shortcutName === name) {
-      continue;
-    }
-
-    const shortcut = customMenuShortcut(shortcutName, menuMap);
-    if (shortcut !== undefined && shortcut === thisShortcut) {
-      menuConflicts.push(shortcutName);
-    }
-  }
-
-  return (editorConflicts as string[]).concat(menuConflicts);
+): CommandId[] {
+  const editor = Object.fromEntries(editorMap.map(({ name, shortcut }) => [name, shortcut]));
+  return getCommandConflicts(id, { editor, ui: menuMap });
 }
 
-export function getShortcutFields(config: ConfigOptions): PreferencesFieldset[] {
-  // For the time being, we'll declare this feature as experimental to ensure we
-  // can tweak that accordingly.
-  const disclaimer =
-    " WARNING: EXPERIMENTAL FEATURE. This feature may still change at any time without prior communication.";
+function groupTitle(group: CommandGroup): string {
+  return trans("%s Shortcuts", group);
+}
 
-  // Returns the default for the provided editor shortcut
-  const defaultEditorShortcut = (name: ConfigurableEditorShortcuts) => {
-    return getDefaultKeybinding(name, editorDefaults);
-  };
-
-  // Returns the default for the provided menu/UI shortcut
-  const defaultUIShortcut = (name: ConfigurableUIShortcuts) => {
-    return getDefaultKeybinding(name, menuDefaults);
-  };
-
-  // Third utility function to determine conflicts across the maps
-  const conflicts = (name: EditorShortcutName | MenuShortcutName) => {
-    return getConflicts(name, editorMap, config.shortcuts.ui);
-  };
-
-  // Necessary for conflict detection
-  const editorMap = Object.entries(config.shortcuts.editor)
-    .map(([name, shortcut]) => ({ name, shortcut }))
-    .filter((shortcut): shortcut is CustomEditorShortcut => shortcut.shortcut !== undefined);
-
-  return [
-    {
-      title: trans("Navigation Shortcuts"),
-      infoString: trans("Set the Back and Forward shortcuts for each editor pane.") + disclaimer,
-      group: PreferencesGroups.Shortcuts,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: "shortcut",
-          label: trans("Go back in this pane's history"),
-          model: "shortcuts.editor.nav-history-back",
-          defaultShortcut: defaultEditorShortcut("nav-history-back"),
-          conflicts: conflicts("nav-history-back"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Go forward in this pane's history"),
-          model: "shortcuts.editor.nav-history-forward",
-          defaultShortcut: defaultEditorShortcut("nav-history-forward"),
-          conflicts: conflicts("nav-history-forward"),
-        },
-      ],
-    },
-    {
-      title: trans("Table Shortcuts"),
-      infoString: trans("Customize the available table shortcuts for the editor.") + disclaimer,
-      group: PreferencesGroups.Shortcuts,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: "shortcut",
-          label: trans("Align Markdown table under cursor"),
-          model: "shortcuts.editor.table-align",
-          defaultShortcut: defaultEditorShortcut("table-align"),
-          conflicts: conflicts("table-align"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Align table column left"),
-          model: "shortcuts.editor.table-align-col-left",
-          defaultShortcut: defaultEditorShortcut("table-align-col-left"),
-          conflicts: conflicts("table-align-col-left"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Align table column center"),
-          model: "shortcuts.editor.table-align-col-center",
-          defaultShortcut: defaultEditorShortcut("table-align-col-center"),
-          conflicts: conflicts("table-align-col-center"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Align table column right"),
-          model: "shortcuts.editor.table-align-col-right",
-          defaultShortcut: defaultEditorShortcut("table-align-col-right"),
-          conflicts: conflicts("table-align-col-right"),
-        },
-      ],
-    },
-    {
-      title: trans("Transform Shortcuts"),
-      infoString:
-        trans("Assign shortcuts to your frequently used text transformations here.") + disclaimer,
-      group: PreferencesGroups.Shortcuts,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: "shortcut",
-          label: trans("Zap Gremlins"),
-          model: "shortcuts.editor.tr-zap-gremlins",
-          defaultShortcut: defaultEditorShortcut("tr-zap-gremlins"),
-          conflicts: conflicts("tr-zap-gremlins"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Strip duplicate spaces"),
-          model: "shortcuts.editor.tr-strip-duplicate-spaces",
-          defaultShortcut: defaultEditorShortcut("tr-strip-duplicate-spaces"),
-          conflicts: conflicts("tr-strip-duplicate-spaces"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Italics to quotes"),
-          model: "shortcuts.editor.tr-italics-to-quotes",
-          defaultShortcut: defaultEditorShortcut("tr-italics-to-quotes"),
-          conflicts: conflicts("tr-italics-to-quotes"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Quotes to italics"),
-          model: "shortcuts.editor.tr-quotes-to-italics",
-          defaultShortcut: defaultEditorShortcut("tr-quotes-to-italics"),
-          conflicts: conflicts("tr-quotes-to-italics"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Remove excess line breaks"),
-          model: "shortcuts.editor.tr-remove-line-breaks",
-          defaultShortcut: defaultEditorShortcut("tr-remove-line-breaks"),
-          conflicts: conflicts("tr-remove-line-breaks"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Straighten quotes"),
-          model: "shortcuts.editor.tr-straighten-quotes",
-          defaultShortcut: defaultEditorShortcut("tr-straighten-quotes"),
-          conflicts: conflicts("tr-straighten-quotes"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Convert quotes to Magic Quotes"),
-          model: "shortcuts.editor.tr-quotes-to-magic",
-          defaultShortcut: defaultEditorShortcut("tr-quotes-to-magic"),
-          conflicts: conflicts("tr-quotes-to-magic"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Ensure double quotes"),
-          model: "shortcuts.editor.tr-ensure-double-quotes",
-          defaultShortcut: defaultEditorShortcut("tr-ensure-double-quotes"),
-          conflicts: conflicts("tr-ensure-double-quotes"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Double quotes to single"),
-          model: "shortcuts.editor.tr-double-quotes-to-single",
-          defaultShortcut: defaultEditorShortcut("tr-double-quotes-to-single"),
-          conflicts: conflicts("tr-double-quotes-to-single"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Single quotes to double"),
-          model: "shortcuts.editor.tr-single-quotes-to-double",
-          defaultShortcut: defaultEditorShortcut("tr-single-quotes-to-double"),
-          conflicts: conflicts("tr-single-quotes-to-double"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Emdash — Add spaces around"),
-          model: "shortcuts.editor.tr-emdash-add-spaces",
-          defaultShortcut: defaultEditorShortcut("tr-emdash-add-spaces"),
-          conflicts: conflicts("tr-emdash-add-spaces"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Emdash — Remove spaces around"),
-          model: "shortcuts.editor.tr-emdash-remove-spaces",
-          defaultShortcut: defaultEditorShortcut("tr-emdash-remove-spaces"),
-          conflicts: conflicts("tr-emdash-remove-spaces"),
-        },
-        {
-          type: "shortcut",
-          label: trans("To sentence case"),
-          model: "shortcuts.editor.tr-sentence-case",
-          defaultShortcut: defaultEditorShortcut("tr-sentence-case"),
-          conflicts: conflicts("tr-sentence-case"),
-        },
-        {
-          type: "shortcut",
-          label: trans("To title case"),
-          model: "shortcuts.editor.tr-title-case",
-          defaultShortcut: defaultEditorShortcut("tr-title-case"),
-          conflicts: conflicts("tr-title-case"),
-        },
-      ],
-    },
-    {
-      title: trans("UI Shortcuts"),
-      infoString: trans("Customize general user interface shortcuts here.") + disclaimer,
-      group: PreferencesGroups.Shortcuts,
-      help: undefined, // TODO
-      fields: [
-        {
-          type: "shortcut",
-          label: trans("Switch to next tab"),
-          model: "shortcuts.ui.next-tab",
-          defaultShortcut: defaultUIShortcut("next-tab"),
-          conflicts: conflicts("next-tab"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Switch to previous tab"),
-          model: "shortcuts.ui.previous-tab",
-          defaultShortcut: defaultUIShortcut("previous-tab"),
-          conflicts: conflicts("previous-tab"),
-        },
-        {
-          type: "shortcut",
-          label: trans("Filter files"),
-          model: "shortcuts.ui.filter-files",
-          defaultShortcut: defaultUIShortcut("filter-files"),
-          conflicts: conflicts("filter-files"),
-        },
-      ],
-    },
-  ];
+export function getShortcutFields(config: Pick<ConfigOptions, "shortcuts">): PreferencesFieldset[] {
+  const shortcuts: ShortcutConfig = config.shortcuts;
+  const commands = commandRegistry.all();
+  const groups = [...new Set(commands.map((command) => command.group))];
+  return groups.map((group) => ({
+    title: groupTitle(group),
+    infoString: trans("Customize keyboard shortcuts for %s commands.", group.toLowerCase()),
+    group: PreferencesGroups.Shortcuts,
+    help: undefined,
+    fields: commands
+      .filter((command) => command.group === group)
+      .map((command) => ({
+        type: "shortcut" as const,
+        label: trans(command.label),
+        model: `shortcuts.${command.scope === "editor" ? "editor" : "ui"}.${command.id}`,
+        defaultShortcut: getConfiguredShortcut(command.id, { editor: {}, ui: {} }),
+        conflicts: getCommandConflicts(command.id, shortcuts).map((id) => {
+          const conflict = commandRegistry.get(id);
+          return conflict === undefined ? id : trans(conflict.label);
+        }),
+      })),
+  }));
 }

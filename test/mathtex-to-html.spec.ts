@@ -68,6 +68,12 @@ process.stdout.write(await md2html('$$\\\\RR$$', { onCitation: () => undefined, 
   assert.match(html, /ℝ/);
 });
 
+function textOf(node: Node): string {
+  const text = node.textContent;
+  assert.ok(text !== null, `expected ${node.nodeName} to carry text content`);
+  return text;
+}
+
 describe("Utility#mathJaxToHTML()", function () {
   before(async function () {
     // Full-stylesheet initialization loads every dynamic font module once.
@@ -83,17 +89,25 @@ describe("Utility#mathJaxToHTML()", function () {
     const rendered = new DOMParser().parseFromString(html, "text/html").body;
 
     assert.equal(rendered.querySelector("mjx-container")?.getAttribute("display"), "true");
-    assert.match(rendered.textContent ?? "", /ℝ/);
-    assert.match(rendered.textContent ?? "", /\(𝑥\)/);
+    assert.match(textOf(rendered), /ℝ/);
+    assert.match(textOf(rendered), /\(𝑥\)/);
     assert.equal(rendered.querySelector("mjx-msub")?.textContent, "𝐴2");
 
     const stylesheet = document.getElementById("MJX-CHTML-styles");
     assert.ok(stylesheet);
     assert.match(
-      stylesheet.textContent ?? "",
+      textOf(stylesheet),
       /url\("http:\/\/localhost:3000\/mathjax\/mjx-ncm-ds\.woff2"\)/,
     );
-    assert.doesNotMatch(stylesheet.textContent ?? "", /cdn\.jsdelivr\.net|@mathjax\//);
+    assert.doesNotMatch(textOf(stylesheet), /cdn\.jsdelivr\.net|@mathjax\//);
+  });
+
+  it("renders the MathJax boldsymbol package instead of an undefined control sequence", function () {
+    const html = mathJaxToHTML("\\boldsymbol{\\iota}_L", "inline");
+    const rendered = new DOMParser().parseFromString(html, "text/html").body;
+
+    assert.doesNotMatch(textOf(rendered), /\\boldsymbol/);
+    assert.equal(rendered.querySelector('mjx-mtext[style*="color: red"]'), null);
   });
 
   it("inserts CommonHTML into the supplied element synchronously", function () {
@@ -102,7 +116,7 @@ describe("Utility#mathJaxToHTML()", function () {
     mathJaxToElem("\\RR", element, "inline");
 
     assert.equal(element.querySelector("mjx-container")?.getAttribute("jax"), "CHTML");
-    assert.match(element.textContent ?? "", /ℝ/);
+    assert.match(textOf(element), /ℝ/);
   });
 
   it("memoizes repeated browser equations while cloning the cached DOM", function () {

@@ -150,14 +150,19 @@
         data-statusbar-item="tasks"
       >
         <button
-          v-if="runningLabel !== ''"
+          v-if="newestTask !== undefined"
           type="button"
           class="main-statusbar-item"
           data-statusbar-item="running-task"
           v-bind:title="runningTitle"
           v-on:click="emit('tasks')"
         >
-          {{ runningLabel }}
+          <span>{{ runningLabel }}</span>
+          <TaskProgressIndicator
+            :label="newestTask.title"
+            :percentage="newestTask.currentTaskPercentage"
+            compact
+          />
         </button>
         <IrisIndicator
           id="long-running-tasks"
@@ -203,8 +208,8 @@
  *                  cursor, counts, input mode, LanguageTool, diagnostics);
  *                  its right group carries the window-level items: the
  *                  notification center, the Pomodoro ring, the
- *                  long-running-task indicator with the name and elapsed
- *                  time of the newest running task and, when an update
+ *                  long-running-task indicator with the progress of the
+ *                  newest running task and, when an update
  *                  exists, the update item. The bar computes
  *                  nothing about the document; it renders and emits.
  *
@@ -219,8 +224,8 @@ import showPopupMenu, {
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import localiseNumber from "@common/util/localise-number";
 import IrisIndicator from "@common/vue/IrisIndicator.vue";
+import TaskProgressIndicator from "@common/vue/TaskProgressIndicator.vue";
 import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
-import { DateTime } from "luxon";
 import {
   useConfigStore,
   useDocumentTreeStore,
@@ -228,7 +233,7 @@ import {
   useWindowStateStore,
 } from "source/pinia";
 import { TaskStatus } from "source/pinia/lrt-store";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed } from "vue";
 import NotificationCenter from "./NotificationCenter.vue";
 import { languageToolMenuItems, magicQuotesMenuItems, magicQuotesPairFor } from "./statusbar-menus";
 
@@ -325,39 +330,15 @@ const runningTasks = computed(() =>
     .filter((task) => task.status === TaskStatus.ongoing)
     .toSorted((a, b) => b.startTime.localeCompare(a.startTime)),
 );
-
-// The elapsed time ticks once a second while a task runs.
-const now = ref(DateTime.now());
-let clock: ReturnType<typeof setInterval> | undefined;
-watch(
-  () => runningTasks.value.length > 0,
-  (running) => {
-    clearInterval(clock);
-    clock = undefined;
-    if (running) {
-      now.value = DateTime.now();
-      clock = setInterval(() => {
-        now.value = DateTime.now();
-      }, 1000);
-    }
-  },
-  { immediate: true },
-);
-onBeforeUnmount(() => {
-  clearInterval(clock);
-});
+const newestTask = computed(() => runningTasks.value[0]);
 
 const runningLabel = computed(() => {
-  const [newest, ...others] = runningTasks.value;
+  const newest = newestTask.value;
   if (newest === undefined) {
     return "";
   }
-  const seconds = Math.max(
-    0,
-    Math.floor(now.value.diff(DateTime.fromISO(newest.startTime)).as("seconds")),
-  );
-  const label = `${newest.title} (${seconds}s)`;
-  return others.length === 0 ? label : `${label} · ${trans("%s more", others.length)}`;
+  const otherCount = runningTasks.value.length - 1;
+  return otherCount === 0 ? newest.title : `${newest.title} · ${trans("%s more", otherCount)}`;
 });
 const runningTitle = computed(() =>
   runningTasks.value

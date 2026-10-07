@@ -50,6 +50,7 @@ function annotation(
     documentId: "doc-1",
     anchor,
     state: "open",
+    agentStatus: { state: "pending" },
     messages: [
       {
         messageId: `msg-${counter}`,

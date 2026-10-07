@@ -48,6 +48,7 @@ import type {
   ReviewSubmissionRequest,
   SearchDocumentRequest,
   SubmitProposalRequest,
+  WorkspaceEntryCreateRequest,
 } from "@dts/common/agent-api";
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
@@ -108,6 +109,14 @@ import AgentDocumentQueries, {
 } from "./document-queries";
 import { HELP_DOCUMENT } from "./help-content";
 import AgentMcpEndpoint from "./mcp-endpoint";
+import {
+  listSkillTree,
+  readSkillMarkdown,
+  resolveSkillsDirectory,
+  SkillFileNotFoundError,
+  SkillsDirectoryUnavailableError,
+  SkillsPathInputError,
+} from "./skills-store";
 import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
@@ -206,10 +215,10 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   ANNOTATION_GENERATION_MISMATCH: 409,
   ANNOTATION_RESOLVED: 409,
   ANNOTATION_ORPHANED: 409,
-  // Unreachable through addAnnotationMessage, the only route that consults
-  // this code (I3: lifecycle is owner-only, and that route never checks
-  // ownership) — kept here because the Record is exhaustive, not as a
-  // defense-in-depth branch a reviewer has to trust by inspection.
+  // Unreachable through addAnnotationMessage, the only annotation write the
+  // agent API exposes. That route may mark the agent's own disposition acted,
+  // but it cannot move owner resolution/anchor lifecycle state and therefore
+  // never asks an owner-only transition to run.
   ANNOTATION_OWNER_ONLY: 403,
   IDEMPOTENCY_CONFLICT: 409,
   REQUEST_TOO_LARGE: 413,
@@ -222,6 +231,11 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   CITATION_NOT_FOUND: 404,
   FIGURE_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
+  SKILLS_NOT_CONFIGURED: 503,
+  SKILL_NOT_FOUND: 404,
+  WORKSPACE_NOT_FOUND: 404,
+  WORKSPACE_OUTSIDE_SCOPE: 403,
+  WORKSPACE_ENTRY_EXISTS: 409,
   DUPLICATE_CLAIM_DESCRIPTION: 400,
   INTERNAL_ERROR: 500,
   ZOTERO_UNAVAILABLE: 503,
@@ -321,13 +335,27 @@ export interface AgentApiHost {
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
       tikz: ConfigOptions["tikz"];
-      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
+      editor: {
+        lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
+      };
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
   documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+  /**
+   * The filesystem operations the workspace-entry routes need, kept separate
+   * from `fsal` because the cross-reference reader may be wired without them.
+   * The real service container exposes the whole FSAL through `fsal`; this
+   * seam names only the four methods those routes call.
+   */
+  workspaceFsal?: {
+    isDir: (absPath: string) => Promise<boolean>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    createDir: (dirPath: string) => Promise<void>;
+    createFile: (filePath: string, content: string) => Promise<void>;
+  };
   links: { readonly index: WikilinkIndex };
 }
 
@@ -399,7 +427,19 @@ export default class AgentHTTPProvider extends ProviderContract {
       _documents,
       _documents.reviewQueries,
       _documents.annotationQueries,
-      _app,
+      {
+        // Spread loses `config` and `links`: they are prototype getters on
+        // the service container, and object spread copies only own enumerable
+        // properties. Define them as live getters so the query host keeps a
+        // working view of the container.
+        get config() {
+          return _app.config;
+        },
+        get links() {
+          return _app.links;
+        },
+        fsal: _app.workspaceFsal,
+      },
       _log,
     );
     // Load the OpenAPI YAML spec (dev: sibling to this file; packaged: assets/openapi.yaml)
@@ -659,8 +699,25 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
-      this._log.error(`[AgentHTTPProvider] Unhandled error: ${err}`);
-      this.sendError(res, 500, "INTERNAL_ERROR", "Internal server error");
+      // Log the stack and which operation failed; `${err}` alone drops both,
+      // leaving six identical "reading 'get'" lines with no fault site. The
+      // response gets the message so a caller sees the real failure, but the
+      // stack stays server-side.
+      const operation = method + " " + pathname;
+      if (err instanceof Error) {
+        const stack = err.stack === undefined ? "(no stack)" : err.stack;
+        this._log.error(
+          `[AgentHTTPProvider] Unhandled error in ${operation}: ${err.message}\n${stack}`,
+        );
+      } else {
+        this._log.error(`[AgentHTTPProvider] Unhandled error in ${operation}: ${String(err)}`);
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        err instanceof Error ? err.message : "Internal server error",
+      );
     });
   }
 
@@ -804,8 +861,28 @@ export default class AgentHTTPProvider extends ProviderContract {
     (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
   > {
     return {
-      getHelp: (c: OperationContext<"getHelp">, req, res: http.ServerResponse) =>
-        this.serveHelp(res, req.headers.accept, c.request.query.format === "json"),
+      getHelp: (
+        c: DefaultedOperationContext<"getHelp", "resource" | "action">,
+        req,
+        res: http.ServerResponse,
+      ) => {
+        if (c.request.query.resource === "skills") {
+          if (c.request.query.action === "read") {
+            if (c.request.query.path === undefined || c.request.query.path === "") {
+              this.sendError(
+                res,
+                400,
+                "INVALID_PARAMS",
+                "Query parameter 'path' is required when resource=skills and action=read",
+              );
+              return;
+            }
+            return this.handleReadSkill(res, c.request.query.path);
+          }
+          return this.handleListSkills(res);
+        }
+        return this.serveHelp(res, req.headers.accept, c.request.query.format === "json");
+      },
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
         this.sendJson(res, 200, {
@@ -819,7 +896,6 @@ export default class AgentHTTPProvider extends ProviderContract {
         }),
       getContext: (_c, _req, res) => this.handleGetContext(res),
       listViews: (_c, _req, res) => this.handleGetViews(res),
-      listWorkspaceFiles: (_c, _req, res) => this.handleListWorkspaceFiles(res),
       searchWorkspace: (
         c: DefaultedOperationContext<
           "searchWorkspace",
@@ -828,16 +904,32 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => this.handleSearchWorkspace(res, c.request.query),
-      listWorkspaces: (c: OperationContext<"listWorkspaces">, _req, res: http.ServerResponse) => {
-        if (c.request.query.workspaceId) {
-          return this.handleListWorkspaceDocuments(
-            res,
-            c.request.query.workspaceId,
-            c.request.query.query,
-          );
+      listWorkspaces: (
+        c: DefaultedOperationContext<"listWorkspaces", "include">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const { include, query } = c.request.query;
+        const workspaceId =
+          c.request.query.workspaceId === "" ? undefined : c.request.query.workspaceId;
+        if (include === "summary") {
+          return this.handleGetWorkspaces(res);
         }
-        return this.handleGetWorkspaces(res);
+        if (workspaceId !== undefined) {
+          return this.handleListInWorkspace(res, include, workspaceId, query);
+        }
+        // A files listing without a workspaceId is the orientation projection
+        // across every workspace, the shape the retired flat route served.
+        if (include === "files") {
+          return this.handleListWorkspaceFiles(res);
+        }
+        this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
       },
+      createWorkspaceEntry: (
+        c: OperationContext<"createWorkspaceEntry">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleCreateWorkspaceEntry(res, c.request.requestBody),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
       getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
@@ -1116,14 +1208,16 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /**
-   * GET /v1/workspace/files — the orientation loop's first question: what
-   * exists. Every file across the configured workspaces, flat, open or not.
-   * Main already walks directories for the workspace listings; this is a
-   * route over that walk, not a subsystem.
+   * GET /v1/workspaces?include=files (no workspaceId) — the orientation loop's
+   * first question: what exists. Every file across every configured workspace,
+   * flat, open or not. Main already walks directories for the workspace
+   * listings; this is a route over that walk, not a subsystem.
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
     try {
-      this.sendJson(res, 200, { files: await this._queries.listWorkspaceFiles() });
+      this.sendJson(res, 200, {
+        files: await this._queries.listWorkspaceFiles(),
+      });
     } catch (error) {
       this.sendError(
         res,
@@ -1132,6 +1226,91 @@ export default class AgentHTTPProvider extends ProviderContract {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  /**
+   * GET /v1/workspaces?workspaceId=…&include=files — the same listing
+   * restricted to one workspace, 404 when the id names no configured one.
+   */
+  /** One workspace's documents, directories or files, as `include` names. */
+  private async handleListInWorkspace(
+    res: http.ServerResponse,
+    include: "documents" | "directories" | "files",
+    workspaceId: string,
+    query: string | undefined,
+  ): Promise<void> {
+    switch (include) {
+      case "documents":
+        return this.handleListWorkspaceDocuments(res, workspaceId, query);
+      case "directories":
+        return this.handleListWorkspaceDirectories(res, workspaceId);
+      case "files":
+        return this.handleListWorkspaceFilesInWorkspace(res, workspaceId);
+    }
+  }
+
+  private async handleListWorkspaceFilesInWorkspace(
+    res: http.ServerResponse,
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const files = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+      if (files === undefined) {
+        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, { files });
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /**
+   * GET /v1/workspaces?include=directories — every folder the workspace holds,
+   * recursively, so a client can see the shape of the tree rather than only
+   * the files in it.
+   */
+  private async handleListWorkspaceDirectories(
+    res: http.ServerResponse,
+    workspaceId: string,
+  ): Promise<void> {
+    try {
+      const directories = await this._queries.listWorkspaceDirectories(workspaceId);
+      if (directories === undefined) {
+        this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
+        return;
+      }
+      this.sendJson(res, 200, directories);
+    } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /**
+   * POST /v1/workspace/entries — create one file or folder inside a workspace.
+   * The provider owns containment and the already-exists refusal; this handler
+   * only translates its outcome to the wire.
+   */
+  private async handleCreateWorkspaceEntry(
+    res: http.ServerResponse,
+    body: WorkspaceEntryCreateRequest,
+  ): Promise<void> {
+    const outcome = await this._queries.createWorkspaceEntry(body);
+    if (outcome.ok) {
+      this.sendJson(res, 201, outcome.entry);
+      return;
+    }
+    this.sendError(res, STATUS_BY_CODE[outcome.code], outcome.code, outcome.message);
   }
 
   /**
@@ -1593,9 +1772,9 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   // ==========================================================================
-  // Annotations — read and reply only. Lifecycle (resolve, reopen, reattach,
-  // delete, create) is owner-only (I3) and has no operationId in the
-  // published document: the API cannot express it, not merely refuse it.
+  // Annotations — read, reply, and record agent action. A reply may mark
+  // itself as the acted disposition; owner lifecycle (resolve, reopen,
+  // reattach, delete, create) remains absent from the published document.
   // ==========================================================================
 
   private async handleListAnnotations(
@@ -1650,19 +1829,22 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.text,
         body.clientRequestId,
         body.expectedAnnotationGeneration,
+        body.markActed,
       );
     if (!("messageId" in result)) {
       this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
       return;
     }
-    const annotationGeneration = this._documents.annotationQueries.getAnnotations(
-      located.documentId,
-    ).generation;
+    const annotation = await this._queries.getAnnotation(annotationId);
+    if (annotation === undefined) {
+      throw new Error(`Annotation ${annotationId} disappeared after its message was committed`);
+    }
     this.sendJson(res, 200, {
       annotationId,
       documentId: located.documentId,
       message: result,
-      annotationGeneration,
+      annotationGeneration: annotation.annotationGeneration,
+      agentStatus: annotation.agentStatus,
     });
   }
 
@@ -1854,7 +2036,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    this.sendJson(res, 200, { reviewId: result.reviewId, documentId: result.documentId });
+    this.sendJson(res, 200, {
+      reviewId: result.reviewId,
+      documentId: result.documentId,
+    });
   }
 
   /**
@@ -1969,8 +2154,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
     } else {
       // PACKET_NOT_RETRACTABLE and DOCUMENT_CLOSED both land on STATUS_BY_CODE's
-      // 409: the packet is live but no longer the retractable one, or its file
-      // is closed. Both name the review that owns the packet, which is the
+      // 409: the packet has already reached a terminal state, or its file is
+      // closed. Both name the review that owns the packet, which is the
       // only thing the caller can re-read from — disposing of the suggestions
       // is the reviewer's.
       this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
@@ -2169,6 +2354,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     );
   }
 
+  private skillsDirectory(): string {
+    return resolveSkillsDirectory(
+      this._app.config.get().agentApi.skillsDirectory,
+      this.authoringHomeDirectory(),
+    );
+  }
+
   private async handleListMacros(
     res: http.ServerResponse,
     query: string | undefined,
@@ -2194,8 +2386,55 @@ export default class AgentHTTPProvider extends ProviderContract {
                   declaration.context.toLocaleLowerCase("en-US").includes(needle),
               );
             });
-      this.sendJson(res, 200, { root: inventory.root, count: macros.length, macros });
+      this.sendJson(res, 200, {
+        root: inventory.root,
+        count: macros.length,
+        macros,
+      });
     } catch (error) {
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleListSkills(res: http.ServerResponse): Promise<void> {
+    try {
+      const { root, entries } = await listSkillTree(this.skillsDirectory());
+      this.sendJson(res, 200, { root, count: entries.length, entries });
+    } catch (error) {
+      if (error instanceof SkillsDirectoryUnavailableError) {
+        this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
+        return;
+      }
+      this.sendError(
+        res,
+        500,
+        "INTERNAL_ERROR",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async handleReadSkill(res: http.ServerResponse, relativePath: string): Promise<void> {
+    try {
+      this.sendJson(res, 200, await readSkillMarkdown(this.skillsDirectory(), relativePath));
+    } catch (error) {
+      if (error instanceof SkillsDirectoryUnavailableError) {
+        this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
+        return;
+      }
+      if (error instanceof SkillFileNotFoundError) {
+        this.sendError(res, 404, "SKILL_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof SkillsPathInputError) {
+        this.sendError(res, 400, "INVALID_PARAMS", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2479,7 +2718,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         lookups.forEach((lookup, index) => {
           const target = targets[index];
           if (lookup.record === undefined) {
-            pending.push({ documentId: target.documentId, path: target.path, name: target.name });
+            pending.push({
+              documentId: target.documentId,
+              path: target.path,
+              name: target.name,
+            });
           } else {
             documents.push(result(target, lookup.record, lookup.current));
           }

@@ -9,7 +9,7 @@
       <span class="annotation-ordinal">{{ card.ordinal }}</span>
       <span
         class="annotation-lifecycle-pill"
-        v-bind:class="card.annotation.state"
+        :class="lifecycleClass"
       >{{ lifecycleLabel }}</span>
       <span class="annotation-inline-thread-spacer"></span>
       <button
@@ -30,12 +30,14 @@
          one needs its text spelled out, since nothing marks it any more. -->
     <blockquote
       v-if="actionRow.canReattach"
+      v-annotation-markdown="card.quotedText"
       class="annotation-selected-quote"
-    >{{ card.quotedText }}</blockquote>
+    />
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
       v-bind:now="now"
+      :acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
     ></AnnotationThread>
 
     <ProposalActionCard
@@ -161,6 +163,7 @@ import {
 } from "../sidebar/annotations/annotation-panel-model";
 import AnnotationComposer from "./AnnotationComposer.vue";
 import AnnotationThread from "./AnnotationThread.vue";
+import { vAnnotationMarkdown } from "./annotation-markdown";
 import ProposalActionCard from "./ProposalActionCard.vue";
 
 const props = defineProps<{
@@ -183,9 +186,15 @@ const emit = defineEmits<{
 const confirmingDelete = ref(false);
 
 const actionRow = computed(() => deriveActionRow(props.card.annotation));
-const lifecycleLabel = computed(() =>
-  props.card.annotation.state === "resolved" ? trans("Resolved") : trans("Open"),
+const lifecycleClass = computed(() =>
+  props.card.annotation.state === "resolved" ? "resolved" : props.card.annotation.agentStatus.state,
 );
+const lifecycleLabel = computed(() => {
+  if (props.card.annotation.state === "resolved") {
+    return trans("Resolved");
+  }
+  return props.card.annotation.agentStatus.state === "acted" ? trans("Acted") : trans("Open");
+});
 const resolveLabel = computed(() =>
   actionRow.value.resolveLabel === "Reopen" ? trans("Reopen") : trans("Resolve"),
 );

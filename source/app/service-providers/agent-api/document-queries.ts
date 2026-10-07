@@ -14,6 +14,7 @@
  */
 
 import { Text } from "@codemirror/state";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -27,7 +28,11 @@ import type {
   SearchDocumentRequest,
   SearchDocumentResponse,
   ViewSummary,
+  WorkspaceDirectoriesResponse,
+  WorkspaceDirectoryEntry,
   WorkspaceDocumentEntry,
+  WorkspaceEntryCreateRequest,
+  WorkspaceEntryResponse,
   WorkspaceFileEntry,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
@@ -104,14 +109,57 @@ export interface AgentDocumentQueryHost {
     get: () => { app: { openWorkspaces: string[] } };
   };
   links: { readonly index: WikilinkIndex };
+  /**
+   * The filesystem seam the workspace-entry operations need. Optional so a
+   * host that only reads documents keeps compiling; a request that creates an
+   * entry or lists directories answers PERSISTENCE_FAILED without it.
+   */
+  fsal?: {
+    isDir: (absPath: string) => Promise<boolean>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    createDir: (dirPath: string) => Promise<void>;
+    createFile: (filePath: string, content: string) => Promise<void>;
+  };
 }
+
+/** Why a workspace-entry creation was refused, mapped to a wire error code. */
+export type WorkspaceEntryFailureCode =
+  | "WORKSPACE_NOT_FOUND"
+  | "WORKSPACE_OUTSIDE_SCOPE"
+  | "WORKSPACE_ENTRY_EXISTS"
+  | "INVALID_PARAMS"
+  | "PERSISTENCE_FAILED";
+
+export type WorkspaceEntryCreation =
+  | { ok: true; entry: WorkspaceEntryResponse }
+  | { ok: false; code: WorkspaceEntryFailureCode; message: string };
 
 /**
  * Read-only annotation projections for transport providers. Annotation
  * mutation is a separate, narrower surface (DocumentManager.addAnnotationMessage)
  * — the only annotation write the agent HTTP API exposes (I3).
+ *
+ * `listCollaborationSidecars` is what closes the read contract: without it a
+ * closed document's annotations — everything the UI workspace panel shows —
+ * would be invisible to an agent, and the only mutation would 404 on an
+ * annotation the listing never produced. Same enumeration the workspace
+ * projection and `listReviewQueries` already serve detached reviews through.
  */
-export type AnnotationQueryPort = Pick<CollaborationApplicationService, "getAnnotations">;
+export type AnnotationQueryPort = Pick<
+  CollaborationApplicationService,
+  "getAnnotations" | "listCollaborationSidecars"
+>;
+
+/** One annotation read, located: which document it belongs to and where its
+ * text lives — the live buffer of an open document, or the persisted working
+ * text of a detached sidecar.
+ */
+interface LocatedAnnotation {
+  documentId: string;
+  annotation: TextAnnotation;
+  annotationGeneration: number;
+  workingText: string;
+}
 
 /** A document's working text, and the text its review started from. */
 interface DocumentText {
@@ -184,6 +232,7 @@ function buildAnnotationResponse(
     documentId: annotation.documentId,
     target: buildAnnotationTarget(annotation.anchor, workingText),
     state: annotation.state,
+    agentStatus: annotation.agentStatus,
     messages: annotation.messages,
     proposalActions: annotation.proposalActions,
     annotationGeneration,
@@ -270,10 +319,11 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Every annotation of one open document. Undefined when documentId names no
-   * document this manager knows — the caller's signal to answer
-   * DOCUMENT_NOT_FOUND rather than an empty list. A known-but-closed document
-   * has no queryable annotation state: the sidecar is not scanned here.
+   * The annotations of one document, open or closed. Undefined when
+   * documentId names no document this manager knows — the caller's signal
+   * to answer DOCUMENT_NOT_FOUND rather than an empty list. A closed
+   * document's annotations come from its persisted sidecar, so what the
+   * UI workspace panel shows for that file is exactly what this answers.
    */
   public async listDocumentAnnotations(
     documentId: string,
@@ -283,37 +333,38 @@ export default class AgentDocumentQueries {
     if (filePath === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find(
-      (candidate) => candidate.documentId === documentId,
-    );
-    if (document === undefined) {
+    const located = await this._annotationDocument(documentId);
+    if (located === undefined) {
       return { annotations: [] };
     }
-    const workingText = document.document.toString();
-    const set: AnnotationSet = this.annotations.getAnnotations(documentId);
     const items =
-      state === undefined ? set.items : set.items.filter((item) => item.state === state);
+      state === undefined
+        ? located.annotations.items
+        : located.annotations.items.filter((item) => item.state === state);
     return {
-      annotations: items.map((item) => buildAnnotationResponse(item, set.generation, workingText)),
+      annotations: items.map((item) =>
+        buildAnnotationResponse(item, located.annotations.generation, located.workingText),
+      ),
     };
   }
 
   /**
-   * Every annotation across every currently open document. `state` narrows to
-   * one lifecycle state and defaults to `open` — the annotations with a
-   * thread to read or reply to, matching the OpenAPI document's declared
-   * default.
+   * Every annotation across the workspace — the same set the UI annotations
+   * panel can show. Open documents read their live state; closed documents
+   * read their persisted sidecars. With no `state` filter this returns every
+   * annotation, including resolved ones; callers may explicitly narrow to one
+   * lifecycle state.
    */
   public async listAnnotations(
-    state: "open" | "resolved" = "open",
+    state: "open" | "resolved" | undefined,
   ): Promise<AnnotationListResponse> {
     const annotations: AnnotationResponse[] = [];
-    for (const document of this.documents.loadedDocuments) {
-      const workingText = document.document.toString();
-      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
-      for (const item of set.items) {
-        if (item.state === state) {
-          annotations.push(buildAnnotationResponse(item, set.generation, workingText));
+    for (const located of await this._annotationDocuments()) {
+      for (const item of located.annotations.items) {
+        if (state === undefined || item.state === state) {
+          annotations.push(
+            buildAnnotationResponse(item, located.annotations.generation, located.workingText),
+          );
         }
       }
     }
@@ -321,40 +372,147 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Locate one annotation by id alone, across every open document — the
+   * Locate one annotation by id alone, across the whole workspace — the
    * lookup `GET /v1/annotations/{annotationId}` and the reply endpoint both
    * need, since neither carries a documentId.
    */
-  public async findAnnotationQuery(
-    annotationId: string,
-  ): Promise<
-    { documentId: string; annotation: TextAnnotation; annotationGeneration: number } | undefined
-  > {
-    for (const document of this.documents.loadedDocuments) {
-      const set: AnnotationSet = this.annotations.getAnnotations(document.documentId);
-      const found = set.items.find((item) => item.annotationId === annotationId);
+  public async findAnnotationQuery(annotationId: string): Promise<LocatedAnnotation | undefined> {
+    for (const located of await this._annotationDocuments()) {
+      const found = located.annotations.items.find((item) => item.annotationId === annotationId);
       if (found !== undefined) {
         return {
-          documentId: document.documentId,
+          documentId: located.documentId,
           annotation: found,
-          annotationGeneration: set.generation,
+          annotationGeneration: located.annotations.generation,
+          workingText: located.workingText,
         };
       }
     }
     return undefined;
   }
 
-  /** One annotation's full detail, wire-shaped, or undefined if unknown. */
+  /**
+   * Every document that has annotation state, open or closed — the merged
+   * projection behind the annotations routes. Open documents read their live
+   * state; closed documents read the sidecar that carries exactly what the
+   * UI workspace panel shows for them.
+   *
+   * A sidecar outside every configured workspace is not served: the sidecar
+   * directory is keyed by path hash, not provenance, and a workspace removed
+   * since the sidecar was written must not leak into an agent's answer.
+   */
+  private async _annotationDocuments(): Promise<
+    Array<{
+      documentId: string;
+      open: boolean;
+      workingText: string;
+      annotations: AnnotationSet;
+    }>
+  > {
+    const documents: Array<{
+      documentId: string;
+      open: boolean;
+      workingText: string;
+      annotations: AnnotationSet;
+    }> = [];
+    const detachedPaths = new Set<string>();
+    for (const document of this.documents.loadedDocuments) {
+      documents.push({
+        documentId: document.documentId,
+        open: true,
+        workingText: document.document.toString(),
+        annotations: this.annotations.getAnnotations(document.documentId),
+      });
+      detachedPaths.add(path.resolve(document.filePath));
+    }
+    for (const sidecar of await this.annotations.listCollaborationSidecars()) {
+      if (detachedPaths.has(path.resolve(sidecar.documentPath))) {
+        continue;
+      }
+      if (!(await this.isOpenable(sidecar.documentPath))) {
+        continue;
+      }
+      documents.push({
+        documentId: this.documents.ensureDocumentId(sidecar.documentPath),
+        open: false,
+        workingText: sidecar.workingText,
+        annotations: sidecar.annotations,
+      });
+    }
+    return documents;
+  }
+
+  /**
+   * One document's annotation-bearing projection, whatever it is: the live
+   * state of an open document, or the persisted sidecar of a closed one.
+   * Undefined when neither half holds annotations — a document with no
+   * annotation state is the caller's empty answer, not this function's.
+   */
+  private async _annotationDocument(
+    documentId: string,
+  ): Promise<{ open: boolean; workingText: string; annotations: AnnotationSet } | undefined> {
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath !== undefined) {
+      const document = this.documents.loadedDocuments.find(
+        (candidate) => candidate.documentId === documentId,
+      );
+      if (document !== undefined) {
+        return {
+          open: true,
+          workingText: document.document.toString(),
+          annotations: this.annotations.getAnnotations(documentId),
+        };
+      }
+      if (!(await this.isOpenable(filePath))) {
+        return undefined;
+      }
+      const sidecar = await this.annotations
+        .listCollaborationSidecars()
+        .then((sidecars) =>
+          sidecars.find(
+            (candidate) => path.resolve(candidate.documentPath) === path.resolve(filePath),
+          ),
+        );
+      if (sidecar !== undefined) {
+        return {
+          open: false,
+          workingText: sidecar.workingText,
+          annotations: sidecar.annotations,
+        };
+      }
+    }
+    // The id may have been minted for a closed document this manager has
+    // never seen open (a workspace listing hands those out). Scan the
+    // sidecars for it rather than returning nothing: findAnnotationQuery
+    // serves those ids, so per-document reads must too.
+    for (const sidecar of await this.annotations.listCollaborationSidecars()) {
+      if (this.documents.ensureDocumentId(sidecar.documentPath) === documentId) {
+        if (!(await this.isOpenable(sidecar.documentPath))) {
+          return undefined;
+        }
+        return {
+          open: false,
+          workingText: sidecar.workingText,
+          annotations: sidecar.annotations,
+        };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * One annotation's full detail, wire-shaped, or undefined if unknown.
+   */
   public async getAnnotation(annotationId: string): Promise<AnnotationResponse | undefined> {
     const located = await this.findAnnotationQuery(annotationId);
     if (located === undefined) {
       return undefined;
     }
-    const document = this.documents.loadedDocuments.find(
-      (candidate) => candidate.documentId === located.documentId,
+    return buildAnnotationResponse(
+      located.annotation,
+      located.annotationGeneration,
+      located.workingText,
     );
-    const workingText = document === undefined ? "" : document.document.toString();
-    return buildAnnotationResponse(located.annotation, located.annotationGeneration, workingText);
   }
 
   public async getContext(): Promise<EditorContext> {
@@ -411,19 +569,43 @@ export default class AgentDocumentQueries {
     }));
   }
 
-  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
+  /**
+   * Every file a workspace holds, flat, open or not. Undefined when
+   * `workspacePath` names no configured workspace, so the route can answer 404
+   * rather than an empty listing.
+   */
+  public async listWorkspaceFilesByWorkspace(
+    workspacePath: string,
+  ): Promise<WorkspaceFileEntry[] | undefined> {
+    if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
+      return undefined;
+    }
     const files: WorkspaceFileEntry[] = [];
     const wikilinks = this.app.links.index;
+    for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
+      files.push({
+        documentId: this.documents.ensureDocumentId(filePath),
+        path: filePath,
+        name: path.basename(filePath),
+        workspaceId: workspacePath,
+        open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
+        ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
+      });
+    }
+    return files;
+  }
+
+  /**
+   * Every file across every configured workspace, flat, open or not. The
+   * orientation projection behind `getContext`; the per-workspace
+   * `include=files` listing shares its entry shape.
+   */
+  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
+    const files: WorkspaceFileEntry[] = [];
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
-        files.push({
-          documentId: this.documents.ensureDocumentId(filePath),
-          path: filePath,
-          name: path.basename(filePath),
-          workspaceId: workspacePath,
-          open: this.documents.loadedDocuments.some((document) => document.filePath === filePath),
-          ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
-        });
+      const workspaceFiles = await this.listWorkspaceFilesByWorkspace(workspacePath);
+      if (workspaceFiles !== undefined) {
+        files.push(...workspaceFiles);
       }
     }
     return files;
@@ -502,7 +684,12 @@ export default class AgentDocumentQueries {
       };
     }
     const working = normalizeText(await this.documents.readSupportedFile(filePath));
-    return { attached: false, working, reference: working, reviewGeneration: 0 };
+    return {
+      attached: false,
+      working,
+      reference: working,
+      reviewGeneration: 0,
+    };
   }
 
   public async readDocumentContent(
@@ -583,6 +770,155 @@ export default class AgentDocumentQueries {
       hits: collected.hits,
       truncated: collected.truncated,
     };
+  }
+
+  /**
+   * Every folder a workspace holds, recursively, relative to the workspace
+   * root. A folder whose name the ignore rules hide does not enter the walk
+   * (`readDirectoryRecursively`), so the listing is the same set the file
+   * manager shows. The workspace root itself is not a child and is not listed.
+   */
+  public async listWorkspaceDirectories(
+    workspacePath: string,
+  ): Promise<WorkspaceDirectoriesResponse | undefined> {
+    if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
+      return undefined;
+    }
+    const fsal = this.app.fsal;
+    if (fsal === undefined) {
+      throw new Error("The workspace directory listing has no filesystem access");
+    }
+    const allPaths = await fsal.readDirectoryRecursively(workspacePath);
+    const directories: WorkspaceDirectoryEntry[] = [];
+    for (const candidate of allPaths) {
+      if (candidate === workspacePath || !(await fsal.isDir(candidate))) {
+        continue;
+      }
+      directories.push({
+        path: candidate,
+        name: path.basename(candidate),
+        workspaceId: workspacePath,
+        parent: path.dirname(candidate),
+      });
+    }
+    return { workspaceId: workspacePath, directories };
+  }
+
+  /**
+   * Creates one file or folder inside a workspace. `path` is absolute or
+   * relative to `workspaceId`; the destination folder must already exist, so
+   * one call creates one entry. Containment is enforced on the realpath of the
+   * destination itself (its parent for a new file or folder), which is what
+   * makes a symlinked workspace root and a `..` in a relative path both safe.
+   */
+  public async createWorkspaceEntry(
+    request: WorkspaceEntryCreateRequest,
+  ): Promise<WorkspaceEntryCreation> {
+    if (request.kind !== "file" && request.kind !== "folder") {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: "kind must be 'file' or 'folder'",
+      };
+    }
+
+    let targetPath: string;
+    if (path.isAbsolute(request.path)) {
+      targetPath = path.normalize(request.path);
+    } else if (request.workspaceId !== undefined && request.workspaceId !== "") {
+      if (!this.app.config.get().app.openWorkspaces.includes(request.workspaceId)) {
+        return {
+          ok: false,
+          code: "WORKSPACE_NOT_FOUND",
+          message: `Workspace not found: ${request.workspaceId}`,
+        };
+      }
+      targetPath = path.resolve(request.workspaceId, request.path);
+    } else {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: "A relative path requires workspaceId",
+      };
+    }
+
+    const fsal = this.app.fsal;
+    if (fsal === undefined) {
+      return {
+        ok: false,
+        code: "PERSISTENCE_FAILED",
+        message: "The workspace entry creation has no filesystem access",
+      };
+    }
+
+    // The destination folder must exist before containment can be judged: a
+    // new file or folder is created *inside* a folder that is already there.
+    const parentDirectory = path.dirname(targetPath);
+    if (!(await fsal.isDir(parentDirectory))) {
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: `The destination folder does not exist: ${parentDirectory}`,
+      };
+    }
+
+    const workspace = await this.containingWorkspace(parentDirectory);
+    if (workspace === undefined) {
+      return {
+        ok: false,
+        code: "WORKSPACE_OUTSIDE_SCOPE",
+        message: "The destination is outside every configured workspace",
+      };
+    }
+
+    try {
+      if (request.kind === "folder") {
+        await fsal.createDir(targetPath);
+      } else {
+        if (request.content === undefined) {
+          return {
+            ok: false,
+            code: "INVALID_PARAMS",
+            message: "content is required for a file",
+          };
+        }
+        await fsal.createFile(targetPath, request.content);
+      }
+    } catch (error) {
+      if (hasErrnoCode(error, "EEXIST")) {
+        return {
+          ok: false,
+          code: "WORKSPACE_ENTRY_EXISTS",
+          message: `An entry already exists at ${targetPath}`,
+        };
+      }
+      throw error;
+    }
+
+    return {
+      ok: true,
+      entry: {
+        kind: request.kind,
+        path: targetPath,
+        name: path.basename(targetPath),
+        workspaceId: workspace,
+      },
+    };
+  }
+
+  /**
+   * The configured workspace that contains `absPath`, or undefined. Both sides
+   * are realpath'd so a symlinked workspace root compares against a symlinked
+   * target; a destination that does not exist yet canonicalizes through its
+   * existing parent.
+   */
+  private async containingWorkspace(absPath: string): Promise<string | undefined> {
+    for (const workspacePath of this.app.config.get().app.openWorkspaces) {
+      if (await this.isOpenableInWorkspace(absPath, workspacePath)) {
+        return workspacePath;
+      }
+    }
+    return undefined;
   }
 
   public async isOpenable(filePath: string): Promise<boolean> {

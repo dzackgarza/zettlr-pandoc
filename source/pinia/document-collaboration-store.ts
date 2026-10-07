@@ -195,6 +195,54 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   /**
+   * Re-read one collaboration session even when it is already cached. This is
+   * the recovery path for an optimistic review fence: a decision may race an
+   * owner edit or another review mutation, but the renderer has no separate
+   * "reload review" operation. The authoritative session read is that reload.
+   */
+  async function refreshSession(documentPath: string): Promise<void> {
+    let session = (await ipcRenderer.invoke("documents-provider", {
+      command: "get-collaboration-session",
+      payload: { path: documentPath },
+    })) as DocumentCollaborationSession | undefined;
+    if (session === undefined) {
+      const detached = (await ipcRenderer.invoke("documents-provider", {
+        command: "get-workspace-collaboration-sessions",
+        payload: { paths: [documentPath] },
+      })) as DocumentCollaborationSession[];
+      session = detached.find((candidate) => candidate.documentPath === documentPath);
+    }
+    if (session === undefined) {
+      Reflect.deleteProperty(sessionsByDocumentPath, documentPath);
+      Reflect.deleteProperty(cardsByDocumentPath, documentPath);
+      return;
+    }
+    sessionsByDocumentPath[documentPath] = session;
+    updateCardsForSession(documentPath, session);
+  }
+
+  function isStaleReviewFailure(result: ReviewFailure): boolean {
+    return result.code === "REVISION_MISMATCH" || result.code === "REVIEW_GENERATION_MISMATCH";
+  }
+
+  /**
+   * Optimistic review mutations recover internally from one stale snapshot:
+   * re-read the provider-owned session, rebuild the fence, and retry once.
+   * A second refusal is a real concurrent conflict and is returned to the UI.
+   */
+  async function withFreshReviewRetry<Response extends { ok: true }>(
+    documentPath: string,
+    attempt: () => Promise<Response | ReviewFailure>,
+  ): Promise<Response | ReviewFailure> {
+    const first = await attempt();
+    if (first.ok || !isStaleReviewFailure(first)) {
+      return first;
+    }
+    await refreshSession(documentPath);
+    return await attempt();
+  }
+
+  /**
    * Replace the panel's workspace projection with the provider's merged live
    * + detached collaboration sessions for these file paths.
    */
@@ -301,7 +349,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     annotationId: string,
     text: string,
   ): Promise<AnnotationMessage | AnnotationFailure> {
-    return await ipcRenderer.invoke("documents:add-annotation-message", {
+    return ipcRenderer.invoke("documents:add-annotation-message", {
       ...annotationFence(documentPath, annotationId),
       text,
     });
@@ -311,7 +359,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:resolve-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -321,7 +369,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:reopen-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -332,7 +380,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:delete-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -346,7 +394,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     from: number,
     to: number,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke("documents:reattach-annotation", {
+    return ipcRenderer.invoke("documents:reattach-annotation", {
       ...annotationFence(documentPath, annotationId),
       from,
       to,
@@ -391,11 +439,15 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     decision: "accept" | "reject",
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await ipcRenderer.invoke("documents:decide-review-chunk", {
-      ...reviewFence(documentPath),
-      chunkId,
-      decision,
-    });
+    return withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:decide-review-chunk", {
+          ...reviewFence(documentPath),
+          chunkId,
+          decision,
+        }),
+    );
   }
 
   /** Annotate one outstanding chunk without deciding it; empty text removes the note. */
@@ -404,29 +456,38 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     text: string,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await ipcRenderer.invoke("documents:comment-review-chunk", {
-      ...reviewFence(documentPath),
-      chunkId,
-      text,
-    });
+    return withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:comment-review-chunk", {
+          ...reviewFence(documentPath),
+          chunkId,
+          text,
+        }),
+    );
   }
 
   async function acceptAllReviewChunks(
     documentPath: string,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await ipcRenderer.invoke(
-      "documents:accept-all-review-chunks",
-      reviewFence(documentPath),
+    return withFreshReviewRetry(
+      documentPath,
+      async () =>
+        await ipcRenderer.invoke("documents:accept-all-review-chunks", reviewFence(documentPath)),
     );
   }
 
   async function acceptAllWorkspaceReviewChunks(
     documentPath: string,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    const result = (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
-      path: documentPath,
-      ...reviewFence(documentPath),
-    })) as AcceptAllChunksResponse | ReviewFailure;
+    const result = await withFreshReviewRetry(
+      documentPath,
+      async () =>
+        (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+          path: documentPath,
+          ...reviewFence(documentPath),
+        })) as AcceptAllChunksResponse | ReviewFailure,
+    );
     if (result.ok) {
       await refreshWorkspaceSessions(workspaceDocumentPaths.value);
     } else {
@@ -450,10 +511,14 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       .map((session) => session.documentPath);
     const results: Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }> = [];
     for (const path of targets) {
-      const result = (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+      const result = await withFreshReviewRetry(
         path,
-        ...reviewFence(path),
-      })) as AcceptAllChunksResponse | ReviewFailure;
+        async () =>
+          (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+            path,
+            ...reviewFence(path),
+          })) as AcceptAllChunksResponse | ReviewFailure,
+      );
       results.push({ path, result });
     }
     const failures = results.filter(({ result }) => !result.ok);
@@ -465,7 +530,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   async function clearReview(documentPath: string): Promise<ClearReviewResponse | ReviewFailure> {
-    return await ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath));
+    return withFreshReviewRetry(documentPath, async () =>
+      ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath)),
+    );
   }
 
   /** A review-level comment adjudicates nothing and moves no text, so it
@@ -474,11 +541,13 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     text: string,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    const { reviewId, expectedReviewGeneration } = reviewFence(documentPath);
-    return await ipcRenderer.invoke("documents:add-review-comment", {
-      reviewId,
-      text,
-      expectedReviewGeneration,
+    return withFreshReviewRetry(documentPath, async () => {
+      const { reviewId, expectedReviewGeneration } = reviewFence(documentPath);
+      return ipcRenderer.invoke("documents:add-review-comment", {
+        reviewId,
+        text,
+        expectedReviewGeneration,
+      });
     });
   }
 
@@ -494,10 +563,12 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       | "documents:discard-invalidated-review",
     documentPath: string,
   ): Promise<Response | ReviewFailure> {
-    const { reviewId, expectedReviewGeneration } = reviewFence(documentPath);
-    const result = (await ipcRenderer.invoke(channel, { reviewId, expectedReviewGeneration })) as
-      | Response
-      | ReviewFailure;
+    const result = await withFreshReviewRetry(documentPath, async () => {
+      const { reviewId, expectedReviewGeneration } = reviewFence(documentPath);
+      return (await ipcRenderer.invoke(channel, { reviewId, expectedReviewGeneration })) as
+        | Response
+        | ReviewFailure;
+    });
     await refreshWorkspaceSessions(workspaceDocumentPaths.value);
     return result;
   }
@@ -505,13 +576,13 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   async function reapplyReview(
     documentPath: string,
   ): Promise<ReapplyReviewResponse | ReviewFailure> {
-    return await recoverReview<ReapplyReviewResponse>("documents:reapply-review", documentPath);
+    return recoverReview<ReapplyReviewResponse>("documents:reapply-review", documentPath);
   }
 
   async function returnReview(
     documentPath: string,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await recoverReview<AddReviewCommentResponse>(
+    return recoverReview<AddReviewCommentResponse>(
       "documents:return-invalidated-review",
       documentPath,
     );
@@ -520,7 +591,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   async function discardReview(
     documentPath: string,
   ): Promise<DiscardReviewResponse | ReviewFailure> {
-    return await recoverReview<DiscardReviewResponse>(
+    return recoverReview<DiscardReviewResponse>(
       "documents:discard-invalidated-review",
       documentPath,
     );
