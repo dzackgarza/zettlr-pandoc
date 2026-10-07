@@ -2188,7 +2188,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       }),
     });
     assert.equal(written.status, 200, written.body);
-    const writtenPayload = parseAs(written.body, "FigureFileResponse");
+    parseAs(written.body, "FigureFileResponse");
     assert.equal(
       readFileSync(path.join(figuresRoot, "new", "nested", "figure.tikz"), "utf8"),
       source,
