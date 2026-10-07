@@ -34,6 +34,7 @@ import { spawn } from "child_process";
 import { createPatch } from "diff";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -583,11 +584,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           mkdirSync(dirPath);
         },
         isDir: async (absPath: string) => {
-          try {
-            return statSync(absPath).isDirectory();
-          } catch {
-            return false;
-          }
+          const stats = lstatSync(absPath, { throwIfNoEntry: false });
+          return stats !== undefined && stats.isDirectory();
         },
         readDirectoryRecursively: async (workspacePath: string) =>
           readdirSync(workspacePath, {
