@@ -349,7 +349,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     annotationId: string,
     text: string,
   ): Promise<AnnotationMessage | AnnotationFailure> {
-    return await ipcRenderer.invoke("documents:add-annotation-message", {
+    return ipcRenderer.invoke("documents:add-annotation-message", {
       ...annotationFence(documentPath, annotationId),
       text,
     });
@@ -359,7 +359,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:resolve-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -369,7 +369,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:reopen-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -380,7 +380,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     annotationId: string,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke(
+    return ipcRenderer.invoke(
       "documents:delete-annotation",
       annotationFence(documentPath, annotationId),
     );
@@ -394,7 +394,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     from: number,
     to: number,
   ): Promise<TextAnnotation | AnnotationFailure> {
-    return await ipcRenderer.invoke("documents:reattach-annotation", {
+    return ipcRenderer.invoke("documents:reattach-annotation", {
       ...annotationFence(documentPath, annotationId),
       from,
       to,
@@ -439,7 +439,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     decision: "accept" | "reject",
   ): Promise<ChunkDecisionResponse | ReviewFailure> {
-    return await withFreshReviewRetry(
+    return withFreshReviewRetry(
       documentPath,
       async () =>
         await ipcRenderer.invoke("documents:decide-review-chunk", {
@@ -456,7 +456,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     chunkId: string,
     text: string,
   ): Promise<ChunkCommentResponse | ReviewFailure> {
-    return await withFreshReviewRetry(
+    return withFreshReviewRetry(
       documentPath,
       async () =>
         await ipcRenderer.invoke("documents:comment-review-chunk", {
@@ -470,7 +470,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   async function acceptAllReviewChunks(
     documentPath: string,
   ): Promise<AcceptAllChunksResponse | ReviewFailure> {
-    return await withFreshReviewRetry(
+    return withFreshReviewRetry(
       documentPath,
       async () =>
         await ipcRenderer.invoke("documents:accept-all-review-chunks", reviewFence(documentPath)),
@@ -530,9 +530,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   async function clearReview(documentPath: string): Promise<ClearReviewResponse | ReviewFailure> {
-    return await withFreshReviewRetry(
-      documentPath,
-      async () => await ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath)),
+    return withFreshReviewRetry(documentPath, async () =>
+      ipcRenderer.invoke("documents:clear-review", reviewFence(documentPath)),
     );
   }
 
@@ -542,9 +541,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     documentPath: string,
     text: string,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await withFreshReviewRetry(documentPath, async () => {
+    return withFreshReviewRetry(documentPath, async () => {
       const { reviewId, expectedReviewGeneration } = reviewFence(documentPath);
-      return await ipcRenderer.invoke("documents:add-review-comment", {
+      return ipcRenderer.invoke("documents:add-review-comment", {
         reviewId,
         text,
         expectedReviewGeneration,
@@ -577,13 +576,13 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   async function reapplyReview(
     documentPath: string,
   ): Promise<ReapplyReviewResponse | ReviewFailure> {
-    return await recoverReview<ReapplyReviewResponse>("documents:reapply-review", documentPath);
+    return recoverReview<ReapplyReviewResponse>("documents:reapply-review", documentPath);
   }
 
   async function returnReview(
     documentPath: string,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await recoverReview<AddReviewCommentResponse>(
+    return recoverReview<AddReviewCommentResponse>(
       "documents:return-invalidated-review",
       documentPath,
     );
@@ -592,7 +591,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   async function discardReview(
     documentPath: string,
   ): Promise<DiscardReviewResponse | ReviewFailure> {
-    return await recoverReview<DiscardReviewResponse>(
+    return recoverReview<DiscardReviewResponse>(
       "documents:discard-invalidated-review",
       documentPath,
     );

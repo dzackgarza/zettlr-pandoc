@@ -94,7 +94,7 @@ const acceptChunk = async (index) =>
 
 /** Horizontal overflow of every element a scene must keep inside its box. */
 async function overflowing(selectors) {
-  return await page.evaluate(
+  return page.evaluate(
     (list) =>
       list.flatMap((selector) =>
         [...document.querySelectorAll(selector)]

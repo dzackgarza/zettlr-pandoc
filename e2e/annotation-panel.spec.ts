@@ -114,7 +114,7 @@ async function createAnnotation(
 }
 
 async function readPanelVisible(page: Page): Promise<boolean> {
-  return await page.evaluate(() => {
+  return page.evaluate(() => {
     const config: unknown = window.ipc.sendSync("config-provider", { command: "get-config" });
     if (typeof config !== "object" || config === null || !("window" in config)) {
       throw new Error("The config provider returned no window section");

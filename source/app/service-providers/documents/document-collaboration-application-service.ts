@@ -1655,7 +1655,7 @@ export class CollaborationApplicationService {
   public async reapplyReview(
     input: ReviewRecoveryInput,
   ): Promise<ReapplyReviewResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -1732,7 +1732,7 @@ export class CollaborationApplicationService {
   public async discardInvalidatedReview(
     input: ReviewRecoveryInput,
   ): Promise<DiscardReviewResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -1786,7 +1786,7 @@ export class CollaborationApplicationService {
   public async returnInvalidatedReview(
     input: ReviewRecoveryInput,
   ): Promise<AddReviewCommentResponse | ReviewFailure> {
-    return await this.withDocumentLock(input.documentId, async () => {
+    return this.withDocumentLock(input.documentId, async () => {
       const located = await this.locateRecoverableReview(input);
       if ("ok" in located) {
         return located;
@@ -2012,7 +2012,7 @@ export class CollaborationApplicationService {
     documentId: string,
     prepare: AnnotationMutationPrepare<Response>,
   ): Promise<Response | AnnotationFailure> {
-    return await this.withDocumentLock(documentId, async () => {
+    return this.withDocumentLock(documentId, async () => {
       const documentPath = this.deps.authority.resolveDocumentPath(documentId);
       const workingText = this.deps.authority.readWorkingText(documentId);
       if (documentPath === undefined || workingText === undefined) {
@@ -2041,7 +2041,7 @@ export class CollaborationApplicationService {
     documentId: string,
     prepare: AnnotationMutationPrepare<Response>,
   ): Promise<Response | AnnotationFailure> {
-    return await this.withDocumentLock(documentId, async () => {
+    return this.withDocumentLock(documentId, async () => {
       const documentPath = this.deps.authority.resolveDocumentPath(documentId);
       if (documentPath === undefined) {
         return {
@@ -2158,7 +2158,7 @@ export class CollaborationApplicationService {
     instruction: string;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationCreation({
         annotations: context.annotations,
         actor: input.actor,
@@ -2182,7 +2182,7 @@ export class CollaborationApplicationService {
     markActed?: boolean;
     expectedAnnotationGeneration: number;
   }): Promise<AnnotationMessage | AnnotationFailure> {
-    return await this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
       prepareAnnotationMessage({
         annotations: context.annotations,
         actor: input.actor,
@@ -2201,7 +2201,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationResolution({ ...input, annotations: context.annotations }),
     );
   }
@@ -2212,7 +2212,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReopen({ ...input, annotations: context.annotations }),
     );
   }
@@ -2223,7 +2223,7 @@ export class CollaborationApplicationService {
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationDeletion({ ...input, annotations: context.annotations }),
     );
   }
@@ -2237,7 +2237,7 @@ export class CollaborationApplicationService {
     to: number;
     expectedAnnotationGeneration: number;
   }): Promise<TextAnnotation | AnnotationFailure> {
-    return await this.commitAnnotationMutation(input.documentId, (context) =>
+    return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReattachment({
         annotations: context.annotations,
         actor: input.actor,

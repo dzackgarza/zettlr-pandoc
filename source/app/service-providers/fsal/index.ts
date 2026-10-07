@@ -826,7 +826,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<string>}            Resolves with UTF-8 encoded content.
    */
   public async readTextFile(filePath: string): Promise<string> {
-    return await fs.readFile(filePath, "utf-8");
+    return fs.readFile(filePath, "utf-8");
   }
 
   /**
@@ -905,8 +905,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}  sourceFile  The source file
    * @param  {string}  targetFile  The target path
    */
-  public async copyFile(sourceFile: string, targetFile: string): Promise<void> {
-    return await fs.copyFile(sourceFile, targetFile);
+  public copyFile(sourceFile: string, targetFile: string): Promise<void> {
+    return fs.copyFile(sourceFile, targetFile);
   }
 
   /**
@@ -916,8 +916,8 @@ export default class FSAL extends ProviderContract {
    * @param  {string}            newName  The new name for the file
    * @deprecated
    */
-  public async renameFile(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public renameFile(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -966,7 +966,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<string[]>}           The files in the directory.
    */
   public async readdir(dirPath: string): Promise<string[]> {
-    return await fs.readdir(dirPath, "utf-8");
+    return fs.readdir(dirPath, "utf-8");
   }
 
   /**
@@ -991,11 +991,11 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
    */
-  public async bindQuartoManifest(
+  public bindQuartoManifest(
     src: DirDescriptor,
     manifestPath: string,
   ): Promise<FSALDir.QuartoManifestBinding> {
-    return await FSALDir.bindQuartoManifest(src, manifestPath);
+    return FSALDir.bindQuartoManifest(src, manifestPath);
   }
 
   /**
@@ -1071,8 +1071,8 @@ export default class FSAL extends ProviderContract {
    * @param   {string}         newName  The new name for the dir
    * @deprecated
    */
-  public async renameDir(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public renameDir(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -1110,8 +1110,8 @@ export default class FSAL extends ProviderContract {
    * @param   {DirDescriptor}        target  Where to move it
    * @deprecated
    */
-  public async move(oldPath: string, newPath: string): Promise<void> {
-    return await this.rename(oldPath, newPath);
+  public move(oldPath: string, newPath: string): Promise<void> {
+    return this.rename(oldPath, newPath);
   }
 
   /**
@@ -1268,8 +1268,8 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<FilesystemMetadata>}           Returns the metadata.
    * @throws
    */
-  public async getFilesystemMetadata(absPath: string): Promise<FilesystemMetadata> {
-    return await getFilesystemMetadata(absPath);
+  public getFilesystemMetadata(absPath: string): Promise<FilesystemMetadata> {
+    return getFilesystemMetadata(absPath);
   }
 
   // *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
@@ -1306,7 +1306,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
-    return await readDirectoryFromDisk(
+    return readDirectoryFromDisk(
       absPath,
       this.listingRules(),
       this.deadWorkspaces.has(absPath),

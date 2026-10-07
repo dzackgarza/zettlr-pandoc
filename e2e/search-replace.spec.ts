@@ -70,8 +70,8 @@ async function waitUntil(
   throw new Error(`Timed out waiting for ${what}`);
 }
 
-async function editorText(page: Page): Promise<string> {
-  return await page.locator(".cm-content").innerText();
+function editorText(page: Page): Promise<string> {
+  return page.locator(".cm-content").innerText();
 }
 
 /** Types a query and waits for the view to say what it found. */
