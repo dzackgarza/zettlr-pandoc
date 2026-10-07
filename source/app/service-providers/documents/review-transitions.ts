@@ -417,39 +417,58 @@ function applyChangeSet(workingText: string, changes: ChangeSet): string {
 // Patch validation and application
 // ============================================================================
 
+/** A parsed patch, or the reason the patch text is not one reviewable patch. */
+type PatchValidation = { ok: true; patch: StructuredPatch } | { ok: false; reason: string };
+
 /**
  * Parse exactly one text-file patch and validate it. Reject binary, create,
  * delete, rename, copy, and mode changes.
  */
-export function validateAndParsePatch(patchText: string, documentPath: string): StructuredPatch {
+export function validateAndParsePatch(patchText: string, documentPath: string): PatchValidation {
   // Detect git binary patches before parsePatch (which doesn't parse them)
   if (patchText.includes("GIT binary patch")) {
-    throw new Error("review-diff does not support binary patches");
+    return { ok: false, reason: "review-diff does not support binary patches" };
   }
   let patches: StructuredPatch[];
   try {
     patches = parsePatch(patchText);
   } catch (err) {
-    throw new Error(
-      `Unified diff syntax error: ${err instanceof Error ? err.message : String(err)}. ` +
+    // jsdiff reports a malformed patch only by throwing an Error from
+    // parsePatch (diff/libcjs/patch/parse.js). Any other throwable is not a
+    // syntax verdict and propagates.
+    if (!(err instanceof Error)) {
+      throw err;
+    }
+    return {
+      ok: false,
+      reason:
+        `Unified diff syntax error: ${err.message}. ` +
         `Check hunk header line counts (@@ -old,count +new,count @@) and ensure all context lines begin with a space.`,
-    );
+    };
   }
   if (patches.length === 0) {
-    throw new Error(
-      "review-diff could not parse patch: no file diff found. " +
+    return {
+      ok: false,
+      reason:
+        "review-diff could not parse patch: no file diff found. " +
         "Ensure the patch begins with '--- document\n+++ document' and contains valid @@ hunk headers.",
-    );
+    };
   }
   if (patches.length !== 1) {
-    throw new Error(`review-diff requires exactly one file patch, but found ${patches.length}`);
+    return {
+      ok: false,
+      reason: `review-diff requires exactly one file patch, but found ${patches.length}`,
+    };
   }
   const patch = patches[0];
   if (patch.hunks.length === 0) {
-    throw new Error("review-diff patch does not change the target document (no hunks found)");
+    return {
+      ok: false,
+      reason: "review-diff patch does not change the target document (no hunks found)",
+    };
   }
   if (patch.isBinary === true) {
-    throw new Error("review-diff does not support binary patches");
+    return { ok: false, reason: "review-diff does not support binary patches" };
   }
   if (
     patch.isRename === true ||
@@ -457,19 +476,24 @@ export function validateAndParsePatch(patchText: string, documentPath: string): 
     patch.isCreate === true ||
     patch.isDelete === true
   ) {
-    throw new Error("review-diff does not support rename, copy, create, or delete patches");
+    return {
+      ok: false,
+      reason: "review-diff does not support rename, copy, create, or delete patches",
+    };
   }
   if (patch.oldMode !== undefined || patch.newMode !== undefined) {
-    throw new Error("review-diff does not support mode-change patches");
+    return { ok: false, reason: "review-diff does not support mode-change patches" };
   }
   if (patch.oldFileName === "/dev/null" || patch.newFileName === "/dev/null") {
-    throw new Error("review-diff does not support create or delete patches");
+    return { ok: false, reason: "review-diff does not support create or delete patches" };
   }
   if (patch.oldFileName === undefined || patch.newFileName === undefined) {
-    throw new Error(
-      "review-diff patch has no '---'/'+++' file headers. " +
+    return {
+      ok: false,
+      reason:
+        "review-diff patch has no '---'/'+++' file headers. " +
         `Use '--- document\n+++ document' or the target path '${documentPath}'.`,
-    );
+    };
   }
   // Headers must be either the exact canonical document URI or the generic
   // "--- document" / "+++ document". Basename matching is too weak.
@@ -477,12 +501,14 @@ export function validateAndParsePatch(patchText: string, documentPath: string): 
     !isAcceptableHeader(patch.oldFileName, documentPath) ||
     !isAcceptableHeader(patch.newFileName, documentPath)
   ) {
-    throw new Error(
-      `review-diff patch headers ('--- ${patch.oldFileName}', '+++ ${patch.newFileName}') ` +
+    return {
+      ok: false,
+      reason:
+        `review-diff patch headers ('--- ${patch.oldFileName}', '+++ ${patch.newFileName}') ` +
         `do not match the target document. Use '--- document\n+++ document' or the target path '${documentPath}'.`,
-    );
+    };
   }
-  return patch;
+  return { ok: true, patch };
 }
 
 function isAcceptableHeader(fileName: string, documentPath: string): boolean {
@@ -639,16 +665,15 @@ export function applyClaimSequence(
   let text = startText;
   for (let i = 0; i < claims.length; i++) {
     const label = claims.length === 1 ? "The patch" : `Claim ${i + 1}'s patch`;
-    let patch: StructuredPatch;
-    try {
-      patch = validateAndParsePatch(claims[i].patch, documentPath);
-    } catch (err) {
+    const validation = validateAndParsePatch(claims[i].patch, documentPath);
+    if (!validation.ok) {
       return {
         ok: false,
         code: "PATCH_INVALID",
-        message: `${label} is invalid: ${err instanceof Error ? err.message : String(err)}`,
+        message: `${label} is invalid: ${validation.reason}`,
       };
     }
+    const patch = validation.patch;
     const applied = applyPatch(text, patch, {
       autoConvertLineEndings: true,
       fuzzFactor: 0,
