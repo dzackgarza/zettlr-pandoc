@@ -183,23 +183,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/documents/{documentId}/focus": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Focus or create an editor view for the document */
-    post: operations["focusDocument"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/v1/documents/{documentId}/search": {
     parameters: {
       query?: never;
@@ -248,7 +231,7 @@ export interface paths {
     put?: never;
     /**
      * Submit a review by file path
-     * @description Resolve a workspace file, verify an optional revision hash, submit ordered claims or one patch as an all-or-nothing change, and focus the document unless disabled.
+     * @description Resolve a workspace file, verify an optional revision hash, and submit ordered claims or one patch as an all-or-nothing change. The review appears in the annotation panel and in any editor that already shows the document; the submission opens and focuses nothing.
      */
     post: operations["submitReview"];
     delete?: never;
@@ -859,11 +842,6 @@ export interface components {
     WorkspaceDocumentSummary:
       | components["schemas"]["LoadedWorkspaceDocumentSummary"]
       | components["schemas"]["UnloadedWorkspaceDocumentSummary"];
-    FocusDocumentResponse: {
-      /** @constant */
-      focused: true;
-      documentId: string;
-    };
     WorkspaceDocumentsResponse: {
       workspaceId: string;
       documents: components["schemas"]["WorkspaceDocumentSummary"][];
@@ -1212,8 +1190,6 @@ export interface components {
       claims?: components["schemas"]["ProposalClaim"][];
       patch?: string;
       description?: string;
-      /** @default true */
-      focus: boolean;
     } & (
       | {
           /** @description Ordered edits built against the same document revision. All claims succeed or none are applied. Each claim becomes a separate review proposal. */
@@ -1235,7 +1211,6 @@ export interface components {
       reviewGeneration: number;
       unresolvedChunks: number;
       state: components["schemas"]["ReviewState"];
-      focused: boolean;
     };
     CitationDatabaseSummary: {
       path: string;
@@ -1952,37 +1927,6 @@ export interface operations {
       };
     };
   };
-  focusDocument: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        documentId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["FocusDocumentResponse"];
-        };
-      };
-      /** @description Document not found or outside workspace */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentErrorResponse"];
-        };
-      };
-    };
-  };
   searchDocument: {
     parameters: {
       query?: never;
@@ -2289,7 +2233,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description The document is closed (DOCUMENT_CLOSED). A closed document's annotations are readable from their sidecar, but replying needs the document open; open it, then retry with a fresh read. */
+      /** @description The annotation is resolved or its generation changed before the message was committed. */
       409: {
         headers: {
           [name: string]: unknown;

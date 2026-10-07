@@ -459,7 +459,7 @@ of an isolated instance are in the first comment of #132.
   at every start the app runs `uv tool install --upgrade` for the main branch of
   `dzackgarza/pandoc-flowmark` in the background
   (`source/app/util/flowmark-update.ts`). A failed update (no network, a broken
-  main) keeps the installed Flowmark and shows a desktop notification; it never
+  main) keeps the installed Flowmark and stays in the task list as a failed task; it never
   stops the app. `just install-flowmark` installs the same source for CI and
   tests. The LanguageTool plugin runs under that tool's Python
   (`flowmarkToolPython`). The editor has no rule/linter layer of

@@ -123,6 +123,9 @@ export enum DP_EVENTS {
  */
 export type SaveRefusalReason =
   | "disk-changed"
+  // The disk write itself failed (permissions, a full disk, a removed
+  // directory). The buffer keeps the text.
+  | "write-failed"
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
   | "review-not-persisted";
@@ -148,6 +151,15 @@ export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal }
 export type SaveRefusedBroadcast = { filePath: string; refusal?: SaveRefusal };
 
 export const SAVE_REFUSED_CHANNEL = "save-refused";
+
+/**
+ * Broadcast on REMOTE_CHANGE_KEPT_CHANNEL when a loaded file changed on disk
+ * and the editor kept its own contents. The renderer offers to load the disk
+ * version; the provider never asks with a modal dialog.
+ */
+export type RemoteChangeKeptBroadcast = { filePath: string; unsavedChanges: boolean };
+
+export const REMOTE_CHANGE_KEPT_CHANNEL = "remote-change-kept";
 
 /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
 export type SerializedChanges = readonly (number | readonly (number | string)[])[];

@@ -50,10 +50,23 @@ function descriptorFor(filePath: string): MDFileDescriptor {
   };
 }
 
+type WatchdogListener = (event: string, filePath: string) => void;
+let watchdogListener: WatchdogListener | undefined;
+
+/** Reports a disk event to the booted manager, as the FSAL watchdog does. */
+export function emitWatchdogEvent(event: "change" | "unlink", filePath: string): void {
+  if (watchdogListener === undefined) {
+    throw new Error("No DocumentManager subscribed to the watchdog");
+  }
+  watchdogListener(event, filePath);
+}
+
 /** A booted DocumentManager whose only workspace is `root`. */
 export async function bootDocumentManager(root: string): Promise<DocumentManager> {
   const watcher = {
-    on: () => {},
+    on: (_name: string, listener: WatchdogListener) => {
+      watchdogListener = listener;
+    },
     getWatched: () => ({}),
     watchPath: (_filePath: string) => {},
     unwatchPath: (_filePath: string) => {},

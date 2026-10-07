@@ -644,17 +644,6 @@ components:
       oneOf:
         - $ref: "#/components/schemas/LoadedWorkspaceDocumentSummary"
         - $ref: "#/components/schemas/UnloadedWorkspaceDocumentSummary"
-    FocusDocumentResponse:
-      type: object
-      required:
-        - focused
-        - documentId
-      properties:
-        focused:
-          type: boolean
-          const: true
-        documentId:
-          type: string
     WorkspaceDocumentsResponse:
       type: object
       required:
@@ -1590,9 +1579,6 @@ components:
         description:
           type: string
           minLength: 1
-        focus:
-          type: boolean
-          default: true
       oneOf:
         - type: object
           required:
@@ -1629,7 +1615,6 @@ components:
         - reviewGeneration
         - unresolvedChunks
         - state
-        - focused
       properties:
         packetId:
           type: string
@@ -1651,8 +1636,6 @@ components:
           type: integer
         state:
           $ref: "#/components/schemas/ReviewState"
-        focused:
-          type: boolean
     CitationDatabaseSummary:
       type: object
       required:
@@ -2935,30 +2918,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
-  /v1/documents/{documentId}/focus:
-    post:
-      operationId: focusDocument
-      x-openai-isConsequential: false
-      summary: Focus or create an editor view for the document
-      parameters:
-        - name: documentId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FocusDocumentResponse"
-        "404":
-          description: Document not found or outside workspace
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -3090,9 +3049,11 @@ paths:
       x-openai-isConsequential: false
       summary: Submit a review by file path
       description: >-
-        Resolve a workspace file, verify an optional revision hash, submit
-        ordered claims or one patch as an all-or-nothing change, and focus the
-        document unless disabled.
+        Resolve a workspace file, verify an optional revision hash, and
+        submit ordered claims or one patch as an all-or-nothing change. The
+        review appears in the annotation panel and in any editor that
+        already shows the document; the submission opens and focuses
+        nothing.
       requestBody:
         required: true
         content:

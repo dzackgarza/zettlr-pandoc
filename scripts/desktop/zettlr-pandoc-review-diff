@@ -29,7 +29,8 @@ function usage() {
     `Usage: ${PROGRAM} --document FILE --patch FILE --description TEXT --port N [options]`,
     "",
     "Submit one unified-diff proposition to the running Zettlr-Pandoc editor.",
-    "The editor validates and applies the patch, then focuses the review.",
+    "The editor validates and applies the patch. The review appears in the",
+    "annotation panel; the editor opens and focuses nothing.",
     "",
     "Required:",
     "  --document FILE       Target document path.",
@@ -262,15 +263,6 @@ async function main() {
   const reviewId = requireString(proposal.reviewId, "review proposal reviewId", 200);
   const packetIds = requireArray(proposal.packetIds, "review proposal packetIds", 200)
     .map((packetId, index) => requireString(packetId, `review proposal packetIds[${index}]`, 200));
-
-  const focused = success(
-    await request(port, "POST", `/v1/documents/${encodeURIComponent(documentId)}/focus`),
-    200,
-    "review document focus",
-  );
-  if (focused.focused !== true) {
-    fail("PROTOCOL_ERROR", "Review document focus did not report focused=true", 200);
-  }
 
   process.stdout.write(
     `${JSON.stringify({

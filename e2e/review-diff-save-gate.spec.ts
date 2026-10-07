@@ -144,29 +144,6 @@ function documentIdOf(payload: unknown): string {
   return documentId as string;
 }
 
-/**
- * The documentId for a path that may currently be closed: /v1/documents lists
- * only open documents, so reopening resolves through the workspace listing.
- */
-async function workspaceDocumentId(client: AgentClient, documentPath: string): Promise<string> {
-  const payload = await client.get("/v1/workspaces?include=files");
-  assert.ok(
-    payload !== null &&
-      typeof payload === "object" &&
-      "files" in payload &&
-      Array.isArray(payload.files),
-    `Workspace listing had no files array: ${JSON.stringify(payload)}`,
-  );
-  const entry = (payload.files as Array<{ path?: unknown; documentId?: unknown }>).find(
-    (file) => file.path === documentPath,
-  );
-  assert.ok(
-    entry !== undefined && typeof entry.documentId === "string",
-    `Workspace listing carried no documentId for ${documentPath}: ${JSON.stringify(payload)}`,
-  );
-  return entry.documentId;
-}
-
 /** The two review-detail fields the pending-save proofs compare across saves. */
 async function reviewCounts(
   client: AgentClient,
@@ -710,10 +687,15 @@ describe("saving after accepting a reviewed change", function () {
       .first()
       .waitFor({ state: "detached", timeout: 20_000 });
 
-    // Focus is the operation that deliberately takes a pane, and opening the
-    // file is what reattaches its sidecar-backed review.
-    const documentId = await workspaceDocumentId(activeClient, activeDocumentPath);
-    await activeClient.post(`/v1/documents/${documentId}/focus`, {});
+    // The user opens the file again, which reattaches its sidecar-backed review.
+    await page.evaluate(
+      async (pathInPage: string) =>
+        await window.ipc.invoke("documents-provider", {
+          command: "open-file",
+          payload: { path: pathInPage, newTab: true },
+        }),
+      activeDocumentPath,
+    );
     await page
       .locator(`${EDITOR} .suggestion-decision.accept`)
       .first()

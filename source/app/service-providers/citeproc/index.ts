@@ -41,7 +41,6 @@ export interface CiteprocErrorDisplay {
 }
 
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
-import { showNativeNotification } from "@common/util/show-notification";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { loadDatabase } from "./util/database-loader";
@@ -650,7 +649,6 @@ export default class CiteprocProvider extends ProviderContract {
       const newValue = this._config.get().export.cslLibrary;
 
       if (newValue !== this.mainLibrary) {
-        showNativeNotification(trans("Changes to the library file detected. Reloading …"));
         this.unloadDatabase(this.mainLibrary);
         broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB);
         this.mainLibrary = newValue;

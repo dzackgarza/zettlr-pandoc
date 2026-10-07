@@ -651,7 +651,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       patch: createPatch(filePath, before, after),
       description: "State the nondegeneracy hypothesis.",
       clientRequestId: "closed-submission",
-      focus: false,
     };
     const inapplicable = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({
@@ -675,7 +674,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       `/v1/documents/${result.documentId}?includeContent=true`,
     );
     assert.equal(parseAs(content.body, "ReadDocumentResponse").content, after);
-    assert.equal(result.focused, false);
     assert.deepEqual(provider.getFocusedView(), focused);
     const stale = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({ ...request, clientRequestId: "stale-submission" }),
@@ -710,6 +708,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const priorPath = path.join(scratch, "previous-selection.md");
     await openFile(priorPath, "Another open document.\n");
     await provider.openFile(windowId, provider.leafIds(windowId)[0], priorPath);
+    const selected = provider.getFocusedView();
     const claims = [
       {
         description: "Specify finite dimension.",
@@ -751,8 +750,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     assert.equal(response.status, 200, response.body);
     const result = parseAs(response.body, "ReviewSubmissionResponse");
-    assert.equal(result.focused, true);
-    assert.equal(provider.getFocusedView()?.documentId, documentId);
+    // The reviewed document is open in a background tab: the submission
+    // leaves the tab the user selected in front.
+    assert.deepEqual(provider.getFocusedView(), selected);
     const content = await httpRequest(
       "GET",
       `/v1/documents/${result.documentId}?includeContent=true`,
@@ -793,7 +793,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
         ],
         clientRequestId: "duplicate-description-exact",
-        focus: false,
       }),
     });
     assert.equal(exact.status, 400, exact.body);
@@ -1033,11 +1032,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       operations.length <= 30,
       `OpenAPI spec operations (${operations.length}) must not exceed the 30-operation Custom GPT limit`,
     );
-    assert.equal(
-      operations.length,
-      30,
-      "the consolidated OpenAPI spec must define exactly 30 operations",
-    );
     for (const { route, method, operation } of operations) {
       assert.equal(
         operation["x-openai-isConsequential"],
@@ -1257,7 +1251,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         .filter((operation) => operation.tags?.includes("zotero") !== true)
         .map((operation) => operation.operationId);
       assert.deepEqual(tools.map((tool) => tool.name).sort(), operationIds.sort());
-      assert.equal(tools.length, 30, "the ChatGPT MCP connector must remain within 30 tools");
+      assert.ok(tools.length <= 30, "the ChatGPT MCP connector must remain within 30 tools");
 
       const read = await client.callTool({
         name: "getDocument",
@@ -1441,11 +1435,16 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
   });
 
-  it("submits a review through the standalone external CLI process", async function () {
+  it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
     const filePath = path.join(scratch, "cli-review.md");
     const original = "before\n";
     const revised = "after\n";
     const documentId = await openFile(filePath, original);
+    const selectedPath = path.join(scratch, "cli-selected.md");
+    await openFile(selectedPath, "The document the user is reading.\n");
+    const windowId = provider.windowKeys()[0];
+    await provider.openFile(windowId, provider.leafIds(windowId)[0], selectedPath);
+    const selected = provider.getFocusedView();
     const patchPath = path.join(scratch, "cli-review.diff");
     writeFileSync(
       patchPath,
@@ -1478,6 +1477,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(submitted.documentId, documentId);
     assert.equal(submitted.packetIds.length, 1);
     assert.equal(submitted.unresolvedChunks, 1);
+    assert.deepEqual(provider.getFocusedView(), selected);
+    const tabPaths: string[] = [];
+    await provider.forEachLeaf(async (tabMan) => {
+      tabPaths.push(...tabMan.openFiles.map((file) => file.path));
+      return false;
+    });
+    assert.ok(!tabPaths.includes(filePath), "the submission must not open a tab");
 
     const content = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
     assert.equal(content.status, 200);

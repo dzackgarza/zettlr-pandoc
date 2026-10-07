@@ -127,8 +127,16 @@ describe("retained integration in packaged Electron", function () {
     await editor.screenshot({ path: path.join(fixture.root, "mixed-bibliography.png") });
   });
 
-  it("submits a closed document, selects it, and preserves the selected tab when focus is false", async function () {
+  it("submits reviews without opening or selecting a tab", async function () {
     const editor = requireInitialized(page, "The editor must be running");
+    const focusedDocumentId = async (): Promise<string | undefined> => {
+      const context: components["schemas"]["EditorContext"] = await (
+        await fetch(`${api}/v1/context`)
+      ).json();
+      return context.focusedDocument?.documentId;
+    };
+    const selected = await focusedDocumentId();
+    assert.equal(typeof selected, "string", "the chapter must be the selected document");
     const request = {
       document: { uri: targetPath },
       baseline: { sha256: sha256(baseline) },
@@ -147,11 +155,12 @@ describe("retained integration in packaged Electron", function () {
       await fetch(`${api}/v1/documents/${result.documentId}?includeContent=true`)
     ).json();
     assert.equal(read.content, proposed);
-    assert.equal(result.focused, true);
-    await editor.waitForFunction(() =>
-      document.querySelector(".cm-content")?.textContent?.includes("symmetric and nondegenerate"),
+    assert.equal(await focusedDocumentId(), selected);
+    assert.equal(
+      await editor.locator(`[role="tab"][data-path="${targetPath}"]`).count(),
+      0,
+      "a review of a closed document must not open a tab",
     );
-    await editor.screenshot({ path: path.join(fixture.root, "review-submission.png") });
     const stale = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -167,23 +176,22 @@ describe("retained integration in packaged Electron", function () {
     assert.equal(replay.status, 409);
     assert.equal((await replay.json()).error.code, "IDEMPOTENCY_CONFLICT");
     const updatedChapter = chapter.replace("End of chapter.", "The chapter is complete.");
-    const quiet = await fetch(`${api}/v1/review-submissions`, {
+    const visible = await fetch(`${api}/v1/review-submissions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         document: { uri: fixture.documentPath },
         patch: createPatch(fixture.documentPath, chapter, updatedChapter),
         description: "Complete the closing sentence.",
-        clientRequestId: "packaged-unfocused",
-        focus: false,
+        clientRequestId: "packaged-visible",
       }),
     });
-    assert.equal(quiet.status, 200, await quiet.clone().text());
-    const quietResult: Submitted = await quiet.json();
-    assert.equal(quietResult.focused, false);
-    const context: components["schemas"]["EditorContext"] = await (
-      await fetch(`${api}/v1/context`)
-    ).json();
-    assert.equal(context.focusedDocument?.documentId, result.documentId);
+    assert.equal(visible.status, 200, await visible.clone().text());
+    // A review of the document the user is reading appears in its editor.
+    await editor.waitForFunction(() =>
+      document.querySelector(".cm-content")?.textContent?.includes("The chapter is complete."),
+    );
+    assert.equal(await focusedDocumentId(), selected);
+    await editor.screenshot({ path: path.join(fixture.root, "review-submission.png") });
   });
 });
