@@ -327,6 +327,13 @@ interface AnnotationDocumentState {
 /** The refusal an annotation mutation answers with when it never ran. */
 export type AnnotationFailure = { ok: false; code: AgentErrorCode; message: string };
 
+/** Plans one annotation mutation against the text and annotations it reads. */
+type AnnotationMutationPrepare<Response> = (context: {
+  documentPath: string;
+  workingText: string;
+  annotations: AnnotationSet;
+}) => AnnotationMutationPlan<Response> | AnnotationTransitionError;
+
 /** Every refusal of a decision on a frozen review names its recovery. */
 
 function persistenceFailure(action: string, error: unknown): ReviewFailure {
@@ -1988,8 +1995,8 @@ export class CollaborationApplicationService {
   // ==========================================================================
 
   /**
-   * The one ordering every annotation mutation obeys, and the twin of
-   * commitReviewMutation above.
+   * The one ordering every annotation mutation of an open document obeys,
+   * and the twin of commitReviewMutation above.
    *
    * `prepare` is pure and may refuse; a refusal reaches the caller having
    * touched nothing, because the only thing that can make a plan true is the
@@ -2003,111 +2010,143 @@ export class CollaborationApplicationService {
    */
   private async commitAnnotationMutation<Response>(
     documentId: string,
-    prepare: (context: {
-      documentPath: string;
-      workingText: string;
-      annotations: AnnotationSet;
-    }) => AnnotationMutationPlan<Response> | AnnotationTransitionError,
-    allowDetached = false,
+    prepare: AnnotationMutationPrepare<Response>,
   ): Promise<Response | AnnotationFailure> {
     return await this.withDocumentLock(documentId, async () => {
       const documentPath = this.deps.authority.resolveDocumentPath(documentId);
       const workingText = this.deps.authority.readWorkingText(documentId);
-      if (documentPath === undefined) {
-        return allowDetached
-          ? {
-              ok: false as const,
-              code: "DOCUMENT_NOT_FOUND" as const,
-              message: "The document containing this annotation was not found.",
-            }
-          : {
-              ok: false as const,
-              code: "DOCUMENT_CLOSED" as const,
-              message: "The document containing this annotation is no longer open.",
-            };
+      if (documentPath === undefined || workingText === undefined) {
+        return {
+          ok: false as const,
+          code: "DOCUMENT_CLOSED" as const,
+          message: "The document containing this annotation is no longer open.",
+        };
       }
-
-      if (workingText === undefined) {
-        if (!allowDetached) {
-          return {
-            ok: false as const,
-            code: "DOCUMENT_CLOSED" as const,
-            message: "The document containing this annotation is no longer open.",
-          };
-        }
-        const sidecar = await this.sidecars.read(documentPath);
-        if (sidecar === undefined) {
-          return {
-            ok: false as const,
-            code: "ANNOTATION_NOT_FOUND" as const,
-            message: "The annotation is no longer present.",
-          };
-        }
-        const plan = prepare({
-          documentPath,
-          workingText: sidecar.workingText,
-          annotations: sidecar.annotations,
-        });
-        if (isTransitionError(plan)) {
-          return { ok: false as const, code: plan.code, message: plan.message };
-        }
-        try {
-          await this.sidecars.write({ ...sidecar, annotations: plan.nextAnnotations });
-        } catch (error) {
-          return persistenceFailure("the annotation change", error);
-        }
-        for (const draft of plan.events) {
-          this.deps.emit(draft.event, draft.payload);
-        }
-        return plan.response;
-      }
-
-      const normalized = normalizeText(workingText);
-      const state = this.annotationStates.get(documentId);
-      const plan = prepare({
+      return await this.commitOpenDocumentAnnotationMutation(
+        documentId,
         documentPath,
-        workingText: normalized,
-        annotations: state?.annotations ?? emptyAnnotationSet(),
-      });
-      if (isTransitionError(plan)) {
-        return { ok: false as const, code: plan.code, message: plan.message };
-      }
-
-      const review = this.reviews.getReview(documentId);
-      const diskFenceSha256 =
-        state?.diskFenceSha256 ??
-        review?.diskFenceSha256 ??
-        sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
-
-      try {
-        await this.sidecars.write(
-          this.sidecarFor(documentId, {
-            documentPath,
-            workingText: normalized,
-            review,
-            annotations: plan.nextAnnotations,
-            diskFenceSha256,
-          }),
-        );
-      } catch (error) {
-        return persistenceFailure("the annotation change", error);
-      }
-
-      // The entry stays even when the last annotation goes: the generation a
-      // client just read has to keep meaning what it meant, and a counter
-      // that restarted at zero would answer a stale fence as a fresh one.
-      // Closing the document is what retires it.
-      this.commitAnnotations(documentId, {
-        documentPath,
-        diskFenceSha256,
-        annotations: plan.nextAnnotations,
-      });
-      for (const draft of plan.events) {
-        this.deps.emit(draft.event, draft.payload);
-      }
-      this.deps.authority.broadcastCollaborationState(documentId);
-      return plan.response;
+        workingText,
+        prepare,
+      );
     });
+  }
+
+  /**
+   * An annotation mutation that also reaches a closed document. An open
+   * document takes the ordering of commitAnnotationMutation; a closed one
+   * has no editor state, so its sidecar is both what `prepare` reads and
+   * what the mutation writes.
+   */
+  private async commitAnnotationMutationOnOpenOrClosedDocument<Response>(
+    documentId: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    return await this.withDocumentLock(documentId, async () => {
+      const documentPath = this.deps.authority.resolveDocumentPath(documentId);
+      if (documentPath === undefined) {
+        return {
+          ok: false as const,
+          code: "DOCUMENT_NOT_FOUND" as const,
+          message: "The document containing this annotation was not found.",
+        };
+      }
+      const workingText = this.deps.authority.readWorkingText(documentId);
+      if (workingText === undefined) {
+        return await this.commitClosedDocumentAnnotationMutation(documentPath, prepare);
+      }
+      return await this.commitOpenDocumentAnnotationMutation(
+        documentId,
+        documentPath,
+        workingText,
+        prepare,
+      );
+    });
+  }
+
+  /** Runs under the document lock of its caller. */
+  private async commitOpenDocumentAnnotationMutation<Response>(
+    documentId: string,
+    documentPath: string,
+    workingText: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    const normalized = normalizeText(workingText);
+    const state = this.annotationStates.get(documentId);
+    const plan = prepare({
+      documentPath,
+      workingText: normalized,
+      annotations: state?.annotations ?? emptyAnnotationSet(),
+    });
+    if (isTransitionError(plan)) {
+      return { ok: false as const, code: plan.code, message: plan.message };
+    }
+
+    const review = this.reviews.getReview(documentId);
+    const diskFenceSha256 =
+      state?.diskFenceSha256 ??
+      review?.diskFenceSha256 ??
+      sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
+
+    try {
+      await this.sidecars.write(
+        this.sidecarFor(documentId, {
+          documentPath,
+          workingText: normalized,
+          review,
+          annotations: plan.nextAnnotations,
+          diskFenceSha256,
+        }),
+      );
+    } catch (error) {
+      return persistenceFailure("the annotation change", error);
+    }
+
+    // The entry stays even when the last annotation goes: the generation a
+    // client just read has to keep meaning what it meant, and a counter
+    // that restarted at zero would answer a stale fence as a fresh one.
+    // Closing the document is what retires it.
+    this.commitAnnotations(documentId, {
+      documentPath,
+      diskFenceSha256,
+      annotations: plan.nextAnnotations,
+    });
+    for (const draft of plan.events) {
+      this.deps.emit(draft.event, draft.payload);
+    }
+    this.deps.authority.broadcastCollaborationState(documentId);
+    return plan.response;
+  }
+
+  /** Runs under the document lock of its caller. */
+  private async commitClosedDocumentAnnotationMutation<Response>(
+    documentPath: string,
+    prepare: AnnotationMutationPrepare<Response>,
+  ): Promise<Response | AnnotationFailure> {
+    const sidecar = await this.sidecars.read(documentPath);
+    if (sidecar === undefined) {
+      return {
+        ok: false as const,
+        code: "ANNOTATION_NOT_FOUND" as const,
+        message: "The annotation is no longer present.",
+      };
+    }
+    const plan = prepare({
+      documentPath,
+      workingText: sidecar.workingText,
+      annotations: sidecar.annotations,
+    });
+    if (isTransitionError(plan)) {
+      return { ok: false as const, code: plan.code, message: plan.message };
+    }
+    try {
+      await this.sidecars.write({ ...sidecar, annotations: plan.nextAnnotations });
+    } catch (error) {
+      return persistenceFailure("the annotation change", error);
+    }
+    for (const draft of plan.events) {
+      this.deps.emit(draft.event, draft.payload);
+    }
+    return plan.response;
   }
 
   /** The owner comments on a stretch of the document. */
@@ -2143,19 +2182,16 @@ export class CollaborationApplicationService {
     markActed?: boolean;
     expectedAnnotationGeneration: number;
   }): Promise<AnnotationMessage | AnnotationFailure> {
-    return await this.commitAnnotationMutation(
-      input.documentId,
-      (context) =>
-        prepareAnnotationMessage({
-          annotations: context.annotations,
-          actor: input.actor,
-          annotationId: input.annotationId,
-          text: input.text,
-          clientRequestId: input.clientRequestId,
-          markActed: input.markActed,
-          expectedAnnotationGeneration: input.expectedAnnotationGeneration,
-        }),
-      true,
+    return await this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+      prepareAnnotationMessage({
+        annotations: context.annotations,
+        actor: input.actor,
+        annotationId: input.annotationId,
+        text: input.text,
+        clientRequestId: input.clientRequestId,
+        markActed: input.markActed,
+        expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+      }),
     );
   }
 
