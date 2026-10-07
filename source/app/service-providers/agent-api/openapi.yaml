@@ -2809,7 +2809,7 @@ paths:
                   - $ref: "#/components/schemas/WorkspaceDirectoriesResponse"
                   - $ref: "#/components/schemas/WorkspaceFilesResponse"
   /v1/workspace/entries:
-    post:
+    post: # nosemgrep: yaml.openapi.security.openai-consequential-action-false.openai-consequential-action-false -- exception: https://github.com/dzackgarza/zettlr-pandoc/pull/175#issuecomment-6039509818
       operationId: createWorkspaceEntry
       x-openai-isConsequential: false
       summary: Create a file or folder inside a workspace
