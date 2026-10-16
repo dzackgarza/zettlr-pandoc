@@ -256,7 +256,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs
   [`tunnel-client`](https://github.com/openai/tunnel-client) from
   `~/.local/bin`. It long-polls `api.openai.com` with `CONTROL_PLANE_API_KEY` from
-  `~/.envrc`, so it needs no inbound port and no public hostname.
+  `~/.envrc`, so it needs no inbound port and no public hostname. The unit sets
+  `GODEBUG=http2client=0`: over HTTP/2 the client keeps one dead connection
+  after a suspend and misses every request for about 16 minutes.
 - Recipes: `just install-systemd-tunnel`, `just start-systemd-tunnel`,
   `just status-systemd-tunnel`. The tunnel-client health and web UI listener is
   `http://127.0.0.1:27414/ui`; `/readyz` reports readiness.

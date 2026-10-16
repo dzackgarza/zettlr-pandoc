@@ -10,6 +10,12 @@ Type=simple
 # agent API's /mcp on loopback. It needs only outbound HTTPS. CONTROL_PLANE_API_KEY
 # comes from ~/.envrc; the health and /ui listener is loopback port 27414.
 # The tunnel may outlive the editor: tool calls fail while the editor is closed.
+# tunnel-client reuses one HTTP/2 connection to the control plane and never
+# pings it. After a suspend that connection is dead, every poll times out on
+# it, and the tunnel stays deaf until the kernel drops it (tcp_retries2, about
+# 16 minutes). Over HTTP/1.1 a timed-out poll closes its connection and the
+# next poll dials a new one.
+Environment=GODEBUG=http2client=0
 ExecStart=/bin/direnv exec %h %h/.local/bin/tunnel-client run --control-plane.tunnel-id tunnel_6aba3fe9f56081919348c7060b52188f --mcp.server-url http://127.0.0.1:27412/mcp --health.listen-addr 127.0.0.1:27414
 Restart=always
 RestartSec=5
