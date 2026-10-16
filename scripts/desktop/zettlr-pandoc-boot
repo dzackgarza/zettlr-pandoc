@@ -217,3 +217,10 @@ fi
 
 spin_until_booted "$launch_pid" "$spinner_label"
 printf '\r\033[K'
+
+# The tunnel client opens its upstream MCP session once, at its own start. A
+# start while the editor was down leaves it unready; restart it against the
+# live Agent API.
+if systemctl --user is-enabled --quiet openai-tunnel-zettlr-pandoc.service; then
+  systemctl --user restart openai-tunnel-zettlr-pandoc.service
+fi
