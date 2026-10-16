@@ -1,0 +1,14 @@
+[Unit]
+Description=Restart the Zettlr-Pandoc OpenAI MCP tunnel of %i after resume
+# A user unit cannot order itself after suspend.target, so this system unit
+# runs at resume and restarts the tunnel in the user manager of %i. The tunnel
+# then polls the control plane on a new connection instead of the one the
+# suspend left dead.
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user --machine=%i@ restart openai-tunnel-zettlr-pandoc.service
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

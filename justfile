@@ -40,6 +40,12 @@ install-desktop-launcher:
 install-systemd-tunnel:
     bash "{{justfile_directory()}}/scripts/install-systemd-tunnel.sh"
 
+# Install the system unit that restarts the tunnel after resume (needs sudo).
+install-systemd-tunnel-resume:
+    sudo install -m 0644 "{{justfile_directory()}}/scripts/systemd/openai-tunnel-zettlr-pandoc-resume@.service" /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable "openai-tunnel-zettlr-pandoc-resume@$(id -un).service"
+
 # Enable and start the Agent API tunnel service.
 start-systemd-tunnel:
     systemctl --user daemon-reload
