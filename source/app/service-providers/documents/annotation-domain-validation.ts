@@ -182,10 +182,7 @@ function schemaIssue(): AnnotationDomainValidationIssue {
     code: "ANNOTATION_SCHEMA_INVALID",
     message:
       "Stored annotation data is invalid: " +
-      annotationSetAjv.errorsText(errors, {
-        dataVar: "annotations",
-        separator: "; ",
-      }),
+      annotationSetAjv.errorsText(errors, { dataVar: "annotations", separator: "; " }),
   };
 }
 
