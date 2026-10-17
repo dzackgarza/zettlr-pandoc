@@ -618,6 +618,45 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     );
   });
 
+  it("scope open through documents:resolve-acted-annotations resolves plain pending threads too", async function () {
+    const content = "First target here. Second target here.\n";
+    const filePath = await openFile("bulk-open-scope.md", content);
+    const firstFrom = content.indexOf("First target");
+    const firstTo = firstFrom + "First target".length;
+    const secondFrom = content.indexOf("Second target");
+    const secondTo = secondFrom + "Second target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "nothing acted on this thread",
+      expectedAnnotationGeneration: 0,
+    });
+    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "nor this one",
+      expectedAnnotationGeneration: 1,
+    });
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: 2, scope: "open" },
+    );
+    assert.ok(
+      !isFailure(resolved),
+      `expected the open-scope batch, got ${JSON.stringify(resolved)}`,
+    );
+    assert.deepEqual(
+      (resolved as { resolved: TextAnnotation[] }).resolved.map(
+        (annotation) => annotation.annotationId,
+      ),
+      [first.annotationId, second.annotationId],
+    );
+  });
+
   it("refuses documents:resolve-acted-annotations with nothing acted", async function () {
     const content = "Nothing acted here.\n";
     const filePath = await openFile("bulk-nothing-acted.md", content);

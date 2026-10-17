@@ -469,6 +469,26 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     return result;
   }
 
+  /**
+   * Resolve EVERY open annotation of one document in one batch — acted or
+   * not. The bulk move the panel's Resolve all control sends; the acted
+   * variant above is the conservative subset the remediation workflow uses.
+   */
+  async function resolveOpenAnnotations(
+    documentPath: string,
+  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
+    const result = await withFreshAnnotationRetry<{ resolved: TextAnnotation[] }>(
+      documentPath,
+      async () =>
+        ipcRenderer.invoke("documents:resolve-acted-annotations", {
+          ...bulkAnnotationFence(documentPath),
+          scope: "open",
+        }),
+    );
+    await refreshSession(documentPath);
+    return result;
+  }
+
   /** Delete every resolved annotation of one document, in one batch. */
   async function deleteResolvedAnnotations(
     documentPath: string,
@@ -490,8 +510,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    * projection, one document at a time. Documents with nothing of the wanted
    * kind contribute nothing and are not sent a batch; each result carries its
    * document path so the caller can surface which refusals happened.
-   */
-  async function resolveActedAnnotationsWorkspace(): Promise<
+   */ async function resolveActedAnnotationsWorkspace(): Promise<
     Array<{ path: string; result: { resolved: TextAnnotation[] } | AnnotationFailure }>
   > {
     const targets = workspaceSessions.value
@@ -510,6 +529,30 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
         results.push({ path, result: await resolveActedAnnotations(path) });
       } catch (err) {
         reportError("[documentCollaborationStore] Resolve acted failed", [{ path, err }]);
+      }
+    }
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return results;
+  }
+
+  /** Workspace-wide Resolve all: every document that still has open threads. */
+  async function resolveOpenAnnotationsWorkspace(): Promise<
+    Array<{ path: string; result: { resolved: TextAnnotation[] } | AnnotationFailure }>
+  > {
+    const targets = workspaceSessions.value
+      .filter((session) =>
+        session.annotations.items.some((annotation) => annotation.state === "open"),
+      )
+      .map((session) => session.documentPath);
+    const results: Array<{
+      path: string;
+      result: { resolved: TextAnnotation[] } | AnnotationFailure;
+    }> = [];
+    for (const path of targets) {
+      try {
+        results.push({ path, result: await resolveOpenAnnotations(path) });
+      } catch (err) {
+        reportError("[documentCollaborationStore] Resolve all failed", [{ path, err }]);
       }
     }
     await refreshWorkspaceSessions(workspaceDocumentPaths.value);
@@ -759,8 +802,10 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     deleteAnnotation,
     reattachAnnotation,
     resolveActedAnnotations,
+    resolveOpenAnnotations,
     deleteResolvedAnnotations,
     resolveActedAnnotationsWorkspace,
+    resolveOpenAnnotationsWorkspace,
     deleteResolvedAnnotationsWorkspace,
     decideReviewChunk,
     commentReviewChunk,

@@ -6,12 +6,12 @@
     <AnnotationHeader
       v-bind:outstanding-count="collaborationStore.workspaceUnresolvedCount"
       v-bind:accept-all-count="outstandingSuggestionCount"
-      v-bind:resolve-acted-count="workspaceActedCount"
+      v-bind:resolve-all-count="workspaceOpenCount"
       v-bind:query="filterQuery"
       v-bind:busy="globalAcceptBusy || globalBulkBusy"
       v-on:update:query="filterQuery = $event"
       v-on:accept-all="acceptAllWorkspace"
-      v-on:resolve-acted="resolveActedWorkspace"
+      v-on:resolve-all="resolveAllWorkspace"
       v-on:close="emit('close')"
     ></AnnotationHeader>
 
@@ -39,13 +39,13 @@
           {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
         </span>
         <button
-          v-if="group.actedCount > 0"
+          v-if="group.openCount > 0"
           type="button"
           class="annotation-button annotation-document-resolve-acted"
-          v-bind:title="trans('Resolve every thread the AI marked acted.')"
+          v-bind:title="trans('Resolve every open annotation of this document.')"
           v-bind:disabled="globalBulkBusy || bulkDocuments.has(group.documentPath)"
-          v-on:click="resolveActedDocument(group.documentPath)"
-        >{{ trans('Resolve acted') }}</button>
+          v-on:click="resolveAllDocument(group.documentPath)"
+        >{{ trans('Resolve all') }}</button>
         <button
           v-if="group.resolvedCount > 0"
           type="button"
@@ -221,10 +221,10 @@ import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
-  actedOpenAnnotationCount,
   buildSuggestionNavigatorRows,
   describeAcceptFailures,
   filterCards,
+  openAnnotationCount,
   resolvedAnnotationCount,
   type SuggestionNavigatorView,
 } from "./annotations/annotation-panel-model";
@@ -236,8 +236,8 @@ interface WorkspaceAnnotationGroup {
   suggestions: SuggestionNavigatorView[];
   /** The review is frozen: see ReviewDiffSession.frozenText. */
   frozen: boolean;
-  /** Open annotations an agent marked acted: the per-document Resolve acted. */
-  actedCount: number;
+  /** Open annotations: the per-document Resolve all. */
+  openCount: number;
   /** Resolved annotations: the per-document Clear resolved. */
   resolvedCount: number;
 }
@@ -312,8 +312,8 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
         annotations,
         suggestions,
         frozen: session.review?.frozenText !== undefined,
-        /** The acted backlog this document's header can bulk-resolve. */
-        actedCount: actedOpenAnnotationCount(session.annotations.items),
+        /** The open threads this document's header can bulk-resolve. */
+        openCount: openAnnotationCount(session.annotations.items),
         /** The resolved threads this document's header can bulk-delete. */
         resolvedCount: resolvedAnnotationCount(session.annotations.items),
       };
@@ -326,9 +326,9 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
     ),
 );
 
-const workspaceActedCount = computed(() =>
+const workspaceOpenCount = computed(() =>
   collaborationStore.workspaceSessions.reduce(
-    (count, session) => count + actedOpenAnnotationCount(session.annotations.items),
+    (count, session) => count + openAnnotationCount(session.annotations.items),
     0,
   ),
 );
@@ -455,19 +455,19 @@ function reportBulkFailure(documentPath: string, result: AnnotationFailure): voi
   showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
 }
 
-/** Resolves every acted open annotation of one document, in one batch. */
-async function resolveActedDocument(documentPath: string): Promise<void> {
+/** Resolves every open annotation of one document, in one batch. */
+async function resolveAllDocument(documentPath: string): Promise<void> {
   if (bulkBusy(documentPath)) {
     return;
   }
   bulkDocuments.add(documentPath);
   try {
-    const result = await collaborationStore.resolveActedAnnotations(documentPath);
+    const result = await collaborationStore.resolveOpenAnnotations(documentPath);
     if ("ok" in result) {
       reportBulkFailure(documentPath, result);
     }
   } catch (err) {
-    reportError("[AnnotationsTab] Could not resolve the acted annotations", err);
+    reportError("[AnnotationsTab] Could not resolve the open annotations", err);
   } finally {
     bulkDocuments.delete(documentPath);
   }
@@ -492,21 +492,21 @@ async function clearResolvedDocument(documentPath: string | null): Promise<void>
   }
 }
 
-/** Workspace-wide: every acted open annotation of the projected documents. */
-async function resolveActedWorkspace(): Promise<void> {
+/** Workspace-wide: every open annotation of the projected documents. */
+async function resolveAllWorkspace(): Promise<void> {
   if (globalBulkBusy.value) {
     return;
   }
   globalBulkBusy.value = true;
   try {
-    const results = await collaborationStore.resolveActedAnnotationsWorkspace();
+    const results = await collaborationStore.resolveOpenAnnotationsWorkspace();
     for (const { path, result } of results) {
       if ("ok" in result) {
         reportBulkFailure(path, result);
       }
     }
   } catch (err) {
-    reportError("[AnnotationsTab] Could not resolve the acted annotations", err);
+    reportError("[AnnotationsTab] Could not resolve the open annotations", err);
   } finally {
     globalBulkBusy.value = false;
   }

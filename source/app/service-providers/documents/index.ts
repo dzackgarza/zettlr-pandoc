@@ -553,11 +553,14 @@ export interface ReattachAnnotationIpcInput {
 /**
  * The two bulk owner moves need only the document and the fence of the
  * snapshot the panel rendered: the batch names its targets itself, so
- * neither carries an annotationId.
+ * neither carries an annotationId. The resolve batch's scope picks acted
+ * remediation results ("acted", the default server-side) or every open
+ * thread ("open").
  */
 export interface BulkAnnotationIpcInput {
   path: string;
   expectedAnnotationGeneration: number;
+  scope?: "acted" | "open";
 }
 
 /**
@@ -993,7 +996,11 @@ export default class DocumentManager
       if (documentId === undefined) {
         return this._annotationDocumentNotFound(input.path);
       }
-      return await this._resolveActedAnnotations(documentId, input.expectedAnnotationGeneration);
+      return await this._resolveActedAnnotations(
+        documentId,
+        input.expectedAnnotationGeneration,
+        input.scope,
+      );
     });
     operations.handle("documents:clear-resolved-annotations", async (_event, input) => {
       const documentId = await this._documentIdForBulkOwnerMutation(input.path);
@@ -3493,15 +3500,17 @@ current contents from the editor somewhere else, and restart the application.`,
     return this.ensureDocumentId(filePath);
   }
 
-  /** Resolve every acted annotation of one document, owner-actor hardcoded. */
+  /** Resolve the open annotations of one document, owner-actor hardcoded. */
   private async _resolveActedAnnotations(
     documentId: string,
     expectedAnnotationGeneration: number,
+    scope?: "acted" | "open",
   ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
     const result = await this._reviewApplication.resolveActedAnnotations({
       documentId,
       actor: "owner",
       expectedAnnotationGeneration,
+      scope,
     });
     if ("ok" in result) {
       return result;

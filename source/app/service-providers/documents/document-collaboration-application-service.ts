@@ -2220,20 +2220,23 @@ export class CollaborationApplicationService {
   }
 
   /**
-   * Resolve every acted open annotation of the document in one batch: one
-   * generation bump, one sidecar write, whatever the document is open or
-   * closed (a closed document's acted threads live only in its sidecar).
+   * Resolve the document's open annotations in one batch: one generation
+   * bump, one sidecar write, whatever the document is open or closed (a
+   * closed document's threads live only in its sidecar). `scope` picks
+   * acted-only remediation results or every open thread.
    */
   public async resolveActedAnnotations(input: {
     documentId: string;
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
+    scope?: "acted" | "open";
   }): Promise<TextAnnotation[] | AnnotationFailure> {
     return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
       prepareAnnotationBulkResolution({
         annotations: context.annotations,
         actor: input.actor,
         expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+        scope: input.scope,
       }),
     );
   }

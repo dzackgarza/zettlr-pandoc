@@ -491,22 +491,25 @@ export function prepareAnnotationDeletion(input: {
 }
 
 /**
- * Resolve in one move every open annotation an agent marked acted. The bulk
- * counterpart of prepareAnnotationResolution: the same per-annotation
- * semantics (state, resolvedAt, agentStatus kept), one generation bump and
- * one sidecar write for the whole batch instead of one per thread.
+ * Resolve a document's open annotations in one move: either only the ones an
+ * agent marked acted (scope "acted"), or every open thread (scope "open").
+ * The same per-annotation semantics as prepareAnnotationResolution (state,
+ * resolvedAt, agentStatus kept), one generation bump and one sidecar write
+ * for the whole batch instead of one per thread, and one generation bump —
+ * one sidecar write.
  *
- * It resolves ONLY acted annotations, never a thread the agent has not
- * reported remediation on — an owner asking to clear the remediated
- * backlog does not silently dispose of the threads the agent has not
- * finished. Anything already resolved is skipped. With nothing to resolve
- * the move refuses rather than spending a generation on an empty batch.
+ * Both scopes are owner moves the panel names explicitly; anything already
+ * resolved is skipped. With nothing of the wanted kind the move refuses
+ * rather than spending a generation on an empty batch.
  */
 export function prepareAnnotationBulkResolution(input: {
   annotations: AnnotationSet;
   actor: AnnotationActor;
   expectedAnnotationGeneration: number;
+  /** Which open annotations the batch takes; defaults to the acted ones. */
+  scope?: "acted" | "open";
 }): AnnotationMutationPlan<TextAnnotation[]> | AnnotationTransitionError {
+  const scope = input.scope ?? "acted";
   const forbidden = checkOwner(input.actor, "resolve");
   if (forbidden !== undefined) {
     return forbidden;
@@ -518,10 +521,11 @@ export function prepareAnnotationBulkResolution(input: {
   const now = new Date().toISOString();
   const items = cloneItems(input.annotations);
   const targets = items.filter(
-    (candidate) => candidate.state === "open" && candidate.agentStatus.state === "acted",
+    (candidate) =>
+      candidate.state === "open" && (scope === "open" || candidate.agentStatus.state === "acted"),
   );
   if (targets.length === 0) {
-    return invalid("No acted annotation to resolve.");
+    return invalid(`No ${scope === "acted" ? "acted " : ""}annotation to resolve.`);
   }
   for (const target of targets) {
     target.state = "resolved";
