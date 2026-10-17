@@ -65,6 +65,7 @@ import {
   type AnnotationMutationPlan,
   type AnnotationTransitionError,
   emptyAnnotationSet,
+  prepareAnnotationBulkResolution,
   prepareAnnotationCreation,
   prepareAnnotationDeletion,
   prepareAnnotationMappingThroughOwnerEdit,
@@ -74,6 +75,7 @@ import {
   prepareAnnotationReattachment,
   prepareAnnotationReopen,
   prepareAnnotationResolution,
+  prepareAnnotationResolvedCleanup,
 } from "./annotation-transitions";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
 import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
@@ -2214,6 +2216,40 @@ export class CollaborationApplicationService {
   }): Promise<TextAnnotation | AnnotationFailure> {
     return this.commitAnnotationMutation(input.documentId, (context) =>
       prepareAnnotationReopen({ ...input, annotations: context.annotations }),
+    );
+  }
+
+  /**
+   * Resolve every acted open annotation of the document in one batch: one
+   * generation bump, one sidecar write, whatever the document is open or
+   * closed (a closed document's acted threads live only in its sidecar).
+   */
+  public async resolveActedAnnotations(input: {
+    documentId: string;
+    actor: AnnotationActor;
+    expectedAnnotationGeneration: number;
+  }): Promise<TextAnnotation[] | AnnotationFailure> {
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+      prepareAnnotationBulkResolution({
+        annotations: context.annotations,
+        actor: input.actor,
+        expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+      }),
+    );
+  }
+
+  /** Delete every resolved annotation of the document in one batch. */
+  public async deleteResolvedAnnotations(input: {
+    documentId: string;
+    actor: AnnotationActor;
+    expectedAnnotationGeneration: number;
+  }): Promise<TextAnnotation[] | AnnotationFailure> {
+    return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
+      prepareAnnotationResolvedCleanup({
+        annotations: context.annotations,
+        actor: input.actor,
+        expectedAnnotationGeneration: input.expectedAnnotationGeneration,
+      }),
     );
   }
 

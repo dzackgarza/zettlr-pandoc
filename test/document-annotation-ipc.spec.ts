@@ -511,4 +511,198 @@ describe("Document annotation IPC (M6, WU-14)", function () {
       "the deleted annotation must be gone from the session",
     );
   });
+
+  /**
+   * Marks one annotation acted the way the REAL agent path does — a real
+   * agent disposition through the application service, not a hand-written
+   * sidecar. Returns the annotation generation after the disposition.
+   */
+  async function actAnnotation(
+    filePath: string,
+    annotationId: string,
+    generation: number,
+  ): Promise<number> {
+    const documentId = provider.getDocumentId(filePath);
+    assert.ok(documentId !== undefined, "the fixture document must be loaded");
+    const disposition = await provider.addAnnotationMessage(
+      documentId,
+      annotationId,
+      "agent",
+      "Implemented the requested correction in commit abc123.",
+      `bulk-ipc-disposition-${annotationId}`,
+      generation,
+      true,
+    );
+    assert.ok(!isFailure(disposition), "the fixture agent disposition must be admitted");
+    return generation + 1;
+  }
+
+  it("wires documents:resolve-acted-annotations to the acted open annotations of a document", async function () {
+    const content = "Remediated target here. Open target here.\n";
+    const filePath = await openFile("bulk-acted.md", content);
+    const firstFrom = content.indexOf("Remediated target");
+    const firstTo = firstFrom + "Remediated target".length;
+    const secondFrom = content.indexOf("Open target");
+    const secondTo = secondFrom + "Open target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "fix this",
+      expectedAnnotationGeneration: 0,
+    });
+    const second = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "and this",
+      expectedAnnotationGeneration: 1,
+    });
+    const actedGeneration = await actAnnotation(filePath, first.annotationId, 2);
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: actedGeneration },
+    );
+    assert.ok(!isFailure(resolved), `expected a committed batch, got ${JSON.stringify(resolved)}`);
+    assert.deepEqual(
+      resolved.resolved.map((annotation) => annotation.annotationId),
+      [first.annotationId],
+      "exactly the acted annotation resolves, the untouched thread stays open",
+    );
+    assert.equal((resolved.resolved[0] as TextAnnotation).state, "resolved");
+
+    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
+      "documents-provider",
+      { command: "get-collaboration-session", payload: { path: filePath } },
+    );
+    assert.ok(session !== undefined);
+    assert.equal(
+      session.annotations.items.find((item) => item.annotationId === first.annotationId)?.state,
+      "resolved",
+    );
+    assert.equal(
+      session.annotations.items.find((item) => item.annotationId === second.annotationId)?.state,
+      "open",
+    );
+  });
+
+  it("wires documents:resolve-acted-annotations to a CLOSED document through its sidecar", async function () {
+    const content = "A remediation backlog outlives the pane.\n";
+    const filePath = await openFile("bulk-acted-closed.md", content);
+    const from = content.indexOf("backlog");
+    const to = from + "backlog".length;
+
+    const created = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "fix this when you can",
+      expectedAnnotationGeneration: 0,
+    });
+    const actedGeneration = await actAnnotation(filePath, created.annotationId, 1);
+    await provider.closeFileEverywhere(filePath);
+
+    const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: actedGeneration },
+    );
+    assert.ok(
+      !isFailure(resolved),
+      `a closed document's acted backlog must resolve: ${JSON.stringify(resolved)}`,
+    );
+    assert.deepEqual(
+      resolved.resolved.map((annotation) => annotation.annotationId),
+      [created.annotationId],
+    );
+  });
+
+  it("refuses documents:resolve-acted-annotations with nothing acted", async function () {
+    const content = "Nothing acted here.\n";
+    const filePath = await openFile("bulk-nothing-acted.md", content);
+    const from = content.indexOf("Nothing");
+    const to = from + "Nothing".length;
+    await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from,
+      to,
+      instruction: "pending thread",
+      expectedAnnotationGeneration: 0,
+    });
+    const result = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: filePath, expectedAnnotationGeneration: 1 },
+    );
+    assert.ok(isFailure(result), "an empty batch must be refused");
+    assert.equal(result.code, "INVALID_PARAMS");
+  });
+
+  it("wires documents:clear-resolved-annotations to the resolved annotations of a document", async function () {
+    const content = "Settled target here. Live target here.\n";
+    const filePath = await openFile("bulk-cleanup.md", content);
+    const firstFrom = content.indexOf("Settled target");
+    const firstTo = firstFrom + "Settled target".length;
+    const secondFrom = content.indexOf("Live target");
+    const secondTo = secondFrom + "Live target".length;
+
+    const first = await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: firstFrom,
+      to: firstTo,
+      instruction: "settled thread",
+      expectedAnnotationGeneration: 0,
+    });
+    await invoke<TextAnnotation>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "live thread",
+      expectedAnnotationGeneration: 1,
+    });
+    await invoke<TextAnnotation | AnnotationFailure>("documents:resolve-annotation", {
+      path: filePath,
+      annotationId: first.annotationId,
+      expectedAnnotationGeneration: 2,
+    });
+
+    const cleared = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
+      "documents:clear-resolved-annotations",
+      { path: filePath, expectedAnnotationGeneration: 3 },
+    );
+    assert.ok(
+      !isFailure(cleared),
+      `expected the cleanup to succeed, got ${JSON.stringify(cleared)}`,
+    );
+    const deletedAnnotation = cleared as { deleted: TextAnnotation[] };
+    assert.deepEqual(
+      deletedAnnotation.deleted.map((annotation) => annotation.annotationId),
+      [first.annotationId],
+      "exactly the resolved annotation is deleted, the open thread survives",
+    );
+
+    const session = await invoke<{ annotations: { items: TextAnnotation[] } } | undefined>(
+      "documents-provider",
+      { command: "get-collaboration-session", payload: { path: filePath } },
+    );
+    assert.ok(session !== undefined);
+    assert.equal(session.annotations.items.length, 1);
+  });
+
+  it("refuses both bulk channels for a path with no document and no sidecar", async function () {
+    const neverOpened = path.join(scratch, "never-opened-bulk.md");
+    const resolveResult = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
+      "documents:resolve-acted-annotations",
+      { path: neverOpened, expectedAnnotationGeneration: 0 },
+    );
+    assert.ok(isFailure(resolveResult), "an unresolved path must be refused, not throw");
+    assert.equal(resolveResult.code, "DOCUMENT_NOT_FOUND");
+
+    const clearResult = await invoke<{ deleted: TextAnnotation[] } | AnnotationFailure>(
+      "documents:clear-resolved-annotations",
+      { path: neverOpened, expectedAnnotationGeneration: 0 },
+    );
+    assert.ok(isFailure(clearResult), "an unresolved path must be refused, not throw");
+    assert.equal(clearResult.code, "DOCUMENT_NOT_FOUND");
+  });
 });

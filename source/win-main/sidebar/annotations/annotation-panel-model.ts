@@ -173,6 +173,27 @@ export function buildAnnotationCards(
   });
 }
 
+/**
+ * The annotations an agent has marked acted but the owner has not yet
+ * resolved: open threads with an acted disposition. This is exactly the bulk
+ * "Resolve acted" target — the cleanable remediation backlog — and every
+ * count a panel button names derives here.
+ */
+export function actedOpenAnnotations(annotations: TextAnnotation[]): TextAnnotation[] {
+  return annotations.filter(
+    (annotation) => annotation.state === "open" && annotation.agentStatus.state === "acted",
+  );
+}
+
+export function actedOpenAnnotationCount(annotations: TextAnnotation[]): number {
+  return actedOpenAnnotations(annotations).length;
+}
+
+/** The resolved annotations of a document: the bulk "Clear resolved" target. */
+export function resolvedAnnotationCount(annotations: TextAnnotation[]): number {
+  return annotations.filter((annotation) => annotation.state === "resolved").length;
+}
+
 /** S9: resolved cards leave the primary list entirely, behind a disclosure. */
 export function partitionByResolution(cards: AnnotationCardView[]): {
   open: AnnotationCardView[];

@@ -36,6 +36,14 @@
         v-bind:disabled="busy"
         v-on:click="emit('accept-all')"
       >{{ trans('Accept all') }} ({{ acceptAllCount }})</button>
+      <button
+        v-else-if="resolveActedCount > 0"
+        type="button"
+        class="annotation-button annotation-global-resolve-acted"
+        v-bind:title="trans('Resolve every acted thread across the workspace.')"
+        v-bind:disabled="busy"
+        v-on:click="emit('resolve-acted')"
+      >{{ trans('Resolve acted') }} ({{ resolveActedCount }})</button>
       <span v-else class="annotation-header-spacer"></span>
       <button
         type="button"
@@ -91,6 +99,8 @@ import { allMenuLeafRows } from "../../launcher/launcher-rows";
 const props = defineProps<{
   outstandingCount: number;
   acceptAllCount: number;
+  /** Open annotations an agent marked acted: the workspace bulk resolve. */
+  resolveActedCount: number;
   query: string;
   busy: boolean;
 }>();
@@ -98,6 +108,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:query", value: string): void;
   (e: "accept-all"): void;
+  (e: "resolve-acted"): void;
   (e: "close"): void;
 }>();
 

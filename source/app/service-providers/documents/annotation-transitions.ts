@@ -491,6 +491,109 @@ export function prepareAnnotationDeletion(input: {
 }
 
 /**
+ * Resolve in one move every open annotation an agent marked acted. The bulk
+ * counterpart of prepareAnnotationResolution: the same per-annotation
+ * semantics (state, resolvedAt, agentStatus kept), one generation bump and
+ * one sidecar write for the whole batch instead of one per thread.
+ *
+ * It resolves ONLY acted annotations, never a thread the agent has not
+ * reported remediation on — an owner asking to clear the remediated
+ * backlog does not silently dispose of the threads the agent has not
+ * finished. Anything already resolved is skipped. With nothing to resolve
+ * the move refuses rather than spending a generation on an empty batch.
+ */
+export function prepareAnnotationBulkResolution(input: {
+  annotations: AnnotationSet;
+  actor: AnnotationActor;
+  expectedAnnotationGeneration: number;
+}): AnnotationMutationPlan<TextAnnotation[]> | AnnotationTransitionError {
+  const forbidden = checkOwner(input.actor, "resolve");
+  if (forbidden !== undefined) {
+    return forbidden;
+  }
+  const stale = checkGeneration(input.annotations, input.expectedAnnotationGeneration);
+  if (stale !== undefined) {
+    return stale;
+  }
+  const now = new Date().toISOString();
+  const items = cloneItems(input.annotations);
+  const targets = items.filter(
+    (candidate) => candidate.state === "open" && candidate.agentStatus.state === "acted",
+  );
+  if (targets.length === 0) {
+    return invalid("No acted annotation to resolve.");
+  }
+  for (const target of targets) {
+    target.state = "resolved";
+    target.resolvedAt = now;
+    target.updatedAt = now;
+  }
+  const nextAnnotations: AnnotationSet = {
+    generation: input.annotations.generation + 1,
+    items,
+  };
+  return validatedPlan(
+    nextAnnotations,
+    targets,
+    targets.map((target) => ({
+      event: "annotation.resolved" as const,
+      payload: {
+        documentId: target.documentId,
+        annotationId: target.annotationId,
+        annotationGeneration: nextAnnotations.generation,
+      },
+    })),
+  );
+}
+
+/**
+ * Delete in one move every resolved annotation of a document. The cleanup
+ * behind a Resolve: a resolved thread leaves the primary list but stays in
+ * its sidecar, and this is the bulk counterpart of prepareAnnotationDeletion
+ * that actually ends them. It touches only resolved annotations — an open
+ * thread survives it however stale it looks. With nothing resolved the move
+ * refuses rather than spending a generation on an empty batch.
+ */
+export function prepareAnnotationResolvedCleanup(input: {
+  annotations: AnnotationSet;
+  actor: AnnotationActor;
+  expectedAnnotationGeneration: number;
+}): AnnotationMutationPlan<TextAnnotation[]> | AnnotationTransitionError {
+  const forbidden = checkOwner(input.actor, "delete");
+  if (forbidden !== undefined) {
+    return forbidden;
+  }
+  const stale = checkGeneration(input.annotations, input.expectedAnnotationGeneration);
+  if (stale !== undefined) {
+    return stale;
+  }
+  const targets = input.annotations.items.filter((candidate) => candidate.state === "resolved");
+  if (targets.length === 0) {
+    return invalid("No resolved annotation to delete.");
+  }
+  const deletedIds = new Set(targets.map((target) => target.annotationId));
+  const items = cloneItems(input.annotations).filter(
+    (candidate) => !deletedIds.has(candidate.annotationId),
+  );
+  const nextAnnotations: AnnotationSet = {
+    generation: input.annotations.generation + 1,
+    items,
+  };
+  return validatedPlan(
+    nextAnnotations,
+    targets,
+    targets.map((target) => ({
+      event: "annotation.deleted" as const,
+      payload: {
+        documentId: target.documentId,
+        annotationId: target.annotationId,
+        annotationGeneration: nextAnnotations.generation,
+      },
+    })),
+  );
+}
+
+/**
  * Reattach an orphaned or point anchor to a range the owner picked. This is
  * the ONLY way an anchor recovers a range it lost (I6): no similarity search,
  * no re-scan of the document, no guess. `quotedText` survives the move

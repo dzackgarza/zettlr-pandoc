@@ -48,6 +48,7 @@ import { DP_EVENTS } from "@dts/common/documents";
 import { defineStore } from "pinia";
 import type {
   AnnotationLifecycleIpcInput,
+  BulkAnnotationIpcInput,
   DocumentsUpdateContext,
 } from "source/app/service-providers/documents";
 import type {
@@ -225,6 +226,35 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     return result.code === "REVISION_MISMATCH" || result.code === "REVIEW_GENERATION_MISMATCH";
   }
 
+  function isStaleAnnotationFailure(result: AnnotationFailure): boolean {
+    return result.code === "ANNOTATION_GENERATION_MISMATCH";
+  }
+
+  /** The one shape a bulk annotation success has no field of. */
+  function isRefusal(result: unknown): result is AnnotationFailure {
+    return (
+      typeof result === "object" && result !== null && (result as { ok?: unknown }).ok === false
+    );
+  }
+
+  /**
+   * Optimistic annotation mutations recover internally from one stale
+   * snapshot: re-read the provider-owned session, rebuild the fence, and
+   * retry once. A second refusal is a real concurrent conflict and is
+   * returned to the UI. The twin of withFreshReviewRetry above.
+   */
+  async function withFreshAnnotationRetry<Response>(
+    documentPath: string,
+    attempt: () => Promise<Response | AnnotationFailure>,
+  ): Promise<Response | AnnotationFailure> {
+    const first = await attempt();
+    if (!isRefusal(first) || !isStaleAnnotationFailure(first)) {
+      return first;
+    }
+    await refreshSession(documentPath);
+    return await attempt();
+  }
+
   /**
    * Optimistic review mutations recover internally from one stale snapshot:
    * re-read the provider-owned session, rebuild the fence, and retry once.
@@ -336,6 +366,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   /**
+   * The fence of a bulk annotation move: which document, and the generation
+   * of the panel snapshot that asked for the batch. No annotationId — the
+   * batch names its targets itself (acted-open for resolve, resolved for
+   * cleanup), so the fence is the only thing that can go stale.
+   */
+  function bulkAnnotationFence(documentPath: string): BulkAnnotationIpcInput {
+    const session = sessionsByDocumentPath[documentPath];
+    if (session === undefined) {
+      throw new Error(`No collaboration session is cached for ${documentPath}`);
+    }
+    return {
+      path: documentPath,
+      expectedAnnotationGeneration: session.annotations.generation,
+    };
+  }
+
+  /**
    * Every one of these five calls is the whole of what an owner control in
    * an annotation thread is allowed to do: ask CollaborationApplicationService, over
    * IPC, for the mutation, and hand the caller its result. None of them
@@ -399,6 +446,101 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       from,
       to,
     });
+  }
+
+  /**
+   * Resolve every annotation an agent marked acted, in one document and one
+   * generation bump. The owner bulk counterpart of the per-thread Resolve;
+   * the refreshed projection comes back through refreshSession, because a
+   * closed document on the workspace panel gets no broadcast.
+   */
+  async function resolveActedAnnotations(
+    documentPath: string,
+  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
+    const result = await withFreshAnnotationRetry<{ resolved: TextAnnotation[] }>(
+      documentPath,
+      async () =>
+        ipcRenderer.invoke(
+          "documents:resolve-acted-annotations",
+          bulkAnnotationFence(documentPath),
+        ),
+    );
+    await refreshSession(documentPath);
+    return result;
+  }
+
+  /** Delete every resolved annotation of one document, in one batch. */
+  async function deleteResolvedAnnotations(
+    documentPath: string,
+  ): Promise<{ deleted: TextAnnotation[] } | AnnotationFailure> {
+    const result = await withFreshAnnotationRetry<{ deleted: TextAnnotation[] }>(
+      documentPath,
+      async () =>
+        ipcRenderer.invoke(
+          "documents:clear-resolved-annotations",
+          bulkAnnotationFence(documentPath),
+        ),
+    );
+    await refreshSession(documentPath);
+    return result;
+  }
+
+  /**
+   * The bulk annotation batches across the annotation panel's workspace
+   * projection, one document at a time. Documents with nothing of the wanted
+   * kind contribute nothing and are not sent a batch; each result carries its
+   * document path so the caller can surface which refusals happened.
+   */
+  async function resolveActedAnnotationsWorkspace(): Promise<
+    Array<{ path: string; result: { resolved: TextAnnotation[] } | AnnotationFailure }>
+  > {
+    const targets = workspaceSessions.value
+      .filter((session) =>
+        session.annotations.items.some(
+          (annotation) => annotation.state === "open" && annotation.agentStatus.state === "acted",
+        ),
+      )
+      .map((session) => session.documentPath);
+    const results: Array<{
+      path: string;
+      result: { resolved: TextAnnotation[] } | AnnotationFailure;
+    }> = [];
+    for (const path of targets) {
+      try {
+        results.push({ path, result: await resolveActedAnnotations(path) });
+      } catch (err) {
+        reportError("[documentCollaborationStore] Resolve acted failed", [{ path, err }]);
+      }
+    }
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return results;
+  }
+
+  /**
+   * The bulk resolved-cleanup across the workspace projection itself: only
+   * documents whose cached snapshot resolves something are sent a batch.
+   */
+  async function deleteResolvedAnnotationsWorkspace(): Promise<
+    Array<{ path: string; result: { deleted: TextAnnotation[] } | AnnotationFailure }>
+  > {
+    const targets = workspaceSessions.value
+      .filter((session) =>
+        session.annotations.items.some((annotation) => annotation.state === "resolved"),
+      )
+      .map((session) => session.documentPath);
+    const results: Array<{
+      path: string;
+      result: { deleted: TextAnnotation[] } | AnnotationFailure;
+    }> = [];
+    for (const path of targets) {
+      try {
+        results.push({ path, result: await deleteResolvedAnnotations(path) });
+      } catch (err) {
+        reportError("[documentCollaborationStore] Clear resolved failed", [{ path, err }]);
+      }
+    }
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return results;
   }
 
   /**
@@ -616,6 +758,10 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     reopenAnnotation,
     deleteAnnotation,
     reattachAnnotation,
+    resolveActedAnnotations,
+    deleteResolvedAnnotations,
+    resolveActedAnnotationsWorkspace,
+    deleteResolvedAnnotationsWorkspace,
     decideReviewChunk,
     commentReviewChunk,
     acceptAllReviewChunks,

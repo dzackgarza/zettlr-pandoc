@@ -6,10 +6,12 @@
     <AnnotationHeader
       v-bind:outstanding-count="collaborationStore.workspaceUnresolvedCount"
       v-bind:accept-all-count="outstandingSuggestionCount"
+      v-bind:resolve-acted-count="workspaceActedCount"
       v-bind:query="filterQuery"
-      v-bind:busy="globalAcceptBusy"
+      v-bind:busy="globalAcceptBusy || globalBulkBusy"
       v-on:update:query="filterQuery = $event"
       v-on:accept-all="acceptAllWorkspace"
+      v-on:resolve-acted="resolveActedWorkspace"
       v-on:close="emit('close')"
     ></AnnotationHeader>
 
@@ -36,6 +38,22 @@
         <span class="annotation-document-count annotation-muted">
           {{ trans('%s pending', String(group.annotations.length + group.suggestions.length)) }}
         </span>
+        <button
+          v-if="group.actedCount > 0"
+          type="button"
+          class="annotation-button annotation-document-resolve-acted"
+          v-bind:title="trans('Resolve every thread the AI marked acted.')"
+          v-bind:disabled="globalBulkBusy || bulkDocuments.has(group.documentPath)"
+          v-on:click="resolveActedDocument(group.documentPath)"
+        >{{ trans('Resolve acted') }}</button>
+        <button
+          v-if="group.resolvedCount > 0"
+          type="button"
+          class="annotation-button annotation-document-clear-resolved"
+          v-bind:title="trans('Delete every resolved annotation of this document.')"
+          v-bind:disabled="globalBulkBusy || bulkDocuments.has(group.documentPath)"
+          v-on:click="clearTarget = group.documentPath"
+        >{{ trans('Clear resolved') }}</button>
         <button
           v-if="group.suggestions.length > 0 && !group.frozen"
           type="button"
@@ -123,6 +141,35 @@
         </button>
       </div>
     </section>
+
+    <!--
+      Clearing the resolved annotations deletes their threads for good, like
+      the single Delete asks first.
+    -->
+    <AlertDialogRoot v-model:open="clearDialogOpen">
+      <AlertDialogPortal>
+        <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
+        <AlertDialogContent class="annotation-dialog">
+          <AlertDialogTitle class="annotation-dialog-title">{{
+            trans('Delete every resolved annotation?')
+          }}</AlertDialogTitle>
+          <AlertDialogDescription class="annotation-dialog-body">
+            {{
+              trans(
+                "The document's resolved threads are deleted for good. This cannot be undone.",
+              )
+            }}
+          </AlertDialogDescription>
+          <div class="annotation-dialog-actions">
+            <AlertDialogCancel class="annotation-button">{{ trans('Cancel') }}</AlertDialogCancel>
+            <AlertDialogAction
+              class="annotation-button annotation-button-danger"
+              v-on:click="clearResolvedDocument(clearTarget)"
+            >{{ trans('Delete') }}</AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 
@@ -154,16 +201,31 @@ import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import showToast from "@common/util/show-toast";
 import type { SourceRange } from "@dts/common/references";
-import type { ReviewFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
+import {
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogRoot,
+  AlertDialogTitle,
+} from "reka-ui";
+import type {
+  AnnotationFailure,
+  ReviewFailure,
+} from "source/app/service-providers/documents/document-collaboration-application-service";
 import { useDocumentCollaborationStore } from "source/pinia";
 import { computed, reactive, ref, watch } from "vue";
 import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
+  actedOpenAnnotationCount,
   buildSuggestionNavigatorRows,
   describeAcceptFailures,
   filterCards,
+  resolvedAnnotationCount,
   type SuggestionNavigatorView,
 } from "./annotations/annotation-panel-model";
 
@@ -174,6 +236,10 @@ interface WorkspaceAnnotationGroup {
   suggestions: SuggestionNavigatorView[];
   /** The review is frozen: see ReviewDiffSession.frozenText. */
   frozen: boolean;
+  /** Open annotations an agent marked acted: the per-document Resolve acted. */
+  actedCount: number;
+  /** Resolved annotations: the per-document Clear resolved. */
+  resolvedCount: number;
 }
 
 const props = defineProps<{
@@ -193,6 +259,22 @@ const filterQuery = ref("");
 const globalAcceptBusy = ref(false);
 const acceptingDocuments = reactive(new Set<string>());
 const recoveringDocuments = reactive(new Set<string>());
+const globalBulkBusy = ref(false);
+const bulkDocuments = reactive(new Set<string>());
+/** The document whose resolved annotations the confirmation dialog is open for. */
+const clearTarget = ref<string | null>(null);
+const clearDialogOpen = computed({
+  get: () => clearTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open) {
+      clearTarget.value = null;
+    }
+  },
+});
+
+function bulkBusy(documentPath: string): boolean {
+  return globalBulkBusy.value || bulkDocuments.has(documentPath);
+}
 
 watch(
   () => props.workspacePaths,
@@ -230,6 +312,10 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
         annotations,
         suggestions,
         frozen: session.review?.frozenText !== undefined,
+        /** The acted backlog this document's header can bulk-resolve. */
+        actedCount: actedOpenAnnotationCount(session.annotations.items),
+        /** The resolved threads this document's header can bulk-delete. */
+        resolvedCount: resolvedAnnotationCount(session.annotations.items),
       };
     })
     .filter((group) => group.annotations.length > 0 || group.suggestions.length > 0)
@@ -238,6 +324,13 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
         left.documentName.localeCompare(right.documentName) ||
         left.documentPath.localeCompare(right.documentPath),
     ),
+);
+
+const workspaceActedCount = computed(() =>
+  collaborationStore.workspaceSessions.reduce(
+    (count, session) => count + actedOpenAnnotationCount(session.annotations.items),
+    0,
+  ),
 );
 
 const outstandingSuggestionCount = computed(() =>
@@ -354,6 +447,68 @@ async function acceptAllWorkspace(): Promise<void> {
     reportError("[AnnotationsTab] Could not accept workspace reviews", err);
   } finally {
     globalAcceptBusy.value = false;
+  }
+}
+
+/** Toasts one document's bulk refusal with the reason nothing changed. */
+function reportBulkFailure(documentPath: string, result: AnnotationFailure): void {
+  showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
+}
+
+/** Resolves every acted open annotation of one document, in one batch. */
+async function resolveActedDocument(documentPath: string): Promise<void> {
+  if (bulkBusy(documentPath)) {
+    return;
+  }
+  bulkDocuments.add(documentPath);
+  try {
+    const result = await collaborationStore.resolveActedAnnotations(documentPath);
+    if ("ok" in result) {
+      reportBulkFailure(documentPath, result);
+    }
+  } catch (err) {
+    reportError("[AnnotationsTab] Could not resolve the acted annotations", err);
+  } finally {
+    bulkDocuments.delete(documentPath);
+  }
+}
+
+/** Deletes every resolved annotation of one document, after the confirmation. */
+async function clearResolvedDocument(documentPath: string | null): Promise<void> {
+  if (documentPath === null || bulkBusy(documentPath)) {
+    return;
+  }
+  bulkDocuments.add(documentPath);
+  clearTarget.value = null;
+  try {
+    const result = await collaborationStore.deleteResolvedAnnotations(documentPath);
+    if ("ok" in result) {
+      reportBulkFailure(documentPath, result);
+    }
+  } catch (err) {
+    reportError("[AnnotationsTab] Could not clear the resolved annotations", err);
+  } finally {
+    bulkDocuments.delete(documentPath);
+  }
+}
+
+/** Workspace-wide: every acted open annotation of the projected documents. */
+async function resolveActedWorkspace(): Promise<void> {
+  if (globalBulkBusy.value) {
+    return;
+  }
+  globalBulkBusy.value = true;
+  try {
+    const results = await collaborationStore.resolveActedAnnotationsWorkspace();
+    for (const { path, result } of results) {
+      if ("ok" in result) {
+        reportBulkFailure(path, result);
+      }
+    }
+  } catch (err) {
+    reportError("[AnnotationsTab] Could not resolve the acted annotations", err);
+  } finally {
+    globalBulkBusy.value = false;
   }
 }
 </script>

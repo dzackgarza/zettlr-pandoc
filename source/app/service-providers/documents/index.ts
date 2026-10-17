@@ -551,6 +551,16 @@ export interface ReattachAnnotationIpcInput {
 }
 
 /**
+ * The two bulk owner moves need only the document and the fence of the
+ * snapshot the panel rendered: the batch names its targets itself, so
+ * neither carries an annotationId.
+ */
+export interface BulkAnnotationIpcInput {
+  path: string;
+  expectedAnnotationGeneration: number;
+}
+
+/**
  * The document operations the renderer invokes on their own typed channels,
  * one handler signature each. This provider owns the schema; the renderer
  * bridge composes it, so a wrong payload or a changed return type is a
@@ -607,6 +617,12 @@ export type DocumentIpcHandlers = {
   "documents:delete-annotation": (
     input: AnnotationLifecycleIpcInput,
   ) => TextAnnotation | AnnotationFailure;
+  "documents:resolve-acted-annotations": (
+    input: BulkAnnotationIpcInput,
+  ) => { resolved: TextAnnotation[] } | AnnotationFailure;
+  "documents:clear-resolved-annotations": (
+    input: BulkAnnotationIpcInput,
+  ) => { deleted: TextAnnotation[] } | AnnotationFailure;
 };
 
 export default class DocumentManager
@@ -963,6 +979,28 @@ export default class DocumentManager
         "owner",
         input.expectedAnnotationGeneration,
       );
+    });
+
+    // The bulk owner moves over the annotations panel. They must also reach a
+    // document no pane shows: the panel's workspace projection carries closed
+    // documents' sidecar state, and the remediation backlog these clear sits
+    // on documents the agent touched without ever opening them. So unlike the
+    // single-id channels above, the path resolves to a documentId through the
+    // collaboration sidecar when the document is not open, and each commit
+    // runs on the open-or-closed ordering.
+    operations.handle("documents:resolve-acted-annotations", async (_event, input) => {
+      const documentId = await this._documentIdForBulkOwnerMutation(input.path);
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path);
+      }
+      return await this._resolveActedAnnotations(documentId, input.expectedAnnotationGeneration);
+    });
+    operations.handle("documents:clear-resolved-annotations", async (_event, input) => {
+      const documentId = await this._documentIdForBulkOwnerMutation(input.path);
+      if (documentId === undefined) {
+        return this._annotationDocumentNotFound(input.path);
+      }
+      return await this._deleteResolvedAnnotations(documentId, input.expectedAnnotationGeneration);
     });
 
     // Finally, listen to events from the renderer
@@ -3433,6 +3471,58 @@ current contents from the editor somewhere else, and restart the application.`,
       code: "DOCUMENT_NOT_FOUND",
       message: `No open document at ${filePath}.`,
     };
+  }
+
+  /**
+   * The documentId a bulk owner mutation works on: the live document, or —
+   * for a document no pane shows — a collaboration sidecar for that path,
+   * which is the only annotation state a closed document has. Assigning an
+   * id is cheap and stable, but it is also why this must not become the
+   * general channel for an arbitrary path: it exists because the panel's
+   * projection just read that sidecar through ensureDocumentId.
+   */
+  private async _documentIdForBulkOwnerMutation(filePath: string): Promise<string | undefined> {
+    const live = this.getDocumentId(filePath);
+    if (live !== undefined) {
+      return live;
+    }
+    const sidecar = await this._reviewApplication.readSidecar(filePath);
+    if (sidecar === undefined) {
+      return undefined;
+    }
+    return this.ensureDocumentId(filePath);
+  }
+
+  /** Resolve every acted annotation of one document, owner-actor hardcoded. */
+  private async _resolveActedAnnotations(
+    documentId: string,
+    expectedAnnotationGeneration: number,
+  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
+    const result = await this._reviewApplication.resolveActedAnnotations({
+      documentId,
+      actor: "owner",
+      expectedAnnotationGeneration,
+    });
+    if ("ok" in result) {
+      return result;
+    }
+    return { resolved: result };
+  }
+
+  /** Delete every resolved annotation of one document, owner-actor hardcoded. */
+  private async _deleteResolvedAnnotations(
+    documentId: string,
+    expectedAnnotationGeneration: number,
+  ): Promise<{ deleted: TextAnnotation[] } | AnnotationFailure> {
+    const result = await this._reviewApplication.deleteResolvedAnnotations({
+      documentId,
+      actor: "owner",
+      expectedAnnotationGeneration,
+    });
+    if ("ok" in result) {
+      return result;
+    }
+    return { deleted: result };
   }
 
   public ensureDocumentId(filePath: string): string {
