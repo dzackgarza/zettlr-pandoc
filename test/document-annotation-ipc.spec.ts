@@ -198,9 +198,9 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     assert.equal(annotation.messages[0].text, "Expand this with concrete examples.");
   });
 
-  it("refuses a second annotation with the same normalized creation reason", async function () {
+  it("admits a second annotation that repeats an earlier creation instruction", async function () {
     const content = "First target here. Second target here.\n";
-    const filePath = await openFile("duplicate-reason.md", content);
+    const filePath = await openFile("repeated-reason.md", content);
     const firstFrom = content.indexOf("First target");
     const firstTo = firstFrom + "First target".length;
     const secondFrom = content.indexOf("Second target");
@@ -215,19 +215,16 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     });
     assert.ok(!isFailure(first), "the first annotation must be admitted");
 
-    const duplicate = await invoke<TextAnnotation | AnnotationFailure>(
-      "documents:create-annotation",
-      {
-        path: filePath,
-        from: secondFrom,
-        to: secondTo,
-        instruction: "  explain   WHY this assumption is needed.  ",
-        expectedAnnotationGeneration: 1,
-      },
-    );
-    assert.ok(isFailure(duplicate), "a duplicate creation reason must be refused");
-    assert.equal(duplicate.code, "INVALID_PARAMS");
-    assert.match(duplicate.message, /same creation instruction/);
+    // The instruction is owner prose, not an identifier: repeating it, even
+    // restyled, for another passage must be admitted like any other.
+    const second = await invoke<TextAnnotation | AnnotationFailure>("documents:create-annotation", {
+      path: filePath,
+      from: secondFrom,
+      to: secondTo,
+      instruction: "  explain   WHY this assumption is needed.  ",
+      expectedAnnotationGeneration: 1,
+    });
+    assert.ok(!isFailure(second), `expected a second annotation, got ${JSON.stringify(second)}`);
 
     const session = await invoke<
       { annotations: { generation: number; items: TextAnnotation[] } } | undefined
@@ -235,13 +232,18 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     assert.ok(session !== undefined);
     assert.equal(
       session.annotations.generation,
-      1,
-      "a refused duplicate must not advance the annotation fence",
+      2,
+      "the repeated instruction must commit like any other",
     );
     assert.equal(
       session.annotations.items.length,
-      1,
-      "a refused duplicate must not enter annotation state",
+      2,
+      "both annotations must be in annotation state",
+    );
+    assert.equal(
+      session.annotations.items[1].messages[0].text,
+      "  explain   WHY this assumption is needed.  ",
+      "the instruction is stored verbatim",
     );
   });
 

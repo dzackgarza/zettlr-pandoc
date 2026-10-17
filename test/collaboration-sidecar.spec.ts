@@ -533,7 +533,7 @@ describe("CollaborationSidecarStore", function () {
     await assert.rejects(store.read(documentPath), annotationIssue("DUPLICATE_ANNOTATION_ID"));
   });
 
-  it("rejects distinct annotations with the same normalized creation instruction", async function () {
+  it("admits distinct annotations that repeat one creation instruction", async function () {
     const first = annotation("annotation-1");
     const secondBase = annotation("annotation-2");
     const second: TextAnnotation = {
@@ -547,15 +547,13 @@ describe("CollaborationSidecarStore", function () {
       ],
       proposalActions: [],
     };
-    persistRaw({
+    const repeated: CollaborationSidecarData = {
       ...sidecar(documentPath),
       review: null,
       annotations: { generation: 2, items: [first, second] },
-    });
-    await assert.rejects(
-      store.read(documentPath),
-      annotationIssue("DUPLICATE_ANNOTATION_INSTRUCTION"),
-    );
+    };
+    persistRaw(repeated);
+    assert.deepEqual(await store.read(documentPath), repeated);
   });
 
   it("rejects an annotation with no messages", async function () {
