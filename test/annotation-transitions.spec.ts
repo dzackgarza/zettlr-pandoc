@@ -130,7 +130,12 @@ function only(annotations: AnnotationSet): TextAnnotation {
 
 async function createOne(
   service: CollaborationApplicationService,
-  overrides: Partial<{ from: number; to: number; instruction: string; generation: number }> = {},
+  overrides: Partial<{
+    from: number;
+    to: number;
+    instruction: string;
+    generation: number;
+  }> = {},
 ): Promise<TextAnnotation> {
   return committed(
     await service.createAnnotation({
@@ -207,10 +212,11 @@ describe("pure annotation transitions", function () {
     );
   });
 
-  it("refuses distinct annotations with the same normalized creation reason", function () {
+  it("admits a second annotation that repeats an earlier instruction verbatim", function () {
     const annotations = oneAnnotation();
     const secondFrom = BASELINE.indexOf("lazy dog");
-    const duplicate = rejected(
+    const repeated = "  SAY   WHAT kind of fox this is.  ";
+    const plan = planned(
       prepareAnnotationCreation({
         annotations,
         actor: "owner",
@@ -218,13 +224,16 @@ describe("pure annotation transitions", function () {
         workingText: BASELINE,
         from: secondFrom,
         to: secondFrom + "lazy dog".length,
-        instruction: "  SAY   WHAT kind of fox this is.  ",
+        instruction: repeated,
         expectedAnnotationGeneration: 1,
       }),
     );
 
-    assert.equal(duplicate.code, "INVALID_PARAMS");
-    assert.match(duplicate.message, /same creation instruction/);
+    // An instruction is owner prose, not an identifier: repeating one
+    // earlier in the document is commentary, not a collision.
+    assert.equal(plan.nextAnnotations.generation, 2);
+    assert.equal(plan.nextAnnotations.items.length, 2);
+    assert.equal(plan.nextAnnotations.items[1].messages[0].text, repeated);
   });
 
   it("refuses every lifecycle move an agent asks for, and leaves the set untouched (I3)", function () {
@@ -295,7 +304,9 @@ describe("pure annotation transitions", function () {
     );
     assert.equal(only(plan.nextAnnotations).messages.length, 2);
     assert.equal(plan.nextAnnotations.generation, 2);
-    assert.deepEqual(only(plan.nextAnnotations).agentStatus, { state: "pending" });
+    assert.deepEqual(only(plan.nextAnnotations).agentStatus, {
+      state: "pending",
+    });
   });
 
   it("lets the agent mark its disposition acted without resolving the owner's annotation", function () {
@@ -966,7 +977,9 @@ describe("the annotation transaction boundary", function () {
         baselineSha256: sha256Text(BASELINE),
         claims: [
           {
-            patch: createPatch(DOCUMENT_PATH, BASELINE, proposed, "", "", { context: 3 }),
+            patch: createPatch(DOCUMENT_PATH, BASELINE, proposed, "", "", {
+              context: 3,
+            }),
             description: "shout at the dog",
           },
         ],
@@ -998,7 +1011,11 @@ describe("the annotation transaction boundary", function () {
   it("carries an anchor through the owner's typing in the same transaction as the text", async function () {
     const { service, authority } = harness();
     const annotation = await createOne(service);
-    const edit = authority.ownerEdit({ from: 0, to: 0, insert: "Once upon a time. " });
+    const edit = authority.ownerEdit({
+      from: 0,
+      to: 0,
+      insert: "Once upon a time. ",
+    });
     await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
 
     const moved = service.getAnnotations(DOCUMENT_ID).items[0];
@@ -1021,7 +1038,11 @@ describe("the annotation transaction boundary", function () {
   it("never blocks a save on an open annotation, and moves the fence with the file (I5)", async function () {
     const { service, authority, sidecarDirectory } = harness();
     await createOne(service);
-    const edit = authority.ownerEdit({ from: 0, to: 0, insert: "Once upon a time. " });
+    const edit = authority.ownerEdit({
+      from: 0,
+      to: 0,
+      insert: "Once upon a time. ",
+    });
     await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
 
     const savedSha256 = sha256Text(edit.nextText);
@@ -1102,7 +1123,9 @@ describe("the annotation transaction boundary", function () {
       baselineSha256: sha256Text(BASELINE),
       claims: [
         {
-          patch: createPatch(DOCUMENT_PATH, BASELINE, proposed, "", "", { context: 3 }),
+          patch: createPatch(DOCUMENT_PATH, BASELINE, proposed, "", "", {
+            context: 3,
+          }),
           description: "shout the opening",
         },
       ],
@@ -1141,7 +1164,10 @@ describe("the annotation transaction boundary", function () {
         expectedAnnotationGeneration: 1,
       }),
     );
-    assert.deepEqual(service.getAnnotations(DOCUMENT_ID), { generation: 2, items: [] });
+    assert.deepEqual(service.getAnnotations(DOCUMENT_ID), {
+      generation: 2,
+      items: [],
+    });
     // The sidecar has nothing left to keep, so the store removed the file.
     assert.equal(await service.readSidecar(DOCUMENT_PATH), undefined);
     assert.equal(
@@ -1163,7 +1189,11 @@ describe("the annotation transaction boundary", function () {
   it("keeps the threads and orphans the anchors when the owner discards the bytes they described", async function () {
     const { service, authority } = harness();
     const annotation = await createOne(service);
-    const edit = authority.ownerEdit({ from: 0, to: 0, insert: "An unsaved thought. " });
+    const edit = authority.ownerEdit({
+      from: 0,
+      to: 0,
+      insert: "An unsaved thought. ",
+    });
     await service.applyWorkingTextEdit(DOCUMENT_ID, edit.nextText, edit.changes, edit.commit);
 
     await service.discardCollaboration(DOCUMENT_ID, DOCUMENT_PATH, BASELINE);
