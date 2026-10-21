@@ -30,7 +30,7 @@ import ProviderContract from "@providers/provider-contract";
 import type { EventName } from "chokidar/handler.js";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
-import { constants as FS_CONSTANTS, promises as fs, statSync, type Stats } from "fs";
+import { constants as FS_CONSTANTS, promises as fs, type Stats, statSync } from "fs";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
