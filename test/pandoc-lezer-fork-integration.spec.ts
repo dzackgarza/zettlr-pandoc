@@ -39,4 +39,13 @@ describe("vendored Pandoc Lezer fork integration", function () {
       assert.ok(performance.now() - start < 2000, "parsing blocked the main process");
     }
   });
+
+  it("parses repeated incomplete citation followers promptly", function () {
+    const source = ("[@key]( " + "text ".repeat(16)).repeat(2000);
+    const start = performance.now();
+    const tree = createPandocParser().parse(source);
+
+    assert.equal(tree.length, source.length);
+    assert.ok(performance.now() - start < 4000, "parsing blocked the main process");
+  });
 });
