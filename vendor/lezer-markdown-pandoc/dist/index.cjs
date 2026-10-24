@@ -1773,10 +1773,24 @@ function finishLink(cx, content, type, start, startPos) {
         // consumes a following reference label. The fork exposes that precedence
         // generically through `referenceLabelBlockers` so the link parser reuses
         // the configured citation grammar instead of restating it here.
-        let blocked = cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos);
-        if (!blocked) {
-            let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
-            if (label) {
+        let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
+        if (label) {
+            // Most labels cannot be a semantic blocker. Parse the bounded label
+            // first; only a possible blocker needs the full following source for
+            // Pandoc's negative lookahead after the closing bracket.
+            let labelSource = text.slice(startPos - cx.offset, label.to - cx.offset);
+            let following = text.charCodeAt(label.to - cx.offset);
+            if (following == 91 /* '[' */) {
+                let followingLabel = parseLinkLabel(text, label.to - cx.offset, cx.offset, false);
+                if (followingLabel) {
+                    labelSource = text.slice(startPos - cx.offset, followingLabel.to - cx.offset);
+                }
+            }
+            let needsFollowing = following == 40 /* '(' */ || following == 91 /* '[' */ ||
+                following == 123; /* '{' */
+            let blocked = cx.parser.referenceLabelBlockedAt(labelSource, startPos) &&
+                (!needsFollowing || cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos));
+            if (!blocked) {
                 // Pandoc `referenceLink` reparses the raw reference label with the
                 // inline grammar for its fallback representation (`parsedRaw <-
                 // parseFromString' inlines raw'`). Preserve those semantic children in

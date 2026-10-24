@@ -24,11 +24,13 @@ describe("vendored Pandoc Lezer fork integration", function () {
   });
 
   it("parses a long paragraph of adjacent bracketed labels promptly", function () {
-    const source = ("[name][label] " + "text ".repeat(16)).repeat(15);
-    const start = performance.now();
-    const tree = createPandocParser().parse(source);
+    for (const suffix of ["[label]", "[@key]", "[@key][reference]"]) {
+      const source = (`[name]${suffix} ` + "text ".repeat(16)).repeat(15);
+      const start = performance.now();
+      const tree = createPandocParser().parse(source);
 
-    assert.equal(tree.length, source.length);
-    assert.ok(performance.now() - start < 700, "parsing blocked the main process");
+      assert.equal(tree.length, source.length);
+      assert.ok(performance.now() - start < 700, "parsing blocked the main process");
+    }
   });
 });
