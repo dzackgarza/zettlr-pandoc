@@ -135,6 +135,7 @@ function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0]
   }
 
   if (next === CHAR.BRACKET_OPEN) {
+    if (ctx.char(pos + 1) === 94 /* ^ */) return false
     // Pandoc `reference` uses balanced brackets. We only need existence here,
     // not its parsed inline payload.
     let depth = 0
@@ -147,17 +148,11 @@ function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0]
     return false
   }
 
-  if (next === CHAR.BRACE_OPEN) {
-    // This spelling is already handled above as Pandoc attributes.
-    return false
-  }
-
   if (next === 40 /* ( */) {
     // `source` is parenthesized and permits nested parenthesized URL chunks.
     // A balanced close is sufficient for the normal-citation exclusion; the
     // actual Link parser remains authoritative for the detailed destination.
     let depth = 0
-    let angle = false
     let quote = 0
     for (let i = pos; i < ctx.end; i++) {
       const ch = ctx.char(i)
@@ -167,9 +162,6 @@ function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0]
         continue
       }
       if (ch === 34 /* " */ || ch === 39 /* ' */) { quote = ch; continue }
-      if (ch === 60 /* < */) { angle = true; continue }
-      if (ch === 62 /* > */ && angle) { angle = false; continue }
-      if (angle) continue
       if (ch === 40) depth++
       if (ch === 41 && --depth === 0) return true
     }
@@ -643,62 +635,7 @@ export const citationParser: InlineParser = {
       //
       // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
       // Pandoc commit.
-      const localAfter = i - ctx.offset
-      const following = ctx.text.slice(localAfter)
-      const followedBySource = (() => {
-        if (!following.startsWith('(')) return false
-        let depth = 0
-        let quote: '"'|"'"|undefined
-        let escaped = false
-        for (let cursor = 0; cursor < following.length; cursor++) {
-          const char = following[cursor]
-          if (escaped) {
-            escaped = false
-            continue
-          }
-          if (char === '\\') {
-            escaped = true
-            continue
-          }
-          if (quote !== undefined) {
-            if (char === quote) quote = undefined
-            continue
-          }
-          if (char === '"' || char === "'") {
-            quote = char
-            continue
-          }
-          if (char === '(') depth++
-          if (char === ')') {
-            depth--
-            if (depth === 0) return true
-          }
-        }
-        return false
-      })()
-      const followedByAttributes = following.startsWith('{') &&
-        scanPandocAttributeList(ctx.text, localAfter).status === 'match'
-      const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
-        let depth = 0
-        let escaped = false
-        for (const char of following) {
-          if (escaped) {
-            escaped = false
-            continue
-          }
-          if (char === '\\') {
-            escaped = true
-            continue
-          }
-          if (char === '[') depth++
-          if (char === ']') {
-            depth--
-            if (depth === 0) return true
-          }
-        }
-        return false
-      })()
-      if (followedBySource || followedByAttributes || followedByReference) {
+      if (conflictsWithNormalCiteClose(ctx, i)) {
         return -1
       }
     } else {
