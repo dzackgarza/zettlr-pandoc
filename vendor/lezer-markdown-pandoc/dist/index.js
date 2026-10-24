@@ -1370,15 +1370,19 @@ class MarkdownParser extends Parser {
         return cx.resolveMarkers(0);
     }
     /**
-    Whether parsing the source beginning at `offset` produces one of the
-    configured semantic nodes which Pandoc gives precedence over a reference
-    link label at this position.
+    Whether the next inline token is a semantic node that Pandoc gives
+    precedence over a reference link label. Only the token at `pos` matters;
+    parsing the rest of the paragraph here repeats work for every label.
     */
-    referenceLabelBlockedAt(text, offset) {
+    referenceLabelBlockedAt(cx, pos) {
         if (!this.referenceLabelBlockers.length)
             return false;
-        let elements = this.parseInline(text, offset);
-        let first = elements.find(element => element.from == offset);
+        let probe = new InlineContext(this, cx.text, cx.offset);
+        let next = probe.char(pos);
+        for (let token of this.inlineParsers)
+            if (token && token(probe, next, pos) >= 0)
+                break;
+        let first = probe.resolveMarkers(0).find(element => element.from == pos);
         return first != null && this.referenceLabelBlockers.includes(this.nodeSet.types[first.type].name);
     }
 }
@@ -1772,32 +1776,15 @@ function finishLink(cx, content, type, start, startPos) {
         // generically through `referenceLabelBlockers` so the link parser reuses
         // the configured citation grammar instead of restating it here.
         let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
-        if (label) {
-            // Most labels cannot be a semantic blocker. Parse the bounded label
-            // first; only a possible blocker needs the full following source for
-            // Pandoc's negative lookahead after the closing bracket.
-            let labelSource = text.slice(startPos - cx.offset, label.to - cx.offset);
-            let following = text.charCodeAt(label.to - cx.offset);
-            if (following == 91 /* '[' */) {
-                let followingLabel = parseLinkLabel(text, label.to - cx.offset, cx.offset, false);
-                if (followingLabel) {
-                    labelSource = text.slice(startPos - cx.offset, followingLabel.to - cx.offset);
-                }
-            }
-            let needsFollowing = following == 40 /* '(' */ || following == 91 /* '[' */ ||
-                following == 123; /* '{' */
-            let blocked = cx.parser.referenceLabelBlockedAt(labelSource, startPos) &&
-                (!needsFollowing || cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos));
-            if (!blocked) {
-                // Pandoc `referenceLink` reparses the raw reference label with the
-                // inline grammar for its fallback representation (`parsedRaw <-
-                // parseFromString' inlines raw'`). Preserve those semantic children in
-                // the Lezer LinkLabel node instead of treating it as opaque source.
-                let innerFrom = label.from + 1, innerTo = label.to - 1;
-                let parsedLabel = cx.elt("LinkLabel", label.from, label.to, cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom));
-                content.push(parsedLabel);
-                endPos = parsedLabel.to;
-            }
+        if (label && !cx.parser.referenceLabelBlockedAt(cx, startPos)) {
+            // Pandoc `referenceLink` reparses the raw reference label with the
+            // inline grammar for its fallback representation (`parsedRaw <-
+            // parseFromString' inlines raw'`). Preserve those semantic children in
+            // the Lezer LinkLabel node instead of treating it as opaque source.
+            let innerFrom = label.from + 1, innerTo = label.to - 1;
+            let parsedLabel = cx.elt("LinkLabel", label.from, label.to, cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom));
+            content.push(parsedLabel);
+            endPos = parsedLabel.to;
         }
     }
     return elt(type, start, endPos, content);
@@ -3102,6 +3089,8 @@ function conflictsWithNormalCiteClose(ctx, pos) {
         return scanPandocAttributeList(ctx.text, pos - ctx.offset).status === 'match';
     }
     if (next === CHAR.BRACKET_OPEN) {
+        if (ctx.char(pos + 1) === 94 /* ^ */)
+            return false;
         // Pandoc `reference` uses balanced brackets. We only need existence here,
         // not its parsed inline payload.
         let depth = 0;
@@ -3118,16 +3107,11 @@ function conflictsWithNormalCiteClose(ctx, pos) {
         }
         return false;
     }
-    if (next === CHAR.BRACE_OPEN) {
-        // This spelling is already handled above as Pandoc attributes.
-        return false;
-    }
     if (next === 40 /* ( */) {
         // `source` is parenthesized and permits nested parenthesized URL chunks.
         // A balanced close is sufficient for the normal-citation exclusion; the
         // actual Link parser remains authoritative for the detailed destination.
         let depth = 0;
-        let angle = false;
         let quote = 0;
         for (let i = pos; i < ctx.end; i++) {
             const ch = ctx.char(i);
@@ -3144,16 +3128,6 @@ function conflictsWithNormalCiteClose(ctx, pos) {
                 quote = ch;
                 continue;
             }
-            if (ch === 60 /* < */) {
-                angle = true;
-                continue;
-            }
-            if (ch === 62 /* > */ && angle) {
-                angle = false;
-                continue;
-            }
-            if (angle)
-                continue;
             if (ch === 40)
                 depth++;
             if (ch === 41 && --depth === 0)
@@ -3545,68 +3519,7 @@ const citationParser = {
             //
             // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
             // Pandoc commit.
-            const localAfter = i - ctx.offset;
-            const following = ctx.text.slice(localAfter);
-            const followedBySource = (() => {
-                if (!following.startsWith('('))
-                    return false;
-                let depth = 0;
-                let quote;
-                let escaped = false;
-                for (let cursor = 0; cursor < following.length; cursor++) {
-                    const char = following[cursor];
-                    if (escaped) {
-                        escaped = false;
-                        continue;
-                    }
-                    if (char === '\\') {
-                        escaped = true;
-                        continue;
-                    }
-                    if (quote !== undefined) {
-                        if (char === quote)
-                            quote = undefined;
-                        continue;
-                    }
-                    if (char === '"' || char === "'") {
-                        quote = char;
-                        continue;
-                    }
-                    if (char === '(')
-                        depth++;
-                    if (char === ')') {
-                        depth--;
-                        if (depth === 0)
-                            return true;
-                    }
-                }
-                return false;
-            })();
-            const followedByAttributes = following.startsWith('{') &&
-                scanPandocAttributeList(ctx.text, localAfter).status === 'match';
-            const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
-                let depth = 0;
-                let escaped = false;
-                for (const char of following) {
-                    if (escaped) {
-                        escaped = false;
-                        continue;
-                    }
-                    if (char === '\\') {
-                        escaped = true;
-                        continue;
-                    }
-                    if (char === '[')
-                        depth++;
-                    if (char === ']') {
-                        depth--;
-                        if (depth === 0)
-                            return true;
-                    }
-                }
-                return false;
-            })();
-            if (followedBySource || followedByAttributes || followedByReference) {
+            if (conflictsWithNormalCiteClose(ctx, i)) {
                 return -1;
             }
         }
