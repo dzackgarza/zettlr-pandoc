@@ -19,7 +19,7 @@
 
 // Import our additional styles we need to put here since we don't have a Vue
 // component for the editor itself.
-import "./editor.css";
+import "@dzack/pandoc-editor/editor.css";
 
 import { foldEffect, foldState } from "@codemirror/language";
 import { forceLinting } from "@codemirror/lint";
@@ -48,6 +48,7 @@ import {
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import type { EditorCommandName } from "@dts/common/shortcut-names";
 import type { UserSnippet } from "@dts/common/snippets";
+import { darkModeEffect, useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
 import { type TagRecord } from "@providers/tags";
 // Keymaps/Input modes
 import { emacs } from "@replit/codemirror-emacs";
@@ -156,7 +157,6 @@ import { EMPTY_QUICKTEX, quickTexUpdate } from "./quicktex";
 import { toggleReadability } from "./renderers/readability";
 import { syncCitationData } from "./renderers/render-citations";
 import { countDiagnostics, type DiagnosticCounts, toggleLintPanel } from "./statusbar/diagnostics";
-import { darkModeEffect, useDarkModeEditor } from "./theme/dark-mode";
 import {
   cloneEditorConfiguration,
   configField,

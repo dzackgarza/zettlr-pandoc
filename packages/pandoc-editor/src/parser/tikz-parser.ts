@@ -17,8 +17,8 @@
 
 import { StreamLanguage, type StreamParser, type StringStream } from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
-import { rawLatexEnvironmentAtStart } from "@common/util/raw-latex-block";
 import { type ParseWrapper, parseMixed } from "@lezer/common";
+import { rawLatexEnvironmentAtStart } from "@lezer/markdown";
 import { tikzLanguage } from "@tikz-editor/lang-tikz";
 
 interface TikzCdState {

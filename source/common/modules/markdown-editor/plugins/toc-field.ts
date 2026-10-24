@@ -16,7 +16,7 @@
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { type EditorState, StateField } from "@codemirror/state";
 import { parsePandocAttributes } from "@common/pandoc-util/parse-pandoc-attributes";
-import { markdownHeadingLevel } from "../util/heading-level";
+import { markdownHeadingLevel } from "@dzack/pandoc-editor/util/heading-level";
 
 /**
  * Takes a heading (the full line) and transforms it into an ID. This function

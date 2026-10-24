@@ -27,11 +27,11 @@
 
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
 import { strict as assert } from "assert";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { md2html } from "source/common/modules/markdown-utils/markdown-to-html";
-import { stripMathDelimiters } from "source/common/util/math-delimiters";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 import { execPandocReference } from "./pandoc-reference";
 

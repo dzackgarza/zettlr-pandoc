@@ -1,15 +1,11 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import {
   setActiveAnnotationEffect,
   setAnnotationSessionEffect,
   textAnnotationsExtension,
 } from "source/common/modules/markdown-editor/plugins/text-annotations";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import loadIcons from "source/common/modules/window-register/load-icons";
 import type { AnnotationSet, TextAnnotation } from "source/types/common/annotation-domain";
 

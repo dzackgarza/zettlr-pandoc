@@ -4,9 +4,9 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import openPandocQuickHelp from "source/app/service-providers/menu/open-pandoc-quick-help";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import {

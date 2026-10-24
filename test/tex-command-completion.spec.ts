@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import {
   phraseCompletionSource,
   phraseCompletionsField,
@@ -10,7 +11,6 @@ import {
   texDocumentKind,
   texMacroSourcesField,
 } from "source/common/modules/markdown-editor/autocomplete/tex";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 
 const bs = String.fromCharCode(92);
 

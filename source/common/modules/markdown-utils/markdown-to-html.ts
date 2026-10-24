@@ -21,10 +21,10 @@
  * END HEADER
  */
 
-import { mathDisplayForOpen, mathFromCodeNode } from "@common/util/math-delimiters";
 import { mathJaxToHTML } from "@common/util/mathtex-to-html";
+import { type MarkdownParserConfig } from "@dzack/pandoc-editor/parser/markdown-parser";
+import { mathDisplayForOpen, mathFromCodeNode } from "@dzack/pandoc-editor/util/math-delimiters";
 import _ from "underscore";
-import { type MarkdownParserConfig } from "../markdown-editor/parser/markdown-parser";
 import { extractASTNodes, markdownToAST } from ".";
 import type { ASTNode, CitationNode, FootnoteRef, GenericNode } from "./markdown-ast";
 

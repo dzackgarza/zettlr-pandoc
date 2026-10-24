@@ -31,20 +31,26 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
+import { VISUAL_INDENT_EXEMPT_CLASS } from "@dzack/pandoc-editor/plugins/visual-indent";
+import {
+  placeCursorFromRenderedPoint,
+  selectRenderedSourceRange,
+} from "@dzack/pandoc-editor/renderers/reveal-rendered-source";
+import {
+  incrementalNodeDecorations,
+  type SourceRange,
+} from "@dzack/pandoc-editor/util/incremental-node-decorations";
+import {
+  rangeInPreviewSuppression,
+  reviewSuppressionChanged,
+} from "@dzack/pandoc-editor/util/range-in-preview-suppression";
+import { rangeInSelection } from "@dzack/pandoc-editor/util/range-in-selection";
+import { visitVisibleSyntaxNodes } from "@dzack/pandoc-editor/util/visible-syntax-nodes";
 import { divModelFromNode, type PandocDivModel } from "source/common/pandoc-util/pandoc-div-model";
 import { parsePandocAttributes } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { reportError } from "source/common/util/error-reporting";
 import { mathJaxToElem } from "source/common/util/mathtex-to-html";
-import { VISUAL_INDENT_EXEMPT_CLASS } from "../plugins/visual-indent";
 import { configField } from "../util/configuration";
-import { incrementalNodeDecorations, type SourceRange } from "../util/incremental-node-decorations";
-import {
-  rangeInPreviewSuppression,
-  reviewSuppressionChanged,
-} from "../util/range-in-preview-suppression";
-import { rangeInSelection } from "../util/range-in-selection";
-import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
-import { placeCursorFromRenderedPoint, selectRenderedSourceRange } from "./reveal-rendered-source";
 
 function createSpanDecorations(view: EditorView): RangeSet<Decoration> {
   const ranges: Range<Decoration>[] = [];

@@ -17,16 +17,16 @@ import { yaml } from "@codemirror/lang-yaml";
 import { syntaxTree } from "@codemirror/language";
 import { EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, WidgetType } from "@codemirror/view";
-import type { SyntaxNode } from "@lezer/common";
-import YAML from "yaml";
-import { codeSyntaxHighlighter } from "../theme/syntax";
-import { configField } from "../util/configuration";
-import { incrementalNodeDecorations } from "../util/incremental-node-decorations";
+import { codeSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
+import { incrementalNodeDecorations } from "@dzack/pandoc-editor/util/incremental-node-decorations";
 import {
   previewSuppressionChanged,
   previewSuppressionRanges,
   rangeInPreviewSuppression,
-} from "../util/range-in-preview-suppression";
+} from "@dzack/pandoc-editor/util/range-in-preview-suppression";
+import type { SyntaxNode } from "@lezer/common";
+import YAML from "yaml";
+import { configField } from "../util/configuration";
 
 // Interaction model adapted from two existing editor implementations rather
 // than inventing another front-matter editor:

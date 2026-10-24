@@ -20,7 +20,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { configField } from "../util/configuration";
+import { previewConfig } from "../util/configuration";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -30,7 +30,7 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
   const hiddenDeco = Decoration.replace({});
-  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = view.state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     // Wikilinks render as chips (render-wikilinks.ts)

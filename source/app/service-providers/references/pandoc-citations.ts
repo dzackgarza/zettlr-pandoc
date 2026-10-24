@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
+import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
 import {
   type Citation,
   type CiteItem,
   parseCitationSuffix,
-} from "@common/modules/markdown-editor/parser/citation-parser";
-import { extractASTNodes, markdownToAST } from "@common/modules/markdown-utils";
+} from "@dzack/pandoc-editor/parser/citation-parser";
 import { LRUCache } from "lru-cache";
 import { z } from "zod";
 

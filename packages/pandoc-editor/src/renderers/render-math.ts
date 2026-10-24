@@ -12,17 +12,30 @@
  * END HEADER
  */
 
-import { type EditorState } from "@codemirror/state";
+import { type EditorState, Facet } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
+import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
+import { rangeInPreviewSuppression } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import { type SyntaxNodeRef } from "@lezer/common";
 import { pandocLatexMathEnvironmentAtStart } from "@lezer/markdown";
-import { stripMathDelimiters } from "source/common/util/math-delimiters";
-import { mathJaxToElem } from "source/common/util/mathtex-to-html";
-import { equationMenu } from "../context-menu/equation-menu";
-import { configField } from "../util/configuration";
-import { rangeInPreviewSuppression } from "../util/range-in-preview-suppression";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
+import { previewConfig } from "../util/configuration";
+
+export interface MathHost {
+  render(equation: string, element: HTMLElement, mode: "display" | "inline"): void;
+  contextMenu?(view: EditorView, equation: string, coordinates: { x: number; y: number }): void;
+}
+
+export const mathHost = Facet.define<MathHost, MathHost | null>({
+  combine: (hosts) => hosts[0] ?? null,
+});
+
+function requireMathHost(state: EditorState): MathHost {
+  const host = state.facet(mathHost);
+  if (host === null) throw new Error("Math rendering requires a host.");
+  return host;
+}
 
 class MathWidget extends WidgetType {
   constructor(
@@ -40,25 +53,27 @@ class MathWidget extends WidgetType {
     const elem = document.createElement("span");
     elem.classList.add("preview-math");
     elem.dataset.equation = this.equation;
-    mathJaxToElem(this.equation, elem, this.displayMode ? "display" : "inline");
+    const host = requireMathHost(view.state);
+    host.render(this.equation, elem, this.displayMode ? "display" : "inline");
     elem.addEventListener("click", clickAndSelect(view));
-    elem.addEventListener("contextmenu", (event) => {
-      equationMenu(view, this.equation, { x: event.clientX, y: event.clientY });
-    });
+    if (host.contextMenu)
+      elem.addEventListener("contextmenu", (event) => {
+        host.contextMenu!(view, this.equation, { x: event.clientX, y: event.clientY });
+      });
     return elem;
   }
 
-  updateDOM(dom: HTMLElement, _view: EditorView): boolean {
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
     if (dom.dataset.equation === this.equation) {
       return true; // No need to update
     }
 
     dom.dataset.equation = this.equation;
-    mathJaxToElem(this.equation, dom, this.displayMode ? "display" : "inline");
+    requireMathHost(view.state).render(this.equation, dom, this.displayMode ? "display" : "inline");
     return true;
   }
 
-  ignoreEvent(event: Event): boolean {
+  ignoreEvent(_event: Event): boolean {
     return true; // By default ignore all events
   }
 }
@@ -94,7 +109,7 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): MathWidget | undefined {
-  const includeAdjacent = state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   // Don't render if the selection is within the node
   if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {

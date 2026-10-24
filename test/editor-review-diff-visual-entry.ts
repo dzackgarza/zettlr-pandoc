@@ -1,18 +1,14 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { ReviewSuggestionView } from "@dts/common/review-diff";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import {
   getReviewChunks,
   reviewChunksExtension,
 } from "source/common/modules/markdown-editor/plugins/review-chunks";
 import { renderers } from "source/common/modules/markdown-editor/renderers";
 import { renderTables } from "source/common/modules/markdown-editor/table-editor";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import {
   configField,
   getDefaultConfig,

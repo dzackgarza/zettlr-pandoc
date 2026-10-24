@@ -7,23 +7,19 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { ProjectRootSpec } from "@dts/common/references";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderCode } from "@dzack/pandoc-editor/renderers/render-code";
+import { renderEmphasis } from "@dzack/pandoc-editor/renderers/render-emphasis";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import {
   type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
 } from "source/common/modules/markdown-editor/plugins/workspace-references-field";
 import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
-import { renderCode } from "source/common/modules/markdown-editor/renderers/render-code";
-import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
 import { renderPandocAttributes } from "source/common/modules/markdown-editor/renderers/render-pandoc-attributes";
 import { renderReferenceChips } from "source/common/modules/markdown-editor/renderers/render-reference-chips";
 import { renderReferenceDefinitions } from "source/common/modules/markdown-editor/renderers/render-reference-definitions";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { resolveWorkspace } from "source/common/pandoc-util/resolve-references";

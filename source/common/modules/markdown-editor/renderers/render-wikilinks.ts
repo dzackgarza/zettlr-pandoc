@@ -21,10 +21,10 @@
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
 import { wikilinkOpener, wikilinkResolutionsField } from "../plugins/wikilink-resolutions-field";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 class WikilinkChipWidget extends WidgetType {
   /** `documentPath` is '' for a link into the document itself (`[[#heading]]`). */

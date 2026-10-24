@@ -22,6 +22,7 @@
 import "./headless-electron-harness.cjs";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import path from "path";
 import CiteprocProvider, {
@@ -30,7 +31,6 @@ import CiteprocProvider, {
 } from "source/app/service-providers/citeproc";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   __resetCitationRenderMemoForTests,
   renderCitations,

@@ -21,10 +21,10 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import { readFileSync } from "fs";
 import path from "path";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   openReferenceSearchEffect,
   type ReferenceSearchRequest,

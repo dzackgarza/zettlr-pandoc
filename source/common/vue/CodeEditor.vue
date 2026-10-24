@@ -47,8 +47,10 @@ import {
 } from "@common/diagnostics/providers/structured-data";
 import { externalLinterExtension } from "@common/modules/markdown-editor/diagnostics/external-linter-adapter";
 import { showStatusbarEffect, statusbar } from "@common/modules/markdown-editor/statusbar";
-import { codeSyntaxHighlighter } from "@common/modules/markdown-editor/theme/syntax";
 import { plainLinkHighlighter } from "@common/modules/markdown-utils/plain-link-highlighter";
+import { darkMode, darkModeEffect } from "@dzack/pandoc-editor/theme/dark-mode";
+import { defaultDark, defaultLight } from "@dzack/pandoc-editor/theme/editor";
+import { codeSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 import { useConfigStore } from "source/pinia";
 import { onMounted, ref, toRef, watch } from "vue";
 import { zettlrKeymap } from "../modules/markdown-editor/keymaps";
@@ -57,8 +59,6 @@ import {
   highlightWhitespace,
   highlightWhitespaceEffect,
 } from "../modules/markdown-editor/plugins/highlight-whitespace";
-import { darkMode, darkModeEffect } from "../modules/markdown-editor/theme/dark-mode";
-import { defaultDark, defaultLight } from "../modules/markdown-editor/theme/editor";
 
 const configStore = useConfigStore();
 

@@ -44,6 +44,24 @@ import {
   jsonDiagnosticProvider,
   yamlDiagnosticProvider,
 } from "@common/diagnostics/providers/structured-data";
+import { markdownEditor } from "@dzack/pandoc-editor";
+import { headingGutter } from "@dzack/pandoc-editor/renderers/render-headings";
+import {
+  darkMode,
+  mainThemes,
+  themeBerlinDark,
+  themeBerlinLight,
+  themeBielefeldDark,
+  themeBielefeldLight,
+  themeBordeauxDark,
+  themeBordeauxLight,
+  themeFrankfurtDark,
+  themeFrankfurtLight,
+  themeKarlMarxStadtDark,
+  themeKarlMarxStadtLight,
+  useDarkModeEditor,
+} from "@dzack/pandoc-editor/theme/index";
+import { codeSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 import { emacs } from "@replit/codemirror-emacs";
 import { autocomplete } from "./autocomplete";
 import { snippetsUpdateField } from "./autocomplete/snippets";
@@ -52,8 +70,6 @@ import { markdownFolding } from "./code-folding/markdown";
 import { externalLinterExtension } from "./diagnostics/external-linter-adapter";
 import { markdownDiagnosticExtensions } from "./diagnostics/markdown-diagnostic-plugins";
 import { zettlrKeymap } from "./keymaps";
-import markdownParser from "./parser/markdown-parser";
-import { backgroundLayers } from "./plugins/code-background";
 import { defaultContextMenu } from "./plugins/default-context-menu";
 import { distractionFree } from "./plugins/distraction-free";
 import { footnoteBackground } from "./plugins/footnote-background";
@@ -78,28 +94,10 @@ import { textAnnotationsExtension } from "./plugins/text-annotations";
 import { tocField } from "./plugins/toc-field";
 import { typewriter } from "./plugins/typewriter";
 import { vimPlugin } from "./plugins/vim-mode";
-import { softwrapVisualIndent } from "./plugins/visual-indent";
 import { wikilinkOpener, wikilinkResolutionsField } from "./plugins/wikilink-resolutions-field";
 import { workspaceReferencesField } from "./plugins/workspace-references-field";
 import { quickTexField } from "./quicktex";
 import { renderers } from "./renderers";
-import { headingGutter } from "./renderers/render-headings";
-import {
-  darkMode,
-  mainThemes,
-  themeBerlinDark,
-  themeBerlinLight,
-  themeBielefeldDark,
-  themeBielefeldLight,
-  themeBordeauxDark,
-  themeBordeauxLight,
-  themeFrankfurtDark,
-  themeFrankfurtLight,
-  themeKarlMarxStadtDark,
-  themeKarlMarxStadtLight,
-  useDarkModeEditor,
-} from "./theme";
-import { codeSyntaxHighlighter, markdownSyntaxHighlighter } from "./theme/syntax";
 import { filePreview, footnoteHover, urlHover } from "./tooltips";
 import { citationTooltips } from "./tooltips/citations";
 import { referenceTooltips } from "./tooltips/references";
@@ -336,13 +334,13 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     EditorView.domEventHandlers(mdPasteDropHandlers),
     // We need our custom keymaps first
     // The parser generates the AST for the document ...
-    markdownParser({
-      zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat },
+    markdownEditor({
+      language: { zknLinkParserConfig: { format: options.initialConfig.zknLinkFormat } },
+      renderers: renderers(options.initialConfig),
+      theme: [],
     }),
     texKnowledgeExtensions("markdown"),
     // ... which can then be styled with a highlighter
-    markdownSyntaxHighlighter(),
-    renderers(options.initialConfig),
     showLineNumbers(options.initialConfig.showMarkdownLineNumbers),
     diagnosticExtensions,
     headingGutter,
@@ -377,10 +375,8 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     filePreview,
     citationTooltips,
     referenceTooltips,
-    backgroundLayers, // Add a background behind inline code and code blocks
     footnoteBackground, // Tint the lines that belong to a footnote body
     defaultContextMenu, // A default context menu
-    softwrapVisualIndent, // Always indent visually
     tagClasses(), // Apply a custom class to each tag so that users can style them (#4589)
     EditorView.domEventHandlers(options.domEventsListeners),
   ];

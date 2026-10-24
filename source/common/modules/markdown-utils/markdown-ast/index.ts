@@ -32,15 +32,15 @@
  * END HEADER
  */
 
-import { mathDisplayForOpen } from "@common/util/math-delimiters";
 import { rawBlockLineRangesFromNode, rawBlockSourceFromNode } from "@common/util/raw-latex-block";
+import { type Citation, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import { mathDisplayForOpen } from "@dzack/pandoc-editor/util/math-delimiters";
 import { type SyntaxNode } from "@lezer/common";
 import { scanPandocAttributeList } from "@lezer/markdown";
 import {
   type ParsedPandocAttributes,
   parsePandocAttributes,
 } from "source/common/pandoc-util/parse-pandoc-attributes";
-import { type Citation, nodeToCiteItem } from "../../markdown-editor/parser/citation-parser";
 import { genericTextNode } from "./generic-text-node";
 import { getWhitespaceBeforeNode } from "./get-whitespace-before-node";
 import { parseChildren } from "./parse-children";

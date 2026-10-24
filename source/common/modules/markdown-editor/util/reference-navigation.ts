@@ -37,9 +37,9 @@ import {
   referenceFamilyOf,
   type SourceRange,
 } from "@dts/common/references";
+import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
-import { NODES } from "../parser/citation-parser";
 import { editorMetadataFacet } from "../plugins/editor-metadata";
 import { workspaceReferencesField } from "../plugins/workspace-references-field";
 import { configField } from "./configuration";

@@ -2,7 +2,7 @@
 // (FSAL-owned saved snapshots) and the renderer (live CodeMirror
 // replacements). This is the typed model locked by issue #1.
 
-import type { Citation } from "../../common/modules/markdown-editor/parser/citation-parser";
+import type { Citation } from "@dzack/pandoc-editor/parser/citation-parser";
 import {
   PANDOC_CROSS_REFERENCE_EXAMPLES,
   PANDOC_CROSSREF_PREFIXES,

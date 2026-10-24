@@ -16,16 +16,16 @@
  */
 
 import { EditorState } from "@codemirror/state";
-import { strict as assert } from "assert";
-import CSL from "citeproc";
-import { readFileSync } from "fs";
-import path from "path";
 import {
   type CiteItem,
   extractCitationNodes,
   nodeToCiteItem,
-} from "source/common/modules/markdown-editor/parser/citation-parser";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+} from "@dzack/pandoc-editor/parser/citation-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { strict as assert } from "assert";
+import CSL from "citeproc";
+import { readFileSync } from "fs";
+import path from "path";
 
 const STYLE = readFileSync(
   path.join(process.cwd(), "static/csl-styles/chicago-author-date.csl"),

@@ -13,9 +13,9 @@
  */
 
 import { strict as assert } from "node:assert";
+import { mathFromCodeNode } from "@dzack/pandoc-editor/util/math-delimiters";
 import { markdownToAST } from "source/common/modules/markdown-utils";
 import type { ASTNode, Document, Table } from "source/common/modules/markdown-utils/markdown-ast";
-import { mathFromCodeNode } from "source/common/util/math-delimiters";
 import {
   PANDOC_INLINE_COMMAND_STRATEGIES,
   type PandocInlineCommandStrategy,

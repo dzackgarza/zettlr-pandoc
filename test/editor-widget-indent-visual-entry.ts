@@ -12,18 +12,14 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import { softwrapVisualIndent } from "source/common/modules/markdown-editor/plugins/visual-indent";
-import { renderEmphasis } from "source/common/modules/markdown-editor/renderers/render-emphasis";
-import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { softwrapVisualIndent } from "@dzack/pandoc-editor/plugins/visual-indent";
+import { renderEmphasis } from "@dzack/pandoc-editor/renderers/render-emphasis";
+import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { renderMermaid } from "source/common/modules/markdown-editor/renderers/render-mermaid";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
 import { renderTables } from "source/common/modules/markdown-editor/table-editor";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 

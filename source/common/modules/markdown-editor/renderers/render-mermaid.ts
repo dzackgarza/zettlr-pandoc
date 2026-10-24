@@ -17,11 +17,11 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
 import mermaid, { type MermaidConfig } from "mermaid";
 import { configField } from "../util/configuration";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 // Define some default options
 const DEFAULT_MERMAID_OPTIONS: MermaidConfig = {

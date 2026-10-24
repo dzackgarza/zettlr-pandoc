@@ -22,8 +22,8 @@ import "source/common/modules/markdown-editor/renderers";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView, type WidgetType } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { renderTables } from "source/common/modules/markdown-editor/table-editor";
 import { tableDecorations } from "source/common/modules/markdown-editor/table-editor/widget";
 import {

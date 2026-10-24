@@ -43,6 +43,7 @@ import { type Completion, CompletionContext } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { readFileSync } from "fs";
 import path from "path";
 import { type AutocompletePlugin } from "source/common/modules/markdown-editor/autocomplete";
@@ -54,7 +55,6 @@ import {
   citations,
   citekeyUpdate,
 } from "source/common/modules/markdown-editor/autocomplete/citations";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import { type CompletionInsertionAffordance } from "source/common/pandoc-util/project-reference-status";

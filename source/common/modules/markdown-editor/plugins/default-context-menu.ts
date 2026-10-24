@@ -19,10 +19,10 @@ import { EditorView } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { type AnyMenuItem } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import { citationMenu } from "../context-menu/citation-menu";
 import { defaultMenu } from "../context-menu/default-menu";
 import { linkImageMenu } from "../context-menu/link-image-menu";
-import { NODES } from "../parser/citation-parser";
 import { nodeAtPos } from "../util/node-in-selection";
 import { resolveAnnotateSelectionMenuItem } from "./annotate-selection";
 import {

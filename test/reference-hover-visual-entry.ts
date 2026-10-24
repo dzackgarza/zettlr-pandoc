@@ -20,17 +20,13 @@
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { EditorView, showTooltip, type Tooltip } from "@codemirror/view";
 import type { ProjectRootSpec } from "@dts/common/references";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import {
   type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
 } from "source/common/modules/markdown-editor/plugins/workspace-references-field";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import {
   referenceTooltip,
   referenceTooltips,

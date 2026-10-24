@@ -16,7 +16,7 @@
  */
 
 import { foldedRanges, syntaxTree } from "@codemirror/language";
-import { type Range, RangeSet } from "@codemirror/state";
+import { type Range, RangeSet, StateEffect } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -46,6 +46,7 @@ const visualIndentExemptTheme = EditorView.baseTheme({
 // base styles from somewhere in the library. We need to account for that
 // not to induce any problems when adjusting the indentation
 const BASE_PADDING = 6;
+const indentationMeasured = StateEffect.define<null>();
 
 // These regexes are used to determine indentation level
 // Leading whitespace characters
@@ -69,7 +70,11 @@ const tabReplaceDeco = new MatchDecorator({
     Decoration.replace({ widget: new SpaceWidget(view.state.tabSize) }),
 });
 
-function render(view: EditorView, measurements?: Map<string, number>): RangeSet<Decoration> {
+function render(
+  view: EditorView,
+  measurements: Map<string, number>,
+  measured: () => void,
+): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
 
   for (const { from, to } of view.visibleRanges) {
@@ -128,12 +133,18 @@ function render(view: EditorView, measurements?: Map<string, number>): RangeSet<
           }
           // Note that this continuously updates our measurements after any layout
           // changes
-          measurements?.set(measurementKey, coords.left - base);
+          const indent = coords.left - base;
+          if (measurements.get(measurementKey) === indent) return false;
+          measurements.set(measurementKey, indent);
+          return true;
+        },
+        write(changed) {
+          if (changed) measured();
         },
         key: measurementKey,
       });
 
-      const indent = measurements?.get(measurementKey);
+      const indent = measurements.get(measurementKey);
       if (indent !== undefined) {
         const deco = Decoration.line({
           attributes: {
@@ -149,18 +160,36 @@ function render(view: EditorView, measurements?: Map<string, number>): RangeSet<
 }
 
 const softwrapVisualIndentPlugin = ViewPlugin.define(
-  (view) => ({
-    decorations: render(view),
-    tabDecorations: tabReplaceDeco.createDeco(view),
-    // This is an additional property, required to ensure that each editor
-    // instance has its own map, preventing any potential interference.
-    measurements: new Map<string, number>(),
+  (view) => {
+    const measurements = new Map<string, number>();
+    let active = true;
+    let queued = false;
+    // requestMeasure writes run inside CodeMirror's update. Publish the measured
+    // line layout once that update ends: https://codemirror.net/docs/ref/#view.EditorView.requestMeasure
+    const measured = () => {
+      if (queued) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (active) view.dispatch({ effects: indentationMeasured.of(null) });
+      });
+    };
+    return {
+      decorations: render(view, measurements, measured),
+      tabDecorations: tabReplaceDeco.createDeco(view),
+      // This is an additional property, required to ensure that each editor
+      // instance has its own map, preventing any potential interference.
+      measurements,
 
-    update(u: ViewUpdate) {
-      this.decorations = render(u.view, this.measurements);
-      this.tabDecorations = tabReplaceDeco.updateDeco(u, this.tabDecorations);
-    },
-  }),
+      update(u: ViewUpdate) {
+        this.decorations = render(u.view, this.measurements, measured);
+        this.tabDecorations = tabReplaceDeco.updateDeco(u, this.tabDecorations);
+      },
+      destroy() {
+        active = false;
+      },
+    };
+  },
   {
     decorations(value) {
       return RangeSet.join([value.decorations, value.tabDecorations]);

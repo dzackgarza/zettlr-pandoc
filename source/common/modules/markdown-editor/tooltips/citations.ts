@@ -18,12 +18,12 @@ import { syntaxTree } from "@codemirror/language";
 import { type EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
 import type { SyntaxNode } from "@lezer/common";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { trans } from "source/common/i18n-renderer";
 import type { CitationDatabase } from "source/types/common/citeproc";
 import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
-import { NODES, nodeToCiteItem } from "../parser/citation-parser";
 import { configField } from "../util/configuration";
 
 const ipcRenderer = window.ipc;

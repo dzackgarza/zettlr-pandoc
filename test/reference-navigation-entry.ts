@@ -29,7 +29,8 @@ import { codeFolding, foldEffect, foldedRanges } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import type { DocumentLocation, SourceRange } from "@dts/common/references";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { clickListeners } from "source/common/modules/markdown-editor/plugins/click-listeners";
 import {
   type EditorWorkspaceReferences,
@@ -39,7 +40,6 @@ import {
 import { renderCitations } from "source/common/modules/markdown-editor/renderers/render-citations";
 import { renderReferenceChips } from "source/common/modules/markdown-editor/renderers/render-reference-chips";
 import { renderReferenceDefinitions } from "source/common/modules/markdown-editor/renderers/render-reference-definitions";
-import { defaultLight, editorTheme } from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import {
   captureDocumentLocation,

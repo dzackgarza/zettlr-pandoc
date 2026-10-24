@@ -21,16 +21,16 @@ import "./provision-renderer-window-seams";
 import { ensureSyntaxTree, forceParsing } from "@codemirror/language";
 import { EditorSelection, EditorState, type TransactionSpec } from "@codemirror/state";
 import { type Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
 import { strict as assert } from "assert";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   type EditorWorkspaceReferences,
   workspaceReferencesField,
   workspaceReferencesUpdate,
 } from "source/common/modules/markdown-editor/plugins/workspace-references-field";
 import { renderers } from "source/common/modules/markdown-editor/renderers";
-import { renderBlockWidgets } from "source/common/modules/markdown-editor/renderers/base-renderer";
 import {
   configField,
   configUpdateEffect,

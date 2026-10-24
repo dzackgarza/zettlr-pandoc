@@ -21,16 +21,16 @@ import { setSanitizedHTML } from "@common/util/sanitize-html";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { referenceFamilyOf } from "@dts/common/references";
+import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
 import { citationMenu } from "../context-menu/citation-menu";
-import { NODES, nodeToCiteItem } from "../parser/citation-parser";
 import {
   type CitationReading,
   referencePresentationField,
 } from "../plugins/workspace-references-field";
 import { configField } from "../util/configuration";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 const CITATION_RENDER_CACHE_LIMIT = 256;
 const citationRenderCache = new Map<string, Promise<string | undefined>>();

@@ -1,6 +1,6 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
-import { stripMathDelimiters } from "@common/util/math-delimiters";
+import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
 import type { SyntaxNode } from "@lezer/common";
 
 function nodeIsMath(state: EditorState, node: SyntaxNode | null): boolean {

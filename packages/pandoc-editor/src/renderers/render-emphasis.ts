@@ -23,7 +23,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
-import { configField } from "../util/configuration";
+import { previewConfig } from "../util/configuration";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -74,7 +74,7 @@ export class SpaceWidget extends WidgetType {
 function hideFormattingCharacters(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
   const hiddenDeco = Decoration.replace({});
-  const includeAdjacent = view.state.field(configField).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = view.state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     // Do not hide any characters if a selection is inside here

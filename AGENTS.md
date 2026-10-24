@@ -126,6 +126,14 @@ Desktop entry → wrapper → splash → boot script:
   fail-loud behavior on build or launch failure.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
 
+## Shared Markdown editor
+
+`packages/pandoc-editor` owns the reusable CodeMirror presentation and Pandoc parser.
+Both Zettlr and math-flashcards consume its `markdownEditor` factory. The package
+imports no application modules. Hosts supply math conversion, preview configuration,
+and ranges that must remain source text. Zettlr adds document-specific renderers
+through its renderer collection. See `packages/pandoc-editor/README.md`.
+
 ## System-specific integrations
 
 ### 1. Central mathematical macro system
@@ -155,12 +163,12 @@ Desktop entry → wrapper → splash → boot script:
 Upstream Zettlr only recognizes `$`/`$$`. This fork adds the LaTeX delimiters, and
 they must be threaded through **four** layers:
 
-- **Parser:** `source/common/modules/markdown-editor/parser/math-parser.ts` —
+- **Parser:** `packages/pandoc-editor/src/parser/math-parser.ts` —
   `blockMathParser` (opens on `\[`, closes on `\]` incl. a trailing `.\]`),
   `inlineBracketMathParser` (handles `\( \)` **and** `\[ \]` mid-paragraph, spanning
   newlines; runs `before: 'Escape'` or the backslash opener is eaten as an escape).
-- **Registered:** `source/common/modules/markdown-editor/parser/markdown-parser.ts`.
-- **Shared pure helpers:** `source/common/util/math-delimiters.ts`
+- **Registered:** `packages/pandoc-editor/src/parser/markdown-parser.ts`.
+- **Shared pure helpers:** `packages/pandoc-editor/src/util/math-delimiters.ts`
   (`MATH_DELIMITERS`, `mathDisplayForOpen`, `stripMathDelimiters`). **This module must
   import nothing (no CodeMirror/lezer)** — `markdown-to-html` runs in the main
   process, and dragging the editor graph into that Node bundle breaks the webpack
@@ -168,7 +176,7 @@ they must be threaded through **four** layers:
 - **AST:** `source/common/modules/markdown-utils/markdown-ast/index.ts` (treats `\[`
   and `\(` code marks as math).
 - **HTML (`md2html`):** `source/common/modules/markdown-utils/markdown-to-html.ts`.
-- **Live editor widget:** `source/common/modules/markdown-editor/renderers/render-math.ts`.
+- **Live editor widget:** `packages/pandoc-editor/src/renderers/render-math.ts`.
 
 ### 3. PDF export → the `~/.pandoc` `compile-pandoc` recipe
 
@@ -555,7 +563,7 @@ of an isolated instance are in the first comment of #132.
   package` or `just verify-build` so the verifier checks the current fingerprint.
 - `userData/defaults` is copied once and never pruned; a **stale shipped profile** can
   shadow a custom one in the export menu.
-- `source/common/util/math-delimiters.ts` must stay CodeMirror-free (main-process
+- `packages/pandoc-editor/src/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
 - The global biome configuration formats every file, the files shared with

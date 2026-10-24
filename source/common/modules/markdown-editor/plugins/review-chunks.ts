@@ -33,6 +33,7 @@ import {
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
 import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
 import type { ReviewSuggestionView } from "@dts/common/review-diff";
+import { previewSuppression } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 
 export interface ReviewChunksConfig {
   suggestions: ReviewSuggestionView[];
@@ -82,7 +83,16 @@ const reviewChunksField = StateField.define<ReviewChunksFieldValue>({
     }
     return value;
   },
-  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+  provide: (field) => [
+    EditorView.decorations.from(field, (value) => value.decorations),
+    previewSuppression.from(field, (value) =>
+      value.suggestions.flatMap((suggestion) => {
+        const spans = suggestion.anchors.filter((anchor) => anchor.to > anchor.from);
+        const seam = suggestion.anchors[0]?.from ?? suggestion.seam;
+        return spans.length === 0 ? [{ from: seam, to: seam }] : spans;
+      }),
+    ),
+  ],
 });
 
 /**

@@ -24,19 +24,15 @@ import {
 } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import {
   autocomplete,
   citekeyUpdate,
   referencesUpdate,
 } from "source/common/modules/markdown-editor/autocomplete";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
-import "source/common/modules/markdown-editor/editor.css";
+import "@dzack/pandoc-editor/editor.css";
 import type { ProjectRootSpec, ReferenceCompletionEntry } from "@dts/common/references";
 import loadIcons from "source/common/modules/window-register/load-icons";
 import { extractReferences } from "source/common/pandoc-util/extract-references";

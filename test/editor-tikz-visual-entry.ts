@@ -9,14 +9,10 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
+import { markdownSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 import { renderTikzFigures } from "source/common/modules/markdown-editor/renderers/render-tikz";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "source/common/modules/markdown-editor/theme/editor";
-import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 import { activeTikzBlock } from "source/common/modules/markdown-editor/tikz-block";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { zettlrTikzWorkbenchHost } from "source/win-main/tikz-workbench-host";

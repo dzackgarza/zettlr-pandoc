@@ -7,8 +7,8 @@ import "./provision-renderer-window-seams";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 

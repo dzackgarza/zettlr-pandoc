@@ -14,13 +14,14 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { strict as assert } from "assert";
 import {
   type CiteItem,
   extractCitationNodes,
   nodeToCiteItem,
-} from "source/common/modules/markdown-editor/parser/citation-parser";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
+} from "@dzack/pandoc-editor/parser/citation-parser";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { markdownSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
+import { strict as assert } from "assert";
 import {
   __resetCitationRenderMemoForTests,
   citationDatabaseChanged,
@@ -28,7 +29,6 @@ import {
   syncCitationData,
 } from "source/common/modules/markdown-editor/renderers/render-citations";
 import { renderPandoc } from "source/common/modules/markdown-editor/renderers/render-pandoc-div-span";
-import { markdownSyntaxHighlighter } from "source/common/modules/markdown-editor/theme/syntax";
 import {
   configField,
   getDefaultConfig,

@@ -14,6 +14,7 @@ import {
 import { indentUnit } from "@codemirror/language";
 import { EditorState, Transaction, type TransactionSpec } from "@codemirror/state";
 import { EditorView as CodeMirrorView, type EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import {
   autocomplete,
   autocompleteSourceFor,
@@ -28,7 +29,6 @@ import {
   snippetsUpdateField,
 } from "../source/common/modules/markdown-editor/autocomplete/snippets";
 import { mainEditorKeybindings } from "../source/common/modules/markdown-editor/keymaps/default";
-import markdownParser from "../source/common/modules/markdown-editor/parser/markdown-parser";
 import {
   EMPTY_QUICKTEX,
   expandQuickTexOnSpace,

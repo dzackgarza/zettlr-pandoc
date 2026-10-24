@@ -15,7 +15,7 @@
 
 import markdownParser, {
   type MarkdownParserConfig,
-} from "@common/modules/markdown-editor/parser/markdown-parser";
+} from "@dzack/pandoc-editor/parser/markdown-parser";
 import { type Tree } from "@lezer/common";
 import { LRUCache } from "lru-cache";
 import {

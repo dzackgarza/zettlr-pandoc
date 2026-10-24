@@ -62,15 +62,15 @@ import {
   referenceFamilyDisplayName,
   referenceFamilyOf,
 } from "@dts/common/references";
+import { NODES, nodeToCiteItem } from "@dzack/pandoc-editor/parser/citation-parser";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
-import { NODES, nodeToCiteItem } from "../parser/citation-parser";
 import { referencePresentationField } from "../plugins/workspace-references-field";
 import {
   followReferenceNavigationIntent,
   resolveReferenceNavigationIntent,
 } from "../util/reference-navigation";
-import { renderBlockWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 /**
  * One chip of a cluster widget: the authored key, its family, and the

@@ -36,13 +36,9 @@ import {
   showResolvedAnnotationsEffect,
   textAnnotationsExtension,
 } from "@common/modules/markdown-editor/plugins/text-annotations";
-import {
-  defaultDark,
-  defaultLight,
-  editorTheme,
-} from "@common/modules/markdown-editor/theme/editor";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import type { SourceRange } from "@dts/common/references";
+import { defaultDark, defaultLight, editorTheme } from "@dzack/pandoc-editor/theme/editor";
 import { createPinia } from "pinia";
 import loadIcons from "source/common/modules/window-register/load-icons";
 import { useDocumentCollaborationStore, useDocumentTreeStore } from "source/pinia";

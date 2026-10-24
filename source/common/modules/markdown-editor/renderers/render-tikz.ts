@@ -30,6 +30,7 @@ import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { sanitizedFragment } from "@common/util/sanitize-html";
+import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
 import { type SyntaxNodeRef } from "@lezer/common";
 import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
 import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
@@ -37,7 +38,6 @@ import { tikzBlockForNode } from "../tikz-block";
 import { tikzWidthEm } from "../tikz-display-size";
 import { requestTikzRender } from "../tikz-render-client";
 import { configField } from "../util/configuration";
-import { renderBlockWidgets } from "./base-renderer";
 
 export const OPEN_TIKZ_VISUAL_EDITOR_EVENT = "open-tikz-visual-editor";
 

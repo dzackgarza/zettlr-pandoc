@@ -2,14 +2,11 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { headingGutter, renderHeadings } from "@dzack/pandoc-editor/renderers/render-headings";
+import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
 import { strict as assert } from "assert";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import markdownParser from "source/common/modules/markdown-editor/parser/markdown-parser";
-import {
-  headingGutter,
-  renderHeadings,
-} from "source/common/modules/markdown-editor/renderers/render-headings";
-import { renderMath } from "source/common/modules/markdown-editor/renderers/render-math";
 import { configField } from "source/common/modules/markdown-editor/util/configuration";
 import { initializeMathJax } from "source/common/util/mathtex-to-html";
 

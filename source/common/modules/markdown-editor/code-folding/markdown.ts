@@ -13,8 +13,8 @@
  */
 
 import { foldService, syntaxTree } from "@codemirror/language";
+import { markdownHeadingLevel } from "@dzack/pandoc-editor/util/heading-level";
 import { type Tree } from "@lezer/common";
-import { markdownHeadingLevel } from "../util/heading-level";
 
 interface TopLevelHeading {
   from: number;

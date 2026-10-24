@@ -19,6 +19,8 @@ import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import makeValidUri from "@common/util/make-valid-uri";
 import { pathDirname } from "@common/util/renderer-path-polyfill";
+import { renderInlineWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNode, type SyntaxNodeRef } from "@lezer/common";
 import {
   type ParsedPandocAttributes,
@@ -26,8 +28,6 @@ import {
 } from "source/common/pandoc-util/parse-pandoc-attributes";
 import { linkImageMenu } from "../context-menu/link-image-menu";
 import { configField } from "../util/configuration";
-import { renderInlineWidgets } from "./base-renderer";
-import clickAndSelect from "./click-and-select";
 
 const ipcRenderer = window.ipc;
 

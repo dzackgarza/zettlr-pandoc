@@ -34,20 +34,20 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import { renderCode } from "@dzack/pandoc-editor/renderers/render-code";
+import { renderEmphasis } from "@dzack/pandoc-editor/renderers/render-emphasis";
+import { renderLinks } from "@dzack/pandoc-editor/renderers/render-links";
+import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
+import { darkMode, useDarkModeEditor } from "@dzack/pandoc-editor/theme/dark-mode";
+import { markdownSyntaxHighlighter } from "@dzack/pandoc-editor/theme/syntax";
 import { getMainEditorThemes } from "../editor-extension-sets";
 import { tableEditorKeymap } from "../keymaps/table-editor";
-import markdownParser from "../parser/markdown-parser";
 import { clickListeners } from "../plugins/click-listeners";
 import { renderCitations } from "../renderers/render-citations";
-import { renderCode } from "../renderers/render-code";
-import { renderEmphasis } from "../renderers/render-emphasis";
-import { renderLinks } from "../renderers/render-links";
-import { renderMath } from "../renderers/render-math";
 import { renderPandocAttributes } from "../renderers/render-pandoc-attributes";
 import { renderReferenceChips } from "../renderers/render-reference-chips";
 import { renderReferenceDefinitions } from "../renderers/render-reference-definitions";
-import { darkMode, useDarkModeEditor } from "../theme/dark-mode";
-import { markdownSyntaxHighlighter } from "../theme/syntax";
 import { configField, type EditorConfiguration } from "../util/configuration";
 import { dispatchFromSubview, maybeDispatchToSubview, syncAnnotation } from "./util/data-exchange";
 
