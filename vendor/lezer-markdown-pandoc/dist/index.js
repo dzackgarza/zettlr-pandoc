@@ -3071,18 +3071,49 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 // Pandoc keys admit single internal punctuation between Unicode alphanumerics.
 // https://pandoc.org/MANUAL.html#citations
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u;
-/**
- * Port the negative lookahead at the end of Pandoc `normalCite`:
- *
- *   notFollowedBy (try (void source) <|>
- *                  (Ext_bracketed_spans *> void attributes) <|>
- *                  void reference)
- *
- * A bracketed citation immediately followed by syntax that would make the
- * bracket group a link/reference/span is NOT a normal citation. Pandoc then
- * falls back to parsing the interior `@key` textually. This distinction is
- * observable in e.g. `[@a][label](url)`.
- */
+const bracketFollowers = new WeakMap();
+const parenthesizedFollowers = new WeakMap();
+function balancedFollower(ctx, pos, open, close, quoted, cache) {
+    let matches = cache.get(ctx);
+    if (matches === undefined) {
+        matches = new Map();
+        cache.set(ctx, matches);
+    }
+    const known = matches.get(pos);
+    if (known !== undefined)
+        return known;
+    const openers = [];
+    let quote = 0;
+    for (let i = pos; i < ctx.end; i++) {
+        const ch = ctx.char(i);
+        if (ch === 92 /* \\ */) {
+            i++;
+            continue;
+        }
+        if (quoted) {
+            if (quote !== 0) {
+                if (ch === quote)
+                    quote = 0;
+                continue;
+            }
+            if (ch === 34 /* " */ || ch === 39 /* ' */) {
+                quote = ch;
+                continue;
+            }
+        }
+        if (ch === open)
+            openers.push(i);
+        if (ch === close && openers.length > 0) {
+            const opener = openers.pop();
+            matches.set(opener, true);
+            if (opener === pos)
+                return true;
+        }
+    }
+    for (const opener of openers)
+        matches.set(opener, false);
+    return false;
+}
 function conflictsWithNormalCiteClose(ctx, pos) {
     const next = ctx.char(pos);
     if (next === CHAR.CURLY_OPEN) {
@@ -3093,46 +3124,13 @@ function conflictsWithNormalCiteClose(ctx, pos) {
             return false;
         // Pandoc `reference` uses balanced brackets. We only need existence here,
         // not its parsed inline payload.
-        let depth = 0;
-        for (let i = pos; i < ctx.end; i++) {
-            const ch = ctx.char(i);
-            if (ch === 92 /* \\ */) {
-                i++;
-                continue;
-            }
-            if (ch === CHAR.BRACKET_OPEN)
-                depth++;
-            if (ch === CHAR.BRACKET_CLOSE && --depth === 0)
-                return true;
-        }
-        return false;
+        return balancedFollower(ctx, pos, CHAR.BRACKET_OPEN, CHAR.BRACKET_CLOSE, false, bracketFollowers);
     }
     if (next === 40 /* ( */) {
         // `source` is parenthesized and permits nested parenthesized URL chunks.
         // A balanced close is sufficient for the normal-citation exclusion; the
         // actual Link parser remains authoritative for the detailed destination.
-        let depth = 0;
-        let quote = 0;
-        for (let i = pos; i < ctx.end; i++) {
-            const ch = ctx.char(i);
-            if (ch === 92 /* \\ */) {
-                i++;
-                continue;
-            }
-            if (quote !== 0) {
-                if (ch === quote)
-                    quote = 0;
-                continue;
-            }
-            if (ch === 34 /* " */ || ch === 39 /* ' */) {
-                quote = ch;
-                continue;
-            }
-            if (ch === 40)
-                depth++;
-            if (ch === 41 && --depth === 0)
-                return true;
-        }
+        return balancedFollower(ctx, pos, 40, 41, true, parenthesizedFollowers);
     }
     return false;
 }
