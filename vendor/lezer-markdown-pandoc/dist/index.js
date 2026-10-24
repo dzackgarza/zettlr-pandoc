@@ -1370,15 +1370,19 @@ class MarkdownParser extends Parser {
         return cx.resolveMarkers(0);
     }
     /**
-    Whether parsing the source beginning at `offset` produces one of the
-    configured semantic nodes which Pandoc gives precedence over a reference
-    link label at this position.
+    Whether the next inline token is a semantic node that Pandoc gives
+    precedence over a reference link label. Only the token at `pos` matters;
+    parsing the rest of the paragraph here repeats work for every label.
     */
-    referenceLabelBlockedAt(text, offset) {
+    referenceLabelBlockedAt(cx, pos) {
         if (!this.referenceLabelBlockers.length)
             return false;
-        let elements = this.parseInline(text, offset);
-        let first = elements.find(element => element.from == offset);
+        let probe = new InlineContext(this, cx.text, cx.offset);
+        let next = probe.char(pos);
+        for (let token of this.inlineParsers)
+            if (token && token(probe, next, pos) >= 0)
+                break;
+        let first = probe.resolveMarkers(0).find(element => element.from == pos);
         return first != null && this.referenceLabelBlockers.includes(this.nodeSet.types[first.type].name);
     }
 }
@@ -1771,19 +1775,16 @@ function finishLink(cx, content, type, start, startPos) {
         // consumes a following reference label. The fork exposes that precedence
         // generically through `referenceLabelBlockers` so the link parser reuses
         // the configured citation grammar instead of restating it here.
-        let blocked = cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos);
-        if (!blocked) {
-            let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
-            if (label) {
-                // Pandoc `referenceLink` reparses the raw reference label with the
-                // inline grammar for its fallback representation (`parsedRaw <-
-                // parseFromString' inlines raw'`). Preserve those semantic children in
-                // the Lezer LinkLabel node instead of treating it as opaque source.
-                let innerFrom = label.from + 1, innerTo = label.to - 1;
-                let parsedLabel = cx.elt("LinkLabel", label.from, label.to, cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom));
-                content.push(parsedLabel);
-                endPos = parsedLabel.to;
-            }
+        let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
+        if (label && !cx.parser.referenceLabelBlockedAt(cx, startPos)) {
+            // Pandoc `referenceLink` reparses the raw reference label with the
+            // inline grammar for its fallback representation (`parsedRaw <-
+            // parseFromString' inlines raw'`). Preserve those semantic children in
+            // the Lezer LinkLabel node instead of treating it as opaque source.
+            let innerFrom = label.from + 1, innerTo = label.to - 1;
+            let parsedLabel = cx.elt("LinkLabel", label.from, label.to, cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom));
+            content.push(parsedLabel);
+            endPos = parsedLabel.to;
         }
     }
     return elt(type, start, endPos, content);
@@ -3070,57 +3071,26 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 // Pandoc keys admit single internal punctuation between Unicode alphanumerics.
 // https://pandoc.org/MANUAL.html#citations
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u;
-/**
- * Port the negative lookahead at the end of Pandoc `normalCite`:
- *
- *   notFollowedBy (try (void source) <|>
- *                  (Ext_bracketed_spans *> void attributes) <|>
- *                  void reference)
- *
- * A bracketed citation immediately followed by syntax that would make the
- * bracket group a link/reference/span is NOT a normal citation. Pandoc then
- * falls back to parsing the interior `@key` textually. This distinction is
- * observable in e.g. `[@a][label](url)`.
- */
-function conflictsWithNormalCiteClose(ctx, pos) {
-    const next = ctx.char(pos);
-    if (next === CHAR.CURLY_OPEN) {
-        return scanPandocAttributeList(ctx.text, pos - ctx.offset).status === 'match';
+const bracketFollowers = new WeakMap();
+const parenthesizedFollowers = new WeakMap();
+function balancedFollower(ctx, pos, open, close, quoted, cache) {
+    let matches = cache.get(ctx);
+    if (matches === undefined) {
+        matches = new Map();
+        cache.set(ctx, matches);
     }
-    if (next === CHAR.BRACKET_OPEN) {
-        // Pandoc `reference` uses balanced brackets. We only need existence here,
-        // not its parsed inline payload.
-        let depth = 0;
-        for (let i = pos; i < ctx.end; i++) {
-            const ch = ctx.char(i);
-            if (ch === 92 /* \\ */) {
-                i++;
-                continue;
-            }
-            if (ch === CHAR.BRACKET_OPEN)
-                depth++;
-            if (ch === CHAR.BRACKET_CLOSE && --depth === 0)
-                return true;
+    const known = matches.get(pos);
+    if (known !== undefined)
+        return known;
+    const openers = [];
+    let quote = 0;
+    for (let i = pos; i < ctx.end; i++) {
+        const ch = ctx.char(i);
+        if (ch === 92 /* \\ */) {
+            i++;
+            continue;
         }
-        return false;
-    }
-    if (next === CHAR.BRACE_OPEN) {
-        // This spelling is already handled above as Pandoc attributes.
-        return false;
-    }
-    if (next === 40 /* ( */) {
-        // `source` is parenthesized and permits nested parenthesized URL chunks.
-        // A balanced close is sufficient for the normal-citation exclusion; the
-        // actual Link parser remains authoritative for the detailed destination.
-        let depth = 0;
-        let angle = false;
-        let quote = 0;
-        for (let i = pos; i < ctx.end; i++) {
-            const ch = ctx.char(i);
-            if (ch === 92 /* \\ */) {
-                i++;
-                continue;
-            }
+        if (quoted) {
             if (quote !== 0) {
                 if (ch === quote)
                     quote = 0;
@@ -3130,21 +3100,37 @@ function conflictsWithNormalCiteClose(ctx, pos) {
                 quote = ch;
                 continue;
             }
-            if (ch === 60 /* < */) {
-                angle = true;
-                continue;
-            }
-            if (ch === 62 /* > */ && angle) {
-                angle = false;
-                continue;
-            }
-            if (angle)
-                continue;
-            if (ch === 40)
-                depth++;
-            if (ch === 41 && --depth === 0)
+        }
+        if (ch === open)
+            openers.push(i);
+        if (ch === close && openers.length > 0) {
+            const opener = openers.pop();
+            matches.set(opener, true);
+            if (opener === pos)
                 return true;
         }
+    }
+    for (const opener of openers)
+        matches.set(opener, false);
+    return false;
+}
+function conflictsWithNormalCiteClose(ctx, pos) {
+    const next = ctx.char(pos);
+    if (next === CHAR.CURLY_OPEN) {
+        return scanPandocAttributeList(ctx.text, pos - ctx.offset).status === 'match';
+    }
+    if (next === CHAR.BRACKET_OPEN) {
+        if (ctx.char(pos + 1) === 94 /* ^ */)
+            return false;
+        // Pandoc `reference` uses balanced brackets. We only need existence here,
+        // not its parsed inline payload.
+        return balancedFollower(ctx, pos, CHAR.BRACKET_OPEN, CHAR.BRACKET_CLOSE, false, bracketFollowers);
+    }
+    if (next === 40 /* ( */) {
+        // `source` is parenthesized and permits nested parenthesized URL chunks.
+        // A balanced close is sufficient for the normal-citation exclusion; the
+        // actual Link parser remains authoritative for the detailed destination.
+        return balancedFollower(ctx, pos, 40, 41, true, parenthesizedFollowers);
     }
     return false;
 }
@@ -3531,68 +3517,7 @@ const citationParser = {
             //
             // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
             // Pandoc commit.
-            const localAfter = i - ctx.offset;
-            const following = ctx.text.slice(localAfter);
-            const followedBySource = (() => {
-                if (!following.startsWith('('))
-                    return false;
-                let depth = 0;
-                let quote;
-                let escaped = false;
-                for (let cursor = 0; cursor < following.length; cursor++) {
-                    const char = following[cursor];
-                    if (escaped) {
-                        escaped = false;
-                        continue;
-                    }
-                    if (char === '\\') {
-                        escaped = true;
-                        continue;
-                    }
-                    if (quote !== undefined) {
-                        if (char === quote)
-                            quote = undefined;
-                        continue;
-                    }
-                    if (char === '"' || char === "'") {
-                        quote = char;
-                        continue;
-                    }
-                    if (char === '(')
-                        depth++;
-                    if (char === ')') {
-                        depth--;
-                        if (depth === 0)
-                            return true;
-                    }
-                }
-                return false;
-            })();
-            const followedByAttributes = following.startsWith('{') &&
-                scanPandocAttributeList(ctx.text, localAfter).status === 'match';
-            const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
-                let depth = 0;
-                let escaped = false;
-                for (const char of following) {
-                    if (escaped) {
-                        escaped = false;
-                        continue;
-                    }
-                    if (char === '\\') {
-                        escaped = true;
-                        continue;
-                    }
-                    if (char === '[')
-                        depth++;
-                    if (char === ']') {
-                        depth--;
-                        if (depth === 0)
-                            return true;
-                    }
-                }
-                return false;
-            })();
-            if (followedBySource || followedByAttributes || followedByReference) {
+            if (conflictsWithNormalCiteClose(ctx, i)) {
                 return -1;
             }
         }

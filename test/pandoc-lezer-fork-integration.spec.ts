@@ -22,4 +22,30 @@ describe("vendored Pandoc Lezer fork integration", function () {
     assert.ok(commonmarkLanguage.parser instanceof MarkdownParser);
     assert.doesNotThrow(() => (commonmarkLanguage.parser as MarkdownParser).configure(Pandoc()));
   });
+
+  it("parses a long paragraph of adjacent bracketed labels promptly", function () {
+    for (const suffix of [
+      "[label]",
+      "[@key]",
+      "[@key][reference]",
+      "[@key](target)",
+      "[@key]{.class}",
+    ]) {
+      const source = (`[name]${suffix} ` + "text ".repeat(16)).repeat(15);
+      const start = performance.now();
+      const tree = createPandocParser().parse(source);
+
+      assert.equal(tree.length, source.length);
+      assert.ok(performance.now() - start < 2000, "parsing blocked the main process");
+    }
+  });
+
+  it("parses repeated incomplete citation followers promptly", function () {
+    const source = ("[@key]( " + "text ".repeat(16)).repeat(2000);
+    const start = performance.now();
+    const tree = createPandocParser().parse(source);
+
+    assert.equal(tree.length, source.length);
+    assert.ok(performance.now() - start < 4000, "parsing blocked the main process");
+  });
 });

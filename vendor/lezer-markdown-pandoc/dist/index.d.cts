@@ -418,11 +418,11 @@ declare class MarkdownParser extends Parser {
     */
     parseInline(text: string, offset: number): Element[];
     /**
-    Whether parsing the source beginning at `offset` produces one of the
-    configured semantic nodes which Pandoc gives precedence over a reference
-    link label at this position.
+    Whether the next inline token is a semantic node that Pandoc gives
+    precedence over a reference link label. Only the token at `pos` matters;
+    parsing the rest of the paragraph here repeats work for every label.
     */
-    referenceLabelBlockedAt(text: string, offset: number): any;
+    referenceLabelBlockedAt(cx: InlineContext, pos: number): any;
 }
 /**
 Elements are used to compose syntax nodes during parsing.

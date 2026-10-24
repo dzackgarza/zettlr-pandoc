@@ -10,7 +10,6 @@
 
 import type { InlineParser, Element as MDElement } from '../markdown'
 import { scanPandocAttributeList } from './attribute-syntax'
-import { scanPandocAttributeList } from './attribute-syntax'
 
 // See https://github.com/bwiernik/schema/blob/ff67ae11347a4fb444ef839d96549540e9516cc1/schemas/input/csl-citation.json#L144 ff
 export type CSL_LOCATOR_TERM = 'article-locator' | 'book' | 'canon' | 'chapter'
@@ -115,6 +114,47 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 // https://pandoc.org/MANUAL.html#citations
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u
 
+type CitationContext = Parameters<InlineParser['parse']>[0]
+
+const bracketFollowers = new WeakMap<CitationContext, Map<number, boolean>>()
+const parenthesizedFollowers = new WeakMap<CitationContext, Map<number, boolean>>()
+
+// Each nested opener starts with the same unquoted state as an independent
+// lookahead. Cache its result while scanning, so incomplete followers do not
+// make every later citation scan the paragraph suffix again.
+function balancedFollower (ctx: CitationContext, pos: number, open: number, close: number, quoted: boolean, cache: WeakMap<CitationContext, Map<number, boolean>>): boolean {
+  let matches = cache.get(ctx)
+  if (matches === undefined) {
+    matches = new Map()
+    cache.set(ctx, matches)
+  }
+  const known = matches.get(pos)
+  if (known !== undefined) return known
+
+  const openers: number[] = []
+  let quote = 0
+  for (let i = pos; i < ctx.end; i++) {
+    const ch = ctx.char(i)
+    if (ch === 92 /* \\ */) { i++; continue }
+    if (quoted) {
+      if (quote !== 0) {
+        if (ch === quote) quote = 0
+        continue
+      }
+      if (ch === 34 /* " */ || ch === 39 /* ' */) { quote = ch; continue }
+    }
+    if (ch === open) openers.push(i)
+    if (ch === close && openers.length > 0) {
+      const opener = openers.pop()!
+      matches.set(opener, true)
+      if (opener === pos) return true
+    }
+  }
+
+  for (const opener of openers) matches.set(opener, false)
+  return false
+}
+
 /**
  * Port the negative lookahead at the end of Pandoc `normalCite`:
  *
@@ -127,7 +167,7 @@ const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u
  * falls back to parsing the interior `@key` textually. This distinction is
  * observable in e.g. `[@a][label](url)`.
  */
-function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0], pos: number): boolean {
+function conflictsWithNormalCiteClose (ctx: CitationContext, pos: number): boolean {
   const next = ctx.char(pos)
 
   if (next === CHAR.CURLY_OPEN) {
@@ -135,44 +175,17 @@ function conflictsWithNormalCiteClose (ctx: Parameters<InlineParser['parse']>[0]
   }
 
   if (next === CHAR.BRACKET_OPEN) {
+    if (ctx.char(pos + 1) === 94 /* ^ */) return false
     // Pandoc `reference` uses balanced brackets. We only need existence here,
     // not its parsed inline payload.
-    let depth = 0
-    for (let i = pos; i < ctx.end; i++) {
-      const ch = ctx.char(i)
-      if (ch === 92 /* \\ */) { i++; continue }
-      if (ch === CHAR.BRACKET_OPEN) depth++
-      if (ch === CHAR.BRACKET_CLOSE && --depth === 0) return true
-    }
-    return false
-  }
-
-  if (next === CHAR.BRACE_OPEN) {
-    // This spelling is already handled above as Pandoc attributes.
-    return false
+    return balancedFollower(ctx, pos, CHAR.BRACKET_OPEN, CHAR.BRACKET_CLOSE, false, bracketFollowers)
   }
 
   if (next === 40 /* ( */) {
     // `source` is parenthesized and permits nested parenthesized URL chunks.
     // A balanced close is sufficient for the normal-citation exclusion; the
     // actual Link parser remains authoritative for the detailed destination.
-    let depth = 0
-    let angle = false
-    let quote = 0
-    for (let i = pos; i < ctx.end; i++) {
-      const ch = ctx.char(i)
-      if (ch === 92 /* \\ */) { i++; continue }
-      if (quote !== 0) {
-        if (ch === quote) quote = 0
-        continue
-      }
-      if (ch === 34 /* " */ || ch === 39 /* ' */) { quote = ch; continue }
-      if (ch === 60 /* < */) { angle = true; continue }
-      if (ch === 62 /* > */ && angle) { angle = false; continue }
-      if (angle) continue
-      if (ch === 40) depth++
-      if (ch === 41 && --depth === 0) return true
-    }
+    return balancedFollower(ctx, pos, 40, 41, true, parenthesizedFollowers)
   }
 
   return false
@@ -643,62 +656,7 @@ export const citationParser: InlineParser = {
       //
       // Reference: Markdown.hs `normalCite`, lines 2302-2313 at the pinned
       // Pandoc commit.
-      const localAfter = i - ctx.offset
-      const following = ctx.text.slice(localAfter)
-      const followedBySource = (() => {
-        if (!following.startsWith('(')) return false
-        let depth = 0
-        let quote: '"'|"'"|undefined
-        let escaped = false
-        for (let cursor = 0; cursor < following.length; cursor++) {
-          const char = following[cursor]
-          if (escaped) {
-            escaped = false
-            continue
-          }
-          if (char === '\\') {
-            escaped = true
-            continue
-          }
-          if (quote !== undefined) {
-            if (char === quote) quote = undefined
-            continue
-          }
-          if (char === '"' || char === "'") {
-            quote = char
-            continue
-          }
-          if (char === '(') depth++
-          if (char === ')') {
-            depth--
-            if (depth === 0) return true
-          }
-        }
-        return false
-      })()
-      const followedByAttributes = following.startsWith('{') &&
-        scanPandocAttributeList(ctx.text, localAfter).status === 'match'
-      const followedByReference = following.startsWith('[') && !following.startsWith('[^') && (() => {
-        let depth = 0
-        let escaped = false
-        for (const char of following) {
-          if (escaped) {
-            escaped = false
-            continue
-          }
-          if (char === '\\') {
-            escaped = true
-            continue
-          }
-          if (char === '[') depth++
-          if (char === ']') {
-            depth--
-            if (depth === 0) return true
-          }
-        }
-        return false
-      })()
-      if (followedBySource || followedByAttributes || followedByReference) {
+      if (conflictsWithNormalCiteClose(ctx, i)) {
         return -1
       }
     } else {

@@ -1388,13 +1388,15 @@ export class MarkdownParser extends Parser {
     return cx.resolveMarkers(0)
   }
 
-  /// Whether parsing the source beginning at `offset` produces one of the
-  /// configured semantic nodes which Pandoc gives precedence over a reference
-  /// link label at this position.
-  referenceLabelBlockedAt(text: string, offset: number) {
+  /// Whether the next inline token is a semantic node that Pandoc gives
+  /// precedence over a reference link label. Only the token at `pos` matters;
+  /// parsing the rest of the paragraph here repeats work for every label.
+  referenceLabelBlockedAt(cx: InlineContext, pos: number) {
     if (!this.referenceLabelBlockers.length) return false
-    let elements = this.parseInline(text, offset)
-    let first = elements.find(element => element.from == offset)
+    let probe = new InlineContext(this, cx.text, cx.offset)
+    let next = probe.char(pos)
+    for (let token of this.inlineParsers) if (token && token(probe, next, pos) >= 0) break
+    let first = probe.resolveMarkers(0).find(element => element.from == pos)
     return first != null && this.referenceLabelBlockers.includes(this.nodeSet.types[first.type].name)
   }
 }
@@ -1778,20 +1780,17 @@ function finishLink(cx: InlineContext, content: Element[], type: Type, start: nu
     // consumes a following reference label. The fork exposes that precedence
     // generically through `referenceLabelBlockers` so the link parser reuses
     // the configured citation grammar instead of restating it here.
-    let blocked = cx.parser.referenceLabelBlockedAt(text.slice(startPos - cx.offset), startPos)
-    if (!blocked) {
-      let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false)
-      if (label) {
-        // Pandoc `referenceLink` reparses the raw reference label with the
-        // inline grammar for its fallback representation (`parsedRaw <-
-        // parseFromString' inlines raw'`). Preserve those semantic children in
-        // the Lezer LinkLabel node instead of treating it as opaque source.
-        let innerFrom = label.from + 1, innerTo = label.to - 1
-        let parsedLabel = cx.elt("LinkLabel", label.from, label.to,
-          cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom))
-        content.push(parsedLabel)
-        endPos = parsedLabel.to
-      }
+    let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false)
+    if (label && !cx.parser.referenceLabelBlockedAt(cx, startPos)) {
+      // Pandoc `referenceLink` reparses the raw reference label with the
+      // inline grammar for its fallback representation (`parsedRaw <-
+      // parseFromString' inlines raw'`). Preserve those semantic children in
+      // the Lezer LinkLabel node instead of treating it as opaque source.
+      let innerFrom = label.from + 1, innerTo = label.to - 1
+      let parsedLabel = cx.elt("LinkLabel", label.from, label.to,
+        cx.parser.parseInline(cx.slice(innerFrom, innerTo), innerFrom))
+      content.push(parsedLabel)
+      endPos = parsedLabel.to
     }
   }
   return elt(type, start, endPos, content)
