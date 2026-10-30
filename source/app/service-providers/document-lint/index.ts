@@ -57,7 +57,8 @@ import type LongRunningTaskProvider from "@providers/long-running-tasks";
 import type { LongRunningTask } from "@providers/long-running-tasks/task";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import { createHash } from "crypto";
-import { readdir, readFile, rename, stat, writeFile } from "fs/promises";
+import { readdir, readFile, stat } from "fs/promises";
+import writeFileAtomic from "write-file-atomic";
 import { availableParallelism } from "os";
 import path from "path";
 import { trans } from "source/common/i18n-main";
@@ -112,17 +113,25 @@ export interface DocumentLintDependencies {
     get: () => {
       export: { cslLibrary: string };
       tikz: ConfigOptions["tikz"];
-      editor: { lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] } };
+      editor: {
+        lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
+      };
     };
   };
   /** Open buffers win over the disk. */
-  buffers: { readMarkdownBufferContent: (filePath: string) => string | undefined };
+  buffers: {
+    readMarkdownBufferContent: (filePath: string) => string | undefined;
+  };
   references?: { getSnapshot: () => WorkspaceReferenceState };
   /** The workspace's wikilink index, which resolves the document's wikilinks. */
   links?: { index: WikilinkIndex };
   fsal?: Pick<
     FSAL,
-    "getDescriptorFor" | "getAnyDirectoryDescriptor" | "getAllLoadedDescriptors" | "on" | "off"
+    | "getDescriptorFor"
+    | "getAnyDirectoryDescriptor"
+    | "getAllLoadedDescriptors"
+    | "on"
+    | "off"
   >;
   /** Shows the background queue in the status bar. */
   lrt?: Pick<LongRunningTaskProvider, "registerTask" | "settleTask">;
@@ -141,9 +150,16 @@ const CACHE_FILE = "document-lint-cache.json";
 const RECONCILE_DEBOUNCE_MS = 1_000;
 const PERSIST_DEBOUNCE_MS = 2_000;
 // Each Flowmark run is one single-threaded Python process.
-const WORKER_COUNT = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
+const WORKER_COUNT = Math.max(
+  1,
+  Math.min(4, Math.floor(availableParallelism() / 2)),
+);
 // flowmark/config.py searches each directory upward for these names.
-const FLOWMARK_CONFIG_NAMES = [".flowmark.toml", "flowmark.toml", "pyproject.toml"];
+const FLOWMARK_CONFIG_NAMES = [
+  ".flowmark.toml",
+  "flowmark.toml",
+  "pyproject.toml",
+];
 
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -154,7 +170,9 @@ function digest(value: unknown): string {
  * one that overlaps a fix already taken. A skipped fix remains a finding for
  * the next run, as in ESLint's SourceCodeFixer (eslint/lib/linter).
  */
-export function fixEdits(diagnostics: readonly DocumentLintDiagnostic[]): FixAllEdit[] {
+export function fixEdits(
+  diagnostics: readonly DocumentLintDiagnostic[],
+): FixAllEdit[] {
   const edits: FixAllEdit[] = [];
   let cursor = 0;
   const fixable = diagnostics
@@ -189,7 +207,10 @@ function isRecord(value: unknown): value is DocumentLintRecord {
   );
 }
 
-type DirectoryReader = Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+type DirectoryReader = Pick<
+  FSAL,
+  "getDescriptorFor" | "getAnyDirectoryDescriptor"
+>;
 
 /** The inputs of a Flowmark run that belong to one document. */
 interface DocumentInputs {
@@ -206,12 +227,19 @@ interface DocumentInputs {
  * bytes keeps its hash.
  */
 class ContentHashes {
-  private readonly known = new Map<string, { mtimeMs: number; size: number; hash: string }>();
+  private readonly known = new Map<
+    string,
+    { mtimeMs: number; size: number; hash: string }
+  >();
 
   async of(filePath: string): Promise<string> {
     const info = await stat(filePath);
     const known = this.known.get(filePath);
-    if (known !== undefined && known.mtimeMs === info.mtimeMs && known.size === info.size) {
+    if (
+      known !== undefined &&
+      known.mtimeMs === info.mtimeMs &&
+      known.size === info.size
+    ) {
       return known.hash;
     }
     const hash = createHash("sha256")
@@ -302,14 +330,18 @@ class LintPass {
     const candidates: string[] = [];
     let directory = path.dirname(documentPath);
     for (;;) {
-      candidates.push(...FLOWMARK_CONFIG_NAMES.map((name) => path.join(directory, name)));
+      candidates.push(
+        ...FLOWMARK_CONFIG_NAMES.map((name) => path.join(directory, name)),
+      );
       const parent = path.dirname(directory);
       if (parent === directory) {
         break;
       }
       directory = parent;
     }
-    const stamps = await Promise.all(candidates.map(async (file) => await this.stamp(file)));
+    const stamps = await Promise.all(
+      candidates.map(async (file) => await this.stamp(file)),
+    );
     return stamps.filter((stamp) => !stamp.endsWith("\0absent"));
   }
 }
@@ -322,7 +354,9 @@ export default class DocumentLintProvider extends ProviderContract {
   private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>();
   private activeWorkers = 0;
   /** The status bar task of the running queue, from its first document until it drains. */
-  private batch: { task: LongRunningTask; total: number; done: number; failed: number } | undefined;
+  private batch:
+    | { task: LongRunningTask; total: number; done: number; failed: number }
+    | undefined;
   private flowmarkIdentity: string | undefined;
   private reconcileTimer: NodeJS.Timeout | undefined;
   private persistTimer: NodeJS.Timeout | undefined;
@@ -388,7 +422,11 @@ export default class DocumentLintProvider extends ProviderContract {
    */
   async lint(documentPath: string, text: string): Promise<DocumentLintRecord> {
     this.assertBackgroundHealthy();
-    return await this.lintIn(new LintPass(this.contentHashes), documentPath, text);
+    return await this.lintIn(
+      new LintPass(this.contentHashes),
+      documentPath,
+      text,
+    );
   }
 
   private async lintIn(
@@ -403,7 +441,11 @@ export default class DocumentLintProvider extends ProviderContract {
     const revision = sha256Text(text);
     const inputs = await this.inputsKey(documentPath, text, document, pass);
     const cached = this.entries.get(documentPath);
-    if (cached !== undefined && cached.revision === revision && cached.inputs === inputs) {
+    if (
+      cached !== undefined &&
+      cached.revision === revision &&
+      cached.inputs === inputs
+    ) {
       return cached;
     }
     return await this.runOnce(documentPath, text, document, revision, inputs);
@@ -470,7 +512,12 @@ export default class DocumentLintProvider extends ProviderContract {
       tikzRenderConfig: this.tikzRenderConfig(),
       flowmarkLintTimeoutMs: config.editor.lint.flowmark.timeoutMs,
     });
-    const outcome = await lintDocumentText(text, documentPath, context, document);
+    const outcome = await lintDocumentText(
+      text,
+      documentPath,
+      context,
+      document,
+    );
     const record: DocumentLintRecord = {
       revision: sha256Text(text),
       inputs,
@@ -480,7 +527,11 @@ export default class DocumentLintProvider extends ProviderContract {
     };
     // A Flowmark failure (a timeout, a missing install) is not a result of
     // the document; the next lint must try again.
-    if (outcome.complete && documentPath !== "" && this.flowmarkIdentity !== undefined) {
+    if (
+      outcome.complete &&
+      documentPath !== "" &&
+      this.flowmarkIdentity !== undefined
+    ) {
       this.entries.set(documentPath, record);
       this.schedulePersist();
     }
@@ -541,7 +592,12 @@ export default class DocumentLintProvider extends ProviderContract {
     document: DocumentInputs,
     pass: LintPass,
   ): Promise<string> {
-    const macroRoot = path.join(this.deps.homeDirectory, ".pandoc", "styles", "macros");
+    const macroRoot = path.join(
+      this.deps.homeDirectory,
+      ".pandoc",
+      "styles",
+      "macros",
+    );
     const mathJaxMacros = path.join(
       this.deps.homeDirectory,
       ".pandoc",
@@ -552,20 +608,33 @@ export default class DocumentLintProvider extends ProviderContract {
     return digest({
       vocabulary: FLOWMARK_HOST_VOCABULARY,
       flowmark: this.flowmarkIdentity,
-      macros: [...(await pass.tree(macroRoot)), await pass.stamp(mathJaxMacros)],
+      macros: [
+        ...(await pass.tree(macroRoot)),
+        await pass.stamp(mathJaxMacros),
+      ],
       tikz: pass.tikzTemplate(this.tikzRenderConfig().templatePath),
       texinputs: this.deps.env.TEXINPUTS ?? null,
       // The revision covers the document's own definitions and references.
-      references: document.references === undefined ? null : document.references.resolutions,
+      references:
+        document.references === undefined
+          ? null
+          : document.references.resolutions,
       wikilinks:
         this.deps.links === undefined
           ? null
-          : digest(wikilinkResolutions(text, documentPath, this.deps.links.index)),
+          : digest(
+              wikilinkResolutions(text, documentPath, this.deps.links.index),
+            ),
       bibliographies:
         document.bibliographies === undefined
           ? null
-          : await Promise.all(document.bibliographies.map(async (file) => await pass.stamp(file))),
-      projectRoots: document.projectRoots === undefined ? null : document.projectRoots,
+          : await Promise.all(
+              document.bibliographies.map(
+                async (file) => await pass.stamp(file),
+              ),
+            ),
+      projectRoots:
+        document.projectRoots === undefined ? null : document.projectRoots,
       flowmarkConfig: await pass.flowmarkConfig(documentPath),
     });
   }
@@ -603,11 +672,17 @@ export default class DocumentLintProvider extends ProviderContract {
   private startBackground(operation: Promise<void>, title: string): void {
     const task = operation
       .catch((error: unknown) => {
-        const failure = error instanceof Error ? error : new Error(String(error));
+        const failure =
+          error instanceof Error ? error : new Error(String(error));
         this.backgroundFailure = failure;
         this.deps.log.error(`[Document Lint] ${title} failed`, failure);
         if (this.deps.lrt !== undefined) {
-          const status = this.deps.lrt.registerTask(trans(title), "Flowmark", undefined, false);
+          const status = this.deps.lrt.registerTask(
+            trans(title),
+            "Flowmark",
+            undefined,
+            false,
+          );
           this.deps.lrt.settleTask(status, failure);
         }
       })
@@ -648,12 +723,17 @@ export default class DocumentLintProvider extends ProviderContract {
       throw new Error("[Document Lint] The workspace documents need the FSAL");
     }
     return (await this.deps.fsal.getAllLoadedDescriptors())
-      .filter((descriptor) => descriptor.type === "file" && hasMarkdownExt(descriptor.path))
+      .filter(
+        (descriptor) =>
+          descriptor.type === "file" && hasMarkdownExt(descriptor.path),
+      )
       .map((descriptor) => descriptor.path);
   }
 
   /** Answer the Problems view from cached records and queue outdated documents. */
-  async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
+  async workspaceProblems(
+    request: ListProblemsRequest,
+  ): Promise<WorkspaceProblems> {
     this.assertBackgroundHealthy();
     const allPaths = await this.workspaceDocuments();
     const paths =
@@ -748,7 +828,12 @@ export default class DocumentLintProvider extends ProviderContract {
    */
   async planFixes(documentPaths: string[]): Promise<FixAllPlan> {
     this.assertBackgroundHealthy();
-    const task = this.deps.lrt?.registerTask(trans("Finding fixes"), "Flowmark", undefined, false);
+    const task = this.deps.lrt?.registerTask(
+      trans("Finding fixes"),
+      "Flowmark",
+      undefined,
+      false,
+    );
     const plan: FixAllPlan = {
       documents: [],
       documentsChecked: documentPaths.length,
@@ -768,7 +853,11 @@ export default class DocumentLintProvider extends ProviderContract {
         } else {
           const edits = fixEdits(record.diagnostics);
           if (edits.length > 0) {
-            plan.documents.push({ documentPath, sourceHash: hashDocumentSource(text), edits });
+            plan.documents.push({
+              documentPath,
+              sourceHash: hashDocumentSource(text),
+              edits,
+            });
           }
         }
         done += 1;
@@ -782,7 +871,10 @@ export default class DocumentLintProvider extends ProviderContract {
       await Promise.all(Array.from({ length: WORKER_COUNT }, worker));
     } catch (error) {
       if (task !== undefined) {
-        this.deps.lrt?.settleTask(task, error instanceof Error ? error : new Error(String(error)));
+        this.deps.lrt?.settleTask(
+          task,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
       throw error;
     }
@@ -824,9 +916,16 @@ export default class DocumentLintProvider extends ProviderContract {
         }
         this.queue.delete(documentPath);
         try {
-          await this.lintIn(pass, documentPath, await this.currentText(documentPath));
+          await this.lintIn(
+            pass,
+            documentPath,
+            await this.currentText(documentPath),
+          );
         } catch (error) {
-          this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error);
+          this.deps.log.error(
+            `[Document Lint] Could not lint ${documentPath}`,
+            error,
+          );
           if (this.batch !== undefined) {
             this.batch.failed += 1;
           }
@@ -862,7 +961,11 @@ export default class DocumentLintProvider extends ProviderContract {
     this.showProgress(this.batch);
   }
 
-  private showProgress(batch: { task: LongRunningTask; total: number; done: number }): void {
+  private showProgress(batch: {
+    task: LongRunningTask;
+    total: number;
+    done: number;
+  }): void {
     batch.task.update({
       info: trans("%s of %s documents", batch.done, batch.total),
       percentage: batch.done / batch.total,
@@ -880,7 +983,10 @@ export default class DocumentLintProvider extends ProviderContract {
       batch.failed === 0
         ? undefined
         : new Error(
-            trans("%s documents could not be linted; the log names each one", batch.failed),
+            trans(
+              "%s documents could not be linted; the log names each one",
+              batch.failed,
+            ),
           ),
     );
   }
@@ -931,8 +1037,6 @@ export default class DocumentLintProvider extends ProviderContract {
 
   private async persist(): Promise<void> {
     const file: CacheFile = { entries: Object.fromEntries(this.entries) };
-    const temporary = `${this.cachePath}.tmp`;
-    await writeFile(temporary, JSON.stringify(file), "utf8");
-    await rename(temporary, this.cachePath);
+    await writeFileAtomic(this.cachePath, JSON.stringify(file), "utf8");
   }
 }
