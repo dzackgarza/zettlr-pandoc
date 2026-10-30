@@ -38,7 +38,7 @@ fi
 # The app bounds its acknowledged delivery at 300 seconds; leave time for it
 # to report that error before this outer process deadline.
 status=0
-timeout --kill-after=2 310 "$packaged_binary" --open-in-running-instance "$@" || status=$?
+timeout --kill-after=2 310 "$packaged_binary" --ozone-platform=wayland --open-in-running-instance "$@" || status=$?
 
 if (( status == 124 || status == 137 )); then
   printf 'The running Zettlr-Pandoc did not answer the single-instance handshake.\n' >&2

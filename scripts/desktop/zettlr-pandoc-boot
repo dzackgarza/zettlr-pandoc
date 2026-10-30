@@ -187,9 +187,11 @@ if "$running" || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$st
   spinner_label='Starting (no rebuild)'
   tput civis >/dev/null 2>&1
   printf '[boot] %s launching packaged binary (existing instance or current build)\n' "$(date +%T)" >>"$log"
-  # Remote debugging port for agent/inspection access without colliding with Chrome (9222):
-  debug_port="--remote-debugging-port=27413"
-  setsid "$packaged_binary" "$debug_port" "$@" >>"$log" 2>&1 </dev/null 9>&- &
+  # An existing owner already holds the inspection port. Delivery processes
+  # need no debugger of their own.
+  debug_args=()
+  if ! "$running"; then debug_args=(--remote-debugging-port=27413); fi
+  setsid "$packaged_binary" --ozone-platform=wayland "${debug_args[@]}" "$@" >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!
 else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
@@ -202,7 +204,7 @@ else
   debug_port="--remote-debugging-port=27413"
   setsid sh -c '
     repo="$1"; binary="$2"; debug="$3"; shift 3
-    cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package && exec "$binary" "$debug" "$@"
+    cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package && exec "$binary" --ozone-platform=wayland "$debug" "$@"
   ' sh "$repo" "$packaged_binary" "$debug_port" "$@" \
     >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!
