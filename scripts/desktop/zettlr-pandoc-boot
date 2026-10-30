@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date dirname grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date dirname flock grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1
@@ -145,19 +145,27 @@ spin_until_booted() {
 trap restore_cursor EXIT
 
 mkdir -p "$HOME/.cache"
+# Serialize build selection and this launch's completion log. The app does not
+# inherit this descriptor: the launcher releases it as soon as startup finishes.
+exec 9>"$HOME/.cache/zettlr-pandoc-launch.lock"
+flock -w "$rebuild_launch_timeout" 9 || fail "Another desktop launch has not completed."
 printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
+
+running=false
+if app_up; then running=true; fi
 
 macro_generator="$HOME/.pandoc/bin/generate-mathjax-config.py"
 macro_config="$HOME/.pandoc/templates/css/mathjax-macros.json"
 
-if [[ ! -f "$macro_generator" ]]; then
-  fail "MathJax macro generator is unavailable: $macro_generator"
+if ! "$running"; then
+  if [[ ! -f "$macro_generator" ]]; then
+    fail "MathJax macro generator is unavailable: $macro_generator"
+  fi
+  if ! timeout 15 python3 "$macro_generator" >>"$log" 2>&1; then
+    fail "MathJax macro refresh failed."
+  fi
+  printf '[boot] %s regenerated canonical MathJax projections -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
 fi
-
-if ! timeout 15 python3 "$macro_generator" >>"$log" 2>&1; then
-  fail "MathJax macro refresh failed."
-fi
-printf '[boot] %s regenerated canonical MathJax projections -> %s\n' "$(date +%T)" "$macro_config" >>"$log"
 
 # Honest launches without repeat cost: the packaged build in out/ carries a
 # stamp of the source fingerprint it was built from. A matching fingerprint
@@ -174,14 +182,14 @@ if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$re
 fi
 
 spinner_label='Building & starting'
-if app_up || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; }; then
+if "$running" || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; }; then
   printf '\n   Starting \033[1mZettlr-Pandoc\033[0m (no rebuild)\n\n'
   spinner_label='Starting (no rebuild)'
   tput civis >/dev/null 2>&1
   printf '[boot] %s launching packaged binary (existing instance or current build)\n' "$(date +%T)" >>"$log"
   # Remote debugging port for agent/inspection access without colliding with Chrome (9222):
   debug_port="--remote-debugging-port=27413"
-  setsid "$packaged_binary" "$debug_port" "$@" >>"$log" 2>&1 </dev/null &
+  setsid "$packaged_binary" "$debug_port" "$@" >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!
 else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
@@ -196,7 +204,7 @@ else
     repo="$1"; binary="$2"; debug="$3"; shift 3
     cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package && exec "$binary" "$debug" "$@"
   ' sh "$repo" "$packaged_binary" "$debug_port" "$@" \
-    >>"$log" 2>&1 </dev/null &
+    >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!
   launch_timeout=$rebuild_launch_timeout
 fi

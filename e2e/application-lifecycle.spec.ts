@@ -1,10 +1,9 @@
 import { strict as assert } from "node:assert";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, watch } from "node:fs";
+import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser } from "playwright";
-import WebSocket from "ws";
 import {
   createFixture,
   delay,
@@ -133,7 +132,6 @@ describe("application launch delivery", function () {
       binary,
       [
         `--data-dir=${fixture.configDirectory}`,
-        "--inspect=0",
         "--remote-debugging-port=0",
         "--disable-hardware-acceleration",
         "--ozone-platform=x11",
@@ -160,46 +158,37 @@ describe("application launch delivery", function () {
       browser = await chromium.connectOverCDP(primaryEndpoint);
       const initial = await findEditorPage(browser, 60_000);
       await initial.locator(".cm-content").waitFor({ timeout: 60_000 });
-      const inspector = primaryOutput.match(
-        /Debugger listening on (ws:\/\/\S+)/,
+      const logDirectory = path.join(fixture.configDirectory, "logs");
+      const logName = (await readdir(logDirectory)).find((name) =>
+        name.endsWith(".log"),
       );
-      assert.ok(inspector, primaryOutput);
-      await new Promise<void>((resolve, reject) => {
-        const socket = new WebSocket(inspector[1]);
-        socket.once("error", reject);
-        socket.once("open", () =>
-          socket.send(
-            JSON.stringify({
-              id: 1,
-              method: "Runtime.evaluate",
-              params: {
-                includeCommandLineAPI: true,
-                expression: `require('electron').app.once('will-quit', () => {
-              setImmediate(() => { require('electron').app.quit(); require('electron').app.quit(); });
-              process.kill(process.pid, 'SIGSTOP');
-            }); setTimeout(() => require('electron').app.quit(), 100);`,
-              },
-            }),
-          ),
-        );
-        socket.on("message", (data) => {
-          const reply = JSON.parse(data.toString());
-          if (reply.id !== 1) return;
-          socket.close();
-          if (reply.error || reply.result.exceptionDetails)
-            reject(new Error(JSON.stringify(reply)));
-          else resolve();
+      assert.ok(logName);
+      const logPath = path.join(logDirectory, logName);
+      const stopping = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          watcher.close();
+          reject(new Error("The owner did not start shutdown"));
+        }, 10_000);
+        const watcher = watch(logPath, () => {
+          if (!readFileSync(logPath, "utf8").includes("Shutting down at"))
+            return;
+          clearTimeout(timer);
+          watcher.close();
+          try {
+            process.kill(pid, "SIGSTOP");
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
         });
       });
-      await browser.close();
-      browser = undefined;
-      const stoppedBy = Date.now() + 10_000;
-      while (
-        !(await readFile(`/proc/${pid}/status`, "utf8")).includes("T (stopped)")
-      ) {
-        assert.ok(Date.now() < stoppedBy, "The owner did not reach shutdown");
-        await delay(10);
-      }
+      await initial.evaluate(() => {
+        window.ipc.send("menu-provider", {
+          command: "click-menu-item",
+          payload: "menu-quit",
+        });
+      });
+      await stopping;
       secondary = spawn(
         binary,
         [
