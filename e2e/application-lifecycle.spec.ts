@@ -3,7 +3,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { _electron, chromium, type Browser } from "playwright";
+import { chromium, type Browser } from "playwright";
+import WebSocket from "ws";
 import {
   createFixture,
   delay,
@@ -128,31 +129,70 @@ describe("application launch delivery", function () {
     });
     const requestedFile = path.join(fixture.root, "after-shutdown.md");
     await writeFile(requestedFile, "# Document requested during shutdown\n");
-    const primary = await _electron.launch({
-      executablePath: binary,
-      args: [
+    const primary = spawn(
+      binary,
+      [
         `--data-dir=${fixture.configDirectory}`,
+        "--inspect=0",
+        "--remote-debugging-port=0",
         "--disable-hardware-acceleration",
         "--ozone-platform=x11",
       ],
+      { detached: true, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let primaryOutput = "";
+    primary.stdout!.on("data", (chunk) => {
+      primaryOutput += chunk.toString();
+    });
+    primary.stderr!.on("data", (chunk) => {
+      primaryOutput += chunk.toString();
     });
     let secondary: ChildProcess | undefined;
     let browser: Browser | undefined;
     let output = "";
-    const pid = primary.process().pid!;
+    const pid = primary.pid!;
     try {
-      const initial = await primary.firstWindow();
+      const primaryEndpoint = await waitForDevTools(
+        primary,
+        () => primaryOutput,
+        60_000,
+      );
+      browser = await chromium.connectOverCDP(primaryEndpoint);
+      const initial = await findEditorPage(browser, 60_000);
       await initial.locator(".cm-content").waitFor({ timeout: 60_000 });
-      await primary.evaluate(({ app }) => {
-        app.once("will-quit", () => {
-          setImmediate(() => {
-            app.quit();
-            app.quit();
-          });
-          process.kill(process.pid, "SIGSTOP");
+      const inspector = primaryOutput.match(
+        /Debugger listening on (ws:\/\/\S+)/,
+      );
+      assert.ok(inspector, primaryOutput);
+      await new Promise<void>((resolve, reject) => {
+        const socket = new WebSocket(inspector[1]);
+        socket.once("error", reject);
+        socket.once("open", () =>
+          socket.send(
+            JSON.stringify({
+              id: 1,
+              method: "Runtime.evaluate",
+              params: {
+                includeCommandLineAPI: true,
+                expression: `require('electron').app.once('will-quit', () => {
+              setImmediate(() => { require('electron').app.quit(); require('electron').app.quit(); });
+              process.kill(process.pid, 'SIGSTOP');
+            }); setTimeout(() => require('electron').app.quit(), 100);`,
+              },
+            }),
+          ),
+        );
+        socket.on("message", (data) => {
+          const reply = JSON.parse(data.toString());
+          if (reply.id !== 1) return;
+          socket.close();
+          if (reply.error || reply.result.exceptionDetails)
+            reject(new Error(JSON.stringify(reply)));
+          else resolve();
         });
-        setTimeout(() => app.quit(), 100);
       });
+      await browser.close();
+      browser = undefined;
       const stoppedBy = Date.now() + 10_000;
       while (
         !(await readFile(`/proc/${pid}/status`, "utf8")).includes("T (stopped)")
@@ -187,7 +227,7 @@ describe("application launch delivery", function () {
         .getByText("Document requested during shutdown", { exact: false })
         .first()
         .waitFor({ timeout: 30_000 });
-      assert.equal(primary.process().exitCode, 0);
+      assert.equal(primary.exitCode, 0);
       assert.equal(
         secondary.exitCode,
         null,
@@ -200,9 +240,9 @@ describe("application launch delivery", function () {
         "Repeated quit requests must run cleanup once",
       );
     } finally {
-      if (primary.process().exitCode === null) process.kill(pid, "SIGCONT");
+      if (primary.exitCode === null) process.kill(pid, "SIGCONT");
       await browser?.close();
-      if (primary.process().exitCode === null) await primary.close();
+      await stopProcess(primary);
       await stopProcess(secondary);
     }
   });
