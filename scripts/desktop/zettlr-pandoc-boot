@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date dirname grep hostname hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date dirname grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1
@@ -91,7 +91,7 @@ fail() {
 # Hyprland has mapped its window. The window alone is not enough: Electron's
 # fatal error dialog carries the same class.
 app_booted() {
-  grep -qxF '[Application] Boot complete.' "$log" && app_up
+  grep -qxE '\[Application\] (Boot|Launch) complete\.' "$log" && app_up
 }
 
 spin_until_booted() {
@@ -104,12 +104,16 @@ spin_until_booted() {
   local line
   local status
   local termination_error
+  local launch_exited=false
 
   while ! app_booted; do
-    if ! process_alive "$launch_pid"; then
+    if ! "$launch_exited" && ! process_alive "$launch_pid"; then
       status=0
       wait "$launch_pid" || status=$?
-      fail "Launch exited with status $status before the app finished booting."
+      if (( status != 0 )) || ! grep -qxF '[Application] Launch complete.' "$log"; then
+        fail "Launch exited with status $status before the app finished booting."
+      fi
+      launch_exited=true
     fi
 
     if (( SECONDS - start > launch_timeout )); then
@@ -139,49 +143,6 @@ spin_until_booted() {
 }
 
 trap restore_cursor EXIT
-
-# Chromium keeps SingletonLock until the process exits, after its last window
-# closes. Launching during that interval hands the request to the dying process
-# and exits successfully without opening a window. Wait for either a window
-# (an instance still starting) or the lock holder's exit (an instance stopping).
-# Chromium's process_singleton_posix.cc stores this symlink as hostname-pid.
-singleton_lock="${XDG_CONFIG_HOME:-$HOME/.config}/Zettlr-Pandoc/SingletonLock"
-if ! app_up && [[ -L "$singleton_lock" ]]; then
-  singleton_owner=$(readlink -- "$singleton_lock") || singleton_owner=''
-  local_host=$(hostname)
-  if [[ "$singleton_owner" == "$local_host-"* ]]; then
-    singleton_pid=${singleton_owner##*-}
-    if [[ "$singleton_pid" =~ ^[1-9][0-9]*$ ]]; then
-      wait_start=$SECONDS
-      while process_alive "$singleton_pid" && ! app_up; do
-        if (( SECONDS - wait_start > launch_timeout )); then
-          fail "Existing Zettlr process $singleton_pid has no window and has not exited."
-        fi
-        printf '\r\033[K   Waiting for the existing Zettlr process [%ss]' "$((SECONDS - wait_start))"
-        sleep 0.12
-      done
-      printf '\r\033[K'
-    fi
-  fi
-fi
-
-# Zettlr is single-instance, so never start a second build here. Files go to the
-# instance that already holds the singleton lock, through a short-lived Electron
-# process that only performs the handshake (see zettlr-pandoc-open-in-running);
-# then focus the window that received them.
-if app_up; then
-  if (( $# > 0 )); then
-    if ! "$repo/scripts/desktop/zettlr-pandoc-open-in-running" "$@"; then
-      # A failure that closes the splash at once is indistinguishable from the
-      # silent drop described in #52.
-      printf '\n   Could not open %s in the running Zettlr-Pandoc.\n' "$*" >&2
-      hold_open
-      exit 1
-    fi
-  fi
-  hyprctl dispatch focuswindow "class:^(${app_class})$" >/dev/null
-  exit 0
-fi
 
 mkdir -p "$HOME/.cache"
 printf '=== %s starting zettlr-pandoc from %s ===\n' "$(date)" "$repo" >"$log"
@@ -213,11 +174,11 @@ if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$re
 fi
 
 spinner_label='Building & starting'
-if [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; then
-  printf '\n   Starting \033[1mZettlr-Pandoc\033[0m (packaged build is current \342\200\224 no rebuild)\n\n'
+if app_up || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; }; then
+  printf '\n   Starting \033[1mZettlr-Pandoc\033[0m (no rebuild)\n\n'
   spinner_label='Starting (no rebuild)'
   tput civis >/dev/null 2>&1
-  printf '[boot] %s launching packaged binary (fingerprint matched, no build)\n' "$(date +%T)" >>"$log"
+  printf '[boot] %s launching packaged binary (existing instance or current build)\n' "$(date +%T)" >>"$log"
   # Remote debugging port for agent/inspection access without colliding with Chrome (9222):
   debug_port="--remote-debugging-port=27413"
   setsid "$packaged_binary" "$debug_port" "$@" >>"$log" 2>&1 </dev/null &
