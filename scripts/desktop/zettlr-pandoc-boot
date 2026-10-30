@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date dirname grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date dirname grep hostname hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1
@@ -139,6 +139,31 @@ spin_until_booted() {
 }
 
 trap restore_cursor EXIT
+
+# Chromium keeps SingletonLock until the process exits, after its last window
+# closes. Launching during that interval hands the request to the dying process
+# and exits successfully without opening a window. Wait for either a window
+# (an instance still starting) or the lock holder's exit (an instance stopping).
+# Chromium's process_singleton_posix.cc stores this symlink as hostname-pid.
+singleton_lock="${XDG_CONFIG_HOME:-$HOME/.config}/Zettlr-Pandoc/SingletonLock"
+if ! app_up && [[ -L "$singleton_lock" ]]; then
+  singleton_owner=$(readlink -- "$singleton_lock") || singleton_owner=''
+  local_host=$(hostname)
+  if [[ "$singleton_owner" == "$local_host-"* ]]; then
+    singleton_pid=${singleton_owner##*-}
+    if [[ "$singleton_pid" =~ ^[1-9][0-9]*$ ]]; then
+      wait_start=$SECONDS
+      while process_alive "$singleton_pid" && ! app_up; do
+        if (( SECONDS - wait_start > launch_timeout )); then
+          fail "Existing Zettlr process $singleton_pid has no window and has not exited."
+        fi
+        printf '\r\033[K   Waiting for the existing Zettlr process [%ss]' "$((SECONDS - wait_start))"
+        sleep 0.12
+      done
+      printf '\r\033[K'
+    fi
+  fi
+fi
 
 # Zettlr is single-instance, so never start a second build here. Files go to the
 # instance that already holds the singleton lock, through a short-lived Electron
