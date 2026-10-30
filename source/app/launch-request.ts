@@ -32,14 +32,9 @@ export type LaunchRequest = z.infer<typeof launchRequestSchema>;
 async function replyChannel() {
   const token = `/${randomUUID()}`;
   let resolve!: (outcome: LaunchOutcome) => void;
-  let reject!: (error: Error) => void;
-  const outcome = new Promise<LaunchOutcome>((accept, fail) => {
+  const outcome = new Promise<LaunchOutcome>((accept) => {
     resolve = accept;
-    reject = fail;
   });
-  // A channel is created even for the elected owner, which closes it unused.
-  // Attach the rejection handler now; the election may still be in progress.
-  void outcome.catch(() => {});
   const server = createServer((request, response) => {
     const url = new URL(request.url!, "http://127.0.0.1");
     if (request.method !== "POST" || url.pathname !== token) {
@@ -51,7 +46,10 @@ async function replyChannel() {
     );
     if (!parsed.success) {
       response.writeHead(400).end();
-      reject(new Error(`Invalid launch response: ${parsed.error.message}`));
+      resolve({
+        status: "error",
+        message: `Invalid launch response: ${parsed.error.message}`,
+      });
       return;
     }
     response.writeHead(204).end();
@@ -61,17 +59,19 @@ async function replyChannel() {
     server.once("error", fail);
     server.listen(0, "127.0.0.1", accept);
   });
-  server.on("error", reject);
+  server.on("error", (error) =>
+    resolve({ status: "error", message: error.message }),
+  );
   const address = server.address();
   if (address === null || typeof address === "string")
     throw new Error("Launch response server has no TCP address");
   const timer = setTimeout(
     () =>
-      reject(
-        new Error(
+      resolve({
+        status: "error",
+        message:
           "The application did not answer the launch request within 300 seconds",
-        ),
-      ),
+      }),
     300_000,
   );
   return {

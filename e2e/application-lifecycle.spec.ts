@@ -8,6 +8,7 @@ import {
   createFixture,
   delay,
   findEditorPage,
+  readAppLog,
   stopProcess,
   waitForDevTools,
 } from "./support/electron-app";
@@ -97,6 +98,21 @@ describe("application launch delivery", function () {
       }
       assert.equal(secondary.exitCode, 0, secondaryOutput);
       assert.match(secondaryOutput, /\[Application\] Launch complete\./);
+      const rejected = launch([
+        "--open-in-running-instance",
+        path.join(fixture.root, "missing.md"),
+      ]);
+      const rejectedStatus = await new Promise<number | null>(
+        (resolve, reject) => {
+          rejected.once("error", reject);
+          rejected.once("exit", resolve);
+        },
+      );
+      assert.equal(
+        rejectedStatus,
+        1,
+        "A failed document open must fail the invoking process",
+      );
     } finally {
       if (primary.pid !== undefined && primary.exitCode === null)
         process.kill(primary.pid, "SIGCONT");
@@ -128,7 +144,13 @@ describe("application launch delivery", function () {
       const initial = await primary.firstWindow();
       await initial.locator(".cm-content").waitFor({ timeout: 60_000 });
       await primary.evaluate(({ app }) => {
-        app.once("will-quit", () => process.kill(process.pid, "SIGSTOP"));
+        app.once("will-quit", () => {
+          setImmediate(() => {
+            app.quit();
+            app.quit();
+          });
+          process.kill(process.pid, "SIGSTOP");
+        });
         setTimeout(() => app.quit(), 100);
       });
       const stoppedBy = Date.now() + 10_000;
@@ -171,10 +193,16 @@ describe("application launch delivery", function () {
         null,
         "The new owner must remain running",
       );
+      const log = await readAppLog(fixture.root);
+      assert.equal(
+        log.split("Application uptime was:").length - 1,
+        1,
+        "Repeated quit requests must run cleanup once",
+      );
     } finally {
       if (primary.process().exitCode === null) process.kill(pid, "SIGCONT");
       await browser?.close();
-      await stopProcess(primary.process());
+      if (primary.process().exitCode === null) await primary.close();
       await stopProcess(secondary);
     }
   });

@@ -89,7 +89,6 @@ if (getCLIArgument("disable-hardware-acceleration")) {
 
 // *****************************************************************************
 
-let canQuit = false;
 const restartFiles: string[] = [];
 let restartRequested = false;
 
@@ -172,8 +171,7 @@ const lifecycle = new ApplicationLifecycle({
   quit() {
     if (restartRequested)
       app.relaunch({ args: process.argv.slice(1).concat(restartFiles) });
-    canQuit = true;
-    app.quit();
+    app.exit(0);
   },
   report: (error) => logUnhandledProcessError(errorToString(error)),
   fail: failLifecycle,
@@ -236,12 +234,7 @@ app.on("window-all-closed", function () {
  * properly.
  */
 app.on("will-quit", function (event) {
-  if (!canQuit) {
-    // Prevent immediate shutdown and allow the process to shut down first
-    event.preventDefault();
-  } else {
-    return; // Don't prevent quitting, but we don't need to shut down again.
-  }
+  event.preventDefault();
 
   void lifecycle.stop().catch(failLifecycle);
 });
