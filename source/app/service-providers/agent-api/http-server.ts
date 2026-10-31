@@ -54,7 +54,10 @@ import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/a
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
 import { CiteprocRenderInvariantError } from "@providers/citeproc";
-import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
+import type {
+  AgentApiConfig,
+  ConfigOptions,
+} from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
 import type { DocumentLintRecord } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
@@ -142,7 +145,10 @@ interface ClaimDescriptionCollision {
 }
 
 function normalizeClaimDescription(description: string): string {
-  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
+  return description
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .replace(/\s+/gu, "");
 }
 
 /**
@@ -156,9 +162,15 @@ function findClaimDescriptionCollision(
   claims: readonly { description: string }[],
   threshold: number,
 ): ClaimDescriptionCollision | undefined {
-  const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
+  const normalized = claims.map((claim) =>
+    normalizeClaimDescription(claim.description),
+  );
   for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < normalized.length; secondIndex += 1) {
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < normalized.length;
+      secondIndex += 1
+    ) {
       const first = normalized[firstIndex];
       const second = normalized[secondIndex];
       const maxLength = Math.max(first.length, second.length);
@@ -283,14 +295,17 @@ type OperationContext<Id extends keyof AgentApiOperations> = Context<
   OrEmpty<AgentApiOperations[Id]["parameters"]["query"]>
 >;
 
-type OperationBody<Id extends keyof AgentApiOperations> = AgentApiOperations[Id] extends {
-  requestBody: { content: { "application/json": infer Body } };
-}
-  ? Body
-  : undefined;
+type OperationBody<Id extends keyof AgentApiOperations> =
+  AgentApiOperations[Id] extends {
+    requestBody: { content: { "application/json": infer Body } };
+  }
+    ? Body
+    : undefined;
 
 /** The generated operations write `never` for a parameter section an operation has none of. */
-type OrEmpty<T> = [NonNullable<T>] extends [never] ? Record<string, never> : NonNullable<T>;
+type OrEmpty<T> = [NonNullable<T>] extends [never]
+  ? Record<string, never>
+  : NonNullable<T>;
 
 type OperationQuery<Id extends keyof AgentApiOperations> = OrEmpty<
   AgentApiOperations[Id]["parameters"]["query"]
@@ -422,7 +437,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     this._helpText = HELP_DOCUMENT;
-    this._zotero = _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc);
+    this._zotero =
+      _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc);
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -477,7 +493,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     const definition = this._openApiSpecification.toJS() as OpenApiDefinition;
     const version = definition.info?.version;
     if (typeof version !== "string" || version.length === 0) {
-      throw new Error("Agent API OpenAPI specification declares no info.version");
+      throw new Error(
+        "Agent API OpenAPI specification declares no info.version",
+      );
     }
     this._protocolVersion = version;
     this._zoteroRoutes = Object.entries(definition.paths ?? {})
@@ -543,14 +561,16 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // An enabled API without a listener is a broken application state. Do not
     // start the editor with a missing endpoint that clients believe exists.
-    const listenError = await new Promise<NodeJS.ErrnoException | undefined>((resolve) => {
-      this._server!.once("error", (error: NodeJS.ErrnoException) => {
-        resolve(error);
-      });
-      this._server!.listen(config.port, "127.0.0.1", () => {
-        resolve(undefined);
-      });
-    });
+    const listenError = await new Promise<NodeJS.ErrnoException | undefined>(
+      (resolve) => {
+        this._server!.once("error", (error: NodeJS.ErrnoException) => {
+          resolve(error);
+        });
+        this._server!.listen(config.port, "127.0.0.1", () => {
+          resolve(undefined);
+        });
+      },
+    );
 
     if (listenError !== undefined) {
       this._server = undefined;
@@ -567,16 +587,24 @@ export default class AgentHTTPProvider extends ProviderContract {
       throw new Error("Agent API listener reports no TCP address");
     }
     const boundPort = address.port;
-    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
+    this._portFilePath = path.join(
+      app.getPath("userData"),
+      AGENT_API_PORT_FILE,
+    );
     try {
       await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
     } catch (error) {
       await this.shutdown();
-      throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {
-        cause: error,
-      });
+      throw new Error(
+        `Agent API could not publish its endpoint to ${this._portFilePath}`,
+        {
+          cause: error,
+        },
+      );
     }
-    this._log.info(`[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`);
+    this._log.info(
+      `[AgentHTTPProvider] Listening on http://127.0.0.1:${boundPort}`,
+    );
   }
 
   /** Whether the HTTP listener is bound. False after a refused bind. */
@@ -655,14 +683,22 @@ export default class AgentHTTPProvider extends ProviderContract {
    * (`GET http://[ HTTP/1.1` is legal absolute form, and `new URL` refuses it)
    * was enough. So no request leaves here unanswered or unlogged.
    */
-  private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+  private handleRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
     const method = req.method;
     const requestUrl = req.url;
     if (method === undefined || requestUrl === undefined) {
       this._log.error(
         "[AgentHTTPProvider] Node delivered an HTTP request without a method or URL.",
       );
-      this.sendError(res, 400, "INVALID_PARAMS", "HTTP method and request target are required");
+      this.sendError(
+        res,
+        400,
+        "INVALID_PARAMS",
+        "HTTP method and request target are required",
+      );
       return;
     }
     // The async wrapper is what makes a handler that throws synchronously
@@ -674,7 +710,12 @@ export default class AgentHTTPProvider extends ProviderContract {
           `[AgentHTTPProvider] Refused oversized ${method} ${pathname} with REQUEST_TOO_LARGE`,
         );
         res.setHeader("Connection", "close");
-        this.sendError(res, 413, "REQUEST_TOO_LARGE", "Request body exceeds the API limit");
+        this.sendError(
+          res,
+          413,
+          "REQUEST_TOO_LARGE",
+          "Request body exceeds the API limit",
+        );
         return;
       }
       if (err instanceof RequestBodyTimeoutError) {
@@ -710,7 +751,9 @@ export default class AgentHTTPProvider extends ProviderContract {
           `[AgentHTTPProvider] Unhandled error in ${operation}: ${err.message}\n${stack}`,
         );
       } else {
-        this._log.error(`[AgentHTTPProvider] Unhandled error in ${operation}: ${String(err)}`);
+        this._log.error(
+          `[AgentHTTPProvider] Unhandled error in ${operation}: ${String(err)}`,
+        );
       }
       this.sendError(
         res,
@@ -755,7 +798,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         address === null ||
         typeof address === "string"
       ) {
-        throw new Error("Agent API received an MCP request before boot finished");
+        throw new Error(
+          "Agent API received an MCP request before boot finished",
+        );
       }
       await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`);
       return;
@@ -774,7 +819,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         return;
       }
       if (url.pathname === "/v1/help") {
-        this.serveHelp(res, req.headers.accept, url.searchParams.get("format") === "json");
+        this.serveHelp(
+          res,
+          req.headers.accept,
+          url.searchParams.get("format") === "json",
+        );
         return;
       }
     }
@@ -821,7 +870,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     res.writeHead(200, {
       "Content-Type": asJson ? "application/json" : "application/yaml",
     });
-    res.end(asJson ? JSON.stringify(specification.toJSON(), null, 2) : specification.toString());
+    res.end(
+      asJson
+        ? JSON.stringify(specification.toJSON(), null, 2)
+        : specification.toString(),
+    );
   }
 
   /**
@@ -858,7 +911,11 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private operationHandlers(): Record<
     string,
-    (context: Context, req: http.IncomingMessage, res: http.ServerResponse) => unknown
+    (
+      context: Context,
+      req: http.IncomingMessage,
+      res: http.ServerResponse,
+    ) => unknown
   > {
     return {
       getHelp: (
@@ -868,7 +925,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         if (c.request.query.resource === "skills") {
           if (c.request.query.action === "read") {
-            if (c.request.query.path === undefined || c.request.query.path === "") {
+            if (
+              c.request.query.path === undefined ||
+              c.request.query.path === ""
+            ) {
               this.sendError(
                 res,
                 400,
@@ -881,7 +941,11 @@ export default class AgentHTTPProvider extends ProviderContract {
           }
           return this.handleListSkills(res);
         }
-        return this.serveHelp(res, req.headers.accept, c.request.query.format === "json");
+        return this.serveHelp(
+          res,
+          req.headers.accept,
+          c.request.query.format === "json",
+        );
       },
       ping: (_c, _req, res) => this.sendJson(res, 200, this.instanceIdentity()),
       getCapabilities: (_c, _req, res) =>
@@ -899,7 +963,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       searchWorkspace: (
         c: DefaultedOperationContext<
           "searchWorkspace",
-          "matchCase" | "wholeWord" | "regex" | "include" | "exclude" | "maxMatches"
+          | "matchCase"
+          | "wholeWord"
+          | "regex"
+          | "include"
+          | "exclude"
+          | "maxMatches"
         >,
         _req,
         res: http.ServerResponse,
@@ -911,7 +980,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         const { include, query } = c.request.query;
         const workspaceId =
-          c.request.query.workspaceId === "" ? undefined : c.request.query.workspaceId;
+          c.request.query.workspaceId === ""
+            ? undefined
+            : c.request.query.workspaceId;
         if (include === "summary") {
           return this.handleGetWorkspaces(res);
         }
@@ -923,7 +994,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         if (include === "files") {
           return this.handleListWorkspaceFiles(res);
         }
-        this.sendError(res, 400, "INVALID_PARAMS", `include=${include} requires workspaceId`);
+        this.sendError(
+          res,
+          400,
+          "INVALID_PARAMS",
+          `include=${include} requires workspaceId`,
+        );
       },
       createWorkspaceEntry: (
         c: OperationContext<"createWorkspaceEntry">,
@@ -932,7 +1008,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => this.handleCreateWorkspaceEntry(res, c.request.requestBody),
 
       listDocuments: (_c, _req, res) => this.handleListDocuments(res),
-      getDocument: (c: OperationContext<"getDocument">, _req, res: http.ServerResponse) => {
+      getDocument: (
+        c: OperationContext<"getDocument">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
         if (c.request.query.includeContent) {
           return this.handleReadContent(res, c.request.params.documentId, {
             side: c.request.query.side as ReadSide | undefined,
@@ -942,19 +1022,38 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleGetDocument(res, c.request.params.documentId);
       },
-      searchDocument: (c: OperationContext<"searchDocument">, _req, res: http.ServerResponse) =>
-        this.handleSearch(res, c.request.params.documentId, c.request.requestBody),
-      submitProposal: (c: OperationContext<"submitProposal">, _req, res: http.ServerResponse) =>
+      searchDocument: (
+        c: OperationContext<"searchDocument">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleSearch(
+          res,
+          c.request.params.documentId,
+          c.request.requestBody,
+        ),
+      submitProposal: (
+        c: OperationContext<"submitProposal">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
         this.handleSubmitProposal(
           res,
           c.request.params.documentId,
           c.request.requestBody,
           "REVISION_MISMATCH",
         ),
-      submitReview: (c: OperationContext<"submitReview">, _req, res: http.ServerResponse) =>
-        this.handleReviewSubmission(res, c.request.requestBody),
+      submitReview: (
+        c: OperationContext<"submitReview">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleReviewSubmission(res, c.request.requestBody),
 
-      listAnnotations: (c: OperationContext<"listAnnotations">, _req, res: http.ServerResponse) => {
+      listAnnotations: (
+        c: OperationContext<"listAnnotations">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
         if (c.request.query.documentId) {
           return this.handleListDocumentAnnotations(
             res,
@@ -964,14 +1063,21 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListAnnotations(res, c.request.query.state);
       },
-      getAnnotation: (c: OperationContext<"getAnnotation">, _req, res: http.ServerResponse) =>
-        this.handleGetAnnotation(res, c.request.params.annotationId),
+      getAnnotation: (
+        c: OperationContext<"getAnnotation">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleGetAnnotation(res, c.request.params.annotationId),
       addAnnotationMessage: (
         c: OperationContext<"addAnnotationMessage">,
         _req,
         res: http.ServerResponse,
       ) =>
-        this.handleAddAnnotationMessage(res, c.request.params.annotationId, c.request.requestBody),
+        this.handleAddAnnotationMessage(
+          res,
+          c.request.params.annotationId,
+          c.request.requestBody,
+        ),
 
       listReviews: (_c, _req, res) => this.handleListReviews(res),
       getReview: (
@@ -991,36 +1097,63 @@ export default class AgentHTTPProvider extends ProviderContract {
             return this.handleGetReview(res, c.request.params.reviewId);
           default: {
             const unhandled: never = view;
-            throw new Error(`getReview has no handler for view ${String(unhandled)}`);
+            throw new Error(
+              `getReview has no handler for view ${String(unhandled)}`,
+            );
           }
         }
       },
-      addReviewComment: (c: OperationContext<"addReviewComment">, _req, res: http.ServerResponse) =>
+      addReviewComment: (
+        c: OperationContext<"addReviewComment">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
         this.handleAddReviewComment(
           res,
           c.request.params.reviewId,
           c.request.requestBody.text,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      reapplyReview: (c: OperationContext<"reapplyReview">, _req, res: http.ServerResponse) =>
+      reapplyReview: (
+        c: OperationContext<"reapplyReview">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
         this.handleReapplyReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      discardReview: (c: OperationContext<"discardReview">, _req, res: http.ServerResponse) =>
+      discardReview: (
+        c: OperationContext<"discardReview">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
         this.handleDiscardReview(
           res,
           c.request.params.reviewId,
           c.request.requestBody.expectedReviewGeneration,
         ),
-      retractProposal: (c: OperationContext<"retractProposal">, _req, res: http.ServerResponse) =>
-        this.handleRetractProposal(res, c.request.params.packetId, c.request.requestBody),
+      retractProposal: (
+        c: OperationContext<"retractProposal">,
+        _req,
+        res: http.ServerResponse,
+      ) =>
+        this.handleRetractProposal(
+          res,
+          c.request.params.packetId,
+          c.request.requestBody,
+        ),
       waitForReviewEvents: (
         c: OperationContext<"waitForReviewEvents">,
         _req,
         res: http.ServerResponse,
-      ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
+      ) =>
+        this.handleWaitForReviewEvents(
+          res,
+          c.request.params.reviewId,
+          c.request.query,
+        ),
 
       queryCitations: (
         c: DefaultedOperationContext<"queryCitations", "database">,
@@ -1028,14 +1161,22 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => {
         if (c.request.query.citeKey) {
-          return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
+          return this.handleGetCitationItem(
+            res,
+            c.request.query.citeKey,
+            c.request.query.database,
+          );
         }
         if (c.request.query.target === "databases") {
           return this.handleListCitationDatabases(res);
         }
         return this.handleListCitationItems(res, c.request.query.database);
       },
-      renderCitations: (c: OperationContext<"renderCitations">, _req, res: http.ServerResponse) => {
+      renderCitations: (
+        c: OperationContext<"renderCitations">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
         const body = c.request.requestBody;
         if (body.mode === "bibliography") {
           if (body.citekeys === undefined) {
@@ -1067,8 +1208,11 @@ export default class AgentHTTPProvider extends ProviderContract {
           composite: body.composite,
         });
       },
-      listMacros: (c: OperationContext<"listMacros">, _req, res: http.ServerResponse) =>
-        this.handleListMacros(res, c.request.query.query),
+      listMacros: (
+        c: OperationContext<"listMacros">,
+        _req,
+        res: http.ServerResponse,
+      ) => this.handleListMacros(res, c.request.query.query),
       queryFigures: (
         c: DefaultedOperationContext<"queryFigures", "action">,
         _req,
@@ -1101,7 +1245,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListFigures(res);
       },
-      saveFigure: (c: OperationContext<"saveFigure">, _req, res: http.ServerResponse) => {
+      saveFigure: (
+        c: OperationContext<"saveFigure">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
         if (c.request.requestBody.action === "create") {
           return this.handleCreateFigure(res, {
             path: c.request.requestBody.path,
@@ -1114,7 +1262,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         });
       },
       lintDocuments: (
-        c: DefaultedOperationContext<"lintDocuments", "scope" | "minimumSeverity">,
+        c: DefaultedOperationContext<
+          "lintDocuments",
+          "scope" | "minimumSeverity"
+        >,
         _req,
         res: http.ServerResponse,
       ) => this.handleLintDocuments(res, c.request.query),
@@ -1126,7 +1277,23 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         const zotero = this.zoteroLibrary(res);
         if (zotero !== undefined) {
-          this.sendZoteroResult(res, await zotero.search(c.request.query.q, c.request.query.limit));
+          this.sendZoteroResult(
+            res,
+            await zotero.search(c.request.query.q, c.request.query.limit),
+          );
+        }
+      },
+      getZoteroExtractions: async (
+        c: OperationContext<"getZoteroExtractions">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        const zotero = this.zoteroLibrary(res);
+        if (zotero !== undefined) {
+          this.sendZoteroResult(
+            res,
+            await zotero.extractions(c.request.params.itemKey),
+          );
         }
       },
       importZoteroIdentifier: async (
@@ -1136,7 +1303,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         const zotero = this.zoteroLibrary(res);
         if (zotero !== undefined) {
-          this.sendZoteroResult(res, await zotero.importIdentifier(c.request.requestBody));
+          this.sendZoteroResult(
+            res,
+            await zotero.importIdentifier(c.request.requestBody),
+          );
         }
       },
       importZoteroUrl: async (
@@ -1146,7 +1316,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       ) => {
         const zotero = this.zoteroLibrary(res);
         if (zotero !== undefined) {
-          this.sendZoteroResult(res, await zotero.importUrl(c.request.requestBody));
+          this.sendZoteroResult(
+            res,
+            await zotero.importUrl(c.request.requestBody),
+          );
         }
       },
 
@@ -1155,13 +1328,19 @@ export default class AgentHTTPProvider extends ProviderContract {
        * the offending field, which is more than the hand-written decoders
        * could say about a body they refused wholesale.
        */
-      validationFail: (c: Context, _req: http.IncomingMessage, res: http.ServerResponse) => {
+      validationFail: (
+        c: Context,
+        _req: http.IncomingMessage,
+        res: http.ServerResponse,
+      ) => {
         // openapi-backend calls this handler only when validation produced
         // errors, and it nulls an empty error list; no errors here is a
         // contract break in the router, not an invalid request.
         const errors = c.validation.errors;
         if (errors === null || errors === undefined || errors.length === 0) {
-          throw new Error("validationFail was called without validation errors");
+          throw new Error(
+            "validationFail was called without validation errors",
+          );
         }
         this.sendError(
           res,
@@ -1169,13 +1348,19 @@ export default class AgentHTTPProvider extends ProviderContract {
           "INVALID_PARAMS",
           errors
             .map((error) =>
-              typeof error === "string" ? error : `${error.instancePath} ${error.message}`.trim(),
+              typeof error === "string"
+                ? error
+                : `${error.instancePath} ${error.message}`.trim(),
             )
             .join("; "),
         );
       },
 
-      notFound: (c: Context, req: http.IncomingMessage, res: http.ServerResponse) =>
+      notFound: (
+        c: Context,
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+      ) =>
         this.sendError(
           res,
           404,
@@ -1197,7 +1382,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     const documents = await this._queries.listDocuments();
     this.sendJson(res, 200, {
       documents: await Promise.all(
-        documents.map(async (summary) => await this.withCrossReferences(summary)),
+        documents.map(
+          async (summary) => await this.withCrossReferences(summary),
+        ),
       ),
     });
   }
@@ -1216,7 +1403,9 @@ export default class AgentHTTPProvider extends ProviderContract {
    * flat, open or not. Main already walks directories for the workspace
    * listings; this is a route over that walk, not a subsystem.
    */
-  private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
+  private async handleListWorkspaceFiles(
+    res: http.ServerResponse,
+  ): Promise<void> {
     try {
       this.sendJson(res, 200, {
         files: await this._queries.listWorkspaceFiles(),
@@ -1257,7 +1446,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
   ): Promise<void> {
     try {
-      const files = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+      const files =
+        await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
       if (files === undefined) {
         this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
         return;
@@ -1283,7 +1473,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
   ): Promise<void> {
     try {
-      const directories = await this._queries.listWorkspaceDirectories(workspaceId);
+      const directories =
+        await this._queries.listWorkspaceDirectories(workspaceId);
       if (directories === undefined) {
         this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
         return;
@@ -1313,7 +1504,12 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendJson(res, 201, outcome.entry);
       return;
     }
-    this.sendError(res, STATUS_BY_CODE[outcome.code], outcome.code, outcome.message);
+    this.sendError(
+      res,
+      STATUS_BY_CODE[outcome.code],
+      outcome.code,
+      outcome.message,
+    );
   }
 
   /**
@@ -1355,7 +1551,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const workspaces = this._app.config.get().app.openWorkspaces;
-    const loaded = new Set(this._documents.loadedDocuments.map((document) => document.filePath));
+    const loaded = new Set(
+      this._documents.loadedDocuments.map((document) => document.filePath),
+    );
     this.sendJson(res, 200, {
       files: outcome.results.map((result) => ({
         documentId: this._documents.ensureDocumentId(result.documentPath),
@@ -1378,7 +1576,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     query: string | undefined,
   ): Promise<void> {
     try {
-      const documents = await this._queries.listWorkspaceDocuments(workspaceId, query);
+      const documents = await this._queries.listWorkspaceDocuments(
+        workspaceId,
+        query,
+      );
       if (documents === undefined) {
         this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
         return;
@@ -1394,7 +1595,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
+  private async handleGetDocument(
+    res: http.ServerResponse,
+    documentId: string,
+  ): Promise<void> {
     const summary = await this._queries.getDocumentSummary(documentId);
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
@@ -1404,13 +1608,18 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   /** Adds the cross-reference system whose ID syntax (GET /help) the document uses. */
-  private async withCrossReferences(summary: DocumentSummary): Promise<DocumentSummary> {
+  private async withCrossReferences(
+    summary: DocumentSummary,
+  ): Promise<DocumentSummary> {
     if (this._app.fsal === undefined) {
       return summary;
     }
     return {
       ...summary,
-      crossReferences: await documentCrossReferenceSystem(this._app.fsal, summary.path),
+      crossReferences: await documentCrossReferenceSystem(
+        this._app.fsal,
+        summary.path,
+      ),
     };
   }
 
@@ -1475,7 +1684,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     const waitSeconds = query.waitSeconds ?? query.wait ?? 30;
     const afterGeneration = query.afterGeneration ?? 0;
 
-    const reviewQuery = await this._documents.reviewQueries.findReviewQuery(reviewId);
+    const reviewQuery =
+      await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (reviewQuery === undefined || !reviewQuery.attached) {
       // A detached review's generation cannot advance — nothing can decide
       // its chunks while its file is closed — so waiting on it would be
@@ -1516,7 +1726,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (eventDocumentId !== documentId || event.reviewId !== reviewId) {
         return;
       }
-      if (event.reviewGeneration !== undefined && event.reviewGeneration > afterGeneration) {
+      if (
+        event.reviewGeneration !== undefined &&
+        event.reviewGeneration > afterGeneration
+      ) {
         const status = this._documents.reviewQueries.getStatus(documentId);
         finish({
           reviewId,
@@ -1639,7 +1852,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     staleBaselineCode: "REVISION_MISMATCH" | "BASELINE_MISMATCH",
   ): Promise<void> {
-    const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
+    const similarityThreshold =
+      this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
     const descriptionCollision = findClaimDescriptionCollision(
       proposal.claims,
       similarityThreshold,
@@ -1704,9 +1918,14 @@ export default class AgentHTTPProvider extends ProviderContract {
         // status here (412, an ETag precondition) and the header above are
         // both specific to this route — STATUS_BY_CODE's own entry for this
         // code is the generic 409 every other route uses.
-        const current = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+        const current = this._documents.loadedDocuments.find(
+          (d) => d.filePath === filePath,
+        );
         if (current !== undefined) {
-          res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
+          res.setHeader(
+            "ETag",
+            `"sha256:${sha256Text(current.document.toString())}"`,
+          );
         }
         this.sendError(res, 412, staleBaselineCode, result.message);
       } else {
@@ -1730,13 +1949,18 @@ export default class AgentHTTPProvider extends ProviderContract {
     // Set the new ETag on the response. A committed review keeps its buffer
     // loaded, so the document is there whether the caller opened it or the
     // submission acquired it.
-    const applied = this._documents.loadedDocuments.find((d) => d.filePath === filePath);
+    const applied = this._documents.loadedDocuments.find(
+      (d) => d.filePath === filePath,
+    );
     if (applied === undefined) {
       throw new Error(
         `Proposal ${result.reviewId} committed against ${documentId}, which is not open`,
       );
     }
-    res.setHeader("ETag", `"sha256:${sha256Text(applied.document.toString())}"`);
+    res.setHeader(
+      "ETag",
+      `"sha256:${sha256Text(applied.document.toString())}"`,
+    );
     this.sendJson(res, 200, {
       packetId: result.packetId,
       packetIds: result.packetIds,
@@ -1767,7 +1991,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     documentId: string,
     state: "open" | "resolved" | undefined,
   ): Promise<void> {
-    const result = await this._queries.listDocumentAnnotations(documentId, state);
+    const result = await this._queries.listDocumentAnnotations(
+      documentId,
+      state,
+    );
     if (result === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;
@@ -1775,7 +2002,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, result);
   }
 
-  private async handleGetAnnotation(res: http.ServerResponse, annotationId: string): Promise<void> {
+  private async handleGetAnnotation(
+    res: http.ServerResponse,
+    annotationId: string,
+  ): Promise<void> {
     const annotation = await this._queries.getAnnotation(annotationId);
     if (annotation === undefined) {
       this.sendError(res, 404, "ANNOTATION_NOT_FOUND", "Annotation not found");
@@ -1810,12 +2040,19 @@ export default class AgentHTTPProvider extends ProviderContract {
         body.markActed,
       );
     if (!("messageId" in result)) {
-      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message);
+      this.sendError(
+        res,
+        STATUS_BY_CODE[result.code],
+        result.code,
+        result.message,
+      );
       return;
     }
     const annotation = await this._queries.getAnnotation(annotationId);
     if (annotation === undefined) {
-      throw new Error(`Annotation ${annotationId} disappeared after its message was committed`);
+      throw new Error(
+        `Annotation ${annotationId} disappeared after its message was committed`,
+      );
     }
     this.sendJson(res, 200, {
       annotationId,
@@ -1842,7 +2079,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       return {
         reviewId: sidecar.review.reviewId,
-        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        state: classifyReviewState(
+          sidecar.review.invalidated,
+          unresolvedChunks,
+        ),
         generation: sidecar.review.generation,
         unresolvedChunks,
         packetCount: sidecar.review.packets.length,
@@ -1858,7 +2098,10 @@ export default class AgentHTTPProvider extends ProviderContract {
    * 409 when the id names a detached review (it exists — /v1/reviews just
    * listed it — but its file is closed), 404 only when no review carries it.
    */
-  private async sendReviewLookupFailure(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async sendReviewLookupFailure(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
@@ -1876,7 +2119,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found.");
   }
 
-  private async handleGetReview(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReview(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1887,7 +2133,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const unresolvedChunks = sidecarUnresolvedChunks(sidecar);
       this.sendJson(res, 200, {
         reviewId: sidecar.review.reviewId,
-        state: classifyReviewState(sidecar.review.invalidated, unresolvedChunks),
+        state: classifyReviewState(
+          sidecar.review.invalidated,
+          unresolvedChunks,
+        ),
         generation: sidecar.review.generation,
         unresolvedChunks,
         packetCount: sidecar.review.packets.length,
@@ -1906,7 +2155,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewDiff(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewDiff(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -1974,7 +2226,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     reviewId: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
-    const result = await this._documents.reapplyReview(reviewId, expectedReviewGeneration);
+    const result = await this._documents.reapplyReview(
+      reviewId,
+      expectedReviewGeneration,
+    );
     if (!result.ok) {
       this.sendError(
         res,
@@ -2031,12 +2286,17 @@ export default class AgentHTTPProvider extends ProviderContract {
     text: string,
     expectedReviewGeneration: number,
   ): Promise<void> {
-    const documentId = this._documents.reviewQueries.findDocumentIdByReviewId(reviewId);
+    const documentId =
+      this._documents.reviewQueries.findDocumentIdByReviewId(reviewId);
     if (documentId === undefined) {
       await this.sendReviewLookupFailure(res, reviewId);
       return;
     }
-    const result = await this._documents.addReviewComment(reviewId, text, expectedReviewGeneration);
+    const result = await this._documents.addReviewComment(
+      reviewId,
+      text,
+      expectedReviewGeneration,
+    );
     if (!result.ok) {
       this.sendError(
         res,
@@ -2059,7 +2319,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewChunks(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewChunks(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -2074,7 +2337,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       });
       return;
     }
-    const chunks = this._documents.reviewQueries.getOutstandingChunks(query.documentId);
+    const chunks = this._documents.reviewQueries.getOutstandingChunks(
+      query.documentId,
+    );
     if (chunks === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
       return;
@@ -2091,7 +2356,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private async handleGetReviewPackets(res: http.ServerResponse, reviewId: string): Promise<void> {
+  private async handleGetReviewPackets(
+    res: http.ServerResponse,
+    reviewId: string,
+  ): Promise<void> {
     const query = await this._documents.reviewQueries.findReviewQuery(reviewId);
     if (query === undefined) {
       this.sendError(res, 404, "REVIEW_NOT_FOUND", "Review not found");
@@ -2119,7 +2387,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     packetId: string,
     precondition: ReviewMutationPrecondition,
   ): Promise<void> {
-    const result = await this._documents.retractProposal(packetId, precondition);
+    const result = await this._documents.retractProposal(
+      packetId,
+      precondition,
+    );
     if (result.ok) {
       this.sendJson(res, 200, {
         retracted: true,
@@ -2136,10 +2407,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       // closed. Both name the review that owns the packet, which is the
       // only thing the caller can re-read from — disposing of the suggestions
       // is the reviewer's.
-      this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
-        reviewId: result.reviewId,
-        ...AgentHTTPProvider.conflictDetail(result),
-      });
+      this.sendError(
+        res,
+        STATUS_BY_CODE[result.code],
+        result.code,
+        result.message,
+        {
+          reviewId: result.reviewId,
+          ...AgentHTTPProvider.conflictDetail(result),
+        },
+      );
     }
   }
 
@@ -2177,7 +2454,9 @@ export default class AgentHTTPProvider extends ProviderContract {
       result.status,
       result.code,
       result.message,
-      result.remediation === undefined ? undefined : { remediation: result.remediation },
+      result.remediation === undefined
+        ? undefined
+        : { remediation: result.remediation },
     );
   }
 
@@ -2193,7 +2472,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
   }
 
-  private handleListCitationItems(res: http.ServerResponse, database: string): void {
+  private handleListCitationItems(
+    res: http.ServerResponse,
+    database: string,
+  ): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2212,7 +2494,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private handleGetCitationItem(res: http.ServerResponse, citeKey: string, database: string): void {
+  private handleGetCitationItem(
+    res: http.ServerResponse,
+    citeKey: string,
+    database: string,
+  ): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
@@ -2221,7 +2507,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     try {
       const item = this._citeproc.getItem(db, citeKey);
       if (item === undefined) {
-        this.sendError(res, 404, "CITATION_NOT_FOUND", `Citation key not found: ${citeKey}`);
+        this.sendError(
+          res,
+          404,
+          "CITATION_NOT_FOUND",
+          `Citation key not found: ${citeKey}`,
+        );
         return;
       }
       this.sendJson(res, 200, item as AgentApiResponseBody);
@@ -2235,14 +2526,22 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
+  private handleRenderCitation(
+    res: http.ServerResponse,
+    body: RenderCitationRequest,
+  ): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
     const db = body.database;
     if (body.citations.length === 0) {
-      this.sendError(res, 400, "INVALID_PARAMS", "citations must name at least one item to render");
+      this.sendError(
+        res,
+        400,
+        "INVALID_PARAMS",
+        "citations must name at least one item to render",
+      );
       return;
     }
     if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
@@ -2262,7 +2561,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         prefix: c.prefix,
         suffix: c.suffix,
       }));
-      const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
+      const rendered = this._citeproc.getCitation(
+        db,
+        citeItems,
+        body.composite,
+      );
       // With items and a loaded database, the engine declines only when a
       // citekey is missing from that database.
       if (rendered === undefined) {
@@ -2344,7 +2647,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     query: string | undefined,
   ): Promise<void> {
     try {
-      const inventory = await loadCanonicalMacroInventory(this.authoringHomeDirectory());
+      const inventory = await loadCanonicalMacroInventory(
+        this.authoringHomeDirectory(),
+      );
       // An omitted or blank query asks for the whole inventory.
       const needle = query?.trim().toLocaleLowerCase("en-US");
       const macros =
@@ -2354,14 +2659,24 @@ export default class AgentHTTPProvider extends ProviderContract {
               if (macro.name.toLocaleLowerCase("en-US").includes(needle)) {
                 return true;
               }
-              if (macro.mathjax?.replacement.toLocaleLowerCase("en-US").includes(needle) === true) {
+              if (
+                macro.mathjax?.replacement
+                  .toLocaleLowerCase("en-US")
+                  .includes(needle) === true
+              ) {
                 return true;
               }
               return macro.declarations.some(
                 (declaration) =>
-                  declaration.sourcePath.toLocaleLowerCase("en-US").includes(needle) ||
-                  declaration.declaration.toLocaleLowerCase("en-US").includes(needle) ||
-                  declaration.context.toLocaleLowerCase("en-US").includes(needle),
+                  declaration.sourcePath
+                    .toLocaleLowerCase("en-US")
+                    .includes(needle) ||
+                  declaration.declaration
+                    .toLocaleLowerCase("en-US")
+                    .includes(needle) ||
+                  declaration.context
+                    .toLocaleLowerCase("en-US")
+                    .includes(needle),
               );
             });
       this.sendJson(res, 200, {
@@ -2397,9 +2712,16 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private async handleReadSkill(res: http.ServerResponse, relativePath: string): Promise<void> {
+  private async handleReadSkill(
+    res: http.ServerResponse,
+    relativePath: string,
+  ): Promise<void> {
     try {
-      this.sendJson(res, 200, await readSkillMarkdown(this.skillsDirectory(), relativePath));
+      this.sendJson(
+        res,
+        200,
+        await readSkillMarkdown(this.skillsDirectory(), relativePath),
+      );
     } catch (error) {
       if (error instanceof SkillsDirectoryUnavailableError) {
         this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
@@ -2466,7 +2788,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private async handleSearchFigures(res: http.ServerResponse, query: string): Promise<void> {
+  private async handleSearchFigures(
+    res: http.ServerResponse,
+    query: string,
+  ): Promise<void> {
     const root = this.centralFiguresDirectory();
     try {
       const result = await searchCentralFigures(root, query);
@@ -2481,7 +2806,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private async handleReadFigure(res: http.ServerResponse, relativePath: string): Promise<void> {
+  private async handleReadFigure(
+    res: http.ServerResponse,
+    relativePath: string,
+  ): Promise<void> {
     try {
       this.sendJson(
         res,
@@ -2533,7 +2861,9 @@ export default class AgentHTTPProvider extends ProviderContract {
     }
   }
 
-  private static lintCounts(diagnostics: readonly LintDiagnostic[]): LintSeverityCounts {
+  private static lintCounts(
+    diagnostics: readonly LintDiagnostic[],
+  ): LintSeverityCounts {
     const counts: LintSeverityCounts = { error: 0, warning: 0, info: 0 };
     for (const diagnostic of diagnostics) {
       counts[diagnostic.severity] += 1;
@@ -2560,11 +2890,21 @@ export default class AgentHTTPProvider extends ProviderContract {
     try {
       if (scope === "focused") {
         if (context.focusedDocument === undefined) {
-          this.sendError(res, 404, "NO_FOCUSED_DOCUMENT", "No document is focused");
+          this.sendError(
+            res,
+            404,
+            "NO_FOCUSED_DOCUMENT",
+            "No document is focused",
+          );
           return;
         }
         if (context.focusedDocument.type !== "markdown") {
-          this.sendError(res, 400, "INVALID_PARAMS", "The focused document is not Markdown");
+          this.sendError(
+            res,
+            400,
+            "INVALID_PARAMS",
+            "The focused document is not Markdown",
+          );
           return;
         }
         targets = [
@@ -2590,20 +2930,37 @@ export default class AgentHTTPProvider extends ProviderContract {
         const workspaceFiles = await this._queries.listWorkspaceFiles();
         if (scope === "document") {
           if (query.documentId === undefined || query.documentId === "") {
-            this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "scope=document requires documentId",
+            );
             return;
           }
           const open = context.openDocuments.find(
             (document) => document.documentId === query.documentId,
           );
-          const workspaceFile = workspaceFiles.find((file) => file.documentId === query.documentId);
+          const workspaceFile = workspaceFiles.find(
+            (file) => file.documentId === query.documentId,
+          );
           if (open === undefined && workspaceFile === undefined) {
-            this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
+            this.sendError(
+              res,
+              404,
+              "DOCUMENT_NOT_FOUND",
+              "Document not found",
+            );
             return;
           }
           const documentPath = open?.path ?? workspaceFile!.path;
           if (!hasMarkdownExt(documentPath)) {
-            this.sendError(res, 400, "INVALID_PARAMS", "The requested document is not Markdown");
+            this.sendError(
+              res,
+              400,
+              "INVALID_PARAMS",
+              "The requested document is not Markdown",
+            );
             return;
           }
           targets = [
@@ -2618,21 +2975,35 @@ export default class AgentHTTPProvider extends ProviderContract {
         } else {
           if (scope === "workspace") {
             if (query.workspaceId === undefined || query.workspaceId === "") {
-              this.sendError(res, 400, "INVALID_PARAMS", "scope=workspace requires workspaceId");
+              this.sendError(
+                res,
+                400,
+                "INVALID_PARAMS",
+                "scope=workspace requires workspaceId",
+              );
               return;
             }
             if (
               !this._queries
                 .listWorkspaces()
-                .some((workspace) => workspace.workspaceId === query.workspaceId)
+                .some(
+                  (workspace) => workspace.workspaceId === query.workspaceId,
+                )
             ) {
-              this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Workspace not found");
+              this.sendError(
+                res,
+                404,
+                "DOCUMENT_NOT_FOUND",
+                "Workspace not found",
+              );
               return;
             }
           }
           const selected =
             scope === "workspace"
-              ? workspaceFiles.filter((file) => file.workspaceId === query.workspaceId)
+              ? workspaceFiles.filter(
+                  (file) => file.workspaceId === query.workspaceId,
+                )
               : workspaceFiles;
           const seen = new Set<string>();
           targets = selected
@@ -2665,7 +3036,9 @@ export default class AgentHTTPProvider extends ProviderContract {
             Number.MAX_SAFE_INTEGER,
           );
           if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-            throw new Error(`Could not read selected lint document ${target.path}`);
+            throw new Error(
+              `Could not read selected lint document ${target.path}`,
+            );
           }
           return { path: target.path, text: read.content };
         }),
@@ -2676,7 +3049,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         current: boolean,
       ): LintResponse["documents"][number] => {
         const diagnostics: LintDiagnostic[] = record.diagnostics.filter(
-          (diagnostic) => severityWeight[diagnostic.severity] >= severityWeight[minimum],
+          (diagnostic) =>
+            severityWeight[diagnostic.severity] >= severityWeight[minimum],
         );
         return {
           ...target,
@@ -2692,7 +3066,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       if (scope === "workspace" || scope === "all") {
         // A workspace answers from the lint cache; the background linter
         // brings every outdated or pending document current.
-        const lookups = await workspaceLintRows(this._app.documentLint, sources);
+        const lookups = await workspaceLintRows(
+          this._app.documentLint,
+          sources,
+        );
         lookups.forEach((lookup, index) => {
           const target = targets[index];
           if (lookup.record === undefined) {
@@ -2708,7 +3085,8 @@ export default class AgentHTTPProvider extends ProviderContract {
       } else {
         const records = await Promise.all(
           sources.map(
-            async (source) => await this._app.documentLint.lint(source.path, source.text),
+            async (source) =>
+              await this._app.documentLint.lint(source.path, source.text),
           ),
         );
         records.forEach((record, index) => {
@@ -2716,7 +3094,9 @@ export default class AgentHTTPProvider extends ProviderContract {
         });
       }
 
-      const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+      const allDiagnostics = documents.flatMap(
+        (document) => document.diagnostics,
+      );
       this.sendJson(res, 200, {
         scope,
         documents,
@@ -2792,7 +3172,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     });
   }
 
-  private sendJson(res: http.ServerResponse, status: number, body: AgentApiResponseBody): void {
+  private sendJson(
+    res: http.ServerResponse,
+    status: number,
+    body: AgentApiResponseBody,
+  ): void {
     const json = JSON.stringify(body);
     res.writeHead(status, {
       "Content-Type": "application/json",

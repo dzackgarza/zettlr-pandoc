@@ -2355,6 +2355,32 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ZoteroSearchItem"
+    ZoteroExtractionsResponse:
+      type: object
+      required:
+        - itemKey
+        - extractions
+      additionalProperties: false
+      properties:
+        itemKey:
+          type: string
+        extractions:
+          type: array
+          items:
+            type: object
+            required:
+              - attachmentKey
+              - title
+              - content
+            additionalProperties: false
+            properties:
+              attachmentKey:
+                type: string
+              title:
+                type: string
+              content:
+                type: string
+                description: The attached Markdown extraction text.
     ZoteroAddedItem:
       type: object
       required:
@@ -3771,6 +3797,38 @@ paths:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
           description: Zotero or the citation database is not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+  /v1/zotero/items/{itemKey}/extractions:
+    get:
+      operationId: getZoteroExtractions
+      tags:
+        - zotero
+      summary: Read the Markdown extractions attached to a Zotero item
+      parameters:
+        - name: itemKey
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z0-9]{8}$"
+      responses:
+        "200":
+          description: Every Markdown extraction child and its text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoteroExtractionsResponse"
+        "502":
+          description: Zotero or an attachment file could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "503":
+          description: Zotero or the citation database is unavailable.
           content:
             application/json:
               schema:

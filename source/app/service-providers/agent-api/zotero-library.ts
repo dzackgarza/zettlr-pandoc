@@ -25,11 +25,13 @@ import type {
   ZoteroIdentifierImportResponse,
   ZoteroSearchItem,
   ZoteroSearchResponse,
+  ZoteroExtractionsResponse,
   ZoteroSourceRemediation,
   ZoteroUrlImportRequest,
   ZoteroUrlImportResponse,
 } from "@dts/common/agent-api";
 import type CiteprocProvider from "@providers/citeproc";
+import fs from "node:fs/promises";
 
 /** Zotero's local HTTP server, at the default of its httpServer.port preference. */
 const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
@@ -80,7 +82,12 @@ interface AddonError {
 
 /** The add-on operations this API sends to POST /write. */
 type AddonWriteRequest =
-  | { operation: "import_by_identifier"; identifier: string; collection_keys?: string[] }
+  | { operation: "get_item_children"; item_key: string }
+  | {
+      operation: "import_by_identifier";
+      identifier: string;
+      collection_keys?: string[];
+    }
   | {
       operation: "import_from_url";
       url: string;
@@ -108,10 +115,77 @@ interface AddonUrlImport {
   };
 }
 
+interface AddonChildrenEnvelope {
+  success: boolean;
+  details: {
+    children: Array<{
+      item_key: string;
+      title: string;
+      child_type: "attachment" | "note";
+      content_type?: string;
+      file?:
+        | { state: "on_disk"; path: string }
+        | { state: "missing" | "linked_url" };
+    }>;
+  };
+}
+
 export default class ZoteroLibrary {
   constructor(readonly citeproc: CiteprocProvider) {}
 
-  async search(query: string, limit: number): Promise<ZoteroResult<ZoteroSearchResponse>> {
+  async extractions(
+    itemKey: string,
+  ): Promise<ZoteroResult<ZoteroExtractionsResponse>> {
+    const response = await this.request<AddonChildrenEnvelope>(
+      new URL("/write", ZOTERO_ORIGIN),
+      {
+        operation: "get_item_children",
+        item_key: itemKey,
+      },
+    );
+    if (!response.ok) return response;
+    if (!response.body.success) {
+      throw new Error(
+        "Zotero returned an unsuccessful child listing with HTTP 200",
+      );
+    }
+    const extractions: ZoteroExtractionsResponse["extractions"] = [];
+    for (const child of response.body.details.children) {
+      if (
+        child.child_type !== "attachment" ||
+        child.content_type !== "text/markdown"
+      )
+        continue;
+      if (child.file?.state !== "on_disk") {
+        return {
+          ok: false,
+          status: 502,
+          code: "ZOTERO_REQUEST_FAILED",
+          message: `Markdown extraction ${child.item_key} has no local file`,
+        };
+      }
+      try {
+        extractions.push({
+          attachmentKey: child.item_key,
+          title: child.title,
+          content: await fs.readFile(child.file.path, "utf8"),
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          status: 502,
+          code: "ZOTERO_REQUEST_FAILED",
+          message: `Cannot read markdown extraction ${child.item_key}: ${String(error)}`,
+        };
+      }
+    }
+    return { ok: true, body: { itemKey, extractions } };
+  }
+
+  async search(
+    query: string,
+    limit: number,
+  ): Promise<ZoteroResult<ZoteroSearchResponse>> {
     const url = new URL("/api/users/0/items/top", ZOTERO_ORIGIN);
     url.search = new URLSearchParams({
       q: query,
@@ -164,12 +238,16 @@ export default class ZoteroLibrary {
     }
     const body = response.body;
     const items = await Promise.all(
-      body.item_keys.map((itemKey, index) => this.addedItem(itemKey, body.citation_keys[index])),
+      body.item_keys.map((itemKey, index) =>
+        this.addedItem(itemKey, body.citation_keys[index]),
+      ),
     );
     return { ok: true, body: { items } };
   }
 
-  async importUrl(request: ZoteroUrlImportRequest): Promise<ZoteroResult<ZoteroUrlImportResponse>> {
+  async importUrl(
+    request: ZoteroUrlImportRequest,
+  ): Promise<ZoteroResult<ZoteroUrlImportResponse>> {
     const fallback = request.fallbackMetadata;
     const response = await this.write<AddonUrlImport>({
       operation: "import_from_url",
@@ -183,7 +261,9 @@ export default class ZoteroLibrary {
               year: fallback.year,
               creators: fallback.creators.map((creator) => ({
                 last_name: creator.lastName,
-                ...(creator.firstName === undefined ? {} : { first_name: creator.firstName }),
+                ...(creator.firstName === undefined
+                  ? {}
+                  : { first_name: creator.firstName }),
               })),
             },
           }),
@@ -204,15 +284,23 @@ export default class ZoteroLibrary {
     };
   }
 
-  private async addedItem(itemKey: string, citationKey: string): Promise<ZoteroAddedItem> {
+  private async addedItem(
+    itemKey: string,
+    citationKey: string,
+  ): Promise<ZoteroAddedItem> {
     return {
       itemKey,
       citationKey,
-      citable: await this.citeproc.awaitMainLibraryItem(citationKey, CITABLE_DEADLINE_MS),
+      citable: await this.citeproc.awaitMainLibraryItem(
+        citationKey,
+        CITABLE_DEADLINE_MS,
+      ),
     };
   }
 
-  private async write<Body>(body: AddonWriteRequest): Promise<ZoteroResult<Body>> {
+  private async write<Body>(
+    body: AddonWriteRequest,
+  ): Promise<ZoteroResult<Body>> {
     return await this.request<Body>(new URL("/write", ZOTERO_ORIGIN), body);
   }
 
@@ -229,7 +317,8 @@ export default class ZoteroLibrary {
     try {
       response = await fetch(url, {
         method: body === undefined ? "GET" : "POST",
-        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        headers:
+          body === undefined ? {} : { "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (error) {

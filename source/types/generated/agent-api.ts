@@ -531,6 +531,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/zotero/items/{itemKey}/extractions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the Markdown extractions attached to a Zotero item */
+    get: operations["getZoteroExtractions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/zotero/imports/identifier": {
     parameters: {
       query?: never;
@@ -582,7 +599,12 @@ export interface components {
      * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
      * @enum {string}
      */
-    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
+    ReviewState:
+      | "active"
+      | "resolved-awaiting-save"
+      | "completed"
+      | "cleared"
+      | "invalidated";
     ReviewSummary: {
       reviewId: string;
       state: components["schemas"]["ReviewState"];
@@ -1122,7 +1144,8 @@ export interface components {
       reviewId: string;
       linkedAt: string;
       /** @enum {string} */
-      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+      terminalOutcome?:
+        "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
     };
     AnnotationAgentStatus:
       | {
@@ -1489,6 +1512,15 @@ export interface components {
     };
     ZoteroSearchResponse: {
       items: components["schemas"]["ZoteroSearchItem"][];
+    };
+    ZoteroExtractionsResponse: {
+      itemKey: string;
+      extractions: {
+        attachmentKey: string;
+        title: string;
+        /** @description The attached Markdown extraction text. */
+        content: string;
+      }[];
     };
     ZoteroAddedItem: {
       /** @description The Zotero item key. */
@@ -2837,6 +2869,46 @@ export interface operations {
         };
       };
       /** @description Zotero or the citation database is not available */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+    };
+  };
+  getZoteroExtractions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        itemKey: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every Markdown extraction child and its text. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroExtractionsResponse"];
+        };
+      };
+      /** @description Zotero or an attachment file could not be read. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description Zotero or the citation database is unavailable. */
       503: {
         headers: {
           [name: string]: unknown;
