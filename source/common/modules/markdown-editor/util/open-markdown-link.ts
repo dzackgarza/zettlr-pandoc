@@ -65,6 +65,14 @@ export default function (url: string, view: EditorView): void {
     const base = pathDirname(view.state.field(configField).metadata.path);
     const validURI = makeValidUri(url, base);
 
+    if (
+      validURI.startsWith("safe-file://") &&
+      /^#page=[1-9]\d*$/.test(new URL(validURI).hash)
+    ) {
+      window.location.assign(validURI);
+      return;
+    }
+
     // Create a path from the URL by stripping the protocol and decoding any
     // potential encoded characters.
     let localPath = decodeURIComponent(validURI.replace("safe-file://", ""));

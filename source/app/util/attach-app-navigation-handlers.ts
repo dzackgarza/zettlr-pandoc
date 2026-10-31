@@ -15,6 +15,7 @@
 
 import { reportError } from "@common/util/error-reporting";
 import { app, shell } from "electron";
+import { spawn } from "node:child_process";
 import type LogProvider from "../service-providers/log";
 
 /**
@@ -25,6 +26,19 @@ import type LogProvider from "../service-providers/log";
  */
 function maybeOpenExternal(url: string): void {
   if (url.startsWith("safe-file://")) {
+    const page = new URL(url).hash.match(/^#page=([1-9]\d*)$/);
+    if (page !== null) {
+      const filePath = decodeURIComponent(new URL(url).pathname);
+      const viewer = spawn("okular", ["--page", page[1], filePath], {
+        detached: true,
+        stdio: "ignore",
+      });
+      viewer.on("error", (err) => {
+        reportError(`[Window Manager] Could not open PDF ${filePath}: ${err.message}.`);
+      });
+      viewer.unref();
+      return;
+    }
     // will-navigate assumes an URL and will pass an encoded URI, so we have to
     // make sure to decode the url so that %28 becomes ( again.
     const unencoded = decodeURIComponent(url).substring(12);
