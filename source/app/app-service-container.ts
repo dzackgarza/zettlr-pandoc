@@ -193,12 +193,6 @@ export class AppServiceContainer {
         }
       },
     });
-    this._agentHTTPProvider = new AgentHTTPProvider(
-      this._logProvider,
-      this._documentManager,
-      this,
-      this._citeprocProvider,
-    );
     this._tagProvider = new TagProvider(
       this._logProvider,
       this._documentManager,
@@ -215,6 +209,12 @@ export class AppServiceContainer {
       this._logProvider,
       this._configProvider,
       this._windowProvider,
+    );
+    this._agentHTTPProvider = new AgentHTTPProvider(
+      this._logProvider,
+      this._documentManager,
+      this,
+      this._citeprocProvider,
     );
     this._trayProvider = new TrayProvider(
       this._logProvider,
