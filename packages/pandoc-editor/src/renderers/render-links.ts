@@ -30,6 +30,10 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
   const ranges: Array<Range<Decoration>> = [];
   const hiddenDeco = Decoration.replace({});
+  const linkLabelDeco = Decoration.mark({
+    class: "cm-preview-link",
+    attributes: { title: "Ctrl/Command-click to open link" },
+  });
   const includeAdjacent = view.state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
@@ -60,6 +64,7 @@ function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
 
     ranges.push(
       hiddenDeco.range(marks[0].from, marks[0].to),
+      linkLabelDeco.range(marks[0].to, marks[1].from),
       hiddenDeco.range(marks[1].from, label ? label.to : marks[marks.length - 1].to),
     );
   });

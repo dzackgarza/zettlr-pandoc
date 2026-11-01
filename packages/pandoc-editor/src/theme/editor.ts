@@ -527,6 +527,16 @@ export const editorTheme = EditorView.baseTheme({
     color: "var(--zettlr-editor-primary-color)",
     textDecoration: "var(--zettlr-editor-line-decoration)",
   },
+  ".cm-preview-link": {
+    borderRadius: "0.25em",
+    padding: "0 0.18em",
+    margin: "0 0.06em",
+    backgroundColor: "color-mix(in srgb, currentColor 10%, transparent)",
+    cursor: "pointer",
+  },
+  ".cm-preview-link:hover": {
+    backgroundColor: "color-mix(in srgb, currentColor 20%, transparent)",
+  },
   ".cm-string": {
     color: "var(--zettlr-editor-secondary-color)",
   },
