@@ -36,5 +36,5 @@ excludes=(
   git -C "$repo" diff -- . "${excludes[@]}"
   # Untracked non-ignored files, content-hashed.
   git -C "$repo" ls-files --others --exclude-standard -z -- . "${excludes[@]}" |
-    (cd -- "$repo" && xargs -0 -r sha256sum)
+    (cd -- "$repo" && xargs -0 -r sha256sum --)
 } | sha256sum | cut -d' ' -f1
