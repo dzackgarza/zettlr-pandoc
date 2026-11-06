@@ -16,20 +16,17 @@
 import { reportError } from "@common/util/error-reporting";
 import errorToString from "@common/util/error-to-string";
 import { getCLIArgument, handleExitArguments } from "@providers/cli-provider";
-import { app } from "electron";
+import { app, crashReporter } from "electron";
 import path from "path";
-import {
-  getAppServiceContainer,
-  isAppServiceContainerReady,
-} from "./app/app-service-container";
-import { bootApplication, shutdownApplication } from "./app/lifecycle";
+import { getAppServiceContainer, isAppServiceContainerReady } from "./app/app-service-container";
 import { ApplicationLifecycle } from "./app/application-lifecycle";
 import {
   acquireLaunch,
+  type LaunchOutcome,
   launchRequestSchema,
   replyToLaunch,
-  type LaunchOutcome,
 } from "./app/launch-request";
+import { bootApplication, shutdownApplication } from "./app/lifecycle";
 // Helper function to extract files to open from process.argv
 import extractFilesFromArgv from "./app/util/extract-files-from-argv";
 
@@ -42,9 +39,7 @@ function logUnhandledProcessError(message: string): void {
 }
 
 process.on("uncaughtExceptionMonitor", (error, origin) => {
-  logUnhandledProcessError(
-    `[Application] Uncaught exception (${origin})\n${errorToString(error)}`,
-  );
+  logUnhandledProcessError(`[Application] Uncaught exception (${origin})\n${errorToString(error)}`);
 });
 
 handleExitArguments();
@@ -66,13 +61,23 @@ if (dataDir !== undefined) {
   }
 
   if (isAppServiceContainerReady()) {
-    getAppServiceContainer().log.info(
-      `[Application] Using custom data dir: ${dataDir}`,
-    );
+    getAppServiceContainer().log.info(`[Application] Using custom data dir: ${dataDir}`);
   }
   app.setPath("userData", dataDir);
   app.setAppLogsPath(path.join(dataDir, "logs"));
 }
+
+// Write a local minidump for every crashed process into userData/Crashpad.
+// Nothing is uploaded. See: https://www.electronjs.org/docs/latest/api/crash-reporter
+crashReporter.start({ uploadToServer: false });
+
+// A helper process (GPU, utility, a renderer's zygote child) that exits leaves
+// no other record. See: https://www.electronjs.org/docs/latest/api/app#event-child-process-gone
+app.on("child-process-gone", (_event, { type, reason, exitCode, name }) => {
+  logUnhandledProcessError(
+    `[Application] Child process gone: type=${type} name=${name ?? "-"} reason=${reason} exitCode=${exitCode}`,
+  );
+});
 
 // To show notifications properly on Windows, we must manually set the appUserModelID
 // See https://www.electronjs.org/docs/tutorial/notifications#windows
@@ -99,10 +104,7 @@ function failLifecycle(error: Error): void {
   app.exit(1);
 }
 
-async function completeNativeActivation(
-  files: string[],
-  outcome: LaunchOutcome,
-): Promise<void> {
+async function completeNativeActivation(files: string[], outcome: LaunchOutcome): Promise<void> {
   switch (outcome.status) {
     case "ready":
       return;
@@ -150,12 +152,7 @@ const lifecycle = new ApplicationLifecycle({
     // checks to make sure the environment is as expected for Zettlr, and boots
     // up the providers.
     await bootApplication();
-    if (
-      !(await getAppServiceContainer().commands.run(
-        "roots-add",
-        extractFilesFromArgv(),
-      ))
-    ) {
+    if (!(await getAppServiceContainer().commands.run("roots-add", extractFilesFromArgv()))) {
       throw new Error("Could not open the startup documents");
     }
     console.log("[Application] Boot complete.");
@@ -169,8 +166,7 @@ const lifecycle = new ApplicationLifecycle({
   shutdown: shutdownApplication,
   release: () => app.releaseSingleInstanceLock(),
   quit() {
-    if (restartRequested)
-      app.relaunch({ args: process.argv.slice(1).concat(restartFiles) });
+    if (restartRequested) app.relaunch({ args: process.argv.slice(1).concat(restartFiles) });
     app.exit(0);
   },
   report: (error) => logUnhandledProcessError(errorToString(error)),
@@ -206,9 +202,7 @@ app.on("second-instance", (_event, _argv, _cwd, data) => {
 app.on("open-file", (e, filePath) => {
   e.preventDefault(); // Need to explicitly set this b/c we're handling this
 
-  lifecycle.activate([filePath], (outcome) =>
-    completeNativeActivation([filePath], outcome),
-  );
+  lifecycle.activate([filePath], (outcome) => completeNativeActivation([filePath], outcome));
 });
 
 /**
@@ -251,7 +245,5 @@ app.on("activate", function () {
  * a Promise is rejected somewhere.
  */
 process.on("unhandledRejection", (err: unknown) => {
-  logUnhandledProcessError(
-    `[Application] Unhandled rejection received\n${errorToString(err)}`,
-  );
+  logUnhandledProcessError(`[Application] Unhandled rejection received\n${errorToString(err)}`);
 });

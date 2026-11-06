@@ -6,10 +6,7 @@ import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 
-const script = path.resolve(
-  __dirname,
-  "../scripts/desktop/zettlr-pandoc-source-fingerprint",
-);
+const script = path.resolve(__dirname, "../scripts/desktop/zettlr-pandoc-source-fingerprint");
 
 function fingerprint(repo: string): string {
   return execFileSync(script, [repo], { encoding: "utf8" }).trim();
