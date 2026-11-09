@@ -295,4 +295,21 @@ describe("assembled app: gitignore rules filter the workspace", function () {
       "index.md",
     ]);
   });
+
+  it("lists a file of any type until a rule in the dialog hides it", async function () {
+    await writeFile(path.join(workspace, "coble", "proof.tex"), "\\section{Proof}\n", "utf8");
+    await assertListed(["coble/proof.tex"]);
+
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    const globalRules = activePage().locator(`${DIALOG} [data-ignore-rules-global]`);
+    await globalRules.fill(`${await globalRules.inputValue()}\n*.tex`);
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+
+    await assertNotListed(["coble/proof.tex"]);
+    await assertListed(["coble/notes.md"]);
+    screenshots.set("tex-hidden-by-rule.png", await activePage().screenshot());
+  });
 });
