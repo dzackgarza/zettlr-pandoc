@@ -167,7 +167,6 @@ import {
 } from "./util/configuration";
 // Utilities
 import { copyAsHTML, pasteAsPlain } from "./util/copy-paste-cut";
-import { whenAuthoritySynced } from "./util/when-authority-synced";
 import { countRange } from "./util/word-count";
 
 export interface DocumentWrapper {
@@ -1465,22 +1464,6 @@ export default class MarkdownEditor extends EventEmitter {
    */
   async runFormatter(formatter: MarkdownFormatter): Promise<FormatResult> {
     return formatDocument(this._instance, formatter);
-  }
-
-  /**
-   * Resolves once every pending change has been pushed to the document
-   * authority (there are no sendable collab updates left), and THROWS when
-   * `timeout` ms pass with updates still unsent. Callers use this to order a
-   * format-then-save: the on-disk write must see the formatted bytes, so the
-   * format's collab update has to reach main first, and a caller that cannot be
-   * given that ordering must hear about it instead of saving anyway.
-   *
-   * @param   {number}         timeout  Backstop in ms (default 2000).
-   *
-   * @return  {Promise<void>}
-   */
-  async whenSynced(timeout = 2000): Promise<void> {
-    await whenAuthoritySynced(() => this._instance.state, timeout);
   }
 
   /**

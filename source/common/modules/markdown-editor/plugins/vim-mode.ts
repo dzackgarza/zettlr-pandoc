@@ -17,12 +17,10 @@
  */
 
 import type { Extension } from "@codemirror/state";
-import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
-import { pathBasename } from "@common/util/renderer-path-polyfill";
-import showToast from "@common/util/show-toast";
 import { type CodeMirror, type ExParams, Vim, vim } from "@replit/codemirror-vim";
 import { configField } from "../util/configuration";
+import { saveBuffer } from "../util/save-buffer";
 import { editorMetadataFacet } from "./editor-metadata";
 
 const ipcRenderer = window.ipc;
@@ -46,31 +44,9 @@ async function write(cm: CodeMirror, _params: ExParams): Promise<boolean> {
   // editor the same as a refused write. `quit` reads the field the same way.
   const filePath = cm.cm6.state.field(configField).metadata.path;
 
-  return await ipcRenderer
-    .invoke("documents:save-file", { path: filePath })
-    .then((result) => {
-      if (result.ok) {
-        return true;
-      }
-      // `:w` is a save request like any other, so it gets the same treatment as
-      // the Save shortcut in MainEditor: the provider hands back the reason it
-      // refused, and we surface it on the closable toast rather than dropping it
-      // into the console where nobody sees it.
-      const message =
-        result.refusal?.message ?? trans('Could not save "%s".', pathBasename(filePath));
-      reportError(
-        `[vim :w] Main refused to save ${filePath}` +
-          (result.refusal !== undefined
-            ? ` (${result.refusal.reason}): ${result.refusal.message}`
-            : ""),
-      );
-      showToast(message, "error", 12000);
-      return false;
-    })
-    .catch((e) => {
-      reportError(e);
-      return false;
-    });
+  // `:w` is a save request like any other: it goes through the same path as
+  // the Save shortcut in MainEditor.
+  return await saveBuffer(() => cm.cm6.state, filePath);
 }
 
 /**

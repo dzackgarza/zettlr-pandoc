@@ -108,6 +108,7 @@ import { OPEN_TIKZ_VISUAL_EDITOR_EVENT } from "@common/modules/markdown-editor/r
 import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
+import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
@@ -581,51 +582,27 @@ const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
   }
 
   if (command === "save-file") {
-    // Main is telling us to save, so tell main to save the current file.
+    const editor = currentEditor;
+    // saveBuffer waits until the document authority holds the whole buffer:
+    // the on-disk write goes through the authority.
     const doSave = (): void => {
-      ipcRenderer
-        .invoke("documents:save-file", { path: props.file.path })
-        .then((result) => {
-          if (result.ok) {
-            return;
-          }
-          // The provider refuses saves it cannot perform (an unresolved review,
-          // an external edit). It deliberately does not present this itself: a
-          // blocking main-process modal freezes the app until dismissed. Show
-          // the closable toast surface instead, and never swallow the reason.
-          const message =
-            result.refusal?.message ?? trans('Could not save "%s".', pathBasename(props.file.path));
-          reportError(
-            `[MainEditor] Main refused to save ${props.file.path}` +
-              (result.refusal !== undefined
-                ? ` (${result.refusal.reason}): ${result.refusal.message}`
-                : ""),
-          );
-          showToast(message, "error", 12000);
-        })
-        .catch((e) => reportError(e));
+      void saveBuffer(() => editor.instance.state, props.file.path);
     };
 
     // Format-on-save (issue #26): when enabled for a Markdown file, run flowmark
-    // over the buffer first and wait for the format's collab update to reach the
-    // document authority, so the on-disk write sees the formatted bytes. The
-    // format is a single undo step, so one undo reverts an unwanted auto-format.
+    // over the buffer first. The format is a single undo step, so one undo
+    // reverts an unwanted auto-format. saveBuffer then waits for the format's
+    // collab update to reach the authority, so the write sees the formatted
+    // bytes; when it cannot, it refuses the save and says so.
     //
     // A formatter that reports a typed failure (flowmark absent, bad exit) left
     // the buffer untouched, surfaceFormatResult tells the author why, and the
-    // save proceeds on the unchanged text. But if the format DID change the
-    // buffer and whenSynced cannot promise those bytes reached the authority,
-    // saving would write the pre-format text and report an ordinary success —
-    // the author would find out by diffing the file. Refuse the save and say so
-    // instead; the buffer keeps the formatted text and pressing save again
-    // retries the whole thing.
-    if (configStore.config.editor.formatOnSave && isMarkdown.value && currentEditor !== undefined) {
-      const editor = currentEditor;
+    // save proceeds on the unchanged text.
+    if (configStore.config.editor.formatOnSave && isMarkdown.value) {
       editor
         .runFormatter(ipcMarkdownFormatter(props.file.path))
-        .then(async (result) => {
+        .then((result) => {
           surfaceFormatResult(result);
-          await editor.whenSynced();
           doSave();
         })
         .catch((e) => {
