@@ -13,6 +13,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
@@ -85,46 +86,21 @@ export function getFileManagerFields(
       ],
     },
     {
-      title: trans("File types"),
-      infoString: trans(
-        "The file manager and Ctrl+Shift+P show only files with these extensions. Leave the list empty to show every file type permitted by File Treatment.",
-      ),
-      group: PreferencesGroups.FileManager,
-      help: undefined,
-      fields: [
-        {
-          type: "token",
-          label: trans("Include file extensions"),
-          placeholder: trans('Enter an extension, e.g. ".md"'),
-          model: "fileManager.filters.include",
-        },
-      ],
-    },
-    {
       title: trans("File filters"),
       infoString: trans(
-        'A file or folder that a rule matches is not in the file manager, the launcher, search, links or lint. A rule is one gitignore pattern, for example "*scripts*", "*_files/", "references/" or "AGENTS.md". These rules apply to all workspaces; a workspace adds its own in the file ".zettlrignore" at its root. The menu of the Workspaces header in the file manager has "Edit filters…" for both.',
+        'Gitignore rules decide which files and folders the app lists. One dialog edits them: the rules for all workspaces and the ".zettlrignore" file of each workspace. To list only some file types, start with "*" and "!*/", then add one "!*.md" line for each type.',
       ),
       group: PreferencesGroups.FileManager,
       help: undefined,
       fields: [
         {
-          type: "list",
-          valueType: "simpleArray",
-          model: "fileManager.ignoreRules",
-          columnLabels: [trans("Rule")],
-          addable: true,
-          editable: true,
-          deletable: true,
-          emptyMessage: trans("No rules"),
-        },
-        {
-          type: "checkbox",
-          label: trans("Turn the filters off"),
-          info: trans(
-            "No rule hides a file or folder anywhere in the app. The file manager dims each file and folder that a rule matches.",
-          ),
-          model: "fileManager.showIgnored",
+          type: "button",
+          label: trans("Edit file filters…"),
+          onClick: () => {
+            window.ipc
+              .invoke("application", { command: "edit-ignore-rules" })
+              .catch((err) => reportError(err));
+          },
         },
       ],
     },

@@ -1,10 +1,6 @@
 import { strict as assert } from "assert";
 import { defaultKeybindings } from "source/app/service-providers/menu/shortcuts";
-import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from "source/types/common/fsal";
-import {
-  createFileManagerVisibilityFilter,
-  type FileManagerVisibilityConfig,
-} from "source/win-main/file-manager/util/filter-children";
+import type { CodeFileDescriptor, MDFileDescriptor } from "source/types/common/fsal";
 import matchQuery from "source/win-main/file-manager/util/match-query";
 
 const markdown: MDFileDescriptor = {
@@ -62,49 +58,7 @@ const yaml: CodeFileDescriptor = {
   linefeed: "\n",
 };
 
-const directory: DirDescriptor = {
-  path: "/notes",
-  dir: "/",
-  name: "notes",
-  type: "directory",
-  size: 1,
-  modtime: 0,
-  creationtime: 0,
-  settings: {
-    sorting: "name-up",
-    explorer: {
-      displayName: "inherit",
-      sortMetadataKey: "zettlr-order_",
-      foldersFirst: null,
-      projectFilter: "all",
-    },
-    icon: null,
-    project: null,
-    color: null,
-    quartoManifest: null,
-  },
-  isGitRepository: false,
-};
-
-const visibilityConfig: FileManagerVisibilityConfig = {
-  attachmentExtensions: [],
-  fileManager: {
-    filters: {
-      include: [".md", ".tex"],
-    },
-  },
-  files: {
-    builtin: { showInFilemanager: true, openWith: "zettlr" },
-    images: { showInFilemanager: true, openWith: "system" },
-    pdf: { showInFilemanager: true, openWith: "system" },
-    msoffice: { showInFilemanager: true, openWith: "system" },
-    openOffice: { showInFilemanager: true, openWith: "system" },
-    dataFiles: { showInFilemanager: true, openWith: "system" },
-    dotFiles: { showInFilemanager: false, openWith: "system" },
-  },
-};
-
-describe("Ctrl+Shift+P shared file-manager visibility", function () {
+describe("Ctrl+Shift+P file picker", function () {
   it("keeps Ctrl+Shift+P/Cmd+Shift+P as the file-picker shortcut", function () {
     assert.deepEqual(defaultKeybindings["filter-files"], {
       key: "Ctrl-Shift-p",
@@ -112,13 +66,11 @@ describe("Ctrl+Shift+P shared file-manager visibility", function () {
     });
   });
 
-  it("applies transient text matching only after permanent visibility", function () {
-    const visible = createFileManagerVisibilityFilter(visibilityConfig);
+  it("matches the query against files of every type", function () {
     const matching = matchQuery("theorem", false, false);
 
-    assert.equal(visible(markdown) && matching(markdown), true);
-    assert.equal(visible(latex) && matching(latex), true);
-    assert.equal(visible(yaml) && matchQuery("project", false, false)(yaml), false);
-    assert.equal(visible(directory), true);
+    assert.equal(matching(markdown), true);
+    assert.equal(matching(latex), true);
+    assert.equal(matching(yaml), false);
   });
 });

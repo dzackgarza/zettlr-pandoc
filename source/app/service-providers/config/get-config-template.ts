@@ -28,15 +28,19 @@ import { v4 as uuid4 } from "uuid";
 import AUTOCORRECT_REPLACEMENTS from "./autocorrect-replacements.json";
 
 export type MarkdownTheme = "berlin" | "frankfurt" | "bielefeld" | "karl-marx-stadt" | "bordeaux";
-export const DEFAULT_FILE_FILTER_INCLUDE = [...MD_EXT];
+/**
+ * The rules of a new profile: list folders and Markdown files only, and no
+ * dot file or folder. The rules are gitignore lines, read in order.
+ */
+export const DEFAULT_IGNORE_RULES = [
+  "*",
+  "!*/",
+  ...MD_EXT.map((extension) => `!*${extension}`),
+  ".*",
+];
 
-// This type adds groups of file types to the settings in
-// order to allow users to display them in the file tree, and open them
-// internally or externally.
-// NOTE: The generics are meant so that you can restrict certain groupings.
-// E.g., FileTypeSettings<true, 'zettlr'> enforces these values for the two
-// properties.
-type FileTypeSettings<F = boolean, O = "zettlr" | "system"> = { showInFilemanager: F; openWith: O };
+/** How the app opens a file type that it can show itself. */
+type FileTypeSettings = { openWith: "zettlr" | "system" };
 
 export type ConfigurableEditorShortcuts = EditorCommandId;
 export type ConfigurableUIShortcuts = WindowCommandId;
@@ -135,10 +139,6 @@ export type ConfigOptions = {
     ignoreRules: string[];
     /** Lists the files and folders that the ignore rules match. The rules stay. */
     showIgnored: boolean;
-    /** The file types that the file manager and the file picker list. */
-    filters: {
-      include: string[];
-    };
   };
 
   newFileNamePattern: string;
@@ -298,18 +298,8 @@ export type ConfigOptions = {
     renderHorizontalRules: boolean;
   };
   files: {
-    // Built-in files cannot be shown in the sidebar, will always be shown in
-    // the file manager, and will always be opened with Zettlr.
-    builtin: FileTypeSettings<true, "zettlr">;
-    // Images and PDFs can be entirely hidden or shown everywhere, and opened
-    // with the system default, or in Zettlr
     images: FileTypeSettings;
     pdf: FileTypeSettings;
-    // These file types can be shown anywhere, but are not open-able by Zettlr.
-    msoffice: FileTypeSettings<boolean, "system">;
-    openOffice: FileTypeSettings<boolean, "system">;
-    dataFiles: FileTypeSettings<boolean, "system">;
-    dotFiles: FileTypeSettings;
   };
   watchdog: {
     activatePolling: boolean;
@@ -435,11 +425,8 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       twoStepCollapseWorkspaces: false,
       sortWorkspacesManually: false, // By default, let Zettlr sort workspaces
       expandedDirectories: [],
-      ignoreRules: [],
+      ignoreRules: [...DEFAULT_IGNORE_RULES],
       showIgnored: false,
-      filters: {
-        include: [...DEFAULT_FILE_FILTER_INCLUDE],
-      },
     },
     newFileNamePattern: "%id.md",
     newFileDontPrompt: false, // If true immediately creates files
@@ -556,34 +543,8 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
       renderHorizontalRules: true,
     },
     files: {
-      builtin: {
-        showInFilemanager: true,
-        openWith: "zettlr",
-      },
-      images: {
-        showInFilemanager: true,
-        openWith: "system",
-      },
-      pdf: {
-        showInFilemanager: true,
-        openWith: "system",
-      },
-      msoffice: {
-        showInFilemanager: true,
-        openWith: "system",
-      },
-      openOffice: {
-        showInFilemanager: true,
-        openWith: "system",
-      },
-      dataFiles: {
-        showInFilemanager: true,
-        openWith: "system",
-      },
-      dotFiles: {
-        showInFilemanager: false,
-        openWith: "system",
-      },
+      images: { openWith: "system" },
+      pdf: { openWith: "system" },
     },
     // Language
     selectedDicts: [], // By default no spell checking is active to speed up first start.

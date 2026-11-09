@@ -27,18 +27,18 @@ const activateLabel = trans("Preview images and PDFs in Zettlr");
 
 const hasActivatedPreviws = computed(() => {
   return (
-    configStore.config.files.images.showInFilemanager &&
-    configStore.config.files.pdf.showInFilemanager
+    configStore.config.files.images.openWith === "zettlr" &&
+    configStore.config.files.pdf.openWith === "zettlr"
   );
 });
 
 function togglePreviews() {
   if (hasActivatedPreviws.value) {
-    configStore.setConfigValue("files.images", { showInFilemanager: false, openWith: "system" });
-    configStore.setConfigValue("files.pdf", { showInFilemanager: false, openWith: "system" });
+    configStore.setConfigValue("files.images", { openWith: "system" });
+    configStore.setConfigValue("files.pdf", { openWith: "system" });
   } else {
-    configStore.setConfigValue("files.images", { showInFilemanager: true, openWith: "zettlr" });
-    configStore.setConfigValue("files.pdf", { showInFilemanager: true, openWith: "zettlr" });
+    configStore.setConfigValue("files.images", { openWith: "zettlr" });
+    configStore.setConfigValue("files.pdf", { openWith: "zettlr" });
   }
 }
 </script>

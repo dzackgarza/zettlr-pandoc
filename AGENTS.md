@@ -422,6 +422,11 @@ of an isolated instance are in the first comment of #132.
   a workspace root. The pure module is `source/common/util/ignore-rules.ts`
   (`createIgnoreFilter`, `ruleForName`, `ruleForPath`, `setPathIgnored`,
   `movePathRules`, `removePathRules`).
+- **The rules are the only visibility setting.** File types and dot files are
+  rules too. A type allow-list starts with `*` and `!*/`, then has one
+  `!*.ext` line for each type (`DEFAULT_IGNORE_RULES` in
+  `get-config-template.ts`: Markdown only, no dot files). The built-in names
+  of `ignore-path.ts` (`.git`, `.ztr-directory`, ...) are not rules.
 - **One filter, in the FSAL:** `fsal/util/read-directory.ts` leaves hidden
   children out of every listing, and `FSAL.isListed` drops every watcher
   event of a hidden path. The file manager, the launcher, search, the link
@@ -444,9 +449,9 @@ of an isolated instance are in the first comment of #132.
   menu of a tree item (`file-manager/util/ignore-menu.ts`: hide or show the
   path, hide all items with the name), the Workspaces header menu (Edit
   filters…, Turn the filters off), the application menu and the launcher
-  (`menu.edit_ignore_rules`), and Preferences → File Manager. Preferences uses
-  the `list` field for the rules; the `token` field splits on spaces and
-  commas.
+  (`menu.edit_ignore_rules`), and the button in Preferences → File Manager
+  (command `edit-ignore-rules`). `IgnoreRulesDialog.vue` is the only editor
+  of the rule text.
 - **`fileManager.showIgnored`** turns the filters off for every consumer,
   not only for the file manager; the file manager then dims each match.
 - **Proof:** `test/ignore-rules.spec.ts`, `test/fsal-ignore-rules.spec.ts`,

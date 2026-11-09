@@ -23,8 +23,14 @@
     "recentGlobalSearches": []
   },
   "ui": {
-    "fileManagerSplitSize": [40, 60],
-    "editorSidebarSplitSize": [55, 45]
+    "fileManagerSplitSize": [
+      40,
+      60
+    ],
+    "editorSidebarSplitSize": [
+      55,
+      45
+    ]
   },
   "attachmentExtensions": [],
   "darkMode": true,
@@ -46,10 +52,9 @@
     "twoStepCollapseWorkspaces": false,
     "sortWorkspacesManually": false,
     "expandedDirectories": [],
-    "filters": {
-      "include": [".md", ".rmd", ".qmd", ".markdown", ".txt", ".mdx", ".mkd"]
-    },
-    "ignoreRules": [],
+    "ignoreRules": [
+      ".*"
+    ],
     "showIgnored": false
   },
   "newFileNamePattern": "%id.md",
@@ -351,39 +356,10 @@
     "renderHorizontalRules": true
   },
   "files": {
-    "builtin": {
-      "showInFilemanager": true,
-      "showInSidebar": false,
-      "openWith": "zettlr"
-    },
     "images": {
-      "showInFilemanager": false,
-      "showInSidebar": true,
       "openWith": "system"
     },
     "pdf": {
-      "showInFilemanager": false,
-      "showInSidebar": true,
-      "openWith": "system"
-    },
-    "msoffice": {
-      "showInFilemanager": false,
-      "showInSidebar": true,
-      "openWith": "system"
-    },
-    "openOffice": {
-      "showInFilemanager": false,
-      "showInSidebar": true,
-      "openWith": "system"
-    },
-    "dataFiles": {
-      "showInFilemanager": false,
-      "showInSidebar": true,
-      "openWith": "system"
-    },
-    "dotFiles": {
-      "showInFilemanager": false,
-      "showInSidebar": false,
       "openWith": "system"
     }
   },
@@ -398,7 +374,10 @@
     "deleteOnFail": false,
     "leaveAppRunning": false,
     "avoidNewTabs": false,
-    "iframeWhitelist": ["www.youtube.com", "player.vimeo.com"],
+    "iframeWhitelist": [
+      "www.youtube.com",
+      "player.vimeo.com"
+    ],
     "checkForUpdates": true,
     "zoomBehavior": "gui"
   },

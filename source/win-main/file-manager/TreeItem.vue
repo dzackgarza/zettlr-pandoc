@@ -220,7 +220,6 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
 import { eventsChangeChildren } from "./util/events-change-children";
-import { filterDescriptorChildren } from "./util/filter-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
@@ -289,11 +288,6 @@ const shouldBeCollapsed = computed<boolean>(
   () => props.filterResults.length === 0 && collapsed.value,
 );
 
-const showDotFiles = ref<boolean>(configStore.config.files.dotFiles.showInFilemanager);
-configStore.$subscribe((_mutation, state) => {
-  showDotFiles.value = state.config.files.dotFiles.showInFilemanager;
-});
-
 /**
  * The secondary icon's shape -- this is the visually FIRST icon to be
  * displayed. Displays either an angle (for directories with children), or
@@ -310,7 +304,7 @@ const secondaryIcon = computed(() => (filteredChildren.value.length > 0 ? "angle
  * @return  {string}  The icon name (as in: cds-shape)
  */
 const primaryIcon = computed(() => {
-  const { files, attachmentExtensions } = configStore.config;
+  const { attachmentExtensions } = configStore.config;
 
   if (props.item.type === "file" && writingTarget.value !== undefined) {
     return "writing-target";
@@ -332,12 +326,6 @@ const primaryIcon = computed(() => {
     } else if (hasExt(props.item.path, attachmentExtensions)) {
       return "file-group";
     } else {
-      // Generic other file (this should not happen as they get filtered out before)
-      if (!files.dotFiles.showInFilemanager) {
-        console.warn(
-          `Encountered a file with extension ${props.item.ext}. These should've been filtered out before reaching this point!`,
-        );
-      }
       return "unknown-status";
     }
   } else if (props.item.type === "directory" && props.item.dirNotFoundFlag === true) {
@@ -418,8 +406,6 @@ const filteredChildren = computed(() => {
     return [];
   }
 
-  const filter = filterDescriptorChildren();
-
   return (
     children.value
       // Ensure we only consider filtered files
@@ -430,14 +416,8 @@ const filteredChildren = computed(() => {
 
         return props.filterResults.some((res) => res.startsWith(child.path));
       })
-      // Filter based on our rules
-      .filter((child) => {
-        if (!combined.value) {
-          return child.type === "directory" && filter(child);
-        }
-
-        return filter(child);
-      })
+      // The thin and expanded modes list only folders in the tree.
+      .filter((child) => combined.value || child.type === "directory")
   );
 });
 
@@ -555,12 +535,6 @@ watch(operationType, (newVal) => {
 // this way it does.
 watch(toRef(props, "item"), function (value) {
   updateObject(value);
-});
-
-watch(showDotFiles, async function () {
-  if (props.item.type === "directory") {
-    await fetchChildren();
-  }
 });
 
 let stopShortcutListener: (() => void) | undefined;

@@ -104,6 +104,10 @@ const SYNTAX: ReadonlyArray<[rule: string, meaning: string]> = [
   ["AGENTS.md", trans("Each file and folder with the name “AGENTS.md”")],
   ["/drafts/old/", trans("The one folder “drafts/old” at the workspace root")],
   ["!keep.md", trans("Shows “keep.md” again, but not below a hidden folder")],
+  ["*", trans("Every file and folder: put it first to list only what a “!” rule shows")],
+  ["!*/", trans("Every folder again, after “*”")],
+  ["!*.tex", trans("Every file with the extension “.tex” again, after “*”")],
+  [".*", trans("Each file and folder with a name that starts with a dot")],
 ];
 
 const configStore = useConfigStore();

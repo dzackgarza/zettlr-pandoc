@@ -108,7 +108,6 @@ import tippy, { type Instance } from "tippy.js";
 import { computed, nextTick, onUpdated, ref, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
 import FileItem from "./FileItem.vue";
-import { filterDescriptorChildren } from "./util/filter-children";
 import matchQuery from "./util/match-query";
 import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
 
@@ -185,17 +184,14 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
   } as const;
 
   // ... and add them to our RecycleScroller.
-  const filter = filterDescriptorChildren();
   const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, (directory, children) => {
     return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
-  })
-    .filter(filter)
-    .map((props, id) => {
-      return {
-        id, // This helps the virtual scroller to adequately position the items
-        props, // The actual item
-      };
-    });
+  }).map((props, id) => {
+    return {
+      id, // This helps the virtual scroller to adequately position the items
+      props, // The actual item
+    };
+  });
 
   return sortedDescendants;
 });

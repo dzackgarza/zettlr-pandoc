@@ -296,6 +296,12 @@ export type ApplicationIPCContract = {
     request: { payload: { window: ProgrammaticallyOpenableWindows; hash?: string } };
     response: unknown;
   };
+  // Answered inline by run(): opens the file filter dialog in the last
+  // active main window, the one editor of the ignore rules.
+  "edit-ignore-rules": {
+    request: { payload?: undefined };
+    response: boolean;
+  };
   // Answered inline by run(): shows the window, then returns true.
   "open-preferences": {
     request: { payload?: PreferenceNavigationTarget };
@@ -462,6 +468,14 @@ export default class CommandProvider extends ProviderContract {
     } else if (command === "get-file-contents" && typeof payload === "string") {
       // Some renderer's editor has requested a file
       return await this._app.fsal.loadAnySupportedFile(payload);
+    } else if (command === "edit-ignore-rules") {
+      const mainWindow = this._app.windows.getFirstMainWindow();
+      if (mainWindow === undefined) {
+        throw new Error("The file filter dialog has no main window to open in.");
+      }
+      mainWindow.show();
+      mainWindow.webContents.send("shortcut", "edit-ignore-rules");
+      return true;
     } else if (command === "open-preferences") {
       this._app.windows.showPreferences(payload as PreferenceNavigationTarget | undefined);
       return true;

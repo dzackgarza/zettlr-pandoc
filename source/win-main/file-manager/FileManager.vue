@@ -112,7 +112,6 @@ import { useWorkspaceStore } from "source/pinia/workspace-store";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import FileList from "./FileList.vue";
 import FileTree from "./FileTree.vue";
-import { filterDescriptorChildren } from "./util/filter-children";
 import { buildFilePickerCache, type FilePickerCache } from "./util/match-query";
 
 const ipcRenderer = window.ipc;
@@ -140,12 +139,11 @@ const configStore = useConfigStore();
 const windowStateStore = useWindowStateStore();
 
 const selectedDirectory = computed(() => configStore.config.openDirectory);
-// The picker cache is exactly the file-manager-visible file set. Invoking
-// Ctrl+Shift+P only activates this already-computed candidate set. The cache
-// follows each publication of the descriptors and each configuration value
-// that the visibility filter reads.
+// The picker cache is every listed file. Invoking Ctrl+Shift+P only activates
+// this already-computed candidate set. The cache follows each publication of
+// the descriptors.
 const filePickerCache = computed<FilePickerCache>(() =>
-  buildFilePickerCache(workspaceStore.descriptorMap.values(), filterDescriptorChildren()),
+  buildFilePickerCache(workspaceStore.descriptorMap.values()),
 );
 
 /** Remembers the directory context when the Explorer itself takes focus. */
