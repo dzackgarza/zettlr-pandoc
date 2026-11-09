@@ -89,6 +89,16 @@ describe("assembled app: gitignore rules filter the workspace", function () {
       .waitFor({ state: "visible", timeout: 10_000 });
   }
 
+  /** Flips "Turn the filters off" in the file filter window and saves. */
+  async function toggleFiltersOff(): Promise<void> {
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    await activePage().locator(`${DIALOG} [data-ignore-rules-show-ignored]`).click();
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+  }
+
   async function openContextMenu(relativePath: string): Promise<void> {
     await row(relativePath).click({ button: "right" });
     await activePage().locator(".application-menu").waitFor({ state: "visible", timeout: 10_000 });
@@ -230,8 +240,7 @@ describe("assembled app: gitignore rules filter the workspace", function () {
   });
 
   it("turns the filters off everywhere and dims the matches, and shows one again from its context menu", async function () {
-    await openHeaderMenu();
-    await activePage().locator(MENU_ITEM("explorer-show-ignored")).click();
+    await toggleFiltersOff();
     await assertListed([
       "AGENTS.md",
       "scripts",
@@ -265,8 +274,7 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     await activePage().locator(MENU_ITEM("menu.unignore_path")).click();
     await waitForRulesFile("CONTRIBUTING.md\n");
 
-    await openHeaderMenu();
-    await activePage().locator(MENU_ITEM("explorer-show-ignored")).click();
+    await toggleFiltersOff();
     await assertNotListed(["AGENTS.md", "scripts", "coble/CONTRIBUTING.md", "coble/references"]);
     await assertListed(["coble/drafts", "coble/drafts/old.md"]);
     await waitForApiFiles(["coble/drafts/old.md", "coble/notes.md", "index.md"]);
@@ -296,8 +304,19 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     ]);
   });
 
-  it("lists a file of any type until a rule in the dialog hides it", async function () {
+  it("lists a file type once the window includes it, until a rule in the same window hides it", async function () {
     await writeFile(path.join(workspace, "coble", "proof.tex"), "\\section{Proof}\n", "utf8");
+    await row("coble/notes.md").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await row("coble/proof.tex").count(), 0, "the default file types are Markdown");
+
+    await openHeaderMenu();
+    await activePage().locator(MENU_ITEM("explorer-edit-ignore-rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    const include = activePage().locator(`${DIALOG} [data-ignore-rules-include]`);
+    await include.fill(`${await include.inputValue()}\n.tex`);
+    screenshots.set("file-filter-window.png", await activePage().screenshot());
+    await activePage().locator(`${DIALOG} [data-ignore-rules-save]`).click();
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
     await assertListed(["coble/proof.tex"]);
 
     await openHeaderMenu();

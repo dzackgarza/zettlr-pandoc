@@ -24,11 +24,14 @@ export interface FilePickerCache {
   pathSet: Set<string>;
 }
 
-/** Precomputes picker candidates: every file that the FSAL lists. */
-export function buildFilePickerCache(descriptors: Iterable<AnyDescriptor>): FilePickerCache {
+/** Precomputes picker candidates from the file manager's visibility authority. */
+export function buildFilePickerCache(
+  descriptors: Iterable<AnyDescriptor>,
+  isVisible: (item: AnyDescriptor) => boolean,
+): FilePickerCache {
   const paths: string[] = [];
   for (const descriptor of descriptors) {
-    if (descriptor.type !== "directory") {
+    if (descriptor.type !== "directory" && isVisible(descriptor)) {
       paths.push(descriptor.path);
     }
   }

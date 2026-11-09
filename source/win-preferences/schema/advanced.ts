@@ -115,7 +115,7 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
     {
       title: trans("File Treatment"),
       infoString: trans(
-        "Decide how to open images and PDF documents. The file filters in the File Manager preferences decide which files are listed.",
+        "Decide how to open images and PDF documents. Which files the app lists is set in one window: File filters, in the File Manager preferences.",
       ),
       group: PreferencesGroups.Advanced,
       help: undefined,
@@ -158,17 +158,6 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
               },
             ],
           ],
-        },
-        {
-          type: "separator",
-        },
-        {
-          type: "token",
-          label: trans(
-            'File extensions that Zettlr recognizes besides its own: a new or renamed file with one of them keeps that extension. Include the leading period, e.g., ".xml".',
-          ),
-          placeholder: trans("Enter an extension and press enter"),
-          model: "attachmentExtensions",
         },
       ],
     },

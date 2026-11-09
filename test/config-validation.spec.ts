@@ -44,6 +44,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "fileManager.expandedDirectories": "/a",
   "fileManager.ignoreRules": "*.tmp",
   "fileManager.showIgnored": "no",
+  "fileManager.filters.include": "md",
   muteLines: "no",
   "export.dir": "home",
   "export.stripTags": "no",

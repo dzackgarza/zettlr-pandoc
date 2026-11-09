@@ -17,15 +17,21 @@ import assert from "assert";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import { readDirectoryFromDisk } from "source/app/service-providers/fsal/util/read-directory";
+import {
+  type ListingRules,
+  readDirectoryFromDisk,
+} from "source/app/service-providers/fsal/util/read-directory";
 import { createIgnoreFilter } from "source/common/util/ignore-rules";
 
 const logger = { error: () => {} };
-const rules = createIgnoreFilter({
-  globalRules: [],
-  workspaceRules: new Map(),
-  showIgnored: false,
-});
+const rules: ListingRules = {
+  ignoreDotFiles: false,
+  ignoreFilter: createIgnoreFilter({
+    globalRules: [],
+    workspaceRules: new Map(),
+    showIgnored: false,
+  }),
+};
 const getDescriptor = async (): Promise<never> => {
   throw new Error("An empty or deleted directory must not request child descriptors");
 };

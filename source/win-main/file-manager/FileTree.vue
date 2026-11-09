@@ -190,7 +190,6 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { sortExplorerChildren } from "@common/util/explorer-ordering";
-import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import type { CloseAllIPCAPI } from "source/app/service-providers/windows";
 import showPopupMenu, {
@@ -218,9 +217,11 @@ import type {
 } from "source/types/common/fsal";
 import { computed, ref } from "vue";
 import TreeItem from "./TreeItem.vue";
+import { filterDescriptorChildren } from "./util/filter-children";
 import { closeFile, closeWorkspace } from "./util/item-composable";
 import matchQuery from "./util/match-query";
 import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
+import { updateExplorerDirectory } from "./util/update-explorer-directory";
 
 type SortChoice =
   | "display"
@@ -351,6 +352,7 @@ const filterResults = computed<string[]>(() => {
   }
 
   const filter = matchQuery(q, useTitle.value, useH1.value);
+  const visible = filterDescriptorChildren();
   const results: string[] = [];
 
   if (props.filePickerActive) {
@@ -362,7 +364,7 @@ const filterResults = computed<string[]>(() => {
     }
   } else {
     for (const [absPath, descriptor] of workspaceStore.descriptorMap.entries()) {
-      if (filter(descriptor)) {
+      if (visible(descriptor) && filter(descriptor)) {
         results.push(absPath);
       }
     }
@@ -373,9 +375,10 @@ const filterResults = computed<string[]>(() => {
 
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
-  const roots = rootDescriptors.value.filter(
-    (desc) => desc.type === "file" || desc.type === "code",
-  );
+  const visible = filterDescriptorChildren();
+  const roots = rootDescriptors.value
+    .filter((desc) => desc.type === "file" || desc.type === "code")
+    .filter(visible);
   if (!filterActive.value) {
     return roots;
   }
@@ -388,7 +391,8 @@ const getFiles = computed(() => {
 });
 
 const getDirectories = computed(() => {
-  const roots = rootDescriptors.value.filter((desc) => desc.type === "directory");
+  const visible = filterDescriptorChildren();
+  const roots = rootDescriptors.value.filter((desc) => desc.type === "directory").filter(visible);
   if (!filterActive.value) {
     return roots;
   }
@@ -412,6 +416,7 @@ const directoryNameCounts = computed(() => nameCounts(getDirectories.value));
 const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, string]>>(() => {
   // First, get all descriptors.
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
+    .filter(filterDescriptorChildren())
     // Second, filter them if applicable.
     .filter((descriptor) => {
       return !filterActive.value
@@ -441,6 +446,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     appLang: configStore.config.appLang,
     fileMetaTime: configStore.config.fileMetaTime,
   } as const;
+  const filter = filterDescriptorChildren();
 
   for (const descriptor of getDirectories.value) {
     retValue.push(
@@ -450,7 +456,15 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     );
   }
 
-  return retValue.map((descriptor) => [descriptor.path, descriptor.type]);
+  return (
+    retValue
+      // Filter out any files and folders that should not be displayed such that
+      // this "global" list of files and folders corresponds exactly to how they
+      // will be displayed to the user. This is especially important for the
+      // navigation with the arrow keys.
+      .filter(filter)
+      .map((descriptor) => [descriptor.path, descriptor.type])
+  );
 });
 
 /**
@@ -562,18 +576,6 @@ function workspaceRootContextMenu(event: MouseEvent): void {
       },
     },
     {
-      id: "explorer-show-ignored",
-      label: trans("Turn the filters off"),
-      type: "checkbox",
-      checked: configStore.config.fileManager.showIgnored,
-      action() {
-        configStore.setConfigValue(
-          "fileManager.showIgnored",
-          !configStore.config.fileManager.showIgnored,
-        );
-      },
-    },
-    {
       id: "explorer-edit-ignore-rules",
       label: trans("Edit filters…"),
       type: "normal",
@@ -651,47 +653,6 @@ function methodFor(choice: SortChoice, direction: Direction): SortMethod {
             ? "frontmatter"
             : choice;
   return `${prefix}-${direction}` as SortMethod;
-}
-
-/**
- * Explorer choices apply one at a time, each to the settings the main process
- * holds once the choice before it is stored. The tree's own descriptor is no
- * base for a choice: an FSAL broadcast of an earlier state can replace it
- * after a later choice was made, and a choice computed from it would write
- * that earlier state back.
- */
-let explorerUpdates: Promise<void> = Promise.resolve();
-
-function updateExplorerDirectory(
-  directory: DirDescriptor,
-  settingsPatch: (stored: DirDescriptor) => Partial<DirectorySettings>,
-  explorerPatch: Partial<DirectoryExplorerSettings> = {},
-): void {
-  explorerUpdates = explorerUpdates
-    .then(async () => {
-      const stored: AnyDescriptor = await ipcRenderer.invoke("fsal", {
-        command: "get-descriptor",
-        payload: directory.path,
-      });
-      if (stored.type !== "directory") {
-        throw new Error(`${directory.path} is no longer a directory`);
-      }
-      const settings = {
-        ...settingsPatch(stored),
-        explorer: { ...stored.settings.explorer, ...explorerPatch },
-      };
-      Object.assign(directory.settings, settings);
-      try {
-        await ipcRenderer.invoke("application", {
-          command: "set-directory-setting",
-          payload: { path: directory.path, settings } satisfies DirSettingsCommandAPI,
-        });
-      } catch (err) {
-        Object.assign(directory.settings, stored.settings);
-        throw err;
-      }
-    })
-    .catch((err) => reportError("Could not update Explorer settings", err));
 }
 
 function setDisplay(directory: DirDescriptor, value: "inherit" | FileNameDisplay): void {

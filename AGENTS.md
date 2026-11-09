@@ -413,7 +413,7 @@ of an isolated instance are in the first comment of #132.
   version update of the package must keep the patch until the package has the
   change.
 
-### 10. File filters (gitignore rules)
+### 10. File filters
 
 - **Rules:** gitignore syntax, matched by the `ignore` package. The sources
   are `fileManager.ignoreRules` in the configuration (all workspaces) and the
@@ -422,11 +422,6 @@ of an isolated instance are in the first comment of #132.
   a workspace root. The pure module is `source/common/util/ignore-rules.ts`
   (`createIgnoreFilter`, `ruleForName`, `ruleForPath`, `setPathIgnored`,
   `movePathRules`, `removePathRules`).
-- **The rules are the only visibility setting.** File types and dot files are
-  rules too. A type allow-list starts with `*` and `!*/`, then has one
-  `!*.ext` line for each type (`DEFAULT_IGNORE_RULES` in
-  `get-config-template.ts`: Markdown only, no dot files). The built-in names
-  of `ignore-path.ts` (`.git`, `.ztr-directory`, ...) are not rules.
 - **One filter, in the FSAL:** `fsal/util/read-directory.ts` leaves hidden
   children out of every listing, and `FSAL.isListed` drops every watcher
   event of a hidden path. The file manager, the launcher, search, the link
@@ -443,15 +438,26 @@ of an isolated instance are in the first comment of #132.
 - **IPC:** `fsal` commands `get-ignore-rules`, `set-workspace-ignore-rules`
   (`{ root, text }`) and `set-path-ignored` (`{ path, isDirectory, ignored }`);
   the broadcast `fsal-ignore-rules` carries the current `IgnoreRuleSources`.
-- **Window:** `useIgnoreRulesStore` (`source/pinia/ignore-rules-store.ts`)
-  holds the sources and the dialog state. The window filters nothing; it
-  marks matches (`is-ignored`) and edits rules. Entry points: the context
-  menu of a tree item (`file-manager/util/ignore-menu.ts`: hide or show the
-  path, hide all items with the name), the Workspaces header menu (Edit
-  filters…, Turn the filters off), the application menu and the launcher
-  (`menu.edit_ignore_rules`), and the button in Preferences → File Manager
-  (command `edit-ignore-rules`). `IgnoreRulesDialog.vue` is the only editor
-  of the rule text.
+- **One editor:** `win-main/IgnoreRulesDialog.vue` (the File filters window)
+  holds every setting that decides what the app lists: Turn the filters off
+  (`fileManager.showIgnored`), the file types (`fileManager.filters.include`,
+  `files.<type>.showInFilemanager`, `attachmentExtensions`), the global rules,
+  each workspace `.zettlrignore`, the project file filter of each project
+  (`settings.explorer.projectFilter`) and the read-only built-in names
+  (`IGNORE_PATHS`). No other surface edits these values. Preferences →
+  File Manager has only a button that opens the window (`application`
+  command `edit-ignore-rules`); Advanced → File Treatment keeps only
+  "Open with". The Workspaces header menu, the application menu and the
+  launcher (`menu.edit_ignore_rules`) open the window. The context menus
+  are actions on the same state: hide or show a path or a name
+  (`file-manager/util/ignore-menu.ts`) and the project file filter of a
+  project folder.
+- **Two evaluators.** The FSAL applies the rules and the built-in names to
+  every consumer. The file types and the project file filter apply in the
+  window only (`file-manager/util/filter-children.ts`,
+  `explorer-ordering.ts`); the launcher, search and the Agent API do not
+  see them. `useIgnoreRulesStore` holds the rule sources and the window
+  state and marks matches (`is-ignored`).
 - **`fileManager.showIgnored`** turns the filters off for every consumer,
   not only for the file manager; the file manager then dims each match.
 - **Proof:** `test/ignore-rules.spec.ts`, `test/fsal-ignore-rules.spec.ts`,

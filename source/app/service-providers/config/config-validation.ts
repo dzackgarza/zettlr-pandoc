@@ -28,6 +28,7 @@ const RULES = {
   "fileManager.expandedDirectories": "optional|array",
   "fileManager.ignoreRules": "optional|array",
   "fileManager.showIgnored": "optional|boolean",
+  "fileManager.filters.include": "optional|array",
   muteLines: "required|boolean",
   "export.dir": "required|string|in:temp,cwd,ask",
   "export.stripTags": "required|boolean",

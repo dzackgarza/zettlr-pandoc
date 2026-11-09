@@ -1,10 +1,15 @@
 import { strict as assert } from "assert";
+import { DEFAULT_FILE_FILTER_INCLUDE } from "source/app/service-providers/config/get-config-template";
 import type {
   CodeFileDescriptor,
   DirDescriptor,
   MDFileDescriptor,
   OtherFileDescriptor,
 } from "source/types/common/fsal";
+import {
+  createFileManagerVisibilityFilter,
+  type FileManagerVisibilityConfig,
+} from "source/win-main/file-manager/util/filter-children";
 import { buildFilePickerCache } from "source/win-main/file-manager/util/match-query";
 import { getFileManagerFields } from "source/win-preferences/schema/file-manager";
 
@@ -98,22 +103,80 @@ const directory = {
   isGitRepository: false,
 } satisfies DirDescriptor;
 
-describe("file filters of the file manager", function () {
-  it("builds the Ctrl+Shift+P cache from every listed file of any type", function () {
-    const cache = buildFilePickerCache([markdown, yaml, latex, pdf, directory]);
+function visibilityConfig(include: string[]): FileManagerVisibilityConfig {
+  return {
+    attachmentExtensions: [],
+    fileManager: {
+      filters: { include },
+    },
+    files: {
+      builtin: { showInFilemanager: true, openWith: "zettlr" },
+      images: { showInFilemanager: true, openWith: "system" },
+      pdf: { showInFilemanager: true, openWith: "system" },
+      msoffice: { showInFilemanager: true, openWith: "system" },
+      openOffice: { showInFilemanager: true, openWith: "system" },
+      dataFiles: { showInFilemanager: true, openWith: "system" },
+      dotFiles: { showInFilemanager: false, openWith: "system" },
+    },
+  };
+}
 
-    assert.deepEqual(cache.paths, [markdown.path, yaml.path, latex.path, pdf.path]);
+describe("file type filter of the file manager", function () {
+  it("defaults Include to all Markdown extensions", function () {
+    assert.deepEqual(DEFAULT_FILE_FILTER_INCLUDE, [
+      ".md",
+      ".rmd",
+      ".qmd",
+      ".markdown",
+      ".txt",
+      ".mdx",
+      ".mkd",
+    ]);
+  });
+
+  it("shows only files with an included extension, and every folder", function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([".md", ".yaml"]));
+
+    assert.equal(visible(markdown), true);
+    assert.equal(visible(yaml), true);
+    assert.equal(visible(latex), false);
+    assert.equal(visible(pdf), false);
+    assert.equal(visible(directory), true);
+  });
+
+  it("builds the Ctrl+Shift+P cache from the exact file-manager-visible set", function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([".md", ".yaml"]));
+    const cache = buildFilePickerCache([markdown, yaml, latex, pdf, directory], visible);
+
+    assert.deepEqual(cache.paths, [markdown.path, yaml.path]);
+    assert.equal(cache.pathSet.has(latex.path), false);
     assert.equal(cache.pathSet.has(directory.path), false);
   });
 
-  it("edits the rules on the File Manager page of Preferences only through the file filter dialog", function () {
+  it("uses an empty Include list as all file types permitted by File Treatment", function () {
+    const visible = createFileManagerVisibilityFilter(visibilityConfig([]));
+
+    assert.equal(visible(markdown), true);
+    assert.equal(visible(latex), true);
+    assert.equal(visible(yaml), true);
+    assert.equal(visible(pdf), true);
+    assert.equal(visible(directory), true);
+  });
+
+  it("edits the file filters on the File Manager page of Preferences only through the file filter window", function () {
     const fields = getFileManagerFields({ fileNameDisplay: "filename" }).flatMap(
       (fieldset) => fieldset.fields,
     );
     const models = fields.flatMap((field) => ("model" in field ? [field.model] : []));
     const labels = fields.flatMap((field) => (field.type === "button" ? [field.label] : []));
 
-    assert.ok(!models.includes("fileManager.ignoreRules"));
+    for (const model of [
+      "fileManager.filters.include",
+      "fileManager.ignoreRules",
+      "fileManager.showIgnored",
+    ]) {
+      assert.ok(!models.includes(model), `${model} has no second editor in Preferences`);
+    }
     assert.ok(labels.includes("Edit file filters…"));
   });
 });

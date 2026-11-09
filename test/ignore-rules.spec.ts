@@ -16,7 +16,6 @@
  */
 
 import { strict as assert } from "assert";
-import { DEFAULT_IGNORE_RULES } from "source/app/service-providers/config/get-config-template";
 import {
   createIgnoreFilter,
   type IgnoreRuleSources,
@@ -34,30 +33,6 @@ function sources(globalRules: string[], rulesFile = "", showIgnored = false): Ig
 }
 
 describe("Ignore rules", function () {
-  describe("the rules of a new profile", function () {
-    const filter = createIgnoreFilter(sources([...DEFAULT_IGNORE_RULES]));
-    const hidden = (relative: string, isDirectory: boolean): boolean =>
-      filter.hides(`${ROOT}/${relative}`, isDirectory);
-
-    it("list folders and Markdown files, at any depth", function () {
-      assert.equal(hidden("coble", true), false);
-      assert.equal(hidden("coble/notes.md", false), false);
-      assert.equal(hidden("coble/draft.qmd", false), false);
-    });
-
-    it("hide every other file type and every dot file or folder", function () {
-      assert.equal(hidden("coble/proof.tex", false), true);
-      assert.equal(hidden("coble/figure.png", false), true);
-      assert.equal(hidden(".obsidian", true), true);
-      assert.equal(hidden("coble/.hidden.md", false), true);
-    });
-
-    it("list a type again from one more rule", function () {
-      const withTex = createIgnoreFilter(sources([...DEFAULT_IGNORE_RULES, "!*.tex"]));
-      assert.equal(withTex.hides(`${ROOT}/coble/proof.tex`, false), false);
-    });
-  });
-
   describe("what a rule hides", function () {
     const filter = createIgnoreFilter(
       sources(["*scripts*", "*_files/", "references/", "AGENTS.md"]),

@@ -88,7 +88,7 @@ export function getFileManagerFields(
     {
       title: trans("File filters"),
       infoString: trans(
-        'Gitignore rules decide which files and folders the app lists. One dialog edits them: the rules for all workspaces and the ".zettlrignore" file of each workspace. To list only some file types, start with "*" and "!*/", then add one "!*.md" line for each type.',
+        'One window holds every setting that decides which files and folders the app lists: the file types, the gitignore rules for all workspaces and the ".zettlrignore" file of each workspace, the project file filters, and the switch that turns the filters off.',
       ),
       group: PreferencesGroups.FileManager,
       help: undefined,

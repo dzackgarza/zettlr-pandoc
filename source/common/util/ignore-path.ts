@@ -12,6 +12,8 @@
  * END HEADER
  */
 
+const DOTFILE_RE = /(?:^|[\/\\])\./;
+
 // A list of path names that should be ignored
 // by the chokidar watchdog process. Will be converted
 // to a RegExp object
@@ -37,7 +39,7 @@ const WATCHDOG_IGNORE_PATHS: string[] = [
 // not appear in the UI, however, they should still
 // be watched for changes. Will be converted
 // to a RegExp object
-const IGNORE_PATHS: string[] = [
+export const IGNORE_PATHS: string[] = [
   "\\.ztr-directory", // Zettlr project settings
   ...WATCHDOG_IGNORE_PATHS,
 ];
@@ -59,12 +61,27 @@ export const IGNORE_PATH_RE: RegExp[] = IGNORE_PATHS.map(
 );
 
 /**
+ * Check if the given filename is a dot file or folder.
+ *
+ * @param   {string}   filePath  The path to check (can be absolute or relative)
+ *
+ * @return  {boolean}            Whether the file is a dot file or folder
+ */
+export function isDotFile(filePath: string): boolean {
+  return DOTFILE_RE.test(filePath);
+}
+
+/**
  * Check whether the provided filePath matches an ignored pattern
  *
  * @param    {string}    filePath   The path to check
  *
  * @return   {boolean}              Whether the path should be ignored
  */
-export function ignorePath(filePath: string): boolean {
+export function ignorePath(filePath: string, ignoreDotFiles: boolean = true): boolean {
+  if (ignoreDotFiles && isDotFile(filePath)) {
+    return true;
+  }
+
   return IGNORE_PATH_RE.some((re) => re.test(filePath));
 }

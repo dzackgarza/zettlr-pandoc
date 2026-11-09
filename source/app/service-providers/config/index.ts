@@ -81,7 +81,9 @@ function assertConfigPath(config: ConfigOptions, option: string): asserts option
  */
 type StoredConfig = Partial<Omit<ConfigOptions, "app" | "fileManager">> & {
   app?: Partial<ConfigOptions["app"]>;
-  fileManager?: Partial<ConfigOptions["fileManager"]>;
+  fileManager?: Partial<ConfigOptions["fileManager"]> & {
+    filePicker?: { include?: string[] } | null;
+  };
   openPaths?: string[];
 };
 
@@ -321,6 +323,25 @@ export default class ConfigProvider extends ProviderContract {
    * @param  {StoredConfig}  readConfig  The read config from disk.
    */
   private runMigrations(readConfig: StoredConfig): void {
+    // The Ctrl+Shift+P picker used to own a separate permanent extension
+    // filter. File visibility now has one authority: the file manager's
+    // permanent filters, which the picker consumes as a subset. Preserve the
+    // user's exact include list while renaming the persisted key.
+    if (
+      typeof readConfig.fileManager === "object" &&
+      readConfig.fileManager !== null &&
+      typeof readConfig.fileManager.filePicker === "object" &&
+      readConfig.fileManager.filePicker !== null &&
+      readConfig.fileManager.filters === undefined
+    ) {
+      readConfig.fileManager.filters = {
+        include: Array.isArray(readConfig.fileManager.filePicker.include)
+          ? readConfig.fileManager.filePicker.include
+          : [],
+      };
+      delete readConfig.fileManager.filePicker;
+    }
+
     // After version 4.0.0, we have split up `openPaths` into separate file and
     // workspaces arrays. Only a configuration written before 4.0.0 has
     // `openPaths`, and such a configuration has no `app` section.
