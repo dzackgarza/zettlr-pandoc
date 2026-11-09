@@ -19,6 +19,7 @@ import { reportError } from "@common/util/error-reporting";
 import { defineStore } from "pinia";
 import {
   createIgnoreFilter,
+  EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
   judgingRoot,
@@ -59,6 +60,7 @@ export const useIgnoreRulesStore = defineStore("ignore-rules", () => {
     globalRules: [],
     workspaceRules: new Map(),
     showIgnored: false,
+    fileTypes: EVERY_FILE_TYPE,
   });
   const filter = computed(() => createIgnoreFilter(sources.value));
   /** True while the dialog that edits the rules is open. */

@@ -36,6 +36,7 @@ import { trans } from "source/common/i18n-main";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
 import {
   createIgnoreFilter,
+  EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
   judgingRoot,
@@ -56,7 +57,6 @@ import FSALWatchdog from "./fsal-watchdog";
 import getMarkdownFileParser from "./util/file-parser";
 import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
 import {
-  type ListingRules,
   readDirectoryFromDisk,
   readDirectoryRecursivelyFromDisk,
   visibilityChanges,
@@ -95,6 +95,7 @@ async function writeRulesFile(root: string, text: string): Promise<void> {
 function sameIgnoreSources(a: IgnoreRuleSources, b: IgnoreRuleSources): boolean {
   return (
     a.showIgnored === b.showIgnored &&
+    _.isEqual(a.fileTypes, b.fileTypes) &&
     _.isEqual(a.globalRules, b.globalRules) &&
     _.isEqual([...a.workspaceRules], [...b.workspaceRules])
   );
@@ -147,6 +148,7 @@ export default class FSAL extends ProviderContract {
     globalRules: [],
     workspaceRules: new Map(),
     showIgnored: false,
+    fileTypes: EVERY_FILE_TYPE,
   };
   private ignoreFilter: IgnoreFilter = createIgnoreFilter(this.ignoreSources);
   /** The last queued change of the ignore rules. Changes run one after the other. */
@@ -244,12 +246,15 @@ export default class FSAL extends ProviderContract {
       if (
         which === "openPaths" ||
         which === "fileManager.ignoreRules" ||
-        which === "fileManager.showIgnored"
+        which === "fileManager.showIgnored" ||
+        which === "attachmentExtensions" ||
+        which?.startsWith("fileManager.filters") === true ||
+        which?.startsWith("files.") === true
       ) {
         this.refreshIgnoreRules();
       }
 
-      if (which === "openPaths" || which === "files.dotFiles.showInFilemanager") {
+      if (which === "openPaths") {
         this.syncRoots()
           .then(() => {
             // Always reindex all files after config updates later on.
@@ -368,13 +373,6 @@ export default class FSAL extends ProviderContract {
     );
   }
 
-  private listingRules(): ListingRules {
-    return {
-      ignoreDotFiles: !this._config.get().files.dotFiles.showInFilemanager,
-      ignoreFilter: this.ignoreFilter,
-    };
-  }
-
   /**
    * Reads the ignore rules from their sources: the configuration and the rules
    * file of each open workspace.
@@ -383,6 +381,8 @@ export default class FSAL extends ProviderContract {
     const {
       app: { openWorkspaces },
       fileManager,
+      files,
+      attachmentExtensions,
     } = this._config.get();
     const workspaceRules = new Map<string, string>();
     for (const root of openWorkspaces) {
@@ -392,6 +392,16 @@ export default class FSAL extends ProviderContract {
       globalRules: [...fileManager.ignoreRules],
       workspaceRules,
       showIgnored: fileManager.showIgnored,
+      fileTypes: {
+        include: [...fileManager.filters.include],
+        images: files.images.showInFilemanager,
+        pdf: files.pdf.showInFilemanager,
+        msoffice: files.msoffice.showInFilemanager,
+        openOffice: files.openOffice.showInFilemanager,
+        dataFiles: files.dataFiles.showInFilemanager,
+        dotFiles: files.dotFiles.showInFilemanager,
+        attachmentExtensions: [...attachmentExtensions],
+      },
     };
   }
 
@@ -434,7 +444,6 @@ export default class FSAL extends ProviderContract {
     this.ignoreFilter = createIgnoreFilter(sources);
     broadcastIPCMessage("fsal-ignore-rules", sources);
 
-    const { ignoreDotFiles, ignoreFilter } = this.listingRules();
     const roots = new Set(sources.workspaceRules.keys());
     for (const root of roots) {
       if (this.deadWorkspaces.has(root)) {
@@ -443,10 +452,9 @@ export default class FSAL extends ProviderContract {
 
       for (const change of await visibilityChanges(
         root,
-        ignoreDotFiles,
         roots,
         before,
-        ignoreFilter,
+        this.ignoreFilter,
         this._logger,
       )) {
         if (!change.visible) {
@@ -1294,7 +1302,7 @@ export default class FSAL extends ProviderContract {
       throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`);
     }
 
-    return await readDirectoryRecursivelyFromDisk(directoryPath, this.listingRules(), this._logger);
+    return await readDirectoryRecursivelyFromDisk(directoryPath, this.ignoreFilter, this._logger);
   }
 
   /**
@@ -1308,7 +1316,7 @@ export default class FSAL extends ProviderContract {
   public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
     return readDirectoryFromDisk(
       absPath,
-      this.listingRules(),
+      this.ignoreFilter,
       this.deadWorkspaces.has(absPath),
       async (childPath) => await this.getDescriptorFor(childPath),
       this._logger,

@@ -217,7 +217,6 @@ import type {
 } from "source/types/common/fsal";
 import { computed, ref } from "vue";
 import TreeItem from "./TreeItem.vue";
-import { filterDescriptorChildren } from "./util/filter-children";
 import { closeFile, closeWorkspace } from "./util/item-composable";
 import matchQuery from "./util/match-query";
 import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
@@ -352,7 +351,6 @@ const filterResults = computed<string[]>(() => {
   }
 
   const filter = matchQuery(q, useTitle.value, useH1.value);
-  const visible = filterDescriptorChildren();
   const results: string[] = [];
 
   if (props.filePickerActive) {
@@ -364,7 +362,7 @@ const filterResults = computed<string[]>(() => {
     }
   } else {
     for (const [absPath, descriptor] of workspaceStore.descriptorMap.entries()) {
-      if (visible(descriptor) && filter(descriptor)) {
+      if (filter(descriptor)) {
         results.push(absPath);
       }
     }
@@ -375,10 +373,9 @@ const filterResults = computed<string[]>(() => {
 
 const getFiles = computed(() => {
   // NOTE: These are the root files. We'll only allow Markdown and code files here.
-  const visible = filterDescriptorChildren();
-  const roots = rootDescriptors.value
-    .filter((desc) => desc.type === "file" || desc.type === "code")
-    .filter(visible);
+  const roots = rootDescriptors.value.filter(
+    (desc) => desc.type === "file" || desc.type === "code",
+  );
   if (!filterActive.value) {
     return roots;
   }
@@ -391,8 +388,7 @@ const getFiles = computed(() => {
 });
 
 const getDirectories = computed(() => {
-  const visible = filterDescriptorChildren();
-  const roots = rootDescriptors.value.filter((desc) => desc.type === "directory").filter(visible);
+  const roots = rootDescriptors.value.filter((desc) => desc.type === "directory");
   if (!filterActive.value) {
     return roots;
   }
@@ -416,7 +412,6 @@ const directoryNameCounts = computed(() => nameCounts(getDirectories.value));
 const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, string]>>(() => {
   // First, get all descriptors.
   const allDescriptors = [...workspaceStore.descriptorMap.values()]
-    .filter(filterDescriptorChildren())
     // Second, filter them if applicable.
     .filter((descriptor) => {
       return !filterActive.value
@@ -446,7 +441,6 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     appLang: configStore.config.appLang,
     fileMetaTime: configStore.config.fileMetaTime,
   } as const;
-  const filter = filterDescriptorChildren();
 
   for (const descriptor of getDirectories.value) {
     retValue.push(
@@ -456,15 +450,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     );
   }
 
-  return (
-    retValue
-      // Filter out any files and folders that should not be displayed such that
-      // this "global" list of files and folders corresponds exactly to how they
-      // will be displayed to the user. This is especially important for the
-      // navigation with the arrow keys.
-      .filter(filter)
-      .map((descriptor) => [descriptor.path, descriptor.type])
-  );
+  return retValue.map((descriptor) => [descriptor.path, descriptor.type]);
 });
 
 /**

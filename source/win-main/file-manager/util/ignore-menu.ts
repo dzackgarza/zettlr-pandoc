@@ -63,7 +63,7 @@ export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
     ];
   }
 
-  if (filter.matches(descriptor.path, isDirectory)) {
+  if (filter.ruleMatches(descriptor.path, isDirectory)) {
     return [
       {
         id: "menu.unignore_path",
@@ -71,6 +71,21 @@ export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
         type: "normal",
         action() {
           setPathIgnored(descriptor, false);
+        },
+      },
+    ];
+  }
+
+  if (filter.matches(descriptor.path, isDirectory)) {
+    return [
+      {
+        id: "menu.edit_ignore_rules",
+        label: trans("Hidden by its file type: Edit file filters…"),
+        type: "normal",
+        action() {
+          ipcRenderer
+            .invoke("application", { command: "edit-ignore-rules" })
+            .catch((err) => reportError("Could not open the file filters", err));
         },
       },
     ];

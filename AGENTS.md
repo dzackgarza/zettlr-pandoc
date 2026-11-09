@@ -81,15 +81,15 @@ All project workflows route through the top-level `justfile`. **`just --list`** 
 the source of truth for recipes; do not run builds/exports/tests by hand when a
 recipe exists. Key recipes (see the `justfile` for the exact commands):
 
-| Recipe | What it does |
-|---|---|
-| `just launch` | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile. |
-| `just launch-desktop` | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
-| `just install-desktop-launcher` | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`. |
-| `just package` | Production build and freshness verification (`electron-forge package`) → `app.asar`. |
-| `just verify-build` | Build, then prove the asar is fresh + built from HEAD (observability). |
-| `just verify-build-only` | Fast staleness check of the existing artifact (no rebuild). |
-| `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports. |
+| Recipe                                  | What it does                                                                                                   |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `just launch`                           | Dev mode through `scripts/test-gui/index.mjs`; uses the isolated `resources/test-cfg` profile.                 |
+| `just launch-desktop`                   | Dev mode (`electron-forge start`) with the normal user configuration. **This is the desktop path that works.** |
+| `just install-desktop-launcher`         | Install the repo-owned Hyprland launcher and desktop entry under `~/.local`.                                   |
+| `just package`                          | Production build and freshness verification (`electron-forge package`) → `app.asar`.                           |
+| `just verify-build`                     | Build, then prove the asar is fresh + built from HEAD (observability).                                         |
+| `just verify-build-only`                | Fast staleness check of the existing artifact (no rebuild).                                                    |
+| `just export-headless PDF.yaml file.md` | Run the real `makeExport` headlessly (no GUI) — debug exports.                                                 |
 
 ## Build process
 
@@ -197,7 +197,7 @@ they must be threaded through **four** layers:
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
 - Export profile list: `list-export-profiles` in
   `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)
-  + `getCustomProfiles()`, with custom profiles overriding same-named defaults.
+  - `getCustomProfiles()`, with custom profiles overriding same-named defaults.
 
 ### 4. Quarto books
 
@@ -415,6 +415,15 @@ of an isolated instance are in the first comment of #132.
 
 ### 10. File filters
 
+- **What the filter judges:** the gitignore rules and the file types. A
+  file type is hidden when it is not in `fileManager.filters.include`
+  (empty: every type), when the `files.<type>.showInFilemanager` of its
+  group is off, or when it is of no known type and its extension is not in
+  `attachmentExtensions`. Markdown and code files are always of a known
+  type. A path with a segment that starts with `.` is a dot path, hidden
+  while dot files are off; a folder is hidden by type only as a dot path.
+  `IgnoreFilter.matches` judges both, `ruleMatches` the rules only (Hide
+  and Unhide edit rules, so they read `ruleMatches`).
 - **Rules:** gitignore syntax, matched by the `ignore` package. The sources
   are `fileManager.ignoreRules` in the configuration (all workspaces) and the
   file `.zettlrignore` at the root of each open workspace. A path below
@@ -452,15 +461,16 @@ of an isolated instance are in the first comment of #132.
   are actions on the same state: hide or show a path or a name
   (`file-manager/util/ignore-menu.ts`) and the project file filter of a
   project folder.
-- **Two evaluators.** The FSAL applies the rules and the built-in names to
-  every consumer. The file types and the project file filter apply in the
-  window only (`file-manager/util/filter-children.ts`,
-  `explorer-ordering.ts`); the launcher, search and the Agent API do not
-  see them. `useIgnoreRulesStore` holds the rule sources and the window
-  state and marks matches (`is-ignored`).
+- **One evaluator.** The FSAL applies the rules, the file types and the
+  built-in names to every consumer. The project file filter is the only
+  other filter: a view of one project folder in the window
+  (`explorer-ordering.ts`). `useIgnoreRulesStore` holds the filter sources
+  and marks matches (`is-ignored`).
 - **`fileManager.showIgnored`** turns the filters off for every consumer,
-  not only for the file manager; the file manager then dims each match.
+  not only for the file manager: hidden types and dot paths are listed too.
+  The file manager then dims each match.
 - **Proof:** `test/ignore-rules.spec.ts`, `test/fsal-ignore-rules.spec.ts`,
+  `test/file-filter-preferences.spec.ts`,
   `e2e/ignore-rules.spec.ts`.
 
 ## Debugging entry points
@@ -685,6 +695,7 @@ Review comments are not implementation specs.
 The worker must translate accepted feedback into first-principles remediation requirements before assigning implementation.
 
 For each comment:
+
 - Identify the concern.
 - Identify the proposed fix.
 - Decide whether the concern is true under global + repo policy.

@@ -8,12 +8,6 @@ interface DirectoryReadLogger {
   error: (message: string, error?: unknown) => void;
 }
 
-/** What a listing leaves out beside the built-in ignored names. */
-export interface ListingRules {
-  ignoreDotFiles: boolean;
-  ignoreFilter: IgnoreFilter;
-}
-
 interface DirectoryChild {
   path: string;
   isDirectory: boolean;
@@ -26,17 +20,14 @@ export interface VisibilityChange extends DirectoryChild {
 
 /**
  * The files and folders of a directory that the ignore rules then judge: no
- * symbolic link, no built-in ignored name, no dot file when asked.
+ * symbolic link, no built-in ignored name. Dot files are the concern of the
+ * filter, so that "Turn the filters off" lists them.
  */
-async function candidateChildren(
-  directoryPath: string,
-  ignoreDotFiles: boolean,
-): Promise<DirectoryChild[]> {
+async function candidateChildren(directoryPath: string): Promise<DirectoryChild[]> {
   const children = await fs.readdir(directoryPath, { withFileTypes: true });
   return children
     .filter(
-      (dirent) =>
-        !ignorePath(dirent.name, ignoreDotFiles) && (dirent.isFile() || dirent.isDirectory()),
+      (dirent) => !ignorePath(dirent.name, false) && (dirent.isFile() || dirent.isDirectory()),
     )
     .map((dirent) => ({
       path: path.join(directoryPath, dirent.name),
@@ -46,15 +37,15 @@ async function candidateChildren(
 
 async function listedChildren(
   directoryPath: string,
-  rules: ListingRules,
+  ignoreFilter: IgnoreFilter,
 ): Promise<DirectoryChild[]> {
-  const children = await candidateChildren(directoryPath, rules.ignoreDotFiles);
-  return children.filter((child) => !rules.ignoreFilter.hides(child.path, child.isDirectory));
+  const children = await candidateChildren(directoryPath);
+  return children.filter((child) => !ignoreFilter.hides(child.path, child.isDirectory));
 }
 
 export async function readDirectoryFromDisk(
   absPath: string,
-  rules: ListingRules,
+  ignoreFilter: IgnoreFilter,
   isDeadWorkspace: boolean,
   getDescriptor: (absPath: string) => Promise<AnyDescriptor>,
   logger: DirectoryReadLogger,
@@ -79,7 +70,7 @@ export async function readDirectoryFromDisk(
   }
 
   try {
-    const children = await listedChildren(absPath, rules);
+    const children = await listedChildren(absPath, ignoreFilter);
 
     const results = await Promise.allSettled(
       children.map(
@@ -115,15 +106,15 @@ export async function readDirectoryFromDisk(
  */
 export async function readDirectoryRecursivelyFromDisk(
   directoryPath: string,
-  rules: ListingRules,
+  ignoreFilter: IgnoreFilter,
   logger: DirectoryReadLogger,
 ): Promise<string[]> {
   try {
-    const children = await listedChildren(directoryPath, rules);
+    const children = await listedChildren(directoryPath, ignoreFilter);
     const contents = await Promise.all(
       children.map(async (child) => {
         return child.isDirectory
-          ? await readDirectoryRecursivelyFromDisk(child.path, rules, logger)
+          ? await readDirectoryRecursivelyFromDisk(child.path, ignoreFilter, logger)
           : [child.path];
       }),
     );
@@ -152,7 +143,6 @@ export async function readDirectoryRecursivelyFromDisk(
  */
 export async function visibilityChanges(
   directoryPath: string,
-  ignoreDotFiles: boolean,
   otherRoots: ReadonlySet<string>,
   before: IgnoreFilter,
   after: IgnoreFilter,
@@ -160,7 +150,7 @@ export async function visibilityChanges(
 ): Promise<VisibilityChange[]> {
   let children: DirectoryChild[];
   try {
-    children = await candidateChildren(directoryPath, ignoreDotFiles);
+    children = await candidateChildren(directoryPath);
   } catch (err: unknown) {
     logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err);
     return [];
@@ -179,7 +169,7 @@ export async function visibilityChanges(
     }
 
     const below = child.isDirectory
-      ? await visibilityChanges(child.path, ignoreDotFiles, otherRoots, before, after, logger)
+      ? await visibilityChanges(child.path, otherRoots, before, after, logger)
       : [];
     if (wasVisible === isVisible) {
       changes.push(...below);

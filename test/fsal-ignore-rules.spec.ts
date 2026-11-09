@@ -24,7 +24,11 @@ import {
   readDirectoryRecursivelyFromDisk,
   visibilityChanges,
 } from "source/app/service-providers/fsal/util/read-directory";
-import { createIgnoreFilter, type IgnoreFilter } from "source/common/util/ignore-rules";
+import {
+  createIgnoreFilter,
+  EVERY_FILE_TYPE,
+  type IgnoreFilter,
+} from "source/common/util/ignore-rules";
 import type { OtherFileDescriptor } from "source/types/common/fsal";
 
 const TREE = [
@@ -65,6 +69,7 @@ describe("FSAL listing under ignore rules", function () {
       globalRules,
       workspaceRules: new Map([[root, rulesFile]]),
       showIgnored,
+      fileTypes: EVERY_FILE_TYPE,
     });
   };
   const relative = (paths: string[]): string[] =>
@@ -83,11 +88,7 @@ describe("FSAL listing under ignore rules", function () {
   });
 
   it("lists the whole tree without a rule", async function () {
-    const listed = await readDirectoryRecursivelyFromDisk(
-      root,
-      { ignoreDotFiles: true, ignoreFilter: filterOf([]) },
-      logger,
-    );
+    const listed = await readDirectoryRecursivelyFromDisk(root, filterOf([]), logger);
     assert.deepEqual(relative(listed), [
       "",
       "AGENTS.md",
@@ -108,11 +109,7 @@ describe("FSAL listing under ignore rules", function () {
 
   it("leaves the files and folders that a rule matches out of the recursive listing", async function () {
     const ignoreFilter = filterOf(["*scripts*", "*_files/", "references/", "AGENTS.md"]);
-    const listed = await readDirectoryRecursivelyFromDisk(
-      root,
-      { ignoreDotFiles: true, ignoreFilter },
-      logger,
-    );
+    const listed = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
     assert.deepEqual(relative(listed), ["", "coble", "coble/notes.md", "notes.md"]);
   });
 
@@ -120,7 +117,7 @@ describe("FSAL listing under ignore rules", function () {
     const ignoreFilter = filterOf(["*_files/", "AGENTS.md"], "/coble/scripts/\nreferences/\n");
     const children = await readDirectoryFromDisk(
       path.join(root, "coble"),
-      { ignoreDotFiles: true, ignoreFilter },
+      ignoreFilter,
       false,
       getDescriptor,
       logger,
@@ -130,18 +127,13 @@ describe("FSAL listing under ignore rules", function () {
 
   it("lists every path while the reveal toggle is on", async function () {
     const ignoreFilter = filterOf(["*scripts*", "*_files/", "references/", "AGENTS.md"], "", true);
-    const listed = await readDirectoryRecursivelyFromDisk(
-      root,
-      { ignoreDotFiles: true, ignoreFilter },
-      logger,
-    );
+    const listed = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
     assert.equal(listed.length, 14);
   });
 
   it("reports the paths a new rule hides, the content of a folder before the folder", async function () {
     const changes = await visibilityChanges(
       root,
-      true,
       new Set(),
       filterOf([]),
       filterOf(["scripts/"]),
@@ -166,7 +158,6 @@ describe("FSAL listing under ignore rules", function () {
   it("reports the paths a removed rule shows again, a folder before its content", async function () {
     const changes = await visibilityChanges(
       root,
-      true,
       new Set(),
       filterOf(["scripts/", "AGENTS.md"]),
       filterOf(["scripts/"]),
@@ -184,7 +175,6 @@ describe("FSAL listing under ignore rules", function () {
 
     const shown = await visibilityChanges(
       root,
-      true,
       new Set(),
       filterOf(["/coble/"]),
       filterOf([]),
@@ -200,7 +190,6 @@ describe("FSAL listing under ignore rules", function () {
   it("reports no change for a path below a folder that stays hidden", async function () {
     const changes = await visibilityChanges(
       root,
-      true,
       new Set(),
       filterOf(["/coble/"]),
       filterOf(["/coble/", "run.md"]),
@@ -219,10 +208,10 @@ describe("FSAL listing under ignore rules", function () {
           [inner, ""],
         ]),
         showIgnored: false,
+        fileTypes: EVERY_FILE_TYPE,
       });
     const changes = await visibilityChanges(
       root,
-      true,
       new Set([inner]),
       filterWith(""),
       filterWith("/coble/\n"),

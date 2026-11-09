@@ -18,6 +18,7 @@
 import { strict as assert } from "assert";
 import {
   createIgnoreFilter,
+  EVERY_FILE_TYPE,
   type IgnoreRuleSources,
   movePathRules,
   removePathRules,
@@ -29,16 +30,21 @@ import {
 const ROOT = "/home/user/writing";
 
 function sources(globalRules: string[], rulesFile = "", showIgnored = false): IgnoreRuleSources {
-  return { globalRules, workspaceRules: new Map([[ROOT, rulesFile]]), showIgnored };
+  return {
+    globalRules,
+    workspaceRules: new Map([[ROOT, rulesFile]]),
+    showIgnored,
+    fileTypes: EVERY_FILE_TYPE,
+  };
 }
 
 describe("Ignore rules", function () {
-  describe("what a rule hides", function () {
+  describe("what a rule matches", function () {
     const filter = createIgnoreFilter(
       sources(["*scripts*", "*_files/", "references/", "AGENTS.md"]),
     );
     const hidden = (relative: string, isDirectory: boolean): boolean =>
-      filter.hides(`${ROOT}/${relative}`, isDirectory);
+      filter.ruleMatches(`${ROOT}/${relative}`, isDirectory);
 
     it('hides files and folders whose name holds "scripts", at any depth', function () {
       assert.equal(hidden("scripts", true), true);
@@ -106,6 +112,7 @@ describe("Ignore rules", function () {
           [inner, ""],
         ]),
         showIgnored: false,
+        fileTypes: EVERY_FILE_TYPE,
       });
       assert.equal(
         filter.hides(inner, true),
@@ -125,6 +132,13 @@ describe("Ignore rules", function () {
       assert.equal(filter.hides(`${ROOT}/references`, true), false);
       assert.equal(filter.matches(`${ROOT}/references`, true), true);
       assert.equal(filter.matches(`${ROOT}/coble`, true), false);
+    });
+
+    it("tells a match of a rule from a file type that the settings leave out", function () {
+      const filter = createIgnoreFilter(sources(["references/"]));
+      assert.equal(filter.matches(`${ROOT}/data.zip`, false), true);
+      assert.equal(filter.ruleMatches(`${ROOT}/data.zip`, false), false);
+      assert.equal(filter.ruleMatches(`${ROOT}/references`, true), true);
     });
   });
 
@@ -165,6 +179,13 @@ describe("Ignore rules", function () {
 
     it("starts a rules file when the workspace has none", function () {
       assert.equal(setPathIgnored("", [], ROOT, scripts, true, true), "/coble/scripts/\n");
+    });
+
+    it("hides a file that its file type leaves out with a rule of its own", function () {
+      const archive = `${ROOT}/data.zip`;
+      const hiddenText = setPathIgnored("", [], ROOT, archive, false, true);
+      assert.equal(hiddenText, "/data.zip\n");
+      assert.equal(setPathIgnored(hiddenText, [], ROOT, archive, false, false), "");
     });
 
     it("unhides a path that a pattern hides with a negation, and hides it again by removing the negation", function () {

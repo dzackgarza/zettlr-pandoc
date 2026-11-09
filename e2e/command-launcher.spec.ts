@@ -371,7 +371,7 @@ describe("the Ctrl+P command launcher", function () {
       "editor.lint.languageTool.active",
       "zkn.idGen",
       "export.cslStyle",
-      "files.dotFiles.showInFilemanager",
+      "fileNameDisplay",
       "shortcuts.ui.next-tab",
     ]) {
       assert.ok(
