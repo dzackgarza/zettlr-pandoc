@@ -317,7 +317,9 @@ describe("the sidebar views", () => {
       .evaluate((element) => getComputedStyle(element).pointerEvents);
     assert.equal(panelPointerEvents, "auto", "the Files panel takes pointer events after the drag");
     await activePage
-      .locator(`${SECTION("files")} #file-manager .tree-item.file[data-path$="/index.md"] .display-name`)
+      .locator(
+        `${SECTION("files")} #file-manager .tree-item.file[data-path$="/index.md"] .display-name`,
+      )
       .first()
       .click({ timeout: 5_000 });
     screenshots.set("section-drag-collapse.png", await activePage.screenshot());
