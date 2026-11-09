@@ -332,6 +332,34 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     screenshots.set("tex-hidden-by-rule.png", await activePage().screenshot());
   });
 
+  it("offers the file filter window, not Unhide, for a file that only its type hides", async function () {
+    await writeFile(path.join(workspace, "coble", "data.zip"), "", "utf8");
+    await row("coble/notes.md").waitFor({ state: "visible", timeout: 15_000 });
+    assert.equal(await row("coble/data.zip").count(), 0, "no setting lists a .zip file");
+
+    await toggleFiltersOff();
+    await assertListed(["coble/data.zip"]);
+    assert.ok(
+      await row("coble/data.zip").evaluate((element) => element.classList.contains("is-ignored")),
+      "the file is marked as hidden",
+    );
+    await openContextMenu("coble/data.zip");
+    assert.equal(
+      await activePage().locator(MENU_ITEM("menu.unignore_path")).count(),
+      0,
+      "no rule hides the file, so no rule can show it",
+    );
+    screenshots.set("context-menu-hidden-type.png", await activePage().screenshot());
+    await activePage().locator(MENU_ITEM("menu.edit_ignore_rules")).click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    // The menu that opened the window is gone, so Escape belongs to the window.
+    await activePage().keyboard.press("Escape");
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+
+    await toggleFiltersOff();
+    await assertNotListed(["coble/data.zip"]);
+  });
+
   it("keeps an open document open and saving after a rule hides it", async function () {
     const documentPath = path.join(workspace, "index.md");
     const tab = activePage().locator(
