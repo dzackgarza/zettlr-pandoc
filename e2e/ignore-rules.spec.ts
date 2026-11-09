@@ -383,6 +383,28 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     await editor.click();
     await activePage().keyboard.press("ControlOrMeta+End");
     await activePage().keyboard.type("Hidden but open.");
+    // The editor sends typed text to the main process in batches; the save
+    // writes what the main process holds.
+    assert.ok(api !== undefined, "The Agent API must be reachable");
+    const documents = (await api.get("/v1/documents")) as {
+      documents: Array<{ documentId: string; path: string }>;
+    };
+    const opened = documents.documents.find((document) => document.path === documentPath);
+    assert.ok(opened !== undefined, "the hidden document is still an open document");
+    const deadline = Date.now() + 15_000;
+    let held = "";
+    while (Date.now() < deadline) {
+      held = (
+        (await api.get(`/v1/documents/${opened.documentId}?includeContent=true&side=working`)) as {
+          content: string;
+        }
+      ).content;
+      if (held === "# Index\nHidden but open.") {
+        break;
+      }
+      await delay(100);
+    }
+    assert.equal(held, "# Index\nHidden but open.");
     // The IPC call that the save-file shortcut makes: CDP key events do not
     // run the main-process menu accelerators.
     assert.deepEqual(

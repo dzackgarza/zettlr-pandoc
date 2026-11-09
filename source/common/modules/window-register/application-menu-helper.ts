@@ -235,6 +235,16 @@ export default function showPopupMenu(
   appMenu.classList.add("application-menu");
   appMenu.style.zIndex = "99999"; // Ensure it always stays on top of anything
 
+  // The window listeners of the menu live as long as the menu. Every way the
+  // menu closes goes through close(): a listener left behind would cancel
+  // every later Escape, and a dialog closes only on an Escape that no handler
+  // cancelled.
+  const windowListeners = new AbortController();
+  const close = (): void => {
+    appMenu.remove();
+    windowListeners.abort();
+  };
+
   for (const item of items) {
     const menuItem = renderMenuItem(item);
 
@@ -252,7 +262,7 @@ export default function showPopupMenu(
             `Registered click on menu item "${item.label}", but it had neither an action, nor an ID attached to it.`,
           );
         }
-        appMenu.parentElement?.removeChild(appMenu); // Close the menu
+        close();
       });
     } else if (item.type === "submenu" && item.enabled !== false) {
       // Enable displaying the sub menu
@@ -278,7 +288,7 @@ export default function showPopupMenu(
               callback(clickedID);
             }
             // Furthermore, we need to close the parent menu
-            appMenu.parentElement?.removeChild(appMenu);
+            close();
           };
 
           closeSubmenu = showPopupMenu(target, item.submenu, subCB, false); // NOTE: Prevent cleanup ONLY here!
@@ -344,26 +354,26 @@ export default function showPopupMenu(
   // on the window, because this indicates that the menu should be closed.
   // Clicks on any menu item will be handled before the event bubbles up to the
   // window so we don't need additional checks.
-  const clickCallback = (event?: MouseEvent): void => {
-    appMenu.parentElement?.removeChild(appMenu);
-    window.removeEventListener("mousedown", clickCallback);
-    window.removeEventListener("keydown", escapeCallback);
-  };
-  // Escape closes the menu the way a click outside does.
-  const escapeCallback = (event: KeyboardEvent): void => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      clickCallback();
-    }
-  };
-  window.addEventListener("mousedown", clickCallback);
-  window.addEventListener("keydown", escapeCallback);
+  window.addEventListener("mousedown", close, { signal: windowListeners.signal });
+  // Escape closes the menu the way a click outside does. A menu that a newer
+  // menu removed (the cleanup above) only drops its listeners.
+  window.addEventListener(
+    "keydown",
+    (event: KeyboardEvent) => {
+      if (!appMenu.isConnected) {
+        windowListeners.abort();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    },
+    { signal: windowListeners.signal },
+  );
 
-  // Return a close-callback for the caller to programmatically close the menu
-  return () => {
-    // When the closing function is called, remove the menu again
-    clickCallback();
-  };
+  // The caller closes the menu programmatically with this function
+  return close;
 }
 
 /**
