@@ -321,6 +321,9 @@ describe("the sidebar views", () => {
       .first()
       .click({ timeout: 5_000 });
     screenshots.set("section-drag-collapse.png", await activePage.screenshot());
+    // The next case opens the Explorer from its icon; leave the drawer on Search.
+    await activePage.locator(ICON("search")).click();
+    await activePage.locator(VIEW("search")).waitFor({ timeout: 10_000 });
   });
 
   it("lists the active file's citations and its related files in the References view", async () => {

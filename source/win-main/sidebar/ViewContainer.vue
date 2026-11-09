@@ -17,7 +17,9 @@
         <SplitterResizeHandle
           v-if="index > 0"
           class="view-container-handle"
-          v-bind:disabled="!isExpanded(props.sections[index - 1].id) || !isExpanded(section.id)"
+          v-bind:disabled="
+            !dragging && (!isExpanded(props.sections[index - 1].id) || !isExpanded(section.id))
+          "
           v-on:dragging="dragging = $event"
         ></SplitterResizeHandle>
         <SplitterPanel
@@ -139,6 +141,10 @@ function setCollapsed(id: SidebarSectionId, collapsed: boolean): void {
 // The splitter reports a panel's collapse and expand on its initial layout
 // and on programmatic resizes too; only a drag on a handle is the user
 // collapsing or expanding a section through the splitter.
+// A handle stays enabled while a drag runs: reka-ui's SplitterResizeHandle
+// removes its pointer listeners when it becomes disabled, so a drag that
+// collapses a section would never receive its pointerup and the group would
+// keep `pointer-events: none` on every panel.
 const dragging = ref(false);
 
 function onPanelDragged(id: SidebarSectionId, collapsed: boolean): void {
