@@ -331,4 +331,40 @@ describe("assembled app: gitignore rules filter the workspace", function () {
     await assertListed(["coble/notes.md"]);
     screenshots.set("tex-hidden-by-rule.png", await activePage().screenshot());
   });
+
+  it("keeps an open document open and saving after a rule hides it", async function () {
+    const documentPath = path.join(workspace, "index.md");
+    const tab = activePage().locator(
+      `.document-tablist-wrapper [data-path=${JSON.stringify(documentPath)}]`,
+    );
+    await tab.waitFor({ state: "visible", timeout: 10_000 });
+
+    await openContextMenu("index.md");
+    await activePage().locator(MENU_ITEM("menu.ignore_path")).click();
+    await waitForRulesFile("CONTRIBUTING.md\n/index.md\n");
+    await assertNotListed(["index.md"]);
+    await waitForApiFiles([
+      "AGENTS.md",
+      "coble/AGENTS.md",
+      "coble/drafts/old.md",
+      "coble/notes.md",
+    ]);
+
+    await tab.waitFor({ state: "visible", timeout: 10_000 });
+    const editor = activePage().locator(".cm-content");
+    await editor.click();
+    await activePage().keyboard.press("ControlOrMeta+End");
+    await activePage().keyboard.type("Hidden but open.");
+    // The IPC call that the save-file shortcut makes: CDP key events do not
+    // run the main-process menu accelerators.
+    assert.deepEqual(
+      await activePage().evaluate(
+        async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        documentPath,
+      ),
+      { ok: true },
+    );
+    assert.equal(await readFile(documentPath, "utf8"), "# Index\nHidden but open.");
+    screenshots.set("hidden-document-open.png", await activePage().screenshot());
+  });
 });

@@ -466,6 +466,14 @@ of an isolated instance are in the first comment of #132.
   other filter: a view of one project folder in the window
   (`explorer-ordering.ts`). `useIgnoreRulesStore` holds the filter sources
   and marks matches (`is-ignored`).
+- **A filter hides; it does not close.** An open document that a rule or a
+  file type hides stays open, and it saves to its path. The documents
+  provider has its own watcher and does not read `fsal-events`.
+- **Cost of a rule change:** one scan of each open workspace before and
+  after, on asynchronous `readdir` calls. On 21,226 files in 2,312 folders a
+  rule change takes about 300 ms of main-process JavaScript in short steps,
+  and the window has no long task except one of under 90 ms for 2000
+  removed rows (#148).
 - **`fileManager.showIgnored`** turns the filters off for every consumer,
   not only for the file manager: hidden types and dot paths are listed too.
   The file manager then dims each match.
