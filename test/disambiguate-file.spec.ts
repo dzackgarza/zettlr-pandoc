@@ -60,6 +60,14 @@ describe("Utility#disambiguateFile()", function () {
     assert.notDeepEqual(disambiguated, filePath2);
   });
 
+  // A symbolic link to itself: the filesystem cannot follow it (ELOOP), so
+  // it cannot say whether the name is free.
+  it("should reject when the filesystem cannot examine the path", async function () {
+    const looped = path.join(testFolder, "looped.txt");
+    await fs.symlink(looped, looped);
+    await assert.rejects(disambiguateFile(looped), { code: "ELOOP" });
+  });
+
   // Clean test dir
   after(async function () {
     await fs.rm(testFolder, { recursive: true });
