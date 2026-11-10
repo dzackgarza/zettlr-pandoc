@@ -1370,6 +1370,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(capped.matchCount, 2);
     assert.equal(capped.truncated, true);
 
+    // A workspace inside another workspace: its files belong to it, so an
+    // include pattern is relative to it and it is the workspace of each hit.
+    const inner = path.join(scratch, "zeta");
+    const innerPath = path.join(inner, "foundations", "unimodular.md");
+    mkdirSync(path.dirname(innerPath), { recursive: true });
+    writeFileSync(innerPath, "a unimodular form\n");
+    openWorkspaces.push(inner);
+    const nested = parseAs(
+      (await httpRequest("GET", "/v1/workspace/search?text=unimodular&include=foundations/*.md"))
+        .body,
+      "WorkspaceSearchResponse",
+    );
+    assert.deepEqual(
+      nested.files.map((file) => [file.path, file.workspaceId]),
+      [[innerPath, inner]],
+    );
+
     const invalid = await httpRequest("GET", "/v1/workspace/search?text=(&regex=true");
     assert.equal(invalid.status, 400);
     assert.equal(parseAs(invalid.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");

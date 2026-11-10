@@ -38,6 +38,7 @@ import {
   systemAppLang,
 } from "./get-config-template";
 import { showOnboardingWindow } from "./onboarding-window";
+import { consolidateRootPaths } from "./root-paths";
 
 const ZETTLR_VERSION = app.getVersion();
 
@@ -393,38 +394,11 @@ export default class ConfigProvider extends ProviderContract {
   }
 
   /**
-   * This function ensures that all root paths are consolidated, i.e., have no
-   * overlaps. In other words, this function will remove any root paths that are
-   * contained by any of the other roots. This will help prevent any
-   * inconsistencies when a root file is part of a loaded workspace, or some
-   * workspace is loaded as part of another workspace.
+   * Removes each open file that an open workspace holds: the workspace lists
+   * it already. A workspace inside another workspace stays open.
    */
   private consolidateRootPaths(): void {
-    const { openFiles, openWorkspaces } = this.config.app;
-
-    // First, check if any of the open files are part of any of the workspaces.
-    for (const openFile of openFiles) {
-      for (const workspace of openWorkspaces) {
-        if (openFile.startsWith(workspace)) {
-          openFiles.splice(openFiles.indexOf(openFile), 1);
-        }
-      }
-    }
-
-    // Second, check if any open workspaces are subdirectories of any other
-    // workspace.
-    for (const workspace of openWorkspaces) {
-      for (const otherWorkspace of openWorkspaces) {
-        if (workspace === otherWorkspace) {
-          continue;
-        }
-
-        if (workspace.startsWith(otherWorkspace)) {
-          openWorkspaces.slice(openWorkspaces.indexOf(workspace), 1);
-        }
-      }
-    }
-
+    const { openFiles, openWorkspaces } = consolidateRootPaths(this.config.app);
     this.config.app.openFiles = openFiles;
     this.config.app.openWorkspaces = openWorkspaces;
     this._container.set(this.config); // Persist changes

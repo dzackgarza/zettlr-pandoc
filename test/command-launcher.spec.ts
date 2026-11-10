@@ -23,6 +23,7 @@ import path from "path";
 import { serializedMenuSchema } from "source/types/common/serialized-menu";
 import {
   allMenuLeafRows,
+  fileBreadcrumb,
   menuGroupRows,
   rankRows,
   resolveGroup,
@@ -275,5 +276,18 @@ describe("command launcher: a menu the launcher cannot present in full", functio
       "a leaf with no id can never be clicked, so the launcher must say so instead of listing one command fewer",
     );
     assert.throws(() => allMenuLeafRows(withUnaddressableLeaf), Error);
+  });
+});
+
+describe("the breadcrumb of a document row", function () {
+  it("is the directory relative to the innermost workspace root", function () {
+    const roots = ["/u/notes", "/u/notes/zeta"];
+    assert.deepEqual(fileBreadcrumb("/u/notes/zeta/foundations/a.md", roots), ["foundations"]);
+    assert.deepEqual(fileBreadcrumb("/u/notes/alpha/b.md", roots), ["alpha"]);
+    assert.deepEqual(fileBreadcrumb("/u/notes/zeta/c.md", [...roots].reverse()), []);
+  });
+
+  it("is the absolute directory of a file beside a root with the same name prefix", function () {
+    assert.deepEqual(fileBreadcrumb("/n/proj-notes/x.md", ["/n/proj"]), ["n", "proj-notes"]);
   });
 });

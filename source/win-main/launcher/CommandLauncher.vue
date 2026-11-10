@@ -91,7 +91,7 @@ import {
 import { trans } from "@common/i18n-renderer";
 import { SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
-import { pathBasename, relativePath } from "@common/util/renderer-path-polyfill";
+import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { cmShortcutToElectron } from "@common/util/shortcuts";
 import showToast from "@common/util/show-toast";
 import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
@@ -127,6 +127,7 @@ import {
   type ExportProfileRow,
   type ExportRequest,
   type FileRow,
+  fileBreadcrumb,
   type HeadingRow,
   type JustRecipeRow,
   justRecipeLabel,
@@ -369,15 +370,11 @@ function fileRowFor(filePath: string): FileRow {
     descriptor !== undefined && (descriptor.type === "file" || descriptor.type === "code")
       ? getDocumentTitle(descriptor)
       : pathBasename(filePath);
-  const root = workspaceStore.rootDescriptors
-    .map((root) => root.path)
-    .find((rootPath) => filePath.startsWith(rootPath));
-  const relative = root === undefined ? filePath : relativePath(root, filePath);
-  const directory = relative
-    .split("/")
-    .slice(0, -1)
-    .filter((segment) => segment !== "");
-  return { kind: "file", path: filePath, label, breadcrumb: directory };
+  const breadcrumb = fileBreadcrumb(
+    filePath,
+    workspaceStore.rootDescriptors.map((root) => root.path),
+  );
+  return { kind: "file", path: filePath, label, breadcrumb };
 }
 
 /** Every workspace document as a row. */

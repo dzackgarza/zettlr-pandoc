@@ -160,6 +160,33 @@ describe("Project reference status computation (issue #1 Phase 7)", function () 
       );
     });
 
+    it("takes the innermost root as the Project of a document", function () {
+      // Part2 is a Project inside ProjectA. Its documents belong to Part2,
+      // in whatever order the roots arrive.
+      const inner = path.join(PROJECT_A, "Part2");
+      const chapter = path.join(inner, "Chapter.md");
+      const appendix = path.join(inner, "Appendix.md");
+      const outerFirst = [
+        projectARoot(["Theorems.md"]),
+        { rootPath: inner, files: ["Chapter.md", "Appendix.md"] },
+      ];
+
+      for (const roots of [outerFirst, [...outerFirst].reverse()]) {
+        assert.strictEqual(
+          computeProjectReferenceStatus(appendix, chapter, roots),
+          "in-active-project",
+        );
+        assert.strictEqual(
+          computeProjectReferenceStatus(THEOREMS, chapter, roots),
+          "another-project",
+        );
+        assert.strictEqual(
+          computeProjectReferenceStatus(chapter, THEOREMS, roots),
+          "another-project",
+        );
+      }
+    });
+
     it("uses path-segment-safe root containment", function () {
       // A sibling directory whose name merely extends the root's name is NOT
       // inside the root: ProjectA must not claim ProjectAB.
