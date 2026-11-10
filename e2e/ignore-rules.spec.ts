@@ -19,9 +19,11 @@ import {
   createFixture,
   delay,
   findEditorPage,
+  findMenuNode,
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  readApplicationMenu,
   shutdown,
 } from "./support/electron-app";
 
@@ -302,6 +304,41 @@ describe("assembled app: gitignore rules filter the workspace", function () {
       "coble/notes.md",
       "index.md",
     ]);
+  });
+
+  it("names the file name search in the application menu apart from the file filters", async function () {
+    const menu = await readApplicationMenu(activePage());
+    assert.equal(findMenuNode(menu, "menu.filter_files")?.label, "Search files");
+    assert.equal(findMenuNode(menu, "menu.edit_ignore_rules")?.label, "Edit file filters…");
+  });
+
+  it("opens the file filter window from Advanced → File Treatment in Preferences", async function () {
+    await activePage().evaluate(async () => {
+      await window.ipc.invoke("application", {
+        command: "open-preferences",
+        payload: { group: 0, fieldsetTitle: "File Treatment" },
+      });
+    });
+    const deadline = Date.now() + 20_000;
+    let preferences: Page | undefined;
+    while (preferences === undefined && Date.now() < deadline) {
+      preferences = browser
+        ?.contexts()
+        .flatMap((context) => context.pages())
+        .find((candidate) => candidate.url().includes("/preferences/"));
+      await delay(100);
+    }
+    assert.ok(preferences !== undefined, "the Preferences window opens");
+    const button = preferences.locator(
+      '[data-form-fieldset-title="File Treatment"] button:has-text("Edit file filters…")',
+    );
+    await button.waitFor({ state: "visible", timeout: 20_000 });
+    screenshots.set("preferences-file-treatment.png", await preferences.screenshot());
+    await button.click();
+    await activePage().locator(DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    await preferences.close();
+    await activePage().keyboard.press("Escape");
+    await activePage().locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });
   });
 
   it("lists a file type once the window includes it, until a rule in the same window hides it", async function () {

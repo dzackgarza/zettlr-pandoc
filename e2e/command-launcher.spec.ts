@@ -43,9 +43,11 @@ import {
   createWorkspaceFixture,
   delay,
   findEditorPage,
+  findMenuNode,
   hideDevServerOverlay,
   preserveArtifacts,
   REPO_ROOT,
+  readApplicationMenu,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -59,45 +61,6 @@ const NAVIGATION_SIDEBAR = "#navigation-sidebar";
 const FILTER_INPUT = "#navigation-sidebar .chrome-filter-input";
 const LAUNCHER_MENU_ITEM = "menu.command_launcher";
 const execFileAsync = promisify(execFile);
-
-interface SerializedMenuNode {
-  id?: string;
-  label?: string;
-  type?: string;
-  accelerator?: string | null;
-  submenu?: SerializedMenuNode[];
-}
-
-/** The application menu as the menu provider serialises it for this window. */
-function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
-  return page.evaluate(
-    () =>
-      new Promise<SerializedMenuNode[]>((resolve) => {
-        window.ipc.on(
-          "menu-provider",
-          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
-            if (message.command === "application-menu") {
-              resolve(message.payload);
-            }
-          },
-        );
-        window.ipc.send("menu-provider", { command: "get-application-menu" });
-      }),
-  );
-}
-
-function findMenuNode(nodes: SerializedMenuNode[], id: string): SerializedMenuNode | undefined {
-  for (const node of nodes) {
-    if (node.id === id) {
-      return node;
-    }
-    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id);
-    if (nested !== undefined) {
-      return nested;
-    }
-  }
-  return undefined;
-}
 
 /** Opens the launcher the way the accelerator would: by clicking its menu item. */
 async function openLauncherFromMenu(page: Page): Promise<void> {

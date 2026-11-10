@@ -275,6 +275,48 @@ export async function hideDevServerOverlay(page: Page): Promise<void> {
   });
 }
 
+export interface SerializedMenuNode {
+  id?: string;
+  label?: string;
+  type?: string;
+  accelerator?: string | null;
+  submenu?: SerializedMenuNode[];
+}
+
+/** The application menu as the menu provider serialises it for this window. */
+export function readApplicationMenu(page: Page): Promise<SerializedMenuNode[]> {
+  return page.evaluate(
+    () =>
+      new Promise<SerializedMenuNode[]>((resolve) => {
+        window.ipc.on(
+          "menu-provider",
+          (_event: unknown, message: { command: string; payload: SerializedMenuNode[] }) => {
+            if (message.command === "application-menu") {
+              resolve(message.payload);
+            }
+          },
+        );
+        window.ipc.send("menu-provider", { command: "get-application-menu" });
+      }),
+  );
+}
+
+export function findMenuNode(
+  nodes: SerializedMenuNode[],
+  id: string,
+): SerializedMenuNode | undefined {
+  for (const node of nodes) {
+    if (node.id === id) {
+      return node;
+    }
+    const nested = node.submenu === undefined ? undefined : findMenuNode(node.submenu, id);
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
 /** The Agent API, as the specs drive it: JSON in, parsed JSON out. */
 export interface AgentClient {
   get: (route: string) => Promise<unknown>;
@@ -498,6 +540,8 @@ async function writeFixtureState(
 export interface LaunchOptions {
   /** Files delivered as literal application arguments on a cold start. */
   files?: string[];
+  /** Variables set over the inherited environment of the app process. */
+  environment?: NodeJS.ProcessEnv;
 }
 
 export async function launchElectron(
@@ -548,6 +592,7 @@ export async function launchElectron(
     ZETTLR_E2E: "1",
     ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
     ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
+    ...options.environment,
   };
 
   return spawn(executable, args, {
