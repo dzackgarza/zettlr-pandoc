@@ -34,7 +34,8 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
-import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
 import { md2html } from "source/common/modules/markdown-utils";
@@ -102,7 +103,7 @@ onMounted(async () => {
     },
     zknLinkFormat: window.config.get("zkn.linkFormat") ?? "link|title",
     onImageSrc(src) {
-      return "safe-file://" + resolvePath(base, src);
+      return imageSourceUri(src, base);
     },
   })
     .then((html) => {

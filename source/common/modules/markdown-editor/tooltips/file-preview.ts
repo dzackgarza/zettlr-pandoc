@@ -24,7 +24,7 @@ import { splitWikilinkTarget } from "@common/util/wikilink-target";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
 import type { ForceOpenAPI } from "source/app/service-providers/commands/force-open";
-import makeValidUri from "source/common/util/make-valid-uri";
+import { imageSourceUri } from "source/common/util/image-source-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
 
@@ -119,12 +119,7 @@ function getPreviewElement(
     zknLinkFormat,
     onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
     onImageSrc(src) {
-      const isDataUrl = /^data:[a-zA-Z0-9/;=]+(?:;base64){0,1},.+/.test(src);
-      if (isDataUrl) {
-        return src;
-      } else {
-        return makeValidUri(src, basePath);
-      }
+      return imageSourceUri(src, basePath);
     },
   })
     .then((html) => {

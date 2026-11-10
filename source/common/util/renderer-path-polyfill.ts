@@ -8,9 +8,9 @@
  * License:         GNU GPL v3
  *
  * Description:     This module contains a subset of Node.js's path functions
- *                  which we need despite the renderer sandbox. NOTE: This is a
- *                  subset that only implements required functions and not deals
- *                  with all edge cases, only the relevant ones!
+ *                  which we need despite the renderer sandbox. A function
+ *                  here gives the result of the Node.js function for the
+ *                  same absolute paths.
  *
  * END HEADER
  */
@@ -83,7 +83,76 @@ export function isAbsolutePath(path: string): boolean {
 }
 
 /**
- * Returns the relative path from from to to.
+ * A path as its root and the names below the root. A relative path has the
+ * empty root. `splitPath`, `relativePath` and `resolvePath` follow
+ * `normalizeString`, `relative` and `resolve` of the Node.js path module
+ * (https://github.com/nodejs/node/blob/main/lib/path.js). Node.js resolves a
+ * relative path against the working directory; the renderer has none, so a
+ * relative path stays relative here.
+ */
+interface PathParts {
+  root: string;
+  segments: string[];
+}
+
+const WIN32_DRIVE_ROOT = /^[A-Za-z]:[\\/]+/;
+const WIN32_SHARE_ROOT = /^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)[\\/]*/;
+
+/** The root of a path, and the length of the text that spells it. */
+function pathRoot(path: string, win32: boolean): { root: string; length: number } {
+  if (!win32) {
+    return path.startsWith("/") ? { root: "/", length: 1 } : { root: "", length: 0 };
+  }
+
+  const drive = WIN32_DRIVE_ROOT.exec(path);
+  if (drive !== null) {
+    return { root: `${path.slice(0, 2)}\\`, length: drive[0].length };
+  }
+
+  const share = WIN32_SHARE_ROOT.exec(path);
+  if (share !== null) {
+    return { root: `\\\\${share[1]}\\${share[2]}\\`, length: share[0].length };
+  }
+
+  return /^[\\/]/.test(path) ? { root: "\\", length: 1 } : { root: "", length: 0 };
+}
+
+/**
+ * Removes each `.` segment and applies each `..` segment to the name before
+ * it. A `..` segment that has no name before it is dropped below a root and
+ * stays in a relative path.
+ */
+function normalizeSegments(segments: string[], rooted: boolean): string[] {
+  const names: string[] = [];
+
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") {
+      continue;
+    }
+
+    if (segment !== "..") {
+      names.push(segment);
+    } else if (names.length > 0 && names[names.length - 1] !== "..") {
+      names.pop();
+    } else if (!rooted) {
+      names.push("..");
+    }
+  }
+
+  return names;
+}
+
+/** Splits a path into its root and its names in their shortest form. */
+function splitPath(path: string, win32: boolean): PathParts {
+  const { root, length } = pathRoot(path, win32);
+  const segments = path.slice(length).split(win32 ? /[\\/]+/ : /\/+/);
+  return { root, segments: normalizeSegments(segments, root !== "") };
+}
+
+/**
+ * Returns the relative path from from to to. When no relative path leads from
+ * one to the other (two drives, or one absolute and one relative path), this
+ * is the target path.
  *
  * @param   {string}  from  The source location
  * @param   {string}  to    The target location
@@ -95,54 +164,42 @@ export function relativePath(from: string, to: string): string {
     throw new Error("Cannot calculate relative path between win32 and Unix paths");
   }
 
-  // Edge cases
-  if (to.startsWith(from)) {
-    // to is already the relative path
-    return to.substring(from.length + 1); // Remove path separator
-  } else if (
-    isWin32Path(from) &&
-    isWin32Path(to) &&
-    to[0].toLowerCase() !== from[0].toLowerCase()
+  const win32 = isWin32Path(from);
+  const separator = sep(from);
+  const source = splitPath(from, win32);
+  const target = splitPath(to, win32);
+  // Two Windows names that differ only in case name the same file.
+  const sameName = (a: string, b: string): boolean =>
+    win32 ? a.toLowerCase() === b.toLowerCase() : a === b;
+
+  if (!sameName(source.root, target.root)) {
+    return target.root + target.segments.join(separator);
+  }
+
+  let common = 0;
+  while (
+    common < source.segments.length &&
+    common < target.segments.length &&
+    sameName(source.segments[common], target.segments[common])
   ) {
-    // Files are on different drives
-    return to;
-  } /* else if (pathDirname(from) === pathDirname(to)) {
-    // Same directory
-    return pathBasename(to)
-  } */
-
-  // After the edge cases, we have to do some more work. Finding the relative
-  // path is a combination of adding '..' and parts of either path to the other.
-  const fromSegments = from.split(sep(from));
-  const toSegments = to.split(sep(to));
-  if (fromSegments.length === 1) {
-    // Happens with, e.g., filenames. Node.js's path assumes traversing up from
-    // both path starts here
-    fromSegments.unshift("..");
-    toSegments.unshift("..");
-  }
-  let lastCommonSegment = 0;
-  for (let i = 0; i < Math.min(fromSegments.length, toSegments.length); i++) {
-    if (fromSegments[i] === toSegments[i]) {
-      lastCommonSegment = i;
-    } else {
-      break;
-    }
+    common++;
   }
 
-  // Now we have to do two things: (1) move up from from to the last common
-  // segment and then (2) append the remaining segments from to
-  const seq = `..${sep(from)}`.repeat(fromSegments.length - lastCommonSegment - 1);
-  const appendix = toSegments.slice(lastCommonSegment + 1).join(sep(to));
-  const relativePath = seq + appendix;
-  return relativePath.endsWith(sep(from))
-    ? relativePath.substring(0, relativePath.length - 1)
-    : relativePath;
+  const sourceRest = source.segments.slice(common);
+  if (sourceRest.includes("..")) {
+    throw new Error(
+      `No relative path leads from "${from}" to "${to}": the names above "${from}" are unknown`,
+    );
+  }
+
+  return [...sourceRest.map(() => ".."), ...target.segments.slice(common)].join(separator);
 }
 
 /**
  * Resolves the provided (relative) path using the (absolute) base to an
- * absolute path to the resource.
+ * absolute path to the resource. The result is in its shortest form: it has
+ * no `.` segment, no `..` segment after a name, and no separator at its end
+ * unless it is a root.
  *
  * @param   {string}  base  The base.
  * @param   {string}  path  The path.
@@ -150,37 +207,19 @@ export function relativePath(from: string, to: string): string {
  * @return  {string}        The path, turned absolute.
  */
 export function resolvePath(base: string, path: string): string {
-  if (isAbsolutePath(path)) {
-    return path;
+  const win32 = isWin32Path(base);
+  const target = splitPath(path, win32);
+  if (target.root !== "") {
+    return target.root + target.segments.join(sep(base));
   }
 
-  const pathSegments = path.split(sep(path));
-  if (pathSegments[0] === ".") {
-    // Remove a potential this-dir indicator
-    pathSegments.splice(0, 1);
+  const origin = splitPath(base, win32);
+  const segments = normalizeSegments([...origin.segments, ...target.segments], origin.root !== "");
+  if (origin.root === "" && segments.length === 0) {
+    return ".";
   }
 
-  // NOTE: We reverse the array, which makes splicing path segments easier.
-  const baseSegments = base.split(sep(base)).reverse();
-
-  for (let i = 0; i < pathSegments.length; i++) {
-    const segment = pathSegments[i];
-    // For each "go up", remove one base segment
-    if (segment === "..") {
-      baseSegments.splice(0, 1); // NOTE: basePath is reversed
-      pathSegments.splice(0, 1);
-      i--;
-    } else {
-      break;
-    }
-  }
-
-  // This ensures that the resolved path ends with a separator
-  if (pathSegments.length === 0) {
-    pathSegments.push("");
-  }
-
-  return [...baseSegments.reverse(), ...pathSegments].join(sep(base));
+  return origin.root + segments.join(sep(base));
 }
 
 /**
