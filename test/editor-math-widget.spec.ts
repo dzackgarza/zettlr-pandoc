@@ -17,6 +17,7 @@
 
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { markdownRenderers } from "@dzack/pandoc-editor";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { renderMath } from "@dzack/pandoc-editor/renderers/render-math";
 import { strict as assert } from "assert";
@@ -118,5 +119,31 @@ such that for each nonempty overlap $U_i \cap U_j$, the transition maps
   it("does not render non-math RawInline TeX as mathematics", function () {
     const dom = renderInEditor(String.raw`Before \textbf{bold} after.`);
     assert.equal(dom.querySelectorAll(".preview-math").length, 0);
+  });
+
+  it("selects the whole source of an equation on a click, delimiters included", function () {
+    // The standard renderers hide the code marks of inline code. The `$` of an
+    // equation is such a mark, and the equation widget must still own it.
+    const doc = "The square $x^2$ and the fibre $\\pi^{-1}(y)$ are here.\n\nOutside.";
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [markdownParser(), configField, markdownRenderers(), renderMath],
+    });
+    const view = new EditorView({ state, parent: document.body });
+
+    for (const source of ["$x^2$", "$\\pi^{-1}(y)$"]) {
+      view.dispatch({ selection: { anchor: doc.length } });
+      const widget = [...view.dom.querySelectorAll<HTMLElement>(".preview-math")].find(
+        (element) => element.dataset.equation === source.slice(1, -1),
+      );
+      assert.ok(widget !== undefined, `expected a rendered widget for ${source}`);
+      widget.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+      const { from, to } = view.state.selection.main;
+      assert.equal(view.state.sliceDoc(from, to), source);
+      assert.equal(from, doc.indexOf(source));
+    }
+    view.destroy();
   });
 });
