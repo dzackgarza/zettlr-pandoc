@@ -1231,6 +1231,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     try {
       const { tools } = await zoteroClient.listTools();
       assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+        "getZoteroExtractions",
         "importZoteroIdentifier",
         "importZoteroUrl",
         "searchZoteroItems",
