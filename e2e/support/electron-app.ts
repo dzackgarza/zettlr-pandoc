@@ -2,7 +2,8 @@
 // against a throwaway data directory and attach over CDP; keeping that in one
 // module is what stops the second spec from copying the first one's 300 lines.
 import { strict as assert } from "node:assert";
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -11,6 +12,33 @@ import { type Browser, chromium, type Page } from "playwright";
 import { stringify } from "yaml";
 
 export const REPO_ROOT = path.resolve(process.cwd());
+
+/**
+ * The packaged binary of `just package`. A spec that starts it proves the
+ * current source only while the build is current, so this fails when the
+ * build is absent or when its stamp differs from the source fingerprint that
+ * the desktop launcher compares.
+ */
+export function currentPackagedBinary(): string {
+  const packagedDirectory = path.join(REPO_ROOT, "out", "Zettlr-Pandoc-linux-x64");
+  const binary = path.join(packagedDirectory, "zettlr-pandoc");
+  const stamp = path.join(packagedDirectory, ".source-fingerprint");
+  assert.ok(
+    existsSync(binary) && existsSync(stamp),
+    `No packaged build at ${packagedDirectory}. Run \`just package\` first.`,
+  );
+  const fingerprint = execFileSync(
+    path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
+    [REPO_ROOT],
+    { encoding: "utf8" },
+  ).trim();
+  assert.equal(
+    readFileSync(stamp, "utf8").trim(),
+    fingerprint,
+    `The packaged build at ${packagedDirectory} is older than the source. Run \`just package\` first.`,
+  );
+  return binary;
+}
 
 export function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));

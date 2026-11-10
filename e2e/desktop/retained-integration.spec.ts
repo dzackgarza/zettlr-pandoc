@@ -9,9 +9,9 @@ import { stringify } from "yaml";
 import type { components } from "../../source/types/generated/agent-api";
 import {
   createFixture,
+  currentPackagedBinary,
   type Fixture,
   findEditorPage,
-  REPO_ROOT,
   readAgentApiPort,
   requireInitialized,
   shutdown,
@@ -62,7 +62,7 @@ describe("retained integration in packaged Electron", function () {
       "@book{Web26, author={Webster, Ben}, title={Spaces}, year={2026}}\n",
     );
     appProcess = spawn(
-      path.join(REPO_ROOT, "out/Zettlr-Pandoc-linux-x64/zettlr-pandoc"),
+      currentPackagedBinary(),
       [
         `--data-dir=${fixture.configDirectory}`,
         "--remote-debugging-port=0",

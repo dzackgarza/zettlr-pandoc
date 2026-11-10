@@ -6,6 +6,7 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import {
   createFixture,
+  currentPackagedBinary,
   delay,
   findEditorPage,
   readAppLog,
@@ -13,10 +14,13 @@ import {
   waitForDevTools,
 } from "./support/electron-app";
 
-const binary = path.resolve("out/Zettlr-Pandoc-linux-x64/zettlr-pandoc");
-
 describe("application launch delivery", function () {
   this.timeout(120_000);
+  let binary: string;
+
+  before(function () {
+    binary = currentPackagedBinary();
+  });
 
   it("waits for the owner to open the requested document before reporting success", async function () {
     const fixture = await createFixture("zettlr-lifecycle-", {

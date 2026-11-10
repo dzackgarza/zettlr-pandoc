@@ -61,6 +61,15 @@ jobs:
           bash scripts/configure-electron-sandbox-ci.sh
       - name: Run unit tests
         run: bun run test
+      # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
+      # type-check but never bundle, so a renderer file importing a main-only
+      # module (e.g. `from 'electron'`, which drags in `child_process`) passes
+      # lint yet breaks `bun run start`. `just package` runs the same webpack
+      # compile as launching the app, minus the installer makers, and fails
+      # when the build wrote no app.asar of this commit. The assembled-app
+      # E2E step starts this binary, so the build comes first.
+      - name: Build app bundle
+        run: just package
       - name: Run assembled-app E2E
         run: just test-e2e
       - name: Upload assembled-app E2E logs
@@ -70,14 +79,6 @@ jobs:
           name: e2e-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/zettlr-*-e2e-latest
           retention-days: 7
-      # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
-      # type-check but never bundle, so a renderer file importing a main-only
-      # module (e.g. `from 'electron'`, which drags in `child_process`) passes
-      # lint yet breaks `bun run start`. `package` runs the same webpack compile as
-      # launching the app, minus the installer makers — so this fails in CI
-      # instead of being discovered by whoever next runs the app.
-      - name: Build app bundle
-        run: bun run package:linux-x64
       - name: Test CSL update
         run: bun run update:csl
       - name: Test Citation update
