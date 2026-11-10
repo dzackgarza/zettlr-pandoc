@@ -18,6 +18,7 @@ import { readFileSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager from "source/app/service-providers/documents";
+import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
@@ -95,7 +96,7 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
-      testAccess: async (_filePath: string) => true,
+      testAccess: FSAL.prototype.testAccess,
       writeTextFile: async (filePath: string, content: string) => {
         writeFileSync(filePath, content, "utf-8");
       },
