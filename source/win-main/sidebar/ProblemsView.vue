@@ -153,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { innermostRoot, pathBasename } from "@common/util/renderer-path-polyfill";
 import type {
   ProblemDocument,
   ProblemFinding,
@@ -179,18 +179,10 @@ const error = ref("");
 
 const workspacePath = computed(() => {
   const activePath = documentTreeStore.lastLeafActiveFile?.path;
-  const roots = workspaceStore.rootDescriptors.filter(
-    (descriptor) => descriptor.type === "directory",
-  );
-  return (
-    roots
-      .filter(
-        (descriptor) =>
-          activePath !== undefined &&
-          (activePath === descriptor.path || activePath.startsWith(`${descriptor.path}/`)),
-      )
-      .sort((a, b) => b.path.length - a.path.length)[0]?.path ?? roots[0]?.path
-  );
+  const roots = workspaceStore.rootDescriptors
+    .filter((descriptor) => descriptor.type === "directory")
+    .map((descriptor) => descriptor.path);
+  return (activePath === undefined ? undefined : innermostRoot(activePath, roots)) ?? roots[0];
 });
 
 const weight: Record<ProblemSeverity, number> = { info: 0, warning: 1, error: 2 };

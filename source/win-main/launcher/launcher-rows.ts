@@ -18,7 +18,7 @@
 import type { CommandId } from "@common/commands/command-registry";
 // NOTE: fzf is ESM-only; this must remain a real ESM import (see
 // util/reference-search.ts and the webpack alias that serves the ES build).
-import { relativePath } from "@common/util/renderer-path-polyfill";
+import { innermostRoot, relativePath } from "@common/util/renderer-path-polyfill";
 import type { JustRecipeCommand, JustRecipeParameter } from "@dts/common/justfile-commands";
 import type { PreferencesGroups } from "@dts/common/preferences";
 import type { SerializedMenuItem, SerializedSubmenu } from "@dts/common/serialized-menu";
@@ -82,11 +82,11 @@ export interface FileRow {
 }
 
 /**
- * The directory of a file as breadcrumb segments: relative to the workspace
- * root that holds the file, absolute outside every root.
+ * The directory of a file as breadcrumb segments: relative to the innermost
+ * workspace root that holds the file, absolute outside every root.
  */
 export function fileBreadcrumb(filePath: string, rootPaths: readonly string[]): string[] {
-  const root = rootPaths.find((rootPath) => filePath.startsWith(rootPath));
+  const root = innermostRoot(filePath, rootPaths);
   const relative = root === undefined ? filePath : relativePath(root, filePath);
   return relative
     .split("/")

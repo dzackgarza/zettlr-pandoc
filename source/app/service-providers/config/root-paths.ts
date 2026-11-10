@@ -13,6 +13,8 @@
  * END HEADER
  */
 
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
+
 export interface RootPaths {
   openFiles: string[];
   openWorkspaces: string[];
@@ -20,13 +22,8 @@ export interface RootPaths {
 
 /** The root paths without the open files that an open workspace holds. */
 export function consolidateRootPaths({ openFiles, openWorkspaces }: RootPaths): RootPaths {
-  for (const openFile of openFiles) {
-    for (const workspace of openWorkspaces) {
-      if (openFile.startsWith(workspace)) {
-        openFiles.splice(openFiles.indexOf(openFile), 1);
-      }
-    }
-  }
-
-  return { openFiles, openWorkspaces };
+  return {
+    openFiles: openFiles.filter((file) => innermostRoot(file, openWorkspaces) === undefined),
+    openWorkspaces,
+  };
 }

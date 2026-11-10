@@ -146,6 +146,11 @@ export interface DirDescriptor extends FSMetaInfo {
   dirNotFoundFlag?: boolean; // If the flag is set & true this directory has not been found
 }
 
+/** A directory that is a Project. */
+export interface ProjectDirDescriptor extends DirDescriptor {
+  settings: DirectorySettings & { project: ProjectSettings };
+}
+
 /**
  * A value of the YAML core schema, which `yaml.parse` produces: a scalar, a
  * sequence or a mapping (https://yaml.org/spec/1.2.2/#103-core-schema).

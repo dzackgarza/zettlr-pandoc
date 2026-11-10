@@ -104,7 +104,7 @@ export function displayFileContext(
 
   const membership =
     fileObject.type === "file"
-      ? projectMembershipForPath(fileObject.path, workspaceStore.rootDescriptors)
+      ? projectMembershipForPath(fileObject.path, workspaceStore.projectDirectories)
       : undefined;
   const canAddToQuartoBook =
     membership?.manifestKind === "quarto" && membership.status === "omitted";

@@ -18,7 +18,8 @@ import type { AnyMenuItem } from "@common/modules/window-register/application-me
 import { reportError } from "@common/util/error-reporting";
 import showToast from "@common/util/show-toast";
 import type { AnyDescriptor } from "@dts/common/fsal";
-import { judgingRoot, ruleForName } from "source/common/util/ignore-rules";
+import { ruleForName } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { useConfigStore, useIgnoreRulesStore } from "source/pinia";
 
 const ipcRenderer = window.ipc;
@@ -45,7 +46,7 @@ function setPathIgnored(descriptor: AnyDescriptor, ignored: boolean): void {
 export function ignoreMenuItems(descriptor: AnyDescriptor): AnyMenuItem[] {
   const configStore = useConfigStore();
   const { sources, filter } = useIgnoreRulesStore();
-  const root = judgingRoot(sources.workspaceRules.keys(), descriptor.path);
+  const root = innermostRoot(descriptor.path, sources.workspaceRules.keys());
   if (root === undefined) {
     return [];
   }

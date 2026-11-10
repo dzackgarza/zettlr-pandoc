@@ -14,13 +14,16 @@
  */
 
 import {
+  innermostRoot,
   isAbsolutePath,
+  isAtOrInsideRoot,
+  isInsideRoot,
   isWin32Path,
   pathDirname,
   relativePath,
   resolvePath,
 } from "@common/util/renderer-path-polyfill";
-import { strictEqual } from "assert";
+import { deepStrictEqual, strictEqual } from "assert";
 import path from "path";
 
 const pathDirnameTesters = [
@@ -114,6 +117,77 @@ const resolveNormalizationTesters = [
   { base: "C:\\a\\b", path: "images/figure.png" },
   { base: "C:\\a\\b", path: ".." },
 ];
+
+// A path and a directory. The oracle is Node's path module: a path is inside
+// a directory when the relative path from the directory goes down only.
+const containmentTesters = [
+  { path: "/notes/book/chapter.md", root: "/notes/book" },
+  { path: "/notes/book/part/chapter.md", root: "/notes/book" },
+  { path: "/notes/book", root: "/notes/book" },
+  // A sibling whose name starts with the name of the directory (#200)
+  { path: "/notes/book-notes.md", root: "/notes/book" },
+  { path: "/notes/book2/chapter.md", root: "/notes/book" },
+  { path: "/notes/boo", root: "/notes/book" },
+  { path: "/notes", root: "/notes/book" },
+  { path: "/elsewhere/book/chapter.md", root: "/notes/book" },
+  { path: "/notes/chapter.md", root: "/" },
+  { path: "C:\\notes\\book\\chapter.md", root: "C:\\notes\\book" },
+  { path: "C:\\notes\\book-notes.md", root: "C:\\notes\\book" },
+  { path: "C:\\notes\\chapter.md", root: "C:\\" },
+];
+
+function nodeSaysInside(test: { path: string; root: string }): boolean {
+  const node = isWin32Path(test.path) ? path.win32 : path.posix;
+  const relative = node.relative(test.root, test.path);
+  return relative !== "" && !relative.startsWith("..") && !node.isAbsolute(relative);
+}
+
+describe("Utility#isInsideRoot()", function () {
+  for (const test of containmentTesters) {
+    const inside = nodeSaysInside(test);
+    it(`should return ${inside} for "${test.path}" in "${test.root}"`, function () {
+      strictEqual(isInsideRoot(test.path, test.root), inside);
+    });
+  }
+});
+
+describe("Utility#isAtOrInsideRoot()", function () {
+  for (const test of containmentTesters) {
+    const atOrInside = test.path === test.root || nodeSaysInside(test);
+    it(`should return ${atOrInside} for "${test.path}" in "${test.root}"`, function () {
+      strictEqual(isAtOrInsideRoot(test.path, test.root), atOrInside);
+    });
+  }
+});
+
+describe("Utility#innermostRoot()", function () {
+  const roots = ["/notes", "/notes/book", "/notes/book/appendix", "/notes/book-drafts", "/other"];
+  const testers = [
+    { path: "/notes/book/appendix/tables.md", root: "/notes/book/appendix" },
+    { path: "/notes/book/appendix", root: "/notes/book" },
+    { path: "/notes/book/chapter.md", root: "/notes/book" },
+    { path: "/notes/book-drafts/chapter.md", root: "/notes/book-drafts" },
+    { path: "/notes/book-notes.md", root: "/notes" },
+    { path: "/notes", root: undefined },
+    { path: "/notes-archive/old.md", root: undefined },
+  ];
+
+  for (const test of testers) {
+    it(`should return "${test.root}" for "${test.path}"`, function () {
+      strictEqual(innermostRoot(test.path, roots), test.root);
+      // The order of the roots does not decide the answer.
+      strictEqual(innermostRoot(test.path, [...roots].reverse()), test.root);
+    });
+  }
+
+  it("should return a root that Node's path module puts the path inside, and no deeper one exists", function () {
+    for (const test of testers) {
+      const holders = roots.filter((root) => nodeSaysInside({ path: test.path, root }));
+      const deepest = holders.sort((a, b) => b.length - a.length)[0];
+      deepStrictEqual(innermostRoot(test.path, roots), deepest);
+    }
+  });
+});
 
 describe("Utility#pathDirname()", function () {
   for (const test of pathDirnameTesters) {

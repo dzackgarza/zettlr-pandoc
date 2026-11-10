@@ -7,7 +7,8 @@
  *
  *   project-or-standalone-group.document.family-local-ordinal
  *
- * Project roots are ordered by path. Files inside a Project use the authored
+ * Project roots are ordered by path. A document belongs to the innermost
+ * Project root that holds it. Files inside a Project use the authored
  * ProjectSettings.files order; omitted files follow in path order. Documents
  * outside every Project share one final standalone group and are path ordered.
  * Within a document, each reference family has its own counter in source
@@ -23,16 +24,11 @@ import type {
   ReferenceFamily,
   Resolution,
 } from "../../types/common/references";
+import { containingRoot } from "./project-reference-status";
 
 function normalizedPath(value: string): string {
   const slashes = value.replace(/\\/g, "/").replace(/\/+$/g, "");
   return slashes === "" ? "/" : slashes;
-}
-
-function pathInsideRoot(documentPath: string, rootPath: string): boolean {
-  const document = normalizedPath(documentPath);
-  const root = normalizedPath(rootPath);
-  return document === root || document.startsWith(root === "/" ? "/" : `${root}/`);
 }
 
 function pathInRoot(rootPath: string, relativePath: string): string {
@@ -76,11 +72,8 @@ function projectGroups(
   };
 
   for (const definition of definitions) {
-    const group = groups.find(
-      (candidate) =>
-        candidate.root !== undefined &&
-        pathInsideRoot(definition.documentPath, candidate.root.rootPath),
-    );
+    const root = containingRoot(definition.documentPath, roots);
+    const group = groups.find((candidate) => candidate.root === root);
     if (group === undefined) {
       standalone.definitions.push(definition);
     } else {

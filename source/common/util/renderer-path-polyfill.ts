@@ -38,6 +38,29 @@ export function isInsideRoot(documentPath: string, rootPath: string): boolean {
   return boundary === "/" || boundary === "\\";
 }
 
+/** Whether a path is a directory or lies inside it. */
+export function isAtOrInsideRoot(documentPath: string, rootPath: string): boolean {
+  return documentPath === rootPath || isInsideRoot(documentPath, rootPath);
+}
+
+/**
+ * The root that holds a path: of the roots that the path lies inside, the
+ * innermost. A root does not hold itself. Every decision of the workspace or
+ * the directory that a path belongs to goes through this function.
+ */
+export function innermostRoot(documentPath: string, roots: Iterable<string>): string | undefined {
+  let innermost: string | undefined;
+  for (const root of roots) {
+    if (
+      isInsideRoot(documentPath, root) &&
+      (innermost === undefined || root.length > innermost.length)
+    ) {
+      innermost = root;
+    }
+  }
+  return innermost;
+}
+
 /**
  * Utility function that checks if a path is likely a win32-path
  *

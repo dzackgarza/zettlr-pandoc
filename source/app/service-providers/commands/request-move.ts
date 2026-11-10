@@ -15,6 +15,7 @@
 import { trans } from "@common/i18n-main";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { isAtOrInsideRoot } from "source/common/util/renderer-path-polyfill";
 import ZettlrCommand from "./zettlr-command";
 
 export default class RequestMove extends ZettlrCommand {
@@ -49,7 +50,7 @@ export default class RequestMove extends ZettlrCommand {
     }
 
     // Let's check if the destination is a child of the source:
-    if (from.type === "directory" && to.path.startsWith(from.path)) {
+    if (from.type === "directory" && isAtOrInsideRoot(to.path, from.path)) {
       this._app.windows.prompt({
         type: "error",
         title: trans("Cannot move directory"),

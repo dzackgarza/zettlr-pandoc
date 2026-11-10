@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { relativePath } from "@common/util/renderer-path-polyfill";
+import { isInsideRoot, relativePath } from "@common/util/renderer-path-polyfill";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
 
 /**
@@ -31,7 +31,7 @@ export function eventsChangeChildren(events: FSALEventPayload[], directoryPath: 
   return events.some((payload) => {
     const affectedPath = "path" in payload ? payload.path : payload.descriptor.path;
 
-    if (!affectedPath.startsWith(directoryPath) || affectedPath === directoryPath) {
+    if (!isInsideRoot(affectedPath, directoryPath)) {
       return false;
     }
 

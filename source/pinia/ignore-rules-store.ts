@@ -22,8 +22,8 @@ import {
   EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
-  judgingRoot,
 } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { computed, ref, shallowRef, watch } from "vue";
 import { useConfigStore } from "./config";
 
@@ -38,7 +38,7 @@ function nearestListedDirectory(
   roots: Iterable<string>,
   dirPath: string,
 ): string {
-  const root = judgingRoot(roots, dirPath);
+  const root = innermostRoot(dirPath, roots);
   if (root === undefined) {
     return dirPath;
   }

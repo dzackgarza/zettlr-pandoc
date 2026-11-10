@@ -195,7 +195,7 @@ import type { CloseAllIPCAPI } from "source/app/service-providers/windows";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "source/common/modules/window-register/application-menu-helper";
-import { isInsideRoot, pathDirname } from "source/common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot, pathDirname } from "source/common/util/renderer-path-polyfill";
 import ButtonControl from "source/common/vue/form/elements/ButtonControl.vue";
 import TextControl from "source/common/vue/form/elements/TextControl.vue";
 import PopoverWrapper from "source/common/vue/PopoverWrapper.vue";
@@ -324,7 +324,7 @@ const activeWorkspace = computed<DirDescriptor | undefined>(() => {
   const selected = configStore.config.openDirectory;
   if (selected !== null) {
     const containing = roots
-      .filter((root) => selected === root.path || isInsideRoot(selected, root.path))
+      .filter((root) => isAtOrInsideRoot(selected, root.path))
       .sort((a, b) => b.path.length - a.path.length)[0];
     if (containing !== undefined) {
       return containing;
@@ -394,7 +394,7 @@ const getDirectories = computed(() => {
   }
 
   return roots.filter((root) => {
-    return filterResults.value.some((res) => res.startsWith(root.path));
+    return filterResults.value.some((res) => isAtOrInsideRoot(res, root.path));
   });
 });
 
@@ -416,7 +416,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
     .filter((descriptor) => {
       return !filterActive.value
         ? true
-        : filterResults.value.some((res) => res.startsWith(descriptor.path));
+        : filterResults.value.some((res) => isAtOrInsideRoot(res, descriptor.path));
     });
 
   const uncollapsed = windowStateStore.uncollapsedDirectories;
@@ -427,7 +427,7 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
   const visibleDescriptors = allDescriptors
     // Third, remove any file that is within a collapsed directory
     .filter((descriptor) => {
-      return collapsed.find((absPath) => descriptor.dir.startsWith(absPath)) === undefined;
+      return !collapsed.some((absPath) => isAtOrInsideRoot(descriptor.dir, absPath));
     });
 
   // Fourth, sort them recursively so that the list is the same as what the file
@@ -445,7 +445,12 @@ const flatSortedAndFilteredVisualFileDescriptors = computed<Array<[string, strin
   for (const descriptor of getDirectories.value) {
     retValue.push(
       ...retrieveChildrenAndSort(descriptor, visibleDescriptors, (directory, children) => {
-        return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
+        return sortExplorerChildren(
+          directory,
+          children,
+          defaults,
+          workspaceStore.projectDirectories,
+        );
       }),
     );
   }

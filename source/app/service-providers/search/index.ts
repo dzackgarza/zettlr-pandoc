@@ -24,6 +24,7 @@ import type { WorkspaceTextEdit } from "@dts/common/references";
 import { ipcMain } from "electron";
 import path from "path";
 import broadcastIPCMessage from "source/common/util/broadcast-ipc-message";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import vm from "vm";
 import type { ConfigOptions } from "../config/get-config-template";
 import type DocumentManager from "../documents";
@@ -364,12 +365,12 @@ export class SearchProvider implements ProviderContract {
   }
 
   /**
-   * The path a glob is matched against: relative to the workspace root that
-   * holds the file, so `foundations/*.md` means what it says. A file outside
+   * The path a glob is matched against: relative to the innermost workspace
+   * root that holds the file, so `foundations/*.md` means what it says. A file outside
    * every root is matched by its own name.
    */
   private relativePath(absPath: string, roots: string[]): string {
-    const root = roots.find((candidate) => absPath.startsWith(`${candidate}${path.sep}`));
+    const root = innermostRoot(absPath, roots);
     const relative = root === undefined ? path.basename(absPath) : path.relative(root, absPath);
     return relative.split(path.sep).join("/");
   }

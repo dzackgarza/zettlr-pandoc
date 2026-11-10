@@ -474,9 +474,8 @@ export interface WorkspaceFixtureOptions {
 }
 
 /**
- * A fixture whose workspace root is a copy of an existing directory — the
- * shape a Quarto project needs, since the app offers the Book surface only
- * when a workspace ROOT is the project.
+ * A fixture whose workspace root is a copy of an existing directory, such as
+ * a Quarto project.
  */
 export async function createWorkspaceFixture(
   prefix: string,

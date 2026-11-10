@@ -71,6 +71,7 @@ import {
   hasPDFExt,
 } from "source/common/util/file-extention-checks";
 import isDir from "source/common/util/is-dir";
+import { innermostRoot, isInsideRoot } from "source/common/util/renderer-path-polyfill";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import {
@@ -2010,7 +2011,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this._app.recentDocs.add(filePath);
 
     const { openFiles, openWorkspaces } = this._app.config.get().app;
-    if (!openFiles.includes(filePath) && openWorkspaces.every((p) => !filePath.startsWith(p))) {
+    if (!openFiles.includes(filePath) && innermostRoot(filePath, openWorkspaces) === undefined) {
       // The file just opened is outside the current opened roots -> add as a
       // standalone root file.
       this._app.config.addPath(filePath);
@@ -2504,16 +2505,12 @@ current contents from the editor somewhere else, and restart the application.`,
    */
   public async hasMovedDir(oldPath: string, newPath: string): Promise<void> {
     // Similar as hasMovedFile, but triggers the command for every affected file
-    const docs = this.documents.filter((doc) => doc.filePath.startsWith(oldPath));
+    const docs = this.documents.filter((doc) => isInsideRoot(doc.filePath, oldPath));
 
     for (const doc of docs) {
-      this._app.log.info(
-        "Replacing file path for doc " +
-          doc.filePath +
-          " with " +
-          doc.filePath.replace(oldPath, newPath),
-      );
-      await this.hasMovedFile(doc.filePath, doc.filePath.replace(oldPath, newPath));
+      const movedPath = newPath + doc.filePath.slice(oldPath.length);
+      this._app.log.info(`Replacing file path for doc ${doc.filePath} with ${movedPath}`);
+      await this.hasMovedFile(doc.filePath, movedPath);
     }
   }
 

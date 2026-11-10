@@ -197,7 +197,7 @@ import {
   sortExplorerChildren,
 } from "@common/util/explorer-ordering";
 import generateFilename from "@common/util/generate-filename";
-import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot, pathBasename } from "@common/util/renderer-path-polyfill";
 
 import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
 import type { AnyDescriptor } from "@dts/common/fsal";
@@ -414,7 +414,7 @@ const filteredChildren = computed(() => {
           return true;
         }
 
-        return props.filterResults.some((res) => res.startsWith(child.path));
+        return props.filterResults.some((res) => isAtOrInsideRoot(res, child.path));
       })
       // The thin and expanded modes list only folders in the tree.
       .filter((child) => combined.value || child.type === "directory")
@@ -438,7 +438,7 @@ const sortedChildren = computed(() => {
     props.item,
     filteredChildren.value,
     defaults,
-    workspaceStore.rootDescriptors,
+    workspaceStore.projectDirectories,
   );
 });
 
@@ -456,7 +456,7 @@ const basename = computed(() => {
       ? configStore.config.fileNameDisplay
       : effectiveExplorerDisplayForDirectory(
           ownerDirectory.value,
-          workspaceStore.rootDescriptors,
+          workspaceStore.projectDirectories,
           configStore.config.fileNameDisplay,
         );
   return getDocumentTitle(props.item, display);
@@ -465,7 +465,7 @@ const basename = computed(() => {
 const projectMembership = computed(() =>
   props.item.type === "directory"
     ? undefined
-    : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors),
+    : projectMembershipForPath(props.item.path, workspaceStore.projectDirectories),
 );
 
 const projectMembershipTitle = computed(() => {

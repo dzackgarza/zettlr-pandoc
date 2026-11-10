@@ -28,6 +28,7 @@ import {
   hasOpenOfficeExt,
   hasPDFExt,
 } from "./file-extention-checks";
+import { innermostRoot, isInsideRoot } from "./renderer-path-polyfill";
 
 /** The rules file at a workspace root. Its rules add to the global ones. */
 export const WORKSPACE_RULES_FILE = ".zettlrignore";
@@ -91,16 +92,6 @@ export interface IgnoreFilter {
   ruleMatches: (absPath: string, isDirectory: boolean) => boolean;
   /** True when the app must not list the path: it matches and the reveal toggle is off. */
   hides: (absPath: string, isDirectory: boolean) => boolean;
-}
-
-/**
- * The workspace root whose rules judge a path: the innermost root that
- * contains it. A root does not contain itself.
- */
-export function judgingRoot(roots: Iterable<string>, absPath: string): string | undefined {
-  return [...roots]
-    .sort((a, b) => b.length - a.length)
-    .find((root) => absPath.startsWith(`${root}/`));
 }
 
 /**
@@ -186,7 +177,7 @@ export function createIgnoreFilter(sources: IgnoreRuleSources): IgnoreFilter {
   };
 
   const judge = (absPath: string, isDirectory: boolean, withTypes: boolean): boolean => {
-    const root = judgingRoot(roots, absPath);
+    const root = innermostRoot(absPath, roots);
     if (root === undefined) {
       return false;
     }
@@ -221,7 +212,7 @@ function escapeLiteral(text: string): string {
 
 /** The path below `root`, written as the literal start of an anchored rule. */
 function anchoredLiteral(root: string, absPath: string): string {
-  if (!absPath.startsWith(`${root}/`)) {
+  if (!isInsideRoot(absPath, root)) {
     throw new Error(`Cannot write a rule for ${absPath}: it is not inside ${root}`);
   }
   return (
@@ -360,8 +351,8 @@ export function movePathRules(
   oldPath: string,
   newPath: string,
 ): Map<string, string> {
-  const oldRoot = judgingRoot(texts.keys(), oldPath);
-  const newRoot = judgingRoot(texts.keys(), newPath);
+  const oldRoot = innermostRoot(oldPath, texts.keys());
+  const newRoot = innermostRoot(newPath, texts.keys());
   if (oldRoot === undefined) {
     return new Map();
   }
@@ -395,7 +386,7 @@ export function removePathRules(
   texts: ReadonlyMap<string, string>,
   absPath: string,
 ): Map<string, string> {
-  const root = judgingRoot(texts.keys(), absPath);
+  const root = innermostRoot(absPath, texts.keys());
   if (root === undefined) {
     return new Map();
   }

@@ -22,7 +22,12 @@ import { strict as assert } from "assert";
 import { createPinia, setActivePinia } from "pinia";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
-import type { AnyDescriptor, DirDescriptor, OtherFileDescriptor } from "source/types/common/fsal";
+import type {
+  AnyDescriptor,
+  DirDescriptor,
+  OtherFileDescriptor,
+  ProjectSettings,
+} from "source/types/common/fsal";
 import { watchEffect } from "vue";
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
@@ -70,6 +75,31 @@ const ROOT_DESCRIPTOR: DirDescriptor = {
     quartoManifest: null,
   },
 };
+
+const BOOK: ProjectSettings = {
+  manifest: {
+    kind: "quarto",
+    path: `${ROOT}/part/book/_quarto.yml`,
+    bibliographies: [],
+    navigation: [],
+  },
+  title: "Book",
+  profiles: [],
+  files: ["intro.md"],
+  cslStyle: "",
+  templates: { tex: "", html: "" },
+};
+
+/** A directory two levels below the workspace root. */
+function bookDirectory(project: ProjectSettings | null): DirDescriptor {
+  return {
+    ...ROOT_DESCRIPTOR,
+    path: `${ROOT}/part/book`,
+    dir: `${ROOT}/part`,
+    name: "book",
+    settings: { ...ROOT_DESCRIPTOR.settings, project },
+  };
+}
 
 async function settled(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -166,6 +196,40 @@ describe("The workspace store applies a batch of filesystem events", function ()
     assert.equal(store.descriptorMap.get(changed.path), changed);
     assert.deepEqual(store.pathList, [ROOT, changed.path]);
     assert.deepEqual(requests, []);
+  });
+
+  it("with the Project directories at any depth, in a list that changes only with a Project", async function () {
+    assert.deepEqual(store.projectDirectories, []);
+    const empty = store.projectDirectories;
+
+    // A directory that is no Project, and a file: the list is the same object.
+    send([
+      { event: "addDir", descriptor: bookDirectory(null) },
+      { event: "add", descriptor: figure("second.png") },
+    ]);
+    await settled();
+    assert.equal(store.projectDirectories, empty);
+
+    const book = bookDirectory(BOOK);
+    send([{ event: "change", descriptor: book }]);
+    await settled();
+    assert.deepEqual(store.projectDirectories, [book]);
+    const withBook = store.projectDirectories;
+
+    send([{ event: "change", descriptor: figure("second.png", 4096) }]);
+    await settled();
+    assert.equal(store.projectDirectories, withBook);
+
+    // The manifest of the book goes away: the directory is no Project.
+    send([{ event: "change", descriptor: bookDirectory(null) }]);
+    await settled();
+    assert.deepEqual(store.projectDirectories, []);
+
+    send([{ event: "change", descriptor: book }]);
+    await settled();
+    send([{ event: "unlinkDir", path: book.path }]);
+    await settled();
+    assert.deepEqual(store.projectDirectories, []);
   });
 
   it("with the last state of a path that the batch names more than one time", async function () {

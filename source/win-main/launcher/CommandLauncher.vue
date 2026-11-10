@@ -538,16 +538,10 @@ const referenceActiveDocumentPath = ref<string | undefined>(undefined);
  * ProjectRootSpec shape the ranking consumes.
  */
 function collectProjectRoots(): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = [];
-  for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
-      roots.push({
-        rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files],
-      });
-    }
-  }
-  return roots;
+  return workspaceStore.projectDirectories.map((directory) => ({
+    rootPath: directory.path,
+    files: [...directory.settings.project.files],
+  }));
 }
 
 /** Loads the workspace reference snapshot; a failed fetch surfaces its own toast and returns false. */

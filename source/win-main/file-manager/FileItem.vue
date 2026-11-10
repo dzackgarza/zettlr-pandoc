@@ -280,7 +280,7 @@ const basename = computed(() => {
     owner?.type === "directory"
       ? effectiveExplorerDisplayForDirectory(
           owner,
-          workspaceStore.rootDescriptors,
+          workspaceStore.projectDirectories,
           configStore.config.fileNameDisplay,
         )
       : configStore.config.fileNameDisplay;
@@ -290,7 +290,7 @@ const basename = computed(() => {
 const projectMembership = computed(() =>
   props.item.type === "directory"
     ? undefined
-    : projectMembershipForPath(props.item.path, workspaceStore.rootDescriptors),
+    : projectMembershipForPath(props.item.path, workspaceStore.projectDirectories),
 );
 
 const projectMembershipLabel = computed(() => {

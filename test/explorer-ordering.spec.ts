@@ -3,12 +3,13 @@ import {
   type ExplorerSortDefaults,
   effectiveExplorerDisplay,
   projectMembershipForPath,
+  projectRootForPath,
   sortExplorerChildren,
 } from "source/common/util/explorer-ordering";
 import type {
-  AnyDescriptor,
   DirDescriptor,
   MDFileDescriptor,
+  ProjectDirDescriptor,
   ProjectSettings,
   SortMethod,
 } from "source/types/common/fsal";
@@ -50,6 +51,15 @@ function directory(
       quartoManifest: null,
     },
   };
+}
+
+function projectDirectory(
+  path: string,
+  sorting: SortMethod,
+  project: ProjectSettings,
+): ProjectDirDescriptor {
+  const descriptor = directory(path, sorting);
+  return { ...descriptor, settings: { ...descriptor.settings, project } };
 }
 
 function markdown(
@@ -113,7 +123,7 @@ describe("Explorer ordering", function () {
 
     assert.equal(effectiveExplorerDisplay(root, DEFAULTS.fileNameDisplay), "title");
     assert.deepEqual(
-      sortExplorerChildren(root, children, DEFAULTS, [root]).map((item) => item.name),
+      sortExplorerChildren(root, children, DEFAULTS, []).map((item) => item.name),
       ["a.md", "z.md"],
       "displaying titles must not redefine an explicit filename sort",
     );
@@ -125,12 +135,12 @@ describe("Explorer ordering", function () {
     const root = directory("/notes", "modtime-up");
 
     assert.deepEqual(
-      sortExplorerChildren(root, [a, b], DEFAULTS, [root]).map((x) => x.name),
+      sortExplorerChildren(root, [a, b], DEFAULTS, []).map((x) => x.name),
       ["b.md", "a.md"],
     );
     root.settings.sorting = "creationtime-down";
     assert.deepEqual(
-      sortExplorerChildren(root, [a, b], DEFAULTS, [root]).map((x) => x.name),
+      sortExplorerChildren(root, [a, b], DEFAULTS, []).map((x) => x.name),
       ["b.md", "a.md"],
     );
   });
@@ -142,7 +152,7 @@ describe("Explorer ordering", function () {
     const c = markdown("/notes/c.md");
 
     assert.deepEqual(
-      sortExplorerChildren(root, [a, c, b], DEFAULTS, [root]).map((x) => x.name),
+      sortExplorerChildren(root, [a, c, b], DEFAULTS, []).map((x) => x.name),
       ["b.md", "a.md", "c.md"],
       "manual order values are numeric and missing metadata stays last",
     );
@@ -150,15 +160,19 @@ describe("Explorer ordering", function () {
     root.settings.explorer.sortMetadataKey = "date";
     root.settings.sorting = "frontmatter-down";
     assert.deepEqual(
-      sortExplorerChildren(root, [a, c, b], DEFAULTS, [root]).map((x) => x.name),
+      sortExplorerChildren(root, [a, c, b], DEFAULTS, []).map((x) => x.name),
       ["b.md", "a.md", "c.md"],
       "custom metadata fields support descending order without pulling missing values to the top",
     );
   });
 
   it("computes nested Project membership from project-relative paths rather than basenames", function () {
-    const root = directory("/book", "book-up", quartoProject(["beta/two.md", "alpha/one.md"]));
-    const roots: AnyDescriptor[] = [root];
+    const root = projectDirectory(
+      "/book",
+      "book-up",
+      quartoProject(["beta/two.md", "alpha/one.md"]),
+    );
+    const roots = [root];
 
     assert.deepEqual(projectMembershipForPath("/book/alpha/one.md", roots), {
       rootPath: "/book",
@@ -173,8 +187,47 @@ describe("Explorer ordering", function () {
     });
   });
 
+  it("gives a file the innermost Project that holds it, and no Project to a file beside one", function () {
+    const outer = projectDirectory(
+      "/notes/book",
+      "book-up",
+      quartoProject(["intro.md", "appendix/tables.md"]),
+    );
+    const inner = projectDirectory(
+      "/notes/book/appendix",
+      "book-up",
+      quartoProject(["proofs.md", "tables.md"]),
+    );
+
+    for (const projects of [
+      [outer, inner],
+      [inner, outer],
+    ]) {
+      assert.deepEqual(projectMembershipForPath("/notes/book/appendix/tables.md", projects), {
+        rootPath: "/notes/book/appendix",
+        manifestKind: "quarto",
+        status: "included",
+        position: 2,
+      });
+      assert.deepEqual(projectMembershipForPath("/notes/book/intro.md", projects), {
+        rootPath: "/notes/book",
+        manifestKind: "quarto",
+        status: "included",
+        position: 1,
+      });
+      assert.equal(projectRootForPath("/notes/book/appendix", projects), inner);
+      // The path of this file starts with the path of the outer Project.
+      assert.equal(projectMembershipForPath("/notes/book-notes.md", projects), undefined);
+      assert.equal(projectMembershipForPath("/notes/book-drafts/intro.md", projects), undefined);
+    }
+  });
+
   it("orders a filesystem tree by the earliest book chapter below each directory", function () {
-    const root = directory("/book", "book-up", quartoProject(["beta/two.md", "alpha/one.md"]));
+    const root = projectDirectory(
+      "/book",
+      "book-up",
+      quartoProject(["beta/two.md", "alpha/one.md"]),
+    );
     const alpha = directory("/book/alpha");
     const beta = directory("/book/beta");
     const forgotten = markdown("/book/forgotten.md");
@@ -187,7 +240,7 @@ describe("Explorer ordering", function () {
   });
 
   it("filters files by Project membership while retaining directories as navigation routes", function () {
-    const root = directory(
+    const root = projectDirectory(
       "/book",
       "filename-up",
       quartoProject(["included.md", "nested/included.md"]),
@@ -204,7 +257,11 @@ describe("Explorer ordering", function () {
   });
 
   it("propagates explicit Project-root Explorer modes through nested chapter directories", function () {
-    const root = directory("/book", "book-up", quartoProject(["nested/z.md", "nested/a.md"]));
+    const root = projectDirectory(
+      "/book",
+      "book-up",
+      quartoProject(["nested/z.md", "nested/a.md"]),
+    );
     root.settings.explorer.displayName = "filename";
     root.settings.explorer.projectFilter = "included";
     const nested = directory("/book/nested", "filename-up");

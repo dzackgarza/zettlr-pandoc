@@ -218,11 +218,18 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - **A chapter's identity is its real path.** `parseQuartoProject`
   (`source/app/util/quarto-project.ts`) resolves each path against the manifest's own
   directory and then through `realpath`, so a symlinked chapter is the file it points
-  at and no file reaches the document model under two names. `ProjectSettings.files`
-  therefore holds real paths for a Quarto project and directory-relative paths for a
-  Zettlr one; resolve them, never join them.
-- **Consumers:** the Book module (`QuartoBookOutline.vue`, gated in
-  `NavigationSidebar.vue` by path containment), inherited bibliographies
+  at and no file reaches the document model under two names. `parseQuartoManifest`
+  then names each chapter relative to the real path of the Project directory, so
+  `ProjectSettings.files` holds directory-relative paths with `/` separators for a
+  Quarto project and for a Zettlr one.
+- **The Project of a file is the innermost Project directory that holds it.** A
+  Project directory is a loaded directory with `settings.project`, at any depth of
+  a workspace; the workspace store lists them (`projectDirectories`), and
+  `projectRootForPath` (`common/util/explorer-ordering.ts`) decides. A book in a
+  subdirectory of a book owns its own chapters.
+- **Consumers:** the Book module (`QuartoBookOutline.vue`; `NavigationSidebar.vue`
+  shows it when the Project of the active file is a Quarto book), the Explorer
+  membership marks, inherited bibliographies
   (`get-bibliography-for-descriptor.ts`), and project export.
 
 ### 5. Startup preflight
@@ -459,7 +466,7 @@ of an isolated instance are in the first comment of #132.
 - **Rules:** gitignore syntax, matched by the `ignore` package. The sources
   are `fileManager.ignoreRules` in the configuration (all workspaces) and the
   file `.zettlrignore` at the root of each open workspace. A path below
-  nested roots is judged by the innermost root (`judgingRoot`). No rule hides
+  nested roots is judged by the innermost root (`innermostRoot`). No rule hides
   a workspace root. The pure module is `source/common/util/ignore-rules.ts`
   (`createIgnoreFilter`, `ruleForName`, `ruleForPath`, `setPathIgnored`,
   `movePathRules`, `removePathRules`).
@@ -515,6 +522,23 @@ of an isolated instance are in the first comment of #132.
 - **Proof:** `test/ignore-rules.spec.ts`, `test/fsal-ignore-rules.spec.ts`,
   `test/file-filter-preferences.spec.ts`,
   `e2e/ignore-rules.spec.ts`.
+
+### 11. Path containment
+
+- **One owner.** `source/common/util/renderer-path-polyfill.ts` decides whether a
+  path is in a directory: `isInsideRoot` (strictly inside, at a path-segment
+  boundary), `isAtOrInsideRoot`, and `innermostRoot` (of the directories that hold
+  a path, the longest). `/notes/book-notes.md` is not in `/notes/book`.
+- **No `startsWith` on a path.** A new decision of the workspace, the Project or
+  the directory of a path calls one of those three functions. A workspace inside
+  a workspace is a supported state: each consumer (the link index, search, the
+  Agent API workspace id, the ignore rules, the launcher, the Explorer, the
+  Problems view, the reference numbering) gives a path to the innermost one.
+- **Root list.** `consolidateRootPaths` (`config/root-paths.ts`) moves an open
+  file that a workspace holds out of `openFiles`; a file beside a workspace stays.
+- **Proof:** `test/renderer-path-polyfill.spec.ts` (Node's `path.relative` is the
+  oracle), `test/config-root-paths.spec.ts`, `test/explorer-ordering.spec.ts`,
+  `e2e/nested-roots.spec.ts`.
 
 ## Debugging entry points
 

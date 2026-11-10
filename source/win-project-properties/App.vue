@@ -190,6 +190,7 @@ import type { CodeFileDescriptor, MDFileDescriptor, ProjectSettings } from "@dts
 import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import { pathToUnix } from "source/common/util/path-to-unix";
+import { isInsideRoot } from "source/common/util/renderer-path-polyfill";
 import { useConfigStore, useWorkspaceStore } from "source/pinia";
 import getDocumentTitle from "source/win-main/util/get-document-title";
 import { computed, onMounted, ref, watch } from "vue";
@@ -280,7 +281,7 @@ const availableFiles = computed<Array<MDFileDescriptor | CodeFileDescriptor>>(()
   const absPath = descriptor.value.path;
 
   return workspaceStore.pathList
-    .filter((p) => p.startsWith(absPath))
+    .filter((p) => isInsideRoot(p, absPath))
     .map((f) => workspaceStore.descriptorMap.get(f))
     .filter((d) => d !== undefined && (d.type === "code" || d.type === "file"));
 });

@@ -14,10 +14,10 @@
  */
 
 import { reportError } from "@common/util/error-reporting";
-import { isInsideRoot } from "@common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { defineStore } from "pinia";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
-import type { AnyDescriptor } from "source/types/common/fsal";
+import type { AnyDescriptor, ProjectDirDescriptor } from "source/types/common/fsal";
 import { computed, type Ref, ref, shallowRef, triggerRef, watch } from "vue";
 import { useConfigStore } from "./config";
 
@@ -80,6 +80,12 @@ async function retrieveInitialUpdate(
   descriptorMap.value = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
 }
 
+function isProjectDirectory(
+  descriptor: AnyDescriptor | undefined,
+): descriptor is ProjectDirDescriptor {
+  return descriptor?.type === "directory" && descriptor.settings.project !== null;
+}
+
 export const useWorkspaceStore = defineStore("workspace", () => {
   // Dependent stores and watched variables
   const configStore = useConfigStore();
@@ -96,6 +102,11 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   // descriptor in large workspaces.
   const descriptorMap = shallowRef(new Map<string, AnyDescriptor>());
   const rootDescriptors = shallowRef<AnyDescriptor[]>([]);
+  // Every loaded directory that is a Project, at any depth of a workspace. A
+  // Project decision reads this list, so a Project below a workspace root
+  // counts like one that is a root. The list is replaced only when a Project
+  // directory changed.
+  const projectDirectories = shallowRef<ProjectDirDescriptor[]>([]);
 
   const isLoading = ref(true);
 
@@ -106,18 +117,29 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       .filter((root) => root !== undefined);
   }
 
+  function refreshProjectDirectories(): void {
+    projectDirectories.value = [...descriptorMap.value.values()].filter(isProjectDirectory);
+  }
+
   function setDescriptors(descriptors: readonly AnyDescriptor[]): void {
     if (descriptors.length === 0) {
       return;
     }
     let rootsChanged = false;
+    let projectsChanged = false;
     for (const descriptor of descriptors) {
+      projectsChanged ||=
+        isProjectDirectory(descriptor) ||
+        isProjectDirectory(descriptorMap.value.get(descriptor.path));
       descriptorMap.value.set(descriptor.path, descriptor);
       rootsChanged ||= openPaths.value.includes(descriptor.path);
     }
     triggerRef(descriptorMap);
     if (rootsChanged) {
       refreshRootDescriptors();
+    }
+    if (projectsChanged) {
+      refreshProjectDirectories();
     }
   }
 
@@ -126,8 +148,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       return;
     }
     let rootsChanged = false;
+    let projectsChanged = false;
     let changed = false;
     for (const path of paths) {
+      projectsChanged ||= isProjectDirectory(descriptorMap.value.get(path));
       changed ||= descriptorMap.value.delete(path);
       rootsChanged ||= openPaths.value.includes(path);
     }
@@ -137,11 +161,15 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     if (rootsChanged) {
       refreshRootDescriptors();
     }
+    if (projectsChanged) {
+      refreshProjectDirectories();
+    }
   }
 
   retrieveInitialUpdate(openPaths.value, workspaceMap, descriptorMap)
     .then(() => {
       refreshRootDescriptors();
+      refreshProjectDirectories();
     })
     .catch((err) =>
       reportError("[Workspace Store] Could not retrieve initial set of loaded paths", err),
@@ -177,7 +205,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       }
 
       for (const [root, paths] of workspaceMap.value) {
-        if (eventPath !== root && !isInsideRoot(eventPath, root)) {
+        if (!isAtOrInsideRoot(eventPath, root)) {
           continue;
         }
 
@@ -290,5 +318,5 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     { deep: true },
   );
 
-  return { workspaceMap, pathList, descriptorMap, rootDescriptors };
+  return { workspaceMap, pathList, descriptorMap, rootDescriptors, projectDirectories };
 });

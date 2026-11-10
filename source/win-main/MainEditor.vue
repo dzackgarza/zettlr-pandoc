@@ -1688,16 +1688,10 @@ async function updateCitationKeys(library: CitationDatabase): Promise<void> {
  * absolute path plus the ordered project-relative ProjectSettings.files list.
  */
 function collectProjectRoots(): ProjectRootSpec[] {
-  const roots: ProjectRootSpec[] = [];
-  for (const descriptor of workspaceStore.descriptorMap.values()) {
-    if (descriptor.type === "directory" && descriptor.settings.project !== null) {
-      roots.push({
-        rootPath: descriptor.path,
-        files: [...descriptor.settings.project.files],
-      });
-    }
-  }
-  return roots;
+  return workspaceStore.projectDirectories.map((directory) => ({
+    rootPath: directory.path,
+    files: [...directory.settings.project.files],
+  }));
 }
 
 let latestReferenceRequestId = 0;

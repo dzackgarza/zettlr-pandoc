@@ -31,6 +31,7 @@ import type { WorkspaceTextEdit } from "@dts/common/references";
 import type LogProvider from "@providers/log";
 import { app, ipcMain } from "electron";
 import path from "path";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 import _ from "underscore";
 import type ConfigProvider from "../config";
@@ -144,13 +145,9 @@ export default class LinkProvider extends ProviderContract {
 
     // A file belongs to the innermost open workspace that contains it; a file
     // opened on its own is its own workspace.
-    const workspaces = [...this._config.get().app.openWorkspaces].sort(
-      (a, b) => b.length - a.length,
-    );
+    const workspaces = this._config.get().app.openWorkspaces;
     const rootFor = (filePath: string): string => {
-      return (
-        workspaces.find((root) => filePath.startsWith(root + path.sep)) ?? path.dirname(filePath)
-      );
+      return innermostRoot(filePath, workspaces) ?? path.dirname(filePath);
     };
 
     const links = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor.links]));

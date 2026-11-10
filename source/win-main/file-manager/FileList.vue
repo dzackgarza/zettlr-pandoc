@@ -99,7 +99,7 @@ import {
   effectiveExplorerDisplayForDirectory,
   sortExplorerChildren,
 } from "@common/util/explorer-ordering";
-import { isInsideRoot } from "@common/util/renderer-path-polyfill";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import type { AnyDescriptor } from "@dts/common/fsal";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
@@ -153,7 +153,7 @@ const displayMode = computed(() => {
   return dir?.type === "directory"
     ? effectiveExplorerDisplayForDirectory(
         dir,
-        workspaceStore.rootDescriptors,
+        workspaceStore.projectDirectories,
         configStore.config.fileNameDisplay,
       )
     : configStore.config.fileNameDisplay;
@@ -171,7 +171,7 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
 
   // Fetch all descriptors ...
   const allDescriptors = [...workspaceStore.descriptorMap.keys()]
-    .filter((absPath) => absPath === dir.path || isInsideRoot(absPath, dir.path))
+    .filter((absPath) => isAtOrInsideRoot(absPath, dir.path))
     .map((absPath) => workspaceStore.descriptorMap.get(absPath)!);
 
   // ... sort them recursively ...
@@ -185,7 +185,7 @@ const getDirectoryContents = computed<RecycleScrollerData[]>(() => {
 
   // ... and add them to our RecycleScroller.
   const sortedDescendants = retrieveChildrenAndSort(dir, allDescriptors, (directory, children) => {
-    return sortExplorerChildren(directory, children, defaults, workspaceStore.rootDescriptors);
+    return sortExplorerChildren(directory, children, defaults, workspaceStore.projectDirectories);
   }).map((props, id) => {
     return {
       id, // This helps the virtual scroller to adequately position the items

@@ -39,13 +39,13 @@ import {
   EVERY_FILE_TYPE,
   type IgnoreFilter,
   type IgnoreRuleSources,
-  judgingRoot,
   movePathRules,
   removePathRules,
   rulesTextOf,
   setPathIgnored,
   WORKSPACE_RULES_FILE,
 } from "source/common/util/ignore-rules";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import _ from "underscore";
 import type LongRunningTaskProvider from "../long-running-tasks";
 import * as FSALAttachment from "./fsal-attachment";
@@ -532,7 +532,7 @@ export default class FSAL extends ProviderContract {
     ignored: boolean,
   ): Promise<void> {
     await this.editRulesFiles(({ globalRules, workspaceRules }) => {
-      const root = judgingRoot(workspaceRules.keys(), absPath);
+      const root = innermostRoot(absPath, workspaceRules.keys());
       if (root === undefined) {
         throw new Error(
           `[FSAL] Cannot change the ignore rules for ${absPath}: Not inside an open workspace`,
