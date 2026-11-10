@@ -7,7 +7,8 @@
  * License:         GNU GPL v3
  *
  * Description:     Drives the real MainEditor/CodeMirror/TikZ IPC boundary:
- *                  entering a TikZ block opens the microlocal sidecar, a real
+ *                  entering a TikZ block opens the compiled preview, which
+ *                  embeds no editor and offers Visual TikZ Editor; a real
  *                  TeX error leaves the last-good SVG visible, correcting the
  *                  source recovers, and the explicit rerender completes.
  *
@@ -17,27 +18,14 @@
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
-import { type EditorView } from "@codemirror/view";
 import { type Browser, type Page } from "playwright";
 import {
   attach,
   createFixture,
   findEditorPage,
   hideDevServerOverlay,
-  requireInitialized,
   shutdown,
 } from "./support/electron-app";
-
-/** The production editor's content element; CodeMirror keeps its view on the element's tile. */
-type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } };
-
-/** A message the embedded Quiver host posts to Zettlr (packages/tikz-workbench/vendor/quiver/src/zettlr-host.mjs). */
-interface QuiverBridgeMessage {
-  type: string;
-  sessionId?: string | null;
-  source?: string;
-  message?: string;
-}
 
 const DOCUMENT = String.raw`# TikZ live integration
 
@@ -111,35 +99,26 @@ describe("TikZ microlocal live preview in the assembled app", function () {
 
     const preview = page.locator(".tikz-live-preview");
     await preview.waitFor({ state: "visible", timeout: 20_000 });
-    const tikzMode = preview.getByRole("button", { name: "TeX render", exact: true });
-    const quiverMode = preview.getByRole("button", { name: "Quiver canvas", exact: true });
-    const visualMode = preview.getByRole("button", { name: "Drawing canvas", exact: true });
+    // The pane has one view: the figure that TeX compiled. The visual editors
+    // are a separate application, which the pane starts.
     assert.strictEqual(
-      await quiverMode.getAttribute("aria-pressed"),
-      "true",
-      "tikzcd defaults the unified RHS preview to Quiver",
+      await preview.getByRole("group", { name: "Diagram view" }).count(),
+      0,
+      "the pane offers no choice of editor",
     );
-    assert.strictEqual(await tikzMode.getAttribute("aria-pressed"), "false");
     assert.strictEqual(
-      await visualMode.isDisabled(),
-      true,
-      "ordinary visual TikZ editing is never offered for tikzcd",
+      await page.locator("iframe").count(),
+      0,
+      "the window embeds no editor page",
     );
-    const quiverFrame = page.frameLocator(".tikz-quiver-frame");
-    await quiverFrame.locator(".vertex").first().waitFor({ state: "visible", timeout: 20_000 });
     assert.ok(
-      (await quiverFrame.locator(".vertex").count()) >= 2,
-      "the RHS Quiver preview imports the authored tikzcd diagram",
+      await preview.getByRole("button", { name: "Edit in Visual TikZ Editor" }).isVisible(),
+      "the pane starts Visual TikZ Editor on the active diagram",
     );
     assert.ok(
       (await page.locator(".cm-content").innerText()).includes("\\begin{tikzcd}"),
-      "the ordinary CodeMirror source remains the editing surface beside Quiver",
+      "the ordinary CodeMirror source remains the editing surface beside the preview",
     );
-
-    // The same RHS pane can show the compiler-backed TikZ preview. Choosing it
-    // starts the TeX renderer; Quiver is not accompanied by a hidden background
-    // compile while it is the active/default mode.
-    await tikzMode.click();
     await preview
       .locator(".tikz-live-preview-figure .viewer-canvas img")
       .waitFor({ state: "visible", timeout: 60_000 });
@@ -481,459 +460,6 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       undefined,
       { timeout: 60_000 },
     );
-
-    // Leave source editing, then activate the rendered tikzcd. Every TikZ
-    // widget now follows the same edit-first path; tikzcd differs only in the
-    // RHS renderer that is selected after the source becomes active.
-    await page.evaluate(`(() => {
-      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
-      if (!view) throw new Error('CodeMirror view disappeared')
-      view.dispatch({ selection: { anchor: 1 } })
-      view.focus()
-    })()`);
-    await preview.waitFor({ state: "detached", timeout: 20_000 });
-    const inlineTikzCd = page.locator('.tikz-figure[data-tikz-language="tikzcd"]');
-    await inlineTikzCd.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    assert.strictEqual(
-      await inlineTikzCd.locator(".tikz-expand-button").count(),
-      0,
-      "inline figures have no competing fullscreen control",
-    );
-    await inlineTikzCd.locator("..").getByRole("button", { name: "Open Quiver editor" }).click();
-    await preview.waitFor({ state: "visible", timeout: 20_000 });
-    assert.strictEqual(
-      await preview
-        .getByRole("button", { name: "Quiver canvas", exact: true })
-        .getAttribute("aria-pressed"),
-      "true",
-      "the inline tikzcd control opens Quiver",
-    );
-    await page.evaluate(`(() => {
-      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
-      if (!view) throw new Error('CodeMirror view disappeared')
-      view.dispatch({ selection: { anchor: 1 } })
-      view.focus()
-    })()`);
-    await preview.waitFor({ state: "detached", timeout: 20_000 });
-    await inlineTikzCd.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    await inlineTikzCd.locator("svg").click();
-    await preview.waitFor({ state: "visible", timeout: 20_000 });
-
-    const rhsTikzMode = preview.getByRole("button", { name: "TeX render", exact: true });
-    const rhsQuiverMode = preview.getByRole("button", { name: "Quiver canvas", exact: true });
-    assert.strictEqual(
-      await rhsQuiverMode.getAttribute("aria-pressed"),
-      "true",
-      "rendered tikzcd activation defaults the RHS pane to Quiver",
-    );
-    assert.strictEqual(await rhsQuiverMode.isEnabled(), true);
-    assert.strictEqual(await rhsTikzMode.getAttribute("aria-pressed"), "false");
-
-    await quiverFrame.locator(".vertex").first().waitFor({ state: "visible", timeout: 20_000 });
-    assert.ok(
-      (await quiverFrame.locator(".vertex").count()) >= 2,
-      "the local vendored Quiver frame imported the authored diagram",
-    );
-    for (const webAction of ["save", "autosave-on", "dark-theme", "about"]) {
-      assert.strictEqual(
-        await quiverFrame.locator(`.toolbar .action[data-name="${webAction}"]`).count(),
-        0,
-        `embedded Quiver must not register its web-only ${webAction} action`,
-      );
-    }
-    assert.strictEqual(
-      await quiverFrame.locator('.toolbar .action[data-name="undo"]').count(),
-      1,
-      "native Quiver undo remains available",
-    );
-    assert.strictEqual(
-      await quiverFrame.locator(".panel.global").isVisible(),
-      false,
-      "web import/export/code panel is not exposed",
-    );
-    assert.strictEqual(
-      await quiverFrame.locator(".port").isVisible(),
-      false,
-      "web import/export modal surface is not exposed",
-    );
-
-    // Embedded Escape belongs to Quiver itself; it must not close the RHS pane.
-    await quiverFrame.locator("body").click({ position: { x: 20, y: 20 } });
-    await page.keyboard.press("Escape");
-    assert.strictEqual(
-      await preview.isVisible(),
-      true,
-      "Escape in embedded Quiver does not close the RHS preview",
-    );
-    assert.strictEqual(
-      await preview.evaluate((element) => element.classList.contains("fullscreen")),
-      false,
-    );
-
-    // The one pane-level expand control promotes whichever renderer is active.
-    // Mark the iframe and prove fullscreen promotion/collapse preserves it.
-    await page.evaluate(() => {
-      const frame = document.querySelector(".tikz-quiver-frame");
-      if (!(frame instanceof HTMLIFrameElement)) throw new Error("embedded Quiver frame missing");
-      frame.dataset.e2eQuiverIdentity = "same-quiver-frame";
-    });
-    await preview.locator(".tikz-live-preview-expand").click();
-    await page.waitForFunction(
-      () => document.querySelector(".tikz-live-preview")?.classList.contains("fullscreen") === true,
-    );
-    assert.strictEqual(
-      await page.locator(".tikz-quiver-frame").getAttribute("data-e2e-quiver-identity"),
-      "same-quiver-frame",
-      "fullscreen promotion keeps the exact embedded Quiver iframe",
-    );
-    assert.strictEqual(
-      await page.locator(".tikz-quiver-frame").count(),
-      1,
-      "fullscreen Quiver does not create a second iframe",
-    );
-    await quiverFrame.locator("body").click({ position: { x: 20, y: 20 } });
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(
-      () => document.querySelector(".tikz-live-preview")?.classList.contains("fullscreen") !== true,
-    );
-    assert.strictEqual(
-      await preview.isVisible(),
-      true,
-      "Escape collapses fullscreen Quiver back into the RHS pane instead of closing editing",
-    );
-    assert.strictEqual(
-      await page.locator(".tikz-quiver-frame").getAttribute("data-e2e-quiver-identity"),
-      "same-quiver-frame",
-      "fullscreen Escape preserves the same Quiver session/iframe",
-    );
-
-    await quiverFrame.locator('.toolbar .action[data-name="shortcuts"]').click();
-    const shortcutPane = quiverFrame.locator("#keyboard-shortcuts-pane");
-    await shortcutPane.waitFor({ state: "visible", timeout: 10_000 });
-    const shortcutText = await shortcutPane.innerText();
-    assert.doesNotMatch(
-      shortcutText,
-      /Import from LaTeX|Export to LaTeX|Save diagram in URL|Toggle standalone/u,
-    );
-    assert.match(
-      shortcutText,
-      /Undo|Redo|Pan view/u,
-      "native editing/navigation shortcut help remains available",
-    );
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(
-      () => {
-        const iframe = document.querySelector<HTMLIFrameElement>(".tikz-quiver-frame");
-        return (
-          iframe?.contentDocument
-            ?.querySelector("#keyboard-shortcuts-pane")
-            ?.classList.contains("hidden") === true
-        );
-      },
-      undefined,
-      { timeout: 10_000 },
-    );
-
-    // Edit through Quiver's actual controls and require the same CodeMirror
-    // source to update. Use the repaired central semantic macro so this also
-    // proves the ~/.pandoc macro projection reaches Quiver/KaTeX.
-    const firstVertex = quiverFrame.locator(".vertex").first();
-    await firstVertex.locator(".content").click();
-    const quiverLabel = quiverFrame.locator("input.label-input");
-    await quiverLabel.waitFor({ state: "visible", timeout: 20_000 });
-    assert.strictEqual(
-      await quiverLabel.isEnabled(),
-      true,
-      "selecting a Quiver vertex enables its own label editor",
-    );
-    const bridgeLog = await page.evaluateHandle(() => {
-      const messages: QuiverBridgeMessage[] = [];
-      // The window also receives messages that are not Quiver's (other
-      // frames, dev tooling), so only the Quiver bridge's own types are kept.
-      window.addEventListener(
-        "message",
-        (event: MessageEvent<QuiverBridgeMessage | null>) => {
-          const type = event.data?.type;
-          if (
-            event.data !== null &&
-            typeof type === "string" &&
-            type.startsWith("zettlr-quiver:")
-          ) {
-            messages.push(event.data);
-          }
-        },
-        { once: false },
-      );
-      return messages;
-    });
-    await quiverLabel.fill("\\fiberprod{X}{S}{Y}");
-    await page.waitForTimeout(250);
-    const bridgeMessages = await bridgeLog.jsonValue();
-    const quiverChange = bridgeMessages.findLast(
-      (message) => message.type === "zettlr-quiver:change",
-    );
-    assert.ok(
-      quiverChange !== undefined,
-      `Quiver History must emit a change through the host bridge: ${JSON.stringify(bridgeMessages)}`,
-    );
-    assert.match(
-      requireInitialized(
-        quiverChange.source,
-        `a Quiver change message must carry its canonical source: ${JSON.stringify(quiverChange)}`,
-      ),
-      /\\fiberprod\{X\}\{S\}\{Y\}/u,
-      "Quiver canonical source contains the semantic fibre-product label",
-    );
-    const syncOutcome = await page
-      .waitForFunction(
-        () => {
-          const view =
-            document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
-          if (view === undefined)
-            throw new Error("the production editor exposes no CodeMirror view");
-          if (view.state.doc.toString().includes("\\fiberprod{X}{S}{Y}")) return { ok: true };
-          const error = document.querySelector(".tikz-quiver-error")?.textContent?.trim();
-          return error ? { ok: false, error } : null;
-        },
-        undefined,
-        { timeout: 20_000 },
-      )
-      .then((handle) => handle.jsonValue());
-    assert.deepStrictEqual(
-      syncOutcome,
-      { ok: true },
-      `Quiver edit must synchronize into CodeMirror: ${JSON.stringify(syncOutcome)}`,
-    );
-    await firstVertex.locator(".label .katex").waitFor({ state: "visible", timeout: 20_000 });
-    assert.strictEqual(
-      await firstVertex.locator(".katex-error").count(),
-      0,
-      "the central three-argument \\fiberprod macro renders through Quiver/KaTeX",
-    );
-
-    await quiverFrame.locator('.toolbar .action[data-name="undo"]').click();
-    await page.waitForFunction(
-      () => {
-        const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
-        if (view === undefined) throw new Error("the production editor exposes no CodeMirror view");
-        return !view.state.doc.toString().includes("\\fiberprod{X}{S}{Y}");
-      },
-      undefined,
-      { timeout: 20_000 },
-    );
-    await quiverFrame.locator('.toolbar .action[data-name="redo"]').click();
-    await page.waitForFunction(
-      () => {
-        const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
-        if (view === undefined) throw new Error("the production editor exposes no CodeMirror view");
-        return view.state.doc.toString().includes("\\fiberprod{X}{S}{Y}");
-      },
-      undefined,
-      { timeout: 20_000 },
-    );
-
-    // Toggle the same RHS pane to the compiler-backed preview. No source-mode
-    // handoff or second overlay exists; the authored source remains on the left.
-    await rhsTikzMode.click();
-    await preview
-      .locator(".tikz-live-preview-figure .viewer-canvas img")
-      .waitFor({ state: "visible", timeout: 60_000 });
-    await page.waitForFunction(
-      () =>
-        document.querySelector(".tikz-live-preview-status")?.textContent?.includes("Up to date") ===
-        true,
-      undefined,
-      { timeout: 60_000 },
-    );
-    assert.strictEqual(
-      await preview.locator(".tikz-live-preview-error").count(),
-      0,
-      "Quiver-authored semantic macro compiles through the central TeX template",
-    );
-    assert.ok(
-      (await page.locator(".cm-content").innerText()).includes("\\begin{tikzcd}"),
-      "mode switching never replaces the ordinary source editor",
-    );
-
-    // Ordinary tikzpicture uses the identical RHS shell. It still defaults to
-    // the compiler-backed preview, while Quiver is unavailable and the pinned
-    // tikz-editor fork is available as a third registered provider.
-    await page.evaluate(`(() => {
-      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
-      if (!view) throw new Error('CodeMirror view disappeared')
-      view.dispatch({ selection: { anchor: 1 } })
-      view.focus()
-    })()`);
-    await preview.waitFor({ state: "detached", timeout: 20_000 });
-    const ordinaryFigure = page.locator('.tikz-figure[data-tikz-language="tikz"]');
-    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    const ordinaryFigureBlock = ordinaryFigure.locator("..");
-    await ordinaryFigureBlock.getByRole("button", { name: "Rebuild TikZ figure" }).click();
-    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    await preview.waitFor({ state: "detached", timeout: 20_000 });
-    await ordinaryFigureBlock.getByRole("button", { name: "Open visual editor" }).click();
-    await preview.waitFor({ state: "visible", timeout: 20_000 });
-    assert.strictEqual(
-      await preview
-        .getByRole("button", { name: "Drawing canvas", exact: true })
-        .getAttribute("aria-pressed"),
-      "true",
-      "the inline visual control opens the matching provider",
-    );
-    await page.evaluate(`(() => {
-      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
-      if (!view) throw new Error('CodeMirror view disappeared')
-      view.dispatch({ selection: { anchor: 1 } })
-      view.focus()
-    })()`);
-    await preview.waitFor({ state: "detached", timeout: 20_000 });
-    await ordinaryFigure.locator("svg").waitFor({ state: "visible", timeout: 60_000 });
-    await ordinaryFigure.locator("svg").click();
-    await preview.waitFor({ state: "visible", timeout: 20_000 });
-    await page.waitForFunction(
-      () =>
-        document.querySelector(".tikz-live-preview")?.getAttribute("data-tikz-language") === "tikz",
-      undefined,
-      { timeout: 20_000 },
-    );
-    const ordinaryTikz = preview.getByRole("button", { name: "TeX render", exact: true });
-    const ordinaryQuiver = preview.getByRole("button", { name: "Quiver canvas", exact: true });
-    const ordinaryVisual = preview.getByRole("button", { name: "Drawing canvas", exact: true });
-    assert.strictEqual(
-      await ordinaryTikz.getAttribute("aria-pressed"),
-      "true",
-      "tikzpicture defaults to TikZ preview",
-    );
-    assert.strictEqual(
-      await ordinaryQuiver.isDisabled(),
-      true,
-      "Quiver toggle is disabled for non-tikzcd source",
-    );
-    assert.strictEqual(
-      await ordinaryVisual.isEnabled(),
-      true,
-      "the visual editor is enabled for an authored tikzpicture",
-    );
-
-    await ordinaryVisual.click();
-    const tikzEditorFrame = page.frameLocator(".tikz-editor-frame");
-    await tikzEditorFrame
-      .locator('[data-canvas-viewport="true"]')
-      .waitFor({ state: "visible", timeout: 30_000 });
-    assert.match(
-      await page.locator(".cm-content").innerText(),
-      /\\node\[dot\] \(eta\)/u,
-      "the host source remains beside the drawing canvas",
-    );
-    assert.strictEqual(
-      await preview.locator(".tikz-quiver-frame").count(),
-      0,
-      "ordinary TikZ uses tikz-editor, not Quiver",
-    );
-    await page.waitForFunction(
-      () =>
-        document.querySelector(".tikz-live-preview-status")?.textContent?.includes("Synced") ===
-        true,
-      undefined,
-      { timeout: 20_000 },
-    );
-
-    // This is the ordinary mixed workflow: leave the visual editor, hand-edit
-    // source with structure the former bespoke canvas did not understand, and
-    // return to visual mode. The exact authored bytes must reach tikz-editor;
-    // Zettlr must not parse, canonicalize, or discard them.
-    const complexTikz = String.raw`\begin{scope}[shift={(1.5,0.5)}, rotate=17]
-  \foreach \x in {0,1,2} {
-    \draw (\x,0) .. controls +(0,0.5) and +(0,-0.5) .. (\x,1);
-  }
-\end{scope}
-`;
-    await ordinaryTikz.click();
-    const complexEdit = await page.evaluate(`(() => {
-      const insert = ${JSON.stringify(complexTikz)}
-      const view = document.querySelector('.cm-content')?.cmTile?.root?.view
-      if (!view) return false
-      const source = view.state.doc.toString()
-      const at = source.lastIndexOf('\\\\end{tikzpicture}')
-      if (at < 0) return false
-      view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length } })
-      view.focus()
-      return true
-    })()`);
-    assert.strictEqual(
-      complexEdit,
-      true,
-      "the complex hand-authored TikZ edit must land in CodeMirror",
-    );
-    await ordinaryVisual.click();
-    await page.waitForFunction(
-      () =>
-        document.querySelector(".tikz-live-preview-status")?.textContent?.includes("Synced") ===
-        true,
-      undefined,
-      { timeout: 20_000 },
-    );
-    const sourceAfterReturn = await page.locator(".cm-content").innerText();
-    assert.ok(sourceAfterReturn.includes("\\foreach \\x in {0,1,2}"));
-    assert.ok(sourceAfterReturn.includes(".. controls +(0,0.5) and +(0,-0.5) .."));
-
-    // Drive a real upstream visual-authoring gesture, not a test-only store
-    // mutation: use tikz-editor's Rectangle tool and drag on its canvas, exactly
-    // as upstream's own path-tools E2E does. The generated source must flow back
-    // into Zettlr without touching the complex hand-authored constructs.
-    const sourceBeforeCanvasDrag = await page.evaluate(() => {
-      const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
-      if (view === undefined) throw new Error("the production editor exposes no CodeMirror view");
-      return view.state.doc.toString();
-    });
-    const rectTool = tikzEditorFrame.locator('button[aria-label="Rect"]').first();
-    await rectTool.waitFor({ state: "visible", timeout: 20_000 });
-    await rectTool.click();
-    const interactionLayer = tikzEditorFrame.locator('[data-canvas-viewport="true"] svg').last();
-    await interactionLayer.waitFor({ state: "visible", timeout: 20_000 });
-    const layerBox = await interactionLayer.boundingBox();
-    assert.ok(layerBox !== null, "tikz-editor must expose its canvas interaction layer");
-    const dragStartX = layerBox.x + Math.min(120, layerBox.width * 0.25);
-    const dragStartY = layerBox.y + Math.min(120, layerBox.height * 0.25);
-    await page.mouse.move(dragStartX, dragStartY);
-    await page.mouse.down();
-    await page.mouse.move(dragStartX + 120, dragStartY + 80, { steps: 8 });
-    await page.mouse.up();
-    await page.waitForFunction(
-      (previous) => {
-        const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
-        if (view === undefined) throw new Error("the production editor exposes no CodeMirror view");
-        const source = view.state.doc.toString();
-        return (
-          source !== previous &&
-          source.includes("\\foreach \\x in {0,1,2}") &&
-          source.includes(".. controls +(0,0.5) and +(0,-0.5) ..")
-        );
-      },
-      sourceBeforeCanvasDrag,
-      { timeout: 20_000 },
-    );
-
-    // Fullscreen promotion keeps the exact iframe/editor instance alive.
-    await page.evaluate(() => {
-      const frame = document.querySelector(".tikz-editor-frame");
-      if (!(frame instanceof HTMLIFrameElement)) throw new Error("tikz-editor iframe missing");
-      frame.dataset.e2eEditorIdentity = "same-tikz-editor-instance";
-    });
-    await preview.locator(".tikz-live-preview-expand").click();
-    await page.waitForFunction(
-      () => document.querySelector(".tikz-live-preview")?.classList.contains("fullscreen") === true,
-    );
-    assert.strictEqual(
-      await preview.locator(".tikz-editor-frame").getAttribute("data-e2e-editor-identity"),
-      "same-tikz-editor-instance",
-      "fullscreen promotion preserves the exact embedded editor instance",
-    );
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(
-      () => document.querySelector(".tikz-live-preview")?.classList.contains("fullscreen") !== true,
-    );
-
     assert.deepStrictEqual(
       rendererEvents,
       [],
