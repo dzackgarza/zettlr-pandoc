@@ -14,11 +14,12 @@
 
 import { trans } from "@common/i18n-main";
 import { hasAnyRecognizedFileExtension } from "@common/util/file-extention-checks";
+import { pathExists } from "@providers/fsal/util/fs";
 import { dialog } from "electron";
+import { constants as FSConstants } from "fs";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import pathExists from "source/common/util/path-exists";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileRename extends ZettlrCommand {
@@ -125,7 +126,7 @@ export default class FileRename extends ZettlrCommand {
 
     if (await this._app.fsal.pathExists(newPath)) {
       // The file system reports the newPath already exists.
-      if (caseChangeOnly && (await pathExists(newPath))) {
+      if (caseChangeOnly && (await pathExists(newPath, FSConstants.F_OK))) {
         // The user only changed the case. Based on the second check, it appears
         // that this file system is case-insensitive, which means that the
         // reason `pathExists()` has returned true is because it confirms the

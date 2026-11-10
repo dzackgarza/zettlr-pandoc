@@ -1346,12 +1346,21 @@ export default class DocumentManager
         const tree = DocumentTree.fromJSON(treedata[key]);
         for (const leaf of tree.getAllLeafs()) {
           for (const file of leaf.tabMan.openFiles.map((x) => x.path)) {
-            if (
-              !(await this._app.fsal.testAccess(
-                file,
-                FSConstants.F_OK | FSConstants.W_OK | FSConstants.R_OK,
-              ))
-            ) {
+            // A failed access check gives no answer. The tab stays, and the
+            // document reports the error of the file when it loads.
+            const gone = await this._app.fsal
+              .testAccess(file, FSConstants.F_OK | FSConstants.W_OK | FSConstants.R_OK)
+              .then(
+                (accessible) => !accessible,
+                (err: Error) => {
+                  this._app.log.error(
+                    `[Document Provider] Could not test the access to ${file}: ${err.message}`,
+                    err,
+                  );
+                  return false;
+                },
+              );
+            if (gone) {
               leaf.tabMan.closeFile(file);
             }
           }

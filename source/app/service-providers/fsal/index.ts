@@ -55,6 +55,7 @@ import * as FSALDir from "./fsal-directory";
 import * as FSALFile from "./fsal-file";
 import FSALWatchdog from "./fsal-watchdog";
 import getMarkdownFileParser from "./util/file-parser";
+import { pathExists } from "./util/fs";
 import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
 import {
   readDirectoryFromDisk,
@@ -851,22 +852,15 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Tests the access to a given path. Provide the flags as provided in
-   * `fs.constants`. By default, this function checks for visibility and whether
-   * we can actually read in the node.
+   * Tests the access to a given path with flags of `fs.constants`. A missing
+   * path and a denied access answer false. Any other error of the access
+   * check is a failure: the filesystem gave no answer, and the promise
+   * rejects.
    *
    * @return  {Promise<boolean>}  Returns true if the file fulfills the criteria.
    */
-  public async testAccess(
-    absPath: string,
-    flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
-  ): Promise<boolean> {
-    try {
-      await fs.access(absPath, flags);
-      return true;
-    } catch (err) {
-      return false;
-    }
+  public async testAccess(absPath: string, flags: number): Promise<boolean> {
+    return await pathExists(absPath, flags);
   }
 
   /**
@@ -1248,7 +1242,8 @@ export default class FSAL extends ProviderContract {
    * Checks if a given path exists on the file system. Optional flags can be
    * passed to check specific access rights. By default, will check for general
    * access (i.e., the process can see the file), and read access, but not write
-   * access. Use fs.constants as flags.
+   * access. Use fs.constants as flags. An error of the access check other
+   * than a missing path or a denied access rejects.
    *
    * @param   {string}            absPath  The path to check
    * @param   {number|undefined}  flags    Optional mode check flags
@@ -1259,12 +1254,7 @@ export default class FSAL extends ProviderContract {
     absPath: string,
     flags: number = FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK,
   ): Promise<boolean> {
-    try {
-      await fs.access(absPath, flags);
-      return true;
-    } catch (err: unknown) {
-      return false;
-    }
+    return await pathExists(absPath, flags);
   }
 
   /**
