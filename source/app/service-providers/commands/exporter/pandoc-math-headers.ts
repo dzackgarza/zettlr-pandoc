@@ -1,8 +1,8 @@
 import { isHtmlWriter, isTexWriter } from "@common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
+import { type MathJaxMacro, mathJaxPackages } from "@dzack/tikz-render/mathjax-config";
 import { promises as fs } from "fs";
 import path from "path";
-import { type MathJaxMacro, mathJaxPackages } from "tikz-workbench/src/mathjax-config";
 import { pathToFileURL } from "url";
 import { projectTexHeader } from "./macro-projections";
 

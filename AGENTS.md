@@ -147,13 +147,12 @@ through its renderer collection. See `packages/pandoc-editor/README.md`.
 - **App load:** `source/app/util/load-mathjax-macros.ts` resolves that central generated
   file and fails loudly when it is absent. The `mathjax-macros` IPC in
   `source/app/lifecycle.ts` serves the same read-only projection to renderer consumers.
-- **Format/validation:** `packages/tikz-workbench/src/mathjax-config.ts` (`parseMathJaxMacros`;
+- **Format/validation:** `packages/tikz-render/src/mathjax-config.ts` (`parseMathJaxMacros`;
   malformed central projections fail rather than being replaced with bundled defaults).
 - **Render:** `source/common/util/mathtex-to-html.ts` (`initializeMathJax`, local
   CommonHTML), wired in `source/common/modules/window-register/index.ts`.
-- **TikZ/Quiver:** TeX compilation follows the real central `dzg-tikz` template/include
-  graph. Quiver starts from the central MathJax projection and then applies compatible
-  later definitions from that actual template graph, matching TeX precedence.
+- **TikZ:** TeX compilation follows the real central `dzg-tikz` template/include
+  graph.
 - **Semantic invariant:** macro meanings and arities are owned by `~/.pandoc`; Zettlr
   may project or adapt them to a renderer but must not redefine their mathematics. See
   `~/.pandoc/AGENTS.md` for the object-valued/atomic macro rule.
@@ -285,28 +284,57 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   ChatGPT connector has a hard 30-tool limit; `/mcp` itself must therefore stay
   at 30 tools rather than hiding extra operations only from `/openapi.json`.
 
-### 7. TikZ workbench module
+### 7. TikZ figures and the external visual editor
 
-- **Module:** `packages/tikz-workbench` (Bun workspace package `tikz-workbench`). It owns
-  the TikZ editing surface — compiled preview, visual editor, Quiver, compiler
-  diagnostics — plus the TeX compiler (`src/tikz-render.ts`), the Quiver macro
-  projection, and the vendored forks `vendor/tikz-editor` and `vendor/quiver`. It must
-  import nothing from `source/`; Zettlr imports it as `tikz-workbench/src/…`.
-  This path is a submodule of `dzackgarza/visual-tikz-editor`. Commit workbench
-  changes there and update the submodule commit in this repository.
-  Zettlr starts ordinary TikZ in compiled preview. The standalone host starts
-  `tikzpicture` in the visual editor. Both start `tikzcd` in Quiver.
-- **Host contract:** `src/host.ts` (`TikzWorkbenchHost`). Zettlr's host is
-  `source/win-main/tikz-workbench-host.ts` (a CodeMirror range + IPC), mounted by
-  `MainEditor.vue`. The standalone host is `standalone/` (`just tikz-standalone
-  file.tikz`): a Bun server plus a Vite page with a source pane. A workbench change
-  goes into `packages/tikz-workbench`, not into a host.
+Zettlr compiles a diagram and shows the figure. It holds no graphical diagram
+editor. The graphical editor is the separate application Visual TikZ Editor
+(`dzackgarza/visual-tikz-editor`, installed by its `just install-desktop`), and
+Zettlr starts it on one diagram.
+
+- **Render package:** `packages/tikz-render` (Bun workspace package
+  `@dzack/tikz-render`) owns the TeX compiler (`src/tikz-render.ts`), the
+  compiler log, the preview state and the preview pane
+  (`src/ui/TikzPreviewPane.vue`). It must import nothing from `source/`. The
+  application gives the pane a `TikzPreviewHost` (`src/host.ts`); Zettlr's host
+  is in `MainEditor.vue` (the `tikz-render` IPC). See
+  `packages/tikz-render/README.md`.
 - **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
   `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
-- **Inline figure controls:** `render-tikz.ts` places rebuild and visual-editor
-  buttons over each TikZ or tikzcd figure. Rebuild bypasses the compiler cache.
-  The visual button opens tikz-editor for TikZ and Quiver for tikzcd. A click on
-  the figure selects its authored source for direct editing.
+- **Controls:** `render-tikz.ts` places a rebuild button and an "Edit in Visual
+  TikZ Editor" button over each figure; the preview pane has the same edit
+  button. Rebuild bypasses the compiler cache. A click on the figure selects
+  its authored source. The edit button is disabled for a diagram whose source
+  is not one range of the document (a diagram in a blockquote or a list item).
+- **Launch:** the window sends `tikz-edit-open` (`commands/tikz-edit.ts`) with
+  a session id and the authored source. `TikzEditSessions`
+  (`source/app/util/tikz-edit-session.ts`) writes the source to
+  `diagram.tikz` or `diagram.tikzcd` in a temporary session directory and
+  starts `visual-tikz-editor --macros <central MathJax projection>
+  --resources <document directory> <file>` as a detached process group. The
+  session directory is also the `XDG_STATE_HOME` of that editor, so the
+  recovery record of the editor stays apart from the user's own. The file
+  extension decides the editor: `.tikzcd` opens in Quiver. A missing command
+  is an error dialog, not a fallback.
+- **Saves:** the main process watches the session file and sends each new
+  content on the `tikz-edit` channel. `tikzEditSessionsField`
+  (`markdown-editor/tikz-edit-sessions.ts`) follows the range of each open
+  diagram through the edits of the author and keeps the source that the
+  document and the editor last agreed on. A save replaces the range only while
+  the range still holds that source. A save after the author changed the
+  diagram in the document is refused with a message: the document is the
+  authority. The document sends nothing to a running editor.
+- **`\input` diagrams:** a block that is `\input{file.tikz}` opens that file
+  itself. The editor saves to the file; there is no session and no document
+  change.
+- **End of a session:** the editor stops when its view state goes away (a
+  closed tab, a document loaded again: `tikz-edit-close`) and when the app
+  quits (`CommandProvider.shutdown` calls the `shutdown` of each command and
+  waits until each editor is gone). The session directory is removed when the
+  editor exits.
+- **Proof:** `test/tikz-edit-sessions.spec.ts` (the range and refusal rules),
+  `e2e/tikz-live-preview.spec.ts` (the pane), and
+  `e2e/desktop/tikz-external-editor.spec.ts` (the assembled app with the
+  installed editor; a workstation proof, not a hosted CI job).
 - **Install layout:** `bunfig.toml` pins Bun's hoisted linker. The workspace would
   otherwise select the isolated linker, and webpack/Forge resolve transitive
   dependencies from the hoisted `node_modules`.

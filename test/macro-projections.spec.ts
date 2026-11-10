@@ -1,9 +1,9 @@
+import { type MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import assert from "assert";
 import {
   projectMathJaxHeader,
   projectTexHeader,
 } from "source/app/service-providers/commands/exporter/macro-projections";
-import { type MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 
 const macros = {
   RR: "\\mathbb{R}",

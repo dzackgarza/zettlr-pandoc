@@ -98,6 +98,7 @@ import { wikilinkOpener, wikilinkResolutionsField } from "./plugins/wikilink-res
 import { workspaceReferencesField } from "./plugins/workspace-references-field";
 import { quickTexField } from "./quicktex";
 import { renderers } from "./renderers";
+import { tikzEditSessions } from "./tikz-edit-client";
 import { filePreview, footnoteHover, urlHover } from "./tooltips";
 import { citationTooltips } from "./tooltips/citations";
 import { referenceTooltips } from "./tooltips/references";
@@ -359,6 +360,8 @@ export function getMarkdownExtensions(options: CoreExtensionOptions): Extension[
     // a wikilink: the state of the wikilink chips. Fed by MainEditor.vue.
     wikilinkResolutionsField,
     wikilinkOpener.of(options.onWikiLink),
+    // The diagrams that Visual TikZ Editor has open, and their saves.
+    tikzEditSessions,
     // Prompts for the workspace rename after the selection leaves a
     // directly edited definition-id token (issue #1 Phase 6).
     referenceKeyEditPrompt({

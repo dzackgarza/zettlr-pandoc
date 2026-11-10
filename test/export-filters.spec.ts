@@ -1,3 +1,4 @@
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import assert from "assert";
 import { execFile } from "child_process";
 import { mkdtemp, readFile, writeFile } from "fs/promises";
@@ -5,7 +6,6 @@ import os from "os";
 import path from "path";
 import { writeDefaults } from "source/app/service-providers/commands/exporter/index";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import { promisify } from "util";
 import YAML from "yaml";
 

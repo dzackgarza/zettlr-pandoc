@@ -49,6 +49,9 @@ export default abstract class ZettlrCommand {
     this._bind = bindEvent;
   }
 
+  /** Called when the app stops. A command that owns a process stops it here. */
+  async shutdown(): Promise<void> {}
+
   /**
    * Returns the event name this thing binds to
    * @return {String} The event name

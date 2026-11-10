@@ -4,7 +4,7 @@ import path from "node:path";
 import { Text } from "@codemirror/state";
 import type { SourceLintDiagnostic } from "@common/util/source-lint-diagnostic";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
-import type { TikzRenderConfig } from "tikz-workbench/src/tikz-render";
+import type { TikzRenderConfig } from "@dzack/tikz-render/tikz-render";
 import { lintMarkdownText } from "./flowmark-lint";
 import { buildFlowmarkLintContext, type FlowmarkReferenceContext } from "./flowmark-lint-context";
 

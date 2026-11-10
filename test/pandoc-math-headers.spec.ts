@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import assert from "assert";
 import { execFile } from "child_process";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "fs/promises";
@@ -7,7 +8,6 @@ import path from "path";
 import { writeDefaults } from "source/app/service-providers/commands/exporter/index";
 import { injectPandocMathHeaders } from "source/app/service-providers/commands/exporter/pandoc-math-headers";
 import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import { promisify } from "util";
 import { runInNewContext } from "vm";
 import YAML from "yaml";

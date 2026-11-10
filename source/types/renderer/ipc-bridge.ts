@@ -22,7 +22,6 @@
 import type { IpcEmitter } from "@electron-toolkit/typed-ipc/renderer";
 import type {
   MathJaxMacrosIPCResponse,
-  QuiverMacrosIPCResponse,
   TexMacroCommandsIPCResponse,
   TikzCompletionIPCResponse,
 } from "source/app/lifecycle";
@@ -101,7 +100,6 @@ export interface IpcBareChannelContracts {
   "mathjax-macros": MathJaxMacrosIPCResponse;
   "tex-macro-commands": TexMacroCommandsIPCResponse;
   "tikz-completion-commands": TikzCompletionIPCResponse;
-  "quiver-macros": QuiverMacrosIPCResponse;
   "request-dir": RequestDirIPCResponse;
   "paste-image-retrieve-data": PasteImageRetrieveDataIPCResponse;
 }

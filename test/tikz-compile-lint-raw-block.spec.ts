@@ -1,8 +1,8 @@
 /** Raw-block compiler diagnostics map through parser-owned authored line ranges. */
 
+import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 const failure: TikzRenderResult = {
   ok: false,

@@ -31,6 +31,9 @@
       ],
       "@dzack/pandoc-editor/*": [
         "./packages/pandoc-editor/src/*"
+      ],
+      "@dzack/tikz-render/*": [
+        "./packages/tikz-render/src/*"
       ]
     }
   },

@@ -20,10 +20,10 @@
 // The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
 // symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
 import resolvesToFile from "@common/util/resolves-to-file";
+import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from "@dzack/tikz-render/tikz-render";
 import { spawn } from "child_process";
 import os from "os";
 import path from "path";
-import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from "tikz-workbench/src/tikz-render";
 
 export interface CommandRequirement {
   command: string;

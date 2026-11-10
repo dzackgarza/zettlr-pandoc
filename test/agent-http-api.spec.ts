@@ -545,7 +545,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           skillsDirectory: configuredSkillsDirectory,
         },
         tikz: {
-          dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
+          dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
           figuresDir: figuresRoot,
         },
         editor: { lint: { flowmark: { timeoutMs: 60_000 } } },

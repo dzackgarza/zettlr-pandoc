@@ -21,6 +21,7 @@ import {
 // Utilities
 import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import { type MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import type AssetsProvider from "@providers/assets";
 import { type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
@@ -31,7 +32,6 @@ import { app } from "electron";
 import { promises as fs } from "fs";
 // Modules
 import path from "path";
-import { type MathJaxMacro } from "tikz-workbench/src/mathjax-config";
 import YAML from "yaml";
 import { loadCanonicalMathJaxMacros } from "../../../util/load-mathjax-macros";
 import { plugin as DefaultExporter } from "./default-exporter";

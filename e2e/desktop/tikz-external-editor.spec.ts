@@ -18,11 +18,12 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess, execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { type Browser, type Page } from "playwright";
 import {
+  assertCleanExit,
   attach,
   createFixture,
   delay,
@@ -81,7 +82,12 @@ async function hostUrl(host: EditorHost, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const sockets = await run("ss", ["-ltnpH"]);
-    const line = sockets.stdout.split("\n").find((entry) => entry.includes(`pid=${host.pid},`));
+    // The app under test runs with a DevTools port, and every process that
+    // the app starts inherits that listening socket. The socket of the file
+    // host is the one that the host alone holds.
+    const line = sockets.stdout
+      .split("\n")
+      .find((entry) => entry.includes(`pid=${host.pid},`) && entry.split("pid=").length === 2);
     const address = line === undefined ? null : /127\.0\.0\.1:\d+/u.exec(line);
     if (address !== null && address !== undefined) return `http://${address[0]}`;
     await delay(250);
@@ -97,6 +103,8 @@ describe("editing a diagram in Visual TikZ Editor", function () {
   let page: Page | undefined;
   let fixtureRoot: string | undefined;
   let documentDirectory = "";
+  let documentPath = "";
+  let appOutput: () => string = () => "";
   const rendererEvents: string[] = [];
 
   before(async function () {
@@ -108,10 +116,12 @@ describe("editing a diagram in Visual TikZ Editor", function () {
       documentContents: DOCUMENT,
     });
     fixtureRoot = fixture.root;
-    documentDirectory = path.dirname(fixture.documentPath);
+    documentPath = fixture.documentPath;
+    documentDirectory = path.dirname(documentPath);
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
     appProcess = app.appProcess;
     browser = app.browser;
+    appOutput = app.getOutput;
     page = await findEditorPage(browser, this.timeout());
     await hideDevServerOverlay(page);
   });
@@ -163,6 +173,22 @@ describe("editing a diagram in Visual TikZ Editor", function () {
       { timeout: 30_000 },
     );
 
+    // The edit is an ordinary change of the document: Save writes it. This
+    // is the IPC call that the save-file shortcut makes; CDP key events do
+    // not reach the menu accelerator.
+    await editor.evaluate(
+      async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+      documentPath,
+    );
+    const deadline = Date.now() + 30_000;
+    while (
+      (await readFile(documentPath, "utf8")) !== DOCUMENT.replace(SQUARE, EDITED) &&
+      Date.now() < deadline
+    ) {
+      await delay(250);
+    }
+    assert.equal(await readFile(documentPath, "utf8"), DOCUMENT.replace(SQUARE, EDITED));
+
     assert.deepEqual(rendererEvents, [], `the renderer emitted errors: ${rendererEvents.join()}`);
   });
 
@@ -171,6 +197,7 @@ describe("editing a diagram in Visual TikZ Editor", function () {
     await shutdown(browser, appProcess);
     browser = undefined;
     appProcess = undefined;
+    assertCleanExit(appOutput());
     const deadline = Date.now() + 20_000;
     while ((await editorHosts(documentDirectory)).length > 0 && Date.now() < deadline) {
       await delay(250);

@@ -10,7 +10,7 @@ import {
   contiguousSourceLineRanges,
   rawTikzEnvironment,
   type TikzSourceBlock,
-} from "tikz-workbench/src/source-block";
+} from "@dzack/tikz-render/source-block";
 
 export const INPUT_TIKZ_RE = /^\s*\\input\s*\{\s*([^}]+?\.(?:tikz|tikzcd))\s*\}\s*$/u;
 

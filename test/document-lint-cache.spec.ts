@@ -27,7 +27,7 @@ describe("document lint cache", function () {
         get: () => ({
           export: { cslLibrary: "" },
           tikz: {
-            dataDir: path.join(__dirname, "../packages/tikz-workbench/test/fixtures/tikz-data"),
+            dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
             figuresDir: "",
           },
           editor: { lint: { flowmark: { timeoutMs: 60_000 } } },

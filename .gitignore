@@ -69,8 +69,5 @@ __pycache__/
 .agents
 .hermes
 
-# Vite build of the standalone TikZ workbench page
-packages/tikz-workbench/standalone/dist
-
 # Scratch output of local tooling runs.
 .tmp/

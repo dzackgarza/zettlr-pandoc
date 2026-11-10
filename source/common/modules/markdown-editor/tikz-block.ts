@@ -23,12 +23,12 @@ import {
   tikzLanguageForFenceInfo,
   usesOwnedTikzTemplate,
 } from "@common/util/tikz-source-blocks";
-import type { SyntaxNodeRef } from "@lezer/common";
 import {
   contiguousSourceLineRanges,
   rawTikzEnvironment,
   type TikzSourceBlock,
-} from "tikz-workbench/src/source-block";
+} from "@dzack/tikz-render/source-block";
+import type { SyntaxNodeRef } from "@lezer/common";
 
 /**
  * Converts one Markdown syntax node into the TikZ source it represents.

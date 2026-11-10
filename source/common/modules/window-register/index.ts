@@ -18,7 +18,7 @@
 import { loadData } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { initializeMathJax } from "@common/util/mathtex-to-html";
-import type { MathJaxMacro } from "tikz-workbench/src/mathjax-config";
+import type { MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import loadIcons from "./load-icons";
 import registerDefaultContextMenu from "./register-default-context";
 import registerThemes from "./register-themes";

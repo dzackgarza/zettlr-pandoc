@@ -19,21 +19,32 @@
         <div ref="editorHost" class="main-editor-host" />
       </SplitterPanel>
       <SplitterResizeHandle
-        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
+        v-if="tikzPreviewTarget !== null"
         class="tikz-editor-resize-handle"
-        aria-label="Resize TikZ editor pane"
+        aria-label="Resize TikZ preview pane"
       />
       <SplitterPanel
-        v-if="tikzPreviewTarget !== null && tikzWorkbenchHost !== null"
+        v-if="tikzPreviewTarget !== null"
         :default-size="42"
         :min-size="20"
       >
-        <TikzWorkbench
+        <TikzPreviewPane
           :target="tikzPreviewTarget"
-          :host="tikzWorkbenchHost"
-          :requested-mode="tikzRequestedMode"
+          :host="tikzPreviewHost"
           :theme="configStore.config.darkMode ? 'dark' : 'light'"
-        />
+        >
+          <template #actions>
+            <button
+              type="button"
+              class="tikz-edit-external"
+              :disabled="!tikzPreviewEditable"
+              :title="tikzPreviewEditable ? '' : 'Visual TikZ Editor opens a diagram whose source is one range of the document. Move this diagram out of the quote or list.'"
+              @click="editActiveTikzExternally()"
+            >
+              {{ EDIT_IN_VISUAL_TIKZ_EDITOR }}
+            </button>
+          </template>
+        </TikzPreviewPane>
       </SplitterPanel>
     </SplitterGroup>
     <RenameReferencePreviewDialog
@@ -104,8 +115,11 @@ import {
   selectNextReviewChunk,
   selectPreviousReviewChunk,
 } from "@common/modules/markdown-editor/plugins/review-chunks";
-import { OPEN_TIKZ_VISUAL_EDITOR_EVENT } from "@common/modules/markdown-editor/renderers/render-tikz";
 import { activeTikzBlock as findActiveTikzBlock } from "@common/modules/markdown-editor/tikz-block";
+import {
+  EDIT_IN_VISUAL_TIKZ_EDITOR,
+  editTikzInVisualEditor,
+} from "@common/modules/markdown-editor/tikz-edit-client";
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
@@ -127,6 +141,7 @@ import {
   getBibliographyForDescriptor as getBibliography,
   resolveProjectForDescriptor,
 } from "@common/util/get-bibliography-for-descriptor";
+import makeValidUri from "@common/util/make-valid-uri";
 import {
   isAbsolutePath,
   pathBasename,
@@ -161,6 +176,13 @@ import type {
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
+import type { TikzPreviewHost } from "@dzack/tikz-render/host";
+import type { TikzLivePreviewTarget } from "@dzack/tikz-render/live-preview";
+import {
+  type TikzSourceBlock,
+  tikzBlockHasContiguousSource,
+} from "@dzack/tikz-render/source-block";
+import TikzPreviewPane from "@dzack/tikz-render/ui/TikzPreviewPane.vue";
 import { storeToRefs } from "pinia";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
@@ -179,10 +201,6 @@ import {
   useWindowStateStore,
   useWorkspaceStore,
 } from "source/pinia";
-import type { TikzLivePreviewTarget } from "tikz-workbench/src/live-preview";
-import type { TikzPreviewModeId } from "tikz-workbench/src/preview-modes";
-import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
-import TikzWorkbench from "tikz-workbench/src/ui/TikzWorkbench.vue";
 import _ from "underscore";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRef, watch } from "vue";
 import AnnotationCreateDialog from "./AnnotationCreateDialog.vue";
@@ -191,7 +209,6 @@ import InlineCollaborationControls, {
   type CollaborationBlock,
 } from "./editor-collaboration/InlineCollaborationControls.vue";
 import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
-import { zettlrTikzWorkbenchHost } from "./tikz-workbench-host";
 import { resolveReattachSelection } from "./util/annotation-reattach-selection";
 import getDocumentTitle from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
@@ -410,13 +427,29 @@ async function updateTexMacroSources(
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
 const activeEditorView = shallowRef<EditorView | null>(null);
-const tikzRequestedMode = ref<TikzPreviewModeId>("tikz");
 
-function openInlineTikzVisualEditor(event: Event): void {
-  if (!(event instanceof CustomEvent)) {
+/** The main process compiles; the window shows the figure file that it wrote. */
+const tikzPreviewHost: TikzPreviewHost = {
+  render: async (request) =>
+    await ipcRenderer.invoke("application", { command: "tikz-render", payload: request }),
+  figureUrl: (figure) => makeValidUri(figure.svgPath),
+  reportError,
+};
+
+function editActiveTikzExternally(): void {
+  const block = activeTikzSource.value;
+  const view = activeEditorView.value;
+  if (block === null || view === null) {
     return;
   }
-  tikzRequestedMode.value = event.detail === "tikzcd" ? "quiver" : "visual";
+  editTikzInVisualEditor(view, {
+    from: block.sourceFrom,
+    to: block.sourceTo,
+    language: block.language,
+    docPath: props.file.path,
+  }).catch((error: unknown) => {
+    reportError("Could not open Visual TikZ Editor", error);
+  });
 }
 
 function ownsWindowActiveState(
@@ -434,11 +467,7 @@ function updateActiveTikzSource(editor: MarkdownEditor): void {
   if (!ownsWindowActiveState(editor) || !hasMarkdownExt(editor.documentPath)) {
     return;
   }
-  const next = findActiveTikzBlock(editor.instance.state);
-  if (next?.from !== activeTikzSource.value?.from) {
-    tikzRequestedMode.value = next?.language === "tikzcd" ? "quiver" : "tikz";
-  }
-  activeTikzSource.value = next;
+  activeTikzSource.value = findActiveTikzBlock(editor.instance.state);
 }
 
 function publishActiveEditorState(editor: MarkdownEditor): void {
@@ -743,7 +772,6 @@ const stopLinkUpdates = ipcRenderer.on("links", (_e) => {
 // MOUNTED HOOK
 onMounted(() => {
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
-  editorHost.value?.addEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (isActiveTab.value) {
     activateTab().catch(reportDocumentLoadError);
   }
@@ -765,7 +793,6 @@ onBeforeUnmount(() => {
   activeTikzSource.value = null;
   activeEditorView.value = null;
   mainEditorWrapper.value?.removeEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
-  editorHost.value?.removeEventListener(OPEN_TIKZ_VISUAL_EDITOR_EVENT, openInlineTikzVisualEditor);
   if (currentEditor !== null) {
     currentEditor.unmount();
   }
@@ -826,8 +853,8 @@ const quickTex = computed(() => windowStateStore.quickTex);
 const phraseCompletions = computed(() => windowStateStore.phraseCompletions);
 const tags = computed(() => tagStore.tags);
 const isMarkdown = computed(() => hasMarkdownExt(props.file.path));
-const tikzWorkbenchHost = computed(() =>
-  activeEditorView.value === null ? null : zettlrTikzWorkbenchHost(activeEditorView.value),
+const tikzPreviewEditable = computed(
+  () => activeTikzSource.value !== null && tikzBlockHasContiguousSource(activeTikzSource.value),
 );
 const tikzPreviewTarget = computed<TikzLivePreviewTarget | null>(() =>
   activeTikzSource.value === null || activeEditorView.value === null
@@ -2107,6 +2134,20 @@ function maybeHighlightSearchResults(): void {
     overflow: hidden;
 
     > .cm-editor { width: 100%; }
+  }
+
+  .tikz-edit-external {
+    min-height: 36px;
+    padding: 4px 12px;
+    border: 1px solid currentColor;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: color-mix(in srgb, currentColor 8%, transparent); }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 
   .tikz-editor-resize-handle {

@@ -16,11 +16,11 @@
  *                  rather than telling the user to install it; a render killed
  *                  by a signal names the signal; the request carries the
  *                  configured document path; a success whose markup carries no
- *                  figure is refused rather than mounted; clicking rendered
- *                  any rendered TikZ/tikzcd click reveals its source so the
- *                  unified RHS preview owns renderer selection, while a separate expand control
- *                  requests the lightbox; and the cursor entering the block
- *                  reveals raw source. The spec drives a
+ *                  figure is refused rather than mounted; a click on any
+ *                  rendered TikZ or tikzcd figure reveals its source, which
+ *                  opens the compiled preview beside the editor; and the
+ *                  cursor entering the block reveals raw source. The spec
+ *                  drives a
  *                  real EditorView with the production renderer and a
  *                  recorded IPC seam — no fabricated widget states.
  *
@@ -31,6 +31,7 @@ import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
+import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import { strict as assert } from "assert";
 import { collectTikzCompilerFindings } from "source/app/util/tikz-compiler-findings";
 import {
@@ -44,7 +45,6 @@ import {
   type EditorConfiguration,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 
 const RAW_BLOCK = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
 const FENCE_BODY = "\\documentclass[tikz]{standalone}\\begin{document}x\\end{document}";
@@ -682,7 +682,7 @@ describe("TikZ editor widgets (issue #14)", function () {
       view.state.selection.ranges.some(
         (range) => range.from <= rawFrom && range.to >= rawFrom + RAW_BLOCK.length,
       ),
-      "tikzcd selects its authored source range so the RHS preview owns TikZ/Quiver mode selection",
+      "a click on a tikzcd figure selects its authored source range",
     );
     figures[1]?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const fenceFrom = DOC.indexOf("```tikz");

@@ -15,19 +15,15 @@
 
 import { trans } from "@common/i18n-main";
 import type { EnvironmentInfo } from "@dts/common/environment";
-import { app, ipcMain } from "electron";
-// Developer tools
-import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
-import path from "path";
-import {
-  projectQuiverMacros,
-  type QuiverMacrosIPCResponse,
-} from "tikz-workbench/src/quiver-macros";
 import {
   resolveTikzTemplatePath,
   type TikzCompletionIPCResponse,
   tikzTemplateCompletions,
-} from "tikz-workbench/src/tikz-render";
+} from "@dzack/tikz-render/tikz-render";
+import { app, ipcMain } from "electron";
+// Developer tools
+import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
+import path from "path";
 import {
   AppServiceContainer,
   getAppServiceContainer,
@@ -53,7 +49,7 @@ import resolveTimespanMs from "./util/resolve-timespan-ms";
  */
 export type MathJaxMacrosIPCResponse = Awaited<ReturnType<typeof loadCanonicalMathJaxMacros>>;
 export type TexMacroCommandsIPCResponse = Awaited<ReturnType<typeof loadCanonicalTexMacroCommands>>;
-export type { QuiverMacrosIPCResponse, TikzCompletionIPCResponse };
+export type { TikzCompletionIPCResponse };
 
 // Statistics: Record the uptime of the application
 let upTimestamp: number;
@@ -131,10 +127,6 @@ export async function bootApplication(): Promise<AppServiceContainer> {
   });
   ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));
-  });
-  ipcMain.handle("quiver-macros", async (): Promise<QuiverMacrosIPCResponse> => {
-    const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
-    return projectQuiverMacros(macros, resolveTikzTemplatePath(app.getPath("home")));
   });
 
   // Now boot up the service container

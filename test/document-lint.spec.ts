@@ -42,7 +42,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -50,7 +50,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -85,7 +85,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -93,7 +93,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -133,7 +133,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -141,7 +141,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -175,7 +175,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -183,7 +183,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -221,7 +221,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -229,7 +229,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -286,7 +286,7 @@ describe("main-process document lint", function () {
         tikzAssetDir: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",
@@ -294,7 +294,7 @@ describe("main-process document lint", function () {
         templatePath: path.join(
           repositoryRoot,
           "packages",
-          "tikz-workbench",
+          "tikz-render",
           "test",
           "fixtures",
           "tikz-data",

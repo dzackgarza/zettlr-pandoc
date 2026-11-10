@@ -38,12 +38,12 @@ import type {
   WorkspaceProblems,
 } from "@dts/common/problems";
 import type { WorkspaceReferenceEdit } from "@dts/common/references";
+import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, shell } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
-import type { TikzRenderRequest, TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import type { LanguageToolIgnoredRuleEntry } from "../config/get-config-template";
 import type { RecentFiles } from "../recent-docs";
 import AddLanguageToolIgnoreRule from "./add-language-tool-ignore-rule";
@@ -95,6 +95,7 @@ import RootOpen from "./root-open";
 import RunExternalLinter from "./run-external-linter";
 import type { SaveImageFromClipboardAPI } from "./save-image-from-clipboard";
 import SaveImageFromClipboard from "./save-image-from-clipboard";
+import TikzEdit, { type TikzEditOpenRequest, type TikzEditOutcome } from "./tikz-edit";
 import TikzRender from "./tikz-render";
 import TutorialOpen from "./tutorial-open";
 import UpdateProjectProperties from "./update-project-properties";
@@ -140,6 +141,7 @@ export const commands = [
   RootClose,
   RootOpen,
   SaveImageFromClipboard,
+  TikzEdit,
   TikzRender,
   TutorialOpen,
   UpdateProjectProperties,
@@ -390,6 +392,14 @@ export type ApplicationIPCContract = {
     request: { payload: string[] };
     response: unknown;
   };
+  "tikz-edit-close": {
+    request: { payload: string };
+    response: undefined;
+  };
+  "tikz-edit-open": {
+    request: { payload: TikzEditOpenRequest };
+    response: TikzEditOutcome;
+  };
   "tikz-render": {
     request: { payload: TikzRenderRequest };
     response: TikzRenderResult;
@@ -556,5 +566,6 @@ export default class CommandProvider extends ProviderContract {
 
   async shutdown(): Promise<void> {
     this._app.log.verbose("Command Provider shutting down ...");
+    await Promise.all(this._commands.map(async (command) => await command.shutdown()));
   }
 }

@@ -20,8 +20,8 @@
  *                  telling the user to install it; a render killed by a signal
  *                  names the signal. Clicking a rendered figure follows the
  *                  editor's ordinary edit-first semantics and reveals its
- *                  source. Overlay controls rebuild the figure or open its
- *                  visual editor (Quiver for tikzcd).
+ *                  source. Overlay controls rebuild the figure or open it
+ *                  in Visual TikZ Editor, a separate application.
  *
  * END HEADER
  */
@@ -31,15 +31,17 @@ import { EditorView, WidgetType } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
 import { sanitizedFragment } from "@common/util/sanitize-html";
 import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import {
+  type TikzSourceBlock,
+  tikzBlockHasContiguousSource,
+} from "@dzack/tikz-render/source-block";
+import type { TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import { type SyntaxNodeRef } from "@lezer/common";
-import type { TikzSourceBlock } from "tikz-workbench/src/source-block";
-import type { TikzRenderResult } from "tikz-workbench/src/tikz-render";
 import { tikzBlockForNode } from "../tikz-block";
 import { tikzWidthEm } from "../tikz-display-size";
+import { EDIT_IN_VISUAL_TIKZ_EDITOR, editTikzInVisualEditor } from "../tikz-edit-client";
 import { requestTikzRender } from "../tikz-render-client";
 import { configField } from "../util/configuration";
-
-export const OPEN_TIKZ_VISUAL_EDITOR_EVENT = "open-tikz-visual-editor";
 
 /**
  * One in-flight render per figure source. Settled requests are removed: the
@@ -71,7 +73,7 @@ function figureNodes(html: string): Node[] {
     throw new Error(
       "render-tikz: the render service reported a successful figure whose markup carries no <svg> element. " +
         `Markup received (${html.length} chars): ${html.slice(0, 200)}. ` +
-        "renderTikz in tikz-workbench/src/tikz-render.ts only returns ok after matching <svg>…</svg> in the " +
+        "renderTikz in packages/tikz-render/src/tikz-render.ts only returns ok after matching <svg>…</svg> in the " +
         "pandoc output, so either that check or this widget must change.",
     );
   }
@@ -207,7 +209,7 @@ function populate(
       const unhandled: never = result;
       throw new Error(
         `render-tikz: unhandled TikzRenderResult case ${JSON.stringify(unhandled)}. ` +
-          "The union lives in tikz-workbench/src/tikz-render.ts; every case it declares must be presented here.",
+          "The union lives in packages/tikz-render/src/tikz-render.ts; every case it declares must be presented here.",
       );
     }
   }
@@ -238,13 +240,16 @@ class TikzWidget extends WidgetType {
   /**
    * The widget holds the figure and the length of the authored block, not the
    * position of the block: an edit before the figure moves the block and keeps
-   * this widget.
+   * this widget. `authored` is the range of the diagram source relative to the
+   * start of the block, or null when that source is not one range of the
+   * document (a diagram inside a blockquote or a list item).
    */
   constructor(
     readonly source: string,
     readonly kind: TikzSourceBlock["kind"],
     readonly language: TikzSourceBlock["language"],
     readonly blockLength: number,
+    readonly authored: { offset: number; length: number } | null,
   ) {
     super();
   }
@@ -254,7 +259,9 @@ class TikzWidget extends WidgetType {
       other.source === this.source &&
       other.kind === this.kind &&
       other.language === this.language &&
-      other.blockLength === this.blockLength
+      other.blockLength === this.blockLength &&
+      other.authored?.offset === this.authored?.offset &&
+      other.authored?.length === this.authored?.length
     );
   }
 
@@ -333,17 +340,29 @@ class TikzWidget extends WidgetType {
     const visual = document.createElement("button");
     visual.type = "button";
     visual.className = "tikz-figure-action";
-    visual.textContent = this.language === "tikzcd" ? "Quiver" : "Visual";
-    visual.title = this.language === "tikzcd" ? "Open Quiver editor" : "Open visual editor";
-    visual.setAttribute("aria-label", visual.title);
-    visual.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      editSource();
-      view.dom.dispatchEvent(
-        new CustomEvent(OPEN_TIKZ_VISUAL_EDITOR_EVENT, { bubbles: true, detail: this.language }),
-      );
-    });
+    visual.textContent = "✎";
+    visual.setAttribute("aria-label", EDIT_IN_VISUAL_TIKZ_EDITOR);
+    const authored = this.authored;
+    if (authored === null) {
+      visual.disabled = true;
+      visual.title =
+        "Visual TikZ Editor opens a diagram whose source is one range of the document. Move this diagram out of the quote or list.";
+    } else {
+      visual.title = EDIT_IN_VISUAL_TIKZ_EDITOR;
+      visual.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const from = view.posAtDOM(block) + authored.offset;
+        editTikzInVisualEditor(view, {
+          from,
+          to: from + authored.length,
+          language: this.language,
+          docPath,
+        }).catch((error: unknown) => {
+          reportError("Could not open Visual TikZ Editor", error);
+        });
+      });
+    }
     actions.append(refresh, visual);
     elem.append(actions);
     render("use");
@@ -384,7 +403,15 @@ function createWidget(state: EditorState, node: SyntaxNodeRef): TikzWidget | und
   const block = tikzBlockForNode(state, node);
   return block === undefined
     ? undefined
-    : new TikzWidget(block.source, block.kind, block.language, block.to - block.from);
+    : new TikzWidget(
+        block.source,
+        block.kind,
+        block.language,
+        block.to - block.from,
+        tikzBlockHasContiguousSource(block)
+          ? { offset: block.sourceFrom - block.from, length: block.sourceTo - block.sourceFrom }
+          : null,
+      );
 }
 
 export const renderTikzFigures = [

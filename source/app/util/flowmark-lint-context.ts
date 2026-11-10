@@ -13,8 +13,8 @@ import {
   type ReferenceDefinition,
   type ReferenceOccurrence,
 } from "@dts/common/references";
+import { renderTikz, type TikzRenderConfig } from "@dzack/tikz-render/tikz-render";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
-import { renderTikz, type TikzRenderConfig } from "tikz-workbench/src/tikz-render";
 import { collectTikzCompilerFindings } from "./tikz-compiler-findings";
 
 export interface FlowmarkLintContextSource {
