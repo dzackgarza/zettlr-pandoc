@@ -447,7 +447,7 @@ export default function getMenu(
         },
         {
           id: "menu.filter_files",
-          label: trans("Filter files"),
+          label: trans("Search files"),
           accelerator: sc("filter-files"),
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(

@@ -455,9 +455,12 @@ of an isolated instance are in the first comment of #132.
   (`settings.explorer.projectFilter`) and the read-only built-in names
   (`IGNORE_PATHS`). No other surface edits these values. Preferences →
   File Manager has only a button that opens the window (`application`
-  command `edit-ignore-rules`); Advanced → File Treatment keeps only
-  "Open with". The Workspaces header menu, the application menu and the
-  launcher (`menu.edit_ignore_rules`) open the window. The context menus
+  command `edit-ignore-rules`); Advanced → File Treatment and the
+  onboarding page "Images and PDFs" set only "Open with", and File
+  Treatment has the same button. The Workspaces header menu, the
+  application menu and the launcher (`menu.edit_ignore_rules`) open the
+  window. "Search files" (`menu.filter_files`) is the file name search of
+  the file manager, not a filter setting. The context menus
   are actions on the same state: hide or show a path or a name
   (`file-manager/util/ignore-menu.ts`) and the project file filter of a
   project folder.

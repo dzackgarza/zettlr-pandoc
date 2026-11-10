@@ -554,7 +554,7 @@ const registrations = [
   }),
   registerCommand({
     id: "filter-files",
-    label: "Filter files",
+    label: "Search files",
     group: "User Interface",
     scope: "window",
     when: "window",

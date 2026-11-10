@@ -13,6 +13,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
 import type { EnvironmentInfo } from "@dts/common/environment";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
@@ -115,7 +116,7 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
     {
       title: trans("File Treatment"),
       infoString: trans(
-        "Decide how to open images and PDF documents. Which files the app lists is set in one window: File filters, in the File Manager preferences.",
+        "Decide how to open images and PDF documents. Which files the app lists is set in the File filters window.",
       ),
       group: PreferencesGroups.Advanced,
       help: undefined,
@@ -158,6 +159,15 @@ export function getAdvancedFields(config: ConfigOptions): PreferencesFieldset[] 
               },
             ],
           ],
+        },
+        {
+          type: "button",
+          label: trans("Edit file filters…"),
+          onClick: () => {
+            window.ipc
+              .invoke("application", { command: "edit-ignore-rules" })
+              .catch((err) => reportError(err));
+          },
         },
       ],
     },

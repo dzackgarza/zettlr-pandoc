@@ -300,7 +300,7 @@ describe("global-search and project-properties failure recovery", function () {
 
     // The Project module hosts the file manager; it may be collapsed or the
     // sidebar hidden after the preceding tests, so reveal it through the
-    // Filter files menu item before opening the workspace context menu.
+    // Search files menu item before opening the workspace context menu.
     if (!(await mainPage.locator("#file-manager").isVisible())) {
       await mainPage.evaluate(() => {
         window.ipc.send("menu-provider", {

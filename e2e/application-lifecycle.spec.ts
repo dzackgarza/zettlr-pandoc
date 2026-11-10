@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chromium, type Browser } from "playwright";
+import { type Browser, chromium } from "playwright";
 import {
   createFixture,
   delay,
@@ -56,9 +56,7 @@ describe("application launch delivery", function () {
       // Suspend the actual owner once it holds Electron's lock. This controls
       // scheduling, not application behavior: the caller cannot yet be served.
       const deadline = Date.now() + 20_000;
-      while (
-        !existsSync(path.join(fixture.configDirectory, "SingletonSocket"))
-      ) {
+      while (!existsSync(path.join(fixture.configDirectory, "SingletonSocket"))) {
         assert.equal(primary.exitCode, null, primaryOutput);
         assert.ok(Date.now() < deadline, primaryOutput);
         await delay(10);
@@ -78,11 +76,7 @@ describe("application launch delivery", function () {
         null,
         `Launch reported success before the owner could serve it: ${secondaryOutput}`,
       );
-      const endpointReady = waitForDevTools(
-        primary,
-        () => primaryOutput,
-        60_000,
-      );
+      const endpointReady = waitForDevTools(primary, () => primaryOutput, 60_000);
       process.kill(primary.pid, "SIGCONT");
       const endpoint = await endpointReady;
       browser = await chromium.connectOverCDP(endpoint);
@@ -102,17 +96,11 @@ describe("application launch delivery", function () {
         "--open-in-running-instance",
         path.join(fixture.root, "missing.md"),
       ]);
-      const rejectedStatus = await new Promise<number | null>(
-        (resolve, reject) => {
-          rejected.once("error", reject);
-          rejected.once("exit", resolve);
-        },
-      );
-      assert.equal(
-        rejectedStatus,
-        1,
-        "A failed document open must fail the invoking process",
-      );
+      const rejectedStatus = await new Promise<number | null>((resolve, reject) => {
+        rejected.once("error", reject);
+        rejected.once("exit", resolve);
+      });
+      assert.equal(rejectedStatus, 1, "A failed document open must fail the invoking process");
     } finally {
       if (primary.pid !== undefined && primary.exitCode === null)
         process.kill(primary.pid, "SIGCONT");
@@ -150,18 +138,12 @@ describe("application launch delivery", function () {
     let output = "";
     const pid = primary.pid!;
     try {
-      const primaryEndpoint = await waitForDevTools(
-        primary,
-        () => primaryOutput,
-        60_000,
-      );
+      const primaryEndpoint = await waitForDevTools(primary, () => primaryOutput, 60_000);
       browser = await chromium.connectOverCDP(primaryEndpoint);
       const initial = await findEditorPage(browser, 60_000);
       await initial.locator(".cm-content").waitFor({ timeout: 60_000 });
       const logDirectory = path.join(fixture.configDirectory, "logs");
-      const logName = (await readdir(logDirectory)).find((name) =>
-        name.endsWith(".log"),
-      );
+      const logName = (await readdir(logDirectory)).find((name) => name.endsWith(".log"));
       assert.ok(logName);
       const logPath = path.join(logDirectory, logName);
       const stopping = new Promise<void>((resolve, reject) => {
@@ -170,8 +152,7 @@ describe("application launch delivery", function () {
           reject(new Error("The owner did not start shutdown"));
         }, 10_000);
         const watcher = watch(logPath, () => {
-          if (!readFileSync(logPath, "utf8").includes("Shutting down at"))
-            return;
+          if (!readFileSync(logPath, "utf8").includes("Shutting down at")) return;
           clearTimeout(timer);
           watcher.close();
           try {
@@ -217,11 +198,7 @@ describe("application launch delivery", function () {
         .first()
         .waitFor({ timeout: 30_000 });
       assert.equal(primary.exitCode, 0);
-      assert.equal(
-        secondary.exitCode,
-        null,
-        "The new owner must remain running",
-      );
+      assert.equal(secondary.exitCode, null, "The new owner must remain running");
       const log = await readAppLog(fixture.root);
       assert.equal(
         log.split("Application uptime was:").length - 1,

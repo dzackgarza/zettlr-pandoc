@@ -159,7 +159,7 @@ function rememberFileManagerFocus(): void {
 }
 
 const filterPlaceholder = trans("Search files");
-// The filter's shortcut hint reads the same binding the menu's Filter files
+// The search box's shortcut hint reads the same binding the menu's Search files
 // item carries: the user's custom shortcut, or the default when none is set.
 const filterShortcut = computed(() => {
   const shortcut = getCustomShortcut("filter-files", configStore.config.shortcuts.ui);

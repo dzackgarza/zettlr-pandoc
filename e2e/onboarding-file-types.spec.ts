@@ -117,6 +117,8 @@ describe("assembled app: first-start onboarding and the file type filters", func
     await page.locator("#onboarding-progress span").nth(7).click();
     const toggle = page.locator('button:has-text("Preview images and PDFs in Zettlr")');
     await toggle.waitFor({ state: "visible", timeout: 10_000 });
+    // The page slides in; the welcome page stays mounted until it has left.
+    await page.waitForFunction(() => document.querySelectorAll(".page").length === 1);
     screenshots.set("onboarding-other-files.png", await page.screenshot());
 
     // The page writes through a synchronous IPC call in the click handler.

@@ -303,7 +303,7 @@
       {
         "type": "normal",
         "id": "menu.filter_files",
-        "label": "Filter files",
+        "label": "Search files",
         "enabled": true,
         "accelerator": "CmdOrCtrl+Shift+T"
       },
