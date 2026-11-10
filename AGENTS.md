@@ -401,6 +401,10 @@ of an isolated instance are in the first comment of #132.
 - **A widget holds no document position.** The field keeps a widget outside a
   changed block, so a stored position goes stale. A handler reads the position
   from `view.posAtDOM`. The `eq` of a widget compares what the widget shows.
+  The widget decorations of `base-renderer.ts` have `Prec.high`, so a widget
+  owns the whole source of its node and `view.posAtDOM` gives the start of
+  that source. A replacement of lower precedence that starts at the same
+  position (the hidden `$` code mark of an equation) is not drawn.
 - **An equal value causes no transaction.** `setWorkspaceReferences`,
   `setWikilinkResolutions`, `setCompletionDatabase`, the collaboration session
   store and `modeSwitcher` (`renderers/index.ts`) dispatch or reconfigure only

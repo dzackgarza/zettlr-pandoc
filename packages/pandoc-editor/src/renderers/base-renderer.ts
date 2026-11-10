@@ -15,7 +15,7 @@
  */
 
 import { syntaxTree } from "@codemirror/language";
-import { type EditorState, type Extension, Facet, type Range } from "@codemirror/state";
+import { type EditorState, type Extension, Facet, Prec, type Range } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -70,6 +70,18 @@ const widgetLineStyleResetTheme = EditorView.baseTheme({
     textIndent: "0",
   },
 });
+
+/**
+ * A widget owns the whole source of its node. Other renderers hide single
+ * marks with their own replacements, and a node can start with such a mark:
+ * the `$` of an equation is a code mark, which the emphasis renderer hides.
+ * Of two replacements that start at one position, the view draws the one of
+ * the higher precedence first and gives the other only the rest of its range.
+ * The widget would then start after the mark, and `view.posAtDOM` would give
+ * that position instead of the start of the source. The widget decorations
+ * therefore take precedence over the decorations of ordinary extensions.
+ */
+const widgetDecorationPrecedence = Prec.high;
 
 /**
  * Wraps a renderer's widget so its DOM is stamped with the line-style reset
@@ -286,7 +298,7 @@ export function renderInlineWidgets(
     },
   );
 
-  return [plugin, widgetLineStyleResetTheme];
+  return [widgetDecorationPrecedence(plugin), widgetLineStyleResetTheme];
 }
 
 /**
@@ -352,7 +364,7 @@ export function renderBlockWidgets(
       createWidget,
       inputsChanged,
     }),
-    sharedBlockRendererField,
+    widgetDecorationPrecedence(sharedBlockRendererField),
     widgetLineStyleResetTheme,
   ];
 }
