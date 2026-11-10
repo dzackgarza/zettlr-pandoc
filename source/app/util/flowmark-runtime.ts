@@ -17,7 +17,7 @@
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import { existsSync } from "fs";
 import path from "path";
 
@@ -28,6 +28,31 @@ export type FlowmarkProcessResult =
   | { ok: false; kind: FlowmarkProcessFailureKind; message: string };
 
 const KILL_GRACE_MS = 2_000;
+
+// The runs that have not ended. Each run leads a process group of its own
+// (`detached`), because a signal to one process does not reach the processes
+// that it started, such as the Pandoc of `flowmark-lint`
+// (https://nodejs.org/api/child_process.html#subprocesskillsignal). A signal
+// to the group reaches all of them, as `kill -- -PGID` does.
+const activeRuns = new Set<ChildProcess>();
+
+/**
+ * Signals each process of a run. Until Node.js has collected the leader of
+ * the group, the group exists, so the signal has a receiver.
+ */
+function signalRun(run: ChildProcess, signal: NodeJS.Signals): void {
+  if (run.pid !== undefined && run.exitCode === null && run.signalCode === null) {
+    process.kill(-run.pid, signal);
+  }
+}
+
+// A run is apart from the process group of the app, so a signal to the app
+// does not reach it. The exit of the app stops the runs that have not ended.
+process.on("exit", () => {
+  for (const run of activeRuns) {
+    signalRun(run, "SIGKILL");
+  }
+});
 
 /** Locate a packaged/development external-linter process plugin. */
 export function externalLinterPluginPath(filename: string): string {
@@ -109,9 +134,9 @@ export interface FlowmarkProcessOptions {
 /**
  * Run one Flowmark process with bounded lifetime and captured stdio.
  *
- * The process is always spawned without a shell.  On timeout it receives
- * SIGTERM, then SIGKILL after a short grace, and the promise resolves only
- * after the child has actually closed.
+ * The process is always spawned without a shell.  On timeout the process and
+ * the processes that it started receive SIGTERM, then SIGKILL after a short
+ * grace, and the promise resolves only after the child has actually closed.
  */
 export async function runFlowmarkProcess(
   options: FlowmarkProcessOptions,
@@ -122,7 +147,8 @@ export async function runFlowmarkProcess(
   return await new Promise<FlowmarkProcessResult>((resolve) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
-    const proc = spawn(command, options.argv, { env, shell: false });
+    const proc = spawn(command, options.argv, { env, shell: false, detached: true });
+    activeRuns.add(proc);
 
     let settled = false;
     let timedOut = false;
@@ -134,6 +160,7 @@ export async function runFlowmarkProcess(
         return;
       }
       settled = true;
+      activeRuns.delete(proc);
       if (boundTimer !== undefined) {
         clearTimeout(boundTimer);
       }
@@ -179,9 +206,9 @@ export async function runFlowmarkProcess(
 
     boundTimer = setTimeout(() => {
       timedOut = true;
-      proc.kill("SIGTERM");
+      signalRun(proc, "SIGTERM");
       graceTimer = setTimeout(() => {
-        proc.kill("SIGKILL");
+        signalRun(proc, "SIGKILL");
       }, KILL_GRACE_MS);
     }, options.timeoutMs);
   });
