@@ -81,6 +81,8 @@ declare global {
     measureStepLayouts: (steps: number[]) => StepLayoutResult;
     measureToggleAnimation: (targetState: "open" | "close") => Promise<ToggleAnimationResult>;
     setUnoptimizedMode: (enable: boolean) => void;
+    /** How many times the view asked the main process for the workspace state. */
+    workspaceStateReads: () => number;
   }
 }
 
@@ -272,6 +274,9 @@ window.benchmarkReady = (async () => {
       }),
     });
   }
+
+  window.workspaceStateReads = () =>
+    documentCollaborationIpcDouble.invokeCallCount("get-workspace-collaboration-sessions");
 
   window.setUnoptimizedMode = (enable: boolean) => {
     const existing = document.getElementById("unoptimized-override");

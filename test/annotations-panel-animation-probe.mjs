@@ -44,6 +44,10 @@ const hasContentVisibility = await page.evaluate(() => {
   return style.contentVisibility === "auto";
 });
 
+// 4. The toggles gave the view its list of workspace paths again, as a new
+// array with the same paths.
+const workspaceStateReads = await page.evaluate(() => window.workspaceStateReads());
+
 await scene.close();
 
 const report = {
@@ -58,6 +62,7 @@ const report = {
     open: optimizedOpen,
   },
   hasContentVisibility,
+  workspaceStateReads,
 };
 
 console.log(JSON.stringify(report));

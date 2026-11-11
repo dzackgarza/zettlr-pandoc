@@ -58,6 +58,7 @@ interface AnimationProbeReport {
     open: ToggleAnimationReport;
   };
   hasContentVisibility: boolean;
+  workspaceStateReads: number;
 }
 
 describe("Annotations panel animation performance and layout isolation", function () {
@@ -134,6 +135,14 @@ describe("Annotations panel animation performance and layout isolation", functio
       optimized.open.severeDroppedFrames,
       0,
       `open animation must have 0 severe dropped frames: got ${optimized.open.severeDroppedFrames}`,
+    );
+  });
+
+  it("reads the workspace state one time for one list of paths (#126)", function () {
+    assert.equal(
+      report.workspaceStateReads,
+      1,
+      "a new array with the same paths starts no read of the workspace state",
     );
   });
 
