@@ -117,10 +117,12 @@ test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
+# The unit-test setup removes its temp directory at exit; an assembled-app
+# spec keeps its artifacts in the system temp directory, as under `test-e2e`.
 # Run one assembled-app spec with enough time for Electron to boot.
 test-e2e-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "{{file}}"
+    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
