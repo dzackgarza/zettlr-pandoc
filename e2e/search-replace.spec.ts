@@ -59,6 +59,8 @@ interface ConfirmationPainting {
   cancel: string;
   accent: string;
   surface: string;
+  text: string;
+  chromeText: string;
 }
 
 /**
@@ -81,8 +83,12 @@ async function confirmationPainting(page: Page): Promise<ConfirmationPainting> {
     const accent = getComputedStyle(probe).backgroundColor;
     probe.style.backgroundColor = "var(--chrome-surface)";
     const surface = getComputedStyle(probe).backgroundColor;
+    probe.style.color = "var(--chrome-text)";
+    const chromeText = getComputedStyle(probe).color;
     probe.remove();
     return {
+      text: getComputedStyle(dialog).color,
+      chromeText,
       centre: [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)],
       viewportCentre: [Math.round(innerWidth / 2), Math.round(innerHeight / 2)],
       replace: getComputedStyle(replace).backgroundColor,
@@ -301,6 +307,11 @@ describe("the Search view", function () {
       painted.cancel,
       painted.surface,
       "the action that cancels has the surface colour of the window",
+    );
+    assert.equal(
+      painted.text,
+      painted.chromeText,
+      "the confirmation has the text colour of the window chrome",
     );
     await confirm.click();
 

@@ -150,7 +150,8 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     const painted = await page.evaluate((dialogSelector) => {
       const confirm = document.querySelector(`${dialogSelector} [data-fix-all-confirm]`);
       const cancel = document.querySelector(`${dialogSelector} button:not([data-fix-all-confirm])`);
-      if (confirm == null || cancel == null) {
+      const dialog = document.querySelector(dialogSelector);
+      if (dialog == null || confirm == null || cancel == null) {
         throw new Error("The Fix All confirmation has no two actions");
       }
       const probe = document.createElement("span");
@@ -159,8 +160,12 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       const accent = getComputedStyle(probe).backgroundColor;
       probe.style.backgroundColor = "var(--chrome-surface)";
       const surface = getComputedStyle(probe).backgroundColor;
+      probe.style.color = "var(--chrome-text)";
+      const chromeText = getComputedStyle(probe).color;
       probe.remove();
       return {
+        text: getComputedStyle(dialog).color,
+        chromeText,
         confirm: getComputedStyle(confirm).backgroundColor,
         cancel: getComputedStyle(cancel).backgroundColor,
         accent,
@@ -176,6 +181,11 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       painted.cancel,
       painted.surface,
       "the action that cancels has the surface colour of the window",
+    );
+    assert.equal(
+      painted.text,
+      painted.chromeText,
+      "the confirmation has the text colour of the window chrome",
     );
 
     await page.locator(`${DIALOG} [data-fix-all-confirm]`).click();
