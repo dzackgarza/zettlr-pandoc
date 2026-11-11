@@ -38,7 +38,7 @@ import {
   systemAppLang,
 } from "./get-config-template";
 import { showOnboardingWindow } from "./onboarding-window";
-import { consolidateRootPaths } from "./root-paths";
+import { consolidateRootPaths, rootPathsOnDisk } from "./root-paths";
 
 const ZETTLR_VERSION = app.getVersion();
 
@@ -364,19 +364,9 @@ export default class ConfigProvider extends ProviderContract {
     this.config.app.openWorkspaces = [...new Set(this.config.app.openWorkspaces)];
 
     // Check for the existence of the files and folders
-    for (const file of this.config.app.openFiles) {
-      if (!isFile(file)) {
-        const idx = this.config.app.openFiles.indexOf(file);
-        this.config.app.openFiles.splice(idx, 1);
-      }
-    }
-
-    for (const workspace of this.config.app.openWorkspaces) {
-      if (!isDir(workspace)) {
-        const idx = this.config.app.openWorkspaces.indexOf(workspace);
-        this.config.app.openWorkspaces.splice(idx, 1);
-      }
-    }
+    const onDisk = rootPathsOnDisk(this.config.app);
+    this.config.app.openFiles = onDisk.openFiles;
+    this.config.app.openWorkspaces = onDisk.openWorkspaces;
 
     // Now sort the paths.
     this.sortPaths();
