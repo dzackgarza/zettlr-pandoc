@@ -72,6 +72,7 @@ interface ErrorWindow {
 describe("Project export", function () {
   let root: string;
   let scripts: string;
+  let macroHome: string;
   let fsal: FSAL;
   let assets: AssetsProvider;
   let services: ProjectExportServices;
@@ -184,6 +185,15 @@ describe("Project export", function () {
       cslStyle: absentStyle,
     });
 
+    // An export with pandoc reads the macro projection of the home directory.
+    macroHome = path.join(tmpdir(), ".pandoc");
+    const projection = path.join(macroHome, "templates", "css");
+    await mkdir(projection, { recursive: true });
+    await copyFile(
+      path.resolve("test", "fixtures", "mathjax-macros.json"),
+      path.join(projection, "mathjax-macros.json"),
+    );
+
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
     await mkdir(defaults, { recursive: true });
@@ -228,6 +238,7 @@ describe("Project export", function () {
     await assets.shutdown();
     await rm(root, { recursive: true });
     await rm(scripts, { recursive: true });
+    await rm(macroHome, { recursive: true });
   });
 
   it("shows the success message when each profile exported", async function () {
@@ -284,19 +295,9 @@ describe("Project export", function () {
 
   describe("with a TeX template in the settings of the Project", function () {
     let just: RecordingJust;
-    let macroHome: string;
 
     before(async function () {
       just = await installRecordingJust();
-
-      // An export reads the macro projection of the home directory.
-      macroHome = path.join(tmpdir(), ".pandoc");
-      const projection = path.join(macroHome, "templates", "css");
-      await mkdir(projection, { recursive: true });
-      await copyFile(
-        path.resolve("test", "fixtures", "mathjax-macros.json"),
-        path.join(projection, "mathjax-macros.json"),
-      );
     });
 
     beforeEach(async function () {
@@ -305,7 +306,6 @@ describe("Project export", function () {
 
     after(async function () {
       await just.remove();
-      await rm(macroHome, { recursive: true });
     });
 
     /** The arguments of each recipe run, in the order of the runs. */
