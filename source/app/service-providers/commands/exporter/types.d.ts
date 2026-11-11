@@ -14,6 +14,7 @@
  */
 
 import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
+import type { PandocRunnerOutput } from "../../../util/run-pandoc";
 
 // The exporter only needs a few properties, so by defining a minimal type here
 // we can make the exporter more flexible to accept also objects that only
@@ -99,12 +100,6 @@ export interface ExporterOutput {
    * you can, for example, open it.
    */
   targetFile: string;
-}
-
-export interface PandocRunnerOutput {
-  code: number;
-  stdout: string[];
-  stderr: string[];
 }
 
 /**

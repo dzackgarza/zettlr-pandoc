@@ -759,8 +759,10 @@ of an isolated instance are in the first comment of #132.
   (`NO_PORTAL_FILE_CHOOSER_VERSION`). Without the option the desktop portal
   of the session draws the dialog on the desktop of the author. A spec
   accepts a GTK file chooser with the mnemonic of its button (`alt+s` for
-  Save): the Return key does not accept it while the name field has the
-  focus (`e2e/refused-save.spec.ts`).
+  Save, `alt+o` for Open): the Return key does not accept it while the name
+  field has the focus (`e2e/refused-save.spec.ts`). A dialog that opens in a
+  folder of the fixture (`dialogPaths` of the configuration) shows no folder
+  of the author (`e2e/import-files.spec.ts`).
 - **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
   answers a native window. `e2e/support/panes.ts` gives the panes of a
   window and opens a document in one.
@@ -1129,6 +1131,32 @@ of an isolated instance are in the first comment of #132.
   `e2e/document-load-retry.spec.ts`, `e2e/search-replace.spec.ts`,
   `test/fsal-directory-metadata.spec.ts`,
   `e2e/folder-metadata-problems.spec.ts`.
+
+### 20. File import
+
+- **An import replaces no file.** `makeImport` (`commands/importer/index.ts`)
+  puts each file into the import folder under a name that the folder does
+  not have. `placeFile` (`importer/place-file.ts`) copies with
+  `COPYFILE_EXCL`, so a file that appears between the check and the copy is
+  kept too. A new import path places its files through `placeFile`.
+- **Each file has a result.** `makeImport` answers one `ImportOutcome` for
+  each file: `imported`, or a refusal with its cause (`destination-exists`,
+  `source-missing`, `unknown-format`, `no-profile`, `malformed-bundle`,
+  `conversion-failed`, `filesystem-error`). One refused file does not stop
+  the other files of the list.
+- **A bundle that would replace a file is refused whole.** A TextBundle or
+  a TextPack is refused when the folder has its note or one of its `assets/`
+  files. The importer examines every destination before the first copy. The
+  note of a TextPack takes the name of the pack file.
+- **Pandoc writes to a scratch directory.** `convertFile` gives pandoc a
+  directory of its own for the defaults file and the output, and places the
+  output afterwards. The cause of a failed conversion has the exit code and
+  the error output of pandoc. `runPandoc` (`app/util/run-pandoc.ts`) is the
+  one start of pandoc for the importer and the exporter.
+- **The command shows the refusals once.** `import-files` throws one error
+  that names each file that was not imported with its cause; the dispatcher
+  shows it (§15). A cancelled dialog is a choice and shows nothing.
+- **Proof:** `test/import-files.spec.ts`, `e2e/import-files.spec.ts`.
 
 ## Debugging entry points
 

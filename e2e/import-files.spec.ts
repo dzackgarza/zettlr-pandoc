@@ -54,7 +54,6 @@ const AUTHORED = "# Genus\n\nTwo forms of one genus.\n";
 const INCOMING = "# Spinor genus\n\nA form of one spinor genus.\n";
 const FOLDER_DIALOG_TITLE = "Import directory";
 const FILE_DIALOG_TITLE = "Open file";
-const IMPORT_MENU_ITEM = "menu.import_files";
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 
 describe("an import of files into a folder of the author", function () {
@@ -107,9 +106,12 @@ describe("an import of files into a folder of the author", function () {
   /** Runs the import command for one file of the sources directory. */
   async function importFile(name: string): Promise<void> {
     const editorPage = requireInitialized(page, "The editor page must be initialized");
-    await editorPage.evaluate((id) => {
-      window.ipc.send("menu-provider", { command: "click-menu-item", payload: id });
-    }, IMPORT_MENU_ITEM);
+    await editorPage.evaluate(() => {
+      window.ipc.send("menu-provider", {
+        command: "click-menu-item",
+        payload: "menu.import_files",
+      });
+    });
     await chooseShownFolder(`folder-dialog-${name}.png`);
     await chooseFile(name, `file-dialog-${name}.png`);
   }
