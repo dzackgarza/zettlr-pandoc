@@ -8,18 +8,18 @@
  * License:         GNU GPL v3
  *
  * Description:     Opens a document whose paragraphs hold inline math,
- *                  reference chips and wikilink chips beside punctuation, and
- *                  makes the window wider in steps of one pixel, so that the
- *                  end of a row passes each widget. At no width does a row
- *                  end between a widget and the punctuation that touches it
- *                  (#213).
+ *                  reference chips, wikilink chips and citations beside
+ *                  punctuation, and makes the window wider in steps of one
+ *                  pixel, so that the end of a row passes each widget. At no
+ *                  width does a row end between a widget and the punctuation
+ *                  that touches it (#213).
  *
  * END HEADER
  */
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright";
@@ -40,6 +40,15 @@ const REPEATS = 8;
 const MATH = "set $X$, map ($f$); ".repeat(REPEATS).trimEnd();
 const REFERENCES = "by @def:orbit, or (@def:orbit); ".repeat(REPEATS).trimEnd();
 const WIKILINKS = "in [[notes]], or ([[notes]]); ".repeat(REPEATS).trimEnd();
+const CITATIONS = "see [@Art91], or ([@Art91]); ".repeat(REPEATS).trimEnd();
+
+const LIBRARY = `@book{Art91,
+  author = {Artin, Michael},
+  title = {Algebra},
+  year = {1991},
+  publisher = {Prentice Hall},
+}
+`;
 
 const DOCUMENT = `# Line breaks beside widgets
 
@@ -53,6 +62,8 @@ ${MATH}
 ${REFERENCES}
 
 ${WIKILINKS}
+
+${CITATIONS}
 `;
 
 const BASE_WIDTH = 620;
@@ -63,7 +74,7 @@ const SWEEP = 240;
 // the editor are more than twice this apart.
 const ROW_TOLERANCE = 10;
 
-type Kind = "math" | "reference chip" | "wikilink chip";
+type Kind = "math" | "reference chip" | "wikilink chip" | "citation";
 
 interface Box {
   left: number;
@@ -79,7 +90,12 @@ interface Glyph {
 
 interface Instance {
   kind: Kind;
-  box: Box;
+  /**
+   * The part of the widget on its first row and the part on its last row. A
+   * citation is text, so its rows can be more than one.
+   */
+  start: Box;
+  end: Box;
   /** The character of the line before the widget, and the one after it. */
   before: Glyph | null;
   after: Glyph | null;
@@ -91,7 +107,7 @@ function readInstances(page: Page): Promise<Instance[]> {
   return page.evaluate(() => {
     const instances: Instance[] = [];
     const boxes = document.querySelectorAll<HTMLElement>(
-      ".cm-content mjx-container, .cm-content .reference-chip, .cm-content .wikilink-chip",
+      ".cm-content mjx-container, .cm-content .reference-chip, .cm-content .wikilink-chip, .cm-content .citeproc-citation",
     );
     for (const element of boxes) {
       const root = element.closest("[data-preview-source-length]");
@@ -131,15 +147,20 @@ function readInstances(page: Page): Promise<Instance[]> {
           box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
         });
       }
-      const rect = element.getBoundingClientRect();
+      const rects = element.getClientRects();
+      const first = rects[0];
+      const last = rects[rects.length - 1];
       instances.push({
         kind:
           element.tagName === "MJX-CONTAINER"
             ? "math"
             : element.classList.contains("reference-chip")
               ? "reference chip"
-              : "wikilink chip",
-        box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+              : element.classList.contains("wikilink-chip")
+                ? "wikilink chip"
+                : "citation",
+        start: { left: first.left, right: first.right, top: first.top, bottom: first.bottom },
+        end: { left: last.left, right: last.right, top: last.top, bottom: last.bottom },
         before: glyphs[0],
         after: glyphs[1],
       });
@@ -180,6 +201,12 @@ describe("assembled app: line breaks beside inline widgets", function () {
     });
     fixtureRoot = fixture.root;
     await writeFile(path.join(path.dirname(fixture.documentPath), "notes.md"), "# Notes\n", "utf8");
+    const libraryPath = path.join(fixture.root, "references.bib");
+    await writeFile(libraryPath, LIBRARY, "utf8");
+    const configPath = path.join(fixture.configDirectory, "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    config.export = { cslLibrary: libraryPath };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
     appProcess = app.appProcess;
     browser = app.browser;
@@ -187,7 +214,12 @@ describe("assembled app: line breaks beside inline widgets", function () {
     page = await findEditorPage(app.browser, this.timeout());
     await hideDevServerOverlay(page);
     await page.setViewportSize({ width: BASE_WIDTH, height: 900 });
-    for (const selector of ["mjx-container", ".reference-chip", ".wikilink-chip"]) {
+    for (const selector of [
+      "mjx-container",
+      ".reference-chip",
+      ".wikilink-chip",
+      ".citeproc-citation:not(.citeproc-pending):not(.error)",
+    ]) {
       await page
         .locator(`.cm-content ${selector}`)
         .nth(2 * REPEATS - 1)
@@ -212,7 +244,7 @@ describe("assembled app: line breaks beside inline widgets", function () {
 
   it("ends no row between a widget and the punctuation that touches it", async function () {
     const editorPage = requireInitialized(page, "The editor window must be open");
-    const kinds: Kind[] = ["math", "reference chip", "wikilink chip"];
+    const kinds: Kind[] = ["math", "reference chip", "wikilink chip", "citation"];
     const separated: string[] = [];
     const widgetsOnFirstRow = new Map<Kind, Set<number>>(kinds.map((kind) => [kind, new Set()]));
 
@@ -221,20 +253,23 @@ describe("assembled app: line breaks beside inline widgets", function () {
       const instances = await readInstances(editorPage);
       assert.deepEqual(
         kinds.map((kind) => instances.filter((instance) => instance.kind === kind).length),
-        [2 * REPEATS, 2 * REPEATS, 2 * REPEATS],
+        [2 * REPEATS, 2 * REPEATS, 2 * REPEATS, 2 * REPEATS],
         "each widget of the document is drawn",
       );
       const separatedBefore = separated.length;
       for (const kind of kinds) {
         const ofKind = instances.filter((instance) => instance.kind === kind);
-        const firstRow = ofKind.filter((instance) => onOneRow(instance.box, ofKind[0].box));
+        const firstRow = ofKind.filter((instance) => onOneRow(instance.start, ofKind[0].start));
         widgetsOnFirstRow.get(kind)?.add(firstRow.length);
         for (const instance of ofKind) {
-          for (const glyph of [instance.before, instance.after]) {
+          for (const [glyph, part] of [
+            [instance.before, instance.start],
+            [instance.after, instance.end],
+          ] as const) {
             if (glyph === null || glyph.char.trim() === "") {
               continue;
             }
-            if (!onOneRow(glyph.box, instance.box)) {
+            if (!onOneRow(glyph.box, part)) {
               separated.push(`${kind} and "${glyph.char}" at a window of ${String(width)} px`);
             }
           }
