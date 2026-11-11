@@ -18,6 +18,7 @@ import safeAssign from "@common/util/safe-assign";
 import type {
   DirDescriptor,
   DirectorySettings,
+  ProjectNavigationItem,
   ProjectSettings,
   SortMethod,
 } from "@dts/common/fsal";
@@ -129,11 +130,15 @@ async function parseQuartoManifest(dir: DirDescriptor): Promise<void> {
       kind: "quarto",
       path: manifestPath,
       bibliographies: quarto.bibliographies,
-      navigation: quarto.navigation.map((item) =>
-        item.kind === "chapter"
-          ? { kind: "chapter", path: chapter(item.path) }
-          : { kind: "part", title: item.title, chapters: item.chapters.map(chapter) },
-      ),
+      navigation: quarto.navigation.map((item): ProjectNavigationItem => {
+        if (item.kind === "chapter") {
+          return { kind: "chapter", path: chapter(item.path) };
+        }
+        const chapters = item.chapters.map(chapter);
+        return item.kind === "part"
+          ? { kind: "part", title: item.title, chapters }
+          : { kind: "part-file", path: chapter(item.path), chapters };
+      }),
     },
   };
 }

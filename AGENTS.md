@@ -222,6 +222,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   then names each chapter relative to the real path of the Project directory, so
   `ProjectSettings.files` holds directory-relative paths with `/` separators for a
   Quarto project and for a Zettlr one.
+- **A part is a title or a file.** Quarto reads the `part` of a book as a file when
+  a file is at that path beside the manifest, and as a title otherwise.
+  `quartoPartFile` (`quarto-project.ts`) makes the same decision. A part that a file
+  names is a `part-file` navigation item: the file is a document of the book, before
+  the chapters of its part in `ProjectSettings.files`, and its title is the title of
+  the part. The Book module shows it as a numbered row that opens the file.
 - **The Project of a file is the innermost Project directory that holds it.** A
   Project directory is a loaded directory with `settings.project`, at any depth of
   a workspace; the workspace store lists them (`projectDirectories`), and

@@ -988,16 +988,19 @@ function updateProjectInfo(): ProjectInfo | null {
             return entry === null ? [] : [entry];
           }
 
+          // The file of a part gives the part its title, and it is the first
+          // document of the part.
+          const partFile = item.kind === "part-file" ? makeChapter(item.path) : null;
+          const title =
+            item.kind === "part" ? item.title : (partFile?.displayName ?? pathBasename(item.path));
           return [
             {
               kind: "part" as const,
-              title: item.title,
-              chapters: item.chapters
-                .map(makeChapter)
-                .filter(
-                  (entry): entry is Extract<ProjectInfoNavigationItem, { kind: "chapter" }> =>
-                    entry !== null,
-                ),
+              title,
+              chapters: [partFile, ...item.chapters.map(makeChapter)].filter(
+                (entry): entry is Extract<ProjectInfoNavigationItem, { kind: "chapter" }> =>
+                  entry !== null,
+              ),
             },
           ];
         })

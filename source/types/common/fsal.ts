@@ -2,9 +2,15 @@
 
 import type { DocumentReferenceSnapshot } from "./references";
 
+/**
+ * One item of a book's chapter list. A part has a title, or it names a file
+ * that holds its title and its introduction (`part-file`); that file is a
+ * document of the book, before the chapters of the part.
+ */
 export type ProjectNavigationItem =
   | { kind: "chapter"; path: string }
-  | { kind: "part"; title: string; chapters: string[] };
+  | { kind: "part"; title: string; chapters: string[] }
+  | { kind: "part-file"; path: string; chapters: string[] };
 
 export type ProjectManifest =
   | { kind: "zettlr" }

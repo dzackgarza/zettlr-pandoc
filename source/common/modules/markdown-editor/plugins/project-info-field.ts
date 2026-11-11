@@ -25,6 +25,10 @@ export interface ProjectInfo {
   charCount: number; // Total characters across project files
 }
 
+/**
+ * A part that a file names has the title of that file, and the file is the
+ * first of its `chapters`.
+ */
 export type ProjectInfoNavigationItem =
   | { kind: "chapter"; path: string; displayName: string }
   | { kind: "part"; title: string; chapters: Array<{ path: string; displayName: string }> };

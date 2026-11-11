@@ -1,3 +1,4 @@
+import isFile from "@common/util/is-file";
 import type { ProjectNavigationItem } from "@dts/common/fsal";
 import path from "path";
 import YAML from "yaml";
@@ -9,7 +10,7 @@ const chapterPathSchema = z.string().min(1);
 const partSchema = z
   .object({
     part: z.string().min(1),
-    chapters: z.array(chapterPathSchema).min(1),
+    chapters: z.array(chapterPathSchema).optional(),
   })
   .passthrough();
 
@@ -31,6 +32,22 @@ export interface QuartoProject {
   files: string[];
   bibliographies: string[];
   navigation: ProjectNavigationItem[];
+}
+
+/**
+ * The file that the `part` value of a book part names, or undefined when the
+ * value is the title of the part. Quarto decides the same way: the value is a
+ * file when a file is at that path of the project, and text otherwise
+ * (`normalizeSidebarItem`, quarto-cli `src/project/project-config.ts`).
+ *
+ * @param   {string}  manifestDirectory  The directory holding _quarto.yml
+ * @param   {string}  part               The `part` value
+ *
+ * @return  {string|undefined}           The real path of the file
+ */
+export function quartoPartFile(manifestDirectory: string, part: string): string | undefined {
+  const file = resolveRealPath(path.resolve(manifestDirectory, part));
+  return isFile(file) ? file : undefined;
 }
 
 /**
@@ -59,11 +76,19 @@ export function parseQuartoProject(manifestDirectory: string, source: string): Q
       return { kind: "chapter", path: chapterFile(item) };
     }
 
-    return { kind: "part", title: item.part, chapters: item.chapters.map(chapterFile) };
+    // Quarto accepts a part with no chapters.
+    const chapters = (item.chapters ?? []).map(chapterFile);
+    const partFile = quartoPartFile(manifestDirectory, item.part);
+    return partFile === undefined
+      ? { kind: "part", title: item.part, chapters }
+      : { kind: "part-file", path: partFile, chapters };
   });
-  const files = navigation.flatMap((item) =>
-    item.kind === "chapter" ? [item.path] : item.chapters,
-  );
+  const files = navigation.flatMap((item) => {
+    if (item.kind === "chapter") {
+      return [item.path];
+    }
+    return item.kind === "part" ? item.chapters : [item.path, ...item.chapters];
+  });
   const bibliography = manifest.bibliography;
   const bibliographyPaths =
     bibliography === undefined

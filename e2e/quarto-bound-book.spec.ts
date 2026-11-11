@@ -46,6 +46,7 @@ const DRAWER = "#navigation-sidebar";
 const SECTION = (id: string): string => `${DRAWER} [data-section="${id}"]`;
 const SECTION_HEADER = (id: string): string => `${SECTION(id)} .chrome-section-trigger`;
 const CHAPTER = `${SECTION("book")} .quarto-book-outline button.chapter`;
+const PART_FILE = `${SECTION("book")} .quarto-book-outline button.part-file`;
 const POPOVER = "#dir-props";
 const MANIFEST_FIELD = `${POPOVER} #field-input-quarto-manifest`;
 const BINDING = path.join(".book", "_quarto.yml");
@@ -392,23 +393,30 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await activePage.locator(SECTION_HEADER("book")).click();
     await activePage.locator(`${SECTION("book")}[data-state="open"]`).waitFor({ timeout: 10_000 });
     await waitUntil(
-      async () => (await activePage.locator(CHAPTER).count()) === 3,
-      "the three chapters of the bound book",
+      async () => (await activePage.locator(CHAPTER).count()) === 4,
+      "the four chapters of the bound book",
     );
 
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
         .allTextContents(),
-      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table"],
+      ["Writing", "Bilinear and quadratic forms", "The Coble lattice table", "Discriminant forms"],
       "the manifest order, titled from the real files the assembly links to",
     );
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .book-part .chrome-group-label`)
         .allTextContents(),
-      ["Category theory", "Coble surfaces"],
-      "the manifest owns the parts",
+      ["Category theory", "Coble surfaces", "Lattice theory"],
+      "the manifest owns the parts; a part that a file names has the title of that file",
+    );
+    assert.deepEqual(
+      await activePage
+        .locator(`${SECTION("book")} .quarto-book-outline .chapter-number`)
+        .allTextContents(),
+      ["1", "2", "3", "4", "5"],
+      "the file of the third part is the fourth document of the book",
     );
     screenshots.set("book-module.png", await activePage.screenshot());
   });
@@ -425,14 +433,20 @@ describe("a workspace bound to the manifest in its assembly directory", function
     await omittedControl.selectOption("category-theory/index.md");
     await activePage.locator(`${SECTION("book")} [data-book-action="add-chapter"]`).click();
     await waitUntil(
-      async () => (await activePage.locator(CHAPTER).count()) === 4,
+      async () => (await activePage.locator(CHAPTER).count()) === 5,
       "the omitted category-theory index to join the book",
     );
     assert.deepEqual(
       await activePage
         .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
         .allTextContents(),
-      ["Writing", "Bilinear and quadratic forms", "Category theory", "The Coble lattice table"],
+      [
+        "Writing",
+        "Bilinear and quadratic forms",
+        "Category theory",
+        "The Coble lattice table",
+        "Discriminant forms",
+      ],
       "adding after the active nested chapter keeps the chapter in that part",
     );
 
@@ -501,6 +515,30 @@ describe("a workspace bound to the manifest in its assembly directory", function
     assert.match(manifest, /part: Surface appendix/);
     assert.match(manifest, /category-theory\/framework\/New-Section\.md/);
     screenshots.set("book-authoring.png", await activePage.screenshot());
+  });
+
+  it("opens the file that names a part from the row of that part", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(workspace, "workspace");
+    const partFile = path.join(root, "lattice-theory", "index.md");
+    const row = activePage.locator(PART_FILE).filter({ hasText: "Lattice theory" });
+
+    await row.click();
+
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(partFile)}]`)
+      .waitFor({ timeout: 20_000 });
+    await activePage.locator(`${PART_FILE}.chrome-row-active`).waitFor({ timeout: 10_000 });
+    assert.equal(
+      await activePage.locator(`${SECTION("book")} .quarto-book-outline .active`).count(),
+      1,
+      "the file of the part is the one active row of the book",
+    );
+    const membership = activePage.locator(
+      `.tree-item[data-path=${JSON.stringify(partFile)}] .project-membership.included.quarto`,
+    );
+    await membership.waitFor({ state: "visible", timeout: 20_000 });
+    screenshots.set("book-part-file.png", await activePage.screenshot());
   });
 
   it("opens a chapter at the file the symlink beside the manifest reaches", async function () {

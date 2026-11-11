@@ -85,7 +85,7 @@
       <p class="authoring-hint">{{ dragHint }}</p>
     </div>
     <nav>
-      <template v-for="(item, itemIndex) in outline.items" v-bind:key="item.kind === 'chapter' ? item.path : item.title">
+      <template v-for="(item, itemIndex) in outline.items" v-bind:key="item.kind === 'part' ? item.title : item.path">
         <button
           v-if="item.kind === 'chapter'"
           type="button"
@@ -100,14 +100,26 @@
           <span class="chrome-row-detail chapter-number">{{ item.position }}</span>
           <span class="chrome-row-label">{{ item.title }}</span>
         </button>
-        <section v-else-if="item.kind === 'part'" class="book-part">
+        <section v-else class="book-part">
           <h4
+            v-if="item.kind === 'part'"
             class="chrome-group-label part-drop-target"
             v-on:dragover.prevent
             v-on:drop.prevent="dropIntoPart(itemIndex)"
           >
             {{ item.title }}
           </h4>
+          <button
+            v-else
+            type="button"
+            v-bind:class="{ 'chrome-row': true, 'part-file': true, 'part-drop-target': true, active: item.path === activeItem, 'chrome-row-active': item.path === activeItem }"
+            v-on:click.stop="openPath(item.path, 1)"
+            v-on:dragover.prevent
+            v-on:drop.prevent="dropIntoPart(itemIndex)"
+          >
+            <span class="chrome-row-detail chapter-number">{{ item.position }}</span>
+            <span class="chrome-group-label">{{ item.title }}</span>
+          </button>
           <button
             v-for="chapter in item.chapters"
             v-bind:key="chapter.path"
@@ -148,7 +160,8 @@
  * License:         GNU GPL v3
  *
  * Description:     The Book module's body: a Quarto book's parts and
- *                  chapters in manifest order, with previous and next. The
+ *                  chapters in manifest order, with previous and next. A
+ *                  part that a file names is a row that opens that file. The
  *                  active document's headings are the Outline module's; no
  *                  heading row appears here.
  *
@@ -268,9 +281,10 @@ const activeRelativePath = computed(() => {
 const currentPartIndex = computed(() => {
   const active = activeRelativePath.value;
   if (active === undefined) return -1;
-  return props.navigation.findIndex(
-    (item) => item.kind === "part" && item.chapters.includes(active),
-  );
+  return props.navigation.findIndex((item) => {
+    if (item.kind === "chapter") return false;
+    return item.chapters.includes(active) || (item.kind === "part-file" && item.path === active);
+  });
 });
 
 watch(
@@ -547,7 +561,8 @@ body .quarto-book-outline {
     text-align: center;
   }
 
-  button.chapter {
+  button.chapter,
+  button.part-file {
     width: 100%;
     border: none;
     background: transparent;
@@ -558,6 +573,19 @@ body .quarto-book-outline {
     .chapter-number {
       flex: 0 0 2em;
       font-variant-numeric: tabular-nums;
+    }
+  }
+
+  // The file of a part: a row that opens it, with the type of a part label.
+  // The row has the space of the group above it; the label has none.
+  button.part-file {
+    margin-top: 8px;
+
+    .chrome-group-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
     }
   }
 }
