@@ -15,8 +15,9 @@
  *                  spec drives the real documents provider: the workspace
  *                  listing names the unreadable file and still lists the
  *                  other documents, the author can move the file aside, the
- *                  window is told when such a document opens, and a move of a
- *                  directory still carries the state of its documents (#178).
+ *                  window is told when such a document opens, no new state of
+ *                  that document replaces the file, and a move of a directory
+ *                  still carries the state of its documents (#178).
  *
  * END HEADER
  */
@@ -181,6 +182,30 @@ describe("A collaboration sidecar that the application cannot read", function ()
       told.map((entry) => [entry.filePath, entry.file]),
       [[genusPath, unreadableFile]],
       "the window is told one time which document opened without its state, and which file holds it",
+    );
+    assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
+  });
+
+  it("refuses a new annotation on the open document, and keeps the file", async function () {
+    await provider.getDocument(genusPath);
+    assert.equal(await provider.openFile(windowId, pane(), genusPath), true);
+    const id = provider.getDocumentId(genusPath);
+    assert.ok(id !== undefined, "a loaded document has an id");
+    const from = GENUS.indexOf("isometry");
+
+    const created = await provider.createAnnotation(
+      id,
+      "owner",
+      from,
+      from + "isometry".length,
+      "Give the bound of the class number.",
+      provider.annotationQueries.getAnnotations(id).generation,
+    );
+
+    assert.equal(
+      "ok" in created ? created.code : "created",
+      "PERSISTENCE_FAILED",
+      "the annotation is refused: its write would replace the state that the file holds",
     );
     assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
   });
