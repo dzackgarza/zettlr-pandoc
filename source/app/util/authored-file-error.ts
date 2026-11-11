@@ -19,7 +19,14 @@ import { trans } from "@common/i18n-main";
 import path from "path";
 import { systemErrorCause } from "./system-error-cause";
 
-export type AuthoredFileOperation = "read" | "save" | "rename" | "remove" | "restore" | "open";
+export type AuthoredFileOperation =
+  | "read"
+  | "save"
+  | "create"
+  | "rename"
+  | "remove"
+  | "restore"
+  | "open";
 
 function sentence(operation: AuthoredFileOperation, filePath: string, cause: string): string {
   const name = path.basename(filePath);
@@ -28,6 +35,8 @@ function sentence(operation: AuthoredFileOperation, filePath: string, cause: str
       return trans("Could not read %s: %s.", name, cause);
     case "save":
       return trans("Could not save %s: %s.", name, cause);
+    case "create":
+      return trans("Could not create %s: %s.", name, cause);
     case "rename":
       return trans("Could not rename %s: %s.", name, cause);
     case "remove":
@@ -52,6 +61,22 @@ export class AuthoredFileError extends Error {
 }
 
 /**
+ * The refusal of a creation or of a rename whose name a file has already.
+ * `takenPath` is the file that has the name.
+ */
+export function nameTaken(
+  operation: "create" | "rename",
+  filePath: string,
+  takenPath: string,
+): AuthoredFileError {
+  const cause =
+    operation === "create"
+      ? trans("a file of this name exists already")
+      : trans("%s exists already", path.basename(takenPath));
+  return new AuthoredFileError(operation, filePath, cause);
+}
+
+/**
  * The rejection handler of one filesystem call on a file of the author:
  * `await fs.unlink(file).catch(refusedAs("remove", file))`.
  */
@@ -60,6 +85,9 @@ export function refusedAs(
   filePath: string,
 ): (failure: NodeJS.ErrnoException) => never {
   return (failure) => {
+    if (operation === "create" && failure.code === "EEXIST") {
+      throw nameTaken("create", filePath, filePath);
+    }
     throw new AuthoredFileError(operation, filePath, systemErrorCause(failure));
   };
 }

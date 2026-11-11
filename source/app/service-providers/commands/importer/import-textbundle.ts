@@ -17,7 +17,8 @@ import ZIP from "adm-zip";
 import { app } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
-import { destinationExists, type ImportStep, isTaken, placeFile } from "./place-file";
+import { isTaken } from "../../fsal/util/fs";
+import { destinationExists, type ImportStep, placeFile } from "./place-file";
 
 /**
  * Imports a TextBundle: its text becomes `<name>.md` in the folder, and its

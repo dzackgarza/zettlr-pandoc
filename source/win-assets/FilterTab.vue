@@ -68,7 +68,7 @@
             ref="codeEditor"
             v-model="editorContents"
             :mode="'lua'"
-            :readonly="currentItem < 0"
+            :readonly="!editable"
           />
           <!-- This div is used to keep the buttons in a line despite the flex -->
           <div class="save-asset-file">
@@ -76,7 +76,7 @@
               :primary="true"
               :label="saveButtonLabel"
               :inline="true"
-              :disabled="currentItem < 0 || (codeEditor != null && codeEditor.isClean())"
+              :disabled="!editable || (codeEditor != null && codeEditor.isClean())"
               @click="saveFilter()"
             />
             <span
@@ -106,7 +106,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import CodeEditor from "@common/vue/CodeEditor.vue";
 import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
 import SelectableList, {
@@ -144,6 +144,9 @@ const currentFilterText = ref("");
 const editorContents = ref("");
 const lastLoadedEditorContents = ref("");
 const savingStatus = ref("");
+// Whether the editor holds the text of the selected filter. It does not
+// while the text loads, and when the file refused the read.
+const editable = ref(false);
 const availableFilters = ref<string[]>([]);
 const protectedFilters = ref<string[]>([]);
 
@@ -191,15 +194,16 @@ function updateAvailableFilters(selectAfterUpdate?: string): void {
     .invoke("assets-provider", { command: "list-filter" })
     .then((data) => {
       availableFilters.value = data;
-      if (
-        typeof selectAfterUpdate === "string" &&
-        availableFilters.value.includes(selectAfterUpdate)
-      ) {
-        currentItem.value = availableFilters.value.indexOf(selectAfterUpdate);
+      const selected =
+        selectAfterUpdate === undefined ? -1 : availableFilters.value.indexOf(selectAfterUpdate);
+      // A new selection loads its filter through the watcher.
+      if (selected !== -1 && selected !== currentItem.value) {
+        currentItem.value = selected;
+        return;
       }
       loadState();
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function getProtectedFilters(): void {
@@ -208,14 +212,21 @@ function getProtectedFilters(): void {
     .then((files) => {
       protectedFilters.value = files;
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
+}
+
+/** Puts a text into the editor as the saved text of the selected filter. */
+function showText(text: string): void {
+  editorContents.value = text;
+  codeEditor.value?.markClean();
+  lastLoadedEditorContents.value = text;
+  savingStatus.value = "";
 }
 
 function loadState(): void {
   if (availableFilters.value.length === 0) {
-    editorContents.value = "";
-    codeEditor.value?.markClean();
-    savingStatus.value = "";
+    showText("");
+    editable.value = false;
     currentFilterText.value = "";
     currentItem.value = -1;
     return; // No state to load, only an error to avoid
@@ -227,68 +238,80 @@ function loadState(): void {
     currentItem.value = 0;
   }
 
-  ipcRenderer
-    .invoke("assets-provider", {
-      command: "get-filter",
-      payload: {
-        filename: availableFilters.value[currentItem.value],
-      },
-    })
-    .then((data) => {
-      editorContents.value = data;
-      codeEditor.value?.markClean();
-      lastLoadedEditorContents.value = data;
-      savingStatus.value = "";
-      currentFilterText.value = availableFilters.value[currentItem.value];
-    })
-    .catch((err) => reportError(err));
+  const filename = availableFilters.value[currentItem.value];
+  const isSelected = (): boolean => availableFilters.value[currentItem.value] === filename;
+
+  ipcRenderer.invoke("assets-provider", { command: "get-filter", payload: { filename } }).then(
+    (data) => {
+      // The author selected another filter while this one loaded.
+      if (!isSelected()) {
+        return;
+      }
+      showText(data);
+      editable.value = true;
+      currentFilterText.value = filename;
+    },
+    (failure: Error) => {
+      // The window does not have the text of this filter. It shows no
+      // text of another filter, and it offers no save.
+      if (isSelected()) {
+        showText("");
+        editable.value = false;
+        currentFilterText.value = filename;
+      }
+      showRefusal(failure);
+    },
+  );
 }
 
 function saveFilter(): void {
+  if (!editable.value) {
+    return;
+  }
+
+  const contents = editorContents.value;
+  const saved = trans("Saved!");
   savingStatus.value = trans("Saving …");
 
   ipcRenderer
     .invoke("assets-provider", {
       command: "set-filter",
-      payload: {
-        filename: availableFilters.value[currentItem.value],
-        contents: editorContents.value,
+      payload: { filename: availableFilters.value[currentItem.value], contents },
+    })
+    .then(
+      () => {
+        lastLoadedEditorContents.value = contents;
+        if (editorContents.value !== contents) {
+          savingStatus.value = trans("Unsaved changes");
+          return;
+        }
+        codeEditor.value?.markClean();
+        savingStatus.value = saved;
+        setTimeout(() => {
+          if (savingStatus.value === saved) {
+            savingStatus.value = "";
+          }
+        }, 1000);
       },
-    })
-    .then(() => {
-      lastLoadedEditorContents.value = editorContents.value;
-      savingStatus.value = trans("Saved!");
-      setTimeout(() => {
-        savingStatus.value = "";
-      }, 1000);
-    })
-    .catch((err) => {
-      savingStatus.value = trans("Could not save changes");
-      reportError(err);
-    });
+      (failure: Error) => {
+        savingStatus.value = trans("Unsaved changes");
+        showRefusal(failure);
+      },
+    );
 }
 
 function addFilter(newName?: string): void {
-  // Adds a filter with empty contents and a generic default name
-  if (newName !== undefined) {
-    newName = newName.trim();
-  }
-  if (newName === undefined || newName === "") {
-    newName = ensureUniqueName("filter");
-  }
+  // A filter without a name of the author gets a name that no filter has.
+  // A name of the author that a filter has is refused: no filter is replaced.
+  const typed = newName === undefined ? "" : newName.trim();
+  const filename = typed === "" ? freeFilterName("filter") : typed;
 
   ipcRenderer
-    .invoke("assets-provider", {
-      command: "set-filter",
-      payload: {
-        filename: newName,
-        contents: "",
-      },
+    .invoke("assets-provider", { command: "create-filter", payload: { filename } })
+    .then((created) => {
+      updateAvailableFilters(created);
     })
-    .then(() => {
-      updateAvailableFilters(newName);
-    })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function removeFilter(idx: number): void {
@@ -305,65 +328,45 @@ function removeFilter(idx: number): void {
     .then(() => {
       updateAvailableFilters();
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function renameFilter(): void {
-  let newVal = currentFilterText.value;
-
-  // Sanitise the name
-  newVal = newVal.replace(/[^a-zA-Z0-9_-]/g, "-");
-
-  newVal = ensureUniqueName(newVal);
+  // The field shows the name with its extension, so the author can write
+  // the new name with it. The rest of the name is sanitised.
+  const typed = currentFilterText.value.trim().replace(/\.lua$/i, "");
+  const newName = `${typed.replace(/[^a-zA-Z0-9_-]/g, "-")}.lua`;
 
   ipcRenderer
     .invoke("assets-provider", {
       command: "rename-filter",
-      payload: {
-        oldName: availableFilters.value[currentItem.value],
-        newName: newVal,
-      },
+      payload: { oldName: availableFilters.value[currentItem.value], newName },
     })
     .then(() => {
-      updateAvailableFilters(newVal);
+      updateAvailableFilters(newName);
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 /**
- * Ensures that the given name candidate describes a unique filter filename
- *
- * @param   {string}  candidate  The candidate's name
- *
- * @return  {string}             The candidate's name, with a number suffix (-X) if necessary
+ * A name that no filter of the list has: the candidate, or the candidate
+ * with the first free number.
  */
-function ensureUniqueName(candidate: string): string {
-  if (!availableFilters.value.includes(candidate)) {
-    return candidate; // No duplicate detected
+function freeFilterName(candidate: string): string {
+  const isTaken = (name: string): boolean => availableFilters.value.includes(`${name}.lua`);
+  if (!isTaken(candidate)) {
+    return candidate;
   }
 
   let count = 1;
-  const match = /-(\d+)$/.exec(candidate);
-
-  if (match !== null) {
-    // The candidate name already ends with a number-suffix --> extract it
-    count = parseInt(match[1], 10);
-    candidate = candidate.substring(0, candidate.length - match[1].length - 1);
-  }
-
-  while (availableFilters.value.includes(candidate + "-" + String(count))) {
+  while (isTaken(`${candidate}-${count}`)) {
     count++;
   }
-
-  return candidate + "-" + count;
+  return `${candidate}-${count}`;
 }
 
 function openFilterDirectory(): void {
-  ipcRenderer
-    .invoke("assets-provider", {
-      command: "open-filter-directory",
-    })
-    .catch((err) => reportError(err));
+  ipcRenderer.invoke("assets-provider", { command: "open-filter-directory" }).catch(showRefusal);
 }
 </script>
 

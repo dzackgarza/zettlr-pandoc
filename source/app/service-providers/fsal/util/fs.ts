@@ -40,3 +40,16 @@ export async function pathExists(
     throw err;
   }
 }
+
+/** Whether a file, a folder or a link is at a path. */
+export async function isTaken(candidate: string): Promise<boolean> {
+  return await fs.lstat(candidate).then(
+    () => true,
+    (failure: NodeJS.ErrnoException) => {
+      if (failure.code === "ENOENT") {
+        return false;
+      }
+      throw failure;
+    },
+  );
+}

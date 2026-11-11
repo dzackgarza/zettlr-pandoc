@@ -52,7 +52,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
-import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import CodeEditor from "@common/vue/CodeEditor.vue";
 import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
 import ZtrAdmonition from "source/common/vue/ZtrAdmonition.vue";
@@ -104,49 +104,65 @@ onUnmounted(() => {
 });
 
 function loadSource(): void {
-  ipcRenderer
-    .invoke("assets-provider", { command: "get-snippets-source" })
-    .then((source) => {
+  ipcRenderer.invoke("assets-provider", { command: "get-snippets-source" }).then(
+    (source) => {
       sourcePath.value = source.filePath;
       editorContents.value = source.contents;
       codeEditor.value?.markClean();
       savingStatus.value = "";
-    })
-    .catch((err) => {
-      savingStatus.value = trans("Could not load snippet file");
-      reportError(err);
-    });
+    },
+    (failure: Error) => {
+      // The window does not have the text of the file. It shows none, and
+      // it offers no save.
+      sourcePath.value = "";
+      editorContents.value = "";
+      codeEditor.value?.markClean();
+      savingStatus.value = "";
+      showRefusal(failure);
+    },
+  );
 }
 
 function saveSnippet(): void {
+  if (sourcePath.value === "") {
+    return;
+  }
+
+  const contents = editorContents.value;
+  const saved = trans("Saved!");
   savingStatus.value = trans("Saving …");
 
   ipcRenderer
-    .invoke("assets-provider", {
-      command: "set-snippets-source",
-      payload: { contents: editorContents.value },
-    })
-    .then((result) => {
-      if (!result.ok) {
-        savingStatus.value = result.error;
-        return;
-      }
-      savingStatus.value = trans("Saved!");
-      codeEditor.value?.markClean();
-      setTimeout(() => {
-        savingStatus.value = "";
-      }, 1000);
-    })
-    .catch((err) => {
-      savingStatus.value = trans("Could not save changes");
-      reportError(err);
-    });
+    .invoke("assets-provider", { command: "set-snippets-source", payload: { contents } })
+    .then(
+      (result) => {
+        // A text that is no snippet file is not written. The status has
+        // the diagnostic of the parser.
+        if (!result.ok) {
+          savingStatus.value = result.error;
+          return;
+        }
+        if (editorContents.value !== contents) {
+          savingStatus.value = trans("Unsaved changes");
+          return;
+        }
+        codeEditor.value?.markClean();
+        savingStatus.value = saved;
+        setTimeout(() => {
+          if (savingStatus.value === saved) {
+            savingStatus.value = "";
+          }
+        }, 1000);
+      },
+      (failure: Error) => {
+        savingStatus.value = trans("Unsaved changes");
+        showRefusal(failure);
+      },
+    );
 }
 
 function openSnippetsFile(): void {
-  ipcRenderer
-    .invoke("assets-provider", { command: "open-snippets-file" })
-    .catch((err) => reportError(err));
+  ipcRenderer.invoke("assets-provider", { command: "open-snippets-file" }).catch(showRefusal);
 }
 </script>
 

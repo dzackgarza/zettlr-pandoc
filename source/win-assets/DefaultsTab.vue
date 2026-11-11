@@ -44,12 +44,12 @@
             class="asset-input-button"
             :label="renameFileLabel"
             :inline="true"
-            :disabled="visibleItems.length === 0 || currentFilename === visibleItems[currentItem].name"
+            :disabled="visibleItems[currentItem] === undefined || currentFilename === visibleItems[currentItem].name"
             @click="renameFile()"
           />
         </p>
         <ZtrAdmonition
-          v-if="visibleItems.length > 0 && visibleItems[currentItem].isProtected === true"
+          v-if="visibleItems[currentItem]?.isProtected === true"
           type="warning"
           class="asset-admonition"
         >
@@ -62,9 +62,9 @@
           {{ invalidProfileWarning }}
         </ZtrAdmonition>
         <CodeEditor
-          ref="code-editor"
           v-model="editorContents"
           :mode="'yaml'"
+          :readonly="!editable"
         />
         <!-- This div is used to keep the buttons in a line despite the flex -->
         <div class="save-asset-file">
@@ -73,6 +73,7 @@
             :primary="true"
             :label="saveButtonLabel"
             :inline="true"
+            :disabled="!editable"
             @click="saveDefaultsFile()"
           />
           <span
@@ -103,7 +104,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
-import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import CodeEditor from "@common/vue/CodeEditor.vue";
 import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
 import SelectableList, {
@@ -141,6 +142,10 @@ const currentFilename = ref("");
 const editorContents = ref("");
 const lastLoadedEditorContents = ref("");
 const savingStatus = ref("");
+// Whether the editor holds the text of the selected profile. It does not
+// while the text loads, when the file refused the read, and when the list
+// has no profile.
+const editable = ref(false);
 const availableDefaultsFiles = ref<PandocProfileMetadata[]>([]);
 
 const protectedProfileWarning = trans(
@@ -194,15 +199,13 @@ const listItems = computed<SelectableListItem[]>(() => {
   });
 });
 
-watch(toRef(props, "which"), function () {
-  // Reset to the beginning of the list. The watcher right below will pick
-  // that change up and re-load the defaults.
-  currentItem.value = -1;
-  loadDefaultsForState().catch((e) => reportError(e));
+watch(toRef(props, "which"), () => {
+  // The other tab shows its first profile.
+  showItem(0);
 });
 
 watch(currentItem, () => {
-  loadDefaultsForState().catch((e) => reportError(e));
+  loadDefaultsForState();
 });
 
 watch(editorContents, () => {
@@ -213,11 +216,9 @@ watch(editorContents, () => {
   }
 });
 
-retrieveDefaultsFiles()
-  .then(() => {
-    loadDefaultsForState().catch((e) => reportError(e));
-  })
-  .catch((e) => reportError(e));
+listProfiles()
+  .then(() => showItem(currentItem.value))
+  .catch(showRefusal);
 
 const offCallback = ipcRenderer.on("shortcut", (event, shortcut) => {
   if (shortcut === "save-file") {
@@ -228,108 +229,160 @@ onUnmounted(() => {
   offCallback();
 });
 
-async function loadDefaultsForState(): Promise<void> {
+/** Puts a text into the editor as the saved text of the selected profile. */
+function showText(text: string): void {
+  lastLoadedEditorContents.value = text;
+  editorContents.value = text;
+  savingStatus.value = "";
+}
+
+/**
+ * Selects the profile at an index of the visible list and loads its text
+ * one time: a new selection loads through the watcher.
+ */
+function showItem(index: number): void {
+  const last = visibleItems.value.length - 1;
+  const selected = Math.max(0, Math.min(index, last));
+  if (currentItem.value === selected) {
+    loadDefaultsForState();
+  } else {
+    currentItem.value = selected;
+  }
+}
+
+/** The index of a profile in the visible list, and the selected index for a name that is not there. */
+function indexOfProfile(name: string | undefined): number {
+  const index = visibleItems.value.findIndex((file) => file.name === name);
+  return index === -1 ? currentItem.value : index;
+}
+
+function loadDefaultsForState(): void {
   // Loads a defaults file from main for the given state (tab + list item)
-  if (availableDefaultsFiles.value.length === 0) {
+  const selected = visibleItems.value[currentItem.value];
+  if (selected === undefined) {
+    showText("");
+    editable.value = false;
     currentFilename.value = "";
     return;
   }
 
-  if (visibleItems.value.length === 0) {
-    return;
-  }
+  const filename = selected.name;
+  const isSelected = (): boolean => visibleItems.value[currentItem.value]?.name === filename;
 
-  if (currentItem.value < 0) {
-    currentItem.value = 0;
-  }
-
-  if (currentItem.value >= visibleItems.value.length) {
-    currentItem.value = visibleItems.value.length - 1;
-  }
-
-  const name = visibleItems.value[currentItem.value].name;
-
-  const data = await ipcRenderer.invoke("assets-provider", {
-    command: "get-defaults-file",
-    payload: { filename: name },
-  });
-
-  lastLoadedEditorContents.value = data;
-  editorContents.value = data;
-  currentFilename.value = visibleItems.value[currentItem.value].name;
+  ipcRenderer
+    .invoke("assets-provider", { command: "get-defaults-file", payload: { filename } })
+    .then(
+      (data) => {
+        // The author selected another profile while this one loaded.
+        if (!isSelected()) {
+          return;
+        }
+        showText(data);
+        editable.value = true;
+        currentFilename.value = filename;
+      },
+      (failure: Error) => {
+        // The window does not have the text of this profile. It shows no
+        // text of another profile, and it offers no save.
+        if (isSelected()) {
+          showText("");
+          editable.value = false;
+          currentFilename.value = filename;
+        }
+        showRefusal(failure);
+      },
+    );
 }
 
-async function retrieveDefaultsFiles(): Promise<void> {
-  // NOTE: Here we are explicitly requesting only the defaults files, not
-  // all export profiles, because here it's only about modifying them (which
-  // does not work with the custom profiles the exporter provides).
-  const files: PandocProfileMetadata[] = await ipcRenderer.invoke("assets-provider", {
+/**
+ * Reads the list of the defaults files again. The list has only the files
+ * of the defaults directory, not the custom profiles of the exporter: this
+ * view edits files.
+ */
+async function listProfiles(): Promise<void> {
+  availableDefaultsFiles.value = await ipcRenderer.invoke("assets-provider", {
     command: "list-defaults",
   });
+}
 
-  availableDefaultsFiles.value = files;
-  if (currentItem.value < 0) {
-    currentItem.value = 0;
-  }
-
-  await loadDefaultsForState();
+/** Reads the list again and shows a profile: the one of a name, or the selected one. */
+function retrieveDefaultsFiles(select?: string): void {
+  listProfiles()
+    .then(() => showItem(indexOfProfile(select)))
+    .catch(showRefusal);
 }
 
 function saveDefaultsFile(): void {
+  const selected = visibleItems.value[currentItem.value];
+  if (!editable.value || selected === undefined) {
+    return;
+  }
+
+  const filename = selected.name;
+  const contents = editorContents.value;
+  const saved = trans("Saved!");
   savingStatus.value = trans("Saving …");
 
-  const name = visibleItems.value[currentItem.value].name;
-
   ipcRenderer
-    .invoke("assets-provider", {
-      command: "set-defaults-file",
-      payload: { filename: name, contents: editorContents.value },
-    })
-    .then(async () => {
-      lastLoadedEditorContents.value = editorContents.value;
-      savingStatus.value = trans("Saved!");
-      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
-      setTimeout(() => {
-        savingStatus.value = "";
-      }, 1000);
-    })
-    .catch((err) => {
-      savingStatus.value = trans("Could not save changes");
-      reportError(err);
-    });
+    .invoke("assets-provider", { command: "set-defaults-file", payload: { filename, contents } })
+    .then(
+      () => {
+        lastLoadedEditorContents.value = contents;
+        if (editorContents.value === contents) {
+          savingStatus.value = saved;
+          setTimeout(() => {
+            if (savingStatus.value === saved) {
+              savingStatus.value = "";
+            }
+          }, 1000);
+        } else {
+          savingStatus.value = trans("Unsaved changes");
+        }
+        // The saved text can change what the list says of the profile, and
+        // whether this tab has it. The editor keeps its text while the
+        // profile keeps its place.
+        listProfiles()
+          .then(() => {
+            const index = indexOfProfile(filename);
+            if (index !== currentItem.value || visibleItems.value[index]?.name !== filename) {
+              showItem(index);
+            }
+          })
+          .catch(showRefusal);
+      },
+      (failure: Error) => {
+        savingStatus.value = trans("Unsaved changes");
+        showRefusal(failure);
+      },
+    );
 }
 
 function newDefaultsFile(newName?: string): void {
-  // Create a new defaults file
+  // A profile without a name of the author gets a name with the time. A
+  // name of the author that a profile has is refused: no profile is
+  // replaced.
+  const typed = newName === undefined ? "" : newName.trim();
   const dt = DateTime.now();
-  const timeString = dt.toISOTime({
-    includeOffset: false,
-    suppressMilliseconds: true,
-  });
-
-  if (newName !== undefined) {
-    newName = newName.trim();
-  }
-
-  if (newName === undefined || newName === "") {
-    newName = `New Profile ${dt.toISODate()} ${timeString}.yaml`;
-  }
+  const timeString = dt.toISOTime({ includeOffset: false, suppressMilliseconds: true });
+  const filename = typed === "" ? `New Profile ${dt.toISODate()} ${timeString}.yaml` : typed;
 
   ipcRenderer
     .invoke("assets-provider", {
-      command: "set-defaults-file",
-      payload: { filename: newName, contents: NEW_DEFAULTS_FILE_CONTENTS },
+      command: "create-defaults-file",
+      payload: { filename, contents: NEW_DEFAULTS_FILE_CONTENTS },
     })
-    .then(async () => {
-      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
-      const idx = visibleItems.value.findIndex((val) => val.name === newName);
-      currentItem.value = idx;
-      console.log({ newName, idx });
+    .then((created) => {
+      retrieveDefaultsFiles(created);
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function renameFile(): void {
+  const selected = visibleItems.value[currentItem.value];
+  if (selected === undefined) {
+    return;
+  }
+
   let newName = currentFilename.value;
   if (!newName.endsWith(".yaml") && !newName.endsWith(".yml")) {
     newName += ".yaml";
@@ -337,17 +390,15 @@ function renameFile(): void {
 
   newName = sanitizeFilename(newName, { replacement: "-" });
 
-  const oldName = visibleItems.value[currentItem.value].name;
-
   ipcRenderer
     .invoke("assets-provider", {
       command: "rename-defaults-file",
-      payload: { oldName, newName },
+      payload: { oldName: selected.name, newName },
     })
-    .then(async () => {
-      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
+    .then(() => {
+      retrieveDefaultsFiles(newName);
     })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function removeFile(idx: number): void {
@@ -358,22 +409,15 @@ function removeFile(idx: number): void {
   const filename = visibleItems.value[idx].name;
 
   ipcRenderer
-    .invoke("assets-provider", {
-      command: "remove-defaults-file",
-      payload: { filename },
+    .invoke("assets-provider", { command: "remove-defaults-file", payload: { filename } })
+    .then(() => {
+      retrieveDefaultsFiles();
     })
-    .then(async () => {
-      await retrieveDefaultsFiles(); // Always make sure to pull in any changes
-    })
-    .catch((err) => reportError(err));
+    .catch(showRefusal);
 }
 
 function openDefaultsDirectory(): void {
-  ipcRenderer
-    .invoke("assets-provider", {
-      command: "open-defaults-directory",
-    })
-    .catch((err) => reportError(err));
+  ipcRenderer.invoke("assets-provider", { command: "open-defaults-directory" }).catch(showRefusal);
 }
 </script>
 

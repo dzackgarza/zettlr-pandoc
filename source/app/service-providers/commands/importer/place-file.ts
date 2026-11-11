@@ -49,19 +49,6 @@ export function filesystemFailure(failure: NodeJS.ErrnoException): ImportStep {
   return { result: "filesystem-error", cause: systemErrorCause(failure) };
 }
 
-/** Whether a file, a folder or a link is at a path. */
-export async function isTaken(candidate: string): Promise<boolean> {
-  return await fs.lstat(candidate).then(
-    () => true,
-    (failure: NodeJS.ErrnoException) => {
-      if (failure.code === "ENOENT") {
-        return false;
-      }
-      throw failure;
-    },
-  );
-}
-
 /**
  * Copies a file to a destination in the import folder. The copy replaces
  * nothing: when something is at the destination, the file system refuses

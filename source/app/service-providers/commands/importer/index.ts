@@ -25,14 +25,9 @@ import path from "path";
 import YAML from "yaml";
 import { runPandoc } from "../../../util/run-pandoc";
 import { systemErrorCause } from "../../../util/system-error-cause";
+import { isTaken } from "../../fsal/util/fs";
 import { importTextbundle, importTextpack } from "./import-textbundle";
-import {
-  destinationExists,
-  filesystemFailure,
-  type ImportStep,
-  isTaken,
-  placeFile,
-} from "./place-file";
+import { destinationExists, filesystemFailure, type ImportStep, placeFile } from "./place-file";
 
 /** The result of the import of one file of a list. */
 export type ImportOutcome = ImportStep & { source: string };

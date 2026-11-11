@@ -41,7 +41,7 @@ interface Refusal {
 }
 
 /** The refusal that a call rejects with. */
-async function refusalOf(call: Promise<boolean | void>): Promise<Refusal> {
+async function refusalOf(call: Promise<string | void>): Promise<Refusal> {
   const failure = await call.then(
     (value) => assert.fail(`the call answered ${String(value)} and did not reject`),
     (reason: Error) => reason,
@@ -115,6 +115,20 @@ describe("The files of the Assets window", function () {
       assert.equal(await readFile(file, "utf8"), FILTER);
     });
 
+    it("creates a filter under a name that no filter has", async function () {
+      const created = await assets.createFilter("sections");
+
+      assert.equal(created, "sections.lua");
+      assert.equal(await readFile(path.join(filters, "sections.lua"), "utf8"), "");
+    });
+
+    it("rejects the creation of a filter under the name of another filter", async function () {
+      const refusal = await refusalOf(assets.createFilter("numbering"));
+
+      assert.deepEqual(refusal, { operation: "create", filePath: file });
+      assert.equal(await readFile(file, "utf8"), FILTER);
+    });
+
     it("rejects a removal that the directory refuses", async function () {
       await chmod(filters, 0o500);
 
@@ -168,6 +182,20 @@ describe("The files of the Assets window", function () {
 
       assert.deepEqual(refusal, { operation: "rename", filePath: file });
       assert.equal(await readFile(other, "utf8"), OTHER_PROFILE);
+      assert.equal(await readFile(file, "utf8"), PROFILE);
+    });
+
+    it("creates a profile under a name that no profile has", async function () {
+      const created = await assets.createDefaultsFile("Notes", OTHER_PROFILE);
+
+      assert.equal(created, "Notes.yaml");
+      assert.equal(await readFile(path.join(defaults, "Notes.yaml"), "utf8"), OTHER_PROFILE);
+    });
+
+    it("rejects the creation of a profile under the name of another profile", async function () {
+      const refusal = await refusalOf(assets.createDefaultsFile("Handout.yaml", OTHER_PROFILE));
+
+      assert.deepEqual(refusal, { operation: "create", filePath: file });
       assert.equal(await readFile(file, "utf8"), PROFILE);
     });
 

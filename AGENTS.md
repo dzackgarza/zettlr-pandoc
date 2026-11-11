@@ -973,6 +973,9 @@ of an isolated instance are in the first comment of #132.
   `.ztr-directory`, the custom CSS, a defaults file, a Lua filter, the snippets
   and the user dictionary. A new path that writes such a file calls it, and
   does not call `fs.writeFile`.
+- **A creation replaces no file.** `createTextFile` (the same module) makes a
+  file only at a path that no file has, in one step of the filesystem. A new
+  path that makes a file under a name of the author calls it.
 - **A reader gets whole text.** The text goes to a temporary file beside the
   target, and a rename puts that file in the place of the target
   (`write-file-atomic`). A reader gets the text before the write or the text
@@ -1157,6 +1160,40 @@ of an isolated instance are in the first comment of #132.
   that names each file that was not imported with its cause; the dispatcher
   shows it (§15). A cancelled dialog is a choice and shows nothing.
 - **Proof:** `test/import-files.spec.ts`, `e2e/import-files.spec.ts`.
+
+### 21. Authored files outside the workspaces
+
+- **What they are.** The Assets window edits files of the author that no
+  workspace holds: the Lua filters (`userData/lua-filter`), the export and
+  import profiles (`userData/defaults`), the snippets file and
+  `userData/custom.css`. `AssetsProvider` and `CssProvider` own them.
+- **A refused operation rejects.** A read, a save, a creation, a rename, a
+  removal and the restore of a protected file reject with an
+  `AuthoredFileError` (`app/util/authored-file-error.ts`), whose message
+  names the file and the cause. No method answers `false` for a failure.
+  `refusedAs(operation, path)` is the rejection handler of one filesystem
+  call.
+- **No file is replaced.** A new filter or profile is made through
+  `create-filter` or `create-defaults-file`; a name that a file has is
+  refused. A rename to the name of another file is refused, and both files
+  stay. `set-filter` and `set-defaults-file` save the text of a file that the
+  window read.
+- **The window shows each refusal once.** A request of a window that is no
+  application command shows its rejection through `showRefusal`
+  (`common/util/show-refusal.ts`). The dispatcher shows the failure of a
+  command (§15).
+- **A window saves only text that it read.** A tab of the Assets window has
+  the state `editable`: the editor holds the text of the selected file. It is
+  false while the text loads and after a refused read; the editor is then
+  empty and read-only (`CodeEditor.readonly`), and the tab sends no save,
+  also for the save shortcut. A refused save leaves the text in the editor
+  with the status "Unsaved changes".
+- **An open that the desktop refuses rejects.** `openPath`
+  (`app/util/open-path.ts`) reads the answer of `shell.openPath`, which is
+  the words of the refusal. New code that opens a path with the desktop
+  calls it.
+- **Proof:** `test/assets-authored-files.spec.ts`,
+  `e2e/assets-refused-save.spec.ts`.
 
 ## Debugging entry points
 

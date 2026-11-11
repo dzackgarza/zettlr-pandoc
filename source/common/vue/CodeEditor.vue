@@ -39,7 +39,7 @@ import {
 import { lua } from "@codemirror/legacy-modes/mode/lua";
 import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
-import { EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, lineNumbers } from "@codemirror/view";
 import {
   jsonDiagnosticProvider,
@@ -78,6 +78,14 @@ const wrapperId = ref<string>("code-editor");
 
 const cleanFlag = ref<boolean>(true);
 
+// The compartment of the extensions that decide whether the author can
+// change the text.
+const readOnly = new Compartment();
+
+function readOnlyExtensions(readonly: boolean): Extension {
+  return [EditorState.readOnly.of(readonly), EditorView.editable.of(!readonly)];
+}
+
 function getExtensions(mode: SupportedLanguage): Extension[] {
   const { editor, shortcuts } = configStore.config;
 
@@ -94,6 +102,7 @@ function getExtensions(mode: SupportedLanguage): Extension[] {
 
   const extensions = [
     zettlrKeymap(shortcutList, editor),
+    readOnly.of(readOnlyExtensions(props.readonly === true)),
     search({ top: true }),
     codeFolding(),
     foldGutter(),
@@ -196,6 +205,12 @@ watch(toRef(props, "modelValue"), () => {
   if (cmInstance.state.doc.toString() !== props.modelValue) {
     setContents(props.modelValue, props.mode);
   }
+});
+
+watch(toRef(props, "readonly"), () => {
+  cmInstance.dispatch({
+    effects: readOnly.reconfigure(readOnlyExtensions(props.readonly === true)),
+  });
 });
 
 onMounted(() => {

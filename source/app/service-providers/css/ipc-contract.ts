@@ -26,6 +26,6 @@ export type CSSProviderIPCContract = {
   };
   "set-custom-css": {
     request: { css: string };
-    response: boolean;
+    response: void;
   };
 };

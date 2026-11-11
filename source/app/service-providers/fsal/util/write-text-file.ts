@@ -2,7 +2,7 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Text file write
+ * Contains:        Text file write and creation
  * CVM-Role:        Utility
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
@@ -21,6 +21,9 @@
  *                  place when the file is a link, has other names, belongs to
  *                  another user or a group that it cannot set, or is in a
  *                  directory where it cannot create a file.
+ *
+ *                  The creation of a new file is a call of its own. It
+ *                  never replaces a file.
  *
  * END HEADER
  */
@@ -70,4 +73,14 @@ export async function writeTextFile(filePath: string, contents: string): Promise
   } else {
     await fs.writeFile(filePath, contents, "utf-8");
   }
+}
+
+/**
+ * Creates the file at `filePath` with `contents`. The creation replaces
+ * nothing: when something is at the path, the file system refuses the call
+ * with `EEXIST` (the flag `wx`, `O_CREAT | O_EXCL` of open(2)), also when it
+ * arrived after a check of the caller.
+ */
+export async function createTextFile(filePath: string, contents: string): Promise<void> {
+  await fs.writeFile(filePath, contents, { encoding: "utf-8", flag: "wx" });
 }

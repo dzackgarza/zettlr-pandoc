@@ -14,6 +14,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import { ProgrammaticallyOpenableWindows } from "@providers/commands/open-aux-window";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
@@ -75,13 +76,7 @@ export function getSnippetsFields(): PreferencesFieldset[] {
               .invoke("assets-provider", {
                 command: "open-phrase-completions-directory",
               })
-              // shell.openPath resolves with an error message, or '' on success.
-              .then((error) => {
-                if (error !== "") {
-                  reportError("Could not open the phrase completion dictionary", error);
-                }
-              })
-              .catch((err) => reportError(err));
+              .catch(showRefusal);
           },
         },
       ],
