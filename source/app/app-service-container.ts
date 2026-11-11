@@ -14,6 +14,7 @@
  */
 
 import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
+import { installedTranslationDirectories } from "@common/util/enum-lang-files";
 import { installErrorReporter } from "@common/util/error-reporting";
 import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
@@ -117,7 +118,7 @@ export class AppServiceContainer {
     installErrorReporter((message, details) => {
       this._logProvider.error(message, details);
     });
-    this._configProvider = new ConfigProvider(this._logProvider);
+    this._configProvider = new ConfigProvider(this._logProvider, installedTranslationDirectories());
     this._lrtProvider = new LongRunningTaskProvider(this._logProvider); // Not really crucial, but the FSAL needs access
     this._fsal = new FSAL(this._logProvider, this._configProvider, this._lrtProvider);
 

@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { reportError } from "@common/util/error-reporting";
+import { reportError, stderrError } from "@common/util/error-reporting";
 import errorToString from "@common/util/error-to-string";
 import { getCLIArgument, handleExitArguments } from "@providers/cli-provider";
 import { app, crashReporter } from "electron";
@@ -74,8 +74,10 @@ crashReporter.start({ uploadToServer: false });
 // A helper process (GPU, utility, a renderer's zygote child) that exits leaves
 // no other record. See: https://www.electronjs.org/docs/latest/api/app#event-child-process-gone
 app.on("child-process-gone", (_event, { type, reason, exitCode, name }) => {
+  // Electron names only some process types (a utility process, a plugin).
+  const helper = name === undefined ? `type=${type}` : `type=${type} name=${name}`;
   logUnhandledProcessError(
-    `[Application] Child process gone: type=${type} name=${name ?? "-"} reason=${reason} exitCode=${exitCode}`,
+    `[Application] Child process gone: ${helper} reason=${reason} exitCode=${exitCode}`,
   );
 });
 
@@ -99,7 +101,8 @@ let restartRequested = false;
 
 function failLifecycle(error: Error): void {
   const details = errorToString(error);
-  console.error(`[Application] Lifecycle failed\n${details}`);
+  // The packaged app logs to a file only; the launcher reads stderr.
+  stderrError(`[Application] Lifecycle failed\n${details}`);
   reportError(details);
   app.exit(1);
 }

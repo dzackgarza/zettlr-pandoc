@@ -24,21 +24,19 @@ import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
 import { rangeInPreviewSuppression } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
 import { type SyntaxNodeRef } from "@lezer/common";
 import { pandocLatexMathEnvironmentAtStart } from "@lezer/markdown";
-import { previewConfig } from "../util/configuration";
+import { previewConfiguration } from "../util/configuration";
 
 export interface MathHost {
   render(equation: string, element: HTMLElement, mode: "display" | "inline"): void;
   contextMenu?(view: EditorView, equation: string, coordinates: { x: number; y: number }): void;
 }
 
-export const mathHost = Facet.define<MathHost, MathHost | null>({
-  combine: (hosts) => hosts[0] ?? null,
-});
+export const mathHost = Facet.define<MathHost>();
 
 function requireMathHost(state: EditorState): MathHost {
-  const host = state.facet(mathHost);
-  if (host === null) throw new Error("Math rendering requires a host.");
-  return host;
+  const hosts = state.facet(mathHost);
+  if (hosts.length === 0) throw new Error("Math rendering requires a host.");
+  return hosts[0];
 }
 
 class MathWidget extends WidgetType implements RowJoinedWidget {
@@ -126,7 +124,7 @@ function shouldHandleNode(node: SyntaxNodeRef): boolean {
 }
 
 function createWidget(state: EditorState, node: SyntaxNodeRef): MathWidget | undefined {
-  const includeAdjacent = state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = previewConfiguration(state).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   // Don't render if the selection is within the node
   if (rangeInPreviewSuppression(state, node.from, node.to, includeAdjacent)) {

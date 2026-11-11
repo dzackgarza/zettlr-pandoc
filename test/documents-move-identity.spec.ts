@@ -129,8 +129,10 @@ describe("Documents-provider identity of a moved document", function () {
 
   /** Fires the before-quit listener and waits until the provider asks for the quit. */
   async function requestQuit(): Promise<number> {
-    const listeners = appListeners.get("before-quit") ?? [];
-    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
+    const listeners = appListeners.get("before-quit");
+    if (listeners?.length !== 1) {
+      assert.fail("the provider registers the one before-quit listener");
+    }
     const event = { prevented: false, preventDefault: () => {} };
     event.preventDefault = () => {
       event.prevented = true;

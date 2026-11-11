@@ -14,8 +14,8 @@
  * END HEADER
  */
 
-import { strict as assert } from "node:assert";
-import type ConfigProvider from "source/app/service-providers/config";
+import path from "node:path";
+import ConfigProvider from "source/app/service-providers/config";
 import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
@@ -27,43 +27,14 @@ import LongRunningTaskProvider from "source/app/service-providers/long-running-t
  */
 export async function bootFsal(root: string): Promise<FSAL> {
   const log = new LogProvider();
-  const shown = { showInFilemanager: true };
-  const values = {
-    app: { openFiles: [], openWorkspaces: [root] },
-    fileManager: { ignoreRules: [], showIgnored: true, filters: { include: [] } },
-    files: {
-      images: shown,
-      pdf: shown,
-      msoffice: shown,
-      openOffice: shown,
-      dataFiles: shown,
-      dotFiles: shown,
-    },
-    attachmentExtensions: [],
-    zkn: { idRE: "(\\d{14})" },
-    system: { deleteOnFail: false },
-    watchdog: { activatePolling: false, stabilityThreshold: 1000 },
-  };
-  // The FSAL reads the whole configuration, and these values by their key.
-  const byKey = new Map<string, boolean | number>([
-    ["system.deleteOnFail", values.system.deleteOnFail],
-    ["watchdog.activatePolling", values.watchdog.activatePolling],
-    ["watchdog.stabilityThreshold", values.watchdog.stabilityThreshold],
-  ]);
-  const config = {
-    get: (key?: string) => {
-      if (key === undefined) {
-        return values;
-      }
-      const value = byKey.get(key);
-      assert.notEqual(value, undefined, `the FSAL read the configuration key ${key}`);
-      return value;
-    },
-    on: (_event: "update", _listener: (which?: string) => void) => {},
-    newVersionDetected: () => false,
-  };
+  // The real provider with the values of the configuration template. It is
+  // not booted: a boot reads the configuration file and opens the onboarding
+  // window.
+  const config = new ConfigProvider(log, [path.resolve("static", "lang")]);
+  config.set("app.openWorkspaces", [root]);
+  config.set("fileManager.showIgnored", true);
 
-  const fsal = new FSAL(log, config as unknown as ConfigProvider, new LongRunningTaskProvider(log));
+  const fsal = new FSAL(log, config, new LongRunningTaskProvider(log));
   await fsal.boot();
   return fsal;
 }

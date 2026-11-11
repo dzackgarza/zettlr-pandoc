@@ -11,21 +11,10 @@
  * END HEADER
  */
 
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { readFileSync } from "fs";
 import { JSDOM } from "jsdom";
 import Module from "module";
-import { tmpdir } from "os";
 import path from "path";
-
-// A spec makes its temporary files below os.tmpdir(), which reads TMPDIR at
-// each call, and the processes that a spec starts inherit TMPDIR. One
-// directory holds every temporary file of the run, and the run removes it at
-// exit. A spec that removes nothing leaves nothing behind.
-const runTemporaryDirectory = mkdtempSync(path.join(tmpdir(), "zettlr-unit-tests-"));
-process.env.TMPDIR = runTemporaryDirectory;
-process.on("exit", () => {
-  rmSync(runTemporaryDirectory, { recursive: true, force: true });
-});
 
 // Webpack loads the icon SVGs as string literals (asset/source in
 // webpack.rules.js); mirror that contract for specs importing modules that

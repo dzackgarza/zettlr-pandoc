@@ -163,7 +163,11 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
       }
     });
     const after = await rendererCpuTimes();
-    const busy = [...after].filter(([pid, cpuTime]) => cpuTime - (before.get(pid) ?? 0) > 0.5);
+    // A renderer of the first reading only: the page ran before that reading.
+    const busy = [...after].filter(([pid, cpuTime]) => {
+      const earlier = before.get(pid);
+      return earlier !== undefined && cpuTime - earlier > 0.5;
+    });
     assert.equal(
       busy.length,
       1,

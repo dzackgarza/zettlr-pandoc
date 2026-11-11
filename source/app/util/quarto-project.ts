@@ -76,8 +76,8 @@ export function parseQuartoProject(manifestDirectory: string, source: string): Q
       return { kind: "chapter", path: chapterFile(item) };
     }
 
-    // Quarto accepts a part with no chapters.
-    const chapters = (item.chapters ?? []).map(chapterFile);
+    // Quarto accepts a part without the `chapters` key: a part of no chapters.
+    const chapters = item.chapters === undefined ? [] : item.chapters.map(chapterFile);
     const partFile = quartoPartFile(manifestDirectory, item.part);
     return partFile === undefined
       ? { kind: "part", title: item.part, chapters }

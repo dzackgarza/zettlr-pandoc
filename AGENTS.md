@@ -330,7 +330,8 @@ Zettlr starts it on one diagram.
   a session id and the authored source. `TikzEditSessions`
   (`source/app/util/tikz-edit-session.ts`) writes the source to
   `diagram.tikz` or `diagram.tikzcd` in a temporary session directory and
-  starts `visual-tikz-editor --macros <central MathJax projection>
+  starts the command of the setting `tikz.visualEditorCommand`
+  (`visual-tikz-editor`) with `--macros <central MathJax projection>
   --resources <document directory> <file>` as a detached process group. The
   session directory is also the `XDG_STATE_HOME` of that editor, so the
   recovery record of the editor stays apart from the user's own. The file
@@ -673,6 +674,11 @@ of an isolated instance are in the first comment of #132.
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
   workstation. Run one at a time.
+- **A function that runs in the page declares no named function.** tsx
+  compiles a spec with esbuild's `keepNames`, which puts a call of the helper
+  `__name` around each function that a `const` or a declaration names. The
+  page has no such helper, so `page.evaluate` stops with `__name is not
+  defined`. A callback that is an argument has no name and is not wrapped.
 - **A native message box is not a page.** Playwright does not see it. A spec
   finds the box by its title with `xdotool`, captures it with ImageMagick
   `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The

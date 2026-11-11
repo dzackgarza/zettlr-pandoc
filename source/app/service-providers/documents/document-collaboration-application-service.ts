@@ -2288,7 +2288,7 @@ export class CollaborationApplicationService {
     documentId: string;
     actor: AnnotationActor;
     expectedAnnotationGeneration: number;
-    scope?: "acted" | "open";
+    scope: "acted" | "open";
   }): Promise<TextAnnotation[] | AnnotationFailure> {
     return this.commitAnnotationMutationOnOpenOrClosedDocument(input.documentId, (context) =>
       prepareAnnotationBulkResolution({

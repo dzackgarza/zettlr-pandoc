@@ -103,8 +103,7 @@ import TutorialOpen from "./tutorial-open";
 import UpdateProjectProperties from "./update-project-properties";
 import UpdateUserDictionary from "./update-user-dictionary";
 import WorkspaceSort from "./ws-sort";
-import type ZettlrCommand from "./zettlr-command";
-import type { CommandWireValue } from "./zettlr-command";
+import type { CommandWireValue, DispatchedCommand } from "./zettlr-command";
 
 export const commands = [
   DirBindQuartoManifest,
@@ -436,7 +435,7 @@ const CALLER_SHOWS_FAILURE: ReadonlySet<string> = new Set([
 ]);
 
 export default class CommandProvider extends ProviderContract {
-  private readonly _commands: ZettlrCommand[];
+  private readonly _commands: DispatchedCommand[];
   /** The errors that the windows already show: a command can run a command. */
   private readonly _shownFailures = new WeakSet<Error>();
 
@@ -575,9 +574,7 @@ export default class CommandProvider extends ProviderContract {
     } else {
       // ELSE: If the command has not yet been found, try to run one of the
       // bigger commands
-      const cmd: ZettlrCommand | undefined = this._commands.find((elem: ZettlrCommand) =>
-        elem.respondsTo(command),
-      );
+      const cmd = this._commands.find((elem) => elem.respondsTo(command));
       if (cmd !== undefined) {
         // Return the return value of the command, if there is any
         return await cmd.run(command, payload);

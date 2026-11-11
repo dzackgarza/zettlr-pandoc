@@ -27,12 +27,20 @@ export interface LangFileMetadata {
 }
 
 /**
+ * The directories of the translations in the packaged app: the translations
+ * of the user, and then the ones that the build puts beside the bundle.
+ */
+export function installedTranslationDirectories(): string[] {
+  return [path.join(app.getPath("userData"), "/lang"), path.join(__dirname, "/lang")];
+}
+
+/**
  * Enumerates all language files available to load, based on the given search paths.
  * @param  {Array} [paths=[]] An array of paths to search for. Optional.
  * @return {Array}       An array containing metadata for all found files.
  */
 export default function enumLangFiles(
-  paths = [path.join(app.getPath("userData"), "/lang"), path.join(__dirname, "/lang")],
+  paths = installedTranslationDirectories(),
 ): Array<Candidate & LangFileMetadata> {
   // Now go through all search paths and enumerate all available files of interest
   const candidates = [];

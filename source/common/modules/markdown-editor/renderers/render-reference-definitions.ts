@@ -375,7 +375,12 @@ class ReferenceDefinitionBadges {
         continue;
       }
       const end = doc.lineAt(group.range.to).to;
-      keysByLineEnd.set(end, [...(keysByLineEnd.get(end) ?? []), group.key]);
+      const keys = keysByLineEnd.get(end);
+      if (keys === undefined) {
+        keysByLineEnd.set(end, [group.key]);
+      } else {
+        keys.push(group.key);
+      }
     }
 
     const rooms = new Map<string, BadgeRoom>();
@@ -404,13 +409,20 @@ class ReferenceDefinitionBadges {
     const { from, to } = this.view.viewport;
 
     // The anchors that renderers drew, by the start of the line they are on.
-    const anchors = new Map<number, HTMLElement>();
-    for (const anchor of this.view.contentDOM.querySelectorAll<HTMLElement>(`.${ANCHOR_CLASS}`)) {
-      anchors.set(doc.lineAt(this.view.posAtDOM(anchor)).from, anchor);
+    // Each anchor starts with no group on it; a group adds its key and its size.
+    const anchors = new Map<
+      number,
+      { element: HTMLElement; keys: string[]; width: number; height: number }
+    >();
+    for (const element of this.view.contentDOM.querySelectorAll<HTMLElement>(`.${ANCHOR_CLASS}`)) {
+      anchors.set(doc.lineAt(this.view.posAtDOM(element)).from, {
+        element,
+        keys: [],
+        width: 0,
+        height: 0,
+      });
     }
 
-    const rooms = new Map<HTMLElement, AnchorRoom>();
-    const keysOfAnchor = new Map<HTMLElement, string[]>();
     const placements = this.groups.map((group) => {
       if (group.range.to < from || group.range.to > to) {
         return { group, position: null };
@@ -420,22 +432,18 @@ class ReferenceDefinitionBadges {
       const size = group.dom.getBoundingClientRect();
       const anchor = anchors.get(line.from);
       if (anchor !== undefined) {
-        const place = anchor.getBoundingClientRect();
-        // The groups before this one on the same anchor.
-        const before = rooms.get(anchor) ?? { keys: "", width: 0, height: 0 };
-        const keys = [...(keysOfAnchor.get(anchor) ?? []), group.key];
-        keysOfAnchor.set(anchor, keys);
-        rooms.set(anchor, {
-          keys: lineKeys(keys),
-          width: before.width + Math.ceil(size.width) + BADGE_GAP,
-          height: Math.max(before.height, Math.ceil(size.height)),
-        });
+        const place = anchor.element.getBoundingClientRect();
+        // The width of the groups before this one on the same anchor.
+        const widthBefore = anchor.width;
+        anchor.keys.push(group.key);
+        anchor.width = widthBefore + Math.ceil(size.width) + BADGE_GAP;
+        anchor.height = Math.max(anchor.height, Math.ceil(size.height));
         // Text before the anchor gets a space; the edge of a row does not.
-        const gap = startsRow(anchor, place) ? 0 : BADGE_GAP;
+        const gap = startsRow(anchor.element, place) ? 0 : BADGE_GAP;
         return {
           group,
           position: {
-            left: place.left - base.left + before.width + gap,
+            left: place.left - base.left + widthBefore + gap,
             top: place.top - base.top,
           },
         };
@@ -451,6 +459,13 @@ class ReferenceDefinitionBadges {
       const left = Math.min(coords.right - base.left + BADGE_GAP, base.width - size.width);
       return { group, position: { left: Math.max(0, left), top: coords.top - base.top } };
     });
+    // The anchors that hold a group, with the room of their groups.
+    const rooms = new Map<HTMLElement, AnchorRoom>();
+    for (const { element, keys, width, height } of anchors.values()) {
+      if (keys.length > 0) {
+        rooms.set(element, { keys: lineKeys(keys), width, height });
+      }
+    }
     return { placements, rooms };
   }
 

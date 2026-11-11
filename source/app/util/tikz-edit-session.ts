@@ -23,9 +23,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-/** The command that `just install-desktop` of visual-tikz-editor links into `~/.local/bin`. */
-export const VISUAL_TIKZ_EDITOR_COMMAND = "visual-tikz-editor";
-
 /** The editor saves with one write; this delay lets that write finish. */
 const SAVE_SETTLE_MS = 50;
 
@@ -39,6 +36,8 @@ const SAVE_SETTLE_MS = 50;
 const KILL_GRACE_MS = 2_000;
 
 export interface TikzEditContext {
+  /** The command that starts the editor: a name on the PATH of the app, or a path. */
+  editorCommand: string;
   /** The MathJax macro projection that the editor's Quiver view uses. */
   macrosPath: string;
   /** The directory from which image paths and TeX inputs resolve; "" for none. */
@@ -135,7 +134,7 @@ export class TikzEditSessions {
     // The editor is a process group of its own: its window process starts a
     // file host, and one signal to the group stops both.
     const child = spawn(
-      VISUAL_TIKZ_EDITOR_COMMAND,
+      context.editorCommand,
       ["--macros", context.macrosPath, ...resources, file],
       { detached: true, stdio: "ignore", env: { ...process.env, ...environment } },
     );
@@ -147,7 +146,7 @@ export class TikzEditSessions {
     });
     if (failure !== null) {
       return failure.code === "ENOENT"
-        ? { outcome: "editor-missing", command: VISUAL_TIKZ_EDITOR_COMMAND }
+        ? { outcome: "editor-missing", command: context.editorCommand }
         : { outcome: "launch-failed", code: failure.code ?? failure.message };
     }
 

@@ -328,6 +328,23 @@ const EDITOR_STATES_SET: AnnotationSet = {
   ],
 };
 
+/** The text of an element of the scene, without the space around it. */
+function trimmedText(element: Element): string {
+  const text = element.textContent;
+  if (text === null) {
+    throw new Error(`<${element.localName}> has no text`);
+  }
+  return text.trim();
+}
+
+function requireAttribute(element: Element, name: string): string {
+  const value = element.getAttribute(name);
+  if (value === null) {
+    throw new Error(`<${element.localName}> has no attribute ${name}`);
+  }
+  return value;
+}
+
 function requireElement<T extends Element>(root: ParentNode, selector: string): T {
   const element = root.querySelector<T>(selector);
   if (element === null) {
@@ -821,9 +838,9 @@ async function mount(): Promise<void> {
       unreadableFileNotices: [
         ...panelHost.querySelectorAll<HTMLElement>(".annotation-unreadable-file"),
       ].map((element) => ({
-        file: element.dataset.unreadableFile ?? "",
-        reason: element.querySelector(".annotation-notice-reason")?.textContent?.trim() ?? "",
-        action: element.querySelector("button")?.textContent?.trim() ?? "",
+        file: requireAttribute(element, "data-unreadable-file"),
+        reason: trimmedText(requireElement(element, ".annotation-notice-reason")),
+        action: trimmedText(requireElement(element, "button")),
       })),
       toasts: [...document.querySelectorAll<HTMLElement>(".zettlr-toast")].map(
         (element) => element.textContent?.trim() ?? "",
@@ -853,17 +870,13 @@ async function mount(): Promise<void> {
       showProposalLabel:
         thread?.querySelector(".annotation-action-show-proposal")?.textContent?.trim() ?? "",
       proposalCardText: thread?.querySelector(".proposal-action-card")?.textContent ?? null,
-      messageTimes: [...paneHost.querySelectorAll(".annotation-message-time")].map(
-        (element) => element.textContent?.trim() ?? "",
-      ),
-      messageTexts: [...paneHost.querySelectorAll(".annotation-message-text")].map(
-        (element) => element.textContent?.trim() ?? "",
-      ),
+      messageTimes: [...paneHost.querySelectorAll(".annotation-message-time")].map(trimmedText),
+      messageTexts: [...paneHost.querySelectorAll(".annotation-message-text")].map(trimmedText),
       annotationRowSummaries: [
         ...panelHost.querySelectorAll(
           ".annotation-workspace-annotation .annotation-workspace-summary",
         ),
-      ].map((element) => element.textContent?.trim() ?? ""),
+      ].map(trimmedText),
       chunkControlCount: paneHost.querySelectorAll(".suggestion-chunk").length,
       acceptCount: paneHost.querySelectorAll(".suggestion-chunk .suggestion-decision.accept")
         .length,

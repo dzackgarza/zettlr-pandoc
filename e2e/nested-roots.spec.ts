@@ -167,7 +167,7 @@ describe("a book inside a book, and a file beside the workspace", function () {
     );
     assert.deepEqual(
       {
-        classes: ((await membership.getAttribute("class")) ?? "").split(/\s+/).sort(),
+        classes: await membership.evaluate((element) => [...element.classList].sort()),
         position: await membership.locator(".membership-position").allTextContents(),
       },
       { classes: ["included", "project-membership", "quarto"], position: ["2"] },

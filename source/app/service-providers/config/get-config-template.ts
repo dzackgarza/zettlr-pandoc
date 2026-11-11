@@ -157,6 +157,8 @@ export type ConfigOptions = {
     dataDir: string;
     /** Optional centralized figure source tree; empty uses FIGURES_SOURCE_DIR or ~/.pandoc/figures. */
     figuresDir: string;
+    /** The command that starts Visual TikZ Editor: a name on the PATH of the app, or a path. */
+    visualEditorCommand: string;
   };
   export: {
     dir: "temp" | "cwd" | "ask";
@@ -353,17 +355,17 @@ export type ConfigPath = Paths<ConfigOptions>;
 export type ConfigValue<P extends ConfigPath> = Get<ConfigOptions, P>;
 
 /**
- * The installed translation that best matches the system locale, or en-US
- * when the system locale is not a language tag.
+ * The translation of these directories that best matches the system locale,
+ * or en-US when the system locale is not a language tag.
  */
-export function systemAppLang(): string {
+export function systemAppLang(translationDirectories: string[]): string {
   const locale = app.getLocale();
   // bcp-47 sets the language to null for a tag that it cannot parse.
   const language = bcp47.parse(locale).language;
   if (language === null || language === undefined) {
     return "en-US";
   }
-  return getLanguageFile(locale).tag;
+  return getLanguageFile(locale, translationDirectories).tag;
 }
 
 /**
@@ -387,6 +389,8 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     tikz: {
       dataDir: "",
       figuresDir: "",
+      // `just install-desktop` of visual-tikz-editor links this name into `~/.local/bin`.
+      visualEditorCommand: "visual-tikz-editor",
     },
     window: {
       // Only use native window appearance by default on macOS. If this value

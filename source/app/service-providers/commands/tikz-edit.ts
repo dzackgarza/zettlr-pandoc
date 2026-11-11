@@ -68,6 +68,7 @@ export default class TikzEdit extends ZettlrCommand {
     }
 
     const context = {
+      editorCommand: this._app.config.get().tikz.visualEditorCommand,
       macrosPath: canonicalMathJaxMacrosPath(app.getPath("home")),
       resourcesDirectory: arg.docPath === "" ? "" : path.dirname(arg.docPath),
     };

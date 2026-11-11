@@ -664,7 +664,10 @@ describe("TikZ editor widgets (issue #14)", function () {
     respond = { ok: false, kind: "toolchain-probe-failed", tool: "pdflatex", code: "EACCES" };
     const view = createEditor();
     await waitFor(() => view.dom.querySelector(".tikz-error") !== null, "the failed-probe box");
-    const text = view.dom.querySelector<HTMLElement>(".tikz-error")?.textContent ?? "";
+    const text = view.dom.querySelector<HTMLElement>(".tikz-error")?.textContent;
+    if (typeof text !== "string") {
+      assert.fail("the failed-probe box has text");
+    }
     assert.ok(text.includes("pdflatex"), `the tool whose check failed is named: ${text}`);
     assert.ok(text.includes("EACCES"), `the errno that ended the check is shown: ${text}`);
     assert.ok(

@@ -149,8 +149,10 @@ describe("Documents-provider close that cannot write the collaboration state", f
 
   /** Fires the before-quit listener. Answers whether the provider stopped the quit. */
   function requestQuit(): boolean {
-    const listeners = appListeners.get("before-quit") ?? [];
-    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
+    const listeners = appListeners.get("before-quit");
+    if (listeners?.length !== 1) {
+      assert.fail("the provider registers the one before-quit listener");
+    }
     let stopped = false;
     listeners[0]({
       preventDefault: () => {

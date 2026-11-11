@@ -107,9 +107,13 @@ function preferencesPage(browser: Browser): Page | undefined {
 /** The ids of the inputs whose fields the Preferences window marks as not loaded. */
 function markedFields(preferences: Page): Promise<string[]> {
   return preferences.evaluate(() =>
-    [...document.querySelectorAll(".file-problem")].map(
-      (mark) => mark.closest(".form-control")?.querySelector("input")?.id ?? "",
-    ),
+    [...document.querySelectorAll(".file-problem")].map((mark) => {
+      const input = mark.closest(".form-control")?.querySelector("input");
+      if (input === null || input === undefined) {
+        throw new Error("A problem mark is not in the field of an input");
+      }
+      return input.id;
+    }),
   );
 }
 

@@ -22,7 +22,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { TikzEditSessions, VISUAL_TIKZ_EDITOR_COMMAND } from "source/app/util/tikz-edit-session";
+import { TikzEditSessions } from "source/app/util/tikz-edit-session";
 
 // A program that stands for the editor: it ignores SIGTERM, as a process
 // whose signal handler does not return does. It writes its process id beside
@@ -45,7 +45,7 @@ describe("TikZ external editor processes", function () {
 
   let scratch: string;
   let diagram: string;
-  let pathBefore: string | undefined;
+  let editorCommand: string;
   let ended: Array<[string, number | null]>;
   let sessions: TikzEditSessions;
 
@@ -53,12 +53,8 @@ describe("TikZ external editor processes", function () {
     scratch = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-edit-process-"));
     diagram = path.join(scratch, "diagram.tikz");
     await writeFile(diagram, "\\begin{tikzpicture}\n\\draw (0,0) -- (1,0);\n\\end{tikzpicture}\n");
-    await writeFile(path.join(scratch, VISUAL_TIKZ_EDITOR_COMMAND), EDITOR_THAT_IGNORES_SIGTERM, {
-      mode: 0o755,
-    });
-    // The app starts the editor by its command name.
-    pathBefore = process.env.PATH;
-    process.env.PATH = `${scratch}${path.delimiter}${pathBefore ?? ""}`;
+    editorCommand = path.join(scratch, "editor");
+    await writeFile(editorCommand, EDITOR_THAT_IGNORES_SIGTERM, { mode: 0o755 });
     ended = [];
     sessions = new TikzEditSessions({
       source: () => {},
@@ -69,7 +65,6 @@ describe("TikZ external editor processes", function () {
   });
 
   afterEach(async function () {
-    process.env.PATH = pathBefore;
     // The editor leads its process group. An editor that the app left
     // running ends here.
     if (existsSync(`${diagram}.pid`)) {
@@ -88,6 +83,7 @@ describe("TikZ external editor processes", function () {
 
   async function startEditor(id: string): Promise<number> {
     const outcome = await sessions.openFile(id, diagram, {
+      editorCommand,
       macrosPath: path.join(scratch, "mathjax-macros.json"),
       resourcesDirectory: "",
     });

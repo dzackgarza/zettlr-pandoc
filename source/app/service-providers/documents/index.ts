@@ -595,7 +595,11 @@ export interface ReattachAnnotationIpcInput {
 export interface BulkAnnotationIpcInput {
   path: string;
   expectedAnnotationGeneration: number;
-  scope?: "acted" | "open";
+}
+
+export interface BulkAnnotationResolutionIpcInput extends BulkAnnotationIpcInput {
+  /** The open annotations that the batch takes: those an agent marked acted, or all. */
+  scope: "acted" | "open";
 }
 
 /**
@@ -656,7 +660,7 @@ export type DocumentIpcHandlers = {
     input: AnnotationLifecycleIpcInput,
   ) => TextAnnotation | AnnotationFailure;
   "documents:resolve-acted-annotations": (
-    input: BulkAnnotationIpcInput,
+    input: BulkAnnotationResolutionIpcInput,
   ) => { resolved: TextAnnotation[] } | AnnotationFailure;
   "documents:clear-resolved-annotations": (
     input: BulkAnnotationIpcInput,
@@ -3850,7 +3854,7 @@ current contents from the editor somewhere else, and restart the application.`,
   private async _resolveActedAnnotations(
     documentId: string,
     expectedAnnotationGeneration: number,
-    scope?: "acted" | "open",
+    scope: "acted" | "open",
   ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
     const result = await this._reviewApplication.resolveActedAnnotations({
       documentId,

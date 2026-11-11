@@ -159,15 +159,18 @@ export default class ConfigProvider extends ProviderContract {
 
   /**
    * Preset sane defaults, then load the config and perform a system check.
-   * @param {Zettlr} parent Parent Zettlr object.
+   * @param {string[]} translationDirectories The directories of the translations; the interface language of the template is one of them.
    */
-  constructor(private readonly _logger: LogProvider) {
+  constructor(
+    private readonly _logger: LogProvider,
+    translationDirectories: string[],
+  ) {
     super();
     this.configFile = path.join(app.getPath("userData"), "config.json");
 
     this._emitter = new EventEmitter(); // Initiate the emitter
 
-    this.config = getConfigTemplate(systemAppLang());
+    this.config = getConfigTemplate(systemAppLang(translationDirectories));
     this._rules = validationRules();
     this._firstStart = false; // Only true if a config file has been created
     this._newVersion = false; // True if the last read config had a different version

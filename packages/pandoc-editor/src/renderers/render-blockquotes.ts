@@ -17,7 +17,7 @@ import type { Range, RangeSet } from "@codemirror/state";
 import { BlockWrapper, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { VISUAL_INDENT_EXEMPT_CLASS } from "../plugins/visual-indent";
-import { previewConfig } from "../util/configuration";
+import { previewConfiguration } from "../util/configuration";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -26,7 +26,9 @@ import { visitVisibleSyntaxNodes } from "../util/visible-syntax-nodes";
 
 function showBlockquoteWrappers(view: EditorView): RangeSet<BlockWrapper> {
   const ranges: Range<BlockWrapper>[] = [];
-  const includeAdjacent = view.state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = previewConfiguration(
+    view.state,
+  ).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     if (rangeInPreviewSuppression(view.state, node.from, node.to, includeAdjacent)) {

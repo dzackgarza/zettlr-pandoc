@@ -135,12 +135,21 @@ function readLayout(page: Page): Promise<EditorLayout> {
       if (title === null) {
         throw new Error("A header of this document has no title element");
       }
+      const label = header.querySelector(".pandoc-div-header-label");
+      if (label === null) {
+        throw new Error("A header of this document has no label element");
+      }
+      const labelText = label.textContent;
+      const titleText = title.textContent;
+      if (labelText === null || titleText === null) {
+        throw new Error("A header of this document has a label or a title without text");
+      }
       const titleRect = title.getBoundingClientRect();
       const text = document.createRange();
       text.selectNodeContents(title);
       return {
-        label: header.querySelector(".pandoc-div-header-label")?.textContent ?? "",
-        title: title.textContent ?? "",
+        label: labelText,
+        title: titleText,
         titleBox: {
           left: titleRect.left,
           right: titleRect.right,
@@ -158,10 +167,13 @@ function readLayout(page: Page): Promise<EditorLayout> {
     const badges = [...scroller.querySelectorAll(".reference-badge-group.positioned")].map(
       (group) => {
         const rect = group.getBoundingClientRect();
+        const key = group.querySelector<HTMLElement>(".reference-definition-badge")?.dataset
+          .referenceKey;
+        if (key === undefined) {
+          throw new Error("A badge group has no badge with a reference key");
+        }
         return {
-          key:
-            group.querySelector<HTMLElement>(".reference-definition-badge")?.dataset.referenceKey ??
-            "",
+          key,
           box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
         };
       },
@@ -201,7 +213,7 @@ function readHeadings(page: Page, keys: string[]): Promise<HeadingLayout[]> {
     const lines = [...scroller.querySelectorAll(".cm-line")];
     return headingKeys.map((key) => {
       const step = `Step ${key.slice("sec:step-".length)}:`;
-      const line = lines.find((candidate) => (candidate.textContent ?? "").includes(step));
+      const line = lines.find((candidate) => candidate.textContent?.includes(step) === true);
       if (line === undefined) {
         throw new Error(`The editor draws no line for ${key}`);
       }

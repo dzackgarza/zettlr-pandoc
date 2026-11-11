@@ -179,8 +179,10 @@ describe("Documents-provider save that it must refuse", function () {
     chmodSync(filePath, 0o000);
     messageBoxes.answer = SAVE;
 
-    const listeners = appListeners.get("before-quit") ?? [];
-    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
+    const listeners = appListeners.get("before-quit");
+    if (listeners?.length !== 1) {
+      assert.fail("the provider registers the one before-quit listener");
+    }
     listeners[0]({ preventDefault: () => {} });
     await untilRefused();
 

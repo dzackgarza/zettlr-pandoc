@@ -112,7 +112,7 @@ export interface DocumentLintDependencies {
   config: {
     get: () => {
       export: { cslLibrary: string };
-      tikz: ConfigOptions["tikz"];
+      tikz: Pick<ConfigOptions["tikz"], "dataDir" | "figuresDir">;
       editor: {
         lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
       };

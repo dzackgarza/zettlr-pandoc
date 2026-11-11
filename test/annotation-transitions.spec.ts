@@ -653,6 +653,7 @@ describe("bulk annotation moves", function () {
         annotations,
         actor: "owner",
         expectedAnnotationGeneration: 5,
+        scope: "acted",
       }),
     );
     assert.deepEqual(
@@ -678,6 +679,7 @@ describe("bulk annotation moves", function () {
         annotations,
         actor: "owner",
         expectedAnnotationGeneration: 5,
+        scope: "acted",
       }),
     );
     const resolved = plan.nextAnnotations.items.find(
@@ -695,6 +697,7 @@ describe("bulk annotation moves", function () {
         annotations,
         actor: "owner",
         expectedAnnotationGeneration: 1,
+        scope: "acted",
       }),
     );
     assert.equal(refusedNothing.code, "INVALID_PARAMS");
@@ -738,6 +741,7 @@ describe("bulk annotation moves", function () {
         annotations,
         actor: "owner",
         expectedAnnotationGeneration: 5,
+        scope: "acted",
       }),
     ).nextAnnotations;
     assert.equal(
@@ -779,6 +783,7 @@ describe("bulk annotation moves", function () {
           annotations,
           actor: "agent",
           expectedAnnotationGeneration: 5,
+          scope: "acted",
         }),
       ).code,
       "ANNOTATION_OWNER_ONLY",
@@ -788,6 +793,7 @@ describe("bulk annotation moves", function () {
         annotations,
         actor: "owner",
         expectedAnnotationGeneration: 4,
+        scope: "acted",
       }),
     );
     assert.equal(stale.code, "ANNOTATION_GENERATION_MISMATCH");

@@ -20,7 +20,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import { previewConfig } from "../util/configuration";
+import { previewConfiguration } from "../util/configuration";
 import {
   rangeInPreviewSuppression,
   reviewSuppressionChanged,
@@ -34,7 +34,9 @@ function hideLinkMarkers(view: EditorView): RangeSet<Decoration> {
     class: "cm-preview-link",
     attributes: { title: "Ctrl/Command-click to open link" },
   });
-  const includeAdjacent = view.state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = previewConfiguration(
+    view.state,
+  ).previewModeShowSyntaxWhenCursorIsAdjacent;
 
   visitVisibleSyntaxNodes(view, (node) => {
     // Wikilinks render as chips (render-wikilinks.ts)

@@ -19,7 +19,7 @@ import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import type CiteprocProvider from "source/app/service-providers/citeproc";
 import FileDelete from "source/app/service-providers/commands/file-delete";
-import type ConfigProvider from "source/app/service-providers/config";
+import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
 import { writeTextFile } from "source/app/service-providers/fsal/util/write-text-file";
@@ -114,6 +114,11 @@ export async function bootDocumentManager(
     addPath: (_filePath: string) => false,
     set: (_key: string, _value: unknown) => {},
   };
+  // The real provider with the values of the configuration template, for the
+  // real file dialog. It is not booted: a boot reads the configuration file
+  // and opens the onboarding window.
+  const dialogConfig = new ConfigProvider(log, [path.resolve("static", "lang")]);
+  dialogConfig.set("dialogPaths.askFileDialog", root);
   const appSeam = {
     log,
     config,
@@ -143,8 +148,7 @@ export async function bootDocumentManager(
       // The real prompt, with no window to attach it to.
       askSaveChanges: async (detail?: string) => await askSaveChanges(null, detail),
       // The real file dialog, with no window to attach it to.
-      saveFile: async (filePath: string) =>
-        await saveFileDialog(log, config as unknown as ConfigProvider, null, filePath),
+      saveFile: async (filePath: string) => await saveFileDialog(log, dialogConfig, null, filePath),
     },
   };
 
@@ -158,7 +162,7 @@ export async function bootDocumentManager(
  * from the disk, with no trash.
  */
 export function fileDeleteCommand(provider: DocumentManager): FileDelete {
-  const appSeam = {
+  return new FileDelete({
     log: new LogProvider(),
     documents: provider,
     fsal: {
@@ -166,6 +170,5 @@ export function fileDeleteCommand(provider: DocumentManager): FileDelete {
         unlinkSync(filePath);
       },
     },
-  };
-  return new FileDelete(appSeam as unknown as AppServiceContainer);
+  });
 }

@@ -39,6 +39,10 @@ const userData = fs.mkdtempSync(
 fs.mkdirSync(path.join(userData, "logs"), { recursive: true });
 fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
 
+// Webpack's DefinePlugin puts the build date into the bundle
+// (webpack.main.config.js). The configuration template reads it.
+globalThis.__BUILD_DATE__ = new Date(0).toISOString();
+
 /**
  * Records every ipcMain.handle registration made by main-process modules
  * loaded under this harness, keyed by channel. The recorded listener is the

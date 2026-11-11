@@ -32,7 +32,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { type SyntaxNodeRef } from "@lezer/common";
-import { previewConfig } from "../util/configuration";
+import { previewConfiguration } from "../util/configuration";
 import { incrementalNodeDecorations } from "../util/incremental-node-decorations";
 import {
   previewSuppressionChanged,
@@ -302,7 +302,7 @@ function renderWidgets(
 ): Range<Decoration>[] {
   const widgets: Range<Decoration>[] = [];
 
-  const includeAdjacent = state.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent;
+  const includeAdjacent = previewConfiguration(state).previewModeShowSyntaxWhenCursorIsAdjacent;
   const specsByNodeType = new Map<string, RendererSpec[]>();
   for (const spec of specs) {
     for (const nodeType of spec.nodeTypes) {
@@ -434,8 +434,8 @@ const sharedBlockRendererField = incrementalNodeDecorations({
     const specs = after.facet(blockRendererFacet);
     return (
       specs !== before.facet(blockRendererFacet) ||
-      before.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent !==
-        after.facet(previewConfig).previewModeShowSyntaxWhenCursorIsAdjacent ||
+      previewConfiguration(before).previewModeShowSyntaxWhenCursorIsAdjacent !==
+        previewConfiguration(after).previewModeShowSyntaxWhenCursorIsAdjacent ||
       specs.some((spec) => spec.inputsChanged(before, after))
     );
   },

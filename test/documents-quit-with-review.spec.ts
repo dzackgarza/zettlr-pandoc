@@ -80,8 +80,10 @@ describe("Documents-provider quit with an open review", function () {
    * after the dialog are real file I/O, so this waits on the outcome.
    */
   async function requestQuit(): Promise<QuitEvent> {
-    const listeners = appListeners.get("before-quit") ?? [];
-    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
+    const listeners = appListeners.get("before-quit");
+    if (listeners?.length !== 1) {
+      assert.fail("the provider registers the one before-quit listener");
+    }
     const quitsBefore = appQuitRequests.length;
     const event: QuitEvent = {
       prevented: false,
@@ -196,7 +198,11 @@ describe("Documents-provider quit with an open review", function () {
         "the edit of the author is saved",
       );
       assert.equal(messageBoxes.shown.length, 1, "the author is asked one time");
-      const [asked, kept] = (messageBoxes.shown[0].detail ?? "").split("\n\n");
+      const detail = messageBoxes.shown[0].detail;
+      if (detail === undefined) {
+        assert.fail("the prompt names its documents");
+      }
+      const [asked, kept] = detail.split("\n\n");
       assert.equal(asked, draftPath, "the prompt asks about the document of the author");
       assert.equal(
         kept?.split("\n").at(-1),

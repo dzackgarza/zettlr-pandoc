@@ -68,6 +68,15 @@ const TIKZ_TEMPLATE = path.join(TIKZ_ASSET_DIR, "templates/standalone-tikz.tex")
  */
 const NO_DOC_PATH = "";
 
+/** The PATH of the run, which holds pandoc and the TeX tools. */
+function pathOfTheRun(): string {
+  const value = process.env.PATH;
+  if (value === undefined) {
+    throw new Error("The run has no PATH");
+  }
+  return value;
+}
+
 /** The time limit of a render that is expected to end. */
 const TIME_LIMIT_MS = 30000;
 
@@ -390,9 +399,11 @@ describe("TikZ render service (issue #14)", function () {
       // The filter namespaces every id/use pair with a content-hash prefix so
       // several figures can share one document.
       const idMatch = result.html.match(/id="([0-9a-f]{8})-/);
-      assert.ok(idMatch !== null, "SVG element ids carry the content-hash namespace prefix");
+      if (idMatch === null) {
+        assert.fail("SVG element ids carry the content-hash namespace prefix");
+      }
       assert.ok(
-        result.html.includes(`xlink:href="#${idMatch?.[1] ?? ""}-`),
+        result.html.includes(`xlink:href="#${idMatch[1]}-`),
         "use references are namespaced with the same prefix",
       );
       assert.ok(existsSync(result.svgPath), "a lightbox-servable SVG file exists");
@@ -483,7 +494,7 @@ describe("TikZ render service (issue #14)", function () {
         timeoutMs: TIME_LIMIT_MS,
         templatePath: TIKZ_TEMPLATE,
         cacheDir,
-        env: { ...process.env, PATH: `${sessionBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, PATH: `${sessionBin}:${pathOfTheRun()}` },
       };
       const results: TikzRenderResult[] = [];
       const started = await startedProcesses(async () => {
@@ -760,7 +771,7 @@ describe("TikZ render service (issue #14)", function () {
           timeoutMs: TIME_LIMIT_MS,
           templatePath: TIKZ_TEMPLATE,
           cacheDir,
-          env: { ...process.env, PATH: `${failingBin}:${process.env.PATH ?? ""}` },
+          env: { ...process.env, PATH: `${failingBin}:${pathOfTheRun()}` },
         },
       );
       assert.ok(!failed.ok, "a forced refresh whose converter fails cannot report success");

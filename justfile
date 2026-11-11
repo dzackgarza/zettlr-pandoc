@@ -115,9 +115,9 @@ run-packaged:
 # repository-wide spec glob. Usage: just test-file test/example.spec.ts
 test-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "{{file}}"
 
-# The unit-test setup removes its temp directory at exit; an assembled-app
+# The unit-test launcher removes its temp directory at exit; an assembled-app
 # spec keeps its artifacts in the system temp directory, as under `test-e2e`.
 # Run one assembled-app spec with enough time for Electron to boot.
 test-e2e-file file: sync-dependencies
@@ -148,7 +148,7 @@ install-flowmark:
 # Run the focused workspace-reference test suite.
 test-references: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 30000 "test/extract-references.spec.ts" "test/extract-references-subfigures.spec.ts" "test/resolve-references.spec.ts" "test/extract-references-pandoc-oracle.spec.ts" "test/fsal-reference-snapshots.spec.ts" "test/reference-index-overlay.spec.ts" "test/editor-reference-completion.spec.ts" "test/editor-reference-completion-help.spec.ts" "test/reference-fzf-search.spec.ts" "test/reference-search-project-ranking.spec.ts" "test/editor-reference-chips.spec.ts" "test/editor-reference-badges.spec.ts" "test/reference-hover.spec.ts" "test/tab-manager-history.spec.ts" "test/compute-reference-edits.spec.ts" "test/rename-preview-summary.spec.ts" "test/reference-rename-atomicity.spec.ts" "test/show-toast-action.spec.ts" "test/navigation-shortcut-config.spec.ts" "test/project-reference-status.spec.ts" "test/editor-reference-completion-project-status.spec.ts" "test/reference-hover-project-status.spec.ts" "test/export-ordered-inputs.spec.ts" "test/export-quoted-inputs.spec.ts" "test/documents-provider-navigation.spec.ts" "test/preflight-crossref.spec.ts" "test/reference-create-label-confirm.spec.ts" "test/pandoc-quick-reference-lst.spec.ts" "test/pandoc-quick-help-search.spec.ts"
 
 # Run the reference UI suite: the references-provider Electron shell spec
 # (Phase 3b) plus the Chromium probe specs (Mod-P search overlay incl. the
@@ -157,12 +157,12 @@ test-references: sync-dependencies
 # Mirrors test-file's invocation with the longer timeout the xvfb probes need.
 test-reference-ui: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/reference-provider-shell.spec.ts" "test/reference-search-overlay.spec.ts" "test/reference-navigation.spec.ts" "test/reference-create-label.spec.ts" "test/reference-rename-preview.spec.ts" "test/reference-error-surface.spec.ts"
 
 # Run the annotations panel animation performance and layout isolation spec.
 test-annotations-animation: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/annotations-panel-animation.spec.ts"
 
 # Cross-repository proof: ordered Project inputs through the companion
 # pandoc-config compile-pandoc-project recipe (issue #1). Hard-bails when the
@@ -174,16 +174,16 @@ test-pandoc-config-integration:
 # Run the format and lint services against the installed Flowmark commands.
 test-flowmark-integration: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 180000 "test/flowmark-format-integration.ts"
 
 # Run the Zotero operations against the running Zotero, its local-write-api add-on and the Better BibTeX export.
 test-zotero-integration: sync-dependencies
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --no-config --node-option import=tsx --require ./test/setup.js --extension ts --timeout 240000 "test/zotero-agent-api-integration.ts"
 
 # Run the repository test suite. The guard executes before Mocha can start.
 test: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    "{{justfile_directory()}}/node_modules/.bin/mocha" --timeout 120000 --inline-diffs
+    "{{justfile_directory()}}/scripts/run-unit-tests.sh" --timeout 120000 --inline-diffs
 
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.

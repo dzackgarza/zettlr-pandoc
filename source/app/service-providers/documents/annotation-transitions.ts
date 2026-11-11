@@ -506,10 +506,10 @@ export function prepareAnnotationBulkResolution(input: {
   annotations: AnnotationSet;
   actor: AnnotationActor;
   expectedAnnotationGeneration: number;
-  /** Which open annotations the batch takes; defaults to the acted ones. */
-  scope?: "acted" | "open";
+  /** Which open annotations the batch takes. */
+  scope: "acted" | "open";
 }): AnnotationMutationPlan<TextAnnotation[]> | AnnotationTransitionError {
-  const scope = input.scope ?? "acted";
+  const { scope } = input;
   const forbidden = checkOwner(input.actor, "resolve");
   if (forbidden !== undefined) {
     return forbidden;

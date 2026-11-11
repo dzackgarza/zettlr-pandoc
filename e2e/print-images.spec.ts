@@ -38,7 +38,7 @@ const DATA_URL = `data:image/png;base64,${PIXEL_BASE64}`;
 
 interface PrintedImage {
   alt: string;
-  src: string;
+  src: string | null;
   naturalWidth: number;
 }
 
@@ -111,7 +111,7 @@ describe("print window images", function () {
         Array.from(document.querySelectorAll<HTMLImageElement>("#print-container img")).map(
           (image) => ({
             alt: image.alt,
-            src: image.getAttribute("src") ?? "",
+            src: image.getAttribute("src"),
             naturalWidth: image.naturalWidth,
           }),
         ),

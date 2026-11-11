@@ -130,7 +130,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
 
   /** Gives a path to a source, unless a newer source has it. */
   function ownsPath(documentPath: string, sourceTime: number): boolean {
-    if ((newestSourceByPath.get(documentPath) ?? 0) > sourceTime) {
+    const newestSource = newestSourceByPath.get(documentPath);
+    if (newestSource !== undefined && newestSource > sourceTime) {
       return false;
     }
     newestSourceByPath.set(documentPath, sourceTime);
@@ -508,10 +509,10 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     const result = await withFreshAnnotationRetry<{ resolved: TextAnnotation[] }>(
       documentPath,
       async () =>
-        ipcRenderer.invoke(
-          "documents:resolve-acted-annotations",
-          bulkAnnotationFence(documentPath),
-        ),
+        ipcRenderer.invoke("documents:resolve-acted-annotations", {
+          ...bulkAnnotationFence(documentPath),
+          scope: "acted",
+        }),
     );
     await refreshSession(documentPath);
     return result;

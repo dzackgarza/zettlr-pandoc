@@ -13,13 +13,22 @@
  */
 
 import { trans } from "@common/i18n-main";
+import type DocumentManager from "@providers/documents";
+import type FSAL from "@providers/fsal";
+import type LogProvider from "@providers/log";
 import { dialog, type MessageBoxOptions } from "electron";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import ZettlrCommand from "./zettlr-command";
 
-export default class FileDelete extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+/** The services that the command uses. */
+export interface FileDeleteServices {
+  log: Pick<LogProvider, "info">;
+  documents: Pick<DocumentManager, "closeFileEverywhere">;
+  fsal: Pick<FSAL, "removeFile">;
+}
+
+export default class FileDelete extends ZettlrCommand<FileDeleteServices> {
+  constructor(app: FileDeleteServices) {
     super(app, "file-delete");
   }
 

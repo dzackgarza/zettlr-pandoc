@@ -573,7 +573,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
       "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: actedGeneration },
+      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
     );
     assert.ok(!isFailure(resolved), `expected a committed batch, got ${JSON.stringify(resolved)}`);
     assert.deepEqual(
@@ -616,7 +616,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     const resolved = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
       "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: actedGeneration },
+      { path: filePath, expectedAnnotationGeneration: actedGeneration, scope: "acted" },
     );
     assert.ok(
       !isFailure(resolved),
@@ -681,7 +681,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     });
     const result = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
       "documents:resolve-acted-annotations",
-      { path: filePath, expectedAnnotationGeneration: 1 },
+      { path: filePath, expectedAnnotationGeneration: 1, scope: "acted" },
     );
     assert.ok(isFailure(result), "an empty batch must be refused");
     assert.equal(result.code, "INVALID_PARAMS");
@@ -742,7 +742,7 @@ describe("Document annotation IPC (M6, WU-14)", function () {
     const neverOpened = path.join(scratch, "never-opened-bulk.md");
     const resolveResult = await invoke<{ resolved: TextAnnotation[] } | AnnotationFailure>(
       "documents:resolve-acted-annotations",
-      { path: neverOpened, expectedAnnotationGeneration: 0 },
+      { path: neverOpened, expectedAnnotationGeneration: 0, scope: "acted" },
     );
     assert.ok(isFailure(resolveResult), "an unresolved path must be refused, not throw");
     assert.equal(resolveResult.code, "DOCUMENT_NOT_FOUND");
