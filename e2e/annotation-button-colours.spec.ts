@@ -7,11 +7,14 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Opens an annotation thread and its delete confirmation in
- *                  the assembled app in dark mode. Each button with the
- *                  classes of the annotations panel has the background of
- *                  its collaboration token, in the editor pane and in the
- *                  confirmation that is a portal on `body` (#107).
+ * Description:     Opens each collaboration surface of the assembled app: an
+ *                  annotation thread, its delete confirmation (a portal on
+ *                  `body`), the Annotations view, the review bar, a review
+ *                  chunk and the dialog that creates an annotation. In dark
+ *                  and in light mode each button with the classes of the
+ *                  annotations panel has the background of its collaboration
+ *                  token, and no control of a surface changes when the
+ *                  platform class leaves `body` (#107).
  *
  * END HEADER
  */
@@ -21,20 +24,34 @@ import { type ChildProcess } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createPatch } from "diff";
 import { type Browser, type Page } from "playwright";
+import { sha256Text } from "../source/common/util/sha256";
 import {
+  agentClient,
   assertCleanExit,
   attach,
   createFixture,
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  readAgentApiPort,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-annotation-button-colours-e2e-latest");
-const DOCUMENT = "# Orbits\n\nThe orbit of a point is the set of its images.\n";
+const DOCUMENT =
+  "# Orbits\n\nThe orbit of a point is the set of its images.\n\nThe stabilizer of a point is a subgroup.\n";
+const PROPOSED = DOCUMENT.replace("a subgroup", "a closed subgroup");
+const ANNOTATED = { from: 14, to: 19 };
+
+const THREAD = ".main-editor-wrapper [data-annotation-detail]";
+const CONFIRMATION = ".annotation-dialog";
+const PANEL = "#annotations-panel";
+const REVIEW_BAR = ".suggestion-review-bar";
+const REVIEW_CHUNK = ".suggestion-chunk";
+const CREATE_DIALOG = ".annotation-create-dialog";
 
 interface ButtonColour {
   label: string;
@@ -42,6 +59,12 @@ interface ButtonColour {
   background: string;
   token: string;
   tokenColour: string;
+}
+
+interface ControlPainting {
+  control: string;
+  withPlatform: string;
+  withoutPlatform: string;
 }
 
 /**
@@ -62,7 +85,9 @@ async function buttonColours(page: Page, scope: string): Promise<ButtonColour[]>
         ? "--annotation-danger"
         : button.classList.contains("annotation-button-primary")
           ? "--annotation-accent"
-          : "--annotation-surface";
+          : button.classList.contains("accept")
+            ? "--annotation-resolved"
+            : "--annotation-surface";
       const sample = document.createElement("div");
       sample.style.backgroundColor = `var(${token})`;
       document.body.append(sample);
@@ -80,10 +105,72 @@ async function buttonColours(page: Page, scope: string): Promise<ButtonColour[]>
   }, scope);
 }
 
-describe("assembled app: annotation buttons in dark mode", function () {
+/**
+ * The painting of each visible control under `scope`: as the window shows
+ * it, and with the platform class taken from `body`. Without that class no
+ * platform rule of the window selects a control, so the second reading is
+ * what the rules of the surface give on their own.
+ */
+async function controlPainting(page: Page, scope: string): Promise<ControlPainting[]> {
+  return page.evaluate((selector) => {
+    const properties = [
+      "background-color",
+      "color",
+      "border-top-width",
+      "border-top-style",
+      "border-top-color",
+      "border-bottom-width",
+      "border-bottom-style",
+      "border-bottom-color",
+      "border-left-width",
+      "border-right-width",
+      "border-top-left-radius",
+      "padding-top",
+      "padding-right",
+      "padding-bottom",
+      "padding-left",
+      "min-width",
+      "font-family",
+      "font-size",
+    ];
+    const controls = [
+      ...document.querySelectorAll<HTMLElement>(`${selector} :is(input, select, textarea, button)`),
+    ].filter((control) => control.offsetParent !== null);
+    const still = document.createElement("style");
+    still.textContent = "* { transition: none !important; }";
+    document.head.append(still);
+    const platform = ["linux", "darwin", "win32"].filter((name) =>
+      document.body.classList.contains(name),
+    );
+    // The first reading has the platform class, the second has not.
+    const readings: string[][] = [];
+    for (const withClass of [true, false]) {
+      if (!withClass) {
+        document.body.classList.remove(...platform);
+      }
+      readings.push(
+        controls.map((control) => {
+          const style = getComputedStyle(control);
+          return properties.map((name) => `${name}: ${style.getPropertyValue(name)}`).join("; ");
+        }),
+      );
+    }
+    document.body.classList.add(...platform);
+    still.remove();
+    const [withPlatform, withoutPlatform] = readings;
+    return controls.map((control, index) => ({
+      control: `${control.tagName.toLowerCase()}.${control.className}`,
+      withPlatform: withPlatform[index],
+      withoutPlatform: withoutPlatform[index],
+    }));
+  }, scope);
+}
+
+describe("assembled app: controls of the collaboration surfaces", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let fixtureRoot: string | undefined;
+  let configDirectory = "";
   let documentPath = "";
   let page: Page | undefined;
   let getOutput: () => string = () => "";
@@ -94,9 +181,10 @@ describe("assembled app: annotation buttons in dark mode", function () {
     const fixture = await createFixture("zettlr-annotation-button-colours-e2e-", {
       documentName: "orbits.md",
       documentContents: DOCUMENT,
-      config: { darkMode: true },
+      config: { darkMode: true, agentApi: { enabled: true, port: 0 } },
     });
     fixtureRoot = fixture.root;
+    configDirectory = fixture.configDirectory;
     documentPath = fixture.documentPath;
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
     appProcess = app.appProcess;
@@ -124,7 +212,101 @@ describe("assembled app: annotation buttons in dark mode", function () {
     assertCleanExit(getOutput());
   });
 
-  it("paints each button of a thread and of its delete confirmation in the colour of its token", async function () {
+  /**
+   * Reads the buttons and the controls of every surface that is on the
+   * screen in this colour mode. The two dialogs are modal, so each is opened,
+   * read and closed in turn.
+   */
+  async function readSurfaces(
+    shown: Page,
+    mode: string,
+  ): Promise<{ colours: ButtonColour[]; painting: ControlPainting[]; surfaces: string[] }> {
+    const colours: ButtonColour[] = [];
+    const painting: ControlPainting[] = [];
+    const surfaces: string[] = [];
+    const read = async (surface: string): Promise<void> => {
+      const controls = await controlPainting(shown, surface);
+      if (controls.length > 0) {
+        surfaces.push(surface);
+      }
+      painting.push(...controls);
+      colours.push(...(await buttonColours(shown, surface)));
+    };
+
+    for (const surface of [THREAD, PANEL, REVIEW_BAR, REVIEW_CHUNK]) {
+      await read(surface);
+    }
+    screenshots.set(`${mode}-surfaces.png`, await shown.screenshot());
+
+    await shown.locator(`${THREAD} [data-annotation-action="delete"]`).click();
+    await shown
+      .locator('[data-annotation-confirm="delete"]')
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await read(CONFIRMATION);
+    screenshots.set(`${mode}-delete-confirmation.png`, await shown.screenshot());
+    await shown.locator(`${CONFIRMATION} button`, { hasText: "Cancel" }).click();
+    await shown.locator(CONFIRMATION).waitFor({ state: "detached", timeout: 10_000 });
+
+    // The event that the command "Annotate for AI…" sends for a selection.
+    await shown.evaluate((range) => {
+      const editor = document.querySelector(".main-editor-wrapper .cm-editor");
+      if (editor === null) {
+        throw new Error("The window shows no editor");
+      }
+      editor.dispatchEvent(
+        new CustomEvent("zettlr-annotate-selection", { bubbles: true, detail: range }),
+      );
+    }, ANNOTATED);
+    await shown.locator(CREATE_DIALOG).waitFor({ state: "visible", timeout: 10_000 });
+    await read(CREATE_DIALOG);
+    screenshots.set(`${mode}-create-dialog.png`, await shown.screenshot());
+    await shown.locator(`${CREATE_DIALOG} [data-cancel]`).click();
+    await shown.locator(CREATE_DIALOG).waitFor({ state: "detached", timeout: 10_000 });
+
+    return { colours, painting, surfaces };
+  }
+
+  function assertOwnPainting(
+    read: { colours: ButtonColour[]; painting: ControlPainting[]; surfaces: string[] },
+    mode: string,
+  ): void {
+    assert.deepEqual(
+      read.surfaces,
+      [THREAD, PANEL, REVIEW_BAR, REVIEW_CHUNK, CONFIRMATION, CREATE_DIALOG],
+      `${mode}: each surface shows controls`,
+    );
+    assert.deepEqual(
+      read.colours.map((button) => [button.label, button.classes, button.background]),
+      read.colours.map((button) => [button.label, button.classes, button.tokenColour]),
+      `${mode}: each button has the background of its token`,
+    );
+    const tokens = new Set(read.colours.map((button) => button.token));
+    assert.deepEqual(
+      [...tokens].sort(),
+      [
+        "--annotation-accent",
+        "--annotation-danger",
+        "--annotation-resolved",
+        "--annotation-surface",
+      ],
+      `${mode}: the surfaces show a button of each kind`,
+    );
+    const danger = read.colours.find((button) => button.token === "--annotation-danger");
+    const cancel = read.colours.find((button) => button.label === "Cancel");
+    assert.ok(danger !== undefined && cancel !== undefined, `${mode}: the confirmation was read`);
+    assert.notEqual(
+      danger.background,
+      cancel.background,
+      `${mode}: the destructive action does not look like Cancel`,
+    );
+    assert.deepEqual(
+      read.painting.map((control) => [control.control, control.withPlatform]),
+      read.painting.map((control) => [control.control, control.withoutPlatform]),
+      `${mode}: no platform rule paints a control of a collaboration surface`,
+    );
+  }
+
+  it("paints each control of each collaboration surface by the rules of the surface, in dark and in light mode", async function () {
     const shown = requireInitialized(page, "The editor page must be initialized");
     assert.equal(
       await shown.evaluate(() => document.body.classList.contains("dark")),
@@ -136,8 +318,7 @@ describe("assembled app: annotation buttons in dark mode", function () {
       async (input) => await window.ipc.invoke("documents:create-annotation", input),
       {
         path: documentPath,
-        from: 14,
-        to: 19,
+        ...ANNOTATED,
         instruction: "Say which group acts.",
         expectedAnnotationGeneration: 0,
       },
@@ -147,34 +328,36 @@ describe("assembled app: annotation buttons in dark mode", function () {
       `the annotation was created: ${JSON.stringify(created)}`,
     );
 
+    const api = agentClient(await readAgentApiPort(configDirectory, 60_000));
+    await api.post("/v1/review-submissions", {
+      document: { uri: documentPath },
+      baseline: { sha256: sha256Text(DOCUMENT) },
+      clientRequestId: "annotation-button-colours",
+      claims: [
+        {
+          description: "Name the topology",
+          patch: createPatch(documentPath, DOCUMENT, PROPOSED, "", "", { context: 0 }),
+        },
+      ],
+    });
+    await shown.locator(REVIEW_CHUNK).first().waitFor({ state: "visible", timeout: 30_000 });
+    await shown.locator(REVIEW_BAR).waitFor({ state: "visible", timeout: 30_000 });
+
+    await shown.locator('[data-activity="annotations"]').click();
+    await shown.locator(PANEL).waitFor({ state: "visible", timeout: 10_000 });
     await shown.locator(".cm-textAnnotation-gutterMarker").first().click();
-    const thread = shown.locator(".main-editor-wrapper [data-annotation-detail]");
-    await thread.waitFor({ state: "visible", timeout: 10_000 });
-    screenshots.set("thread.png", await shown.screenshot());
-    const inThread = await buttonColours(shown, ".main-editor-wrapper [data-annotation-detail]");
-    assert.ok(inThread.length >= 2, `the thread has its actions: ${JSON.stringify(inThread)}`);
+    await shown.locator(THREAD).waitFor({ state: "visible", timeout: 10_000 });
 
-    await thread.locator('[data-annotation-action="delete"]').click();
-    const confirm = shown.locator('[data-annotation-confirm="delete"]');
-    await confirm.waitFor({ state: "visible", timeout: 10_000 });
-    screenshots.set("delete-confirmation.png", await shown.screenshot());
-    const inDialog = await buttonColours(shown, ".annotation-dialog");
-    assert.deepEqual(
-      inDialog.map((button) => button.token),
-      ["--annotation-surface", "--annotation-danger"],
-      `the confirmation has Cancel and the destructive action: ${JSON.stringify(inDialog)}`,
-    );
+    assertOwnPainting(await readSurfaces(shown, "dark"), "dark mode");
 
-    const all = [...inThread, ...inDialog];
-    assert.deepEqual(
-      all.map((button) => [button.label, button.classes, button.background]),
-      all.map((button) => [button.label, button.classes, button.tokenColour]),
-      "each button has the background of its token",
-    );
-    assert.notEqual(
-      inDialog[1].tokenColour,
-      inDialog[0].tokenColour,
-      "the destructive action does not look like Cancel",
-    );
+    await shown.evaluate(() => {
+      window.config.set("darkMode", false);
+    });
+    await shown.waitForFunction(() => !document.body.classList.contains("dark"), undefined, {
+      timeout: 10_000,
+    });
+    await shown.locator(THREAD).waitFor({ state: "visible", timeout: 10_000 });
+
+    assertOwnPainting(await readSurfaces(shown, "light"), "light mode");
   });
 });
