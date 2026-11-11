@@ -121,6 +121,29 @@ such that for each nonempty overlap $U_i \cap U_j$, the transition maps
     assert.equal(dom.querySelectorAll(".preview-math").length, 0);
   });
 
+  it("draws an equation again when an edit changes only its mode", function () {
+    // The caret is away from the equation, so the edit replaces one rendered
+    // widget with another and the view offers the new widget the old element.
+    const doc = "The square $x^2$ is here.\n\nOutside.";
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [markdownParser(), configField, renderMath],
+    });
+    const view = new EditorView({ state, parent: document.body });
+    const inline = view.dom.querySelector(".preview-math mjx-container");
+    assert.ok(inline !== null, "expected a rendered inline equation");
+    assert.notEqual(inline.getAttribute("display"), "true");
+
+    const from = doc.indexOf("$x^2$");
+    view.dispatch({ changes: { from, to: from + "$x^2$".length, insert: "$$x^2$$" } });
+
+    const containers = view.dom.querySelectorAll(".preview-math mjx-container");
+    assert.equal(containers.length, 1);
+    assert.equal(containers[0].getAttribute("display"), "true");
+    view.destroy();
+  });
+
   it("selects the whole source of an equation on a click, delimiters included", function () {
     // The standard renderers hide the code marks of inline code. The `$` of an
     // equation is such a mark, and the equation widget must still own it.
