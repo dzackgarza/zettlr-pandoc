@@ -730,6 +730,16 @@ of an isolated instance are in the first comment of #132.
   CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
   spec runs on the display of the run only: with `DISPLAY` set, the keys go
   to the desktop of the author.
+- **A file dialog is drawn on the display of the run.** `attach` starts the
+  app with `--xdg-portal-required-version` at a version that no portal has
+  (`NO_PORTAL_FILE_CHOOSER_VERSION`). Without the option the desktop portal
+  of the session draws the dialog on the desktop of the author. A spec
+  accepts a GTK file chooser with the mnemonic of its button (`alt+s` for
+  Save): the Return key does not accept it while the name field has the
+  focus (`e2e/refused-save.spec.ts`).
+- **Shared helpers.** `e2e/support/native-dialog.ts` finds, captures and
+  answers a native window. `e2e/support/panes.ts` gives the panes of a
+  window and opens a document in one.
 
 ### 14. Document identity and refused closes
 
@@ -855,6 +865,33 @@ of an isolated instance are in the first comment of #132.
   "Save a copy…". The watcher follows the path through the removal: a
   file that is written again arrives as `add`, which the provider handles
   as a change (the `add` of its own save is not a change).
+- **"Close anyway" at a window close offers no proposal for a save.** The
+  buffer of a document with an undecided proposal takes the text of the
+  file; the review and its working text stay in the sidecar. `pullUpdates`
+  tells only an editor whose pane shows the path to load its document
+  again, so the editor of a closing window does not load the document a
+  second time. `closeWindow` removes a window only when none of its
+  documents is loaded.
+- **A move finishes when its review state cannot follow.** A rename, a move
+  and a folder rename move each document id and offer the link update when
+  the sidecar cannot be written at the new key. The author gets one message
+  that names the file and the cause; the sidecar stays at the old key, where
+  the Annotations view names it.
+- **A save whose file cannot be read again is refused.** The reason is
+  `saved-not-refreshed`: the text is on disk, the document keeps the
+  descriptor of its last read, and the message names the cause.
+- **A message has a list of actions.** `showToast` takes each action of a
+  message (`ToastAction`), and the notification center shows the same list.
+  A save that is refused because the file changed on disk under a review
+  offers "Load from disk" and "Show the review", which opens the
+  Annotations view (`common/util/save-refusal-action.ts`).
+- **The window owns the message of a changed file that cannot be read.**
+  `App.vue` shows one message with "Load from disk" for the document, not
+  one for each pane or tab that shows it.
+- **A save always has a document.** The editor that holds the focus saves.
+  When no editor of the window holds it (the focus is on a message, in the
+  file manager or in a sidebar), the save is for the active document of the
+  pane that the author used last (`savesThisDocument` in `MainEditor.vue`).
 - **Proof:** `test/documents-move-identity.spec.ts`,
   `test/documents-removed-file.spec.ts`,
   `e2e/external-delete-unsaved.spec.ts`,
@@ -867,7 +904,10 @@ of an isolated instance are in the first comment of #132.
   `test/collaboration-sidecar-of-no-document.spec.ts`,
   `test/collaboration-sidecar.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,
-  `e2e/review-persistence-failure.spec.ts`, `e2e/refused-save.spec.ts`.
+  `e2e/review-persistence-failure.spec.ts`, `e2e/refused-save.spec.ts`,
+  `e2e/refused-save-changed-on-disk.spec.ts`, `e2e/window-close.spec.ts`,
+  `e2e/reload-failure.spec.ts`, `e2e/move-with-unwritable-review-state.spec.ts`,
+  `test/fsal-watcher-events.spec.ts`.
 
 ### 15. Failed application commands
 
@@ -876,12 +916,15 @@ of an isolated instance are in the first comment of #132.
   file or folder and the cause. It does not write the cause to the log and
   answer `false`: `false` is a value of the contract of some commands, and a
   caller cannot tell it from a failure.
-- **The dispatcher shows each failure once.** `CommandProvider.run`
-  (`commands/index.ts`) logs the error, broadcasts it on `command-failed`
-  (`types/common/command-failure.ts`) and rejects to the caller. The main
-  window shows the message as an error (`App.vue`). A command that runs a
-  command (`force-open`, `tutorial-open`) passes the same error on; the
-  dispatcher shows it one time.
+- **The dispatcher shows each failure once, in the window that started the
+  command.** `CommandProvider.run` (`commands/index.ts`) logs the error,
+  sends it on `command-failed` (`types/common/command-failure.ts`) to the
+  window whose renderer started the command, and rejects to the caller. The
+  main window gets the failure of a command that the application started (a
+  menu item, a second instance) and of a command whose window is gone. Each
+  window shows the message as an error (`window-register`). A command that
+  runs a command (`force-open`, `tutorial-open`) passes the same error on;
+  the dispatcher shows it one time.
 - **A caller does not show a rejection of a command.** It logs the rejection
   (`reportError`) and stops its own work: no success message, no further
   step. A second message in the caller repeats the first.
@@ -893,7 +936,8 @@ of an isolated instance are in the first comment of #132.
 - **A command that prompts answers its contract.** A command that showed the
   cause itself in a native dialog (`dir-rename`, the project export of one
   profile) returns its value and does not throw as well.
-- **Proof:** `e2e/command-refusal.spec.ts`.
+- **Proof:** `e2e/command-refusal.spec.ts`,
+  `e2e/project-settings-refusal.spec.ts`.
 
 ### 16. Writes of authored text files
 
@@ -1008,11 +1052,23 @@ of an isolated instance are in the first comment of #132.
   view, the Fix All plan and `/v1/lint` (scopes `workspace` and `all`, kind
   `unreadable` in `failed`) name the document and answer for the other
   documents. No failure is kept for it: each reader reads the file again.
+- **A document that Flowmark cannot lint keeps its cause.**
+  `DocumentLintProvider` keeps the last run of each document that gave no
+  result, for the session. The queue does not lint the same text with the
+  same inputs again. The Problems view and `/v1/lint` (`failed`, and
+  `queueStopped` while the background queue lints no document) name each
+  such document with the cause. "Try again" in the Problems view runs the
+  command `retry-workspace-lint` (`DocumentLintProvider.retry`).
+- **A check that did not run is one diagnostic.** A lint provider of the
+  editor that rejects gives the error diagnostic "This check did not run:
+  <cause>" (`external-linter-adapter.ts`). The status bar counts follow each
+  transaction that sets diagnostics.
 - **A failed first load offers the load again.** The message of an editor
   that could not load its document has the action "Try again"
   (`surface-document-load-error.ts`, `loadAgain` in `MainEditor.vue`).
 - **Proof:** `test/fsal-unreadable-file.spec.ts`,
   `test/document-lint-failure.spec.ts`, `test/agent-http-api.spec.ts`,
+  `test/external-linter-adapter.spec.ts`, `e2e/lint-failure.spec.ts`,
   `e2e/document-load-retry.spec.ts`.
 
 ## Debugging entry points
