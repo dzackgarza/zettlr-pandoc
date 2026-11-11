@@ -38,7 +38,12 @@ import {
   type WorkspaceCollaborationListing,
 } from "source/types/common/document-collaboration";
 import { bootDocumentManager } from "./documents-provider-seam";
-import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+import {
+  ipcMainHandlers,
+  messageBoxes,
+  sentMessagesFor,
+  userData,
+} from "./headless-electron-harness.cjs";
 
 type IpcHandler = (
   event: unknown,
@@ -48,6 +53,8 @@ type IpcHandler = (
 const GENUS = "A genus holds finitely many isometry classes.\n";
 const LATTICE = "An even unimodular lattice has a rank that 8 divides.\n";
 const SIDECARS = path.join(userData, "review-sidecars");
+// The second button of the close prompt: do not save the unsaved text.
+const DISCARD = 1;
 
 describe("A collaboration sidecar that the application cannot read", function () {
   let root: string;
@@ -70,6 +77,8 @@ describe("A collaboration sidecar that the application cannot read", function ()
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
     mkdirSync(SIDECARS);
+    messageBoxes.shown.length = 0;
+    messageBoxes.answer = undefined;
 
     provider = await bootDocumentManager(root);
     windowId = provider.windowKeys()[0];
@@ -208,6 +217,24 @@ describe("A collaboration sidecar that the application cannot read", function ()
       "PERSISTENCE_FAILED",
       "the annotation is refused: its write would replace the state that the file holds",
     );
+    assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
+  });
+
+  it("closes the open document when the author discards its unsaved text, and keeps the file", async function () {
+    await provider.getDocument(genusPath);
+    assert.equal(await provider.openFile(windowId, pane(), genusPath), true);
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: genusPath, range: { from: 0, to: 0 }, insert: "Let p be a prime.\n" },
+    ]);
+    assert.equal(provider.isModified(genusPath), true, "the document has unsaved text");
+
+    messageBoxes.answer = DISCARD;
+    const closed = await provider.closeFile(windowId, pane(), genusPath);
+
+    assert.equal(messageBoxes.shown.length, 1, "the close asks about the unsaved text");
+    assert.equal(closed, true, "the document closes: the discarded text has no state in the file");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+    assert.equal(readFileSync(genusPath, "utf-8"), GENUS, "the discarded text is not on disk");
     assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
   });
 

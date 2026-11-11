@@ -126,6 +126,22 @@ describe("Documents-provider close that cannot write the collaboration state", f
       .map(([, payload]) => (payload as SaveRefusedBroadcast).refused?.documentId);
   }
 
+  /** The action that each refused close named to the window as stopped, in order. */
+  function refusedActions(): Array<string | undefined> {
+    return sentMessagesFor(window)
+      .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
+      .map(([, payload]) => (payload as SaveRefusedBroadcast).refused?.action);
+  }
+
+  /** The annotations in the sidecar of each document, by the path of the document. */
+  async function annotationsInSidecars(): Promise<Array<[string, string[]]>> {
+    const sidecars = await provider.annotationQueries.listCollaborationSidecars();
+    return sidecars.map((sidecar) => [
+      sidecar.documentPath,
+      sidecar.annotations.items.map((item) => item.annotationId),
+    ]);
+  }
+
   /** The command that the action of the refusal sends. */
   async function closeWithoutReview(documentId: string): Promise<unknown> {
     const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
@@ -215,6 +231,7 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(requestQuit(), true);
     await untilRefused();
     assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
+    assert.deepEqual(refusedActions(), ["quit"], "and the quit as the action that it stopped");
     assert.equal(appQuitRequests.length, 0, "the quit did not go on");
     assert.equal(provider.readWorkingText(id), REVISED, "a refused quit keeps the document");
 
@@ -273,6 +290,29 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(await provider.closeWindow(second, closeAgain), true, "the window may close");
     assert.deepEqual(provider.windowKeys(), [windowId], "the provider has the first window only");
     assert.deepEqual(provider.loadedDocuments, [], "the document of the window is closed");
+  });
+
+  it("closes a window whose unsaved text the author discards", async function () {
+    provider.newWindow();
+    const second = provider.windowKeys().find((key) => key !== windowId);
+    assert.ok(second !== undefined, "the provider has a second window");
+    const { annotation } = await openAndAnnotate(second);
+    await typeDraft();
+    const closeAgain = async (): Promise<void> => {};
+
+    messageBoxes.answer = DISCARD;
+    const mayClose = await provider.askUserToCloseWindow(second, closeAgain);
+
+    assert.equal(messageBoxes.shown.length, 1, "the close asks about the unsaved text");
+    assert.equal(mayClose, true, "the window may close");
+    assert.deepEqual(provider.windowKeys(), [windowId], "the provider has the first window only");
+    assert.deepEqual(provider.loadedDocuments, [], "the document of the window is closed");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the discarded text is not on disk");
+    assert.deepEqual(
+      await annotationsInSidecars(),
+      [[filePath, [annotation]]],
+      "the annotation of the document is in its sidecar",
+    );
   });
 
   it("keeps the tab of a document that it could not close in every pane", async function () {
@@ -343,6 +383,32 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.deepEqual(annotationsInMemory(id), [annotation], "and the sidecar as last written");
   });
 
+  it("keeps the sidecar of a document whose later text the author discards after the action of a refusal", async function () {
+    const { id, annotation } = await openAndAnnotate();
+    chmodSync(SIDECARS, 0o500);
+    assert.equal(
+      await provider.closeFile(windowId, pane(), filePath),
+      false,
+      "the close is refused",
+    );
+    chmodSync(SIDECARS, 0o700);
+    // The author goes on with the document, and takes the action of the
+    // refusal afterwards: the close then asks about the unsaved text.
+    await typeDraft();
+    assert.deepEqual(await annotationsInSidecars(), [[filePath, [annotation]]]);
+
+    messageBoxes.answer = DISCARD;
+    assert.equal(await closeWithoutReview(id), true);
+    assert.equal(messageBoxes.shown.length, 1, "the repeated close asks about the unsaved text");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the discarded text is not on disk");
+    assert.deepEqual(
+      await annotationsInSidecars(),
+      [[filePath, [annotation]]],
+      "the sidecar stays as it was last written",
+    );
+  });
+
   it("ends a quit whose unsaved text the author discards, when the state cannot be written", async function () {
     const { id } = await openAndAnnotate();
     await typeDraft();
@@ -352,6 +418,7 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(requestQuit(), true);
     await untilRefused();
     assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
+    assert.deepEqual(refusedActions(), ["quit"], "and the quit as the action that it stopped");
     assert.equal(appQuitRequests.length, 0, "the quit did not go on");
 
     assert.equal(await closeWithoutReview(id), true);
@@ -373,6 +440,7 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(requestQuit(), true);
     await untilRefused();
     assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
+    assert.deepEqual(refusedActions(), ["quit"], "and the quit as the action that it stopped");
     assert.equal(appQuitRequests.length, 0, "the quit did not go on");
 
     assert.equal(await closeWithoutReview(id), true);

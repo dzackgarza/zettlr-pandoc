@@ -215,6 +215,35 @@ describe("Documents-provider save that it must refuse", function () {
     assert.equal(provider.settlesBeforeQuit(), true, "a quit asks the author about that text");
   });
 
+  it("says that the file was written when its new state cannot be read", async function () {
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: "Let p be a prime.\n" },
+    ]);
+    // The file can be written and not read.
+    chmodSync(filePath, 0o200);
+
+    const saved = await provider.saveFile(filePath);
+
+    chmodSync(filePath, 0o600);
+    assert.deepEqual(
+      [saved.ok, saved.ok ? undefined : saved.refusal.reason],
+      [false, "saved-not-refreshed"],
+      "the save answers that the file was written and not read again",
+    );
+    assert.equal(
+      readFileSync(filePath, "utf-8"),
+      `Let p be a prime.\n${SOURCE}`,
+      "the file holds the text of the document",
+    );
+    assert.equal(
+      provider.isModified(filePath),
+      false,
+      "the text is on disk, so a close asks nothing",
+    );
+  });
+
   it("writes the text of a document that cannot be saved to the file that the author chooses", async function () {
     await openWithReview();
     chmodSync(filePath, 0o400);
