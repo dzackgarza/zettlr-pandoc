@@ -96,6 +96,14 @@ const messageBoxes = { shown: [], answer: undefined };
  */
 const saveDialogs = { shown: [], answer: undefined };
 
+/**
+ * Every desktop notification that the application showed, with its title and
+ * its body.
+ *
+ * @type {{ shown: Array<{ title: string, body: string }> }}
+ */
+const notifications = { shown: [] };
+
 class HeadlessBrowserWindow {
   constructor() {
     const messages = [];
@@ -198,10 +206,15 @@ Module._load = function (request, ...rest) {
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
       nativeTheme: { shouldUseDarkColors: false },
       Notification: class {
+        constructor(options) {
+          this.options = options;
+        }
         static isSupported() {
           return true;
         }
-        show() {}
+        show() {
+          notifications.shown.push({ title: this.options.title, body: this.options.body });
+        }
         on() {}
       },
       BrowserWindow: HeadlessBrowserWindow,
@@ -220,6 +233,7 @@ module.exports = {
   ipcMainHandlers,
   ipcMainListeners,
   messageBoxes,
+  notifications,
   saveDialogs,
   sentMessagesFor,
   userData,
