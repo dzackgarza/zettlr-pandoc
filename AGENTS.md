@@ -619,6 +619,10 @@ of an isolated instance are in the first comment of #132.
 - **`closeWindow` answers whether the window may close.** The window
   provider closes the `BrowserWindow` only for `true`, and gives the
   documents provider the function that repeats the close.
+- **`closeFileEverywhere` answers whether the document closed.** It
+  detaches before it closes a tab, so a refused close leaves the tabs and
+  the buffer. A caller that removes the file afterwards (`file-delete`, the
+  overwrite of `file-new`) stops on `false`.
 - **Proof:** `test/documents-move-identity.spec.ts`,
   `test/documents-refused-close.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,

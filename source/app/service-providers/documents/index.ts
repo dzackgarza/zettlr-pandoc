@@ -397,7 +397,7 @@ export type DocumentManagerIPCContract = {
   };
   "close-file-everywhere": {
     request: { payload: { path: string } };
-    response: undefined;
+    response: boolean;
   };
   "load-from-disk": {
     request: { payload: { path: string } };
@@ -2331,17 +2331,18 @@ current contents from the editor somewhere else, and restart the application.`,
    * are definitely closed. This will be called from within the watcher callback
    * on an `unlink` event.
    *
+   * Resolves false when the collaboration state could not be written: the
+   * document stays loaded and its tabs stay open, so the refusal that the
+   * window shows is true and the author still has the buffer. A caller that
+   * removes the file afterwards must stop on false.
+   *
    * @param   {string}  filePath  The file path in question
    */
-  public async closeFileEverywhere(filePath: string): Promise<void> {
-    await this._closeTabsEverywhere(filePath);
-
-    // We also must splice the document out of our provider. Detach before
-    // the splice: the sidecar export reads the working text through the
-    // live document. When the export fails, the file is gone from disk and
-    // there is no reopening it to retry: the review stays in memory and the
-    // buffer stays loaded rather than being dropped along with the only
-    // copy of both.
+  public async closeFileEverywhere(filePath: string): Promise<boolean> {
+    // Detach before the tabs close and before the splice: the sidecar export
+    // reads the working text through the live document. After an `unlink`
+    // the file is gone from disk, so the review in memory and the buffer are
+    // the only copy of both.
     const documentId = this.getDocumentId(filePath);
     if (
       documentId !== undefined &&
@@ -2349,14 +2350,16 @@ current contents from the editor somewhere else, and restart the application.`,
         await this.closeFileEverywhere(filePath);
       }))
     ) {
-      return;
+      return false;
     }
+    await this._closeTabsEverywhere(filePath);
     const document = this.documents.find((doc) => doc.filePath === filePath);
     if (document !== undefined) {
       this._unload(document);
     }
 
     this.syncWatchedFilePaths();
+    return true;
   }
 
   /** Closes the tab of a path in every pane, pinned or not. */

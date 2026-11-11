@@ -45,8 +45,13 @@ export default class FileDelete extends ZettlrCommand {
       return false;
     }
 
-    // Ensure the file is closed before removing
-    await this._app.documents.closeFileEverywhere(arg.path);
+    // The file is closed before it is removed. A refused close keeps the
+    // file: its buffer and its review are in the open document.
+    if (!(await this._app.documents.closeFileEverywhere(arg.path))) {
+      throw new Error(
+        trans("%s was not deleted: the open document could not be closed.", fileName),
+      );
+    }
 
     // Now, remove the file
     await this._app.fsal.removeFile(arg.path);

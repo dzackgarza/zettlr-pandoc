@@ -162,7 +162,11 @@ export default class FileNew extends ZettlrCommand {
         } else {
           // Remove the file before creating it anew. We'll use the
           // corresponding command for that.
-          await this._app.documents.closeFileEverywhere(absPath);
+          if (!(await this._app.documents.closeFileEverywhere(absPath))) {
+            throw new Error(
+              trans("%s was not replaced: the open document could not be closed.", filename),
+            );
+          }
           await this._app.fsal.removeFile(absPath);
         }
       }
