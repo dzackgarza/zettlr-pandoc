@@ -12,7 +12,9 @@
  *                  of its process. It is a real executable: it records its
  *                  working directory and each argument as the process got
  *                  them, and leaves the file that the recipe leaves,
- *                  "<title>-<date>.pdf". No application code is replaced.
+ *                  "<title>-<date>.pdf". For `compile-pandoc` it also keeps
+ *                  the text of the input and the wikilink map of the
+ *                  export. No application code is replaced.
  *
  * END HEADER
  */
@@ -35,6 +37,10 @@ export interface RecordingJust {
   runs: () => Promise<RecipeRun[]>;
   /** The run of an export that started the runner one time. */
   onlyRun: () => Promise<RecipeRun>;
+  /** The text of the input that the last `compile-pandoc` run got. */
+  inputText: () => Promise<string>;
+  /** The wikilink map that the last `compile-pandoc` run got, as JSON text. */
+  wikilinkMap: () => Promise<string>;
   /** Drops the recorded runs. */
   forget: () => Promise<void>;
   /** Gives the process its PATH back and removes the runner. */
@@ -44,14 +50,20 @@ export interface RecordingJust {
 /**
  * The runner. Each run adds one record: the working directory and the
  * arguments, each ended by NUL, then one RS. The title is the fourth argument
- * of `compile-pandoc-project` and the fifth of `compile-pandoc`.
+ * of `compile-pandoc-project` and the fifth of `compile-pandoc`. The input of
+ * `compile-pandoc` is its fourth argument, a path that the recipe reads from
+ * its working directory.
  */
 const RUNNER = [
   "#!/bin/sh",
   `{ printf '%s\\0' "$PWD" "$@"; printf '\\036'; } >> "$(dirname "$0")/record.bin"`,
   'case "$3" in',
   '  compile-pandoc-project) title="$4" ;;',
-  '  *) title="$5" ;;',
+  "  *)",
+  '    title="$5"',
+  '    cat "$4" > "$(dirname "$0")/input.md"',
+  '    cat "$PANDOC_WIKILINKS" > "$(dirname "$0")/wikilinks.json"',
+  "    ;;",
   "esac",
   ': > "$PWD/$title-01-01-26.pdf"',
   "",
@@ -90,6 +102,8 @@ export async function installRecordingJust(): Promise<RecordingJust> {
       assert.equal(recorded.length, 1, "one export starts the recipe runner one time");
       return recorded[0];
     },
+    inputText: async () => await readFile(path.join(directory, "input.md"), "utf8"),
+    wikilinkMap: async () => await readFile(path.join(directory, "wikilinks.json"), "utf8"),
     forget: async () => {
       await writeFile(recordFile, "");
     },

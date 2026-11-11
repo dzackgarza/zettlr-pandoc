@@ -15,8 +15,16 @@
 import { trans } from "@common/i18n-main";
 import { PANDOC_WRITERS } from "@common/pandoc-util/pandoc-maps";
 import { showNativeNotification } from "@common/util/show-notification";
+import type AssetsProvider from "@providers/assets";
 import { type ValidPandocProfile } from "@providers/assets";
-import { app, shell } from "electron";
+import type ConfigProvider from "@providers/config";
+import type DocumentManager from "@providers/documents";
+import type FSAL from "@providers/fsal";
+import type LinkProvider from "@providers/links";
+import type LogProvider from "@providers/log";
+import type LongRunningTaskProvider from "@providers/long-running-tasks";
+import type WindowProvider from "@providers/windows";
+import { app as electronApp, shell } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
@@ -141,148 +149,173 @@ export default class Export extends ZettlrCommand {
     if (!("profile" in arg) || !("exportTo" in arg)) {
       throw new Error("Unexpected payload received for export event.");
     }
-    const { file, profile, exportTo } = arg;
+    await exportDocument(this._app, arg);
+  }
+}
 
-    const exporterOptions: ExporterOptions = {
-      profile,
-      targetDirectory: "",
-      sourceFiles: [],
-      cwd: undefined,
-    };
+/** The services of the application that the export of one document uses. */
+export interface DocumentExportServices {
+  documents: Pick<DocumentManager, "isModified" | "getDocument">;
+  fsal: Pick<FSAL, "getDescriptorForAnySupportedFile" | "isDir">;
+  windows: Pick<WindowProvider, "askDir" | "showErrorMessage">;
+  lrt: LongRunningTaskProvider;
+  config: ConfigProvider;
+  assets: AssetsProvider;
+  log: LogProvider;
+  links: Pick<LinkProvider, "index">;
+}
 
-    // If the file is modified, then the document manager will have a more
-    // recent version of the file in its cache. In that case, we'll silently
-    // overwrite the source file with a temporary one that we create with the
-    // contents of said modified file.
-    const isModified = this._app.documents.isModified(file);
-    const filename = path.basename(file);
-    const tempPath = path.join(app.getPath("temp"), filename);
+/**
+ * Exports one document with one profile.
+ *
+ * @param   {DocumentExportServices}  app  The services of the application
+ * @param   {ExportIPCAPI}            arg  The document, the profile and the destination
+ */
+export async function exportDocument(
+  app: DocumentExportServices,
+  arg: ExportIPCAPI,
+): Promise<void> {
+  const { file, profile, exportTo } = arg;
+
+  const exporterOptions: ExporterOptions = {
+    profile,
+    targetDirectory: "",
+    sourceFiles: [],
+    cwd: undefined,
+  };
+
+  // If the file is modified, then the document manager will have a more
+  // recent version of the file in its cache. In that case, we'll silently
+  // overwrite the source file with a temporary one that we create with the
+  // contents of said modified file.
+  const isModified = app.documents.isModified(file);
+  const filename = path.basename(file);
+  const tempPath = path.join(electronApp.getPath("temp"), filename);
+  if (isModified) {
+    const cachedVersion = await app.documents.getDocument(file);
+    await fs.writeFile(tempPath, cachedVersion.content, { encoding: "utf8" });
+  }
+
+  // We must have an absolute path given in file
+  const fileDescriptor = await app.fsal.getDescriptorForAnySupportedFile(file);
+  if (fileDescriptor !== undefined) {
+    // If we have a cached version, we already have a file to export.
+    // Otherwise, use the regular one from disk.
     if (isModified) {
-      const cachedVersion = await this._app.documents.getDocument(file);
-      await fs.writeFile(tempPath, cachedVersion.content, { encoding: "utf8" });
+      exporterOptions.sourceFiles.push({
+        path: tempPath,
+        name: filename,
+        ext: path.extname(filename),
+      });
+    } else {
+      exporterOptions.sourceFiles.push(fileDescriptor);
     }
 
-    // We must have an absolute path given in file
-    const fileDescriptor = await this._app.fsal.getDescriptorForAnySupportedFile(file);
-    if (fileDescriptor !== undefined) {
-      // If we have a cached version, we already have a file to export.
-      // Otherwise, use the regular one from disk.
-      if (isModified) {
-        exporterOptions.sourceFiles.push({
-          path: tempPath,
-          name: filename,
-          ext: path.extname(filename),
-        });
-      } else {
-        exporterOptions.sourceFiles.push(fileDescriptor);
-      }
+    // The cwd, however, is the source file one's
+    exporterOptions.cwd = fileDescriptor.dir;
 
-      // The cwd, however, is the source file one's
-      exporterOptions.cwd = fileDescriptor.dir;
-
-      // A user can override this default by providing in a frontmatter the
-      // key zettlr.pandoc_working_dir: /path/to/directory
-      const declaredWorkingDir =
-        fileDescriptor.type === "file"
-          ? frontmatterWorkingDir(fileDescriptor.frontmatter)
-          : undefined;
-      if (declaredWorkingDir !== undefined && (await this._app.fsal.isDir(declaredWorkingDir))) {
-        exporterOptions.cwd = declaredWorkingDir;
-      }
-
-      switch (exportTo) {
-        case "ask": {
-          const folderSelection = await this._app.windows.askDir(
-            trans("Choose export destination"),
-            null,
-            trans("Save"),
-          );
-          // The author cancelled the dialog: a choice, and no failure.
-          if (folderSelection.length === 0) {
-            return;
-          }
-          exporterOptions.targetDirectory = folderSelection[0];
-          break;
-        }
-        case "temp":
-          exporterOptions.targetDirectory = app.getPath("temp");
-          break;
-        case "cwd":
-        default:
-          exporterOptions.targetDirectory = fileDescriptor.dir;
-          break;
-      }
+    // A user can override this default by providing in a frontmatter the
+    // key zettlr.pandoc_working_dir: /path/to/directory
+    const declaredWorkingDir =
+      fileDescriptor.type === "file"
+        ? frontmatterWorkingDir(fileDescriptor.frontmatter)
+        : undefined;
+    if (declaredWorkingDir !== undefined && (await app.fsal.isDir(declaredWorkingDir))) {
+      exporterOptions.cwd = declaredWorkingDir;
     }
 
-    // We should have at least one file present now
-    if (exporterOptions.sourceFiles.length === 0) {
-      throw new Error("Could not export: no source file was given.");
-    }
-
-    const task = this._app.lrt.registerTask(
-      trans("Exporting file %s", path.basename(file)),
-      trans("Exporting using profile %s", profile.name),
-    );
-
-    // Call the exporter. Don't throw the "big" error as this is single-file export
-    try {
-      this._app.log.verbose(
-        `[Exporter] Exporting ${exporterOptions.sourceFiles.length} files to ${exporterOptions.targetDirectory}`,
-      );
-      const output = await makeExport(
-        exporterOptions,
-        this._app.log,
-        this._app.config,
-        this._app.assets,
-        this._app.links.index,
-      );
-      if (output.code === 0) {
-        this._app.log.info(`Successfully exported file to ${output.targetFile}`);
-        const readableFormat =
-          profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
-        showNativeNotification(trans("Exported to %s", readableFormat));
-        task.update({
-          title: trans("File %s has been exported", path.basename(file)),
-          info: trans("File has been exported to %s", readableFormat),
-          successInteraction: () => {
-            shell.openPath(output.targetFile).catch((err) => {
-              this._app.log.error(`[Project] Could not open file '${output.targetFile}'`, err);
-            });
-          },
-        });
-        task.endTask("success");
-
-        // In case of a textbundle/pack it's a folder, else it's a file
-        if (this._app.config.get().export.autoOpenExportedFiles) {
-          if (["textbundle", "textpack"].includes(profile.writer)) {
-            shell.showItemInFolder(output.targetFile);
-          } else {
-            const potentialError = await shell.openPath(output.targetFile);
-            if (potentialError !== "") {
-              throw new Error("Could not open exported file: " + potentialError);
-            }
-          }
-        }
-      } else {
-        const title = trans("Export failed");
-        const message = trans(
-          "An error occurred on export: %s",
-          `Pandoc exited with code ${output.code}`,
+    switch (exportTo) {
+      case "ask": {
+        const folderSelection = await app.windows.askDir(
+          trans("Choose export destination"),
+          null,
+          trans("Save"),
         );
-        const contents = output.stderr.join("\n");
-        this._app.windows.showErrorMessage(title, message, contents);
-        task.endTask("error", new Error(`Export failed with status ${output.code}`));
+        // The author cancelled the dialog: a choice, and no failure.
+        if (folderSelection.length === 0) {
+          return;
+        }
+        exporterOptions.targetDirectory = folderSelection[0];
+        break;
       }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        const message: string = err.message;
-        this._app.windows.showErrorMessage(trans("Export error"), message);
-        this._app.log.error(message, err);
-        task.endTask("error", err);
-      } else {
-        this._app.log.error("Export failed with an unknown error.", err);
-        task.endTask("error", new Error("Unknown error"));
+      case "temp":
+        exporterOptions.targetDirectory = electronApp.getPath("temp");
+        break;
+      case "cwd":
+      default:
+        exporterOptions.targetDirectory = fileDescriptor.dir;
+        break;
+    }
+  }
+
+  // We should have at least one file present now
+  if (exporterOptions.sourceFiles.length === 0) {
+    throw new Error("Could not export: no source file was given.");
+  }
+
+  const task = app.lrt.registerTask(
+    trans("Exporting file %s", path.basename(file)),
+    trans("Exporting using profile %s", profile.name),
+  );
+
+  // Call the exporter. Don't throw the "big" error as this is single-file export
+  try {
+    app.log.verbose(
+      `[Exporter] Exporting ${exporterOptions.sourceFiles.length} files to ${exporterOptions.targetDirectory}`,
+    );
+    const output = await makeExport(
+      exporterOptions,
+      app.log,
+      app.config,
+      app.assets,
+      app.links.index,
+    );
+    if (output.code === 0) {
+      app.log.info(`Successfully exported file to ${output.targetFile}`);
+      const readableFormat =
+        profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
+      showNativeNotification(trans("Exported to %s", readableFormat));
+      task.update({
+        title: trans("File %s has been exported", path.basename(file)),
+        info: trans("File has been exported to %s", readableFormat),
+        successInteraction: () => {
+          shell.openPath(output.targetFile).catch((err) => {
+            app.log.error(`[Project] Could not open file '${output.targetFile}'`, err);
+          });
+        },
+      });
+      task.endTask("success");
+
+      // In case of a textbundle/pack it's a folder, else it's a file
+      if (app.config.get().export.autoOpenExportedFiles) {
+        if (["textbundle", "textpack"].includes(profile.writer)) {
+          shell.showItemInFolder(output.targetFile);
+        } else {
+          const potentialError = await shell.openPath(output.targetFile);
+          if (potentialError !== "") {
+            throw new Error("Could not open exported file: " + potentialError);
+          }
+        }
       }
+    } else {
+      const title = trans("Export failed");
+      const message = trans(
+        "An error occurred on export: %s",
+        `Pandoc exited with code ${output.code}`,
+      );
+      const contents = output.stderr.join("\n");
+      app.windows.showErrorMessage(title, message, contents);
+      task.endTask("error", new Error(`Export failed with status ${output.code}`));
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      const message: string = err.message;
+      app.windows.showErrorMessage(trans("Export error"), message);
+      app.log.error(message, err);
+      task.endTask("error", err);
+    } else {
+      app.log.error("Export failed with an unknown error.", err);
+      task.endTask("error", new Error("Unknown error"));
     }
   }
 }
