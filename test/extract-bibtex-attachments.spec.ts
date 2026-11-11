@@ -78,7 +78,55 @@ const invalidBibTexFile = `
 @Comment{jabref-meta: databaseType:bibtex;}
 `;
 
+// Zotero writes each attachment as `title:path:type` and puts a backslash
+// before each `\`, `:` and `;` of a part. The entries and their paths are
+// test cases of Zotero's own BibTeX translator
+// (https://github.com/zotero/translators/blob/master/BibTeX.js).
+const zoteroBibTexFile = String.raw`
+@article{zoteroFilePath1,
+    title = {Zotero: single attachment},
+    file = {Test:files/47/test2.pdf:application/pdf}
+}
+
+@article{zoteroFilePaths2,
+    title = {Zotero: multiple attachments},
+    file = {Test1:files/47/test2.pdf:application/pdf;Test2:files/46/test2-min.pdf:application/pdf}
+}
+
+@article{zoteroFilePaths4,
+    title = {Zotero: linked attachments},
+    file = {Test:E\:\\some\\random\\folder\\test2.pdf:application/pdf}
+}
+`;
+
+const zoteroResults: BibTexAttachments = {
+  zoteroFilePath1: ["files/47/test2.pdf"],
+  zoteroFilePaths2: ["files/47/test2.pdf", "files/46/test2-min.pdf"],
+  zoteroFilePaths4: [String.raw`E:\some\random\folder\test2.pdf`],
+};
+
+// An attachment title that holds both separators, after a snapshot.
+const separatorsInTitleFile = String.raw`
+@article{Nik80,
+  title = {Integral symmetric bilinear forms and some of their applications},
+  file = {Snapshot:/srv/zotero/storage/CD34/page.html:text/html;Full Text (Lattices\: forms, groups\; a survey):/srv/zotero/storage/AB12/Nikulin - 1980 - Forms.pdf:application/pdf},
+}
+`;
+
 describe("Utility#extractBibTexAttachments()", function () {
+  it("reads the attachment records that Zotero writes", function () {
+    assert.deepStrictEqual(extractBibTexAttachments(zoteroBibTexFile, ""), zoteroResults);
+  });
+
+  it("gives the files of an attachment whose title holds a separator, PDF first", function () {
+    assert.deepStrictEqual(extractBibTexAttachments(separatorsInTitleFile, "/srv/library"), {
+      Nik80: [
+        "/srv/zotero/storage/AB12/Nikulin - 1980 - Forms.pdf",
+        "/srv/zotero/storage/CD34/page.html",
+      ],
+    });
+  });
+
   it("should successfully parse a valid BibTex file", function () {
     const files = extractBibTexAttachments(validBibTexFile, "");
     assert.deepStrictEqual(
