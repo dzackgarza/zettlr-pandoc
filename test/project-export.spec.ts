@@ -110,6 +110,7 @@ describe("Project export", function () {
   let oneFailed: string;
   let twoFailed: string;
   let allExported: string;
+  let apostrophe: string;
   let template: string;
   let pdfOfChapters: string;
   let pdfOfOneChapter: string;
@@ -136,6 +137,11 @@ describe("Project export", function () {
       texTemplate: "",
     });
     allExported = await project("all-exported", { profiles: [listing], chapters, texTemplate: "" });
+    apostrophe = await project("Halphen's pencils", {
+      profiles: [listing],
+      chapters,
+      texTemplate: "",
+    });
 
     template = path.join(scripts, "thesis.tex");
     await writeFile(template, `${TEMPLATE_MARK}\n$body$\n`);
@@ -229,6 +235,14 @@ describe("Project export", function () {
         `the message has no "${part}"`,
       );
     }
+  });
+
+  it("gives a command a Project folder with an apostrophe in its name", async function () {
+    const exported = await exportProject(services, apostrophe);
+
+    assert.deepEqual(errorWindows, []);
+    assert.equal(exported, true);
+    assert.match(await readFile(path.join(apostrophe, "listing.txt"), "utf8"), /^chapter\.md$/m);
   });
 
   describe("with a TeX template in the settings of the Project", function () {
