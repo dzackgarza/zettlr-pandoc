@@ -31,7 +31,7 @@ const LOG_FILES_TO_KEEP = 30;
  * Available LogLevels BUG: Somehow I have to declare this twice. That happens
  * if you devise a system for typings where you can put types "somewhere."
  */
-enum LogLevel {
+export enum LogLevel {
   verbose = 1,
   info = 2,
   warning = 3,
