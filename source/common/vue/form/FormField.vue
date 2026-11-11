@@ -70,6 +70,7 @@
     v-bind:placeholder="props.field.placeholder"
     v-bind:directory="false"
     v-bind:filter="props.field.filter"
+    v-bind:problem="props.field.problem"
     v-on:update:model-value="emit('update:modelValue', $event)"
   ></FileInput>
   <FileInput

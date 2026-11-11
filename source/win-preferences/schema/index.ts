@@ -17,6 +17,7 @@
 
 import { trans } from "@common/i18n-renderer";
 import type { Fieldset, FormField } from "@common/vue/form/FormBuilder.vue";
+import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { getAdvancedFields } from "./advanced";
@@ -69,16 +70,23 @@ export function getPreferenceGroups(): PreferenceGroupDescriptor[] {
   ];
 }
 
-/** Every fieldset rendered by Preferences, in its existing schema order. */
+/**
+ * Every fieldset rendered by Preferences, in its existing schema order.
+ *
+ * @param  citationProblems  The files of the citation settings that the
+ *                           citation provider could not load. The form flags
+ *                           their fields; the launcher index has no use for them.
+ */
 export function getPreferenceFieldsets(
   config: ConfigOptions,
   appLangOptions: Record<string, string> = {},
+  citationProblems: CitationResourceProblem[] = [],
 ): PreferencesFieldset[] {
   return [
     ...getAdvancedFields(config),
     ...getAppearanceFields(config),
     ...getAutocorrectFields(),
-    ...getCitationFields(),
+    ...getCitationFields(config, citationProblems),
     ...getEditorFields(config),
     ...getFileManagerFields(config),
     ...getGeneralFields(appLangOptions),

@@ -6,8 +6,16 @@
     >
       {{ wordCountLabel }}
     </p>
+    <p
+      v-if="failure !== undefined"
+      class="references-failure"
+      role="alert"
+    >
+      {{ failure }}
+    </p>
     <!-- eslint-disable vue/no-v-html -- referenceHTML is sanitized by DOMPurify before insertion. -->
     <div
+      v-else
       id="references-list"
       v-html="referenceHTML"
     />
@@ -17,13 +25,14 @@
 
 <script setup lang="ts">
 import { trans } from "@common/i18n-renderer";
+import { citationProblemMessage, followCitationProblems } from "@common/util/citation-problems";
 import { reportError } from "@common/util/error-reporting";
 import {
   getBibliographyForDescriptor as getBibliography,
   resolveProjectForDescriptorSync,
 } from "@common/util/get-bibliography-for-descriptor";
 import { isAbsolutePath, resolvePath } from "@common/util/renderer-path-polyfill";
-import type { CitationDatabase } from "@dts/common/citeproc";
+import type { CitationDatabase, CitationResourceProblem } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
 import { type AnyDescriptor, type MDFileDescriptor } from "@dts/common/fsal";
@@ -55,6 +64,19 @@ function getBibliographyForDescriptor(descriptor: MDFileDescriptor): CitationDat
 }
 
 const bibliography = ref<[BibliographyOptions, string[]] | undefined>(undefined);
+// Why the provider gave no bibliography for the active file
+const bibliographyFailure = ref<string | undefined>(undefined);
+// The citation style that the provider could not load: no bibliography exists
+const styleProblem = ref<CitationResourceProblem | undefined>(undefined);
+
+// The provider names a style that did not load in the words of the other
+// windows. The rejection of the request names the same cause behind the text
+// that the IPC layer puts before it.
+const failure = computed(() =>
+  styleProblem.value !== undefined
+    ? citationProblemMessage(styleProblem.value)
+    : bibliographyFailure.value,
+);
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile);
 
@@ -92,11 +114,35 @@ const wordCountLabel = computed(() =>
   trans("circa %s words", localiseNumber(approximateWordCount.value)),
 );
 
-watch(activeFile, () => {
-  updateBibliography().catch((e) => reportError("Could not update bibliography", e));
-});
+/**
+ * Shows the bibliography of the active file, or the cause when the provider
+ * gives none. A bibliography of an earlier request is not the one of this one.
+ */
+function refreshBibliography(): void {
+  updateBibliography().then(
+    () => {
+      bibliographyFailure.value = undefined;
+    },
+    (cause: unknown) => {
+      reportError("Could not update bibliography", cause);
+      bibliography.value = undefined;
+      bibliographyFailure.value = trans(
+        "The references could not be rendered: %s",
+        cause instanceof Error ? cause.message : String(cause),
+      );
+    },
+  );
+}
+
+watch(activeFile, refreshBibliography);
 
 onMounted(() => {
+  // The library or the style changed: the bibliography on screen is of the old one.
+  ipcRenderer.on("citeproc-database-updated", refreshBibliography);
+  followCitationProblems((problems) => {
+    styleProblem.value = problems.find((problem) => problem.resource === "style");
+  });
+
   ipcRenderer.on(
     "documents-update",
     (e, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
@@ -106,14 +152,14 @@ onMounted(() => {
         const { filePath } = context;
 
         if (filePath === activeFile.value?.path) {
-          updateBibliography().catch((e) => reportError("Could not update bibliography", e));
+          refreshBibliography();
         }
       }
     },
   );
 
   // Initial bibliography update
-  updateBibliography().catch((e) => reportError("Could not update bibliography", e));
+  refreshBibliography();
 });
 
 /**
@@ -174,6 +220,13 @@ div#references-panel {
   padding: 0 var(--chrome-inset);
   box-sizing: border-box;
   font-size: var(--chrome-font-size);
+}
+
+div#references-panel .references-failure {
+  margin: 8px 0;
+  color: var(--red-0);
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 div#references-panel .references-word-count {

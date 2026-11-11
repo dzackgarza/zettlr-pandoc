@@ -26,7 +26,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { readFile } from "fs/promises";
 import os from "os";
 import path from "path";
-import CiteprocProvider from "source/app/service-providers/citeproc";
+import CiteprocProvider, { CitationStyleError } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
 import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 
@@ -120,7 +120,6 @@ describe("a citation style that the provider cannot load", function () {
         on: (_event, callback) => listeners.push(callback),
         get: () => ({ appLang: "en-US", export: settings }),
       },
-      { showErrorMessage: () => {} },
       LOCALES,
     );
     providers.push(provider);
@@ -162,8 +161,6 @@ describe("a citation style that the provider cannot load", function () {
     return error.message;
   }
 
-  const isStyleError = (error: Error): boolean => error.name === "CitationStyleError";
-
   it("starts, and names the path and the cause to a window that asks", async function () {
     const { provider } = providerWith({ cslLibrary: "", cslStyle: missingStyle });
 
@@ -183,8 +180,11 @@ describe("a citation style that the provider cannot load", function () {
       provider.getItems(libraryPath).map((item) => item.id),
       ["AW71"],
     );
-    assert.throws(() => provider.getCitation(libraryPath, [{ id: "AW71" }], false), isStyleError);
-    assert.throws(() => provider.makeBibliography(libraryPath, ["AW71"]), isStyleError);
+    assert.throws(
+      () => provider.getCitation(libraryPath, [{ id: "AW71" }], false),
+      CitationStyleError,
+    );
+    assert.throws(() => provider.makeBibliography(libraryPath, ["AW71"]), CitationStyleError);
   });
 
   it("tells the windows when a change of the setting names a file that is absent", async function () {
@@ -207,7 +207,10 @@ describe("a citation style that the provider cannot load", function () {
     assert.deepEqual(broadcasts(PROBLEMS_CHANNEL), [[[problem]]]);
     assert.deepEqual(await problemsReadByAWindow(), [problem]);
     // The style of the last setting is not the style of this one.
-    assert.throws(() => provider.getCitation(libraryPath, [{ id: "AW71" }], false), isStyleError);
+    assert.throws(
+      () => provider.getCitation(libraryPath, [{ id: "AW71" }], false),
+      CitationStyleError,
+    );
   });
 
   it("names a file that is not a citation style", async function () {
@@ -220,7 +223,10 @@ describe("a citation style that the provider cannot load", function () {
       problems.map((problem) => [problem.resource, problem.path]),
       [["style", notAStyle]],
     );
-    assert.throws(() => provider.getCitation(libraryPath, [{ id: "AW71" }], false), isStyleError);
+    assert.throws(
+      () => provider.getCitation(libraryPath, [{ id: "AW71" }], false),
+      CitationStyleError,
+    );
   });
 
   it("renders in the style of the setting when the setting names a style again", async function () {
@@ -230,9 +236,13 @@ describe("a citation style that the provider cannot load", function () {
     const updatesBefore = broadcasts(UPDATED_CHANNEL).length;
 
     set("cslStyle", yearStyle);
-    await untilBroadcast(PROBLEMS_CHANNEL, 1);
+    await untilBroadcast(PROBLEMS_CHANNEL, 2);
 
-    assert.deepEqual(broadcasts(PROBLEMS_CHANNEL), [[[]]]);
+    // An open window gets the problem of the start, and then its end.
+    assert.deepEqual(broadcasts(PROBLEMS_CHANNEL), [
+      [[{ resource: "style", path: missingStyle, cause: await readFailure(missingStyle) }]],
+      [[]],
+    ]);
     assert.deepEqual(await problemsReadByAWindow(), []);
     assert.equal(provider.getCitation(libraryPath, [{ id: "AW71" }], false), "[1971]");
     assert.equal(

@@ -61,11 +61,6 @@ describe("Concurrent requests for one citation database", function () {
         on: () => {},
         get: () => ({ appLang: "en-US", export: { cslLibrary: "", cslStyle: CHICAGO_STYLE } }),
       },
-      {
-        showErrorMessage: (title: string, message: string) => {
-          throw new Error(`${title}: ${message}`);
-        },
-      },
       path.resolve("static", "csl-locales"),
     );
     await provider.boot();

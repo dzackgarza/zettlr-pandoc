@@ -53,7 +53,7 @@ import type {
 import type { AnnotationMessage as DomainAnnotationMessage } from "@dts/common/annotation-domain";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type CiteprocProvider from "@providers/citeproc";
-import { CiteprocRenderInvariantError } from "@providers/citeproc";
+import { CitationStyleError, CiteprocRenderInvariantError } from "@providers/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
 import type { DocumentLintRecord } from "@providers/document-lint";
@@ -182,6 +182,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   PERSISTENCE_FAILED: 500,
   CITATION_DATABASE_NOT_LOADED: 404,
   CITATION_NOT_FOUND: 404,
+  CITATION_STYLE_NOT_LOADED: 503,
   FIGURE_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
   SKILLS_NOT_CONFIGURED: 503,
@@ -2222,6 +2223,10 @@ export default class AgentHTTPProvider extends ProviderContract {
         this.sendError(res, 500, "INTERNAL_ERROR", err.message);
         return;
       }
+      if (err instanceof CitationStyleError) {
+        this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
+        return;
+      }
       this.sendError(
         res,
         404,
@@ -2251,6 +2256,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch (err) {
       if (err instanceof CiteprocRenderInvariantError) {
         this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+        return;
+      }
+      if (err instanceof CitationStyleError) {
+        this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
         return;
       }
       this.sendError(

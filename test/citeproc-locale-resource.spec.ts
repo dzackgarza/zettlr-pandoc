@@ -92,12 +92,7 @@ describe("citation locale resource", function () {
   });
 
   function providerWith(appLang: string, localeDirectory: string): CiteprocProvider {
-    const provider = new CiteprocProvider(
-      log,
-      config(appLang),
-      { showErrorMessage: () => {} },
-      localeDirectory,
-    );
+    const provider = new CiteprocProvider(log, config(appLang), localeDirectory);
     providers.push(provider);
     return provider;
   }

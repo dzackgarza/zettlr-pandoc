@@ -14,7 +14,6 @@ import os from "os";
 import path from "path";
 import CiteprocProvider, {
   type CiteprocConfig,
-  type CiteprocErrorDisplay,
   CiteprocRenderInvariantError,
 } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
@@ -59,8 +58,6 @@ function config(stylePath: string): CiteprocConfig {
   };
 }
 
-const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} };
-
 describe("Citeproc printable-form invariant", function () {
   let directory: string;
   let libraryPath: string;
@@ -93,7 +90,6 @@ describe("Citeproc printable-form invariant", function () {
     const provider = new CiteprocProvider(
       log,
       config(stylePath),
-      windows,
       path.resolve("static", "csl-locales"),
     );
     await provider.boot();

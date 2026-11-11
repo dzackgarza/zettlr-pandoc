@@ -233,6 +233,8 @@ interface FileField extends BasicInfo {
   type: "file" | "directory";
   reset?: string | boolean;
   filter?: FileFilter[];
+  /** Why the app could not use the file that the value names. */
+  problem?: string;
 }
 
 interface CheckboxField extends BasicInfo {

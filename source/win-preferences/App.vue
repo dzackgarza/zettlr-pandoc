@@ -68,6 +68,7 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import { followCitationProblems } from "@common/util/citation-problems";
 import { reportError } from "@common/util/error-reporting";
 import { resolveLangCode } from "@common/util/map-lang-code";
 import SelectableList from "@common/vue/form/elements/SelectableList.vue";
@@ -75,6 +76,7 @@ import TextControl from "@common/vue/form/elements/TextControl.vue";
 import FormBuilder from "@common/vue/form/FormBuilder.vue";
 import SplitView from "@common/vue/window/SplitView.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
 import { useConfigStore } from "source/pinia";
 import { computed, nextTick, onBeforeMount, onMounted, ref, watch } from "vue";
@@ -145,8 +147,11 @@ const showKeyboardShortcutsEditor = computed(
   () => query.value === "" && groups.value[currentGroup.value].id === PreferencesGroups.Shortcuts,
 );
 
+// The files of the citation settings that the citation provider could not load
+const citationProblems = ref<CitationResourceProblem[]>([]);
+
 const fieldsets = computed(() => {
-  return getPreferenceFieldsets(configStore.config, appLangOptions.value);
+  return getPreferenceFieldsets(configStore.config, appLangOptions.value, citationProblems.value);
 });
 
 const filteredFieldsets = computed(() => {
@@ -266,6 +271,9 @@ function preferenceTargetFromLocation(): PreferenceNavigationTarget | undefined 
  * Listen to events in order to adapt display.
  */
 onBeforeMount(() => {
+  followCitationProblems((problems) => {
+    citationProblems.value = problems;
+  });
   ipcRenderer.on("dictionary-provider", (event, message) => {
     const { command } = message;
     if (command === "invalidate-dict") {

@@ -77,7 +77,6 @@ describe("citation attachments on disk", function () {
     provider = new CiteprocProvider(
       new LogProvider(),
       config,
-      { showErrorMessage: () => {} },
       path.resolve("static", "csl-locales"),
     );
     await provider.boot();

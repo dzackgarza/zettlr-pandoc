@@ -3,9 +3,7 @@
     <label v-if="label" v-bind:for="fieldID">{{ label }}</label>
     <div class="input-button-group">
       <TextControl
-        v-bind:id="fieldID"
         v-model="textValue"
-        type="text"
         v-bind:name="name"
         v-bind:placeholder="placeholder"
         v-bind:reset="reset"
@@ -19,6 +17,14 @@
         {{ selectButtonLabel }}
       </button>
     </div>
+    <ZtrAdmonition
+      v-if="problem !== undefined"
+      class="file-problem"
+      role="alert"
+      v-bind:type="'error'"
+    >
+      {{ problem }}
+    </ZtrAdmonition>
   </div>
 </template>
 
@@ -42,6 +48,7 @@ import { reportError } from "@common/util/error-reporting";
 import type { FileFilter } from "electron";
 import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
 import { computed, ref, toRef, watch } from "vue";
+import ZtrAdmonition from "../../ZtrAdmonition.vue";
 import TextControl from "./TextControl.vue";
 
 const ipcRenderer = window.ipc;
@@ -54,6 +61,8 @@ const props = defineProps<{
   placeholder?: string;
   directory?: boolean;
   filter?: FileFilter[];
+  /** Why the app could not use the file that the value names. */
+  problem?: string;
 }>();
 
 const emit = defineEmits<(e: "update:modelValue", val: string) => void>();
@@ -128,6 +137,12 @@ body {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+  }
+
+  // The cause can be a long path without a space.
+  .form-control .file-problem {
+    overflow-wrap: anywhere;
+    user-select: text;
   }
 }
 body.darwin {

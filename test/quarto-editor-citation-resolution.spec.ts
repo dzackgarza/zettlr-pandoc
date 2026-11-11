@@ -25,10 +25,7 @@ import { EditorView } from "@codemirror/view";
 import markdownParser from "@dzack/pandoc-editor/parser/markdown-parser";
 import { strict as assert } from "assert";
 import path from "path";
-import CiteprocProvider, {
-  type CiteprocConfig,
-  type CiteprocErrorDisplay,
-} from "source/app/service-providers/citeproc";
+import CiteprocProvider, { type CiteprocConfig } from "source/app/service-providers/citeproc";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import {
@@ -96,9 +93,7 @@ describe("Quarto editor citation resolution and startup race", function () {
       on: () => {},
       get: () => ({ appLang: "en-US", export: { cslLibrary: "", cslStyle: CHICAGO_STYLE } }),
     };
-    const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} };
-
-    citeproc = new CiteprocProvider(log, config, windows, path.resolve("static", "csl-locales"));
+    citeproc = new CiteprocProvider(log, config, path.resolve("static", "csl-locales"));
     await citeproc.boot();
     await citeproc.synchronizeDatabases([
       path.join(ROOT, "references.bib"),

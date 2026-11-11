@@ -17,10 +17,10 @@
  *                  registered 'citeproc-provider' ipcMain handler -- the same
  *                  channel and 'get-items' command the editor's
  *                  updateCitationKeys() calls for every document it opens.
- *                  Config and the error display are injected as the narrow
- *                  CiteprocConfig / CiteprocErrorDisplay surfaces the provider
- *                  declares, so both doubles implement a complete interface
- *                  and a member added to either fails compilation here. The
+ *                  Config is injected as the narrow CiteprocConfig
+ *                  surface the provider declares, so the double implements a
+ *                  complete interface and a member added to it fails
+ *                  compilation here. The
  *                  whole ConfigProvider cannot be built headlessly anyway: it
  *                  reads a webpack-copied `lang/` asset directory at
  *                  construction. The config values are its shipped defaults.
@@ -37,7 +37,7 @@ import { strict as assert } from "assert";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
-import type { CiteprocConfig, CiteprocErrorDisplay } from "source/app/service-providers/citeproc";
+import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
@@ -77,28 +77,6 @@ function makeConfigSeam(cslLibrary: string): CiteprocConfig {
   return {
     on: () => {},
     get: () => ({ appLang: "en-US", export: { cslLibrary, cslStyle: CHICAGO_STYLE } }),
-  };
-}
-
-/**
- * Records the error dialogs the provider raises. An unconfigured global
- * library must resolve quietly: reporting it as a user-facing failure is the
- * same defect wearing a dialog.
- */
-interface RecordedDialog {
-  title: string;
-  message: string;
-}
-
-function makeWindowRecorder(): { dialogs: RecordedDialog[]; display: CiteprocErrorDisplay } {
-  const dialogs: RecordedDialog[] = [];
-  return {
-    dialogs,
-    display: {
-      showErrorMessage: (title: string, message: string) => {
-        dialogs.push({ title, message });
-      },
-    },
   };
 }
 
@@ -143,15 +121,11 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
 
   describe("with no global library configured", function () {
     let provider: CiteprocProvider;
-    let dialogs: RecordedDialog[];
 
     before(async function () {
-      const windows = makeWindowRecorder();
-      dialogs = windows.dialogs;
       provider = new CiteprocProvider(
         log,
         makeConfigSeam(""),
-        windows.display,
         path.resolve("static", "csl-locales"),
       );
       await provider.boot();
@@ -163,12 +137,14 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
 
     it("serves an empty item set for a document carrying no library of its own", async function () {
       assert.deepEqual(await citekeysFor(CITEPROC_MAIN_DB), []);
-      assert.deepEqual(dialogs, []);
+      // An unconfigured global library is not a problem that a window shows.
+      assert.deepEqual(provider.problems(), []);
     });
 
     it("serves a project bibliography without the unconfigured global library", async function () {
       assert.deepEqual(await citekeysFor([projectLibraryPath, CITEPROC_MAIN_DB]), ["Cob19"]);
-      assert.deepEqual(dialogs, []);
+      // An unconfigured global library is not a problem that a window shows.
+      assert.deepEqual(provider.problems(), []);
     });
 
     it("reports no attachment for a document carrying no library of its own", function () {
@@ -184,7 +160,6 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
       provider = new CiteprocProvider(
         log,
         makeConfigSeam(globalLibraryPath),
-        makeWindowRecorder().display,
         path.resolve("static", "csl-locales"),
       );
       await provider.boot();

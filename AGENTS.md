@@ -573,6 +573,24 @@ of an isolated instance are in the first comment of #132.
   names for a citation key and that exist. The open-attachment command opens the
   first one. When the library names files and none exists, the command logs
   that and asks Zotero (the Better BibTeX JSON-RPC).
+- **A style or a library that does not load is a problem, not a stop.**
+  The app starts when `export.cslStyle` or `export.cslLibrary` names a file
+  that cannot be read or parsed. `CiteprocProvider` keeps each such file as a
+  `CitationResourceProblem` (resource, path, cause), answers the list on the
+  IPC command `get-problems`, and broadcasts each change of the list on
+  `citeproc-problems`. A window follows the list through
+  `followCitationProblems` (`common/util/citation-problems.ts`): the main
+  window shows a message with the action "Open Preferences", the Preferences
+  window marks the file field (`FileField.problem`), and the References view
+  shows the sentence in place of a bibliography.
+- **No citation in another style.** While the style of the setting is not
+  loaded, a render of a citation or of a bibliography throws
+  `CitationStyleError`; the bundled style and the style of the last setting
+  are not used. The Agent API answers 503 `CITATION_STYLE_NOT_LOADED`. The
+  cite keys of the libraries stay available. Each load of a style broadcasts
+  `citeproc-database-updated`, so the windows draw their citations again.
+- **Proof:** `test/citeproc-unreadable-style.spec.ts`,
+  `e2e/unreadable-citation-style.spec.ts`.
 
 ### 13. Assembled-app E2E runs
 
@@ -861,10 +879,14 @@ of an isolated instance are in the first comment of #132.
 - `packages/pandoc-editor/src/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.
-- The global biome configuration formats every file, the files shared with
-  upstream Zettlr included: double quotes, semicolons, sorted imports. Run
-  `biome check --config-path ~/ai-review-ci/tool-configs/biome.json --write .`
-  before a commit; `qc-ci / qc` fails on an unformatted file.
+- The global biome configuration formats the code files, the files shared
+  with upstream Zettlr included: double quotes, semicolons, sorted imports.
+  Before a commit, format the code files that the commit changes:
+  `bun x --package @biomejs/biome biome check --config-path ~/ai-review-ci/tool-configs/biome.json --write <files>`.
+  Give it files, not a directory, and no Markdown file: Biome reads Pandoc
+  Markdown as CommonMark and turns YAML front matter into a heading, which
+  changes the fixtures of `test/fixtures` (dzackgarza/ai-review-ci#496). The
+  hosted `bun-biome` check is recorded debt: it does not fail `qc-ci / qc`.
 
 # Review Guidelines
 

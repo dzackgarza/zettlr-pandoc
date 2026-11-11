@@ -283,6 +283,7 @@ import {
   type RevealTarget,
   SIDEBAR_VIEWS,
 } from "./sidebar/sidebar-views";
+import { showCitationProblems } from "./util/citation-problem-toasts";
 import {
   type DesktopCommandContext,
   resolveDirectoryHere,
@@ -1029,6 +1030,8 @@ watch(distractionFree, (newValue) => {
 });
 
 onMounted(() => {
+  showCitationProblems();
+
   // A command of the application that threw answers `false` to its caller, and
   // most callers drop that answer. The cause is shown here.
   ipcRenderer.on(COMMAND_FAILED_CHANNEL, (event, failure: CommandFailedBroadcast) => {

@@ -182,7 +182,6 @@ export class AppServiceContainer {
     this._citeprocProvider = new CiteprocProvider(
       this._logProvider,
       this._configProvider,
-      this._windowProvider,
       BUNDLED_LOCALE_DIRECTORY,
     );
     this._agentHTTPProvider = new AgentHTTPProvider(

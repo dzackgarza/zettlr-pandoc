@@ -63,14 +63,10 @@ describe("A changed main citation library", function () {
           export: { cslLibrary: libraryPath, cslStyle: CHICAGO_STYLE },
         }),
       },
-      {
-        showErrorMessage: (title: string, message: string) => {
-          throw new Error(`${title}: ${message}`);
-        },
-      },
       path.resolve("static", "csl-locales"),
     );
     await provider.boot();
+    assert.deepEqual(provider.problems(), [], "the main library loaded");
   });
 
   after(async function () {

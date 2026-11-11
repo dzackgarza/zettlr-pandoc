@@ -723,6 +723,7 @@ export interface components {
         | "INTERNAL_ERROR"
         | "CITATION_DATABASE_NOT_LOADED"
         | "CITATION_NOT_FOUND"
+        | "CITATION_STYLE_NOT_LOADED"
         | "FIGURE_NOT_FOUND"
         | "FIGURE_ALREADY_EXISTS"
         | "SKILLS_NOT_CONFIGURED"
@@ -2621,6 +2622,15 @@ export interface operations {
       };
       /** @description Database not loaded, or a citation key not in it */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The citation style of the application settings did not load. The message names the file and the cause. No citation is rendered in another style. */
+      503: {
         headers: {
           [name: string]: unknown;
         };

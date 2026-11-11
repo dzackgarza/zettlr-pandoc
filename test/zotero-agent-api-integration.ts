@@ -82,14 +82,10 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
           export: { cslLibrary: MAIN_LIBRARY, cslStyle: CHICAGO_STYLE },
         }),
       },
-      {
-        showErrorMessage: (title: string, message: string) => {
-          throw new Error(`${title}: ${message}`);
-        },
-      },
       path.resolve("static", "csl-locales"),
     );
     await citeproc.boot();
+    assert.deepEqual(citeproc.problems(), [], "the main library loaded");
     zotero = new ZoteroLibrary(citeproc);
     // A page with no metadata and no identifier: no method of Zotero can name the work.
     pageServer = http.createServer((_req, res) => {

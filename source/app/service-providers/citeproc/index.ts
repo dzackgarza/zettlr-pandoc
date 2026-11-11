@@ -14,7 +14,6 @@
  * END HEADER
  */
 
-import { trans } from "@common/i18n-main";
 import { FSWatcher } from "chokidar";
 import CSL from "citeproc";
 import { app, ipcMain } from "electron";
@@ -35,15 +34,10 @@ export interface CiteprocConfig {
   get: () => { appLang: string; export: { cslLibrary: string; cslStyle: string } };
 }
 
-/** The user-facing error surface this provider consumes. */
-export interface CiteprocErrorDisplay {
-  showErrorMessage: (title: string, message: string, contents?: string) => void;
-}
-
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import isFile from "@common/util/is-file";
-import type { CitationDatabase } from "@dts/common/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { CitationDatabase, CitationResourceProblem } from "@dts/common/citeproc";
+import { CITEPROC_MAIN_DB, CITEPROC_PROBLEMS_CHANNEL } from "@dts/common/citeproc";
 import { loadDatabase } from "./util/database-loader";
 import {
   type CslCitationFormat,
@@ -72,6 +66,10 @@ export type CiteprocIPCContract = {
   "get-bibliography": {
     request: { payload: { database: CitationDatabase; citations: string[] } };
     response: [BibliographyOptions, string[]] | undefined;
+  };
+  "get-problems": {
+    request: { payload?: undefined };
+    response: CitationResourceProblem[];
   };
 };
 
@@ -102,11 +100,31 @@ const CITEPROC_EMPTY_SENTINELS = [
   "[CSL STYLE ERROR: reference with no printed form.]",
 ] as const;
 
+function causeText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 export class CiteprocRenderInvariantError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CiteprocRenderInvariantError";
   }
+}
+
+/** The style of `export.cslStyle` did not load, so the provider renders nothing. */
+export class CitationStyleError extends Error {
+  constructor(problem: CitationResourceProblem) {
+    super(`The citation style ${problem.path} could not be loaded: ${problem.cause}`);
+    this.name = "CitationStyleError";
+  }
+}
+
+/** An engine and the style that made it. */
+interface LoadedStyle {
+  path: string;
+  engine: CSL.Engine;
+  /** CSL-declared citation format used to choose semantically valid modes. */
+  citationFormat: CslCitationFormat | undefined;
 }
 
 /**
@@ -130,18 +148,17 @@ export default class CiteprocProvider extends ProviderContract {
   private lastSelectedDatabase: string;
 
   /**
-   * Our main citeproc engine. This may be enhanced in the future to hold more
-   * engines, as each engine has one unique style.
-   *
-   * @var {CSL.Engine}
+   * The engine of the configured style. `undefined` while that style has a
+   * problem: the provider then renders nothing, also not in the style of an
+   * earlier setting.
    */
-  private engine: CSL.Engine;
-
-  /** The exact configured style driving the current engine. */
-  private stylePath = DEFAULT_CHICAGO_STYLE;
-
-  /** CSL-declared citation format used to choose semantically valid modes. */
-  private citationFormat: CslCitationFormat | undefined;
+  private style: LoadedStyle | undefined;
+  /** Counts the style loads. The result of a load that a later one replaced is dropped. */
+  private styleLoads = 0;
+  private styleProblem: CitationResourceProblem | undefined;
+  private libraryProblem: CitationResourceProblem | undefined;
+  /** The problems that the windows have. */
+  private broadcastProblems: CitationResourceProblem[] = [];
   /**
    * This array contains all available databases, including the main one.
    *
@@ -180,7 +197,6 @@ export default class CiteprocProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: CiteprocConfig,
-    private readonly _windows: CiteprocErrorDisplay,
     /** The one directory that holds the CSL locales (`locales-<lang>.xml`). */
     private readonly _localeDirectory: string,
   ) {
@@ -287,6 +303,9 @@ export default class CiteprocProvider extends ProviderContract {
      * Listen to renderer requests
      */
     ipcMain.handle("citeproc-provider", async (event, message: CiteprocProviderIPCAPI) => {
+      if (message.command === "get-problems") {
+        return this.problems();
+      }
       const { command, payload } = message;
       const { database } = payload;
       // Ensure the database is loaded in any case (will throw a visible error
@@ -431,13 +450,29 @@ export default class CiteprocProvider extends ProviderContract {
       return;
     }
 
-    try {
-      await this.loadDatabase(this.mainLibrary);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "unknown error";
-      this._logger.error(`[Citeproc Provider] Could not load main library: ${msg}`, err);
-      this._windows.showErrorMessage(trans("The citation database could not be loaded"), msg, msg);
+    // A main library that does not load is a problem that the windows show.
+    await this.loadDatabase(this.mainLibrary).catch((err: unknown) => {
+      this._logger.error(`[Citeproc Provider] Could not load main library: ${causeText(err)}`, err);
+    });
+  }
+
+  /**
+   * The files of the citation settings that did not load. A window shows
+   * them to the author: no window is open when the provider starts, so each
+   * window asks for them (`get-problems`), and a change of this list goes to
+   * the open windows on CITEPROC_PROBLEMS_CHANNEL.
+   */
+  public problems(): CitationResourceProblem[] {
+    return [this.styleProblem, this.libraryProblem].filter((problem) => problem !== undefined);
+  }
+
+  private publishProblems(): void {
+    const problems = this.problems();
+    if (JSON.stringify(problems) === JSON.stringify(this.broadcastProblems)) {
+      return;
     }
+    this.broadcastProblems = problems;
+    broadcastIpcMessage(CITEPROC_PROBLEMS_CHANNEL, problems);
   }
 
   /**
@@ -468,31 +503,97 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
-   * Loads a new engine. TODO: We can use this to create multiple engines with
-   * different CSL Styles loaded.
+   * Loads the engine of the configured style. `export.cslStyle` is the only
+   * citation-style setting of the application, so the editor renders in it
+   * too, not only the exporter.
    *
-   * @return {CSL.Engine} The instantiated engine
+   * A style of the author that does not load is a problem of the provider:
+   * the app runs, the windows name the path and the cause, and no citation is
+   * rendered until the style loads. The bundled style is not used in its
+   * place: the document would show a style that the settings do not name.
+   * The bundled style and the locales are resources of the app; their
+   * failure rejects.
    */
   private async loadEngine(): Promise<void> {
-    // `export.cslStyle` is the application's only citation-style setting, so
-    // the editor renders in it too, not just the exporter. An unreadable path
-    // is a misconfiguration the user must see, not something to paper over
-    // with the bundled style.
+    const load = ++this.styleLoads;
     const configuredStyle = this._config.get().export.cslStyle;
-    this.stylePath = configuredStyle === "" ? DEFAULT_CHICAGO_STYLE : configuredStyle;
-    this._logger.info(`[Citeproc Provider] Loading CSL style at ${this.stylePath} ...`);
-    const style = await fs.readFile(this.stylePath, "utf-8");
-    this.citationFormat = parseCslStyleMetadata(style).citationFormat;
+    if (configuredStyle === "") {
+      const bundled = await this.readStyle(DEFAULT_CHICAGO_STYLE);
+      this.applyStyle(load, bundled, undefined);
+      return;
+    }
+
+    await this.readStyle(configuredStyle).then(
+      (style) => this.applyStyle(load, style, undefined),
+      (cause: unknown) => {
+        if (this.isLocaleFailure(cause)) {
+          throw cause;
+        }
+        this._logger.error(
+          `[Citeproc Provider] Could not load CSL style ${configuredStyle}: ${causeText(cause)}`,
+          cause,
+        );
+        this.applyStyle(load, undefined, {
+          resource: "style",
+          path: configuredStyle,
+          cause: causeText(cause),
+        });
+      },
+    );
+  }
+
+  /** Takes the result of a style load, unless a later load started after it. */
+  private applyStyle(
+    load: number,
+    style: LoadedStyle | undefined,
+    problem: CitationResourceProblem | undefined,
+  ): void {
+    if (load !== this.styleLoads) {
+      return;
+    }
+    this.style = style;
+    this.styleProblem = problem;
+    this.publishProblems();
+    // Each rendered citation of a window is of the style before this one.
+    broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB);
+  }
+
+  private async readStyle(stylePath: string): Promise<LoadedStyle> {
+    this._logger.info(`[Citeproc Provider] Loading CSL style at ${stylePath} ...`);
+    const source = await fs.readFile(stylePath, "utf-8");
+    const citationFormat = parseCslStyleMetadata(source).citationFormat;
 
     // The last parameter enforces usage of the language we provide
-    this.engine = new CSL.Engine(this.sys, style, this._config.get().appLang, true);
+    const engine = new CSL.Engine(this.sys, source, this._config.get().appLang, true);
     // ATTENTION: This is a development extension we're using to auto-wrap
     // links and DOIs in a-tags so that the user can click them in the
     // bibliography. Remove if it becomes unstable and implement manually.
-    this.engine.opt.development_extensions.wrap_url_and_doi = true;
+    engine.opt.development_extensions.wrap_url_and_doi = true;
     // Empty citeproc output is an invariant failure. Without this option,
     // citeproc-js literally returns '[NO_PRINTED_FORM]' as if it were content.
-    this.engine.opt.development_extensions.throw_on_empty = true;
+    engine.opt.development_extensions.throw_on_empty = true;
+    return { path: stylePath, engine, citationFormat };
+  }
+
+  /** The read failure of a file in the locale directory, which the engine reads while it loads a style. */
+  private isLocaleFailure(cause: unknown): boolean {
+    return (
+      cause instanceof Error &&
+      "path" in cause &&
+      typeof cause.path === "string" &&
+      path.dirname(cause.path) === this._localeDirectory
+    );
+  }
+
+  /** The engine of the configured style. Throws while that style has a problem. */
+  private requireStyle(): LoadedStyle {
+    if (this.style !== undefined) {
+      return this.style;
+    }
+    if (this.styleProblem === undefined) {
+      throw new Error("The citation provider renders before its start loaded a style.");
+    }
+    throw new CitationStyleError(this.styleProblem);
   }
 
   /**
@@ -528,7 +629,23 @@ export default class CiteprocProvider extends ProviderContract {
       }
     });
     this.loading.set(databasePath, load);
-    await load;
+    await load.then(
+      () => this.setLibraryProblem(databasePath, undefined),
+      (cause: unknown) => {
+        this.setLibraryProblem(databasePath, causeText(cause));
+        throw cause;
+      },
+    );
+  }
+
+  /** Records whether the main library loaded. Another database is not a setting of the app. */
+  private setLibraryProblem(databasePath: string, cause: string | undefined): void {
+    if (databasePath !== this.mainLibrary) {
+      return;
+    }
+    this.libraryProblem =
+      cause === undefined ? undefined : { resource: "library", path: databasePath, cause };
+    this.publishProblems();
   }
 
   /**
@@ -636,8 +753,10 @@ export default class CiteprocProvider extends ProviderContract {
 
     this._items = items;
 
-    // Remove the items from the registry
-    this.engine.updateItems([]);
+    // Remove the items from the registry. Without a style there is no registry.
+    if (this.style !== undefined) {
+      this.style.engine.updateItems([]);
+    }
     this.lastSelectedDatabase = identity;
   }
 
@@ -658,12 +777,11 @@ export default class CiteprocProvider extends ProviderContract {
    */
   onConfigUpdate(option?: string): void {
     if (option === "appLang" || option === "export.cslStyle") {
-      // We have to reload the engine to reflect the new language or style
+      // We have to reload the engine to reflect the new language or style. A
+      // style of the author that does not load is a problem that the windows
+      // show; this rejection is the failure of a resource of the app.
       this.loadEngine().catch((err) =>
-        this._logger.error(
-          `[Citeproc Provider] Could not reload engine: ${err instanceof Error ? err.message : "unknown error"}`,
-          err,
-        ),
+        this._logger.error(`[Citeproc Provider] Could not reload engine: ${causeText(err)}`, err),
       );
     } else if (option === "export.cslLibrary") {
       // Determine if we have to reload
@@ -673,16 +791,21 @@ export default class CiteprocProvider extends ProviderContract {
         this.unloadDatabase(this.mainLibrary);
         broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB);
         this.mainLibrary = newValue;
+        // The problem of the library that the setting named before is gone.
+        this.libraryProblem = undefined;
+        this.publishProblems();
         if (this.mainLibrary.trim() === "") {
           return; // The user removed the csl library
         }
 
+        // A main library that does not load is a problem that the windows show.
         this.loadDatabase(this.mainLibrary)
           .then(() => broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB))
           .catch((err) => {
-            const msg = err instanceof Error ? err.message : "unknown error";
-            this._logger.error(`[Citeproc Provider] Could not reload main library: ${msg}`, err);
-            this._windows.showErrorMessage(trans("The citation database could not be loaded"), msg);
+            this._logger.error(
+              `[Citeproc Provider] Could not reload main library: ${causeText(err)}`,
+              err,
+            );
           });
       }
     }
@@ -750,9 +873,10 @@ export default class CiteprocProvider extends ProviderContract {
       return undefined;
     }
 
-    this.engine.updateItems(citekeys);
+    const style = this.requireStyle();
+    style.engine.updateItems(citekeys);
     const useComposite =
-      composite && citations.length === 1 && supportsNarrativeComposite(this.citationFormat);
+      composite && citations.length === 1 && supportsNarrativeComposite(style.citationFormat);
     const mode: EngineCitation["properties"]["mode"] = useComposite ? "composite" : undefined;
     const citation: EngineCitation = {
       citationItems: citations.map((item) => ({ ...item })),
@@ -760,7 +884,7 @@ export default class CiteprocProvider extends ProviderContract {
     };
 
     try {
-      const rendered = this.engine.previewCitationCluster(citation, [], [], "html");
+      const rendered = style.engine.previewCitationCluster(citation, [], [], "html");
       return this.assertPrintableCitation(rendered, citekeys, composite, mode);
     } catch (error) {
       const contextual = this.renderInvariantError("citation", citekeys, error);
@@ -798,9 +922,8 @@ export default class CiteprocProvider extends ProviderContract {
     if (cause instanceof CiteprocRenderInvariantError) {
       return cause;
     }
-    const causeText = cause instanceof Error ? cause.message : String(cause);
     return new CiteprocRenderInvariantError(
-      `Could not render ${kind} for [${citekeys.join(", ")}] with style ${JSON.stringify(this.stylePath)}: ${causeText}`,
+      `Could not render ${kind} for [${citekeys.join(", ")}] with style ${JSON.stringify(this.style?.path)}: ${causeText(cause)}`,
     );
   }
 
@@ -830,9 +953,10 @@ export default class CiteprocProvider extends ProviderContract {
     if (sanitizedCitekeys.length === 0) {
       return undefined;
     }
-    this.engine.updateItems(sanitizedCitekeys);
+    const style = this.requireStyle();
+    style.engine.updateItems(sanitizedCitekeys);
     try {
-      const bibliography = this.engine.makeBibliography();
+      const bibliography = style.engine.makeBibliography();
       if (bibliography === undefined || bibliography[1].length === 0) {
         throw new Error("citeproc returned no bibliography entries");
       }
