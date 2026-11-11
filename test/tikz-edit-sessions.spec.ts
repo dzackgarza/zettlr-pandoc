@@ -25,7 +25,8 @@ import {
 } from "source/common/modules/markdown-editor/tikz-edit-sessions";
 
 const SQUARE = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
-const TRIANGLE = "\\begin{tikzpicture}\n\\draw (0,0) -- (1,0) -- (0,1) -- cycle;\n\\end{tikzpicture}";
+const TRIANGLE =
+  "\\begin{tikzpicture}\n\\draw (0,0) -- (1,0) -- (0,1) -- cycle;\n\\end{tikzpicture}";
 const DOC = `Before.\n\n${SQUARE}\n\nBetween.\n\n${TRIANGLE}\n\nAfter.\n`;
 
 function open(doc: string, sessions: Array<{ id: string; source: string }>): EditorState {

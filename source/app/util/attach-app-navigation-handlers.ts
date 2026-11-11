@@ -13,9 +13,9 @@
  * END HEADER
  */
 
+import { spawn } from "node:child_process";
 import { reportError } from "@common/util/error-reporting";
 import { app, shell } from "electron";
-import { spawn } from "node:child_process";
 import type LogProvider from "../service-providers/log";
 
 /**

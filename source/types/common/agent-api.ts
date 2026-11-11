@@ -63,10 +63,8 @@ export type AnnotationProposalAction = Schemas["AnnotationProposalAction"];
 export type AnnotationAgentStatus = Schemas["AnnotationAgentStatus"];
 export type AnnotationResponse = Schemas["AnnotationResponse"];
 export type AnnotationListResponse = Schemas["AnnotationListResponse"];
-export type AddAnnotationMessageRequest =
-  Schemas["AddAnnotationMessageRequest"];
-export type AddAnnotationMessageResponse =
-  Schemas["AddAnnotationMessageResponse"];
+export type AddAnnotationMessageRequest = Schemas["AddAnnotationMessageRequest"];
+export type AddAnnotationMessageResponse = Schemas["AddAnnotationMessageResponse"];
 export type ReviewMutationPrecondition = Schemas["ReviewMutationPrecondition"];
 export type AddReviewCommentRequest = Schemas["AddReviewCommentRequest"];
 export type ReviewCommentResponse = Schemas["ReviewCommentResponse"];
@@ -82,10 +80,8 @@ export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
 export type WorkspaceDirectoryEntry = Schemas["WorkspaceDirectoryEntry"];
-export type WorkspaceDirectoriesResponse =
-  Schemas["WorkspaceDirectoriesResponse"];
-export type WorkspaceEntryCreateRequest =
-  Schemas["WorkspaceEntryCreateRequest"];
+export type WorkspaceDirectoriesResponse = Schemas["WorkspaceDirectoriesResponse"];
+export type WorkspaceEntryCreateRequest = Schemas["WorkspaceEntryCreateRequest"];
 export type WorkspaceEntryResponse = Schemas["WorkspaceEntryResponse"];
 export type HelpResponse = Schemas["HelpResponse"];
 export type PingResponse = Schemas["PingResponse"];
@@ -120,10 +116,8 @@ export type ZoteroSearchItem = Schemas["ZoteroSearchItem"];
 export type ZoteroSearchResponse = Schemas["ZoteroSearchResponse"];
 export type ZoteroExtractionsResponse = Schemas["ZoteroExtractionsResponse"];
 export type ZoteroAddedItem = Schemas["ZoteroAddedItem"];
-export type ZoteroIdentifierImportRequest =
-  Schemas["ZoteroIdentifierImportRequest"];
-export type ZoteroIdentifierImportResponse =
-  Schemas["ZoteroIdentifierImportResponse"];
+export type ZoteroIdentifierImportRequest = Schemas["ZoteroIdentifierImportRequest"];
+export type ZoteroIdentifierImportResponse = Schemas["ZoteroIdentifierImportResponse"];
 export type ZoteroUrlImportRequest = Schemas["ZoteroUrlImportRequest"];
 export type ZoteroUrlImportResponse = Schemas["ZoteroUrlImportResponse"];
 export type ZoteroSourceRemediation = Schemas["ZoteroSourceRemediation"];
@@ -153,14 +147,13 @@ type JsonBody<Response> = Response extends {
  * undeclared response shape a compile error rather than a surprise for a
  * client written from the OpenAPI contract.
  */
-export type AgentApiResponseBody =
-  operations[keyof operations] extends infer Operation
-    ? Operation extends { responses: infer Responses }
-      ? {
-          [Status in keyof Responses]: JsonBody<Responses[Status]>;
-        }[keyof Responses]
-      : never
-    : never;
+export type AgentApiResponseBody = operations[keyof operations] extends infer Operation
+  ? Operation extends { responses: infer Responses }
+    ? {
+        [Status in keyof Responses]: JsonBody<Responses[Status]>;
+      }[keyof Responses]
+    : never
+  : never;
 
 export type {
   components as AgentApiComponents,

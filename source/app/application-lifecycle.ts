@@ -80,10 +80,7 @@ export class ApplicationLifecycle {
 
   private async finishPending(outcome: LaunchOutcome): Promise<void> {
     while (this.pending.length > 0) {
-      await this.pending
-        .shift()!
-        .complete(outcome)
-        .catch(this.operations.report);
+      await this.pending.shift()!.complete(outcome).catch(this.operations.report);
     }
   }
 

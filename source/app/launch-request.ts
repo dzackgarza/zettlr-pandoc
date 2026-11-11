@@ -1,6 +1,6 @@
-import { app } from "electron";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { app } from "electron";
 import { z } from "zod";
 
 const outcomeSchema = z.discriminatedUnion("status", [
@@ -41,9 +41,7 @@ async function replyChannel() {
       response.writeHead(404).end();
       return;
     }
-    const parsed = outcomeSchema.safeParse(
-      Object.fromEntries(url.searchParams),
-    );
+    const parsed = outcomeSchema.safeParse(Object.fromEntries(url.searchParams));
     if (!parsed.success) {
       response.writeHead(400).end();
       resolve({
@@ -59,9 +57,7 @@ async function replyChannel() {
     server.once("error", fail);
     server.listen(0, "127.0.0.1", accept);
   });
-  server.on("error", (error) =>
-    resolve({ status: "error", message: error.message }),
-  );
+  server.on("error", (error) => resolve({ status: "error", message: error.message }));
   const address = server.address();
   if (address === null || typeof address === "string")
     throw new Error("Launch response server has no TCP address");
@@ -69,8 +65,7 @@ async function replyChannel() {
     () =>
       resolve({
         status: "error",
-        message:
-          "The application did not answer the launch request within 300 seconds",
+        message: "The application did not answer the launch request within 300 seconds",
       }),
     300_000,
   );
@@ -87,13 +82,9 @@ async function replyChannel() {
   };
 }
 
-export async function replyToLaunch(
-  request: LaunchRequest,
-  outcome: LaunchOutcome,
-): Promise<void> {
+export async function replyToLaunch(request: LaunchRequest, outcome: LaunchOutcome): Promise<void> {
   const url = new URL(request.reply);
-  for (const [key, value] of Object.entries(outcome))
-    url.searchParams.set(key, value);
+  for (const [key, value] of Object.entries(outcome)) url.searchParams.set(key, value);
   const response = await fetch(url, {
     method: "POST",
     signal: AbortSignal.timeout(30_000),
@@ -113,8 +104,7 @@ export async function acquireLaunch(
     const channel = await replyChannel();
     try {
       if (app.requestSingleInstanceLock({ files, mode, reply: channel.url })) {
-        if (mode === "existing")
-          throw new Error("No running Zettlr instance accepted the request");
+        if (mode === "existing") throw new Error("No running Zettlr instance accepted the request");
         return "primary";
       }
       const outcome = await channel.outcome;
