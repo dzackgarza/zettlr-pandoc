@@ -28,9 +28,7 @@ export default class DirNewProject extends ZettlrCommand {
    */
   async run(evt: string, arg: { path: string }): Promise<void> {
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
-    if (dir !== undefined) {
-      // Create a new project, presetting the title with the directory name
-      await this._app.fsal.createProject(dir, { title: dir.name });
-    }
+    // Create a new project, presetting the title with the directory name
+    await this._app.fsal.createProject(dir, { title: dir.name });
   }
 }

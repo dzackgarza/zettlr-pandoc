@@ -1116,6 +1116,10 @@ of an isolated instance are in the first comment of #132.
   (`file-manager/util/read-error.ts`, the attribute
   `data-metadata-problem`). The properties offer the removal of a binding
   whose manifest gives no book.
+- **A control of the folder properties shows the saved state.** After a
+  refused change the sort controls and the Project switch show what the
+  folder has (`PopoverDirProps.vue`). The controls send a command only for a
+  choice of the author: the open of the properties writes nothing.
 - **A change of a manifest is a change of its folder.** The FSAL keeps the
   manifest location of each bound folder and publishes `change` for the
   folder when its manifest is added, changed or removed.

@@ -27,13 +27,8 @@ export default class DirSort extends ZettlrCommand {
    * @param  {string}  evt  The event name
    * @param  {any}     arg  An object containing both a path and a sorting type
    */
-  async run(evt: string, arg: { path: string; sorting: SortMethod }): Promise<boolean> {
+  async run(evt: string, arg: { path: string; sorting: SortMethod }): Promise<void> {
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
-    if (dir !== undefined) {
-      await this._app.fsal.changeSorting(dir, arg.sorting);
-      return true;
-    }
-
-    return false;
+    await this._app.fsal.changeSorting(dir, arg.sorting);
   }
 }

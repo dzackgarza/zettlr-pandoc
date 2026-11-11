@@ -300,6 +300,14 @@ const emit = defineEmits<(e: "close") => void>();
 
 const sortingType = ref<"name" | "time">("name");
 const sortingDirection = ref<"up" | "down">("up");
+/**
+ * The sorting that the controls showed when the folder last agreed with them.
+ * A change that the application refuses puts the controls back to it.
+ */
+let confirmedSorting: { type: "name" | "time"; direction: "up" | "down" } = {
+  type: sortingType.value,
+  direction: sortingDirection.value,
+};
 const isProject = ref<boolean>(props.directory.settings.project !== null);
 const isQuartoProject = computed(
   () => props.directory.settings.project?.manifest.kind === "quarto",
@@ -360,8 +368,13 @@ function setSorting(): void {
   if (type !== "name" && type !== "time") {
     return;
   }
-  sortingType.value = type;
-  sortingDirection.value = direction === "down" ? "down" : "up";
+  confirmedSorting = { type, direction: direction === "down" ? "down" : "up" };
+  showConfirmedSorting();
+}
+
+function showConfirmedSorting(): void {
+  sortingType.value = confirmedSorting.type;
+  sortingDirection.value = confirmedSorting.direction;
 }
 
 function openProjectPreferences(): void {
@@ -398,16 +411,34 @@ function updateColor(color: string | null): void {
     .catch((e) => reportError(e));
 }
 
+/**
+ * Asks the application for the sorting that the controls show. The controls
+ * of a folder that already has that sorting ask for nothing: they show a
+ * state, and only a choice of the author is a change.
+ */
 function updateSorting(): void {
+  const wanted = { type: sortingType.value, direction: sortingDirection.value };
+  if (wanted.type === confirmedSorting.type && wanted.direction === confirmedSorting.direction) {
+    return;
+  }
   ipcRenderer
     .invoke("application", {
       command: "dir-sort",
       payload: {
         path: props.directory.path,
-        sorting: `${sortingType.value}-${sortingDirection.value}`,
+        sorting: `${wanted.type}-${wanted.direction}`,
       },
     })
-    .catch((e) => reportError(e));
+    .then(
+      () => {
+        confirmedSorting = wanted;
+      },
+      (e) => {
+        // The dispatcher shows the refusal. The controls show what is saved.
+        reportError(e);
+        showConfirmedSorting();
+      },
+    );
 }
 
 /**
@@ -514,15 +545,24 @@ function updateProject(): void {
         command: "dir-new-project",
         payload: { path: props.directory.path },
       })
-      .catch((e) => reportError(e));
+      .catch((e) => projectChangeRefused(e));
   } else {
     ipcRenderer
       .invoke("application", {
         command: "dir-remove-project",
         payload: { path: props.directory.path },
       })
-      .catch((e) => reportError(e));
+      .catch((e) => projectChangeRefused(e));
   }
+}
+
+/**
+ * The dispatcher shows the refusal. The switch shows whether the folder is a
+ * Project.
+ */
+function projectChangeRefused(err: unknown): void {
+  reportError(err);
+  isProject.value = props.directory.settings.project !== null;
 }
 </script>
 

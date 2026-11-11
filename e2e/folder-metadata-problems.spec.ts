@@ -265,7 +265,7 @@ describe("folders whose metadata cannot be used", function () {
     screenshots.set("refused-project.png", await editorPage.screenshot());
     const messages = await toast.locator("span:first-child").allInnerTexts();
     const switchedOn = await project.locator('input[type="checkbox"]').isChecked();
-    const buttons = await project.locator("button").count();
+    const offersBookFile = await project.locator("#select-quarto-manifest").count();
 
     await toast.locator('button[aria-label="Dismiss"]').first().click();
     await toast.first().waitFor({ state: "hidden", timeout: 10_000 });
@@ -273,9 +273,9 @@ describe("folders whose metadata cannot be used", function () {
     assert.equal(messages.length, 1, `the refusal is shown one time: ${messages.join(" | ")}`);
     assert.equal(switchedOn, false, "the switch shows that the folder is no Project");
     assert.equal(
-      buttons,
+      offersBookFile,
       1,
-      "the only button selects a Quarto book file: no Project has settings to open",
+      "the properties offer what a folder without a Project has: the choice of a Quarto book file",
     );
     assert.equal(
       await readFile(path.join(conflicted, ".ztr-directory"), "utf8"),
