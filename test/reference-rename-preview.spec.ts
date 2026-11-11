@@ -29,6 +29,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { promisify } from "util";
+import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,11 +86,9 @@ describe("Rename preview dialog", function () {
       ],
       { maxBuffer: 8 * 1024 * 1024 },
     );
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      ["-a", "node", path.join(root, "test/reference-rename-preview-probe.mjs"), outputDirectory],
-      { maxBuffer: 8 * 1024 * 1024 },
-    );
+    const { stdout } = await runProbe(path.join(root, "test/reference-rename-preview-probe.mjs"), [
+      outputDirectory,
+    ]);
     const jsonLine = stdout.trim().split("\n").at(-1);
     assert.ok(
       jsonLine !== undefined,

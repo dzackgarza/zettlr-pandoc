@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { promisify } from "util";
+import { runProbe } from "./visual/display-probe";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,15 +45,9 @@ describe("YAML Properties nested editor isolates clicks from the Markdown editor
       `--tsconfig=${path.join(root, "tsconfig.json")}`,
       `--outfile=${path.join(outputDirectory, "yaml-frontmatter-click-bundle.js")}`,
     ]);
-    const { stdout } = await execFileAsync(
-      "xvfb-run",
-      [
-        "-a",
-        "node",
-        path.join(root, "test/editor-yaml-frontmatter-click-probe.mjs"),
-        outputDirectory,
-      ],
-      { maxBuffer: 1024 * 1024 },
+    const { stdout } = await runProbe(
+      path.join(root, "test/editor-yaml-frontmatter-click-probe.mjs"),
+      [outputDirectory],
     );
     const jsonLine = stdout.trim().split("\n").at(-1);
     assert.ok(jsonLine !== undefined);

@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runProbe } from "./visual/display-probe";
+import { DisplayCommandFailure, runOnVirtualDisplay, runProbe } from "./visual/display-probe";
 
 // The error of a failed command can hold its command line. The probe writes
 // its argument reversed, so the text that the assertions look for comes from
@@ -63,6 +63,8 @@ describe("display probe runner", function () {
 
   it("reports the exit code and the output of a probe that fails", async function () {
     await assert.rejects(runProbe(probe, ["exit", toStdout, toStderr]), (error: Error) => {
+      assert.ok(error instanceof DisplayCommandFailure);
+      assert.equal(error.exitCode, 73);
       assert.match(error.message, /\b73\b/);
       assert.ok(error.message.includes(reversed(toStdout)), error.message);
       assert.ok(error.message.includes(reversed(toStderr)), error.message);
@@ -73,10 +75,27 @@ describe("display probe runner", function () {
   it("reports the signal and the output of a probe that a signal ends", async function () {
     await assert.rejects(runProbe(probe, ["kill", toStdout, toStderr]), (error: Error) => {
       // The shell of xvfb-run gives 128 plus the signal number as its status.
+      assert.ok(error instanceof DisplayCommandFailure);
+      assert.equal(error.exitCode, 137);
       assert.match(error.message, /\b137\b/);
       assert.ok(error.message.includes(reversed(toStdout)), error.message);
       assert.ok(error.message.includes(reversed(toStderr)), error.message);
       return true;
     });
+  });
+
+  it("reports what the X server says when it cannot start", async function () {
+    // The X server names the screen that it refuses.
+    const screen = `${randomBytes(4).toString("hex")}-is-no-screen`;
+
+    await assert.rejects(
+      runOnVirtualDisplay(screen, "node", [probe, "pass", toStdout, toStderr]),
+      (error: Error) => {
+        assert.ok(error instanceof DisplayCommandFailure);
+        assert.ok(error.xServerOutput.includes(screen), error.message);
+        assert.ok(error.message.includes(error.xServerOutput));
+        return true;
+      },
+    );
   });
 });
