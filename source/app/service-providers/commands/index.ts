@@ -76,7 +76,6 @@ import type {
 import FileFindAndReturnMetaData from "./file-find-and-return-meta-data";
 import FileNew from "./file-new";
 import FileRename from "./file-rename";
-import FileSearch from "./file-search";
 import FixAll from "./fix-all";
 import type { ForceOpenAPI } from "./force-open";
 import ForceOpen from "./force-open";
@@ -122,7 +121,6 @@ export const commands = [
   FileDuplicate,
   FileNew,
   FileRename,
-  FileSearch,
   FixAll,
   FileFindAndReturnMetaData,
   ForceOpen,

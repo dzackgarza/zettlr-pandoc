@@ -25,7 +25,6 @@ import type {
   ProjectSettings,
   SortMethod,
 } from "@dts/common/fsal";
-import type { SearchResult, SearchTerm } from "@dts/common/search";
 import type ConfigProvider from "@providers/config";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
@@ -951,27 +950,6 @@ export default class FSAL extends ProviderContract {
     if (await this.pathExists(filePath)) {
       await safeDelete(filePath, deleteOnFail, this._logger);
       await this.editRulesFiles(({ workspaceRules }) => removePathRules(workspaceRules, filePath));
-    }
-  }
-
-  /**
-   * Search the given file
-   *
-   * @param   {MDFileDescriptor}  src          The file to search
-   * @param   {SearchTerm[]}      searchTerms  The search terms
-   *
-   * @return  {Promise<SearchResult[]>}        Returns the results
-   */
-  public async searchFile(
-    src: MDFileDescriptor | CodeFileDescriptor,
-    searchTerms: SearchTerm[],
-  ): Promise<SearchResult[]> {
-    // TODO: Implement search results type
-    // Searches a file and returns the result
-    if (src.type === "file") {
-      return await FSALFile.search(src, searchTerms);
-    } else {
-      return await FSALCodeFile.search(src, searchTerms);
     }
   }
 

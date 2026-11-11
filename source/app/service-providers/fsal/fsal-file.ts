@@ -15,13 +15,11 @@
 import safeAssign from "@common/util/safe-assign";
 // Import the interfaces that we need
 import type { MDFileDescriptor } from "@dts/common/fsal";
-import type { SearchResult, SearchTerm } from "@dts/common/search";
 import { promises as fs } from "fs";
 import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
 import type FSALCache from "./fsal-cache";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
-import searchFile from "./util/search-file";
 
 export const PARSER_VERSION = 2;
 
@@ -138,23 +136,6 @@ export async function parse(
   }
 
   return file;
-}
-
-/**
- * Searches the file associated with the file descriptor
- *
- * @param   {MDFileDescriptor}  fileObject  The corresponding file descriptor
- * @param   {SearchTerm[]}      terms       The (already compiled) search terms
- *
- * @return  {Promise<SearchResult[]>}       Resolves with search results
- */
-export async function search(
-  fileObject: MDFileDescriptor,
-  terms: SearchTerm[],
-): Promise<SearchResult[]> {
-  // Initialise the content variables (needed to check for NOT operators)
-  let cnt = await fs.readFile(fileObject.path, { encoding: "utf8" });
-  return searchFile(fileObject, terms, cnt);
 }
 
 /**
