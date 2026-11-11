@@ -16,7 +16,7 @@ import type { EditorState } from "@codemirror/state";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
-import { saveRefusalAction } from "@common/util/save-refusal-action";
+import { saveRefusalActions } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import type { SaveFileResult } from "@dts/common/documents";
 import { whenAuthoritySynced } from "./when-authority-synced";
@@ -82,6 +82,6 @@ export async function saveBuffer(getState: () => EditorState, filePath: string):
   reportError(
     `[saveBuffer] Main refused to save ${filePath} (${refusal.reason}): ${refusal.message}`,
   );
-  showToast(refusal.message, "error", 12000, saveRefusalAction(filePath, refusal));
+  showToast(refusal.message, "error", 12000, ...saveRefusalActions(filePath, refusal));
   return false;
 }

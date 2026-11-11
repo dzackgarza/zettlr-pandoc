@@ -2,16 +2,17 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        The action of a refused save
+ * Contains:        The actions of a refused save
  * CVM-Role:        Utility Function
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
  * Description:     A refused save leaves text that is not on disk. Each
- *                  message about a refused save offers the step that the
- *                  author can take: load the disk version when the file
- *                  changed on disk, or write the text to another file
- *                  when the text cannot reach the file of the document.
+ *                  message about a refused save offers each step that the
+ *                  author can take: load the disk version or go to the
+ *                  review when the file changed on disk under a review, or
+ *                  write the text to another file when the text cannot
+ *                  reach the file of the document.
  *
  * END HEADER
  */
@@ -65,23 +66,38 @@ export function saveCopyAction(filePath: string): ToastAction {
 }
 
 /**
- * The action that a refused save of the document at `filePath` offers.
- * The disk version resolves a save that was refused because the file
- * changed on disk. A copy takes the text out of a document whose file or
- * review cannot be written. The other refusals leave no text that only the
+ * The action that opens the Annotations view. The view has the controls of
+ * a review that a change of the file froze: reapply it, return it to its
+ * agent, or discard it.
+ */
+export function showReviewAction(): ToastAction {
+  return {
+    label: trans("Show the review"),
+    onAction: () => {
+      window.config.set("window.sidebarVisible", true);
+    },
+  };
+}
+
+/**
+ * The actions that a refused save of the document at `filePath` offers.
+ * A save is refused as `disk-changed` when the file changed on disk under
+ * a review: the disk version resolves it, and so does a decision on the
+ * review. A copy takes the text out of a document whose file or review
+ * cannot be written. The other refusals leave no text that only the
  * application holds.
  */
-export function saveRefusalAction(filePath: string, refusal: SaveRefusal): ToastAction | undefined {
+export function saveRefusalActions(filePath: string, refusal: SaveRefusal): ToastAction[] {
   switch (refusal.reason) {
     case "disk-changed":
-      return loadFromDiskAction(filePath);
+      return [loadFromDiskAction(filePath), showReviewAction()];
     case "disk-unreadable":
     case "write-failed":
     case "review-not-persisted":
-      return saveCopyAction(filePath);
+      return [saveCopyAction(filePath)];
     case "not-loaded":
     case "saved-not-refreshed":
     case "discard-failed":
-      return undefined;
+      return [];
   }
 }

@@ -210,7 +210,7 @@ import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
-import { saveCopyAction, saveRefusalAction } from "@common/util/save-refusal-action";
+import { saveCopyAction, saveRefusalActions } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
@@ -1046,7 +1046,7 @@ onMounted(() => {
     const message = `${name}: ${payload.refusal.message}`;
     const refused = payload.refused;
     if (refused === undefined) {
-      showToast(message, "error", 12000, saveRefusalAction(payload.filePath, payload.refusal));
+      showToast(message, "error", 12000, ...saveRefusalActions(payload.filePath, payload.refusal));
       return;
     }
     // The refusal stopped a close, a reload or a quit. The author can

@@ -67,6 +67,30 @@ describe("Toast action affordance (review A5)", function () {
     assert.strictEqual(toasts().length, 0, "the acted-on toast must dismiss itself");
   });
 
+  it("renders one button for each action of a message and runs only the clicked one", function () {
+    const runs: string[] = [];
+    showToast(
+      "The document changed on disk after this review opened.",
+      "error",
+      6000,
+      { label: "Load from disk", onAction: () => runs.push("disk") },
+      { label: "Show the review", onAction: () => runs.push("review") },
+    );
+
+    const buttons = Array.from(
+      toasts()[0].querySelectorAll<HTMLButtonElement>("button[data-toast-action]"),
+    );
+    assert.deepEqual(
+      buttons.map((button) => button.textContent),
+      ["Load from disk", "Show the review"],
+      "the buttons are in the order of the actions",
+    );
+    buttons[1].click();
+    assert.deepEqual(runs, ["review"], "the click runs its own action and no other");
+    assert.strictEqual(toasts().length, 0, "the acted-on toast dismisses itself");
+    assert.equal(notificationEntries().length, 0, "the acted-on message leaves the log");
+  });
+
   it("keeps toast text available when the body is clicked and closes only from its button", function () {
     let actionRuns = 0;
     showToast("Renamed with pending undo.", "info", 6000, {
@@ -156,7 +180,7 @@ describe("Toast action affordance (review A5)", function () {
       },
     });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    runNotificationAction(notificationEntries()[0].id);
+    runNotificationAction(notificationEntries()[0].id, 0);
     assert.equal(actionRuns, 1);
     assert.equal(notificationEntries().length, 0, "the acted-on message leaves the log");
   });

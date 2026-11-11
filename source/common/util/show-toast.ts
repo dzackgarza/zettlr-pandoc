@@ -24,10 +24,11 @@
 const CONTAINER_ID = "zettlr-toast-container";
 
 /**
- * One optional labeled action rendered as a real button on the toast
- * (issue #1, review A5): e.g. the committed workspace rename's Undo. The
- * action runs exactly once and dismisses the message; dismissing the
- * message any other way never runs it.
+ * One labeled action rendered as a real button on the toast (issue #1,
+ * review A5): e.g. the committed workspace rename's Undo. A message that
+ * names more than one way on has one action for each. The action that the
+ * author clicks runs exactly once and dismisses the message; dismissing
+ * the message any other way runs none.
  */
 export interface ToastAction {
   /** The button label, e.g. 'Undo' */
@@ -44,7 +45,7 @@ export interface NotificationEntry {
   kind: "info" | "error";
   message: string;
   time: Date;
-  action?: ToastAction;
+  actions: readonly ToastAction[];
 }
 
 const entries: NotificationEntry[] = [];
@@ -118,15 +119,16 @@ export function dismissAllNotifications(): void {
 }
 
 /**
- * Runs the action of one message and dismisses the message.
+ * Runs one action of one message, by its position in the actions of the
+ * message, and dismisses the message.
  */
-export function runNotificationAction(id: number): void {
-  const entry = entries.find((entry) => entry.id === id);
-  if (entry?.action === undefined) {
-    throw new Error(`Notification ${id} has no action`);
+export function runNotificationAction(id: number, index: number): void {
+  const action = entries.find((entry) => entry.id === id)?.actions[index];
+  if (action === undefined) {
+    throw new Error(`Notification ${id} has no action ${index}`);
   }
   dismissNotification(id);
-  entry.action.onAction();
+  action.onAction();
 }
 
 /**
@@ -175,6 +177,7 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
   toast.setAttribute("role", "status");
   toast.style.cssText = [
     "display: flex",
+    "flex-wrap: wrap",
     "align-items: baseline",
     "gap: 10px",
     "padding: 10px 14px",
@@ -192,9 +195,16 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
 
   const text = document.createElement("span");
   text.textContent = entry.message;
+  // The text keeps a line of readable length: controls that leave it less
+  // go to a row of their own below it.
   text.style.cssText =
-    "flex: 1 1 auto; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text";
+    "flex: 1 1 20em; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text";
   toast.append(text);
+
+  const controls = document.createElement("span");
+  controls.style.cssText =
+    "display: flex; flex: 0 0 auto; align-items: baseline; gap: 10px; margin-left: auto";
+  toast.append(controls);
 
   if (entry.kind === "error") {
     const copy = document.createElement("button");
@@ -206,14 +216,14 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
     copy.addEventListener("click", () => {
       copyNotificationText(entry.message, copy);
     });
-    toast.append(copy);
+    controls.append(copy);
   }
 
-  if (entry.action !== undefined) {
+  for (const [index, action] of entry.actions.entries()) {
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("data-toast-action", "");
-    button.textContent = entry.action.label;
+    button.textContent = action.label;
     button.style.cssText = [
       "flex: 0 0 auto",
       "padding: 3px 10px",
@@ -225,9 +235,9 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
       "cursor: pointer",
     ].join(";");
     button.addEventListener("click", () => {
-      runNotificationAction(entry.id);
+      runNotificationAction(entry.id, index);
     });
-    toast.append(button);
+    controls.append(button);
   }
 
   const close = document.createElement("button");
@@ -239,7 +249,7 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
   close.addEventListener("click", () => {
     dismissNotification(entry.id);
   });
-  toast.append(close);
+  controls.append(close);
 
   // At the timeout the toast folds into the notification center: it leaves
   // the screen, and its entry stays in the log.
@@ -268,15 +278,15 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
  * @param   {string}                     message  The message to show
  * @param   {'info'|'error'}             kind     The visual severity
  * @param   {number}                     timeout  Toast display time in ms
- * @param   {ToastAction}                action   Optional labeled action button
+ * @param   {ToastAction[]}              actions  The labeled action buttons
  */
 export default function showToast(
   message: string,
   kind: "info" | "error" = "info",
   timeout = 6000,
-  action?: ToastAction,
+  ...actions: ToastAction[]
 ): void {
-  const entry: NotificationEntry = { id: nextId++, kind, message, time: new Date(), action };
+  const entry: NotificationEntry = { id: nextId++, kind, message, time: new Date(), actions };
   entries.push(entry);
   if (!centerOpen) {
     const toast = renderToast(entry, timeout);

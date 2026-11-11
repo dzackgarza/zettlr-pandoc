@@ -86,7 +86,7 @@ describe("A save or a reload that the window asked for and that did not happen",
     );
   });
 
-  it("offers the disk version when the file changed on disk under a review", async function () {
+  it("offers the disk version and the review when the file changed on disk under a review", async function () {
     const message = "The document changed on disk after this review opened.";
     providerAnswers(async () => ({ ok: false, refusal: { reason: "disk-changed", message } }));
 
@@ -97,12 +97,32 @@ describe("A save or a reload that the window asked for and that did not happen",
       [message],
       "the refusal of the provider is shown",
     );
-    assert.equal(errors()[0].action !== undefined, true, "the refusal has an action");
-    runNotificationAction(errors()[0].id);
+    assert.equal(errors()[0].actions.length, 2, "the refusal has an action for each way on");
+    runNotificationAction(errors()[0].id, 0);
     assert.deepEqual(
       requests.filter((request) => request.command === "load-from-disk"),
       [{ command: "load-from-disk", payload: { path: FILE } }],
-      "the action loads the disk version of that document",
+      "the first action loads the disk version of that document",
+    );
+  });
+
+  it("opens the Annotations view from a save that a changed file refused", async function () {
+    const message = "The document changed on disk after this review opened.";
+    providerAnswers(async () => ({ ok: false, refusal: { reason: "disk-changed", message } }));
+    window.config.set("window.sidebarVisible", false);
+
+    assert.equal(await saveBuffer(() => state, FILE), false);
+    runNotificationAction(errors()[0].id, 1);
+
+    assert.equal(
+      window.config.get("window.sidebarVisible"),
+      true,
+      "the second action opens the view that has the controls of the review",
+    );
+    assert.deepEqual(
+      requests.filter((request) => request.command === "load-from-disk"),
+      [],
+      "the editor keeps its text",
     );
   });
 
@@ -119,8 +139,8 @@ describe("A save or a reload that the window asked for and that did not happen",
       ["Could not save file lattices.md: EROFS"],
       "the refusal of the provider is shown",
     );
-    assert.equal(errors()[0].action !== undefined, true, "the refusal has an action");
-    runNotificationAction(errors()[0].id);
+    assert.equal(errors()[0].actions.length, 1, "the refusal has one action");
+    runNotificationAction(errors()[0].id, 0);
     assert.deepEqual(
       requests.filter((request) => ["save-copy", "load-from-disk"].includes(request.command)),
       [{ command: "save-copy", payload: { path: FILE } }],
@@ -137,8 +157,8 @@ describe("A save or a reload that the window asked for and that did not happen",
     assert.equal(await saveBuffer(() => state, FILE), false);
 
     assert.deepEqual(
-      errors().map((entry) => [entry.message, entry.action]),
-      [["The application holds no text of lattices.md.", undefined]],
+      errors().map((entry) => [entry.message, entry.actions]),
+      [["The application holds no text of lattices.md.", []]],
     );
   });
 
@@ -151,8 +171,8 @@ describe("A save or a reload that the window asked for and that did not happen",
     });
 
     assert.equal(errors().length, 1, "one error is shown");
-    assert.equal(errors()[0].action !== undefined, true, "the failed reload has an action");
-    runNotificationAction(errors()[0].id);
+    assert.equal(errors()[0].actions.length, 1, "the failed reload has one action");
+    runNotificationAction(errors()[0].id, 0);
     assert.deepEqual(
       requests.filter((request) => request.command === "load-from-disk"),
       [{ command: "load-from-disk", payload: { path: FILE } }],

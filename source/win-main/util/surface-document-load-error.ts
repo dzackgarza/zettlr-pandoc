@@ -19,7 +19,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Writes the failure to the renderer log and shows it in the window. */
-function show(filePath: string, failure: DocumentLoadFailure, action?: ToastAction): void {
+function show(filePath: string, failure: DocumentLoadFailure, action: ToastAction): void {
   reportError(`[MainEditor] Could not load document ${filePath}\n${failure.diagnostic}`);
   showToast(
     trans('Could not load "%s": %s', pathBasename(filePath), failure.message),

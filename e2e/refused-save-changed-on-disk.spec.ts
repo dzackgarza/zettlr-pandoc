@@ -12,9 +12,10 @@
  *                  author is refused: the file keeps the text of the other
  *                  program. The message of the refusal names two ways on,
  *                  the disk version and the review, and it has an action for
- *                  each. The action for the review opens the Annotations
- *                  view, which has the controls that reapply or discard the
- *                  review (#210).
+ *                  each, on the toast and in the notification center. The
+ *                  action for the review opens the Annotations view, which
+ *                  has the controls that reapply or discard the review
+ *                  (#210).
  *
  * END HEADER
  */
@@ -187,7 +188,19 @@ describe("assembled app: a save of a reviewed document that changed on disk", fu
       "the message has an action for each way on that it names",
     );
 
-    await toast.first().locator("[data-toast-action]", { hasText: "Show the review" }).click();
+    // The notification center shows the same message with the same actions.
+    const bell = editorPage.locator('[data-statusbar-item="notifications"]');
+    await bell.click();
+    const logged = editorPage.locator("#notification-center .notification-entry.error");
+    await logged.waitFor({ state: "visible", timeout: 30_000 });
+    screenshots.set("notification-center.png", await editorPage.screenshot());
+    assert.deepEqual(
+      await logged.locator("[data-notification-action]").allInnerTexts(),
+      ["Load from disk", "Show the review"],
+      "the notification center has both actions of the message",
+    );
+    await logged.locator("[data-notification-action]", { hasText: "Show the review" }).click();
+    await bell.click();
 
     const group = editorPage.locator(
       `${ANNOTATIONS_VIEW} .annotation-document-group[data-document-path="${documentPath}"]`,
@@ -198,8 +211,11 @@ describe("assembled app: a save of a reviewed document that changed on disk", fu
     await group
       .locator(".annotation-frozen-discard")
       .waitFor({ state: "visible", timeout: 30_000 });
+    // The view opens with a transition. A trial click waits until its
+    // target does not move, so the capture shows the open view.
+    await group.locator(".annotation-frozen-discard").click({ trial: true });
     screenshots.set("review-shown.png", await editorPage.screenshot());
-    assert.equal(await toast.count(), 0, "the action takes the message away");
+    assert.equal(await logged.count(), 0, "the action takes the message away");
 
     await takeDiskVersion(editorPage, documentPath);
     assert.deepEqual(await modifiedDocuments(editorPage), [], "the editor has the disk version");
