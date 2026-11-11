@@ -249,33 +249,12 @@ describe("assembled app: the close of a main window", function () {
     assert.deepEqual(await modifiedDocuments(first), [], "no loaded document holds the proposal");
 
     // The sidecar is as the last write left it: the next open has the review.
+    // The quit of the run does not ask about a document with an undecided
+    // proposal, and writes its review to the sidecar.
     await chmod(sidecarDirectory, 0o700);
     const [leaf] = await leafIds(first);
     await openInLeaf(first, leaf, reviewedPath);
     await first.locator(NOTE).waitFor({ state: "visible", timeout: 30_000 });
     screenshots.set("review-returned.png", await first.screenshot());
-
-    // The reviewed document closes, so the quit of the run has nothing to ask.
-    assert.equal(
-      await first.evaluate(async (pathInPage: string) => {
-        const windowId = new URLSearchParams(location.search).get("window_id");
-        if (windowId === null) {
-          throw new Error("The main window carries no window_id");
-        }
-        const tree = await window.ipc.invoke("documents-provider", {
-          command: "retrieve-tab-config",
-          payload: { windowId },
-        });
-        if (tree.type !== "leaf") {
-          throw new Error("The first window has one pane");
-        }
-        return await window.ipc.invoke("documents-provider", {
-          command: "close-file",
-          payload: { windowId, leafId: tree.id, path: pathInPage },
-        });
-      }, reviewedPath),
-      true,
-      "the document closes with its review in the sidecar",
-    );
   });
 });

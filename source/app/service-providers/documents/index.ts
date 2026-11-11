@@ -1620,16 +1620,23 @@ export default class DocumentManager
       // TODO: If we ever implement workspaces, etc., this safeguard won't be
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
-      for (const document of this._windowExclusiveDocuments(windowId)) {
-        const detached = await this._detachForClose(
-          document.documentId,
-          document.filePath,
-          closeAgain,
-        );
-        if (!detached) {
-          return false;
+      // An editor of the window can load a document again while a later
+      // document detaches (pullUpdates), so the window goes only when none
+      // of its documents is loaded.
+      let exclusive = this._windowExclusiveDocuments(windowId);
+      while (exclusive.length > 0) {
+        for (const document of exclusive) {
+          const detached = await this._detachForClose(
+            document.documentId,
+            document.filePath,
+            closeAgain,
+          );
+          if (!detached) {
+            return false;
+          }
+          this._unload(document);
         }
-        this._unload(document);
+        exclusive = this._windowExclusiveDocuments(windowId);
       }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
@@ -1832,10 +1839,11 @@ export default class DocumentManager
   ): Promise<SerializedUpdate[] | false> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
     if (doc === undefined) {
-      // Indicate to the editor that they should get the document (again). This
-      // handles the case where the document has been remotely modified and thus
-      // removed from the document array.
-      return false;
+      // The editor of a pane gets the document again: the document was
+      // unloaded while the pane shows it. An editor whose pane is gone (its
+      // window closes) has nothing to get. A load for it would leave a
+      // document that no window shows, with the review of its sidecar.
+      return this._pathsShownInPanes().has(filePath) ? false : [];
     }
 
     if (clientVersion < doc.minimumVersion || clientVersion > doc.currentVersion) {
@@ -4083,6 +4091,12 @@ current contents from the editor somewhere else, and restart the application.`,
    * text of the review that goes. A document in a pane keeps its buffer,
    * and the repeated close asks about unsaved text as each close does.
    *
+   * The buffer of a document whose review has an undecided proposal is the
+   * working text of that review, in a pane too. The sidecar has that text,
+   * because each change of such a document writes the sidecar first. The
+   * buffer takes the text of the file, so the repeated close has no
+   * proposal to offer for a save (#146).
+   *
    * A document whose unsaved text the author discarded leaves every pane
    * and is unloaded: its buffer is the text that the author threw away,
    * and the discard that puts the text of the file back is what failed.
@@ -4093,11 +4107,16 @@ current contents from the editor somewhere else, and restart the application.`,
       return false;
     }
     this._refusedCloses.delete(documentId);
+    const document = this.documents.find((doc) => doc.documentId === documentId);
+    const heldUndecidedProposal = document !== undefined && this._holdsUndecidedProposal(document);
     await this._reviewApplication.withDocumentLock(documentId, async () => {
       this._reviewApplication.dropCollaboration(documentId);
     });
-    const document = this.documents.find((doc) => doc.documentId === documentId);
     if (document !== undefined) {
+      if (heldUndecidedProposal) {
+        this._applyWorkingTextToDocument(document.filePath, document.lastSavedContent);
+        document.lastSavedVersion = document.currentVersion;
+      }
       if (refused.textDiscarded) {
         await this._closeTabsEverywhere(document.filePath);
       }
