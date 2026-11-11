@@ -10,10 +10,13 @@
  *                  takes seconds. Every window waits for the main process, so
  *                  the parse must not stop its event loop: not when the
  *                  setting names a library, not when Better BibTeX writes the
- *                  library again, and not at the start of the provider. The
- *                  REAL CiteprocProvider reads a REAL .bib file of invented
- *                  entries, each with the fields that the BibLaTeX parser
- *                  reports as unknown (the fields of a MathSciNet export).
+ *                  library again, and not at the start of the provider. No
+ *                  open of a document and no start of the documents provider
+ *                  waits for a library, and a library that does not load
+ *                  stops no other library. The REAL CiteprocProvider reads a
+ *                  REAL .bib file of invented entries, each with the fields
+ *                  that the BibLaTeX parser reports as unknown (the fields of
+ *                  a MathSciNet export).
  *
  * END HEADER
  */
@@ -22,13 +25,17 @@
 // imports 'electron' at module scope.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { monitorEventLoopDelay } from "perf_hooks";
 import CiteprocProvider, { type CiteprocConfig } from "source/app/service-providers/citeproc";
+import type DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
 import { setTimeout as sleep } from "timers/promises";
+import { bootDocumentManager } from "./documents-provider-seam";
+import { bootFsal } from "./fsal-seam";
+import { userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -108,6 +115,22 @@ async function longestStopDuring(work: () => Promise<void>): Promise<number> {
   await sleep(100);
   delay.disable();
   return delay.max / 1e6;
+}
+
+/** Whether the provider has the database now or within `timeoutMs`. */
+async function becomesLoaded(
+  citeproc: CiteprocProvider,
+  databasePath: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (citeproc.listDatabases().some((database) => database.path === databasePath)) {
+      return true;
+    }
+    await sleep(20);
+  }
+  return false;
 }
 
 describe("The parse of a large citation library (#138)", function () {
@@ -210,5 +233,118 @@ describe("The parse of a large citation library (#138)", function () {
     assert.equal(await citeproc.awaitMainLibraryItem(key(ENTRY_COUNT), 30000), true);
     assert.equal(citeproc.getItem("main", key(1))?.title, title(1));
     assert.deepEqual(citeproc.problems(), []);
+  });
+
+  describe("of the documents", function () {
+    let citeproc: CiteprocProvider;
+
+    beforeEach(async function () {
+      citeproc = provider(new Settings(""));
+      await citeproc.boot();
+    });
+
+    it("loads each library that exists when a document names an absent file", async function () {
+      const absent = path.join(directory, "absent.bib");
+      const present = path.join(directory, "present.bib");
+      writeFileSync(present, library(3));
+
+      await citeproc.synchronizeDatabases([absent, present]);
+
+      assert.deepEqual(citeproc.listDatabases(), [{ path: present, type: "biblatex" }]);
+      assert.equal(citeproc.getItem(present, key(3))?.title, title(3));
+      // The author learns which file did not load.
+      assert.deepEqual(
+        citeproc.problems().map((problem) => [problem.resource, problem.path]),
+        [["bibliography", absent]],
+      );
+
+      // No document names the absent file any more.
+      await citeproc.synchronizeDatabases([present]);
+      assert.deepEqual(citeproc.problems(), []);
+    });
+
+    it("keeps the libraries of the last request only", async function () {
+      const closed = path.join(directory, "closed.bib");
+      const open = path.join(directory, "open.bib");
+      writeFileSync(closed, library(ENTRY_COUNT));
+      writeFileSync(open, library(3));
+
+      // The document that names the large library closes while it loads.
+      const first = citeproc.synchronizeDatabases([closed]);
+      const second = citeproc.synchronizeDatabases([open]);
+      await Promise.all([first, second]);
+
+      assert.deepEqual(citeproc.listDatabases(), [{ path: open, type: "biblatex" }]);
+    });
+  });
+
+  describe("in the documents provider", function () {
+    let root: string;
+    let libraryPath: string;
+    let documents: DocumentManager;
+    let citeproc: CiteprocProvider;
+
+    beforeEach(async function () {
+      root = mkdtempSync(path.join(directory, "workspace-"));
+      mkdirSync(path.join(userData, "logs"), { recursive: true });
+      rmSync(path.join(userData, "documents.yaml"), { force: true });
+      libraryPath = path.join(root, "covers.bib");
+      writeFileSync(libraryPath, library(ENTRY_COUNT));
+      citeproc = provider(new Settings(""));
+      await citeproc.boot();
+    });
+
+    afterEach(async function () {
+      await documents.shutdown();
+    });
+
+    it("does not make the open of a document wait for the library of a loaded document", async function () {
+      const cited = path.join(root, "cited.md");
+      const other = path.join(root, "other.md");
+      writeFileSync(
+        cited,
+        `---\nbibliography: ${libraryPath}\n---\n\nThe covers [@${key(1)}] exist.\n`,
+      );
+      writeFileSync(other, "A second document.\n");
+      documents = await bootDocumentManager(root, { citeproc });
+      const windowId = documents.windowKeys()[0];
+      const leafId = documents.leafIds(windowId)[0];
+      assert.equal(await documents.openFile(windowId, leafId, cited, true), true);
+      // The editor of the tab loads the document.
+      await documents.getDocument(cited);
+
+      assert.equal(await documents.openFile(windowId, leafId, other, true), true);
+      assert.deepEqual(
+        citeproc.listDatabases(),
+        [],
+        "the open of the second document ended after the parse of the library",
+      );
+
+      assert.equal(await becomesLoaded(citeproc, libraryPath, 30000), true);
+      assert.equal(citeproc.getItem(libraryPath, key(1))?.title, title(1));
+    });
+
+    it("does not make the start wait for the library of a Quarto book", async function () {
+      writeFileSync(path.join(root, "index.md"), "# Covers\n");
+      writeFileSync(
+        path.join(root, "_quarto.yml"),
+        "project:\n  type: book\nbook:\n  title: Covers\n  chapters:\n    - index.md\nbibliography:\n  - covers.bib\n",
+      );
+      const fsal = await bootFsal(root);
+
+      documents = await bootDocumentManager(root, {
+        citeproc,
+        loadedDescriptors: async () => await fsal.getAllLoadedDescriptors(),
+      });
+      assert.deepEqual(
+        citeproc.listDatabases(),
+        [],
+        "the start of the documents provider ended after the parse of the library",
+      );
+
+      assert.equal(await becomesLoaded(citeproc, libraryPath, 30000), true);
+      assert.equal(citeproc.getItem(libraryPath, key(ENTRY_COUNT))?.title, title(ENTRY_COUNT));
+      await fsal.shutdown();
+    });
   });
 });

@@ -17,6 +17,7 @@
 import { readFileSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import type CiteprocProvider from "source/app/service-providers/citeproc";
 import FileDelete from "source/app/service-providers/commands/file-delete";
 import type ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
@@ -26,7 +27,8 @@ import LogProvider from "source/app/service-providers/log";
 import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
-import type { MDFileDescriptor } from "source/types/common/fsal";
+import extractYamlFrontmatter from "source/common/util/extract-yaml-frontmatter";
+import type { AnyDescriptor, MDFileDescriptor } from "source/types/common/fsal";
 
 function descriptorFor(filePath: string): MDFileDescriptor {
   const content = readFileSync(filePath, "utf-8");
@@ -51,7 +53,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     firstHeading: null,
     yamlTitle: undefined,
     aliases: [],
-    frontmatter: null,
+    frontmatter: extractYamlFrontmatter(content).frontmatter,
     references: extractReferences(filePath, content),
   };
 }
@@ -67,8 +69,24 @@ export function emitWatchdogEvent(event: "change" | "unlink", filePath: string):
   watchdogListener(event, filePath);
 }
 
-/** A booted DocumentManager whose only workspace is `root`. */
-export async function bootDocumentManager(root: string): Promise<DocumentManager> {
+/** The providers of the application that a spec gives to the DocumentManager. */
+interface DocumentManagerParts {
+  /** Gets the bibliographies of the documents and of the Quarto books. */
+  citeproc: Pick<CiteprocProvider, "synchronizeDatabases">;
+  /** The descriptors of the workspace, as `FSAL.getAllLoadedDescriptors` gives them. */
+  loadedDescriptors?: () => Promise<AnyDescriptor[]>;
+}
+
+/**
+ * A booted DocumentManager whose only workspace is `root`. Without `parts`,
+ * no citation provider gets the bibliographies of its documents.
+ */
+export async function bootDocumentManager(
+  root: string,
+  parts: DocumentManagerParts = {
+    citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
+  },
+): Promise<DocumentManager> {
   const watcher = {
     on: (_name: string, listener: WatchdogListener) => {
       watchdogListener = listener;
@@ -107,10 +125,9 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       testAccess: FSAL.prototype.testAccess,
       writeTextFile,
+      getAllLoadedDescriptors: parts.loadedDescriptors,
     },
-    citeproc: {
-      synchronizeDatabases: async (_libraries: string[]) => {},
-    },
+    citeproc: parts.citeproc,
     recentDocs: {
       add: (_filePath: string) => {},
       markEdited: (_filePath: string) => {},
