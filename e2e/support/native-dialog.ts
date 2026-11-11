@@ -73,3 +73,10 @@ export async function captureWindow(window: string): Promise<Buffer> {
 export async function pressKey(window: string, key: string): Promise<void> {
   await run("xdotool", ["windowfocus", "--sync", window, "key", key], { timeout: 30_000 });
 }
+
+/** Types text into a window, as the keyboard of the author does. */
+export async function typeText(window: string, text: string): Promise<void> {
+  await run("xdotool", ["windowfocus", "--sync", window, "type", "--delay", "20", text], {
+    timeout: 60_000,
+  });
+}
