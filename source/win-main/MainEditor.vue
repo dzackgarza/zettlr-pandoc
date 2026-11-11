@@ -625,12 +625,30 @@ const stopReferenceUpdates = ipcRenderer.on("references", (_event) => {
   });
 });
 
+/**
+ * Whether a save is for the document of this editor. The editor that holds
+ * the focus saves. When no editor of the window holds it (the focus is on a
+ * message, in the file manager or in a sidebar), the save is for the active
+ * document of the pane that the author used last: a save never does nothing
+ * while a document is open.
+ */
+function savesThisDocument(editor: MarkdownEditor): boolean {
+  if (editor.hasFocusWithin()) {
+    return true;
+  }
+  const focusInAnEditor = document.activeElement?.closest(".cm-editor") != null;
+  return !focusInAnEditor && isActiveTab.value && documentTreeStore.lastLeafId === props.leafId;
+}
+
 const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
-  if (currentEditor?.hasFocusWithin() !== true) {
-    return; // None of our business
+  if (currentEditor === null) {
+    return;
   }
 
   if (command === "save-file") {
+    if (!savesThisDocument(currentEditor)) {
+      return; // The save is for another editor
+    }
     const editor = currentEditor;
     // saveBuffer waits until the document authority holds the whole buffer:
     // the on-disk write goes through the authority.
@@ -671,7 +689,14 @@ const stopShortcuts = ipcRenderer.on("shortcut", (event, command) => {
     } else {
       doSave();
     }
-  } else if (command === "search") {
+    return;
+  }
+
+  if (!currentEditor.hasFocusWithin()) {
+    return; // The other shortcuts act on the editor that holds the focus
+  }
+
+  if (command === "search") {
     currentEditor.toggleSearchPanel();
   } else if (command === "toggle-typewriter-mode") {
     currentEditor.hasTypewriterMode = !currentEditor.hasTypewriterMode;
