@@ -428,6 +428,20 @@ of an isolated instance are in the first comment of #132.
   owns the whole source of its node and `view.posAtDOM` gives the start of
   that source. A replacement of lower precedence that starts at the same
   position (the hidden `$` code mark of an equation) is not drawn.
+- **An inline widget states how it stays on its row.** The view puts an
+  image of no width (`cm-widgetBuffer`) on each side of a widget, and a
+  browser can end a row beside an image. A widget of `base-renderer.ts`
+  therefore has the property `rowJoin` (`RowJoinedWidget`): `"box"` for one
+  box that no row end divides (an inline equation, a wikilink chip), `"text"`
+  for text with row ends of its own (a citation, a cluster of reference
+  chips), `null` for a widget that fills its row (display math). The renderer
+  puts a mark (`cm-row-join`) over a joined widget and the character that
+  touches it on each side; no row ends in the mark, and a space is never in
+  it. The mark is inclusive: a mark that is not inclusive does not hold a
+  widget that starts or ends at its edge. A pill inside a widget with text
+  around it goes into an element with `ATOMIC_INLINE_JOINT_CLASS`. A widget
+  without `rowJoin` (an image, a task marker) is not joined. Proof:
+  `e2e/inline-widget-line-breaks.spec.ts`.
 - **A renderer that draws the line of a definition gives the badges their
   room.** The reference badges are an overlay (`render-reference-definitions.ts`).
   A widget that replaces the line of a definition (the header of a fenced div)

@@ -144,6 +144,66 @@ such that for each nonempty overlap $U_i \cap U_j$, the transition maps
     view.destroy();
   });
 
+  it("joins an inline equation to the characters that touch it, and to no space", function () {
+    // Of the three equations, only the first touches characters. The second
+    // has a space on each side, and the third is a display equation.
+    const doc = "The map ($f$), the set $X$ and\n\n$$\ny\n$$\n\nOutside.";
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [markdownParser(), configField, renderMath],
+    });
+    const view = new EditorView({ state, parent: document.body });
+    assert.equal(view.dom.querySelectorAll(".preview-math").length, 3);
+
+    const joins = [...view.dom.querySelectorAll<HTMLElement>(".cm-row-join")];
+    assert.equal(joins.length, 1);
+    const equations = joins[0].querySelectorAll<HTMLElement>(".preview-math");
+    assert.equal(equations.length, 1);
+    assert.equal(equations[0].dataset.equation, "f");
+    const touching = [...joins[0].childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent);
+    assert.deepEqual(touching, ["(", ")"]);
+    view.destroy();
+  });
+
+  it("keeps the join of an equation while the caret moves beside it", function () {
+    // A caret move computes again only the decorations that it touches. The
+    // join must follow the equation through each such partial computation.
+    const doc = "The map ($f$), the set.\n\nOutside.";
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.length },
+      extensions: [markdownParser(), configField, renderMath],
+    });
+    const view = new EditorView({ state, parent: document.body });
+    const open = doc.indexOf("(");
+    const close = doc.indexOf(")");
+    const joined = (): boolean[] =>
+      [...view.dom.querySelectorAll(".cm-row-join")].map(
+        (join) => join.querySelector(".preview-math") !== null,
+      );
+    const rendered = (): number => view.dom.querySelectorAll(".preview-math").length;
+
+    // Beside the bracket on each side: the equation is drawn and joined.
+    for (const anchor of [open, close + 1, open - 1, close + 2]) {
+      view.dispatch({ selection: { anchor } });
+      assert.equal(rendered(), 1, `caret at ${anchor}`);
+      assert.deepEqual(joined(), [true], `caret at ${anchor}`);
+    }
+
+    // In the equation: the source is shown, and no join is left on it.
+    view.dispatch({ selection: { anchor: open + 2 } });
+    assert.equal(rendered(), 0);
+    assert.deepEqual(joined(), []);
+
+    view.dispatch({ selection: { anchor: doc.length } });
+    assert.equal(rendered(), 1);
+    assert.deepEqual(joined(), [true]);
+    view.destroy();
+  });
+
   it("selects the whole source of an equation on a click, delimiters included", function () {
     // The standard renderers hide the code marks of inline code. The `$` of an
     // equation is such a mark, and the equation widget must still own it.

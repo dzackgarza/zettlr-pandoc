@@ -21,12 +21,17 @@
 import { type EditorState } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
-import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import {
+  type RowJoinedWidget,
+  renderBlockWidgets,
+} from "@dzack/pandoc-editor/renderers/base-renderer";
 import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { type SyntaxNodeRef } from "@lezer/common";
 import { wikilinkOpener, wikilinkResolutionsField } from "../plugins/wikilink-resolutions-field";
 
-class WikilinkChipWidget extends WidgetType {
+class WikilinkChipWidget extends WidgetType implements RowJoinedWidget {
+  readonly rowJoin = "box";
+
   /** `documentPath` is '' for a link into the document itself (`[[#heading]]`). */
   constructor(
     readonly linkContents: string,

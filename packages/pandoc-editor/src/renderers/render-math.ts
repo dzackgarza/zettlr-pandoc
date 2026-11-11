@@ -14,7 +14,11 @@
 
 import { type EditorState, Facet } from "@codemirror/state";
 import { EditorView, WidgetType } from "@codemirror/view";
-import { renderBlockWidgets } from "@dzack/pandoc-editor/renderers/base-renderer";
+import {
+  type RowJoin,
+  type RowJoinedWidget,
+  renderBlockWidgets,
+} from "@dzack/pandoc-editor/renderers/base-renderer";
 import clickAndSelect from "@dzack/pandoc-editor/renderers/click-and-select";
 import { stripMathDelimiters } from "@dzack/pandoc-editor/util/math-delimiters";
 import { rangeInPreviewSuppression } from "@dzack/pandoc-editor/util/range-in-preview-suppression";
@@ -37,12 +41,17 @@ function requireMathHost(state: EditorState): MathHost {
   return host;
 }
 
-class MathWidget extends WidgetType {
+class MathWidget extends WidgetType implements RowJoinedWidget {
   constructor(
     readonly equation: string,
     readonly displayMode: boolean,
   ) {
     super();
+  }
+
+  /** A display equation fills its row, so no character is joined to it. */
+  get rowJoin(): RowJoin {
+    return this.displayMode ? null : "box";
   }
 
   eq(other: MathWidget): boolean {
@@ -52,9 +61,8 @@ class MathWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     const elem = document.createElement("span");
     elem.classList.add("preview-math");
-    elem.dataset.equation = this.equation;
     const host = requireMathHost(view.state);
-    host.render(this.equation, elem, this.displayMode ? "display" : "inline");
+    this.draw(elem, host);
     elem.addEventListener("click", clickAndSelect(view));
     if (host.contextMenu)
       elem.addEventListener("contextmenu", (event) => {
@@ -64,13 +72,22 @@ class MathWidget extends WidgetType {
   }
 
   updateDOM(dom: HTMLElement, view: EditorView): boolean {
-    if (dom.dataset.equation === this.equation) {
+    if (
+      dom.dataset.equation === this.equation &&
+      dom.dataset.mathMode === (this.displayMode ? "display" : "inline")
+    ) {
       return true; // No need to update
     }
 
-    dom.dataset.equation = this.equation;
-    requireMathHost(view.state).render(this.equation, dom, this.displayMode ? "display" : "inline");
+    this.draw(dom, requireMathHost(view.state));
     return true;
+  }
+
+  private draw(dom: HTMLElement, host: MathHost): void {
+    const mode = this.displayMode ? "display" : "inline";
+    dom.dataset.equation = this.equation;
+    dom.dataset.mathMode = mode;
+    host.render(this.equation, dom, mode);
   }
 
   ignoreEvent(_event: Event): boolean {

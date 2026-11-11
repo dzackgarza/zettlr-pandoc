@@ -15,7 +15,14 @@
  */
 
 import { syntaxTree } from "@codemirror/language";
-import { type EditorState, type Extension, Facet, Prec, type Range } from "@codemirror/state";
+import {
+  type EditorState,
+  type Extension,
+  Facet,
+  findClusterBreak,
+  Prec,
+  type Range,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -65,11 +72,111 @@ const blockRendererFacet = Facet.define<RendererSpec, readonly RendererSpec[]>({
  */
 export const WIDGET_LINE_STYLE_RESET_CLASS = "cm-widget-line-style-reset";
 
-const widgetLineStyleResetTheme = EditorView.baseTheme({
+/**
+ * How a widget stays on the row of the characters that touch it: the bracket
+ * before an equation and the comma after a chip do not go to another row than
+ * the widget. A space beside the widget can still end the row.
+ *
+ * - `"box"`: the widget is one box (an equation, a pill). No row ends in it.
+ * - `"text"`: the widget holds text whose rows end where the rows of text
+ *   end (a citation, a cluster of chips with its authored words).
+ * - `null`: no character is joined to the widget. This is the value for a
+ *   widget that fills the row (display math): such a widget joined to a
+ *   character is wider than the row.
+ */
+export type RowJoin = "box" | "text" | null;
+
+/** A widget that states its `RowJoin`. A widget without it is not joined. */
+export interface RowJoinedWidget {
+  readonly rowJoin: RowJoin;
+}
+
+function rowJoinOf(widget: WidgetType): RowJoin {
+  return "rowJoin" in widget && (widget.rowJoin === "box" || widget.rowJoin === "text")
+    ? widget.rowJoin
+    : null;
+}
+
+/**
+ * The class of the mark that holds a row-joined widget and the characters
+ * that touch it.
+ *
+ * The view puts an image of no width (`cm-widgetBuffer`) before and after
+ * each widget, so that the caret has a place beside content that is not
+ * editable. An image is an atomic inline, and a browser can end a row before
+ * and after each atomic inline (CSS Text 3, section 5.1, "Line Breaking
+ * Details"). The `text-wrap-mode` of the nearest common ancestor of two boxes
+ * decides whether a row can end between them (the same section), so the mark
+ * permits no row end in it. The buffers keep their place and their size: the
+ * caret beside a widget does not move.
+ */
+const ROW_JOIN_CLASS = "cm-row-join";
+
+/**
+ * The class of a widget in the mark that holds text with row ends of its own
+ * (`RowJoin` `"text"`). The widget permits row ends in it again.
+ *
+ * Chromium takes the row end after the last content of an element from the
+ * style of that element, not from the mark around it. The widget therefore
+ * ends in a U+2060 WORD JOINER that permits no row end: no row ends before a
+ * word joiner (UAX #14, rule LB11), and none after this one.
+ */
+const ROW_JOIN_TEXT_CLASS = "cm-row-join-text";
+
+/**
+ * The class of an inline element in a widget that holds one atomic inline box
+ * (an `inline-block` pill) and nothing else. No row ends between that box and
+ * a character of the widget that touches the element.
+ *
+ * Chromium ends a row beside an atomic inline also when a U+2060 WORD JOINER
+ * is the character on that side. The element therefore puts a word joiner on
+ * each side of the box, in generated content, and permits no row end in it.
+ * No row ends between a word joiner and the character beside it (UAX #14,
+ * rule LB11).
+ */
+export const ATOMIC_INLINE_JOINT_CLASS = "cm-atomic-inline-joint";
+
+// The rows of a line end only in an editor with `EditorView.lineWrapping`.
+const widgetTheme = EditorView.baseTheme({
   [`.${WIDGET_LINE_STYLE_RESET_CLASS}`]: {
     textIndent: "0",
   },
+  [`.cm-lineWrapping .${ROW_JOIN_CLASS}, .cm-lineWrapping .${ATOMIC_INLINE_JOINT_CLASS}`]: {
+    textWrapMode: "nowrap",
+  },
+  [`.cm-lineWrapping .${ROW_JOIN_CLASS} .${ROW_JOIN_TEXT_CLASS}`]: {
+    textWrapMode: "wrap",
+  },
+  [`.cm-lineWrapping .${ROW_JOIN_CLASS} .${ROW_JOIN_TEXT_CLASS}::after`]: {
+    content: '"\\2060"',
+    textWrapMode: "nowrap",
+  },
+  [`.${ATOMIC_INLINE_JOINT_CLASS}::before, .${ATOMIC_INLINE_JOINT_CLASS}::after`]: {
+    content: '"\\2060"',
+  },
 });
+
+// A widget replaces its source with a decoration that is not inclusive. Of a
+// mark and such a decoration that start or end at one position, the view
+// puts the widget in the mark only when the mark is inclusive.
+const rowJoinMark = Decoration.mark({ class: ROW_JOIN_CLASS, inclusive: true });
+
+/**
+ * The range of a row-joined widget and the characters of its lines that
+ * touch it. A space is not such a character. Two widgets with one character
+ * between them give two ranges that both hold that character; the view draws
+ * equal marks that overlap as one element.
+ */
+function rowJoinRange(state: EditorState, from: number, to: number): { from: number; to: number } {
+  const first = state.doc.lineAt(from);
+  const last = to <= first.to ? first : state.doc.lineAt(to);
+  const before = findClusterBreak(first.text, from - first.from, false);
+  const after = findClusterBreak(last.text, to - last.from, true);
+  return {
+    from: /\S/.test(first.text.slice(before, from - first.from)) ? first.from + before : from,
+    to: /\S/.test(last.text.slice(to - last.from, after)) ? last.from + after : to,
+  };
+}
 
 /**
  * A widget owns the whole source of its node. Other renderers hide single
@@ -110,9 +217,14 @@ class LineStyleResetWidget extends WidgetType {
 
   toDOM(view: EditorView): HTMLElement {
     const dom = this.inner.toDOM(view);
-    dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
-    dom.dataset.previewSourceLength = String(this.sourceLength);
+    this.stamp(dom);
     return dom;
+  }
+
+  private stamp(dom: HTMLElement): void {
+    dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
+    dom.classList.toggle(ROW_JOIN_TEXT_CLASS, rowJoinOf(this.inner) === "text");
+    dom.dataset.previewSourceLength = String(this.sourceLength);
   }
 
   updateDOM(dom: HTMLElement, view: EditorView, from: LineStyleResetWidget): boolean {
@@ -130,8 +242,7 @@ class LineStyleResetWidget extends WidgetType {
     // the wrapped renderer sees its own predecessor, not this wrapper.
     const updated = this.inner.updateDOM(dom, view, from.inner);
     if (updated) {
-      dom.classList.add(WIDGET_LINE_STYLE_RESET_CLASS);
-      dom.dataset.previewSourceLength = String(this.sourceLength);
+      this.stamp(dom);
     }
     return updated;
   }
@@ -221,6 +332,12 @@ function renderWidgets(
       if (renderedWidget === undefined) {
         continue;
       }
+      if (rowJoinOf(renderedWidget) !== null) {
+        const join = rowJoinRange(state, node.from, node.to);
+        if (join.from < node.from || join.to > node.to) {
+          widgets.push(rowJoinMark.range(join.from, join.to));
+        }
+      }
       const widget = Decoration.replace({
         widget: new LineStyleResetWidget(renderedWidget, node.to - node.from),
         inclusive: false,
@@ -277,6 +394,7 @@ export function renderInlineWidgets(
       constructor(view: EditorView) {
         this.decorations = Decoration.set(
           renderWidgets(view.state, view.visibleRanges, [spec], view),
+          true,
         );
       }
 
@@ -289,6 +407,7 @@ export function renderInlineWidgets(
         ) {
           this.decorations = Decoration.set(
             renderWidgets(update.view.state, update.view.visibleRanges, [spec], update.view),
+            true,
           );
         }
       }
@@ -298,7 +417,7 @@ export function renderInlineWidgets(
     },
   );
 
-  return [widgetDecorationPrecedence(plugin), widgetLineStyleResetTheme];
+  return [widgetDecorationPrecedence(plugin), widgetTheme];
 }
 
 /**
@@ -365,6 +484,6 @@ export function renderBlockWidgets(
       inputsChanged,
     }),
     widgetDecorationPrecedence(sharedBlockRendererField),
-    widgetLineStyleResetTheme,
+    widgetTheme,
   ];
 }
