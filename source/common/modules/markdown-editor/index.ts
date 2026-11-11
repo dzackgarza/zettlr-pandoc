@@ -22,7 +22,7 @@
 import "@dzack/pandoc-editor/editor.css";
 
 import { foldEffect, foldState } from "@codemirror/language";
-import { forceLinting } from "@codemirror/lint";
+import { forceLinting, setDiagnosticsEffect } from "@codemirror/lint";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import {
   Compartment,
@@ -483,6 +483,13 @@ export default class MarkdownEditor extends EventEmitter {
           for (const effect of transaction.effects) {
             // Listen for word count updates
             if (effect.is(updateWordCountEffect)) {
+              this.emit("docUpdate");
+            }
+
+            // A lint set its diagnostics, so the counts of the document
+            // info changed. Such a transaction changes no selection and no
+            // word count.
+            if (effect.is(setDiagnosticsEffect)) {
               this.emit("docUpdate");
             }
 
