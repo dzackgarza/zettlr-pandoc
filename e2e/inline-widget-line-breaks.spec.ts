@@ -37,7 +37,8 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-inline-widget-breaks-e2e-latest");
 
 const REPEATS = 8;
-const MATH = "set $X$, map ($f$); ".repeat(REPEATS).trimEnd();
+// The pair has one character between two equations: it touches both.
+const MATH = "set $X$, map ($f$); pair $a$,$b$; ".repeat(REPEATS).trimEnd();
 const REFERENCES = "by @def:orbit, or (@def:orbit); ".repeat(REPEATS).trimEnd();
 const WIKILINKS = "in [[notes]], or ([[notes]]); ".repeat(REPEATS).trimEnd();
 const CITATIONS = "see [@Art91], or ([@Art91]); ".repeat(REPEATS).trimEnd();
@@ -69,7 +70,7 @@ ${CITATIONS}
 const BASE_WIDTH = 620;
 // Wider than one period of each paragraph, so the end of the first row
 // passes a widget of each kind.
-const SWEEP = 240;
+const SWEEP = 320;
 // Two glyphs of one row have their centres nearer than this; the rows of
 // the editor are more than twice this apart.
 const ROW_TOLERANCE = 10;
@@ -253,7 +254,7 @@ describe("assembled app: line breaks beside inline widgets", function () {
       const instances = await readInstances(editorPage);
       assert.deepEqual(
         kinds.map((kind) => instances.filter((instance) => instance.kind === kind).length),
-        [2 * REPEATS, 2 * REPEATS, 2 * REPEATS, 2 * REPEATS],
+        [4 * REPEATS, 2 * REPEATS, 2 * REPEATS, 2 * REPEATS],
         "each widget of the document is drawn",
       );
       const separatedBefore = separated.length;
