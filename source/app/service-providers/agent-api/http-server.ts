@@ -976,11 +976,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         res: http.ServerResponse,
       ) => this.handleWaitForReviewEvents(res, c.request.params.reviewId, c.request.query),
 
-      queryCitations: (
+      queryCitations: async (
         c: DefaultedOperationContext<"queryCitations", "database">,
         _req,
         res: http.ServerResponse,
       ) => {
+        await this.citationDatabasesRead();
         if (c.request.query.citeKey) {
           return this.handleGetCitationItem(res, c.request.query.citeKey, c.request.query.database);
         }
@@ -989,7 +990,12 @@ export default class AgentHTTPProvider extends ProviderContract {
         }
         return this.handleListCitationItems(res, c.request.query.database);
       },
-      renderCitations: (c: OperationContext<"renderCitations">, _req, res: http.ServerResponse) => {
+      renderCitations: async (
+        c: OperationContext<"renderCitations">,
+        _req,
+        res: http.ServerResponse,
+      ) => {
+        await this.citationDatabasesRead();
         const body = c.request.requestBody;
         if (body.mode === "bibliography") {
           if (body.citekeys === undefined) {
@@ -1078,7 +1084,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.search(c.request.query.q, c.request.query.limit));
         }
@@ -1088,7 +1094,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.extractions(c.request.params.itemKey));
         }
@@ -1098,7 +1104,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importIdentifier(c.request.requestBody));
         }
@@ -1108,7 +1114,7 @@ export default class AgentHTTPProvider extends ProviderContract {
         _req,
         res: http.ServerResponse,
       ) => {
-        const zotero = this.zoteroLibrary(res);
+        const zotero = await this.zoteroLibrary(res);
         if (zotero !== undefined) {
           this.sendZoteroResult(res, await zotero.importUrl(c.request.requestBody));
         }
@@ -2091,10 +2097,21 @@ export default class AgentHTTPProvider extends ProviderContract {
   // ==========================================================================
 
   /**
+   * Ends when the citation provider read each database that it keeps. The
+   * provider reads a database on a thread and the app does not wait for it,
+   * so a request that arrives during a read waits here: its answer is of the
+   * databases after the read, not of a provider without them.
+   */
+  private async citationDatabasesRead(): Promise<void> {
+    await this._citeproc?.loadsEnded();
+  }
+
+  /**
    * The Zotero operations report whether a citation key is citable, so they
    * need the main citation database. Without it the request is a 503.
    */
-  private zoteroLibrary(res: http.ServerResponse): ZoteroLibrary | undefined {
+  private async zoteroLibrary(res: http.ServerResponse): Promise<ZoteroLibrary | undefined> {
+    await this.citationDatabasesRead();
     if (this._zotero === undefined || !this._zotero.citeproc.hasMainLibrary()) {
       this.sendError(
         res,

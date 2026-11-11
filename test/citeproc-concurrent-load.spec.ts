@@ -27,6 +27,7 @@ import os from "os";
 import path from "path";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -62,6 +63,7 @@ describe("Concurrent requests for one citation database", function () {
         get: () => ({ appLang: "en-US", export: { cslLibrary: "", cslStyle: CHICAGO_STYLE } }),
       },
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     await provider.boot();
   });

@@ -29,13 +29,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { monitorEventLoopDelay } from "perf_hooks";
-import CiteprocProvider, { type CiteprocConfig } from "source/app/service-providers/citeproc";
+import CiteprocProvider, {
+  type CiteprocConfig,
+  type CiteprocSyncCitationResponse,
+} from "source/app/service-providers/citeproc";
 import type DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
+import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
 import { setTimeout as sleep } from "timers/promises";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { bootFsal } from "./fsal-seam";
-import { userData } from "./headless-electron-harness.cjs";
+import { ipcMainHandlers, ipcMainListeners, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -117,6 +122,21 @@ async function longestStopDuring(work: () => Promise<void>): Promise<number> {
   return delay.max / 1e6;
 }
 
+/** The request of a window for the items of a database (`ipcRenderer.invoke`). */
+type ItemsHandler = (
+  event: undefined,
+  message: { command: "get-items"; payload: { database: string } },
+) => Promise<CSLItem[]>;
+
+/** The synchronous request of a window for a rendered citation (`ipcRenderer.sendSync`). */
+type SyncCitationListener = (
+  event: { returnValue?: CiteprocSyncCitationResponse },
+  message: {
+    command: "get-citation-sync";
+    payload: { database: string; citations: CiteItem[]; composite: boolean };
+  },
+) => void;
+
 /** Whether the provider has the database now or within `timeoutMs`. */
 async function becomesLoaded(
   citeproc: CiteprocProvider,
@@ -144,6 +164,7 @@ describe("The parse of a large citation library (#138)", function () {
       new LogProvider(),
       settings,
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     providers.push(made);
     return made;
@@ -235,6 +256,22 @@ describe("The parse of a large citation library (#138)", function () {
     assert.deepEqual(citeproc.problems(), []);
   });
 
+  it("gives a window that asks during the first read the items of the library", async function () {
+    const libraryPath = path.join(directory, "asked.bib");
+    writeFileSync(libraryPath, library(ENTRY_COUNT));
+    const citeproc = provider(new Settings(libraryPath));
+    await citeproc.boot();
+
+    const handler = ipcMainHandlers.get("citeproc-provider") as ItemsHandler;
+    const items = await handler(undefined, {
+      command: "get-items",
+      payload: { database: CITEPROC_MAIN_DB },
+    });
+
+    assert.equal(items.length, ENTRY_COUNT);
+    assert.equal(items[0], citeproc.getItem(CITEPROC_MAIN_DB, key(1)));
+  });
+
   describe("of the documents", function () {
     let citeproc: CiteprocProvider;
 
@@ -260,6 +297,53 @@ describe("The parse of a large citation library (#138)", function () {
 
       // No document names the absent file any more.
       await citeproc.synchronizeDatabases([present]);
+      assert.deepEqual(citeproc.problems(), []);
+    });
+
+    it("loads a library whose file appears after a document named it", async function () {
+      const late = path.join(directory, "late.bib");
+      await citeproc.synchronizeDatabases([late]);
+      assert.deepEqual(
+        citeproc.problems().map((problem) => [problem.resource, problem.path]),
+        [["bibliography", late]],
+      );
+
+      // The author makes the file later. The watcher sets up its watch of
+      // the directory in the turns after the failed read; a file that is
+      // there before the watch is no event.
+      await sleep(1000);
+      writeFileSync(late, library(3));
+
+      assert.equal(await becomesLoaded(citeproc, late, 30000), true);
+      assert.equal(citeproc.getItem(late, key(2))?.title, title(2));
+      assert.deepEqual(citeproc.problems(), []);
+    });
+
+    it("renders no citation of a library during its first read, and the citation after it", async function () {
+      const read = path.join(directory, "read.bib");
+      writeFileSync(read, library(ENTRY_COUNT));
+      const citation: CiteItem[] = [{ id: key(7) }];
+
+      const loaded = citeproc.synchronizeDatabases([read]);
+      assert.equal(citeproc.getCitation(read, citation, false), undefined);
+
+      await loaded;
+      assert.equal(citeproc.getCitation(read, citation, false), "(Author and Writer 1957)");
+    });
+
+    it("starts the read of a library that a window renders from before a document named it", async function () {
+      const early = path.join(directory, "early.bib");
+      writeFileSync(early, library(3));
+      const listener = ipcMainListeners.get("citeproc-provider") as SyncCitationListener;
+      const event: { returnValue?: CiteprocSyncCitationResponse } = {};
+
+      listener(event, {
+        command: "get-citation-sync",
+        payload: { database: early, citations: [{ id: key(1) }], composite: false },
+      });
+
+      assert.deepEqual(event.returnValue, { ok: true, value: undefined });
+      assert.equal(await becomesLoaded(citeproc, early, 30000), true);
       assert.deepEqual(citeproc.problems(), []);
     });
 

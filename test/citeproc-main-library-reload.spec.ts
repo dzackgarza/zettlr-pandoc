@@ -25,6 +25,7 @@ import os from "os";
 import path from "path";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -64,8 +65,10 @@ describe("A changed main citation library", function () {
         }),
       },
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     await provider.boot();
+    await provider.loadsEnded();
     assert.deepEqual(provider.problems(), [], "the main library loaded");
   });
 

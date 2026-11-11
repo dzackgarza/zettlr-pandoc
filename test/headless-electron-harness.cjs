@@ -49,6 +49,15 @@ fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
  * @type {Map<string, Function>}
  */
 const ipcMainHandlers = new Map();
+/**
+ * Records every ipcMain.on registration the same way: the REAL listener of
+ * the last registration on a channel. A spec calls it with its own event
+ * object to exercise a synchronous request (`sendSync`), whose answer the
+ * listener writes to `event.returnValue`.
+ *
+ * @type {Map<string, Function>}
+ */
+const ipcMainListeners = new Map();
 const sentMessages = new WeakMap();
 const openWindows = new Set();
 
@@ -153,7 +162,9 @@ Module._load = function (request, ...rest) {
         handle(channel, listener) {
           ipcMainHandlers.set(channel, listener);
         },
-        on() {},
+        on(channel, listener) {
+          ipcMainListeners.set(channel, listener);
+        },
         removeHandler(channel) {
           ipcMainHandlers.delete(channel);
         },
@@ -203,6 +214,7 @@ module.exports = {
   appListeners,
   appQuitRequests,
   ipcMainHandlers,
+  ipcMainListeners,
   messageBoxes,
   saveDialogs,
   sentMessagesFor,

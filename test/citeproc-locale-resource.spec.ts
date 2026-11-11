@@ -25,6 +25,7 @@ import path from "path";
 import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -92,7 +93,12 @@ describe("citation locale resource", function () {
   });
 
   function providerWith(appLang: string, localeDirectory: string): CiteprocProvider {
-    const provider = new CiteprocProvider(log, config(appLang), localeDirectory);
+    const provider = new CiteprocProvider(
+      log,
+      config(appLang),
+      localeDirectory,
+      DATABASE_LOADER_THREAD,
+    );
     providers.push(provider);
     return provider;
   }

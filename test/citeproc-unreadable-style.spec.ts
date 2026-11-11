@@ -28,6 +28,7 @@ import os from "os";
 import path from "path";
 import CiteprocProvider, { CitationStyleError } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -121,6 +122,7 @@ describe("a citation style that the provider cannot load", function () {
         get: () => ({ appLang: "en-US", export: settings }),
       },
       LOCALES,
+      DATABASE_LOADER_THREAD,
     );
     providers.push(provider);
     return {
@@ -272,6 +274,7 @@ describe("a citation style that the provider cannot load", function () {
     const { provider } = providerWith({ cslLibrary: missingLibrary, cslStyle: CHICAGO_STYLE });
 
     await provider.boot();
+    await provider.loadsEnded();
 
     const problems = (await problemsReadByAWindow()) as Array<{ resource: string; path: string }>;
     assert.deepEqual(

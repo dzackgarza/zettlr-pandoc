@@ -37,6 +37,7 @@ import path from "path";
 import ZoteroLibrary from "source/app/service-providers/agent-api/zotero-library";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 
 const ZOTERO = "http://127.0.0.1:23119";
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -83,8 +84,10 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
         }),
       },
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     await citeproc.boot();
+    await citeproc.loadsEnded();
     assert.deepEqual(citeproc.problems(), [], "the main library loaded");
     zotero = new ZoteroLibrary(citeproc);
     // A page with no metadata and no identifier: no method of Zotero can name the work.

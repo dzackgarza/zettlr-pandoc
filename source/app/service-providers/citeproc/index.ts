@@ -38,7 +38,7 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import isFile from "@common/util/is-file";
 import type { CitationDatabase, CitationResourceProblem } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB, CITEPROC_PROBLEMS_CHANNEL } from "@dts/common/citeproc";
-import { loadDatabase } from "./util/database-loader";
+import { loadDatabaseOnThread } from "./util/load-database-on-thread";
 import {
   type CslCitationFormat,
   parseCslStyleMetadata,
@@ -95,6 +95,12 @@ const DEFAULT_CHICAGO_STYLE = path.join(__dirname, "./assets/csl-styles/chicago-
  */
 export const BUNDLED_LOCALE_DIRECTORY = path.join(__dirname, "./assets/csl-locales");
 
+/**
+ * The thread program of a database load in the built app: the entry
+ * `database-loader-worker` of the main bundle (webpack.main.config.js).
+ */
+export const BUNDLED_DATABASE_LOADER_THREAD = path.join(__dirname, "database-loader-worker.cjs");
+
 const CITEPROC_EMPTY_SENTINELS = [
   "[NO_PRINTED_FORM]",
   "[CSL STYLE ERROR: reference with no printed form.]",
@@ -117,6 +123,18 @@ export class CitationStyleError extends Error {
     super(`The citation style ${problem.path} could not be loaded: ${problem.cause}`);
     this.name = "CitationStyleError";
   }
+}
+
+/** A read of a database file that runs on a thread. */
+interface RunningLoad {
+  /**
+   * Ends when no read of the database runs and the provider has the result
+   * of the last one: a record, or a problem. It does not reject for a file
+   * that does not load.
+   */
+  ended: Promise<void>;
+  /** Stops the read. The provider drops the result of a stopped read. */
+  stop: AbortController;
 }
 
 /** An engine and the style that made it. */
@@ -156,7 +174,8 @@ export default class CiteprocProvider extends ProviderContract {
   /** Counts the style loads. The result of a load that a later one replaced is dropped. */
   private styleLoads = 0;
   private styleProblem: CitationResourceProblem | undefined;
-  private libraryProblem: CitationResourceProblem | undefined;
+  /** The cause of the last failed read of each database that is not loaded. */
+  private readonly databaseProblems = new Map<string, string>();
   /** The problems that the windows have. */
   private broadcastProblems: CitationResourceProblem[] = [];
   /**
@@ -165,8 +184,8 @@ export default class CiteprocProvider extends ProviderContract {
    * @var {DatabaseRecord[]}
    */
   private readonly databases: Map<string, DatabaseRecord>;
-  /** The load that runs for a database. A request for that database waits for it. */
-  private readonly loading = new Map<string, Promise<void>>();
+  /** The read that runs for a database. A request for that database waits for it. */
+  private readonly loading = new Map<string, RunningLoad>();
   /** The checks of awaitMainLibraryItem calls. Each runs after every database load. */
   private readonly loadListeners = new Set<() => void>();
 
@@ -199,6 +218,8 @@ export default class CiteprocProvider extends ProviderContract {
     private readonly _config: CiteprocConfig,
     /** The one directory that holds the CSL locales (`locales-<lang>.xml`). */
     private readonly _localeDirectory: string,
+    /** The thread program that reads a database (`util/database-loader-worker`). */
+    private readonly _loaderThread: string,
   ) {
     super();
 
@@ -219,44 +240,18 @@ export default class CiteprocProvider extends ProviderContract {
       },
     });
 
+    // The provider watches each database from its first read, also one that
+    // did not load. Each event is a reason to read the file again: the read
+    // gives the record of a written file and the problem of a removed one.
+    // The record of the text before the change stays until the read ends.
     this._watcher.on("all", (eventName, affectedPath) => {
-      const db = this.databases.get(affectedPath);
-
-      if (db === undefined && eventName === "change") {
-        this._logger.info(`[Citeproc] Retrying to load ${affectedPath} ...`);
-        // This indicates that the library had been loaded, but threw an error
-        // on reload (happens frequently, e.g., with Zotero). In that case,
-        // simply load it.
-        this.loadDatabase(affectedPath, false).catch((err) => {
-          this._logger.error(
-            `[Citeproc] Could not reload database ${affectedPath}: ${err instanceof Error ? err.message : "unknown error"}`,
-            err,
-          );
-        });
-      } else if (db === undefined) {
-        this._logger.warning(
-          `[Citeproc] Received an event ${eventName} for path ${affectedPath}: Could not handle.`,
+      this._logger.info(`[Citeproc Provider] ${affectedPath}: ${eventName}. Reading it again ...`);
+      this.startLoad(affectedPath, false).catch((err: unknown) => {
+        this._logger.error(
+          `[Citeproc Provider] The read of ${affectedPath} did not end: ${causeText(err)}`,
+          err,
         );
-      } else if (eventName === "change") {
-        this._logger.info(`[Citeproc] Changes detected for ${affectedPath}. Reloading ...`);
-        // NOTE: We have to ask the engine to not unwatch the database.
-        // Sometimes, errors may be, and if we unwatch the database on change
-        // events, this would lead any error to no more changes being detected.
-        // And an error can be as simple as "the program was not finished
-        // writing the changes to disk." (looking at you, BetterBibTex :P)
-        this.unloadDatabase(affectedPath, false);
-        this.loadDatabase(affectedPath, false)
-          .then(() => broadcastIpcMessage("citeproc-database-updated", affectedPath))
-          .catch((err) => {
-            this._logger.error(
-              `[Citeproc Provider] Error while reloading database ${affectedPath}: ${err instanceof Error ? err.message : "unknown error"}`,
-              err,
-            );
-          });
-      } else if (eventName === "unlink") {
-        this.unloadDatabase(affectedPath);
-        broadcastIpcMessage("citeproc-database-updated", affectedPath);
-      }
+      });
     });
 
     this.databases = new Map(); // Holds all currently loaded databases
@@ -283,6 +278,10 @@ export default class CiteprocProvider extends ProviderContract {
       const { command, payload } = message;
       if (command === "get-citation-sync") {
         const { database, citations, composite } = payload;
+        // This call cannot wait for a read. A window can ask before the
+        // documents provider named the bibliography of a new document; the
+        // read starts here, and the window draws again when it ends.
+        this.startMissingLoads(database);
         try {
           event.returnValue = {
             ok: true,
@@ -308,19 +307,8 @@ export default class CiteprocProvider extends ProviderContract {
       }
       const { command, payload } = message;
       const { database } = payload;
-      // Ensure the database is loaded in any case (will throw a visible error
-      // if the database cannot be loaded)
-      try {
-        const databases = Array.isArray(database) ? database : [database];
-        for (const databasePath of databases) {
-          await this.loadDatabase(databasePath);
-        }
-      } catch (err: unknown) {
-        this._logger.error(
-          `[Citeproc Provider] Could not load database ${String(database)}: ${err instanceof Error ? err.message : "unknown error"}`,
-          err,
-        );
-        // Proper early return based on the command
+      // A database that does not load is a problem that the windows show.
+      if (!(await this.databasesAvailable(database))) {
         return command === "get-items" ? [] : undefined;
       }
 
@@ -405,8 +393,9 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
-   * Whether the loaded main library contains the cite key. While the watcher
-   * reloads the library, it contains no key.
+   * Whether the loaded main library contains the cite key. While the provider
+   * reads a changed library again, the library has the keys of the text
+   * before the change. During its first read it has no key.
    */
   public mainLibraryHas(citeKey: string): boolean {
     const record = this.databases.get(this.mainLibrary);
@@ -450,20 +439,40 @@ export default class CiteprocProvider extends ProviderContract {
       return;
     }
 
-    // A main library that does not load is a problem that the windows show.
-    await this.loadDatabase(this.mainLibrary).catch((err: unknown) => {
-      this._logger.error(`[Citeproc Provider] Could not load main library: ${causeText(err)}`, err);
-    });
+    // The start does not wait for the library: the read takes seconds for a
+    // large library, and the windows open during it. Each window draws its
+    // citations again when the library arrives.
+    this.startLoadInBackground(this.mainLibrary);
+  }
+
+  /** Ends when no read of a database runs. */
+  public async loadsEnded(): Promise<void> {
+    while (this.loading.size > 0) {
+      await Promise.all([...this.loading.values()].map((load) => load.ended));
+    }
   }
 
   /**
-   * The files of the citation settings that did not load. A window shows
-   * them to the author: no window is open when the provider starts, so each
-   * window asks for them (`get-problems`), and a change of this list goes to
-   * the open windows on CITEPROC_PROBLEMS_CHANNEL.
+   * The files that the provider needs and that did not load: the style and
+   * the library of the citation settings, and each bibliography of a document
+   * or a Quarto book. A window shows them to the author: no window is open
+   * when the provider starts, so each window asks for them (`get-problems`),
+   * and a change of this list goes to the open windows on
+   * CITEPROC_PROBLEMS_CHANNEL.
    */
   public problems(): CitationResourceProblem[] {
-    return [this.styleProblem, this.libraryProblem].filter((problem) => problem !== undefined);
+    const problems: CitationResourceProblem[] = [];
+    if (this.styleProblem !== undefined) {
+      problems.push(this.styleProblem);
+    }
+    for (const [databasePath, cause] of this.databaseProblems) {
+      problems.push({
+        resource: databasePath === this.mainLibrary ? "library" : "bibliography",
+        path: databasePath,
+        cause,
+      });
+    }
+    return problems;
   }
 
   private publishProblems(): void {
@@ -476,30 +485,28 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
-   * Use this function to direct the provider to keep the provided databases
-   * available. The provider will unload any database that is currently
-   * available, but not present in the dbPaths array.
+   * Directs the provider to keep these databases, and the main library,
+   * available, and no other. The last call decides: before this call gives
+   * its first turn to another one, the provider drops each other database
+   * with its running read and its problem, and starts the read of each new
+   * one. The reads run at the same time, so a file that does not load stops
+   * no other file; it becomes a problem (`problems`). Ends when the reads
+   * ended.
    *
    * @param  {string[]}  dbPaths  The absolute paths to the libraries
    */
   public async synchronizeDatabases(dbPaths: string[]): Promise<void> {
-    // First load databases that are not yet available
-    for (const dbPath of dbPaths) {
-      if (!this.databases.has(dbPath)) {
-        await this.loadDatabase(dbPath);
-        broadcastIpcMessage("citeproc-database-updated", dbPath);
-      }
-    }
-    // Second unload databases no longer required
-    for (const dbPath of this.databases.keys()) {
-      if (dbPath === this.mainLibrary) {
-        continue; // Do not unload the (fallback) main database
-      }
-      if (!dbPaths.includes(dbPath)) {
+    const known = new Set([
+      ...this.databases.keys(),
+      ...this.loading.keys(),
+      ...this.databaseProblems.keys(),
+    ]);
+    for (const dbPath of known) {
+      if (dbPath !== this.mainLibrary && !dbPaths.includes(dbPath)) {
         this.unloadDatabase(dbPath);
-        broadcastIpcMessage("citeproc-database-updated", dbPath);
       }
     }
+    await Promise.all(dbPaths.map(async (dbPath) => await this.loadDatabase(dbPath)));
   }
 
   /**
@@ -597,85 +604,126 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
-   * This function loads a full citation database and returns it
-   *
-   * @param   {string}                   databasePath  The path to load the database from
-   *
-   * @return  {Promise<DatabaseRecord>}                Resolves with the DatabaseRecord
+   * Whether the provider has each database of a request, after the reads
+   * that run for them ended. A database that the provider did not read gets
+   * its first read. The main library is not required: the request of a
+   * document names it also when no library is configured or loaded, and then
+   * gets the items of the other databases.
    */
-  private async loadDatabase(databasePath: string, watch = true): Promise<void> {
-    if (databasePath === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
-      this._logger.verbose(
-        "[Citeproc Provider] Could not load main database: No main database available.",
-      );
-      return;
-    } else if (databasePath === CITEPROC_MAIN_DB) {
-      databasePath = this.mainLibrary;
-    }
-
-    if (this.databases.has(databasePath)) {
-      return; // No need to load the database again
-    }
-
-    const running = this.loading.get(databasePath);
-    if (running !== undefined) {
-      await running;
-      return;
-    }
-
-    const load = this.readDatabase(databasePath, watch).finally(() => {
-      if (this.loading.get(databasePath) === load) {
-        this.loading.delete(databasePath);
-      }
-    });
-    this.loading.set(databasePath, load);
-    await load.then(
-      () => this.setLibraryProblem(databasePath, undefined),
-      (cause: unknown) => {
-        this.setLibraryProblem(databasePath, causeText(cause));
-        throw cause;
-      },
+  private async databasesAvailable(database: CitationDatabase): Promise<boolean> {
+    const requested = Array.isArray(database) ? database : [database];
+    await Promise.all(
+      requested.map(async (databasePath) =>
+        databasePath === CITEPROC_MAIN_DB
+          ? await this.loading.get(this.mainLibrary)?.ended
+          : await this.loadDatabase(databasePath),
+      ),
     );
-  }
-
-  /** Records whether the main library loaded. Another database is not a setting of the app. */
-  private setLibraryProblem(databasePath: string, cause: string | undefined): void {
-    if (databasePath !== this.mainLibrary) {
-      return;
-    }
-    this.libraryProblem =
-      cause === undefined ? undefined : { resource: "library", path: databasePath, cause };
-    this.publishProblems();
+    return requested.every(
+      (databasePath) => databasePath === CITEPROC_MAIN_DB || this.databases.has(databasePath),
+    );
   }
 
   /**
-   * Reads a database from its file and makes it available.
+   * Ends when the provider has the database or the problem of its file. A
+   * loaded database is not read again, so a request does not wait while the
+   * provider reads a changed file. A database with a problem is not read
+   * again either: the watcher reads it when its file changes.
+   */
+  private async loadDatabase(databasePath: string): Promise<void> {
+    if (this.databases.has(databasePath) || this.databaseProblems.has(databasePath)) {
+      return;
+    }
+    const running = this.loading.get(databasePath);
+    await (running !== undefined ? running.ended : this.startLoad(databasePath, true));
+  }
+
+  /** Starts the first read of each database of a request that the provider does not know. */
+  private startMissingLoads(database: CitationDatabase): void {
+    for (const databasePath of Array.isArray(database) ? database : [database]) {
+      if (
+        databasePath !== CITEPROC_MAIN_DB &&
+        !this.databases.has(databasePath) &&
+        !this.databaseProblems.has(databasePath) &&
+        !this.loading.has(databasePath)
+      ) {
+        this.startLoadInBackground(databasePath);
+      }
+    }
+  }
+
+  /** Starts a read that no caller waits for. */
+  private startLoadInBackground(databasePath: string): void {
+    this.startLoad(databasePath, true).catch((err: unknown) => {
+      this._logger.error(
+        `[Citeproc Provider] The read of ${databasePath} did not end: ${causeText(err)}`,
+        err,
+      );
+    });
+  }
+
+  /**
+   * Starts a read of a database file on a thread and stops the read that
+   * runs for that file: its text is the text before a change. The record
+   * that the provider has stays until this read ends, so a window that draws
+   * a citation during the read finds the library.
    *
    * @param   {string}   databasePath  The path to load the database from
    * @param   {boolean}  watch         Whether to watch the file for changes
+   *
+   * @return  {Promise<void>}          The `ended` of the read
    */
-  private async readDatabase(databasePath: string, watch: boolean): Promise<void> {
-    try {
-      await fs.access(databasePath, FS_CONSTANTS.F_OK | FS_CONSTANTS.R_OK);
-    } catch {
-      throw new Error(`File "${databasePath}" does not exist or is not visible to the app.`);
+  private startLoad(databasePath: string, watch: boolean): Promise<void> {
+    this.loading.get(databasePath)?.stop.abort();
+    if (watch) {
+      this._watcher.add(databasePath);
     }
 
-    // The file access above took a turn of the event loop, so the load that
-    // called this function is registered.
-    const load = this.loading.get(databasePath);
-    const record = await loadDatabase(
-      databasePath,
-      this._logger,
-      path.join(app.getPath("userData"), "citeproc-cache"),
+    const stop = new AbortController();
+    const ended = this.readDatabase(databasePath, stop.signal).then(
+      async (record) => {
+        if (stop.signal.aborted) {
+          await this.laterLoadEnded(databasePath, stop);
+        } else {
+          this.loading.delete(databasePath);
+          this.takeRecord(databasePath, record);
+        }
+      },
+      async (cause: unknown) => {
+        if (stop.signal.aborted) {
+          await this.laterLoadEnded(databasePath, stop);
+        } else {
+          this.loading.delete(databasePath);
+          this.takeFailure(databasePath, cause);
+        }
+      },
     );
-    const current = this.loading.get(databasePath);
-    if (current !== load) {
-      // The file changed during the read: the later load has its data.
-      await current;
-      return;
-    }
+    this.loading.set(databasePath, { ended, stop });
+    return ended;
+  }
 
+  /** Ends when the read that replaced a stopped read ended. */
+  private async laterLoadEnded(databasePath: string, stopped: AbortController): Promise<void> {
+    const current = this.loading.get(databasePath);
+    if (current !== undefined && current.stop !== stopped) {
+      await current.ended;
+    }
+  }
+
+  /** The record of a database file, read on a thread. */
+  private async readDatabase(databasePath: string, stop: AbortSignal): Promise<DatabaseRecord> {
+    // The cause of an absent or unreadable file is the error of the system.
+    await fs.access(databasePath, FS_CONSTANTS.R_OK);
+    return await loadDatabaseOnThread(
+      this._loaderThread,
+      { databasePath, cacheDir: path.join(app.getPath("userData"), "citeproc-cache") },
+      this._logger,
+      stop,
+    );
+  }
+
+  /** Makes the record of a read the database of its path. */
+  private takeRecord(databasePath: string, record: DatabaseRecord): void {
     // Label styles print `citation-label`, and citeproc invents one from the
     // author names when the item carries none -- BibTeX and BibLaTeX have no
     // field that maps to it. The citekey IS the label the author writes and
@@ -689,36 +737,61 @@ export default class CiteprocProvider extends ProviderContract {
       }
     }
 
-    // Add the database to the list of available databases
     this.databases.set(databasePath, record);
-
-    // Now that the database has been successfully loaded, watch it for changes.
-    if (watch) {
-      this._watcher.add(databasePath);
-    }
-    broadcastIpcMessage("citeproc-database-updated", databasePath);
+    this.setDatabaseProblem(databasePath, undefined);
+    this.broadcastDatabaseUpdate(databasePath);
     for (const check of [...this.loadListeners]) {
       check();
     }
   }
 
   /**
-   * Unloads a database
+   * Records the failed read of a database. The provider drops the record of
+   * the text before: it is not the text of the file. The file stays watched,
+   * so the provider reads it again when it changes.
+   */
+  private takeFailure(databasePath: string, cause: unknown): void {
+    this._logger.error(
+      `[Citeproc Provider] Could not load database ${databasePath}: ${causeText(cause)}`,
+      cause,
+    );
+    if (this.databases.delete(databasePath)) {
+      this.broadcastDatabaseUpdate(databasePath);
+    }
+    this.setDatabaseProblem(databasePath, causeText(cause));
+  }
+
+  private setDatabaseProblem(databasePath: string, cause: string | undefined): void {
+    if (cause === undefined) {
+      this.databaseProblems.delete(databasePath);
+    } else {
+      this.databaseProblems.set(databasePath, cause);
+    }
+    this.publishProblems();
+  }
+
+  /** Tells the windows that the items of a database changed. */
+  private broadcastDatabaseUpdate(databasePath: string): void {
+    broadcastIpcMessage(
+      "citeproc-database-updated",
+      databasePath === this.mainLibrary ? CITEPROC_MAIN_DB : databasePath,
+    );
+  }
+
+  /**
+   * Drops a database: its record, its running read, its problem and its
+   * watch.
    *
    * @param   {string}  dbPath  The database file path
    */
-  private unloadDatabase(dbPath: string, unwatch = true): void {
-    // A load that runs reads the file as it was: its result is not the database.
+  private unloadDatabase(dbPath: string): void {
+    this.loading.get(dbPath)?.stop.abort();
     this.loading.delete(dbPath);
-    if (this.databases.has(dbPath)) {
+    this._watcher.unwatch(dbPath);
+    this.setDatabaseProblem(dbPath, undefined);
+    if (this.databases.delete(dbPath)) {
       this._logger.info(`[Citeproc Provider] Unloading database ${dbPath}`);
-
-      if (unwatch) {
-        this._watcher.unwatch(dbPath);
-      }
-
-      this.databases.delete(dbPath);
-      broadcastIpcMessage("citeproc-database-updated", dbPath);
+      this.broadcastDatabaseUpdate(dbPath);
     }
   }
 
@@ -765,6 +838,13 @@ export default class CiteprocProvider extends ProviderContract {
    */
   async shutdown(): Promise<void> {
     this._logger.verbose("Citeproc provider shutting down ...");
+    // A read that runs owns a thread. The thread ends with the provider.
+    const reads = [...this.loading.values()];
+    this.loading.clear();
+    for (const read of reads) {
+      read.stop.abort();
+    }
+    await Promise.all(reads.map((read) => read.ended));
     // We MUST under all circumstances properly call the close() function on
     // every chokidar process we utilize. Otherwise, the fsevents dylib will
     // still hold on to some memory after the Electron process itself shuts down
@@ -788,25 +868,20 @@ export default class CiteprocProvider extends ProviderContract {
       const newValue = this._config.get().export.cslLibrary;
 
       if (newValue !== this.mainLibrary) {
-        this.unloadDatabase(this.mainLibrary);
-        broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB);
+        // The library that the setting named before goes with its problem.
+        if (this.mainLibrary !== "") {
+          this.unloadDatabase(this.mainLibrary);
+        }
         this.mainLibrary = newValue;
-        // The problem of the library that the setting named before is gone.
-        this.libraryProblem = undefined;
+        // A bibliography with a problem that the setting now names is the
+        // library with that problem.
         this.publishProblems();
         if (this.mainLibrary.trim() === "") {
           return; // The user removed the csl library
         }
 
         // A main library that does not load is a problem that the windows show.
-        this.loadDatabase(this.mainLibrary)
-          .then(() => broadcastIpcMessage("citeproc-database-updated", CITEPROC_MAIN_DB))
-          .catch((err) => {
-            this._logger.error(
-              `[Citeproc Provider] Could not reload main library: ${causeText(err)}`,
-              err,
-            );
-          });
+        this.startLoadInBackground(this.mainLibrary);
       }
     }
   }
@@ -858,7 +933,7 @@ export default class CiteprocProvider extends ProviderContract {
       return undefined; // Nothing to render
     }
 
-    if (typeof database === "string" && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+    if (!this.hasRequestedDatabases(database)) {
       return undefined;
     }
 
@@ -944,7 +1019,7 @@ export default class CiteprocProvider extends ProviderContract {
       return undefined;
     }
 
-    if (typeof database === "string" && database === CITEPROC_MAIN_DB && !this.hasMainLibrary()) {
+    if (!this.hasRequestedDatabases(database)) {
       return undefined;
     }
 
@@ -976,6 +1051,27 @@ export default class CiteprocProvider extends ProviderContract {
       this._logger.error(contextual.message, error);
       throw contextual;
     }
+  }
+
+  /**
+   * Whether a render for this request has databases to read. It has none
+   * when the request names only the main library and no main library is
+   * loaded, and when it names a database that the provider reads for the
+   * first time or whose file did not load: the windows draw their citations
+   * again when the database arrives, and a file that did not load is a
+   * problem that they show.
+   */
+  private hasRequestedDatabases(database: CitationDatabase): boolean {
+    if (database === CITEPROC_MAIN_DB) {
+      return this.hasMainLibrary();
+    }
+    const requested = Array.isArray(database) ? database : [database];
+    return !requested.some(
+      (databasePath) =>
+        databasePath !== CITEPROC_MAIN_DB &&
+        !this.databases.has(databasePath) &&
+        (this.loading.has(databasePath) || this.databaseProblems.has(databasePath)),
+    );
   }
 
   /**

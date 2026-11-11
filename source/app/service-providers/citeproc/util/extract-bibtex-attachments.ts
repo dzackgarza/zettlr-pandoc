@@ -13,10 +13,10 @@
  */
 
 import pdfSorter from "@common/util/sort-by-pdf";
-import type LogProvider from "@providers/log";
 import { bibtex } from "astrocite";
 import { type BracedComment } from "astrocite-bibtex";
 import path from "path";
+import type { LoaderLog } from "./database-loader";
 
 const AstrociteAST = bibtex.AST;
 
@@ -46,7 +46,7 @@ function splitUnescaped(text: string, separator: ":" | ";"): string[] {
 }
 
 /** The paths that a `file` field names, PDF files first. */
-function attachmentPaths(field: string, baseDir: string, logger?: LogProvider): string[] {
+function attachmentPaths(field: string, baseDir: string, logger?: LoaderLog): string[] {
   const paths: string[] = [];
   for (const record of splitUnescaped(field, ";")) {
     const parts = splitUnescaped(record, ":").map((part) =>
@@ -73,7 +73,7 @@ function attachmentPaths(field: string, baseDir: string, logger?: LogProvider): 
 export default function extractBibtexAttachments(
   fileContents: string,
   baseDir: string,
-  logger?: LogProvider,
+  logger?: LoaderLog,
 ): BibTexAttachments {
   const ast = AstrociteAST.parse(fileContents);
   // Return value will be a fast-access dictionary

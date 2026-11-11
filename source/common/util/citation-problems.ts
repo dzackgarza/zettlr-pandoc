@@ -9,8 +9,10 @@
  *
  * Description:     The citation provider cannot always load the files that
  *                  the settings `export.cslStyle` and `export.cslLibrary`
- *                  name. It starts before a window is open, so a window reads
- *                  the problems that exist and then follows each change.
+ *                  name, and the bibliographies that a document or a Quarto
+ *                  book names. It starts before a window is open, so a window
+ *                  reads the problems that exist and then follows each
+ *                  change.
  *
  * END HEADER
  */
@@ -41,20 +43,29 @@ export function followCitationProblems(
     .catch((err) => reportError("Could not read the citation resource problems", err));
 }
 
-/** The setting that names the file of a problem. */
+/**
+ * The setting that names the file of a problem. No setting names a
+ * bibliography: a document or the manifest of a Quarto book does.
+ */
 export function citationProblemSetting(
   problem: CitationResourceProblem,
-): "export.cslStyle" | "export.cslLibrary" {
-  return problem.resource === "style" ? "export.cslStyle" : "export.cslLibrary";
+): "export.cslStyle" | "export.cslLibrary" | undefined {
+  if (problem.resource === "style") {
+    return "export.cslStyle";
+  }
+  return problem.resource === "library" ? "export.cslLibrary" : undefined;
 }
 
 /** The sentence that names the file and the cause to the author. */
 export function citationProblemMessage(problem: CitationResourceProblem): string {
-  return problem.resource === "style"
-    ? trans(
-        "The citation style %s could not be loaded: %s. No citation is rendered until the setting names a style that loads.",
-        problem.path,
-        problem.cause,
-      )
-    : trans("The citation library %s could not be loaded: %s", problem.path, problem.cause);
+  if (problem.resource === "style") {
+    return trans(
+      "The citation style %s could not be loaded: %s. No citation is rendered until the setting names a style that loads.",
+      problem.path,
+      problem.cause,
+    );
+  }
+  return problem.resource === "library"
+    ? trans("The citation library %s could not be loaded: %s", problem.path, problem.cause)
+    : trans("The bibliography %s could not be loaded: %s", problem.path, problem.cause);
 }

@@ -608,6 +608,33 @@ of an isolated instance are in the first comment of #132.
   names for a citation key and that exist. The open-attachment command opens the
   first one. When the library names files and none exists, the command logs
   that and asks Zotero (the Better BibTeX JSON-RPC).
+- **A library is parsed on a thread of its own.** The parse of a BibLaTeX
+  library of some thousand entries takes seconds and gives the event loop no
+  turn (#138). `loadDatabaseOnThread` (`citeproc/util/load-database-on-thread.ts`)
+  starts one Node worker thread for one read; the thread program is
+  `database-loader-worker.ts`, a second entry of `webpack.main.config.js`
+  (`.webpack/main/database-loader-worker.cjs`, `BUNDLED_DATABASE_LOADER_THREAD`).
+  The thread program and what it imports must import nothing of Electron. A
+  spec gives the provider the TypeScript program (`test/citeproc-loader-thread.ts`).
+- **Nothing waits for a library.** The start of the app and the open, close
+  and save of a document name the libraries and do not wait for the reads
+  (`startDatabaseSynchronization`). A window draws its citations again when a
+  library arrives (`citeproc-database-updated`). The synchronous citation
+  call of an editor answers without a citation while the library of the
+  request is in its first read, and starts the read of a library that the
+  provider does not know. A caller that needs the items waits:
+  `synchronizeDatabases` for the libraries it names, `loadsEnded()` for each
+  running read (the Agent API citation and Zotero routes, a spec after
+  `boot()`).
+- **A changed library keeps its items until the new read ends.** The watcher
+  starts a read and stops the read that runs for that file; a stopped read
+  ends its thread. A read that fails drops the items of the file and keeps
+  the watch, so a file that appears or changes is read again.
+- **A bibliography that does not load is a problem too.** A file that the
+  front matter of a document or the manifest of a Quarto book names and that
+  cannot be read is a `CitationResourceProblem` with the resource
+  `bibliography`. No setting names it: its message has no "Open Preferences"
+  action. It does not reject the open, close or save of the document.
 - **A style or a library that does not load is a problem, not a stop.**
   The app starts when `export.cslStyle` or `export.cslLibrary` names a file
   that cannot be read or parsed. `CiteprocProvider` keeps each such file as a
@@ -625,16 +652,21 @@ of an isolated instance are in the first comment of #132.
   cite keys of the libraries stay available. Each load of a style broadcasts
   `citeproc-database-updated`, so the windows draw their citations again.
 - **Proof:** `test/citeproc-unreadable-style.spec.ts`,
-  `e2e/unreadable-citation-style.spec.ts`.
+  `e2e/unreadable-citation-style.spec.ts`,
+  `test/citeproc-library-parse-thread.spec.ts` (the event loop during a
+  parse, the calls that do not wait), and `e2e/citation-library-thread.spec.ts`
+  (the thread program in the packaged app; run `just package` before it).
 
 ### 13. Assembled-app E2E runs
 
 - `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`. A spec
   that starts the app through `attach` (`e2e/support/electron-app.ts`) runs
   `electron-forge start`: a development build of the working tree for each start.
-  `e2e/application-lifecycle.spec.ts` starts the packaged binary.
-  `currentPackagedBinary` refuses a build whose source fingerprint is not that of
-  the tree: run `just package` before that spec.
+  `e2e/application-lifecycle.spec.ts` and `e2e/citation-library-thread.spec.ts`
+  start the packaged binary. `currentPackagedBinary` refuses a build whose
+  source fingerprint is not that of the tree: run `just package` before such a
+  spec. The packaged app writes its log to a file; such a spec reads the
+  shutdown line through `readAppLog`.
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
   Mocha process under one `xvfb-run`; a spec starts no X server of its own.
 - A Chromium probe of test-support code reports its exit code or signal, its

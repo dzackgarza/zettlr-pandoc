@@ -48,6 +48,7 @@ import {
   installCitationIpcFromCallback,
   settleCitationWidgets,
 } from "./citation-widget-test-helper";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
 
@@ -93,7 +94,12 @@ describe("Quarto editor citation resolution and startup race", function () {
       on: () => {},
       get: () => ({ appLang: "en-US", export: { cslLibrary: "", cslStyle: CHICAGO_STYLE } }),
     };
-    citeproc = new CiteprocProvider(log, config, path.resolve("static", "csl-locales"));
+    citeproc = new CiteprocProvider(
+      log,
+      config,
+      path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
+    );
     await citeproc.boot();
     await citeproc.synchronizeDatabases([
       path.join(ROOT, "references.bib"),

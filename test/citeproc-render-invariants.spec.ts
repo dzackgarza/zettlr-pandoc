@@ -17,6 +17,7 @@ import CiteprocProvider, {
   CiteprocRenderInvariantError,
 } from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -91,6 +92,7 @@ describe("Citeproc printable-form invariant", function () {
       log,
       config(stylePath),
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     await provider.boot();
     await provider.synchronizeDatabases([libraryPath]);

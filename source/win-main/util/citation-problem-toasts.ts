@@ -7,8 +7,9 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Shows each file of the citation settings that did not
- *                  load as an error with the action that opens its setting.
+ * Description:     Shows each file that the citation provider did not
+ *                  load as an error. A file of the citation settings has the
+ *                  action that opens its setting.
  *
  * END HEADER
  */
@@ -60,9 +61,15 @@ export function showCitationProblems(): void {
 }
 
 function showProblem(problem: CitationResourceProblem): void {
+  const setting = citationProblemSetting(problem);
+  if (setting === undefined) {
+    // A document or a Quarto manifest names this file. The message names it.
+    showToast(citationProblemMessage(problem), "error", 12000);
+    return;
+  }
   const target: PreferenceNavigationTarget = {
     group: PreferencesGroups.Citations,
-    model: citationProblemSetting(problem),
+    model: setting,
   };
   showToast(citationProblemMessage(problem), "error", 12000, {
     label: trans("Open Preferences"),

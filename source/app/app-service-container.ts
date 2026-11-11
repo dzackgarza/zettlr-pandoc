@@ -19,7 +19,10 @@ import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-
 // Providers
 import AppearanceProvider from "@providers/appearance";
 import AssetsProvider from "@providers/assets";
-import CiteprocProvider, { BUNDLED_LOCALE_DIRECTORY } from "@providers/citeproc";
+import CiteprocProvider, {
+  BUNDLED_DATABASE_LOADER_THREAD,
+  BUNDLED_LOCALE_DIRECTORY,
+} from "@providers/citeproc";
 import CommandProvider from "@providers/commands";
 import ConfigProvider from "@providers/config";
 import CssProvider from "@providers/css";
@@ -182,6 +185,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._configProvider,
       BUNDLED_LOCALE_DIRECTORY,
+      BUNDLED_DATABASE_LOADER_THREAD,
     );
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,

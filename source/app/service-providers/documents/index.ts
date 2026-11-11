@@ -770,6 +770,12 @@ export default class DocumentManager
    */
   private readonly documents: Document[];
 
+  /**
+   * Ends when the last call of synchronizeDatabases named its bibliographies
+   * to the citation provider. The next call collects after it.
+   */
+  private bibliographiesNamed: Promise<void> = Promise.resolve();
+
   private _shuttingDown: boolean;
 
   /** True while the before-quit save-or-discard dialog is unanswered. */
@@ -1514,7 +1520,7 @@ export default class DocumentManager
 
     // Sync everything after boot
     this.syncWatchedFilePaths();
-    await this.synchronizeDatabases();
+    this.startDatabaseSynchronization();
     this.syncToConfig();
 
     this._app.log.info(`[Document Manager] Restored ${this.windowCount()} open windows.`);
@@ -1981,19 +1987,66 @@ current contents from the editor somewhere else, and restart the application.`,
   // END DOCUMENT AUTHORITY FUNCTIONS
 
   /**
-   * This function searches all currently opened documents for files that have
-   * databases attached to them, and announces to the citeproc provider that it
-   * should keep those available. Resolves once the citeproc provider finishes
-   * synchronizing.
-   */
-  /**
-   * Recompute every bibliography reachable from the currently loaded roots and
-   * synchronize Citeproc with that union. Root-management commands call this
-   * after changing the configured roots so already-open editors receive the
-   * same database update they would after opening another document.
+   * Names to the citation provider the bibliographies that it keeps: those
+   * of the loaded documents and those of the Quarto books of the loaded
+   * roots. Ends when the provider read each of them; a file that does not
+   * load is a problem of the provider and rejects nothing here.
+   *
+   * The calls name their bibliographies in the order of the calls, so the
+   * last call decides what the provider keeps. A root-management command
+   * waits for this after it changed the roots: the bibliographies of a new
+   * root are then available to the editors that are open.
    */
   public async synchronizeDatabases(): Promise<void> {
-    const libraries: string[] = [];
+    const named = this.bibliographiesNamed.then(async () => {
+      const libraries = await this.bibliographies();
+      return { read: this._app.citeproc.synchronizeDatabases(libraries) };
+    });
+    // The next call collects after this one, also when this one failed.
+    this.bibliographiesNamed = named.then(
+      () => {},
+      () => {},
+    );
+    await (await named).read;
+  }
+
+  /**
+   * Names the bibliographies again and does not wait for the reads. The
+   * start, and an open, a close and a save of a document do not wait for a
+   * library: the read of a large one takes seconds.
+   */
+  private startDatabaseSynchronization(): void {
+    this.synchronizeDatabases().catch((err: unknown) => {
+      this._app.log.error(
+        `[Document Manager] Could not name the bibliographies to the citation provider: ${err instanceof Error ? err.message : String(err)}`,
+        err,
+      );
+    });
+  }
+
+  /**
+   * The absolute paths of the bibliographies of the Quarto books of the
+   * loaded roots and of the loaded documents. The documents are read last and
+   * without a wait after them, so the list has the documents of the moment
+   * at which the citation provider gets it.
+   */
+  private async bibliographies(): Promise<string[]> {
+    const libraries = new Set<string>();
+
+    if (typeof this._app.fsal.getAllLoadedDescriptors === "function") {
+      for (const descriptor of await this._app.fsal.getAllLoadedDescriptors()) {
+        if (
+          descriptor.type === "directory" &&
+          descriptor.settings.project?.manifest.kind === "quarto"
+        ) {
+          for (const bibPath of descriptor.settings.project.manifest.bibliographies) {
+            if (path.isAbsolute(bibPath)) {
+              libraries.add(bibPath);
+            }
+          }
+        }
+      }
+    }
 
     for (const doc of this.documents) {
       if (doc.descriptor.type !== "file") {
@@ -2002,47 +2055,21 @@ current contents from the editor somewhere else, and restart the application.`,
 
       const frontmatter: unknown = doc.descriptor.frontmatter;
       if (
-        frontmatter !== null &&
-        typeof frontmatter === "object" &&
-        "bibliography" in frontmatter
+        frontmatter === null ||
+        typeof frontmatter !== "object" ||
+        !("bibliography" in frontmatter)
       ) {
-        const bib = frontmatter.bibliography;
-        if (typeof bib === "string" && path.isAbsolute(bib) && !libraries.includes(bib)) {
-          libraries.push(bib);
-        } else if (Array.isArray(bib)) {
-          for (const item of bib) {
-            if (typeof item === "string" && path.isAbsolute(item) && !libraries.includes(item)) {
-              libraries.push(item);
-            }
-          }
+        continue;
+      }
+      const bib = frontmatter.bibliography;
+      for (const item of Array.isArray(bib) ? bib : [bib]) {
+        if (typeof item === "string" && path.isAbsolute(item)) {
+          libraries.add(item);
         }
       }
     }
 
-    if (typeof this._app.fsal.getAllLoadedDescriptors === "function") {
-      try {
-        const descriptors = await this._app.fsal.getAllLoadedDescriptors();
-        for (const descriptor of descriptors) {
-          if (
-            descriptor.type === "directory" &&
-            descriptor.settings.project?.manifest.kind === "quarto"
-          ) {
-            for (const bibPath of descriptor.settings.project.manifest.bibliographies) {
-              if (path.isAbsolute(bibPath) && !libraries.includes(bibPath)) {
-                libraries.push(bibPath);
-              }
-            }
-          }
-        }
-      } catch (err: unknown) {
-        this._app.log.error(
-          "[Document Manager] Could not collect project bibliographies from FSAL",
-          err,
-        );
-      }
-    }
-
-    await this._app.citeproc.synchronizeDatabases(libraries);
+    return [...libraries];
   }
 
   /**
@@ -2209,7 +2236,7 @@ current contents from the editor somewhere else, and restart the application.`,
       filePath: leaf.tabMan.activeFile?.path,
       targetRange: navigation?.targetRange,
     });
-    await this.synchronizeDatabases();
+    this.startDatabaseSynchronization();
     this.syncToConfig();
     return ret;
   }
@@ -2321,7 +2348,7 @@ current contents from the editor somewhere else, and restart the application.`,
         this.syncToConfig();
       }
 
-      await this.synchronizeDatabases();
+      this.startDatabaseSynchronization();
     }
     return ret;
   }
@@ -3691,7 +3718,7 @@ current contents from the editor somewhere else, and restart the application.`,
           doc.descriptor.path,
           false,
         )) as MDFileDescriptor;
-        await this.synchronizeDatabases(); // The file may have gotten a library
+        this.startDatabaseSynchronization(); // The file may have gotten a library
       } else {
         doc.descriptor = (await this._app.fsal.getDescriptorFor(
           doc.descriptor.path,

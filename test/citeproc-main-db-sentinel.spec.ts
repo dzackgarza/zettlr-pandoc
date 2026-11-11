@@ -40,6 +40,7 @@ import path from "path";
 import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { ipcMainHandlers, userData } from "./headless-electron-harness.cjs";
 
 /** The style asset the application ships and loads when none is configured. */
@@ -127,8 +128,10 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
         log,
         makeConfigSeam(""),
         path.resolve("static", "csl-locales"),
+        DATABASE_LOADER_THREAD,
       );
       await provider.boot();
+      await provider.loadsEnded();
     });
 
     after(async function () {
@@ -161,8 +164,10 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
         log,
         makeConfigSeam(globalLibraryPath),
         path.resolve("static", "csl-locales"),
+        DATABASE_LOADER_THREAD,
       );
       await provider.boot();
+      await provider.loadsEnded();
     });
 
     after(async function () {

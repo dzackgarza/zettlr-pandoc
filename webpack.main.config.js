@@ -6,8 +6,16 @@ const { gitCommitHash } = require("./scripts/get-git-hash.js");
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const config = {
-  // Main entry point: the file that runs in the main process
-  entry: "./source/main.ts",
+  entry: {
+    // The file that runs in the main process (`main` of package.json).
+    index: "./source/main.ts",
+    // The program of the worker thread that reads a citation database
+    // (BUNDLED_DATABASE_LOADER_THREAD). A worker thread loads a file of its
+    // own, so the program is a bundle beside the main one.
+    "database-loader-worker":
+      "./source/app/service-providers/citeproc/util/database-loader-worker.ts",
+  },
+  output: { filename: "[name].cjs" },
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
   optimization: {
     // Local desktop rebuilds are launch artifacts, not distribution files.

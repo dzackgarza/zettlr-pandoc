@@ -27,6 +27,7 @@ import path from "path";
 import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import LogProvider from "source/app/service-providers/log";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
@@ -78,8 +79,10 @@ describe("citation attachments on disk", function () {
       new LogProvider(),
       config,
       path.resolve("static", "csl-locales"),
+      DATABASE_LOADER_THREAD,
     );
     await provider.boot();
+    await provider.loadsEnded();
   });
 
   after(async function () {
