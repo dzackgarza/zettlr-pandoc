@@ -171,6 +171,15 @@ describe("FSAL: directory metadata that cannot be used", function () {
     assert.equal(note.type === "file" ? note.firstHeading : null, "Lattices");
   });
 
+  it("lists every folder among the paths of the workspace", async function () {
+    const listed = new Set(await fsal.readDirectoryRecursively(root));
+    assert.deepEqual(
+      folders.filter((folderPath) => !listed.has(folderPath)),
+      [],
+      "each folder is a path of the workspace",
+    );
+  });
+
   it("answers the descriptors of every path that a window asks for", async function () {
     const handler = ipcMainHandlers.get("fsal") as DescriptorHandler;
     const descriptors = await handler(null, { command: "get-descriptor", payload: folders });
