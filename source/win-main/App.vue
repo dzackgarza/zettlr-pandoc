@@ -219,6 +219,7 @@ import {
 } from "@dts/common/document-collaboration";
 import {
   DocumentType,
+  DP_EVENTS,
   type LeafNodeJSON,
   REMOTE_CHANGE_KEPT_CHANNEL,
   type RemoteChangeKeptBroadcast,
@@ -234,6 +235,7 @@ import {
   type ShortcutName,
 } from "@dts/common/shortcut-names";
 import { isSidebarViewId } from "@dts/common/sidebar-views";
+import type { DocumentsUpdateContext } from "@providers/documents";
 import { type UpdateState } from "@providers/updates";
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import type {
@@ -291,6 +293,7 @@ import {
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
 import { REFUSED_ACTION_TEXT } from "./util/refused-action-text";
+import { surfaceDocumentLoadFailure } from "./util/surface-document-load-error";
 
 const ipcRenderer = window.ipc;
 
@@ -1110,6 +1113,31 @@ onMounted(() => {
       : trans("%s changed on disk. The editor keeps its contents.", name);
     showToast(message, "info", 12000, loadFromDiskAction(payload.filePath));
   });
+
+  // A loaded file changed on disk and could not be read. The window shows the
+  // cause one time: a pane has an editor for each of its tabs, and two panes
+  // can hold the file. Only a file in a tab is watched, so a window with the
+  // file in a tab is there for each failure.
+  ipcRenderer.on(
+    "documents-update",
+    (event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
+      if (payload.event !== DP_EVENTS.FILE_REMOTE_CHANGE_ERROR) {
+        return;
+      }
+      const { filePath, documentLoadError } = payload.context;
+      if (filePath === undefined || documentLoadError === undefined) {
+        throw new Error(
+          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a file and a cause`,
+        );
+      }
+      const holdsFile = documentTreeStore.paneData.some((pane) =>
+        pane.openFiles.some((file) => file.path === filePath),
+      );
+      if (holdsFile) {
+        surfaceDocumentLoadFailure(filePath, documentLoadError);
+      }
+    },
+  );
 
   // The window-level shortcuts this component owns, by their typed name. The
   // main process sends the same names from the application menu; names other

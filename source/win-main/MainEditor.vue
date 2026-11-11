@@ -212,9 +212,7 @@ import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
 import { resolveReattachSelection } from "./util/annotation-reattach-selection";
 import getDocumentTitle from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
-import surfaceDocumentLoadError, {
-  surfaceDocumentLoadFailure,
-} from "./util/surface-document-load-error";
+import surfaceDocumentLoadError from "./util/surface-document-load-error";
 
 const ipcRenderer = window.ipc;
 
@@ -685,14 +683,7 @@ const stopDocumentUpdates = ipcRenderer.on(
       applyPendingNavigation();
     }
 
-    if (event === DP_EVENTS.FILE_REMOTE_CHANGE_ERROR && context.filePath === props.file.path) {
-      if (context.documentLoadError === undefined) {
-        throw new Error(
-          `Received ${DP_EVENTS.FILE_REMOTE_CHANGE_ERROR} without a diagnostic for ${context.filePath}`,
-        );
-      }
-      surfaceDocumentLoadFailure(context.filePath, context.documentLoadError);
-    } else if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
+    if (event === DP_EVENTS.FILE_REMOTELY_CHANGED && context.filePath === props.file.path) {
       // The currently loaded document has been changed remotely. This event indicates
       // that the document provider has already reloaded the document and we only
       // need to tell the main editor to reload it as well.
