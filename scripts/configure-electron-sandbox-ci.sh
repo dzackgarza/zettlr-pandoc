@@ -11,7 +11,10 @@ set -euo pipefail
 distribution="${1:?usage: configure-electron-sandbox-ci.sh <directory of the Electron distribution>}"
 sandbox="$distribution/chrome-sandbox"
 
-test -f "$sandbox"
+if [[ ! -f "$sandbox" ]]; then
+  printf 'No chrome-sandbox helper in %s. The electron package downloads its distribution at the first require("electron").\n' "$distribution" >&2
+  exit 1
+fi
 printf 'Electron sandbox: %s\n' "$sandbox"
 sudo chown root:root "$sandbox"
 sudo chmod 4755 "$sandbox"

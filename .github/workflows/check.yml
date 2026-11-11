@@ -56,8 +56,11 @@ jobs:
         run: bun ci
       - name: Verify pinned Pandoc parser reference data
         run: bun run check:pandoc-reference-data
+      # The electron package downloads its distribution at the first require.
       - name: Configure Electron SUID sandbox
-        run: bash scripts/configure-electron-sandbox-ci.sh node_modules/electron/dist
+        run: |
+          node -e "require('electron')"
+          bash scripts/configure-electron-sandbox-ci.sh node_modules/electron/dist
       - name: Run unit tests
         run: bun run test
       # Compile the real webpack bundles (main + renderer + preload). tsc/eslint

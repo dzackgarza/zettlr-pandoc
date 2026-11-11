@@ -201,6 +201,7 @@ test-push:
 [private]
 test-ci:
     {{bun}} install --frozen-lockfile
+    node -e "require('electron')"
     bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh" "{{justfile_directory()}}/node_modules/electron/dist"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
