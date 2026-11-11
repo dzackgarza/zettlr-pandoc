@@ -10,12 +10,15 @@
  * Description:     Boots the REAL DocumentManager over a workspace directory,
  *                  with the FSAL reading and writing the real files. The
  *                  descriptor of a file is the one that the parser of the
- *                  FSAL makes. A spec must import the headless Electron
+ *                  FSAL makes. A message for a window goes through the
+ *                  addressing of the window provider to the windows of
+ *                  the harness. A spec must import the headless Electron
  *                  harness before this.
  *
  * END HEADER
  */
 
+import { BrowserWindow } from "electron";
 import { readFileSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
@@ -30,7 +33,9 @@ import { writeTextFile } from "source/app/service-providers/fsal/util/write-text
 import LogProvider from "source/app/service-providers/log";
 import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
+import tellMainWindows from "source/app/service-providers/windows/tell-main-windows";
 import type { AnyDescriptor } from "source/types/common/fsal";
+import type { IpcValue } from "source/types/common/ipc";
 
 type WatchdogListener = (event: string, filePath: string) => void;
 let watchdogListener: WatchdogListener | undefined;
@@ -41,6 +46,21 @@ export function emitWatchdogEvent(event: "add" | "change" | "unlink", filePath: 
     throw new Error("No DocumentManager subscribed to the watchdog");
   }
   watchdogListener(event, filePath);
+}
+
+/** The main window of each window id of a provider, while the window is open. */
+const mainWindows = new Map<string, BrowserWindow>();
+
+/**
+ * Opens the main window of the window `windowId` of a provider, as the
+ * window provider does for each window of the documents provider. Without
+ * it, a message for that window goes to the first open window: the main
+ * window that the author used last.
+ */
+export function openMainWindow(windowId: string): BrowserWindow {
+  const window = new BrowserWindow();
+  mainWindows.set(windowId, window);
+  return window;
 }
 
 /** The providers of the application that a spec gives to the DocumentManager. */
@@ -127,6 +147,18 @@ export async function bootDocumentManager(
       askSaveChanges: async (detail?: string) => await askSaveChanges(null, detail),
       // The real file dialog, with no window to attach it to.
       saveFile: async (filePath: string) => await saveFileDialog(log, dialogConfig, null, filePath),
+      // The real addressing, over the windows that the spec has open.
+      tellMainWindows: (windowIds: readonly string[], channel: string, payload: IpcValue) => {
+        const open = BrowserWindow.getAllWindows();
+        tellMainWindows(
+          windowIds
+            .map((windowId) => mainWindows.get(windowId))
+            .filter((window) => window !== undefined && open.includes(window)),
+          open[0],
+          channel,
+          payload,
+        );
+      },
     },
   };
 

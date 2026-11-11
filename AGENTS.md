@@ -750,7 +750,7 @@ of an isolated instance are in the first comment of #132.
 - **No close and no reload is refused without an action.** A close of a
   tab, a window close, a quit and a reload from disk (`notifyRemoteChange`)
   detach the collaboration state through `_detachForClose`. When the sidecar
-  cannot be written, it records how to repeat that action and broadcasts
+  cannot be written, it records how to repeat that action and sends
   `save-refused` with `refused: { documentId, action }`. The window shows
   the cause with the action "Close anyway", "Load from disk anyway" or
   "Quit anyway" (`win-main/util/refused-action-text.ts`), which sends
@@ -758,6 +758,17 @@ of an isolated instance are in the first comment of #132.
   leaves the sidecar as it was last written, and repeats the action. A new
   path that closes or reloads a document detaches through
   `_detachForClose`.
+- **A message about a document goes to the window that it concerns.**
+  `_tellAbout` sends each message of the provider about one document (a
+  refused close or save, a removed file that stays open, a change on disk
+  that the editor did not take, an unreadable sidecar). The window that
+  started the action gets it. When no window started it (a quit, an
+  autosave, a watcher event), each main window whose panes show the
+  document gets it. When no pane shows the document, the main window that
+  the author used last gets it. A window that only shares the application
+  with the document shows nothing. A new message about one document goes
+  through `_tellAbout`; `broadcastIpcMessage` of the provider is for state
+  that each window keeps (`documents-update`).
 - **The message of a refused quit says what its action does.** The quit
   stops at one document, and "Quit anyway" changes that document: its
   review stays as the sidecar last held it, or the document closes without
@@ -838,8 +849,8 @@ of an isolated instance are in the first comment of #132.
 - **A removed file closes only a document whose text is on disk.** The
   watcher reports the removal of the file of a tab (`unlink`). A document
   without unsaved text closes with its tabs. A document with unsaved text
-  stays loaded with its tabs, and each window gets one message
-  (`FILE_REMOVED_KEPT_CHANNEL`): a save writes the file again, or, for a
+  stays loaded with its tabs, and each window that shows it gets one
+  message (`FILE_REMOVED_KEPT_CHANNEL`): a save writes the file again, or, for a
   document with a review, the save is refused and the message offers
   "Save a copy…". The watcher follows the path through the removal: a
   file that is written again arrives as `add`, which the provider handles
@@ -938,8 +949,12 @@ of an isolated instance are in the first comment of #132.
 - **No message goes to a window without a renderer.** `broadcastIPCMessage`
   leaves out a window whose `webContents.isCrashed()`. Main-process code that
   tells every window something calls `broadcastIPCMessage`; it does not loop
-  over `BrowserWindow.getAllWindows()` with `webContents.send`. A window
-  reads the whole state when it loads.
+  over `BrowserWindow.getAllWindows()` with `webContents.send`. Code that
+  tells some main windows something calls `WindowProvider.tellMainWindows`
+  (`windows/tell-main-windows.ts`), which leaves out the same windows and
+  gives the message to the main window that the author used last when no
+  addressed window can take it. A window reads the whole state when it
+  loads.
 - **Other windows.** `attachLogger` records the reason for each window. Only
   main windows have the prompt.
 - **Proof:** `e2e/renderer-recovery.spec.ts` (a killed renderer, a renderer

@@ -32,7 +32,7 @@ import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { sha256Text } from "source/common/util/sha256";
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from "source/types/common/documents";
-import { bootDocumentManager, fileDeleteCommand } from "./documents-provider-seam";
+import { bootDocumentManager, fileDeleteCommand, openMainWindow } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
@@ -63,6 +63,8 @@ describe("Documents-provider close that cannot write the collaboration state", f
   let provider: DocumentManager;
   let windowId: string;
   let window: BrowserWindow;
+  /** The main windows that a case opened for window ids of the provider. */
+  let mainWindows: BrowserWindow[];
 
   beforeEach(async function () {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-refused-close-"));
@@ -80,11 +82,15 @@ describe("Documents-provider close that cannot write the collaboration state", f
     provider = await bootDocumentManager(root);
     windowId = provider.windowKeys()[0];
     window = new BrowserWindow();
+    mainWindows = [];
   });
 
   afterEach(async function () {
     chmodSync(SIDECARS, 0o700);
     window.close();
+    for (const mainWindow of mainWindows) {
+      mainWindow.close();
+    }
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
   });
@@ -124,6 +130,23 @@ describe("Documents-provider close that cannot write the collaboration state", f
     return sentMessagesFor(window)
       .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
       .map(([, payload]) => (payload as SaveRefusedBroadcast).refused?.documentId);
+  }
+
+  /** A second window of the provider, and a main window for each of the two. */
+  function twoMainWindows(): { second: string; ofFirst: BrowserWindow; ofSecond: BrowserWindow } {
+    provider.newWindow();
+    const second = provider.windowKeys().find((key) => key !== windowId);
+    assert.ok(second !== undefined, "the provider has a second window");
+    const ofFirst = openMainWindow(windowId);
+    const ofSecond = openMainWindow(second);
+    mainWindows.push(ofFirst, ofSecond);
+    return { second, ofFirst, ofSecond };
+  }
+
+  /** The number of refusals that a window got. */
+  function refusalsIn(mainWindow: BrowserWindow): number {
+    return sentMessagesFor(mainWindow).filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
+      .length;
   }
 
   /** The action that each refused close named to the window as stopped, in order. */
@@ -290,6 +313,31 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(await provider.closeWindow(second, closeAgain), true, "the window may close");
     assert.deepEqual(provider.windowKeys(), [windowId], "the provider has the first window only");
     assert.deepEqual(provider.loadedDocuments, [], "the document of the window is closed");
+  });
+
+  it("tells the window that the author closes, and no other window", async function () {
+    const { second, ofFirst, ofSecond } = twoMainWindows();
+    await openAndAnnotate(second);
+
+    chmodSync(SIDECARS, 0o500);
+    assert.equal(await provider.closeWindow(second, async () => {}), false, "the window stays");
+    assert.equal(refusalsIn(ofSecond), 1, "the window of the close names the cause");
+    assert.equal(refusalsIn(ofFirst), 0, "the other window shows no message");
+  });
+
+  it("tells each window that shows the document about a close that no window started", async function () {
+    const { second, ofFirst, ofSecond } = twoMainWindows();
+    await openAndAnnotate(second);
+
+    chmodSync(SIDECARS, 0o500);
+    assert.equal(await provider.closeFileEverywhere(filePath), false, "the document stays");
+    assert.equal(refusalsIn(ofSecond), 1, "the window that shows the document names the cause");
+    assert.equal(refusalsIn(ofFirst), 0, "a window without the document shows no message");
+
+    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    assert.equal(await provider.closeFileEverywhere(filePath), false, "the document stays");
+    assert.equal(refusalsIn(ofSecond), 2, "each window that shows the document gets the cause");
+    assert.equal(refusalsIn(ofFirst), 1, "each window that shows the document gets the cause");
   });
 
   it("closes a window whose unsaved text the author discards", async function () {

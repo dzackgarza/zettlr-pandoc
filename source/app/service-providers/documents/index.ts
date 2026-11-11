@@ -179,9 +179,16 @@ type DocumentManagerApp = {
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
-    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey" | "saveFile"
+    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey" | "saveFile" | "tellMainWindows"
   >;
 };
+
+/** What the provider tells the author about one document (_tellAbout). */
+type DocumentMessage =
+  | SaveRefusedBroadcast
+  | FileRemovedKeptBroadcast
+  | RemoteChangeKeptBroadcast
+  | CollaborationFileUnreadableBroadcast;
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -1338,6 +1345,33 @@ export default class DocumentManager
     );
   }
 
+  /**
+   * Tells the author something about one document, in one place. The window
+   * that started the action gets the message. An event that no window
+   * started (a quit, a change on disk, an autosave) goes to each window
+   * whose panes show the document. The window provider gives the message to
+   * the main window that the author used last when none of those can show
+   * it.
+   */
+  private _tellAbout(
+    filePath: string,
+    startedBy: string | undefined,
+    channel: string,
+    payload: DocumentMessage,
+  ): void {
+    const addressed =
+      startedBy !== undefined
+        ? [startedBy]
+        : Object.entries(this._windows)
+            .filter(([, tree]) =>
+              tree
+                .getAllLeafs()
+                .some((leaf) => leaf.tabMan.openFiles.some((file) => file.path === filePath)),
+            )
+            .map(([windowId]) => windowId);
+    this._app.windows.tellMainWindows(addressed, channel, payload);
+  }
+
   private _pathsShownInPanes(): Set<string> {
     return new Set(
       Object.values(this._windows).flatMap((tree) =>
@@ -1472,7 +1506,7 @@ export default class DocumentManager
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
       for (const document of asked) {
-        if (!(await this._discardForClose(document, closeAgain, "close"))) {
+        if (!(await this._discardForClose(document, closeAgain, "close", windowId))) {
           return false;
         }
       }
@@ -1485,7 +1519,7 @@ export default class DocumentManager
       for (const document of asked) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
-          this._announceSaveRefusal(document.filePath, saved);
+          this._announceSaveRefusal(document.filePath, saved, windowId);
           return false;
         }
       }
@@ -1630,6 +1664,8 @@ export default class DocumentManager
             document.documentId,
             document.filePath,
             closeAgain,
+            "close",
+            windowId,
           );
           if (!detached) {
             return false;
@@ -2015,7 +2051,7 @@ current contents from the editor somewhere else, and restart the application.`,
               filePath: doc.filePath,
               refusal: result.refusal,
             };
-            broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+            this._tellAbout(doc.filePath, undefined, SAVE_REFUSED_CHANNEL, payload);
           }
           const reason = `${result.refusal.reason}: ${result.refusal.message}`;
           this._app.log.warning(
@@ -2329,18 +2365,22 @@ current contents from the editor somewhere else, and restart the application.`,
     const repeatClose = async (): Promise<void> => {
       await this.closeFile(windowId, leafId, filePath);
     };
+    // The window of the tab shows a refusal of this close.
+    const detachForThisClose = async (): Promise<boolean> =>
+      openFile !== undefined &&
+      (await this._detachForClose(openFile.documentId, filePath, repeatClose, "close", windowId));
     if (openFile !== undefined && this.isModified(filePath) && numOpenInstances === 1) {
       const detail = trans("File: %s", openFile.descriptor.name);
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        if (!(await this._discardForClose(openFile, repeatClose, "close"))) {
+        if (!(await this._discardForClose(openFile, repeatClose, "close", windowId))) {
           return false;
         }
         // A saved review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
-        if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
+        if (!(await detachForThisClose())) {
           return false;
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -2350,13 +2390,13 @@ current contents from the editor somewhere else, and restart the application.`,
       } else if (result.response === 0) {
         const saved = await this.saveFile(filePath);
         if (!saved.ok) {
-          this._announceSaveRefusal(filePath, saved);
+          this._announceSaveRefusal(filePath, saved, windowId);
           return false;
         }
         // The save persists the review, but the final pane is leaving the
         // live registry. Detach before the splice so closed-file API reads do
         // not observe a review whose working-text authority is gone.
-        if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
+        if (!(await detachForThisClose())) {
           return false;
         }
       } else {
@@ -2371,7 +2411,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask. Detach before the splice: the
       // sidecar export reads the working text through the live document.
-      if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
+      if (!(await detachForThisClose())) {
         return false;
       }
       this._unload(openFile);
@@ -2472,7 +2512,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
       const saved = await this.saveFile(document.filePath);
       if (!saved.ok) {
-        this._announceSaveRefusal(document.filePath, saved);
+        this._announceSaveRefusal(document.filePath, saved, windowId);
         return false;
       }
     }
@@ -2575,7 +2615,7 @@ current contents from the editor somewhere else, and restart the application.`,
     return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
   }
 
-  /** Tells every window that a removed file left a document with unsaved text. */
+  /** Tells the author that a removed file left a document with unsaved text. */
   private _announceRemovedFileKept(filePath: string): void {
     const documentId = this.getDocumentId(filePath);
     const payload: FileRemovedKeptBroadcast = {
@@ -2586,7 +2626,7 @@ current contents from the editor somewhere else, and restart the application.`,
     this._app.log.warning(
       `[DocumentManager] ${filePath} was removed from disk; its document has unsaved text and stays open.`,
     );
-    broadcastIpcMessage(FILE_REMOVED_KEPT_CHANNEL, payload);
+    this._tellAbout(filePath, undefined, FILE_REMOVED_KEPT_CHANNEL, payload);
   }
 
   /**
@@ -2660,7 +2700,7 @@ current contents from the editor somewhere else, and restart the application.`,
         status: "modification",
       });
       const payload: RemoteChangeKeptBroadcast = { filePath, unsavedChanges: isModified };
-      broadcastIpcMessage(REMOTE_CHANGE_KEPT_CHANNEL, payload);
+      this._tellAbout(filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
     } else {
       // The user has activated the setting to alwaysReloadFiles.
       await this.notifyRemoteChange(filePath);
@@ -3967,8 +4007,11 @@ current contents from the editor somewhere else, and restart the application.`,
    * main is what made the original deadlock unrecoverable), and the renderer
    * only surfaces refusals for saves it requested itself — so without this the
    * prompt closes, the window stays open, and the reason is only in the log.
+   *
+   * `startedBy` is the window whose close or whose "save all" asked for the
+   * save; a quit has none.
    */
-  private _announceSaveRefusal(filePath: string, result: SaveFileResult): void {
+  private _announceSaveRefusal(filePath: string, result: SaveFileResult, startedBy?: string): void {
     if (result.ok) {
       return;
     }
@@ -3980,7 +4023,7 @@ current contents from the editor somewhere else, and restart the application.`,
       filePath,
       refusal: result.refusal,
     };
-    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+    this._tellAbout(filePath, startedBy, SAVE_REFUSED_CHANNEL, payload);
   }
 
   /**
@@ -4004,8 +4047,9 @@ current contents from the editor somewhere else, and restart the application.`,
   /**
    * The detach of a close. Resolves false when the state could not be
    * written: the close does not happen, the document stays loaded with its
-   * state, and every window names the cause with one action. That action
-   * is closeWithoutReview, which runs `repeatClose` after it dropped the
+   * state, and one window names the cause with one action (_tellAbout;
+   * `startedBy` is the window of the close). That action is
+   * closeWithoutReview, which runs `repeatClose` after it dropped the
    * state. No close is refused without it (#178).
    *
    * A reload from disk and a quit detach the same way: `action` says
@@ -4018,6 +4062,7 @@ current contents from the editor somewhere else, and restart the application.`,
     filePath: string,
     repeatClose: () => Promise<void>,
     action: RefusedAction = "close",
+    startedBy?: string,
   ): Promise<boolean> {
     return await this._detachCollaboration(documentId).then(
       () => {
@@ -4033,6 +4078,7 @@ current contents from the editor somewhere else, and restart the application.`,
           REVIEW_NOT_SAVED[action],
           err,
           action,
+          startedBy,
         );
         return false;
       },
@@ -4043,7 +4089,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * The answer "discard" at a close prompt, for one document. Resolves
    * false when the discard failed: the collaboration state could not be
    * written, or the file could not be read. The close does not happen, the
-   * document keeps its text and its state, and every window names the
+   * document keeps its text and its state, and one window names the
    * cause with the action of _detachForClose. That action closes the
    * document with the text that the author discarded (#178). `action`
    * says whether the prompt was that of a close or that of a quit.
@@ -4052,6 +4098,7 @@ current contents from the editor somewhere else, and restart the application.`,
     document: Document,
     repeatClose: () => Promise<void>,
     action: "close" | "quit",
+    startedBy?: string,
   ): Promise<boolean> {
     return await this._discardChanges(document).then(
       () => true,
@@ -4064,6 +4111,7 @@ current contents from the editor somewhere else, and restart the application.`,
           CHANGES_NOT_DISCARDED[action],
           err,
           action,
+          startedBy,
         );
         return false;
       },
@@ -4172,6 +4220,7 @@ current contents from the editor somewhere else, and restart the application.`,
     what: RefusalMessage,
     err: unknown,
     action: RefusedAction,
+    startedBy: string | undefined,
   ): void {
     const message = what(err instanceof Error ? err.message : String(err));
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
@@ -4180,7 +4229,7 @@ current contents from the editor somewhere else, and restart the application.`,
       refusal: { reason, message },
       refused: { documentId, action },
     };
-    broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
+    this._tellAbout(filePath, startedBy, SAVE_REFUSED_CHANNEL, payload);
   }
 
   /**
@@ -4285,7 +4334,7 @@ current contents from the editor somewhere else, and restart the application.`,
         file: this._reviewApplication.sidecarFileOf(doc.filePath),
         cause: err instanceof Error ? err.message : String(err),
       };
-      broadcastIpcMessage(COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
+      this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
     }
   }
 

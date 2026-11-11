@@ -150,6 +150,12 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
     windows: {
       askSaveChanges: async (_detail?: string) => ({ response: 0, checkboxChecked: false }),
       getFirstMainWindow: () => undefined,
+      // The spec has no main window, so no window gets a message.
+      tellMainWindows: (
+        _windowIds: readonly string[],
+        _channel: string,
+        ..._args: readonly unknown[]
+      ) => {},
       getMainWindowKey: (_window: unknown) => "",
       // No operation of this spec asks the author for a file.
       saveFile: async (_filePath: string): Promise<string | undefined> => {

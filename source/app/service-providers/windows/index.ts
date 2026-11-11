@@ -18,6 +18,7 @@
 import { trans } from "@common/i18n-main";
 import PersistentDataContainer from "@common/modules/persistent-data-container";
 import { DP_EVENTS } from "@dts/common/documents";
+import type { Cloneable, IpcArgument } from "@dts/common/ipc";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
 import { getCLIArgument } from "@providers/cli-provider";
 import type ConfigProvider from "@providers/config";
@@ -51,6 +52,7 @@ import shouldCloseAllDialog from "./dialog/should-close-all";
 import shouldOverwriteFileDialog from "./dialog/should-overwrite-file";
 import shouldReplaceFileDialog from "./dialog/should-replace-file";
 import mapFSError from "./map-fs-error";
+import tellMainWindows from "./tell-main-windows";
 import type { WindowPosition } from "./types";
 
 // 'request-files' and 'close-all' carry no command property: each channel
@@ -742,6 +744,24 @@ export default class WindowProvider extends ProviderContract {
       throw new Error(`No main window ${windowId}`);
     }
     window.webContents.send("jump-to-line", { filePath, line });
+  }
+
+  /**
+   * Sends a message to the main windows `windowIds` that have a working
+   * renderer. When none of them has one, the main window that the author
+   * used last gets the message.
+   */
+  tellMainWindows<A extends readonly IpcArgument[]>(
+    windowIds: readonly string[],
+    channel: string,
+    ...args: A & Cloneable<A>
+  ): void {
+    tellMainWindows(
+      windowIds.map((windowId) => this._mainWindows[windowId]),
+      this.getFirstMainWindow(),
+      channel,
+      ...args,
+    );
   }
 
   /**
