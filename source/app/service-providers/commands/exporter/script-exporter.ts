@@ -72,11 +72,7 @@ export async function runScriptExport(
   // 2. Run the declared command on the Pandoc-processed intermediate.
   const target = path.join(options.targetDirectory, `${title}.${script.extension}`);
   const cwd = options.cwd ?? path.dirname(intermediate);
-  const scriptOutput = await runShellCommand(
-    script.command,
-    [`'${intermediate}'`, `'${target}'`],
-    cwd,
-  );
+  const scriptOutput = await runShellCommand(script.command, [intermediate, target], cwd);
 
   return {
     code: scriptOutput.code,

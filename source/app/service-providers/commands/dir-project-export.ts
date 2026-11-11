@@ -277,7 +277,7 @@ async function exportUsingCustomCommand(
   };
 
   app.log.info(`[Project] Exporting ${config.title} using custom command ${command.displayName}.`);
-  const output = await runShellCommand(command.command, [`'${dir.path}'`], dir.path).catch(stop);
+  const output = await runShellCommand(command.command, [dir.path], dir.path).catch(stop);
   if (output.code !== 0) {
     stop(
       new Error(

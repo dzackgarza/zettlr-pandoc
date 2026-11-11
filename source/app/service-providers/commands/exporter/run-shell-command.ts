@@ -35,12 +35,14 @@ async function collectProcess(
 }
 
 /**
- * Runs an arbitrary command in the shell, passing any arguments and a working
- * directory. NOTE: THIS IS AN UNSAFE FUNCTION. DO NOT PASS UNSANITIZED INPUT TO
- * IT TO PREVENT ANY ATTACKS!
+ * Runs a command of the author in the shell. The command is shell text: the
+ * shell reads its words, its variables and its operators. An argument is a
+ * value: the shell gets each one as a positional parameter and the command
+ * ends with "$@", so no argument is read as shell text and no caller quotes
+ * one. A name with a quote, a space or a "$" arrives as one argument.
  *
- * @param   {string}    command  The command to run.
- * @param   {string[]}  argv     Any arguments to pass to the command
+ * @param   {string}    command  The shell text of the command
+ * @param   {string[]}  argv     The arguments, which go after the command
  * @param   {string}    cwd      The working directory for the command
  *
  * @return  {object}             Returns an object with keys stdout, stderr, and code
@@ -50,8 +52,7 @@ export async function runShellCommand(
   argv: string[],
   cwd: string,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  // NOTE the shell: true parameter, which helps some commands find files.
-  return await collectProcess(spawn(command, argv, { shell: true, cwd }));
+  return await collectProcess(spawn("sh", ["-c", `${command} "$@"`, "sh", ...argv], { cwd }));
 }
 
 /**
