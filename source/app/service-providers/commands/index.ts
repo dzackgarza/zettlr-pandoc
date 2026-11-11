@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import type {
   ExternalLinterRunRequest,
@@ -24,7 +25,6 @@ import type {
   ReferenceRenamePreview,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
-import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles from "@common/util/enum-dict-files";
 import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
@@ -42,7 +42,7 @@ import type {
 import type { WorkspaceReferenceEdit } from "@dts/common/references";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
-import { clipboard, ipcMain, nativeImage, shell } from "electron";
+import { clipboard, ipcMain, nativeImage, shell, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
@@ -436,8 +436,13 @@ const CALLER_SHOWS_FAILURE: ReadonlySet<string> = new Set([
 
 export default class CommandProvider extends ProviderContract {
   private readonly _commands: DispatchedCommand[];
-  /** The errors that the windows already show: a command can run a command. */
+  /** The errors that a window already shows: a command can run a command. */
   private readonly _shownFailures = new WeakSet<Error>();
+  /**
+   * The window whose renderer started the command that runs. A command that
+   * a command runs has the window of the first one.
+   */
+  private readonly _startedBy = new AsyncLocalStorage<WebContents>();
 
   // TODO: Right now this just injects the full service container into the
   // commands, but it mayt be better to only provide those which are actually
@@ -450,7 +455,7 @@ export default class CommandProvider extends ProviderContract {
     // Set up the command listener
     ipcMain.handle("application", async (event, { command, payload }) => {
       if (typeof command === "string") {
-        return await this.run(command, payload);
+        return await this._startedBy.run(event.sender, () => this.run(command, payload));
       } else {
         throw new Error(`[Commands] Could not run command "${String(command)}": Not a string`);
       }
@@ -460,7 +465,7 @@ export default class CommandProvider extends ProviderContract {
   /**
    * Runs a command through the application pipeline. A command that throws
    * rejects: its caller receives the value of the contract or the error, never
-   * a substitute. Most callers only log a rejection, so the windows show the
+   * a substitute. Most callers only log a rejection, so one window shows the
    * cause of each failure once.
    *
    * @param   {string}  command  The command to run
@@ -477,12 +482,31 @@ export default class CommandProvider extends ProviderContract {
         this._shownFailures.add(failure);
         this._app.log.error(`[Application] The command ${command} failed: ${failure.message}`, err);
         if (!CALLER_SHOWS_FAILURE.has(command)) {
-          const broadcast: CommandFailedBroadcast = { command, message: failure.message };
-          broadcastIpcMessage(COMMAND_FAILED_CHANNEL, broadcast);
+          this._showFailure({ command, message: failure.message });
         }
       }
       throw failure;
     }
+  }
+
+  /**
+   * Sends a failure to the one window that shows it: the window that started
+   * the command. The main window shows the failure of a command that the
+   * application started (a menu item, a second instance) and of a command
+   * whose window is gone.
+   */
+  private _showFailure(failure: CommandFailedBroadcast): void {
+    const candidates = [
+      this._startedBy.getStore(),
+      this._app.windows.getFirstMainWindow()?.webContents,
+    ];
+    const window = candidates.find(
+      (candidate) => candidate !== undefined && !candidate.isDestroyed() && !candidate.isCrashed(),
+    );
+    if (window === undefined) {
+      return;
+    }
+    window.send(COMMAND_FAILED_CHANNEL, failure);
   }
 
   private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {

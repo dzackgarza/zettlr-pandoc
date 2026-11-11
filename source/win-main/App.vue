@@ -213,7 +213,6 @@ import { recordRendererError } from "@common/util/run-recoverably";
 import { saveRefusalAction } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
-import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
   type CollaborationFileUnreadableBroadcast,
@@ -1032,12 +1031,6 @@ watch(distractionFree, (newValue) => {
 
 onMounted(() => {
   showCitationProblems();
-
-  // A command of the application that threw answers `false` to its caller, and
-  // most callers drop that answer. The cause is shown here.
-  ipcRenderer.on(COMMAND_FAILED_CHANNEL, (event, failure: CommandFailedBroadcast) => {
-    showToast(failure.message, "error", 12000);
-  });
 
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.

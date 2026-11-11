@@ -19,7 +19,7 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { chmod, rm, writeFile } from "node:fs/promises";
+import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
@@ -116,6 +116,7 @@ describe("a refused change of Project settings", function () {
   let propertiesPage: Page | undefined;
   let fixtureRoot: string | undefined;
   let workspace = "";
+  let notePath = "";
   let settingsFile = "";
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
@@ -128,7 +129,8 @@ describe("a refused change of Project settings", function () {
       config: { darkMode: false, editor: { autoSave: "off" } },
     });
     fixtureRoot = fixture.root;
-    workspace = path.dirname(fixture.documentPath);
+    notePath = fixture.documentPath;
+    workspace = path.dirname(notePath);
     settingsFile = path.join(workspace, ".ztr-directory");
     await writeFile(settingsFile, JSON.stringify(PROJECT_SETTINGS), "utf8");
     await writeFile(path.join(workspace, "genus.md"), GENUS, "utf8");
@@ -195,6 +197,26 @@ describe("a refused change of Project settings", function () {
     screenshots.set("completion.png", await editorPage.screenshot());
     assert.deepEqual(messages, [NOT_SAVED], "the main window shows the cause one time");
     await dismissErrors(editorPage);
+
+    // The completion changed the document. A document with unsaved text
+    // stops the close of the window with a native prompt, so the spec saves
+    // it. This is the IPC call that the save-file shortcut makes: CDP key
+    // events do not reach the accelerators of the application menu.
+    await editorPage.waitForFunction(
+      (part) =>
+        document
+          .querySelector<EditorContentElement>(".cm-content")
+          ?.cmTile?.root.view.state.doc.toString()
+          .includes(part) === true,
+      "@def:genus-of-a-lattice",
+      { timeout: 20_000 },
+    );
+    const saved = await editorPage.evaluate(
+      async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+      notePath,
+    );
+    assert.deepEqual(saved, { ok: true }, "the document with the completed reference is saved");
+    assert.match(await readFile(notePath, "utf8"), /@def:genus-of-a-lattice/);
   });
 
   it("shows the cause in the Project properties window", async function () {

@@ -54,6 +54,7 @@ import {
   type CompletionInsertionAffordance,
   completionAffordanceFor,
 } from "@common/pandoc-util/project-reference-status";
+import { reportError } from "@common/util/error-reporting";
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
 import { type ProjectSettings } from "@dts/common/fsal";
@@ -216,10 +217,23 @@ async function runAppendAndContinue(plan: AppendAndContinuePlan): Promise<void> 
     throw new Error(`Can't update Project ${plan.rootPath}: no Project settings were found`);
   }
 
-  await window.ipc.invoke("application", {
-    command: "update-project-properties",
-    payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) },
-  });
+  // The dispatcher shows the failure of a command in this window. The caller
+  // logs it and stops: no second message, and no message of success.
+  const appended = await window.ipc
+    .invoke("application", {
+      command: "update-project-properties",
+      payload: { path: plan.rootPath, properties: applyAppendPlan(settings, plan) },
+    })
+    .then(
+      () => true,
+      (failure: Error) => {
+        reportError(`Could not add files to the Project ${plan.rootPath}`, failure);
+        return false;
+      },
+    );
+  if (!appended) {
+    return;
+  }
 
   showToast(appendToastMessage(plan));
 }
@@ -242,9 +256,9 @@ function applyFor(affordance: CompletionInsertionAffordance): typeof applyLabel 
   if (affordance.kind === "insert-with-append") {
     return function (view: EditorView, completion: Completion, from: number, to: number): void {
       applyLabel(view, completion, from, to);
-      // The append continuation surfaces failures through the recoverable
-      // boundary (review B8): one closable error toast, never a silent
-      // console-only line. The insertion above already happened either way.
+      // The insertion above already happened. A failure of the append gives
+      // one closable error: the dispatcher shows a refused command, and the
+      // recoverable boundary shows each other failure (review B8).
       void runRecoverably(async () => {
         await runAppendAndContinue(affordance.plan);
       }, trans("Adding files to the Project"));

@@ -180,6 +180,7 @@
 import { trans } from "@common/i18n-renderer";
 import { PANDOC_READERS, PANDOC_WRITERS, SUPPORTED_READERS } from "@common/pandoc-util/pandoc-maps";
 import { reportError } from "@common/util/error-reporting";
+import showToast from "@common/util/show-toast";
 import FileControl from "@common/vue/form/elements/FileControl.vue";
 import ListControl from "@common/vue/form/elements/ListControl.vue";
 import TextControl from "@common/vue/form/elements/TextControl.vue";
@@ -416,6 +417,12 @@ function getDisplayText(name: string): string {
   return name.substring(0, name.lastIndexOf("."));
 }
 
+/** A change that this window does not send: the author gets the cause here. */
+function refuseUpdate(message: string): void {
+  reportError(message);
+  showToast(message, "error", 12000);
+}
+
 function updateProperties(): void {
   if (updateLock.value) {
     return;
@@ -434,14 +441,14 @@ function updateProperties(): void {
         Array.isArray(descriptor) ||
         descriptor.type !== "directory"
       ) {
-        throw new Error(
-          "Could not update project settings because the project folder is no longer open.",
+        return refuseUpdate(
+          trans("Could not update project settings because the project folder is no longer open."),
         );
       }
 
       if (descriptor.settings.project == null) {
-        throw new Error(
-          "Could not update project settings because this folder is no longer a Project.",
+        return refuseUpdate(
+          trans("Could not update project settings because this folder is no longer a Project."),
         );
       }
 
@@ -455,6 +462,7 @@ function updateProperties(): void {
         payload: { properties: deproxiedSettings, path: dirPath },
       });
     })
+    // The dispatcher shows the failure of the command in this window.
     .catch((err) => reportError(err))
     .finally(() => {
       updateLock.value = false;

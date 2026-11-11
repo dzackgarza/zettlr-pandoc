@@ -7,8 +7,9 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     What the command dispatcher sends to the windows when a
- *                  command of the application throws.
+ * Description:     What the command dispatcher sends to one window when a
+ *                  command of the application throws: the window that
+ *                  started the command.
  *
  * END HEADER
  */
