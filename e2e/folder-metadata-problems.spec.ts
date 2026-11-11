@@ -243,10 +243,45 @@ describe("folders whose metadata cannot be used", function () {
       CONFLICTED_SETTINGS,
       "the settings file keeps the bytes of the author",
     );
+    const shownSorting = await editorPage.locator(`${POPOVER} select`).first().inputValue();
+
+    // A click outside the properties closes them.
+    await toast.locator('button[aria-label="Dismiss"]').first().click();
+    await toast.first().waitFor({ state: "hidden", timeout: 10_000 });
+    await editorPage.locator(POPOVER).waitFor({ state: "hidden", timeout: 10_000 });
+    assert.equal(shownSorting, "name", "the control shows the sorting that the folder has");
+  });
+
+  it("shows no Project after a refused change to a Project", async function () {
+    const editorPage = requireInitialized(page, "The editor page must be initialized");
+    const project = editorPage.locator(`${POPOVER} #dir-props-project`);
+    await openFolderProperties(editorPage, conflicted);
+
+    await project.locator("label.switch").click();
+
+    const toast = editorPage.locator(ERROR_TOAST);
+    await toast.first().waitFor({ state: "visible", timeout: 20_000 });
+    await delay(SECOND_MESSAGE_MS);
+    screenshots.set("refused-project.png", await editorPage.screenshot());
+    const messages = await toast.locator("span:first-child").allInnerTexts();
+    const switchedOn = await project.locator('input[type="checkbox"]').isChecked();
+    const buttons = await project.locator("button").count();
 
     await toast.locator('button[aria-label="Dismiss"]').first().click();
-    await editorPage.keyboard.press("Escape");
+    await toast.first().waitFor({ state: "hidden", timeout: 10_000 });
     await editorPage.locator(POPOVER).waitFor({ state: "hidden", timeout: 10_000 });
+    assert.equal(messages.length, 1, `the refusal is shown one time: ${messages.join(" | ")}`);
+    assert.equal(switchedOn, false, "the switch shows that the folder is no Project");
+    assert.equal(
+      buttons,
+      1,
+      "the only button selects a Quarto book file: no Project has settings to open",
+    );
+    assert.equal(
+      await readFile(path.join(conflicted, ".ztr-directory"), "utf8"),
+      CONFLICTED_SETTINGS,
+      "the settings file keeps the bytes of the author",
+    );
   });
 
   it("takes the mark away when the author repairs the file", async function () {
