@@ -207,7 +207,7 @@ defineExpose({ start });
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
   background-color: var(--chrome-surface);
-  color: inherit;
+  color: var(--chrome-text);
   font-size: 12px;
 
   .fix-all-title { margin: 0; font-size: 13px; font-weight: 600; }

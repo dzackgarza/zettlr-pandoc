@@ -1054,7 +1054,7 @@ body div#search-view {
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
   background-color: var(--chrome-surface);
-  color: inherit;
+  color: var(--chrome-text);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 
