@@ -129,8 +129,11 @@ export type SaveRefusalReason =
   // The provider holds no text of the document. Nothing was written.
   | "not-loaded"
   // The disk write itself failed (permissions, a full disk, a removed
-  // directory). The buffer keeps the text.
+  // directory). The buffer keeps the text, and the document stays modified.
   | "write-failed"
+  // The file has the text. The application could not read the file or its
+  // citation libraries again after the write.
+  | "saved-not-refreshed"
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
   | "review-not-persisted"

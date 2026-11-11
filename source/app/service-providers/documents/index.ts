@@ -3500,13 +3500,12 @@ current contents from the editor somewhere else, and restart the application.`,
       return { ok: false, refusal };
     }
 
-    // NOTE: Remember that we MUST under any circumstances adapt the document
-    // descriptor BEFORE attempting to save. The reason is that if we don't do
-    // that, we can run into the following race condition:
-    // 1. User changes the document
-    // 2. The save commences
-    // 3. The user adds more changes
-    // 4. The save finishes and undos the modifications
+    // The version and the text of this save are read here, before the write,
+    // and recorded as saved only after the write. A change that the author
+    // makes while the write runs has a later version, so the document stays
+    // modified. A write that fails records nothing: the document keeps text
+    // that is not on disk, and it must read as modified, or a close and a
+    // quit drop that text without a question.
 
     // NOTE: Zettlr internally always uses regular LF linefeeds. The FSAL load
     // and FSAL save methods will take care to actually use the proper linefeeds
@@ -3514,25 +3513,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // future prevent bugs like #4959
     const docLines = [...doc.document.iterLines()];
     const content = docLines.join("\n");
-    doc.lastSavedVersion = doc.currentVersion;
-    doc.lastSavedContent = content;
-
-    if (doc.descriptor.type === "file") {
-      // In case of an MD File increase the word or char count
-      const locale: string = this._app.config.get().appLang;
-      const ast = markdownToAST(content);
-      const counts = countAll(ast, locale);
-      const newWordCount = counts.words;
-      const newCharCount = counts.chars;
-
-      this._app.stats.updateCounts(
-        newWordCount - doc.lastSavedWordCount,
-        newCharCount - doc.lastSavedCharCount,
-      );
-
-      doc.lastSavedWordCount = newWordCount;
-      doc.lastSavedCharCount = newCharCount;
-    }
+    const savedVersion = doc.currentVersion;
 
     // 8.6: a surviving review's sidecar records the save it is about to
     // survive BEFORE the document write, naming both hashes. A process that
@@ -3555,17 +3536,25 @@ current contents from the editor somewhere else, and restart the application.`,
 
     this._ignoreChanges.push(filePath);
 
+    let written = false;
     try {
+      const fileContents =
+        doc.descriptor.type === "file"
+          ? doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed)
+          : content;
+      await this._app.fsal.writeTextFile(doc.descriptor.path, fileContents);
+      // The file has the text. The watcher compares the file with
+      // lastSavedContent, so it is recorded before the next await.
+      written = true;
+      doc.lastSavedVersion = savedVersion;
+      doc.lastSavedContent = content;
       if (doc.descriptor.type === "file") {
-        const fileContents = doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed);
-        await this._app.fsal.writeTextFile(doc.descriptor.path, fileContents);
         doc.descriptor = (await this._app.fsal.getDescriptorFor(
           doc.descriptor.path,
           false,
         )) as MDFileDescriptor;
         await this.synchronizeDatabases(); // The file may have gotten a library
       } else {
-        await this._app.fsal.writeTextFile(doc.descriptor.path, content);
         doc.descriptor = (await this._app.fsal.getDescriptorFor(
           doc.descriptor.path,
           false,
@@ -3573,6 +3562,25 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
+      if (written) {
+        this._app.log.error(
+          `[DocumentManager] ${filePath} was written, and its new state could not be read: ${reason}`,
+          err,
+        );
+        return {
+          ok: false,
+          refusal: {
+            reason: "saved-not-refreshed",
+            message: trans(
+              "%s was saved, but the application could not read the file again: %s",
+              doc.descriptor.name,
+              reason,
+            ),
+          },
+        };
+      }
+      // The write failed, so the next change of the file is not this save.
+      this._ignoreChanges.splice(this._ignoreChanges.lastIndexOf(filePath), 1);
       this._app.log.error(`[DocumentManager] Could not write ${filePath}: ${reason}`, err);
       return {
         ok: false,
@@ -3581,6 +3589,23 @@ current contents from the editor somewhere else, and restart the application.`,
           message: trans("Could not save file %s: %s", doc.descriptor.name, reason),
         },
       };
+    }
+
+    if (doc.descriptor.type === "file") {
+      // In case of an MD File increase the word or char count
+      const locale: string = this._app.config.get().appLang;
+      const ast = markdownToAST(content);
+      const counts = countAll(ast, locale);
+      const newWordCount = counts.words;
+      const newCharCount = counts.chars;
+
+      this._app.stats.updateCounts(
+        newWordCount - doc.lastSavedWordCount,
+        newCharCount - doc.lastSavedCharCount,
+      );
+
+      doc.lastSavedWordCount = newWordCount;
+      doc.lastSavedCharCount = newCharCount;
     }
 
     this._app.log.info(`[DocumentManager] File ${filePath} saved.`);
