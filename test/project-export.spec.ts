@@ -18,8 +18,8 @@
 
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import AssetsProvider from "source/app/service-providers/assets";
 import {
@@ -41,6 +41,22 @@ const NO_ENGINE = "the engine of the first command is absent";
 
 /** What the second failing command writes to its error output. */
 const NO_TEMPLATE = "the template of the second command is absent";
+
+/** The first line of the TeX template of a Project. */
+const TEMPLATE_MARK = "% the template of the Project";
+
+/** The recipe file that a PDF export runs. */
+const RECIPE_FILE = path.join(homedir(), ".pandoc", "justfile");
+
+/** What a Project of this spec has. */
+interface ProjectFixture {
+  /** The entries of its profile list. */
+  profiles: string[];
+  /** Its chapters, in the order of the export. */
+  chapters: string[];
+  /** The TeX template of its settings. */
+  texTemplate: string;
+}
 
 /** An error window that the command opened. */
 interface ErrorWindow {
@@ -65,21 +81,23 @@ describe("Project export", function () {
     return script;
   }
 
-  /** A Project folder with one chapter and the given export commands. */
-  async function project(name: string, profiles: string[]): Promise<string> {
+  /** A Project folder. Its title is its name. */
+  async function project(name: string, fixture: ProjectFixture): Promise<string> {
     const directory = path.join(root, name);
     await mkdir(directory);
-    await writeFile(path.join(directory, "chapter.md"), CHAPTER);
+    for (const chapter of fixture.chapters) {
+      await writeFile(path.join(directory, chapter), CHAPTER);
+    }
     await writeFile(
       path.join(directory, ".ztr-directory"),
       JSON.stringify({
         sorting: "name-up",
         project: {
           title: name,
-          profiles,
-          files: ["chapter.md"],
+          profiles: fixture.profiles,
+          files: fixture.chapters,
           cslStyle: "",
-          templates: { tex: "", html: "" },
+          templates: { tex: fixture.texTemplate, html: "" },
         },
         icon: null,
         color: null,
@@ -91,6 +109,10 @@ describe("Project export", function () {
   let oneFailed: string;
   let twoFailed: string;
   let allExported: string;
+  let template: string;
+  let pdfOfChapters: string;
+  let pdfOfOneChapter: string;
+  let latex: string;
 
   before(async function () {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-"));
@@ -101,12 +123,40 @@ describe("Project export", function () {
     // The command gets the Project folder as its argument.
     const listing = await exportCommand("listing.sh", 'ls "$1" > "$1/listing.txt"');
 
-    oneFailed = await project("one-failed", [noEngine, listing]);
-    twoFailed = await project("two-failed", [noEngine, noTemplate]);
-    allExported = await project("all-exported", [listing]);
+    const chapters = ["chapter.md"];
+    oneFailed = await project("one-failed", {
+      profiles: [noEngine, listing],
+      chapters,
+      texTemplate: "",
+    });
+    twoFailed = await project("two-failed", {
+      profiles: [noEngine, noTemplate],
+      chapters,
+      texTemplate: "",
+    });
+    allExported = await project("all-exported", { profiles: [listing], chapters, texTemplate: "" });
 
-    // The export profiles of the author: this Project uses commands only.
-    await mkdir(path.join(userData, "defaults"), { recursive: true });
+    template = path.join(scripts, "thesis.tex");
+    await writeFile(template, `${TEMPLATE_MARK}\n$body$\n`);
+    pdfOfChapters = await project("pdf-of-chapters", {
+      profiles: ["PDF.yaml"],
+      chapters: ["one.md", "two.md"],
+      texTemplate: template,
+    });
+    pdfOfOneChapter = await project("pdf-of-one-chapter", {
+      profiles: ["PDF.yaml"],
+      chapters,
+      texTemplate: template,
+    });
+    latex = await project("latex", { profiles: ["LaTeX.yaml"], chapters, texTemplate: template });
+
+    // The export profiles of the author.
+    const defaults = path.join(userData, "defaults");
+    await mkdir(defaults, { recursive: true });
+    await copyFile(
+      path.resolve("static", "defaults", "LaTeX.yaml"),
+      path.join(defaults, "LaTeX.yaml"),
+    );
 
     const log = new LogProvider();
     const config = new ConfigProvider(log, [path.resolve("static", "lang")]);
@@ -178,5 +228,101 @@ describe("Project export", function () {
         `the message has no "${part}"`,
       );
     }
+  });
+
+  describe("with a TeX template in the settings of the Project", function () {
+    let recipeDirectory: string;
+    let recordFile: string;
+    let macroHome: string;
+    let pathOfTheRun: string | undefined;
+
+    before(async function () {
+      // The recipe runner of this spec: a `just` that records its arguments
+      // and leaves the file that the recipe leaves, "<title>-<date>.pdf".
+      recipeDirectory = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-recipe-"));
+      recordFile = path.join(recipeDirectory, "record.bin");
+      const runner = path.join(recipeDirectory, "just");
+      await writeFile(
+        runner,
+        [
+          "#!/bin/sh",
+          `{ printf '%s\\0' "$@"; printf '\\036'; } >> "$(dirname "$0")/record.bin"`,
+          'case "$3" in',
+          '  compile-pandoc-project) title="$4" ;;',
+          '  *) title="$5" ;;',
+          "esac",
+          ': > "$PWD/$title-01-01-26.pdf"',
+          "",
+        ].join("\n"),
+      );
+      await chmod(runner, 0o755);
+      pathOfTheRun = process.env.PATH;
+      process.env.PATH = `${recipeDirectory}${path.delimiter}${pathOfTheRun}`;
+
+      // An export reads the macro projection of the home directory.
+      macroHome = path.join(tmpdir(), ".pandoc");
+      const projection = path.join(macroHome, "templates", "css");
+      await mkdir(projection, { recursive: true });
+      await copyFile(
+        path.resolve("test", "fixtures", "mathjax-macros.json"),
+        path.join(projection, "mathjax-macros.json"),
+      );
+    });
+
+    beforeEach(async function () {
+      await rm(recordFile, { force: true });
+    });
+
+    after(async function () {
+      process.env.PATH = pathOfTheRun;
+      await rm(recipeDirectory, { recursive: true });
+      await rm(macroHome, { recursive: true });
+    });
+
+    /** The arguments of each recipe run, in the order of the runs. */
+    async function recipeRuns(): Promise<string[][]> {
+      const record = await readFile(recordFile, "utf8");
+      return record
+        .split("\x1e")
+        .slice(0, -1)
+        .map((run) => run.split("\0").slice(0, -1));
+    }
+
+    it("gives the recipe the template for a PDF of several chapters", async function () {
+      const exported = await exportProject(services, pdfOfChapters);
+
+      assert.deepEqual(errorWindows, []);
+      assert.equal(exported, true);
+      assert.deepEqual(await recipeRuns(), [
+        [
+          "--justfile",
+          RECIPE_FILE,
+          "compile-pandoc-project",
+          "pdf-of-chapters",
+          template,
+          "one.md",
+          "two.md",
+        ],
+      ]);
+    });
+
+    it("gives the recipe the template for a PDF of one chapter", async function () {
+      const exported = await exportProject(services, pdfOfOneChapter);
+
+      assert.deepEqual(errorWindows, []);
+      assert.equal(exported, true);
+      assert.deepEqual(await recipeRuns(), [
+        ["--justfile", RECIPE_FILE, "compile-pandoc", "chapter.md", "pdf-of-one-chapter", template],
+      ]);
+    });
+
+    it("makes a LaTeX document with the template", async function () {
+      const exported = await exportProject(services, latex);
+
+      assert.deepEqual(errorWindows, []);
+      assert.equal(exported, true);
+      const document = await readFile(path.join(latex, "latex.tex"), "utf8");
+      assert.equal(document.split("\n")[0], TEMPLATE_MARK);
+    });
   });
 });
