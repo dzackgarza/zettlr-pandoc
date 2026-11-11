@@ -11,8 +11,9 @@
  *                  with the action that starts the lint again.
  *
  *                  1. No Flowmark run ends in the time limit of 1 ms. The
- *                     Problems view names each document with the cause, and
- *                     the editor marks its document.
+ *                     Problems view names each document with the cause, the
+ *                     editor marks its document, and the status bar counts
+ *                     the mark.
  *                  2. The file of the lint results takes no write. Each
  *                     reader of the results is refused: the Problems view
  *                     shows the cause, and the editor marks its document
@@ -50,6 +51,7 @@ const RETRY = "[data-problems-retry]";
 const NOT_LOADED = "[data-problems-not-loaded]";
 const QUEUE_STOPPED = "[data-problems-stopped]";
 const EDITOR_ERROR = ".cm-content .cm-lintRange-error";
+const STATUS_BAR_COUNTS = '[data-statusbar-item="diagnostics"]';
 
 interface EditorContentElement extends HTMLElement {
   cmTile?: {
@@ -73,6 +75,23 @@ async function editorErrorMessage(page: Page): Promise<string> {
   // The pointer leaves the document, so the tooltip covers no later step.
   await page.mouse.move(0, 0);
   return message;
+}
+
+/** Waits until the status bar counts this many errors in the document. */
+async function statusBarCountsErrors(page: Page, errors: number): Promise<void> {
+  const counts = async (): Promise<number[]> =>
+    Array.from((await page.locator(STATUS_BAR_COUNTS).innerText()).matchAll(/\d+/g), (match) =>
+      Number(match[0]),
+    );
+  const deadline = Date.now() + 10_000;
+  // The item shows the counts of info, warning and error, in this order.
+  while ((await counts())[2] !== errors) {
+    assert.ok(
+      Date.now() < deadline,
+      `the status bar counts ${String(await counts())}, not ${errors} errors`,
+    );
+    await delay(200);
+  }
 }
 
 async function setFlowmarkTimeLimit(page: Page, timeoutMs: number): Promise<void> {
@@ -172,6 +191,7 @@ describe("a lint that did not run", function () {
         new RegExp(TIME_LIMIT_CAUSE),
         "the editor marks its document with the cause",
       );
+      await statusBarCountsErrors(page, 1);
       screenshots.set("not-linted.png", await page.screenshot());
     });
 
@@ -182,6 +202,7 @@ describe("a lint that did not run", function () {
       await finding(page, "problem.md").waitFor({ state: "visible", timeout: 90_000 });
       await page.locator(NOT_LINTED).waitFor({ state: "detached", timeout: 30_000 });
       await page.locator(EDITOR_ERROR).waitFor({ state: "detached", timeout: 60_000 });
+      await statusBarCountsErrors(page, 0);
       screenshots.set("linted-after-retry.png", await page.screenshot());
     });
 
