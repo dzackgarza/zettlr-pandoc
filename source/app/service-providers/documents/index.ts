@@ -36,7 +36,13 @@ import type {
   AnnotationMessage,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import {
+  COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  type CollaborationFileUnreadableBroadcast,
+  type DocumentCollaborationSession,
+  type UnreadableCollaborationFile,
+  type WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import {
   type BranchNodeJSON,
   DocumentType,
@@ -428,7 +434,11 @@ export type DocumentManagerIPCContract = {
   };
   "get-workspace-collaboration-sessions": {
     request: { payload: { paths: string[] } };
-    response: DocumentCollaborationSession[];
+    response: WorkspaceCollaborationListing;
+  };
+  "set-aside-collaboration-sidecar": {
+    request: { payload: { file: string } };
+    response: string;
   };
   "move-file": {
     request: {
@@ -1115,6 +1125,9 @@ export default class DocumentManager
         }
         case "get-workspace-collaboration-sessions": {
           return await this._workspaceCollaborationSessions(payload.paths);
+        }
+        case "set-aside-collaboration-sidecar": {
+          return await this._reviewApplication.setAsideCollaborationSidecar(payload.file);
         }
         case "move-file": {
           const { originWindow, originLeaf, targetWindow, targetLeaf, path } = payload;
@@ -2619,7 +2632,9 @@ current contents from the editor somewhere else, and restart the application.`,
       await this.hasMovedFile(filePath, movedPath);
     }
 
-    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
+    // A file that cannot be read stays where it is. It stops no move.
+    const { sidecars } = await this._reviewApplication.collaborationSidecarInventory();
+    for (const sidecar of sidecars) {
       if (isInsideRoot(sidecar.documentPath, oldPath)) {
         await this.hasMovedFile(
           sidecar.documentPath,
@@ -3921,6 +3936,13 @@ current contents from the editor somewhere else, and restart the application.`,
       // The document itself is fine — open it; the broken sidecar stays on
       // disk as evidence and keeps failing loudly until it is dealt with.
       this._surfaceReviewSidecarError(doc.documentId, "read", err);
+      // The window says so and offers to move the file aside.
+      const payload: CollaborationFileUnreadableBroadcast = {
+        filePath: doc.filePath,
+        file: this._reviewApplication.sidecarFileOf(doc.filePath),
+        cause: err instanceof Error ? err.message : String(err),
+      };
+      broadcastIpcMessage(COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
     }
   }
 
@@ -4403,10 +4425,13 @@ current contents from the editor somewhere else, and restart the application.`,
    * Closed documents are projected from their validated collaboration
    * sidecars into that exact same renderer shape. The renderer never reads
    * sidecars directly and never has to know whether a document is open.
+   *
+   * A sidecar that cannot be read hides no other document: the listing
+   * names the file, and the document of the file when `paths` holds it.
    */
   private async _workspaceCollaborationSessions(
     paths: readonly string[],
-  ): Promise<DocumentCollaborationSession[]> {
+  ): Promise<WorkspaceCollaborationListing> {
     const wanted = new Set(paths);
     const sessions: DocumentCollaborationSession[] = [];
     const livePaths = new Set<string>();
@@ -4427,7 +4452,8 @@ current contents from the editor somewhere else, and restart the application.`,
 
     // Enumerate the small set of sidecars once, then intersect it with the
     // workspace. This avoids one failed filesystem lookup per ordinary file.
-    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
+    const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
+    for (const sidecar of sidecars) {
       if (!wanted.has(sidecar.documentPath) || livePaths.has(sidecar.documentPath)) {
         continue;
       }
@@ -4442,7 +4468,25 @@ current contents from the editor somewhere else, and restart the application.`,
         }),
       );
     }
-    return sessions;
+    return { sessions, unreadable: this._documentsOfUnreadableFiles(unreadable, wanted) };
+  }
+
+  /**
+   * The name of a sidecar file is a hash of the path of its document, so the
+   * document of an unreadable file is known only among the given paths. The
+   * hashes are computed only when a file is unreadable.
+   */
+  private _documentsOfUnreadableFiles(
+    unreadable: ReadonlyArray<{ file: string; cause: string }>,
+    paths: ReadonlySet<string>,
+  ): UnreadableCollaborationFile[] {
+    if (unreadable.length === 0) {
+      return [];
+    }
+    const documentOfFile = new Map(
+      [...paths].map((filePath) => [this._reviewApplication.sidecarFileOf(filePath), filePath]),
+    );
+    return unreadable.map((entry) => ({ ...entry, documentPath: documentOfFile.get(entry.file) }));
   }
 
   /**

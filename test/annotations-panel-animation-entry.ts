@@ -163,7 +163,9 @@ window.benchmarkReady = (async () => {
   };
   collaborationStore.sessionsByDocumentPath[BENCHMARK_PATH] = benchmarkSession;
   documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
-    message.command === "get-workspace-collaboration-sessions" ? [benchmarkSession] : undefined,
+    message.command === "get-workspace-collaboration-sessions"
+      ? { sessions: [benchmarkSession], unreadable: [] }
+      : undefined,
   );
 
   const sidebarVisible = ref(true);

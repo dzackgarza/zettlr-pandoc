@@ -37,6 +37,12 @@
  *                  error here would silently discard collaboration state the
  *                  user believes is preserved.
  *
+ *                  A file that cannot be read keeps its bytes. The store
+ *                  replaces or removes a file only after it read that file,
+ *                  so no write of new state destroys what a later version of
+ *                  the application or a damaged file holds. The author moves
+ *                  such a file aside (setAside); inventory() names each one.
+ *
  * END HEADER
  */
 
@@ -58,6 +64,8 @@ import {
   ReviewSidecarV4Schema,
 } from "./collaboration-sidecar-schema";
 
+const SIDECAR_EXTENSION = ".json";
+
 /**
  * The sidecar file for a document. Keyed by the hash of the canonical
  * (resolved) path, so the workspace layout never leaks into app data and no
@@ -66,7 +74,7 @@ import {
 // ponytail: path.resolve is the canonical form — symlinked aliases of one
 // file get distinct sidecars. Move to realpath if that ever bites.
 export function collaborationSidecarFilePath(directory: string, documentPath: string): string {
-  return path.join(directory, `${sha256Text(path.resolve(documentPath))}.json`);
+  return path.join(directory, `${sha256Text(path.resolve(documentPath))}${SIDECAR_EXTENSION}`);
 }
 
 function isMissingFile(error: unknown): boolean {
@@ -315,13 +323,30 @@ function parseJson(raw: string, target: string): unknown {
 }
 
 function assertMatchesFilename(sidecar: CollaborationSidecarData, target: string): void {
-  const expectedHash = path.basename(target, ".json");
+  const expectedHash = path.basename(target, SIDECAR_EXTENSION);
   if (expectedHash !== sha256Text(path.resolve(sidecar.documentPath))) {
     throw new Error(`Collaboration sidecar ${target} does not match its document path`);
   }
 }
 
+/** A sidecar file that this version of the application cannot read. */
+export interface UnreadableSidecarFile {
+  file: string;
+  cause: string;
+}
+
+export interface CollaborationSidecarInventory {
+  sidecars: CollaborationSidecarData[];
+  unreadable: UnreadableSidecarFile[];
+}
+
 export class CollaborationSidecarStore {
+  /**
+   * The files whose last read in this session gave a sidecar or no file.
+   * Only these are replaced or removed.
+   */
+  private readonly examined = new Set<string>();
+
   constructor(private readonly directory: string) {}
 
   /**
@@ -337,6 +362,12 @@ export class CollaborationSidecarStore {
    */
   async write(sidecar: CollaborationSidecarData): Promise<void> {
     const target = collaborationSidecarFilePath(this.directory, sidecar.documentPath);
+    await this.examine(target);
+    await this.store(sidecar, target);
+  }
+
+  /** Runs after the file at `target` was read: see `examined`. */
+  private async store(sidecar: CollaborationSidecarData, target: string): Promise<void> {
     if (sidecar.review === null && sidecar.annotations.items.length === 0) {
       await fs.rm(target, { force: true });
       return;
@@ -350,23 +381,42 @@ export class CollaborationSidecarStore {
   }
 
   /**
+   * Reads the file at `target` before the store replaces or removes it,
+   * unless its last read succeeded. A file that cannot be read rejects
+   * here, so its bytes stay until the author moves the file aside.
+   */
+  private async examine(target: string): Promise<void> {
+    if (!this.examined.has(target)) {
+      await this.readFile(target);
+    }
+  }
+
+  /**
    * The sidecar for a document, or undefined when none exists. A version-4
    * file is lifted to version 5 and written back before it is returned, so a
    * second read (a later reopen, an app restart) sees version 5 directly. A
    * file that exists but parses as neither version throws.
    */
   async read(documentPath: string): Promise<CollaborationSidecarData | undefined> {
-    const target = collaborationSidecarFilePath(this.directory, documentPath);
+    return await this.readFile(collaborationSidecarFilePath(this.directory, documentPath));
+  }
+
+  private async readFile(target: string): Promise<CollaborationSidecarData | undefined> {
+    // Until this read succeeds, the file is one that the store cannot read.
+    this.examined.delete(target);
     let raw: string;
     try {
       raw = await fs.readFile(target, "utf8");
     } catch (error) {
       if (isMissingFile(error)) {
+        this.examined.add(target);
         return undefined;
       }
       throw error;
     }
-    return await this.parseAndMigrate(raw, target);
+    const sidecar = await this.parseAndMigrate(raw, target);
+    this.examined.add(target);
+    return sidecar;
   }
 
   private async parseAndMigrate(raw: string, target: string): Promise<CollaborationSidecarData> {
@@ -375,14 +425,14 @@ export class CollaborationSidecarStore {
       const migrated = migrateV4ToV5Sidecar(parsed);
       assertCollaborationSidecarSemantics(migrated, target);
       assertMatchesFilename(migrated, target);
-      await this.write(migrated);
+      await this.store(migrated, target);
       return migrated;
     }
     if (validateEarlyCollaborationSidecarV5(parsed)) {
       const lifted = liftEarlyV5Sidecar(parsed);
       assertCollaborationSidecarSemantics(lifted, target);
       assertMatchesFilename(lifted, target);
-      await this.write(lifted);
+      await this.store(lifted, target);
       return lifted;
     }
     if (!validateCollaborationSidecar(parsed)) {
@@ -400,7 +450,9 @@ export class CollaborationSidecarStore {
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
   async delete(documentPath: string): Promise<void> {
-    await fs.rm(collaborationSidecarFilePath(this.directory, documentPath), { force: true });
+    const target = collaborationSidecarFilePath(this.directory, documentPath);
+    await this.examine(target);
+    await fs.rm(target, { force: true });
   }
 
   /**
@@ -412,10 +464,16 @@ export class CollaborationSidecarStore {
    *
    * The new path then holds the state of the moved document and no other:
    * a sidecar that was at the new path described the file that the move
-   * replaced, so a moved document with no sidecar leaves none there.
+   * replaced, so a moved document with no sidecar leaves none there. When
+   * that sidecar cannot be read, its bytes are kept: it is moved aside.
    */
   async rename(oldPath: string, newPath: string): Promise<void> {
     const sidecar = await this.read(oldPath);
+    const replaced = collaborationSidecarFilePath(this.directory, newPath);
+    const [reading] = await Promise.allSettled([this.readFile(replaced)]);
+    if (reading.status === "rejected") {
+      await this.setAside(replaced);
+    }
     if (sidecar === undefined) {
       await this.delete(newPath);
       return;
@@ -427,25 +485,62 @@ export class CollaborationSidecarStore {
   /**
    * Every persisted sidecar. One corrupt file fails the whole listing, with
    * its path named — a partial answer would present the surviving state as
-   * the complete set.
+   * the complete set. A caller that can show the file to the author reads
+   * inventory() instead.
    */
   async list(): Promise<CollaborationSidecarData[]> {
+    const { sidecars, unreadable } = await this.inventory();
+    if (unreadable.length > 0) {
+      throw new Error(unreadable.map((entry) => entry.cause).join("; "));
+    }
+    return sidecars;
+  }
+
+  /**
+   * Every persisted sidecar that can be read, and each file that cannot,
+   * with its cause. The two lists together are the complete set.
+   */
+  async inventory(): Promise<CollaborationSidecarInventory> {
     let names: string[];
     try {
       names = await fs.readdir(this.directory);
     } catch (error) {
       if (isMissingFile(error)) {
-        return [];
+        return { sidecars: [], unreadable: [] };
       }
       throw error;
     }
-    return await Promise.all(
-      names
-        .filter((name) => name.endsWith(".json"))
-        .map(async (name) => {
-          const target = path.join(this.directory, name);
-          return await this.parseAndMigrate(await fs.readFile(target, "utf8"), target);
-        }),
-    );
+    const files = names
+      .filter((name) => name.endsWith(SIDECAR_EXTENSION))
+      .map((name) => path.join(this.directory, name));
+    const readings = await Promise.allSettled(files.map((file) => this.readFile(file)));
+    const inventory: CollaborationSidecarInventory = { sidecars: [], unreadable: [] };
+    readings.forEach((reading, index) => {
+      if (reading.status === "rejected") {
+        const failure: Error = reading.reason;
+        inventory.unreadable.push({ file: files[index], cause: failure.message });
+        return;
+      }
+      // A file that went away after the directory was listed holds nothing.
+      if (reading.value !== undefined) {
+        inventory.sidecars.push(reading.value);
+      }
+    });
+    return inventory;
+  }
+
+  /**
+   * Move a sidecar file out of the way of its document, at the author's
+   * request. The bytes stay in the sidecar directory under a name that no
+   * read asks for, so the document can take new state and the old state
+   * can still be recovered by hand. Answers the new path of the file.
+   */
+  async setAside(file: string): Promise<string> {
+    if (path.dirname(file) !== this.directory || !file.endsWith(SIDECAR_EXTENSION)) {
+      throw new Error(`${file} is not a collaboration sidecar of ${this.directory}`);
+    }
+    const aside = `${file}.set-aside-${Date.now()}`;
+    await fs.rename(file, aside);
+    return aside;
   }
 }

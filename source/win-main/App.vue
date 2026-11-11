@@ -213,6 +213,10 @@ import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import {
+  COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  type CollaborationFileUnreadableBroadcast,
+} from "@dts/common/document-collaboration";
+import {
   DocumentType,
   type LeafNodeJSON,
   REMOTE_CHANGE_KEPT_CHANNEL,
@@ -1073,6 +1077,35 @@ onMounted(() => {
       },
     });
   });
+
+  // A document opened without its annotations and its review: their file
+  // could not be read. The author can move the file aside, so that the
+  // document takes new annotations; the file is kept.
+  ipcRenderer.on(
+    COLLABORATION_FILE_UNREADABLE_CHANNEL,
+    (event, payload: CollaborationFileUnreadableBroadcast) => {
+      const name = pathBasename(payload.filePath);
+      showToast(
+        trans(
+          "%s opened without its annotations and its review. Their file cannot be read: %s",
+          name,
+          payload.cause,
+        ),
+        "error",
+        12000,
+        {
+          label: trans("Move the file aside"),
+          onAction: () => {
+            collaborationStore.setAsideUnreadableFile(payload.file).then(
+              (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
+              (err: Error) =>
+                showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
+            );
+          },
+        },
+      );
+    },
+  );
 
   // A loaded file changed on disk and the editor kept its contents. The user
   // decides, when they choose, whether the disk version replaces them.

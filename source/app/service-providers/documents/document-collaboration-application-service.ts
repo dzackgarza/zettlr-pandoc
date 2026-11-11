@@ -78,7 +78,11 @@ import {
   prepareAnnotationResolvedCleanup,
 } from "./annotation-transitions";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
-import { CollaborationSidecarStore } from "./collaboration-sidecar-store";
+import {
+  type CollaborationSidecarInventory,
+  CollaborationSidecarStore,
+  collaborationSidecarFilePath,
+} from "./collaboration-sidecar-store";
 import {
   collaborationSidecar,
   normalizeText,
@@ -1024,6 +1028,28 @@ export class CollaborationApplicationService {
    */
   public listCollaborationSidecars(): Promise<CollaborationSidecarData[]> {
     return this.sidecars.list();
+  }
+
+  /**
+   * The persisted collaboration state that can be read, and each file that
+   * cannot. For a caller that shows such a file to the author; a caller that
+   * needs the complete set reads listCollaborationSidecars, which rejects.
+   */
+  public collaborationSidecarInventory(): Promise<CollaborationSidecarInventory> {
+    return this.sidecars.inventory();
+  }
+
+  /** The file that holds the collaboration state of a document. */
+  public sidecarFileOf(documentPath: string): string {
+    return collaborationSidecarFilePath(this.deps.sidecarDirectory, documentPath);
+  }
+
+  /**
+   * Move a sidecar file that cannot be read out of the way of its document,
+   * at the author's request. Answers the new path of the file.
+   */
+  public setAsideCollaborationSidecar(file: string): Promise<string> {
+    return this.sidecars.setAside(file);
   }
 
   private lockFor(documentId: string): Mutex {

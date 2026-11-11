@@ -623,8 +623,21 @@ of an isolated instance are in the first comment of #132.
   detaches before it closes a tab, so a refused close leaves the tabs and
   the buffer. A caller that removes the file afterwards (`file-delete`, the
   overwrite of `file-new`) stops on `false`.
+- **A sidecar that cannot be read is kept.** `CollaborationSidecarStore`
+  replaces or removes a file only after its last read of that file gave a
+  sidecar or no file (`examined`). A file that this version cannot read (a
+  later schema, damaged bytes) refuses each write of its document, so a new
+  annotation is refused with `PERSISTENCE_FAILED` and the bytes stay.
+  `inventory()` gives the readable sidecars and names each unreadable file
+  with its cause; the Annotations view and a message at the open of the
+  document show the file with the action "Move the file aside"
+  (`set-aside-collaboration-sidecar`), which renames the file in the sidecar
+  directory and keeps its bytes. `list()` is the complete set or an error:
+  the Agent API listings reject while an unreadable file exists.
 - **Proof:** `test/documents-move-identity.spec.ts`,
   `test/documents-refused-close.spec.ts`,
+  `test/unreadable-collaboration-sidecar.spec.ts`,
+  `test/collaboration-sidecar.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,
   `e2e/review-persistence-failure.spec.ts`.
 

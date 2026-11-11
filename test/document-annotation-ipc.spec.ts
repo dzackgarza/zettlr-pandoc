@@ -36,7 +36,10 @@
 // Installs process-wide test doubles; it must load before the modules that read them.
 import "./headless-electron-harness.cjs";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { strict as assert } from "assert";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
@@ -267,10 +270,15 @@ describe("Document annotation IPC (M6, WU-14)", function () {
 
     await provider.closeFileEverywhere(filePath);
 
-    const sessions = await invoke<DocumentCollaborationSession[]>("documents-provider", {
-      command: "get-workspace-collaboration-sessions",
-      payload: { paths: [filePath] },
-    });
+    const { sessions, unreadable } = await invoke<WorkspaceCollaborationListing>(
+      "documents-provider",
+      {
+        command: "get-workspace-collaboration-sessions",
+        payload: { paths: [filePath] },
+      },
+    );
+
+    assert.deepEqual(unreadable, []);
 
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0].documentPath, filePath);

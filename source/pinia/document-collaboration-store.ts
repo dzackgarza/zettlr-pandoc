@@ -45,7 +45,11 @@
 
 import { reportError } from "@common/util/error-reporting";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  UnreadableCollaborationFile,
+  WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import { DP_EVENTS } from "@dts/common/documents";
 import { defineStore } from "pinia";
 import type {
@@ -83,6 +87,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   const selectedAnnotationId = ref<string | null>(null);
   const showResolved = ref(false);
   const workspaceDocumentPaths = ref<string[]>([]);
+  /** The files of collaboration state that the application could not read. */
+  const unreadableFiles = ref<UnreadableCollaborationFile[]>([]);
   const workspacePathSet = new Set<string>();
   let workspaceRefreshGeneration = 0;
 
@@ -229,8 +235,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       const detached = (await ipcRenderer.invoke("documents-provider", {
         command: "get-workspace-collaboration-sessions",
         payload: { paths: [documentPath] },
-      })) as DocumentCollaborationSession[];
-      session = detached.find((candidate) => candidate.documentPath === documentPath);
+      })) as WorkspaceCollaborationListing;
+      session = detached.sessions.find((candidate) => candidate.documentPath === documentPath);
     }
     if (!ownsPath(documentPath, sentAt)) {
       return;
@@ -308,12 +314,15 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       workspacePathSet.add(path);
     }
 
-    const sessions = (await ipcRenderer.invoke("documents-provider", {
+    const { sessions, unreadable } = (await ipcRenderer.invoke("documents-provider", {
       command: "get-workspace-collaboration-sessions",
       payload: { paths: uniquePaths },
-    })) as DocumentCollaborationSession[];
+    })) as WorkspaceCollaborationListing;
     if (refreshGeneration !== workspaceRefreshGeneration) {
       return;
+    }
+    if (!_.isEqual(unreadableFiles.value, unreadable)) {
+      unreadableFiles.value = unreadable;
     }
     const returned = new Set(sessions.map((session) => session.documentPath));
 
@@ -335,6 +344,19 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       sessionsByDocumentPath[session.documentPath] = session;
       updateCardsForSession(session.documentPath, session);
     }
+  }
+
+  /**
+   * Move a file of collaboration state that could not be read out of the way
+   * of its document, then read the workspace again. Answers where the file is.
+   */
+  async function setAsideUnreadableFile(file: string): Promise<string> {
+    const aside = (await ipcRenderer.invoke("documents-provider", {
+      command: "set-aside-collaboration-sidecar",
+      payload: { file },
+    })) as string;
+    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
+    return aside;
   }
 
   function getSession(documentPath: string): DocumentCollaborationSession | undefined {
@@ -814,6 +836,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     workspaceDocumentPaths,
     workspaceSessions,
     workspaceUnresolvedCount,
+    unreadableFiles,
+    setAsideUnreadableFile,
     selectedAnnotationId,
     showResolved,
     ensureSession,

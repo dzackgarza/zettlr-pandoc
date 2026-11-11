@@ -32,6 +32,11 @@ import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import {
+  COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  type CollaborationFileUnreadableBroadcast,
+  type WorkspaceCollaborationListing,
+} from "source/types/common/document-collaboration";
 import { bootDocumentManager } from "./documents-provider-seam";
 import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 
@@ -40,15 +45,9 @@ type IpcHandler = (
   message: { command: string; payload?: unknown },
 ) => Promise<unknown> | unknown;
 
-interface WorkspaceListing {
-  sessions: Array<{ documentPath: string; annotations: { items: unknown[] } }>;
-  unreadable: Array<{ file: string; cause: string }>;
-}
-
 const GENUS = "A genus holds finitely many isometry classes.\n";
 const LATTICE = "An even unimodular lattice has a rank that 8 divides.\n";
 const SIDECARS = path.join(userData, "review-sidecars");
-const UNREADABLE_CHANNEL = "collaboration-sidecar-unreadable";
 
 describe("A collaboration sidecar that the application cannot read", function () {
   let root: string;
@@ -127,8 +126,10 @@ describe("A collaboration sidecar that the application cannot read", function ()
   }
 
   /** The listing that the Annotations view reads. */
-  async function workspaceListing(paths: string[]): Promise<WorkspaceListing> {
-    return (await invoke("get-workspace-collaboration-sessions", { paths })) as WorkspaceListing;
+  async function workspaceListing(paths: string[]): Promise<WorkspaceCollaborationListing> {
+    return (await invoke("get-workspace-collaboration-sessions", {
+      paths,
+    })) as WorkspaceCollaborationListing;
   }
 
   it("lists the other documents and names the file", async function () {
@@ -140,9 +141,9 @@ describe("A collaboration sidecar that the application cannot read", function ()
       "the document with a readable sidecar is listed with its annotation",
     );
     assert.deepEqual(
-      listing.unreadable.map((entry) => entry.file),
-      [unreadableFile],
-      "the listing names the file that could not be read",
+      listing.unreadable.map((entry) => [entry.file, entry.documentPath]),
+      [[unreadableFile, genusPath]],
+      "the listing names the file that could not be read, and its document",
     );
     assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
   });
@@ -176,8 +177,8 @@ describe("A collaboration sidecar that the application cannot read", function ()
     assert.equal(await provider.openFile(windowId, pane(), genusPath), true);
 
     const told = sentMessagesFor(window)
-      .filter(([channel]) => channel === UNREADABLE_CHANNEL)
-      .map(([, payload]) => payload as { filePath: string; file: string });
+      .filter(([channel]) => channel === COLLABORATION_FILE_UNREADABLE_CHANNEL)
+      .map(([, payload]) => payload as CollaborationFileUnreadableBroadcast);
     assert.deepEqual(
       told.map((entry) => [entry.filePath, entry.file]),
       [[genusPath, unreadableFile]],

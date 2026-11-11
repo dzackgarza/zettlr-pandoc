@@ -13,7 +13,10 @@
  * which is only observable at this bridge.
  */
 
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  UnreadableCollaborationFile,
+} from "@dts/common/document-collaboration";
 import type { LeafNodeJSON } from "@dts/common/documents";
 import { SCENE_DOCUMENT_PATH } from "./annotations-sidebar-scene-fixture";
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
@@ -30,6 +33,7 @@ export interface RecordedRequest {
 }
 
 let sceneSession: DocumentCollaborationSession | undefined;
+let sceneUnreadableFiles: UnreadableCollaborationFile[] = [];
 const recorded: RecordedRequest[] = [];
 
 // The capture page carries a window_id search param (see
@@ -49,7 +53,16 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
     case "get-collaboration-session":
       return sceneSession;
     case "get-workspace-collaboration-sessions":
-      return sceneSession === undefined ? [] : [sceneSession];
+      return {
+        sessions: sceneSession === undefined ? [] : [sceneSession],
+        unreadable: sceneUnreadableFiles,
+      };
+    case "set-aside-collaboration-sidecar": {
+      // The provider renames the file: it is in no later listing.
+      const { file } = message.payload as { file: string };
+      sceneUnreadableFiles = sceneUnreadableFiles.filter((entry) => entry.file !== file);
+      return `${file}.set-aside-${Date.now()}`;
+    }
     case "get-file-modification-status":
       return [];
     case "retrieve-tab-config":
@@ -71,6 +84,11 @@ documentCollaborationIpcDouble.setSendSyncResponder((channel, message) =>
 
 export function setAnnotationsSceneSession(session: DocumentCollaborationSession): void {
   sceneSession = session;
+}
+
+/** The files of collaboration state that the provider reports as unreadable. */
+export function setAnnotationsSceneUnreadableFiles(files: UnreadableCollaborationFile[]): void {
+  sceneUnreadableFiles = files;
 }
 
 /** Every request the page raised, in order. */

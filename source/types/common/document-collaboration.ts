@@ -37,3 +37,37 @@ export interface DocumentCollaborationSession {
   /** Absent when the document carries no active review. */
   review: ReviewDiffSession | undefined;
 }
+
+/**
+ * A file of collaboration state that this version of the application cannot
+ * read: a later version wrote it, or it is damaged. The file stays where it
+ * is until the author moves it aside.
+ */
+export interface UnreadableCollaborationFile {
+  /** The absolute path of the file in the application data. */
+  file: string;
+  /** Why the file could not be read. */
+  cause: string;
+  /** The document that the file belongs to, when the listing names it. */
+  documentPath: string | undefined;
+}
+
+/** The collaboration state of the documents of a workspace. */
+export interface WorkspaceCollaborationListing {
+  sessions: DocumentCollaborationSession[];
+  /** The files that could not be read. Their state is in no session. */
+  unreadable: UnreadableCollaborationFile[];
+}
+
+/**
+ * Broadcast on COLLABORATION_FILE_UNREADABLE_CHANNEL when a document opened
+ * without its annotations and its review, because their file could not be
+ * read. The window offers to move the file aside.
+ */
+export type CollaborationFileUnreadableBroadcast = {
+  filePath: string;
+  file: string;
+  cause: string;
+};
+
+export const COLLABORATION_FILE_UNREADABLE_CHANNEL = "collaboration-sidecar-unreadable";

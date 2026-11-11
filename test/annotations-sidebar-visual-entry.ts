@@ -60,6 +60,7 @@ import {
 import {
   recordedRequests,
   setAnnotationsSceneSession,
+  setAnnotationsSceneUnreadableFiles,
 } from "./annotations-sidebar-visual-ipc-stub";
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 
@@ -84,6 +85,11 @@ declare global {
     annotationsSceneSetOrphanScenario: (active: boolean) => Promise<void>;
     /** Swap the cached session for one whose review is frozen by disk drift. */
     annotationsSceneSetFrozenReview: (active: boolean) => Promise<void>;
+    /** Makes the provider report one file of collaboration state, of a
+     *  closed document of the workspace, that it cannot read. */
+    annotationsSceneSetUnreadableFile: (active: boolean) => Promise<void>;
+    /** Clicks "Move the file aside" and reports the request it raised. */
+    annotationsSceneClickSetAside: () => Promise<RaisedRequest | undefined>;
     /** Swap the cached session for the one scenes 04 and 06 need: the base
      *  three annotations plus a multi-turn thread and a partially decided
      *  proposal, review active. */
@@ -147,6 +153,10 @@ declare global {
       /** Outstanding-change rows in the workspace panel. */
       suggestionRowCount: number;
       documentAcceptAllCount: number;
+      /** The notices of files of collaboration state that cannot be read. */
+      unreadableFileNotices: Array<{ file: string; reason: string; action: string }>;
+      /** The text of each toast on the page. */
+      toasts: string[];
       globalAcceptAllPresent: boolean;
       /** Heading elements inside the panel: the header is a body-size row. */
       headingCount: number;
@@ -168,6 +178,10 @@ declare global {
       proposalCardText: string | null;
       /** Every thread message's relative time, in thread order. */
       messageTimes: string[];
+      /** Every thread message's rendered text, in thread order. */
+      messageTexts: string[];
+      /** The rendered instruction of each annotation row of the panel. */
+      annotationRowSummaries: string[];
       /** Chunk control blocks in the pane, and what they carry. */
       chunkControlCount: number;
       acceptCount: number;
@@ -193,6 +207,13 @@ const frozenSession = {
   review: { ...reviewedSession.review!, frozenText: reviewedSession.workingText },
 };
 const orphanSession = buildSceneSessionWithOrphan();
+/** A sidecar of the user data directory, as the provider names it. */
+const SCENE_UNREADABLE_FILE = `/home/author/.config/Zettlr-Pandoc/review-sidecars/${"82c4c2e2483dfc75".repeat(4)}.json`;
+const sceneUnreadableFile = {
+  file: SCENE_UNREADABLE_FILE,
+  cause: `Collaboration sidecar ${SCENE_UNREADABLE_FILE} is not a valid collaboration sidecar: /version must be equal to constant`,
+  documentPath: "/tmp/even-unimodular-lattices.md",
+};
 const m10CapturesSession = buildSceneSessionForM10Captures();
 setAnnotationsSceneSession(sceneSession);
 
@@ -613,6 +634,11 @@ async function mount(): Promise<void> {
   window.annotationsSceneSetM10CapturesScenario = async (active) => {
     await setSession(active ? m10CapturesSession : sceneSession);
   };
+  window.annotationsSceneSetUnreadableFile = async (active) => {
+    setAnnotationsSceneUnreadableFiles(active ? [sceneUnreadableFile] : []);
+    await collaborationStore.refreshWorkspaceSessions([SCENE_DOCUMENT_PATH]);
+    await settle();
+  };
 
   window.annotationsSceneClickChip = async (line) => {
     const marker = [
@@ -651,6 +677,11 @@ async function mount(): Promise<void> {
     await settle();
     return recordedRequests().slice(before)[0];
   }
+
+  window.annotationsSceneClickSetAside = async () =>
+    await requestRaisedBy(() => {
+      requireElement<HTMLButtonElement>(panelHost, ".annotation-unreadable-set-aside").click();
+    });
 
   const noteFieldAt = (index: number): HTMLInputElement => {
     const input = paneHost.querySelectorAll<HTMLInputElement>("input.suggestion-chunk-comment")[
@@ -787,6 +818,16 @@ async function mount(): Promise<void> {
       frozenActionLabels: [...panelHost.querySelectorAll(".annotation-frozen-actions button")].map(
         (element) => element.textContent?.trim() ?? "",
       ),
+      unreadableFileNotices: [
+        ...panelHost.querySelectorAll<HTMLElement>(".annotation-unreadable-file"),
+      ].map((element) => ({
+        file: element.dataset.unreadableFile ?? "",
+        reason: element.querySelector(".annotation-notice-reason")?.textContent?.trim() ?? "",
+        action: element.querySelector("button")?.textContent?.trim() ?? "",
+      })),
+      toasts: [...document.querySelectorAll<HTMLElement>(".zettlr-toast")].map(
+        (element) => element.textContent?.trim() ?? "",
+      ),
       globalAcceptAllPresent: panelHost.querySelector(".annotation-global-accept-all") !== null,
       headingCount: panelHost.querySelectorAll("h1, h2, h3").length,
       shortcutChip:
@@ -815,6 +856,14 @@ async function mount(): Promise<void> {
       messageTimes: [...paneHost.querySelectorAll(".annotation-message-time")].map(
         (element) => element.textContent?.trim() ?? "",
       ),
+      messageTexts: [...paneHost.querySelectorAll(".annotation-message-text")].map(
+        (element) => element.textContent?.trim() ?? "",
+      ),
+      annotationRowSummaries: [
+        ...panelHost.querySelectorAll(
+          ".annotation-workspace-annotation .annotation-workspace-summary",
+        ),
+      ].map((element) => element.textContent?.trim() ?? ""),
       chunkControlCount: paneHost.querySelectorAll(".suggestion-chunk").length,
       acceptCount: paneHost.querySelectorAll(".suggestion-chunk .suggestion-decision.accept")
         .length,
@@ -839,4 +888,9 @@ async function mount(): Promise<void> {
 }
 
 window.annotationsSceneWorkingText = SCENE_WORKING_TEXT;
+// The rows and the messages render their Markdown through md2html, which
+// asks the preload bridge for this callback. The scene has no citation
+// library, so no citation gets a rendering.
+window.getCitationCallback = () => () => undefined;
+
 window.captureReady = mount();

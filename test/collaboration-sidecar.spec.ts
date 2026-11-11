@@ -655,4 +655,90 @@ describe("CollaborationSidecarStore", function () {
     );
     assert.equal(readdirSync(sidecarDirectory).length, 1);
   });
+
+  describe("with a file that it cannot read", function () {
+    let otherPath: string;
+    let unreadableFile: string;
+    let unreadableBytes: string;
+    let readable: CollaborationSidecarData;
+
+    /** The names in the sidecar directory that no read asks for, with their bytes. */
+    function setAsideFiles(): string[] {
+      return readdirSync(sidecarDirectory)
+        .filter((name) => !name.endsWith(".json"))
+        .map((name) => readFileSync(path.join(sidecarDirectory, name), "utf8"));
+    }
+
+    beforeEach(async function () {
+      otherPath = path.join(directory, "other.md");
+      readable = sidecar(otherPath);
+      await store.write(readable);
+      // A later version of the application wrote the sidecar of document.md.
+      unreadableFile = collaborationSidecarFilePath(sidecarDirectory, documentPath);
+      unreadableBytes = JSON.stringify({ ...sidecar(documentPath), version: 6 });
+      writeFileSync(unreadableFile, unreadableBytes, "utf8");
+      // A store of a new session: it read no file yet.
+      store = new CollaborationSidecarStore(sidecarDirectory);
+    });
+
+    it("gives the readable sidecars and names the file in its inventory", async function () {
+      const inventory = await store.inventory();
+
+      assert.deepEqual(inventory.sidecars, [readable]);
+      assert.deepEqual(
+        inventory.unreadable.map((entry) => entry.file),
+        [unreadableFile],
+      );
+      await assert.rejects(store.list(), "the complete-set listing has no partial answer");
+    });
+
+    it("does not replace or remove the file", async function () {
+      await assert.rejects(store.write(sidecar(documentPath)));
+      await assert.rejects(store.delete(documentPath));
+      // A sidecar with nothing to restore is a removal too.
+      await assert.rejects(
+        store.write({
+          ...sidecar(documentPath),
+          review: null,
+          annotations: { generation: 1, items: [] },
+        }),
+      );
+
+      assert.equal(readFileSync(unreadableFile, "utf8"), unreadableBytes);
+    });
+
+    it("moves the file aside with its bytes, and then writes the document's sidecar", async function () {
+      const aside = await store.setAside(unreadableFile);
+
+      assert.equal(path.dirname(aside), sidecarDirectory);
+      assert.equal(readFileSync(aside, "utf8"), unreadableBytes);
+      assert.equal(await store.read(documentPath), undefined);
+      await store.write(sidecar(documentPath));
+      assert.deepEqual(await store.read(documentPath), sidecar(documentPath));
+      assert.deepEqual((await store.inventory()).unreadable, []);
+      assert.deepEqual(setAsideFiles(), [unreadableBytes]);
+    });
+
+    it("moves aside only a sidecar file of its own directory", async function () {
+      const outside = path.join(directory, "outside.json");
+      const note = path.join(sidecarDirectory, "note.txt");
+      writeFileSync(outside, "{}", "utf8");
+      writeFileSync(note, "kept", "utf8");
+
+      await assert.rejects(store.setAside(outside));
+      await assert.rejects(store.setAside(note));
+      await assert.rejects(store.setAside(path.join(sidecarDirectory, "..", "outside.json")));
+
+      assert.equal(readFileSync(outside, "utf8"), "{}");
+      assert.equal(readFileSync(note, "utf8"), "kept");
+    });
+
+    it("keeps the bytes of the file when a moved document takes its path", async function () {
+      await store.rename(otherPath, documentPath);
+
+      assert.deepEqual(await store.read(documentPath), { ...readable, documentPath });
+      assert.equal(await store.read(otherPath), undefined);
+      assert.deepEqual(setAsideFiles(), [unreadableBytes]);
+    });
+  });
 });

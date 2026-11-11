@@ -15,8 +15,50 @@
       v-on:close="emit('close')"
     ></AnnotationHeader>
 
+    <div
+      v-if="loadFailure !== undefined"
+      class="annotation-notice annotation-load-failure"
+    >
+      <p class="annotation-notice-reason">
+        {{ trans('The annotations of this workspace could not be loaded.') }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ loadFailure }}</p>
+    </div>
+
+    <!--
+      A file of collaboration state that the application cannot read hides
+      no other document. It is named here until the author moves it aside.
+    -->
+    <div
+      v-for="entry in collaborationStore.unreadableFiles"
+      v-bind:key="entry.file"
+      class="annotation-notice annotation-unreadable-file"
+      v-bind:data-unreadable-file="entry.file"
+    >
+      <p class="annotation-notice-reason">
+        {{
+          entry.documentPath === undefined
+            ? trans('A file of annotations and reviews cannot be read.')
+            : trans(
+              'The annotations and the review of %s cannot be read.',
+              pathBasename(entry.documentPath),
+            )
+        }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ entry.cause }}</p>
+      <div class="annotation-frozen-actions">
+        <button
+          type="button"
+          class="annotation-button annotation-unreadable-set-aside"
+          v-bind:title="trans('Rename the file, so that the document can take new annotations. The file is kept.')"
+          v-bind:disabled="settingAside.has(entry.file)"
+          v-on:click="setAside(entry.file)"
+        >{{ trans('Move the file aside') }}</button>
+      </div>
+    </div>
+
     <p
-      v-if="groups.length === 0"
+      v-if="groups.length === 0 && loadFailure === undefined && collaborationStore.unreadableFiles.length === 0"
       class="annotation-workspace-empty annotation-muted"
     >
       {{ trans('No pending annotations or proposed changes in this workspace.') }}
@@ -261,6 +303,10 @@ const acceptingDocuments = reactive(new Set<string>());
 const recoveringDocuments = reactive(new Set<string>());
 const globalBulkBusy = ref(false);
 const bulkDocuments = reactive(new Set<string>());
+/** The unreadable files that a set-aside request is running for. */
+const settingAside = reactive(new Set<string>());
+/** Why the last read of the workspace state failed. */
+const loadFailure = ref<string | undefined>(undefined);
 /** The document whose resolved annotations the confirmation dialog is open for. */
 const clearTarget = ref<string | null>(null);
 const clearDialogOpen = computed({
@@ -279,11 +325,15 @@ function bulkBusy(documentPath: string): boolean {
 watch(
   () => props.workspacePaths,
   (paths) => {
-    collaborationStore
-      .refreshWorkspaceSessions(paths)
-      .catch((err) =>
-        reportError("[AnnotationsTab] Could not load workspace collaboration state", err),
-      );
+    collaborationStore.refreshWorkspaceSessions(paths).then(
+      () => {
+        loadFailure.value = undefined;
+      },
+      (err: Error) => {
+        reportError("[AnnotationsTab] Could not load workspace collaboration state", err);
+        loadFailure.value = err.message;
+      },
+    );
   },
   { immediate: true },
 );
@@ -365,6 +415,22 @@ function navigateAnnotation(documentPath: string, card: AnnotationCardView): voi
     range: annotationRange(card),
     annotationId: card.annotation.annotationId,
   });
+}
+
+/** Moves one unreadable file aside and says where it is. */
+async function setAside(file: string): Promise<void> {
+  if (settingAside.has(file)) {
+    return;
+  }
+  settingAside.add(file);
+  await collaborationStore
+    .setAsideUnreadableFile(file)
+    .then(
+      (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
+      (err: Error) =>
+        showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),
+    )
+    .finally(() => settingAside.delete(file));
 }
 
 /** Shows which documents an Accept all could not accept, and why. */
@@ -579,7 +645,8 @@ body {
     flex: 0 0 auto;
   }
 
-  .annotation-frozen-review {
+  .annotation-frozen-review,
+  .annotation-notice {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -589,9 +656,15 @@ body {
     background: var(--annotation-surface-muted);
   }
 
-  .annotation-frozen-reason {
+  .annotation-frozen-reason,
+  .annotation-notice-reason,
+  .annotation-notice-cause {
     margin: 0;
     font-size: var(--annotation-small-font-size);
+  }
+
+  .annotation-notice-cause {
+    overflow-wrap: anywhere;
   }
 
   .annotation-frozen-actions {

@@ -37,7 +37,10 @@
 // before the store below reads window.ipc at its own module top level.
 import "./document-collaboration-ipc-double";
 import type { TextAnnotation } from "@dts/common/annotation-domain";
-import type { DocumentCollaborationSession } from "@dts/common/document-collaboration";
+import type {
+  DocumentCollaborationSession,
+  WorkspaceCollaborationListing,
+} from "@dts/common/document-collaboration";
 import { DP_EVENTS } from "@dts/common/documents";
 import { strict as assert } from "assert";
 import { createPinia, setActivePinia } from "pinia";
@@ -240,7 +243,7 @@ describe("useDocumentCollaborationStore", function () {
     // The main process sends a copy of the session for each request.
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return message.command === "get-workspace-collaboration-sessions"
-        ? [structuredClone(provided)]
+        ? { sessions: [structuredClone(provided)], unreadable: [] }
         : structuredClone(provided);
     });
 
@@ -287,7 +290,7 @@ describe("useDocumentCollaborationStore", function () {
     const { authority, service } = harness();
     const created = await annotate(service);
     const beforeReply = sessionFor(authority, service);
-    const workspaceRead = Promise.withResolvers<DocumentCollaborationSession[]>();
+    const workspaceRead = Promise.withResolvers<WorkspaceCollaborationListing>();
 
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return message.command === "get-workspace-collaboration-sessions"
@@ -313,7 +316,7 @@ describe("useDocumentCollaborationStore", function () {
       context: { filePath: DOCUMENT_PATH, collaborationSession: afterReply },
     });
 
-    workspaceRead.resolve([structuredClone(beforeReply)]);
+    workspaceRead.resolve({ sessions: [structuredClone(beforeReply)], unreadable: [] });
     await refresh;
 
     assert.deepEqual(store.getSession(DOCUMENT_PATH), afterReply);
@@ -356,7 +359,7 @@ describe("useDocumentCollaborationStore", function () {
 
   it("removes no session of a broadcast when an earlier workspace read found none", async function () {
     const { authority, service } = harness();
-    const workspaceRead = Promise.withResolvers<DocumentCollaborationSession[]>();
+    const workspaceRead = Promise.withResolvers<WorkspaceCollaborationListing>();
 
     documentCollaborationIpcDouble.setInvokeResponder(async () => await workspaceRead.promise);
 
@@ -370,7 +373,7 @@ describe("useDocumentCollaborationStore", function () {
       context: { filePath: DOCUMENT_PATH, collaborationSession: annotated },
     });
 
-    workspaceRead.resolve([]);
+    workspaceRead.resolve({ sessions: [], unreadable: [] });
     await refresh;
 
     assert.deepEqual(store.getSession(DOCUMENT_PATH), annotated);

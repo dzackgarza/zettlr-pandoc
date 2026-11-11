@@ -763,7 +763,9 @@ describe("useDocumentCollaborationStore review surface", function () {
       },
     };
     documentCollaborationIpcDouble.setInvokeResponder(async (message) =>
-      message.command === "get-workspace-collaboration-sessions" ? [session, second] : undefined,
+      message.command === "get-workspace-collaboration-sessions"
+        ? { sessions: [session, second], unreadable: [] }
+        : undefined,
     );
     const store = useDocumentCollaborationStore();
 
@@ -790,7 +792,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       seen.push({ command: message.command, payload: message.payload });
       if (message.command === "get-workspace-collaboration-sessions") {
-        return acceptanceAttempts === 0 ? [session] : [freshSession];
+        return { sessions: [acceptanceAttempts === 0 ? session : freshSession], unreadable: [] };
       }
       if (message.command === "get-collaboration-session") {
         return freshSession;
@@ -850,7 +852,7 @@ describe("useDocumentCollaborationStore review surface", function () {
       }
       if (message.command === "get-workspace-collaboration-sessions") {
         workspaceReads += 1;
-        return workspaceReads === 1 ? [session] : [freshSession];
+        return { sessions: [workspaceReads === 1 ? session : freshSession], unreadable: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         acceptanceAttempts += 1;
@@ -896,7 +898,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const accepted: string[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return [session, second];
+        return { sessions: [session, second], unreadable: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         accepted.push((message.payload as { path: string }).path);
@@ -935,7 +937,7 @@ describe("useDocumentCollaborationStore review surface", function () {
     const logged: unknown[] = [];
     documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       if (message.command === "get-workspace-collaboration-sessions") {
-        return [session, second];
+        return { sessions: [session, second], unreadable: [] };
       }
       if (message.command === "documents:accept-all-workspace-review-chunks") {
         return (message.payload as { path: string }).path === secondPath
