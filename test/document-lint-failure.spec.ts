@@ -15,17 +15,23 @@
  *                  run. A retry also ends the refusal that a failed write of
  *                  the results leaves, and writes the results again.
  *
+ *                  A second group runs the provider over the REAL FSAL: a
+ *                  workspace document whose file cannot be read is named
+ *                  with the cause, and the other documents have their lint.
+ *
  * END HEADER
  */
 
 // The harness must load before provider modules, which import Electron.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
+import type FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
+import { bootFsal } from "./fsal-seam";
 
 const TEXT = "Residue ???\n";
 /** No Flowmark process ends in this time. */
@@ -36,6 +42,24 @@ const SECOND_RUN_MS = 3_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** The macro sources and the TikZ template that a Flowmark run reads. */
+async function writeAuthoringHome(home: string): Promise<void> {
+  await mkdir(path.join(home, ".pandoc", "styles", "macros"), { recursive: true });
+  await mkdir(path.join(home, ".pandoc", "templates", "css"), { recursive: true });
+  await writeFile(
+    path.join(home, ".pandoc", "styles", "macros", "base.tex"),
+    "\\newcommand{\\ZZ}{\\mathbb{Z}}\n",
+  );
+  await writeFile(
+    path.join(home, ".pandoc", "templates", "css", "mathjax-macros.json"),
+    JSON.stringify({ ZZ: "\\mathbb{Z}" }),
+  );
+  await writeFile(
+    path.join(home, ".pandoc", "templates", "standalone-tikz.tex"),
+    "\\documentclass{standalone}\n\\begin{document}\n$body$\n\\end{document}\n",
+  );
 }
 
 describe("a document that Flowmark cannot lint", function () {
@@ -62,22 +86,9 @@ describe("a document that Flowmark cannot lint", function () {
     const home = path.join(root, "home");
     userDataDirectory = path.join(root, "user-data");
     documentPath = path.join(root, "workspace", "note.md");
-    await mkdir(path.join(home, ".pandoc", "styles", "macros"), { recursive: true });
-    await mkdir(path.join(home, ".pandoc", "templates", "css"), { recursive: true });
+    await writeAuthoringHome(home);
     await mkdir(userDataDirectory);
     await mkdir(path.dirname(documentPath));
-    await writeFile(
-      path.join(home, ".pandoc", "styles", "macros", "base.tex"),
-      "\\newcommand{\\ZZ}{\\mathbb{Z}}\n",
-    );
-    await writeFile(
-      path.join(home, ".pandoc", "templates", "css", "mathjax-macros.json"),
-      JSON.stringify({ ZZ: "\\mathbb{Z}" }),
-    );
-    await writeFile(
-      path.join(home, ".pandoc", "templates", "standalone-tikz.tex"),
-      "\\documentclass{standalone}\n\\begin{document}\n$body$\n\\end{document}\n",
-    );
     await writeFile(documentPath, TEXT);
     timeoutMs = NO_RUN_ENDS_MS;
     drains = 0;
@@ -199,6 +210,87 @@ describe("a document that Flowmark cannot lint", function () {
     while (!(await written())) {
       assert.ok(Date.now() < writeDeadline, "the retry did not write the results");
       await delay(100);
+    }
+  });
+});
+
+describe("a workspace document whose file cannot be read", function () {
+  this.timeout(120_000);
+
+  const OTHER = "# Genera\n\nTwo forms of one genus.\n";
+  let root: string;
+  let notePath: string;
+  let otherPath: string;
+  let fsal: FSAL;
+  let provider: DocumentLintProvider;
+  let drains = 0;
+
+  before(async function () {
+    root = await mkdtemp(path.join(os.tmpdir(), "zettlr-document-lint-unreadable-"));
+    const home = path.join(root, "home");
+    const workspace = path.join(root, "workspace");
+    const userDataDirectory = path.join(root, "user-data");
+    notePath = path.join(workspace, "note.md");
+    otherPath = path.join(workspace, "other.md");
+    await writeAuthoringHome(home);
+    await mkdir(userDataDirectory);
+    await mkdir(workspace);
+    await writeFile(notePath, "# Lattices\n\nAn even unimodular lattice.\n");
+    await writeFile(otherPath, OTHER);
+    await chmod(otherPath, 0o000);
+    fsal = await bootFsal(workspace);
+    provider = new DocumentLintProvider({
+      log: new LogProvider(),
+      config: {
+        get: () => ({
+          export: { cslLibrary: "" },
+          tikz: {
+            dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
+            figuresDir: "",
+          },
+          editor: { lint: { flowmark: { timeoutMs: USUAL_LIMIT_MS } } },
+        }),
+      },
+      buffers: { readMarkdownBufferContent: () => undefined, lastEditorInputAt: () => 0 },
+      fsal,
+      homeDirectory: home,
+      env: {},
+      userDataDirectory,
+      onDrain: () => {
+        drains += 1;
+      },
+    });
+    await provider.boot();
+  });
+
+  after(async function () {
+    await provider.shutdown();
+    await fsal.shutdown();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("is named with the cause, and the other document has its lint", async function () {
+    const problems = await provider.workspaceProblems({ scope: "all" });
+    assert.equal(problems.documentCount, 2, "the document is a document of the workspace");
+    assert.deepEqual(
+      problems.failed.map((document) => document.path),
+      [otherPath],
+      "the reader gets the document that was not linted",
+    );
+    assert.deepEqual(problems.pendingPaths, [notePath], "the other document is in the queue");
+  });
+
+  it("is linted when the file can be read again", async function () {
+    await chmod(otherPath, 0o600);
+    const problems = await provider.workspaceProblems({ scope: "all" });
+    assert.deepEqual(problems.failed, [], "the cause went away with the read");
+
+    const deadline = Date.now() + 90_000;
+    const linted = async (): Promise<boolean> =>
+      (await provider.lookup([{ path: otherPath, text: OTHER }]))[0].current;
+    while (!(await linted())) {
+      assert.ok(Date.now() < deadline, `the document was not linted after ${drains} drains`);
+      await delay(250);
     }
   });
 });

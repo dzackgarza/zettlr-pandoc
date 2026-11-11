@@ -169,6 +169,15 @@ export interface YamlMapping {
 }
 
 /**
+ * Why the last read of the text of a file failed: the code and the message of
+ * the filesystem error.
+ */
+export interface FileReadError {
+  code: string;
+  message: string;
+}
+
+/**
  * The FSAL Markdown file descriptor
  */
 export interface MDFileDescriptor extends FSMetaInfo {
@@ -198,6 +207,11 @@ export interface MDFileDescriptor extends FSMetaInfo {
    * that produces tags, links, and citekeys (issue #1).
    */
   references: DocumentReferenceSnapshot;
+  /**
+   * Present when the file is there and its text could not be read. The other
+   * fields then describe a file without text.
+   */
+  readError?: FileReadError;
 }
 
 /**
@@ -208,6 +222,8 @@ export interface CodeFileDescriptor extends FSMetaInfo {
   type: "code";
   bom: string; // An optional BOM
   linefeed: string;
+  /** Present when the file is there and its text could not be read. */
+  readError?: FileReadError;
 }
 
 /**

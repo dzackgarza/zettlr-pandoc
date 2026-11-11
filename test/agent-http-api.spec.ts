@@ -34,6 +34,7 @@ import { spawn } from "child_process";
 import { randomUUID } from "crypto";
 import { createPatch } from "diff";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -2657,6 +2658,29 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       answered.body,
     );
     assert.equal(payload.queueStopped, undefined, "the queue runs");
+  });
+
+  it("names a workspace document whose file cannot be read, and answers for the other documents", async function () {
+    const readablePath = path.join(scratch, "lint-readable.md");
+    const unreadablePath = path.join(scratch, "lint-unreadable.md");
+    writeFileSync(readablePath, "# Lattices\n", "utf8");
+    writeFileSync(unreadablePath, "# Genera\n", "utf8");
+    chmodSync(unreadablePath, 0o000);
+    const route = `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`;
+
+    const answered = await httpRequest("GET", route);
+    assert.equal(answered.status, 200, answered.body);
+    const payload = parseAs(answered.body, "LintResponse");
+    assert.deepEqual(
+      payload.failed.map((item) => ({ path: item.path, name: item.name, kind: item.kind })),
+      [{ path: unreadablePath, name: "lint-unreadable.md", kind: "unreadable" }],
+      answered.body,
+    );
+    assert.deepEqual(
+      [...payload.documents, ...payload.pending].map((item) => item.path),
+      [readablePath],
+      "the document that can be read is linted or awaited",
+    );
   });
 
   it("validates lint scope parameters instead of silently broadening the requested scope", async function () {
