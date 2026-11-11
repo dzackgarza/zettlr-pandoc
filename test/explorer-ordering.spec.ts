@@ -37,6 +37,7 @@ function directory(
     modtime: 0,
     creationtime: 0,
     isGitRepository: false,
+    metadataProblems: [],
     settings: {
       sorting,
       explorer: {

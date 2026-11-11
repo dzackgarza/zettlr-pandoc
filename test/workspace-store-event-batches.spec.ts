@@ -61,6 +61,7 @@ const ROOT_DESCRIPTOR: DirDescriptor = {
   modtime: 0,
   creationtime: 0,
   isGitRepository: false,
+  metadataProblems: [],
   settings: {
     sorting: "name-up",
     explorer: {

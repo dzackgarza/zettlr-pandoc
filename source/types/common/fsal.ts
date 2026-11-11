@@ -141,6 +141,24 @@ export interface DirectorySettings {
 }
 
 /**
+ * A part of the metadata of a directory that the application could not use.
+ * The directory is listed without that part: with the default settings for
+ * `settings`, without a Project for `manifest`, without children for
+ * `directory`.
+ */
+export interface DirectoryMetadataProblem {
+  /**
+   * What could not be used: the settings file `.ztr-directory`, the Quarto
+   * manifest, or the content of the directory itself.
+   */
+  source: "settings" | "manifest" | "directory";
+  /** The file or the directory that the problem is in. */
+  path: string;
+  /** The cause. */
+  message: string;
+}
+
+/**
  * The FSAL directory descriptor
  */
 export interface DirDescriptor extends FSMetaInfo {
@@ -149,6 +167,8 @@ export interface DirDescriptor extends FSMetaInfo {
   settings: DirectorySettings;
   type: "directory";
   isGitRepository: boolean;
+  /** Each part of the metadata that the last load could not use. */
+  metadataProblems: DirectoryMetadataProblem[];
   dirNotFoundFlag?: boolean; // If the flag is set & true this directory has not been found
 }
 

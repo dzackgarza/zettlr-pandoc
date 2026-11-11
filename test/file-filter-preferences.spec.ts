@@ -103,6 +103,7 @@ const directory = {
     quartoManifest: null,
   },
   isGitRepository: false,
+  metadataProblems: [],
 } satisfies DirDescriptor;
 
 /** Whether the one filter lists a descriptor below the workspace root "/notes". */

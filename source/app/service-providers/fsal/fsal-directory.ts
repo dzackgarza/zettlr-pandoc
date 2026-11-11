@@ -17,6 +17,7 @@ import isFile from "@common/util/is-file";
 import safeAssign from "@common/util/safe-assign";
 import type {
   DirDescriptor,
+  DirectoryMetadataProblem,
   DirectorySettings,
   ProjectNavigationItem,
   ProjectSettings,
@@ -62,6 +63,19 @@ const PROJECT_TEMPLATE: ProjectSettings = {
     html: "", // An optional HTML template
   },
 };
+
+/**
+ * A change of the settings of a directory whose settings file could not be
+ * read. The file holds what the author set, so no write replaces it.
+ */
+export class DirectorySettingsUnreadableError extends Error {
+  constructor(directory: DirDescriptor, problem: DirectoryMetadataProblem) {
+    super(
+      `The settings of ${directory.path} were not changed: the settings file ${problem.path} could not be read (${problem.message}).`,
+    );
+    this.name = "DirectorySettingsUnreadableError";
+  }
+}
 
 /**
  * The manifest this directory is described by: the one it is bound to, or the
@@ -274,6 +288,7 @@ export async function parse(currentPath: string): Promise<DirDescriptor> {
     size: 0,
     type: "directory",
     isGitRepository: false,
+    metadataProblems: [],
     modtime: 0, // You know when something has gone wrong: 01.01.1970
     creationtime: 0,
     settings: JSON.parse(JSON.stringify(SETTINGS_TEMPLATE)),
@@ -322,6 +337,7 @@ export function getDirNotFoundDescriptor(dirPath: string): DirDescriptor {
     size: 0,
     type: "directory",
     isGitRepository: false,
+    metadataProblems: [],
     modtime: 0, // ¯\_(ツ)_/¯
     creationtime: 0,
     // Settings are expected by some functions
