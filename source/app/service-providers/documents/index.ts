@@ -48,6 +48,7 @@ import {
   SAVE_REFUSED_CHANNEL,
   type SaveFileResult,
   type SaveRefusal,
+  type SaveRefusalReason,
   type SaveRefusedBroadcast,
   type SerializedUpdate,
 } from "@dts/common/documents";
@@ -220,6 +221,18 @@ export type DocumentsUpdateContext = {
     diagnostic: string;
   };
 };
+
+/** A close that the provider refused, and what the author's answer to it does. */
+interface RefusedClose {
+  /** Repeats the close that was refused. */
+  repeat: () => Promise<void>;
+  /**
+   * The author answered the prompt of that close with "discard", and the
+   * discard failed: the buffer still holds the text that the author threw
+   * away.
+   */
+  textDiscarded: boolean;
+}
 
 /**
  * Holds all information associated with a document that is currently loaded
@@ -712,12 +725,12 @@ export default class DocumentManager
   private readonly _documentPathById: Map<string, string>;
 
   /**
-   * The closes that the provider refused because the collaboration state
-   * of a document could not be written, by document id. The value repeats
-   * the close. closeWithoutReview runs it when the author decides to close
-   * without that state.
+   * The closes that the provider refused, by the id of the document that
+   * stopped each one: its collaboration state could not be written, or the
+   * discard of its unsaved text failed. closeWithoutReview acts on the
+   * entry when the author decides to close without that state.
    */
-  private readonly _refusedCloses: Map<string, () => Promise<void>>;
+  private readonly _refusedCloses: Map<string, RefusedClose>;
 
   /** The load of each document that is loading now (getDocument). */
   private readonly _pendingLoads = new Map<
@@ -1284,8 +1297,12 @@ export default class DocumentManager
           this._announceSaveRefusal(document.filePath, saved);
           return false;
         }
-      } else {
-        await this._discardChanges(document);
+      } else if (
+        !(await this._discardForClose(document, async () => {
+          app.quit();
+        }))
+      ) {
+        return false;
       }
     }
     return true;
@@ -1326,7 +1343,9 @@ export default class DocumentManager
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
       for (const document of this._windowExclusiveDocuments(windowId)) {
-        await this._discardChanges(document);
+        if (!(await this._discardForClose(document, closeAgain))) {
+          return false;
+        }
       }
 
       // If we're not shutting down, this function will only be called for when
@@ -2149,7 +2168,9 @@ current contents from the editor somewhere else, and restart the application.`,
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        await this._discardChanges(openFile);
+        if (!(await this._discardForClose(openFile, repeatClose))) {
+          return false;
+        }
         // A saved review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
@@ -3685,8 +3706,42 @@ current contents from the editor somewhere else, and restart the application.`,
         return true;
       },
       (err: unknown) => {
-        this._refusedCloses.set(documentId, repeatClose);
-        this._announceDetachFailure(filePath, documentId, err);
+        this._refusedCloses.set(documentId, { repeat: repeatClose, textDiscarded: false });
+        this._announceRefusedClose(
+          filePath,
+          documentId,
+          "review-not-persisted",
+          "The review could not be saved, so this document was left open",
+          err,
+        );
+        return false;
+      },
+    );
+  }
+
+  /**
+   * The answer "discard" at a close prompt, for one document. Resolves
+   * false when the discard failed: the collaboration state could not be
+   * written, or the file could not be read. The close does not happen, the
+   * document keeps its text and its state, and every window names the
+   * cause with the action of _detachForClose. That action closes the
+   * document with the text that the author discarded (#178).
+   */
+  private async _discardForClose(
+    document: Document,
+    repeatClose: () => Promise<void>,
+  ): Promise<boolean> {
+    return await this._discardChanges(document).then(
+      () => true,
+      (err: unknown) => {
+        this._refusedCloses.set(document.documentId, { repeat: repeatClose, textDiscarded: true });
+        this._announceRefusedClose(
+          document.filePath,
+          document.documentId,
+          "discard-failed",
+          "The unsaved changes could not be discarded, so this document was left open",
+          err,
+        );
         return false;
       },
     );
@@ -3712,10 +3767,14 @@ current contents from the editor somewhere else, and restart the application.`,
    * A document that no pane shows is unloaded: its buffer is the working
    * text of the review that goes. A document in a pane keeps its buffer,
    * and the repeated close asks about unsaved text as each close does.
+   *
+   * A document whose unsaved text the author discarded leaves every pane
+   * and is unloaded: its buffer is the text that the author threw away,
+   * and the discard that puts the text of the file back is what failed.
    */
   public async closeWithoutReview(documentId: string): Promise<boolean> {
-    const repeatClose = this._refusedCloses.get(documentId);
-    if (repeatClose === undefined) {
+    const refused = this._refusedCloses.get(documentId);
+    if (refused === undefined) {
       return false;
     }
     this._refusedCloses.delete(documentId);
@@ -3724,6 +3783,9 @@ current contents from the editor somewhere else, and restart the application.`,
     });
     const document = this.documents.find((doc) => doc.documentId === documentId);
     if (document !== undefined) {
+      if (refused.textDiscarded) {
+        await this._closeTabsEverywhere(document.filePath);
+      }
       if (this._pathsShownInPanes().has(document.filePath)) {
         this.broadcastCollaborationState(documentId);
       } else {
@@ -3731,7 +3793,7 @@ current contents from the editor somewhere else, and restart the application.`,
         this.syncWatchedFilePaths();
       }
     }
-    await repeatClose();
+    await refused.repeat();
     return true;
   }
 
@@ -3745,18 +3807,22 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * A close aborted because the review could not be written through. The
-   * window shows this as it shows a refused save, with the document that
-   * the author can close without that state (closeWithoutReview).
+   * A close that the provider refused. The window shows this as it shows a
+   * refused save, with the document that the author can close without the
+   * state that stopped the close (closeWithoutReview).
    */
-  private _announceDetachFailure(filePath: string, documentId: string, err: unknown): void {
-    const message =
-      "The review could not be saved, so this document was left open: " +
-      (err instanceof Error ? err.message : String(err));
+  private _announceRefusedClose(
+    filePath: string,
+    documentId: string,
+    reason: SaveRefusalReason,
+    what: string,
+    err: unknown,
+  ): void {
+    const message = `${what}: ${err instanceof Error ? err.message : String(err)}`;
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
     const payload: SaveRefusedBroadcast = {
       filePath,
-      refusal: { reason: "review-not-persisted", message },
+      refusal: { reason, message },
       closeRefusedFor: documentId,
     };
     broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
@@ -3789,7 +3855,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * The sidecar deletion is deliberately NOT wrapped in the error handling
    * _detachCollaboration uses: a discard whose file removal failed leaves those
    * bytes reattachable, and swallowing that would reinstate the defect. It
-   * throws, and the close it was called from aborts.
+   * throws, and the close it was called from is refused (_discardForClose).
    */
   private async _discardChanges(doc: Document): Promise<void> {
     await this._reviewApplication.withDocumentLock(doc.documentId, async () => {

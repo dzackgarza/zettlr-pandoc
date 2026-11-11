@@ -1057,10 +1057,10 @@ onMounted(() => {
       showToast(message, "error", 12000);
       return;
     }
-    // The refusal stopped a close. The author can close without the review
-    // state that could not be written; no close is refused without that.
+    // The refusal stopped a close. The author can close without the state
+    // that stopped it; no close is refused without that.
     showToast(message, "error", 12000, {
-      label: trans("Close without saving the review"),
+      label: trans("Close anyway"),
       onAction: () => {
         ipcRenderer
           .invoke("documents-provider", {

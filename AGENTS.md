@@ -607,10 +607,15 @@ of an isolated instance are in the first comment of #132.
   close and a quit detach the collaboration state through `_detachForClose`.
   When the sidecar cannot be written, it records how to repeat that close
   and broadcasts `save-refused` with `closeRefusedFor`. The window shows the
-  cause with the action "Close without saving the review" (`App.vue`), which
+  cause with the action "Close anyway" (`App.vue`), which
   sends `close-without-review`. `closeWithoutReview` drops the state in
   memory, leaves the sidecar as it was last written, and repeats the close.
   A new path that closes a document detaches through `_detachForClose`.
+- **The answer "discard" at a close prompt goes through `_discardForClose`.**
+  A discard that fails (the sidecar cannot be written, the file cannot be
+  read) is a refused close with the same action. `closeWithoutReview` then
+  closes the tabs of the document and unloads it: its buffer is the text
+  that the author threw away.
 - **`closeWindow` answers whether the window may close.** The window
   provider closes the `BrowserWindow` only for `true`, and gives the
   documents provider the function that repeats the close.

@@ -128,7 +128,10 @@ export type SaveRefusalReason =
   | "write-failed"
   // The review could not be written through, so the close was aborted and
   // the document is still open with its review intact.
-  | "review-not-persisted";
+  | "review-not-persisted"
+  // The author answered a close prompt with "discard" and the discard
+  // failed. The close was aborted and the document keeps its text.
+  | "discard-failed";
 
 export interface SaveRefusal {
   reason: SaveRefusalReason;
@@ -153,8 +156,9 @@ export type SaveRefusedBroadcast = {
   refusal?: SaveRefusal;
   /**
    * Set when the refusal stopped a close: the id of the document whose
-   * collaboration state could not be written. The window offers the
-   * `close-without-review` command for it.
+   * collaboration state could not be written or whose unsaved text could
+   * not be discarded. The window offers the `close-without-review` command
+   * for it.
    */
   closeRefusedFor?: string;
 };

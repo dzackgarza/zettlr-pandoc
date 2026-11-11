@@ -17,7 +17,7 @@
  *              typing, and the detach a close performs.
  *
  *              A refused close or quit is not a dead end: the refusal offers
- *              the action "Close without saving the review", which closes the
+ *              the action "Close anyway", which closes the
  *              document or ends the quit and leaves the sidecar as it was last
  *              written (#178).
  *
@@ -73,7 +73,7 @@ const BASELINE = [
 /** A second document of the workspace. No pane shows it; a proposal loads it. */
 const PARKED = "# Genus\n\nTwo lattices in one genus are isometric over each localization.\n";
 const PARKED_REVISED = PARKED.replace("localization", "completion");
-const CLOSE_ACTION = "Close without saving the review";
+const CLOSE_ACTION = "Close anyway";
 
 /**
  * The real injection: the sidecar directory keeps its contents readable and
