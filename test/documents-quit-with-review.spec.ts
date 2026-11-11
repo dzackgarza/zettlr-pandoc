@@ -29,6 +29,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import type { ReviewStatus } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
 import { bootDocumentManager } from "./documents-provider-seam";
 import {
@@ -57,7 +58,6 @@ interface QuitEvent {
 }
 
 interface OpenReview {
-  documentId: string;
   reviewId: string;
   generation: number;
 }
@@ -101,6 +101,17 @@ describe("Documents-provider quit with an open review", function () {
     windowId = provider.windowKeys()[0];
   }
 
+  /**
+   * Loads the reviewed document as an editor does and gives the status of
+   * its review. A document has a new id in each session.
+   */
+  async function loadedReviewStatus(): Promise<ReviewStatus | undefined> {
+    await provider.getDocument(reviewedPath);
+    const documentId = provider.getDocumentId(reviewedPath);
+    assert.ok(documentId !== undefined, "a loaded document has an id");
+    return provider.reviewStatus(documentId);
+  }
+
   async function show(filePath: string): Promise<void> {
     await provider.getDocument(filePath);
     assert.equal(await provider.openFile(windowId, leafId, filePath), true);
@@ -125,7 +136,7 @@ describe("Documents-provider quit with an open review", function () {
       assert.fail(`The review proposal was refused: ${submitted.code}`);
     }
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
-    return { documentId, reviewId: submitted.reviewId, generation: submitted.reviewGeneration };
+    return { reviewId: submitted.reviewId, generation: submitted.reviewGeneration };
   }
 
   async function editDraft(): Promise<void> {
@@ -163,7 +174,7 @@ describe("Documents-provider quit with an open review", function () {
   describe("a document in a pane with a proposal that the author did not decide on", function () {
     it("keeps the proposal out of the file when the author saves the other changes", async function () {
       await show(reviewedPath);
-      const { documentId } = await propose();
+      await propose();
       await editDraft();
 
       messageBoxes.answer = SAVE;
@@ -190,9 +201,8 @@ describe("Documents-provider quit with an open review", function () {
       );
 
       await restart();
-      await provider.getDocument(reviewedPath);
       assert.equal(
-        provider.reviewStatus(documentId)?.unresolvedChunks,
+        (await loadedReviewStatus())?.unresolvedChunks,
         1,
         "the review is there at the next start",
       );
@@ -205,7 +215,7 @@ describe("Documents-provider quit with an open review", function () {
 
     it("quits with no prompt when the proposal is the only unsaved text", async function () {
       await show(reviewedPath);
-      const { documentId } = await propose();
+      await propose();
 
       await requestQuit();
 
@@ -213,14 +223,13 @@ describe("Documents-provider quit with an open review", function () {
       assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_SOURCE);
 
       await restart();
-      await provider.getDocument(reviewedPath);
-      assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+      assert.equal((await loadedReviewStatus())?.unresolvedChunks, 1);
       assert.equal(provider.readMarkdownBufferContent(reviewedPath), REVIEWED_TARGET);
     });
 
     it("keeps an edit of the author in the reviewed document for the next start", async function () {
       await show(reviewedPath);
-      const { documentId } = await propose();
+      await propose();
       await provider.applyWorkspaceTextEdits([
         { documentPath: reviewedPath, range: { from: 0, to: 0 }, insert: AUTHOR_PREFIX },
       ]);
@@ -231,8 +240,7 @@ describe("Documents-provider quit with an open review", function () {
       assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_SOURCE);
 
       await restart();
-      await provider.getDocument(reviewedPath);
-      assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+      assert.equal((await loadedReviewStatus())?.unresolvedChunks, 1);
       assert.equal(
         provider.readMarkdownBufferContent(reviewedPath),
         `${AUTHOR_PREFIX}${REVIEWED_TARGET}`,
@@ -242,7 +250,7 @@ describe("Documents-provider quit with an open review", function () {
 
     it("keeps the review when the author discards the other changes", async function () {
       await show(reviewedPath);
-      const { documentId } = await propose();
+      await propose();
       await editDraft();
 
       messageBoxes.answer = DISCARD;
@@ -253,9 +261,8 @@ describe("Documents-provider quit with an open review", function () {
       assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_SOURCE);
 
       await restart();
-      await provider.getDocument(reviewedPath);
       assert.equal(
-        provider.reviewStatus(documentId)?.unresolvedChunks,
+        (await loadedReviewStatus())?.unresolvedChunks,
         1,
         "the discard of other changes leaves the review",
       );
@@ -290,7 +297,7 @@ describe("Documents-provider quit with an open review", function () {
     });
 
     it("is unsaved text of a closed document at its next load", async function () {
-      const { documentId, reviewId, generation } = await propose();
+      const { reviewId, generation } = await propose();
       // The quit puts the review of a document that no pane shows in its sidecar.
       await requestQuit();
       await restart();
@@ -312,14 +319,17 @@ describe("Documents-provider quit with an open review", function () {
         "the author accepts the proposal of the closed document, and no file is written",
       );
 
-      await provider.getDocument(reviewedPath);
+      assert.equal(
+        (await loadedReviewStatus())?.state,
+        "resolved-awaiting-save",
+        "the review of the loaded document waits for a save",
+      );
       assert.equal(
         provider.readMarkdownBufferContent(reviewedPath),
         REVIEWED_TARGET,
         "the document loads with the accepted text",
       );
       assert.equal(provider.isModified(reviewedPath), true, "the accepted text is unsaved");
-      assert.equal(provider.reviewStatus(documentId)?.state, "resolved-awaiting-save");
 
       const saved = await provider.saveFile(reviewedPath);
       assert.equal(saved.ok, true, "a save writes the accepted text");
