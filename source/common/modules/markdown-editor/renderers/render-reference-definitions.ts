@@ -50,20 +50,31 @@
  *                  applied in the measure cycle; badge groups whose
  *                  definition line has no layout yet stay unpositioned.
  *
- *                  PLACE: a renderer that draws the line of a definition
- *                  itself (the header of a fenced div) puts a
- *                  referenceBadgeAnchor in its DOM. The layer gives that
- *                  anchor the size of the badge group and puts the group on
- *                  it, so the badges have room in the flow of the header and
- *                  wrap with it. A definition without an anchor has its
- *                  badges after the end of its line; they stay inside the
- *                  layer, so they add no horizontal scroll.
+ *                  PLACE: the badges of a line have room in the flow of the
+ *                  text. The layer puts an anchor at the end of each line
+ *                  of a definition in the viewport, gives the anchor the
+ *                  size of the badge groups of that line and puts the
+ *                  groups on it. An anchor that has no room after the text
+ *                  goes to a row of its own, so no badge covers text. A
+ *                  renderer that draws the line of a definition itself (the
+ *                  header of a fenced div) puts a referenceBadgeAnchor in
+ *                  its DOM, and the layer uses that anchor. A line whose
+ *                  end another renderer replaced has no anchor; its badges
+ *                  are after the end of the line and stay inside the layer,
+ *                  so they add no horizontal scroll.
  *
  * END HEADER
  */
 
 import { type EditorState } from "@codemirror/state";
-import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+} from "@codemirror/view";
 import { type SourceRange } from "@dts/common/references";
 import { openReferenceSearchEffect } from "../plugins/reference-search-effect";
 import {
@@ -88,15 +99,21 @@ interface BadgeRoom {
   height: number;
 }
 
-/**
- * The measured place of one badge group; null when its line has no layout.
- * `anchor` is the anchor that gives the group its room, when a renderer drew
- * one for the line of the definition.
- */
+/** The measured place of one badge group; null when its line has no layout. */
 interface BadgePlacement {
   group: BadgeGroup;
   position: { left: number; top: number } | null;
-  anchor?: { element: HTMLElement; room: BadgeRoom };
+}
+
+/** The room that the badge groups of one line need on the anchor of the line. */
+interface AnchorRoom extends BadgeRoom {
+  /** The keys of the definitions of the line, as `lineKeys` joins them. */
+  keys: string;
+}
+
+interface BadgeMeasure {
+  placements: BadgePlacement[];
+  rooms: Map<HTMLElement, AnchorRoom>;
 }
 
 /** The space between the end of a line and its badge group, in pixels. */
@@ -115,12 +132,78 @@ const anchorViews = new WeakMap<Element, EditorView>();
  * puts the group on it.
  */
 export function referenceBadgeAnchor(view: EditorView): HTMLElement {
-  const anchor = document.createElement("span");
-  anchor.classList.add(ANCHOR_CLASS);
-  anchor.setAttribute("aria-hidden", "true");
+  const anchor = createAnchor();
   anchorViews.set(anchor, view);
   view.plugin(badgePlugin)?.requestPlacement();
   return anchor;
+}
+
+function createAnchor(): HTMLElement {
+  const anchor = document.createElement("span");
+  anchor.classList.add(ANCHOR_CLASS);
+  anchor.setAttribute("aria-hidden", "true");
+  return anchor;
+}
+
+function setAnchorRoom(anchor: HTMLElement, room: BadgeRoom): boolean {
+  const width = `${room.width}px`;
+  const height = `${room.height}px`;
+  if (anchor.style.width === width && anchor.style.height === height) {
+    return false;
+  }
+  anchor.style.width = width;
+  anchor.style.height = height;
+  return true;
+}
+
+/** The identity of the definitions of one line: a key holds no line break. */
+function lineKeys(keys: string[]): string {
+  return keys.join("\n");
+}
+
+/**
+ * An anchor that wrapped to the start of a row has no text before it: it is
+ * at the left edge of the content box of its parent.
+ */
+function startsRow(anchor: HTMLElement, place: DOMRect): boolean {
+  const parent = anchor.parentElement;
+  if (parent === null) {
+    return false;
+  }
+  const style = getComputedStyle(parent);
+  const contentLeft =
+    parent.getBoundingClientRect().left +
+    Number.parseFloat(style.paddingLeft) +
+    Number.parseFloat(style.borderLeftWidth);
+  return place.left - contentLeft < 1;
+}
+
+/**
+ * The anchor at the end of the line of a definition. A new element of the
+ * same line starts with the room that the layer measured last, so the text
+ * of the line does not move when the editor draws the line again.
+ */
+class BadgeAnchorWidget extends WidgetType {
+  constructor(readonly keys: string) {
+    super();
+  }
+
+  eq(other: BadgeAnchorWidget): boolean {
+    return other.keys === this.keys;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const anchor = createAnchor();
+    const room = view.plugin(badgePlugin)?.roomOf(this.keys);
+    if (room !== undefined) {
+      setAnchorRoom(anchor, room);
+    }
+    return anchor;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
 }
 
 /**
@@ -168,9 +251,13 @@ function buildBadgeGroup(view: EditorView, key: string, citingCount: number): HT
 class ReferenceDefinitionBadges {
   private readonly container: HTMLElement;
   private groups: BadgeGroup[];
+  /** The anchors at the ends of the lines of the definitions in the viewport. */
+  anchors: DecorationSet;
+  /** The room that each of those lines had at the last measure, by `lineKeys`. */
+  private rooms: Map<string, BadgeRoom>;
   private readonly measureReq: {
-    read: () => BadgePlacement[];
-    write: (placements: BadgePlacement[]) => void;
+    read: () => BadgeMeasure;
+    write: (measure: BadgeMeasure) => void;
   };
 
   constructor(private readonly view: EditorView) {
@@ -179,11 +266,13 @@ class ReferenceDefinitionBadges {
     this.container.setAttribute("aria-hidden", "true");
     view.scrollDOM.appendChild(this.container);
     this.groups = [];
+    this.rooms = new Map();
     this.measureReq = {
       read: () => this.measurePositions(),
-      write: (placements) => this.applyPositions(placements),
+      write: (measure) => this.applyPositions(measure),
     };
     this.sync(view.state);
+    this.anchors = this.buildAnchors();
     view.requestMeasure(this.measureReq);
   }
 
@@ -194,6 +283,7 @@ class ReferenceDefinitionBadges {
 
     if (hasPayload) {
       this.sync(update.state);
+      this.anchors = this.buildAnchors();
       update.view.requestMeasure(this.measureReq);
       return;
     }
@@ -209,9 +299,18 @@ class ReferenceDefinitionBadges {
       }
     }
 
+    if (update.docChanged || update.viewportChanged) {
+      this.anchors = this.buildAnchors();
+    }
+
     if (update.docChanged || update.viewportChanged || update.geometryChanged) {
       update.view.requestMeasure(this.measureReq);
     }
+  }
+
+  /** The room that the line of these definitions had at the last measure. */
+  roomOf(keys: string): BadgeRoom | undefined {
+    return this.rooms.get(keys);
   }
 
   destroy(): void {
@@ -263,11 +362,43 @@ class ReferenceDefinitionBadges {
   }
 
   /**
-   * Measure phase: the badge group of a definition hangs at the end of the
-   * line bearing the authored id token. Lines without layout (outside the
-   * viewport) yield null.
+   * One anchor at the end of each line in the viewport that holds a
+   * definition. The measured rooms of the lines that left the viewport are
+   * dropped.
    */
-  private measurePositions(): BadgePlacement[] {
+  private buildAnchors(): DecorationSet {
+    const { doc } = this.view.state;
+    const { from, to } = this.view.viewport;
+    const keysByLineEnd = new Map<number, string[]>();
+    for (const group of this.groups) {
+      if (group.range.to < from || group.range.to > to) {
+        continue;
+      }
+      const end = doc.lineAt(group.range.to).to;
+      keysByLineEnd.set(end, [...(keysByLineEnd.get(end) ?? []), group.key]);
+    }
+
+    const rooms = new Map<string, BadgeRoom>();
+    const anchors = [...keysByLineEnd]
+      .sort(([a], [b]) => a - b)
+      .map(([end, keys]) => {
+        const joined = lineKeys(keys);
+        const room = this.rooms.get(joined);
+        if (room !== undefined) {
+          rooms.set(joined, room);
+        }
+        return Decoration.widget({ widget: new BadgeAnchorWidget(joined), side: 1 }).range(end);
+      });
+    this.rooms = rooms;
+    return Decoration.set(anchors);
+  }
+
+  /**
+   * Measure phase: the badge groups of a line are on the anchor of the line,
+   * one after the other. A line whose anchor is not drawn has its groups
+   * after its end. Lines without layout (outside the viewport) yield null.
+   */
+  private measurePositions(): BadgeMeasure {
     const base = this.container.getBoundingClientRect();
     const { doc } = this.view.state;
     const { from, to } = this.view.viewport;
@@ -278,7 +409,9 @@ class ReferenceDefinitionBadges {
       anchors.set(doc.lineAt(this.view.posAtDOM(anchor)).from, anchor);
     }
 
-    return this.groups.map((group) => {
+    const rooms = new Map<HTMLElement, AnchorRoom>();
+    const keysOfAnchor = new Map<HTMLElement, string[]>();
+    const placements = this.groups.map((group) => {
       if (group.range.to < from || group.range.to > to) {
         return { group, position: null };
       }
@@ -288,16 +421,22 @@ class ReferenceDefinitionBadges {
       const anchor = anchors.get(line.from);
       if (anchor !== undefined) {
         const place = anchor.getBoundingClientRect();
-        // An anchor that wrapped to the start of a row has no text before
-        // it, so its group starts at the edge of the row.
-        const row = anchor.parentElement?.getBoundingClientRect().left ?? place.left;
-        const gap = place.left - row < 1 ? 0 : BADGE_GAP;
+        // The groups before this one on the same anchor.
+        const before = rooms.get(anchor) ?? { keys: "", width: 0, height: 0 };
+        const keys = [...(keysOfAnchor.get(anchor) ?? []), group.key];
+        keysOfAnchor.set(anchor, keys);
+        rooms.set(anchor, {
+          keys: lineKeys(keys),
+          width: before.width + Math.ceil(size.width) + BADGE_GAP,
+          height: Math.max(before.height, Math.ceil(size.height)),
+        });
+        // Text before the anchor gets a space; the edge of a row does not.
+        const gap = startsRow(anchor, place) ? 0 : BADGE_GAP;
         return {
           group,
-          position: { left: place.left - base.left + gap, top: place.top - base.top },
-          anchor: {
-            element: anchor,
-            room: { width: Math.ceil(size.width) + BADGE_GAP, height: Math.ceil(size.height) },
+          position: {
+            left: place.left - base.left + before.width + gap,
+            top: place.top - base.top,
           },
         };
       }
@@ -312,6 +451,7 @@ class ReferenceDefinitionBadges {
       const left = Math.min(coords.right - base.left + BADGE_GAP, base.width - size.width);
       return { group, position: { left: Math.max(0, left), top: coords.top - base.top } };
     });
+    return { placements, rooms };
   }
 
   /**
@@ -320,9 +460,16 @@ class ReferenceDefinitionBadges {
    * change of an anchor moves the text around it, so the places are measured
    * again after it.
    */
-  private applyPositions(placements: BadgePlacement[]): void {
+  private applyPositions({ placements, rooms }: BadgeMeasure): void {
     let anchorChanged = false;
-    for (const { group, position, anchor } of placements) {
+    for (const [anchor, room] of rooms) {
+      this.rooms.set(room.keys, { width: room.width, height: room.height });
+      if (setAnchorRoom(anchor, room)) {
+        anchorChanged = true;
+      }
+    }
+
+    for (const { group, position } of placements) {
       if (position === null) {
         // A group that is not shown is still laid out: it goes back to the
         // corner of the layer, where it adds no scroll width.
@@ -330,16 +477,6 @@ class ReferenceDefinitionBadges {
         group.dom.style.removeProperty("left");
         group.dom.style.removeProperty("top");
         continue;
-      }
-
-      if (anchor !== undefined) {
-        const width = `${anchor.room.width}px`;
-        const height = `${anchor.room.height}px`;
-        if (anchor.element.style.width !== width || anchor.element.style.height !== height) {
-          anchor.element.style.width = width;
-          anchor.element.style.height = height;
-          anchorChanged = true;
-        }
       }
 
       group.dom.classList.add("positioned");
@@ -353,7 +490,9 @@ class ReferenceDefinitionBadges {
   }
 }
 
-const badgePlugin = ViewPlugin.fromClass(ReferenceDefinitionBadges);
+const badgePlugin = ViewPlugin.fromClass(ReferenceDefinitionBadges, {
+  decorations: (plugin) => plugin.anchors,
+});
 
 /**
  * Base styling for the badges: the label badge is subtle, the count badge is
