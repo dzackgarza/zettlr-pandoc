@@ -41,6 +41,7 @@ export interface CiteprocErrorDisplay {
 }
 
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
+import isFile from "@common/util/is-file";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { loadDatabase } from "./util/database-loader";
@@ -330,11 +331,17 @@ export default class CiteprocProvider extends ProviderContract {
     });
   }
 
+  /**
+   * The attachment files of a citation that are on disk, in the order of the
+   * library. A library can name a file that is absent: Zotero's BibTeX export
+   * writes a file name without its braces and doubled spaces. `false`: the
+   * library names no file for the citation.
+   */
   public getBibTexAttachments(database: CitationDatabase, id: string): string[] | false {
     for (const dbPath of this.databasePaths(database)) {
       const attachments = this.databases.get(dbPath)?.bibtexAttachments[id];
       if (attachments !== undefined) {
-        return attachments;
+        return attachments === false ? false : attachments.filter((file) => isFile(file));
       }
     }
     return false;

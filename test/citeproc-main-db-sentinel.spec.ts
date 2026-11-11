@@ -131,6 +131,7 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
     globalLibraryPath = path.join(directory, "global.bib");
     writeFileSync(projectLibraryPath, PROJECT_LIBRARY);
     writeFileSync(globalLibraryPath, GLOBAL_LIBRARY);
+    writeFileSync(path.join(directory, GLOBAL_ATTACHMENT), "%PDF-1.7\n");
     // A parse cache left by an earlier run would answer for a library this
     // run never wrote.
     rmSync(path.join(userData, "citeproc-cache"), { recursive: true, force: true });

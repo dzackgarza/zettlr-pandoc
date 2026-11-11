@@ -90,12 +90,26 @@ export default class OpenAttachment extends ZettlrCommand {
     // circumvent the Zotero thing directly
     if (this._app.citeproc.hasBibTexAttachments(library)) {
       const attachments = this._app.citeproc.getBibTexAttachments(library, arg.citekey);
-      if (attachments === false || attachments.length === 0) {
+      if (attachments === false) {
         appearsToHaveNoAttachments = true;
+      } else if (attachments.length === 0) {
+        // The library names files for this key, and none is on disk. Zotero
+        // knows where its files are, so the query below is the next source.
+        this._app.log.warning(
+          `No attachment file that the library names for ${arg.citekey} is on disk. Asking Zotero.`,
+        );
       } else {
         const potentialError = await shell.openPath(attachments[0]);
         if (potentialError !== "") {
-          this._app.log.warning("Error during opening of BibTex attachment", potentialError);
+          this._app.log.error(
+            `Could not open the attachment ${attachments[0]} of ${arg.citekey}: ${potentialError}`,
+          );
+          showNativeNotification(
+            trans(
+              "Could not open attachment for key %s. Check the logs for more information.",
+              arg.citekey,
+            ),
+          );
           return false;
         }
         return true;
