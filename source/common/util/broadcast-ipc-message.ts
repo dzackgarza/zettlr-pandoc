@@ -30,6 +30,11 @@ export default function broadcastIPCMessage<A extends readonly IpcArgument[]>(
   const allWindows = BrowserWindow.getAllWindows();
 
   for (const window of allWindows) {
+    // A window whose renderer ended has nothing that receives a message.
+    // The window reads the whole state when it loads again.
+    if (window.webContents.isCrashed()) {
+      continue;
+    }
     window.webContents.send(channel, ...args);
   }
 }

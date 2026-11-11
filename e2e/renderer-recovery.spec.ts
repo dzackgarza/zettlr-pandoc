@@ -52,6 +52,8 @@ const SENTENCE = "The orbit of a point has the index of its stabilizer as its si
 const STOPPED_TITLE = "Window stopped";
 const NOT_RESPONDING_TITLE = "Window not responding";
 const QUIT_PROMPT_TITLE = "Unsaved changes";
+const HUNG_RENDERER_END =
+  /^.*FATAL:content\/child\/child_thread_impl\.cc.*Crashing because hung$/gm;
 
 /** The X windows that `xdotool search` finds; none is exit status 1, not an error. */
 function searchWindows(criteria: string[]): Promise<string[]> {
@@ -108,16 +110,30 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
   /** The page of the main window on a new connection: the old one ended with its renderer. */
   async function connectAgain(): Promise<Page> {
     await browser?.close();
-    const connected = await chromium.connectOverCDP(devToolsUrl);
+    const connected = await chromium.connectOverCDP(devToolsUrl, { timeout: 20_000 });
     browser = connected;
     for (const context of connected.contexts()) {
       context.pages().forEach((open) => observeRenderer(open, rendererEvents));
     }
-    const editorPage = await findEditorPage(connected, 60_000);
+    const editorPage = await findEditorPage(connected, 30_000);
     await hideDevServerOverlay(editorPage);
-    await editorPage.locator(".cm-content:visible").waitFor({ state: "visible", timeout: 60_000 });
+    await editorPage.locator(".cm-content:visible").waitFor({ state: "visible", timeout: 30_000 });
     page = editorPage;
     return editorPage;
+  }
+
+  /** Waits until the output of the app has a line of a renderer after the first match of `event`. */
+  async function rendererRunsAfter(event: RegExp, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const output = getOutput();
+      const found = event.exec(output);
+      if (found !== null && output.indexOf("[R] [Main Window", found.index) !== -1) {
+        return;
+      }
+      assert.ok(Date.now() < deadline, `no renderer wrote to the log after ${String(event)}`);
+      await delay(250);
+    }
   }
 
   async function rendererCpuTimes(): Promise<Map<number, number>> {
@@ -191,6 +207,8 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
   });
 
   after(async function () {
+    // The display at the end of the run: a prompt that no case answered is on it.
+    screenshots.set("display-at-end.png", await captureWindow("root"));
     await browser?.close();
     browser = undefined;
     await shutdown(browser, appProcess);
@@ -273,6 +291,10 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     // The default button keeps the window: the mnemonic chooses the load.
     await pressKey(prompts[0], "alt+l");
 
+    // The app ends the renderer that hangs, and the log has the reason. A
+    // connection that Playwright made at the moment of that end gave no
+    // answer in two runs: the spec connects when the new renderer runs.
+    await rendererRunsAfter(/Renderer process gone: reason=crashed exitCode=\d+/, 30_000);
     const loaded = await connectAgain();
     await assertWindowHasUnsavedText(
       loaded,
@@ -312,7 +334,9 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     await pressKey(saving[0], "Return");
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     assert.deepEqual(outcome, [0, null], "the answer Save changes ends the app");
-    assertCleanExit(getOutput());
+    // Chromium writes one FATAL line for the renderer that the app ended in
+    // the case above. Each other fatal line is a failure of the app.
+    assertCleanExit(getOutput().replace(HUNG_RENDERER_END, ""));
     assert.equal(await readFile(documentPath, "utf8"), `${DRAFT}${SENTENCE}`, "the text is saved");
   });
 });

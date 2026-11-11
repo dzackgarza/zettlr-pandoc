@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
 import { installErrorReporter } from "@common/util/error-reporting";
 import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
@@ -38,7 +39,7 @@ import TargetProvider from "@providers/targets";
 import TrayProvider from "@providers/tray";
 import UpdateProvider from "@providers/updates";
 import WindowProvider from "@providers/windows";
-import { app, BrowserWindow, dialog } from "electron";
+import { app, dialog } from "electron";
 import path from "path";
 import { trans } from "source/common/i18n-main";
 import LongRunningTaskProvider from "./service-providers/long-running-tasks";
@@ -162,9 +163,7 @@ export class AppServiceContainer {
       env: process.env,
       userDataDirectory: app.getPath("userData"),
       onDrain: () => {
-        for (const window of BrowserWindow.getAllWindows()) {
-          window.webContents.send("document-lint-changed");
-        }
+        broadcastIPCMessage("document-lint-changed");
       },
     });
     this._tagProvider = new TagProvider(

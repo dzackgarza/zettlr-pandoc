@@ -782,6 +782,38 @@ of an isolated instance are in the first comment of #132.
   `test/fsal-watcher-events.spec.ts`, `e2e/save-after-typing.spec.ts`,
   `e2e/refused-save.spec.ts`.
 
+### 17. A main window without a working renderer
+
+- **The author gets a prompt.** `recoverRenderer`
+  (`service-providers/windows/recover-renderer.ts`) follows each main window.
+  When Electron reports `render-process-gone`, a native message box names the
+  reason and the exit code and offers "Load the window again" and "Close the
+  window". When Electron reports `unresponsive`, a second box offers the same
+  two actions and "Keep waiting", which is its default; the box goes away
+  when the window responds again. The prompt is native because a window
+  without a renderer draws nothing and takes no input.
+- **The documents are in the main process.** A new renderer shows the
+  unsaved text of each document. Text that a hung renderer did not send to
+  its document is lost with that renderer; the prompt says so.
+- **Each action but "Keep waiting" starts a new renderer first.** "Close the
+  window" loads the window and then closes it on the usual path
+  (`closeWindow`, §14), so the unsaved-changes prompt runs and a cancel leaves
+  a window that works.
+- **A hung renderer is ended before the load.**
+  `webContents.forcefullyCrashRenderer()` ends it, and the load starts when
+  Electron reports that exit: a load that starts before the exit does not
+  happen.
+- **No message goes to a window without a renderer.** `broadcastIPCMessage`
+  leaves out a window whose `webContents.isCrashed()`. Main-process code that
+  tells every window something calls `broadcastIPCMessage`; it does not loop
+  over `BrowserWindow.getAllWindows()` with `webContents.send`. A window
+  reads the whole state when it loads.
+- **Other windows.** `attachLogger` records the reason for each window. Only
+  main windows have the prompt.
+- **Proof:** `e2e/renderer-recovery.spec.ts` (a killed renderer, a renderer
+  in an endless loop, and a close of a stopped window). It answers native
+  message boxes, so it runs on the display of the run only (§13).
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal
