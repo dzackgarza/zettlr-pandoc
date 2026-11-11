@@ -105,11 +105,35 @@ interface WorkspaceEditJournal {
  * @return  {string}                       The target text
  */
 function computeTarget(source: string, edits: WorkspaceTextEdit[]): string {
-  const changes = ChangeSet.of(
+  return changeSetOf(source, edits)
+    .apply(Text.of(source.split("\n")))
+    .toString();
+}
+
+function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
+  return ChangeSet.of(
     edits.map((edit) => ({ from: edit.range.from, to: edit.range.to, insert: edit.insert })),
     source.length,
   );
-  return changes.apply(Text.of(source.split("\n"))).toString();
+}
+
+/**
+ * The edits that take a live buffer from the target of `edits` back to
+ * `original`. Each one changes only the text that its forward edit changed,
+ * so the review and the annotations of the document keep their places
+ * through a rollback.
+ */
+function inverseEdits(
+  documentPath: string,
+  original: string,
+  edits: WorkspaceTextEdit[],
+): WorkspaceTextEdit[] {
+  const inverse = changeSetOf(original, edits).invert(Text.of(original.split("\n")));
+  const restoring: WorkspaceTextEdit[] = [];
+  inverse.iterChanges((from, to, _fromOriginal, _toOriginal, inserted) => {
+    restoring.push({ documentPath, range: { from, to }, insert: inserted.toString() });
+  });
+  return restoring;
 }
 
 /** The edit that replaces a live buffer's entire text with `text`. */
@@ -220,7 +244,7 @@ export async function runWorkspaceEditTransaction(
       installed.push(documentPath);
     }
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed);
+    await rollback(authority, journalFile, journal, installed, input.edits);
     throw err;
   }
 
@@ -244,19 +268,35 @@ export async function runWorkspaceEditTransaction(
  * @param   {string}                  journalFile  The journal's path
  * @param   {WorkspaceEditJournal}    journal      The journal
  * @param   {string[]}                installed    Files already installed
+ * @param   {WorkspaceTextEdit[]}     edits        The edits of the transaction
  */
 async function rollback(
   authority: WorkspaceEditAuthority,
   journalFile: string,
   journal: WorkspaceEditJournal,
   installed: string[],
+  edits: WorkspaceTextEdit[],
 ): Promise<void> {
   await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
 
   const restoreBuffers: WorkspaceTextEdit[] = [];
   for (const entry of journal.openBuffers) {
     const current = authority.readMarkdownBufferContent(entry.documentPath);
-    if (current !== undefined && current !== entry.original) {
+    if (current === undefined || current === entry.original) {
+      continue;
+    }
+    // A buffer that holds the target goes back through the inverse of its
+    // edits. A buffer with another text was changed by its author after
+    // the transaction changed it; only the whole original restores it.
+    if (current === entry.target) {
+      restoreBuffers.push(
+        ...inverseEdits(
+          entry.documentPath,
+          entry.original,
+          edits.filter((edit) => edit.documentPath === entry.documentPath),
+        ),
+      );
+    } else {
       restoreBuffers.push(wholeDocumentEdit(entry.documentPath, current.length, entry.original));
     }
   }

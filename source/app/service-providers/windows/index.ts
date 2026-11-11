@@ -408,13 +408,14 @@ export default class WindowProvider extends ProviderContract {
       // documents manager about it so that it keeps the document in the config.
       if (nWindows === 1 && process.platform !== "darwin") {
         if (!leaveAppRunning) {
-          if (!this._documents.isClean()) {
+          if (this._documents.settlesBeforeQuit()) {
             // Keep the window alive while the quit prompt is open. Letting the
             // close proceed fires window-all-closed -> a second app.quit() ->
             // a second stacked prompt, and Cancel on the prompt would leave
-            // the app running with no window. Once the prompt resolves, the
-            // re-issued quit finds the documents clean, this branch no longer
-            // prevents, and the close goes through.
+            // the app running with no window. Once the quit has nothing left
+            // to settle, this branch no longer prevents, and the close goes
+            // through. A document that holds an undecided proposal stays
+            // modified and is nothing to settle: its sidecar has its text.
             event.preventDefault();
           }
           app.quit();

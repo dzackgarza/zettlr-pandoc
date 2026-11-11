@@ -123,6 +123,22 @@ describe("Documents-provider save that it must refuse", function () {
     return id;
   }
 
+  /**
+   * Opens the file with a review whose proposal the author accepted. The
+   * accepted text is unsaved text of the author, so a quit asks about it.
+   */
+  async function openWithAcceptedText(): Promise<void> {
+    const id = await openWithReview();
+    const status = provider.reviewStatus(id);
+    assert.ok(status !== undefined, "the document has a review");
+    const accepted = await provider.acceptAllReviewChunks(status.reviewId, {
+      expectedReviewGeneration: status.generation,
+      expectedWorkingSha256: sha256Text(REVISED),
+    });
+    assert.ok(accepted.ok, "the author accepts the proposal");
+    assert.equal(provider.readMarkdownBufferContent(filePath), REVISED);
+  }
+
   function refusals(): SaveRefusedBroadcast[] {
     return sentMessagesFor(window)
       .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
@@ -159,7 +175,7 @@ describe("Documents-provider save that it must refuse", function () {
   });
 
   it("tells the window when a save at a quit is refused for a file that cannot be read", async function () {
-    await openWithReview();
+    await openWithAcceptedText();
     chmodSync(filePath, 0o000);
     messageBoxes.answer = SAVE;
 
@@ -177,7 +193,7 @@ describe("Documents-provider save that it must refuse", function () {
   });
 
   it("keeps the document modified when its file cannot be written", async function () {
-    await openWithReview();
+    await openWithAcceptedText();
     // The file can be read and not written.
     chmodSync(filePath, 0o400);
 
@@ -194,7 +210,7 @@ describe("Documents-provider save that it must refuse", function () {
       true,
       "the document has text that is not on disk, so it is modified",
     );
-    assert.equal(provider.isClean(), false, "a quit asks the author about that text");
+    assert.equal(provider.settlesBeforeQuit(), true, "a quit asks the author about that text");
   });
 
   it("writes the text of a document that cannot be saved to the file that the author chooses", async function () {

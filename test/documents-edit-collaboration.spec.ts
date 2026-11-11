@@ -12,7 +12,9 @@
  *                  that an editor pushes, and a workspace edit (reference
  *                  rename, Fix All). An annotation stays on its text through
  *                  both, and the review sidecar holds the text that the
- *                  document has after a workspace edit (#146).
+ *                  document has after a workspace edit. A workspace edit
+ *                  that is rolled back leaves the annotation where it was
+ *                  (#146).
  *
  * END HEADER
  */
@@ -22,11 +24,13 @@ import "./headless-electron-harness.cjs";
 import { ChangeSet } from "@codemirror/state";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { mkdirSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import { runWorkspaceEditTransaction } from "source/app/service-providers/references/workspace-edit-transaction";
+import { hashDocumentSource } from "source/common/pandoc-util/extract-references";
 import { sha256Text } from "source/common/util/sha256";
 import type { AnnotationAnchor } from "source/types/common/annotation-domain";
 import { bootDocumentManager } from "./documents-provider-seam";
@@ -70,6 +74,7 @@ describe("Documents-provider edits of a document with annotations", function () 
     root = await mkdtemp(path.join(tmpdir(), "zettlr-edit-collaboration-"));
     filePath = path.join(root, "Lattice.md");
     writeFileSync(filePath, SOURCE, "utf-8");
+    mkdirSync(path.join(root, "locked"));
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
@@ -81,6 +86,7 @@ describe("Documents-provider edits of a document with annotations", function () 
   });
 
   afterEach(async function () {
+    chmodSync(path.join(root, "locked"), 0o700);
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
   });
@@ -161,5 +167,32 @@ describe("Documents-provider edits of a document with annotations", function () 
       "the sidecar holds the edit and the proposal",
     );
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+  });
+
+  it("leaves an annotation where it was when a workspace edit is rolled back", async function () {
+    const { from, to } = await annotate();
+    const insideTarget = from + "bilinear".length;
+    // The transaction cannot install its edit of this closed file.
+    const closedPath = path.join(root, "locked", "Closed.md");
+    const closedSource = "A closed document.\n";
+    writeFileSync(closedPath, closedSource, "utf-8");
+    chmodSync(path.join(root, "locked"), 0o500);
+
+    await assert.rejects(
+      runWorkspaceEditTransaction(provider, root, {
+        edits: [
+          { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+          { documentPath: filePath, range: { from: insideTarget, to: insideTarget }, insert: "," },
+          { documentPath: closedPath, range: { from: 0, to: 0 }, insert: PREFIX },
+        ],
+        expectedSourceHashes: {
+          [filePath]: hashDocumentSource(SOURCE),
+          [closedPath]: hashDocumentSource(closedSource),
+        },
+      }),
+    );
+
+    assert.equal(provider.readMarkdownBufferContent(filePath), SOURCE, "the buffer is restored");
+    assert.deepEqual(anchors(), [{ state: "range", from, to, quotedText: TARGET_TEXT }]);
   });
 });

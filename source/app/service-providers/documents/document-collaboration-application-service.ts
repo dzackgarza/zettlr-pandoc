@@ -887,6 +887,10 @@ export class CollaborationApplicationService {
    * Neither half is lost to a fence mismatch. A review that cannot be fenced
    * is frozen until it is reapplied or discarded; annotations that cannot be
    * fenced are still the owner's comments and become `orphaned` (I6).
+   *
+   * This broadcasts nothing. A session has the text of the buffer, and the
+   * buffer gets the restored working text from the caller: the caller
+   * broadcasts the state after that.
    */
   public async reattachCollaboration(
     documentId: string,
@@ -917,22 +921,29 @@ export class CollaborationApplicationService {
       return await this.driftedCollaboration(documentId, documentPath, sidecar, normalizedDisk);
     }
 
-    const hasOutstandingReview =
+    // The review has a claim on the buffer while it has a proposal to decide
+    // on, or while its working text is not the text of the file: text that
+    // the author accepted and did not save (`resolved-awaiting-save`). The
+    // author accepts the proposals of a closed document in the Annotations
+    // view, and a quit parks a document that no pane shows; the sidecar is
+    // then the one place that has the accepted text.
+    const restoresReview =
       sidecar.review !== null &&
-      sidecar.review.suggestions.some((suggestion) => suggestion.state === "proposed");
+      (sidecar.review.suggestions.some((suggestion) => suggestion.state === "proposed") ||
+        sidecar.workingText !== normalizedDisk);
 
     // Without a review to restore, the persisted working text has no claim
     // on the buffer: the buffer is the file. If the two disagree, the
     // anchors were measured against text nobody is looking at, and there is
     // no change set to carry them across the difference.
     const annotations =
-      hasOutstandingReview || sidecar.workingText === normalizedDisk
+      restoresReview || sidecar.workingText === normalizedDisk
         ? sidecar.annotations
         : (prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
             ?.nextAnnotations ?? sidecar.annotations);
 
-    const review = hasOutstandingReview ? reviewFromSidecar(documentId, sidecar) : undefined;
-    const workingText = hasOutstandingReview ? sidecar.workingText : normalizedDisk;
+    const review = restoresReview ? reviewFromSidecar(documentId, sidecar) : undefined;
+    const workingText = restoresReview ? sidecar.workingText : normalizedDisk;
 
     // A file that already says exactly this is left alone; the orphaning
     // above and a review that did not survive are the two things that make
@@ -961,7 +972,6 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    this.deps.authority.broadcastCollaborationState(documentId);
     return { review, annotations, workingText: review === undefined ? undefined : workingText };
   }
 
@@ -982,8 +992,8 @@ export class CollaborationApplicationService {
     const annotations =
       prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
       sidecar.annotations;
-    // A review with nothing proposed has nothing to recover, and ends here
-    // exactly as it does on a reopen without drift.
+    // A review with nothing proposed has no suggestion to reapply to the
+    // new text of the file, and ends here.
     const review =
       sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
         ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
@@ -1013,7 +1023,6 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    this.deps.authority.broadcastCollaborationState(documentId);
     return { review, annotations, workingText: undefined };
   }
 

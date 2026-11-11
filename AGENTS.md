@@ -588,6 +588,12 @@ of an isolated instance are in the first comment of #132.
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
   workstation. Run one at a time.
+- **A native message box is not a page.** Playwright does not see it. A spec
+  finds the box by its title with `xdotool`, captures it with ImageMagick
+  `import`, and presses a key in it (`e2e/quit-with-open-review.spec.ts`). The
+  CI toolchain installs both tools (`scripts/setup-ci-toolchain.sh`). Such a
+  spec runs on the display of the run only: with `DISPLAY` set, the keys go
+  to the desktop of the author.
 
 ### 14. Document identity and refused closes
 
@@ -649,7 +655,35 @@ of an isolated instance are in the first comment of #132.
   (`set-aside-collaboration-sidecar`), which renames the file in the sidecar
   directory and keeps its bytes. `list()` is the complete set or an error:
   the Agent API listings reject while an unreadable file exists.
+- **A prompt for many documents does not decide a review.** A quit and a
+  window close ask the author to save or discard only the documents of
+  `_documentsToAskAbout`. A document whose review has an undecided proposal
+  (`_holdsUndecidedProposal`) is not one of them: its working text holds the
+  proposal, so a save would write the proposal to the file and a discard
+  would destroy the review. Its text and its review are in the sidecar, and
+  the next load of the document attaches them. The quit prompt names such a
+  document after the ones it asks about (`_quitPromptDetail`). Text that the
+  author accepted from a review is text of the author: the quit asks about
+  it, also for a document that no pane shows. A save that the author starts
+  for one document is not changed by this rule.
+- **Each edit of a loaded document goes through the collaboration service.**
+  The update of an editor (`pushUpdatesLocked`) and a workspace edit
+  (`applyWorkspaceTextEdits`) commit through `applyWorkingTextEditLocked`,
+  which maps the annotations and the review through the change and writes
+  the sidecar before the buffer takes the text. A new path that changes the
+  text of a loaded document commits through it. The rollback of a workspace
+  edit transaction applies the inverse of its edits (`inverseEdits`), so an
+  annotation and a review return to their places; it does not replace the
+  buffer with the old text.
+- **A restored session goes out after the buffer has its text.**
+  `reattachCollaboration` broadcasts nothing. `_reattachCollaborationSidecar`
+  applies the working text of the sidecar and then broadcasts the state. The
+  window keeps the session that it gets for a document, and an editor shows a
+  review only while its text is the working text of that session.
 - **Proof:** `test/documents-move-identity.spec.ts`,
+  `test/documents-quit-with-review.spec.ts`,
+  `test/documents-edit-collaboration.spec.ts`,
+  `e2e/quit-with-open-review.spec.ts`,
   `test/documents-refused-close.spec.ts`,
   `test/documents-refused-save.spec.ts`, `test/save-refusal-toast.spec.ts`,
   `test/unreadable-collaboration-sidecar.spec.ts`,

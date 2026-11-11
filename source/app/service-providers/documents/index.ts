@@ -1198,7 +1198,7 @@ export default class DocumentManager
     // this, if we ever switched to the auto updater.
     app.on("before-quit", (event) => {
       const parked = this._reviewedDocumentsWithoutPane();
-      const unsaved = this._unsavedDocumentsToPrompt();
+      const unsaved = this._documentsToAskAbout(this.documents);
       if (parked.length === 0 && unsaved.length === 0) {
         this._shuttingDown = true;
         return;
@@ -1229,34 +1229,64 @@ export default class DocumentManager
   } // END constructor
 
   /**
-   * The unsaved changes a quit asks about: a document some pane shows, or
-   * one that no review owns. A reviewed document that no pane shows is not
-   * here; `_reviewedDocumentsWithoutPane` parks it in its sidecar instead.
+   * A document whose review has a proposal that the author did not decide
+   * on. Its working text holds that proposal, so a prompt that asks about
+   * many documents at one time (a quit, a window close) has no answer for
+   * it: a save writes the proposal to the file before the author decided on
+   * it, and a discard destroys the review. Each change of such a document
+   * writes its sidecar before the buffer takes it, so the sidecar has the
+   * working text and the review, and the next load of the document attaches
+   * them (#146).
    */
-  private _unsavedDocumentsToPrompt(): Document[] {
+  private _holdsUndecidedProposal(document: Document): boolean {
+    return this._reviewApplication.getStatus(document.documentId)?.state === "active";
+  }
+
+  /**
+   * Of `documents`, the ones whose unsaved text a prompt asks the author to
+   * save or discard: a modified document that holds no undecided proposal.
+   * A document with a frozen review is asked about only while a pane shows
+   * it; `_reviewedDocumentsWithoutPane` parks the others.
+   */
+  private _documentsToAskAbout(documents: readonly Document[]): Document[] {
     const shown = this._pathsShownInPanes();
-    return this.documents.filter(
-      (document) =>
-        this.isModified(document.filePath) &&
-        (shown.has(document.filePath) ||
-          this._reviewApplication.getReview(document.documentId) === undefined),
-    );
+    return documents.filter((document) => {
+      if (!this.isModified(document.filePath) || this._holdsUndecidedProposal(document)) {
+        return false;
+      }
+      const state = this._reviewApplication.getStatus(document.documentId)?.state;
+      return state !== "invalidated" || shown.has(document.filePath);
+    });
   }
 
   /**
    * An agent proposal loads its document into the authority without a pane,
    * and the review's working text leaves that buffer modified where nobody is
-   * looking at it. Saving it at quit would write the proposal to disk before
-   * the author decided on it; discarding it would destroy the review. The
-   * sidecar is where a closed document's review lives, so a quit detaches
-   * these the way closing their last tab would.
+   * looking at it. The sidecar is where a closed document's review lives, so
+   * a quit detaches these the way closing their last tab would. A document
+   * whose proposals the author all decided on is not here: its unsaved text
+   * is text of the author, and the quit asks about it.
    */
   private _reviewedDocumentsWithoutPane(): Document[] {
     const shown = this._pathsShownInPanes();
+    const asked = new Set(this._documentsToAskAbout(this.documents));
     return this.documents.filter(
       (document) =>
         !shown.has(document.filePath) &&
+        !asked.has(document) &&
         this._reviewApplication.getReview(document.documentId) !== undefined,
+    );
+  }
+
+  /**
+   * Whether a quit has work to do before the process may end: a review to
+   * park or a question for the author. The window provider keeps the last
+   * window open exactly while this holds.
+   */
+  public settlesBeforeQuit(): boolean {
+    return (
+      this._reviewedDocumentsWithoutPane().length > 0 ||
+      this._documentsToAskAbout(this.documents).length > 0
     );
   }
 
@@ -1304,7 +1334,7 @@ export default class DocumentManager
       cancelId: 2,
       title: trans("Unsaved changes"),
       message: trans("There are unsaved changes. Do you want to save or discard them?"),
-      detail: unsaved.map((document) => document.filePath).join("\n"),
+      detail: this._quitPromptDetail(unsaved),
     };
     const { response } = await dialog.showMessageBox(opt);
     // 0 = Save, 1 = Don't save, 2 = Cancel
@@ -1331,6 +1361,27 @@ export default class DocumentManager
   }
 
   /**
+   * The documents that the quit prompt asks about, one path for each line.
+   * A modified document in a pane that the prompt does not ask about is
+   * named after them with the reason, so the author knows where its text is.
+   */
+  private _quitPromptDetail(unsaved: Document[]): string {
+    const shown = this._pathsShownInPanes();
+    const kept = this.documents.filter(
+      (document) =>
+        shown.has(document.filePath) &&
+        this.isModified(document.filePath) &&
+        this._holdsUndecidedProposal(document),
+    );
+    const asked = unsaved.map((document) => document.filePath).join("\n");
+    if (kept.length === 0) {
+      return asked;
+    }
+    const keptPaths = kept.map((document) => document.filePath).join("\n");
+    return `${asked}\n\n${trans("Not saved and not discarded, because a review has open proposals. The text and the review return at the next start:")}\n${keptPaths}`;
+  }
+
+  /**
    * Use this method to ask the user whether or not the window identified with
    * the windowId may be closed. If this function returns true, the user agreed
    * to drop all changes, or there were no changes contained in the window.
@@ -1348,9 +1399,12 @@ export default class DocumentManager
       return true;
     }
 
-    // TODO: Check if the same (modified) files are also open in other windows.
-    // If so, we can treat this window as if it contains no changes, since the
-    // document is still open somewhere else.
+    // A document that holds an undecided proposal is neither saved nor
+    // discarded here: closeWindow puts its text and its review in the sidecar.
+    const asked = this._documentsToAskAbout(this._windowExclusiveDocuments(windowId));
+    if (asked.length === 0) {
+      return await this.closeWindow(windowId, closeAgain);
+    }
 
     const result = await this._app.windows.askSaveChanges();
     // 0 = Save, 1 = Don't save, 2 = Cancel
@@ -1364,7 +1418,7 @@ export default class DocumentManager
       // Only this window's documents: the prompt named this window's unsaved
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
-      for (const document of this._windowExclusiveDocuments(windowId)) {
+      for (const document of asked) {
         if (!(await this._discardForClose(document, closeAgain))) {
           return false;
         }
@@ -1375,7 +1429,7 @@ export default class DocumentManager
       return await this.closeWindow(windowId, closeAgain);
     } else if (result.response === 0) {
       // Save this window's docs — the same set the discard branch throws away.
-      for (const document of this._windowExclusiveDocuments(windowId)) {
+      for (const document of asked) {
         const saved = await this.saveFile(document.filePath);
         if (!saved.ok) {
           this._announceSaveRefusal(document.filePath, saved);
@@ -1831,9 +1885,8 @@ current contents from the editor somewhere else, and restart the application.`,
       candidateMinimumVersion += 1;
     }
 
-    const documentId = this.getDocumentId(filePath);
-    const review =
-      documentId === undefined ? undefined : this._reviewApplication.getReview(documentId);
+    const documentId = this.ensureDocumentId(filePath);
+    const reviewed = this._reviewApplication.getReview(documentId) !== undefined;
     const candidateWorkingText = normalizeText(candidateText.toString());
     const commitDocument = (): void => {
       doc.document = candidateText;
@@ -1849,19 +1902,21 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     };
 
-    if (documentId !== undefined && review !== undefined) {
-      await this._reviewApplication.applyWorkingTextEditLocked(
-        documentId,
-        candidateWorkingText,
-        candidateChanges,
-        commitDocument,
-      );
+    // The collaboration service commits the document. A document with a
+    // review or with annotations gets its sidecar first: the service maps
+    // the suggestions and the annotation anchors through the changes. A
+    // document with neither is committed at once.
+    await this._reviewApplication.applyWorkingTextEditLocked(
+      documentId,
+      candidateWorkingText,
+      candidateChanges,
+      commitDocument,
+    );
+    if (reviewed) {
       // A reviewed document does not autosave: the save gate owns when its
       // bytes reach disk.
       return true;
     }
-
-    commitDocument();
 
     const autoSave = this._app.config.get().editor.autoSave;
 
@@ -4061,12 +4116,18 @@ current contents from the editor somewhere else, and restart the application.`,
         doc.filePath,
         doc.lastSavedContent,
       );
-      // Annotations restore silently: only a restored review gives the
-      // sidecar's working text a claim on the buffer.
-      if (restored?.workingText === undefined) {
+      if (restored === undefined) {
         return;
       }
-      this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      // Only a restored review gives the working text of the sidecar a
+      // claim on the buffer.
+      if (restored.workingText !== undefined) {
+        this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      }
+      // The window keeps the session that it gets for the document, and an
+      // editor shows a review only while its text is the working text of
+      // that session. The session goes out after the buffer has its text.
+      this.broadcastCollaborationState(doc.documentId);
     } catch (err) {
       // The document itself is fine — open it; the broken sidecar stays on
       // disk as evidence and keeps failing loudly until it is dealt with.
@@ -4450,7 +4511,8 @@ current contents from the editor somewhere else, and restart the application.`,
    * transaction set. The document manager is the central collab authority:
    * it prepares every ChangeSet before mutating any document, records one
    * serialized authority update per touched document, then broadcasts the
-   * updates for every renderer pane to pull.
+   * updates for every renderer pane to pull. The review and the annotations
+   * of a document follow the edit, and its sidecar holds the edited text.
    *
    * Resolving the returned promise is the application acknowledgement used
    * by ReferenceProvider. No rename success or undo record may be exposed
@@ -4471,11 +4533,13 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
 
+    // Every ChangeSet is made, and with that checked against its document,
+    // before a buffer changes.
     const prepared: Array<{
       document: Document;
       filePath: string;
-      nextText: Text;
-      update: SerializedUpdate;
+      source: Text;
+      changes: ChangeSet;
     }> = [];
     for (const [filePath, documentEdits] of editsByDocument) {
       const document = this.documents.find((candidate) => candidate.filePath === filePath);
@@ -4495,34 +4559,45 @@ current contents from the editor somewhere else, and restart the application.`,
         })),
         document.document.length,
       );
-      const update = {
-        changes: serializeChangeSet(changes),
-        clientID: "reference-rename",
-      };
-      prepared.push({
-        document,
-        filePath,
-        nextText: changes.apply(document.document),
-        update,
-      });
+      prepared.push({ document, filePath, source: document.document, changes });
     }
 
-    for (const transaction of prepared) {
-      transaction.document.document = transaction.nextText;
-      transaction.document.currentVersion += 1;
-      transaction.document.updates.push(transaction.update);
-      while (transaction.document.updates.length > MAX_VERSION_HISTORY) {
-        transaction.document.updates.shift();
-        transaction.document.minimumVersion += 1;
-      }
-    }
-
-    for (const transaction of prepared) {
-      this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
-        filePath: transaction.filePath,
-        status: "modification",
+    // Each document changes as it does for an update of an editor: under its
+    // lock and through the collaboration service, which writes the sidecar
+    // of a document with a review or annotations before the buffer changes.
+    // A document that fails leaves the earlier ones changed and rejects; the
+    // workspace-edit transaction then restores them.
+    for (const { document, filePath, source, changes } of prepared) {
+      const documentId = this.ensureDocumentId(filePath);
+      await this._reviewApplication.withDocumentLock(documentId, async () => {
+        assert(
+          this.documents.includes(document) && document.document === source,
+          `[DocumentManager] ${filePath} changed during the workspace edit`,
+        );
+        const nextText = changes.apply(source);
+        await this._reviewApplication.applyWorkingTextEditLocked(
+          documentId,
+          normalizeText(nextText.toString()),
+          changes,
+          () => {
+            document.document = nextText;
+            document.currentVersion += 1;
+            document.updates.push({
+              changes: serializeChangeSet(changes),
+              clientID: "reference-rename",
+            });
+            while (document.updates.length > MAX_VERSION_HISTORY) {
+              document.updates.shift();
+              document.minimumVersion += 1;
+            }
+            this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
+              filePath,
+              status: "modification",
+            });
+            this._app.references.reportAuthorityBuffer(filePath);
+          },
+        );
       });
-      this._app.references.reportAuthorityBuffer(transaction.filePath);
     }
 
     return prepared.map((transaction) => transaction.filePath);

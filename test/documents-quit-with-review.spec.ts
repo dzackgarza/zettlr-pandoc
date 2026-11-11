@@ -30,9 +30,10 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import type { DocumentsUpdateContext } from "source/app/service-providers/documents";
 import type { ReviewStatus } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
-import { type DocumentsUpdateContext, DP_EVENTS } from "source/types/common/documents";
+import { DP_EVENTS } from "source/types/common/documents";
 import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
