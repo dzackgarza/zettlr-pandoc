@@ -3791,36 +3791,25 @@ current contents from the editor somewhere else, and restart the application.`,
       written = true;
       doc.lastSavedVersion = savedVersion;
       doc.lastSavedContent = content;
-      if (doc.descriptor.type === "file") {
-        doc.descriptor = (await this._app.fsal.getDescriptorFor(
-          doc.descriptor.path,
-          false,
-        )) as MDFileDescriptor;
+      const refreshed = (await this._app.fsal.getDescriptorFor(doc.descriptor.path, false)) as
+        | MDFileDescriptor
+        | CodeFileDescriptor;
+      // A file that can be written and not read has a descriptor of a file
+      // without text. The document keeps the descriptor of its last read.
+      if (refreshed.readError !== undefined) {
+        return {
+          ok: false,
+          refusal: this._savedNotRefreshed(doc, refreshed.readError.message, refreshed.readError),
+        };
+      }
+      doc.descriptor = refreshed;
+      if (refreshed.type === "file") {
         this.startDatabaseSynchronization(); // The file may have gotten a library
-      } else {
-        doc.descriptor = (await this._app.fsal.getDescriptorFor(
-          doc.descriptor.path,
-          false,
-        )) as CodeFileDescriptor;
       }
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : String(err);
       if (written) {
-        this._app.log.error(
-          `[DocumentManager] ${filePath} was written, and its new state could not be read: ${reason}`,
-          err,
-        );
-        return {
-          ok: false,
-          refusal: {
-            reason: "saved-not-refreshed",
-            message: trans(
-              "%s was saved, but the application could not read the file again: %s",
-              doc.descriptor.name,
-              reason,
-            ),
-          },
-        };
+        return { ok: false, refusal: this._savedNotRefreshed(doc, reason, err) };
       }
       // The write failed, so the next change of the file is not this save.
       this._ignoreChanges.splice(this._ignoreChanges.lastIndexOf(filePath), 1);
@@ -4121,6 +4110,25 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     await refused.repeat();
     return true;
+  }
+
+  /**
+   * The answer of a save that wrote the file and could not read it again. The
+   * text is on disk, so the document is not modified.
+   */
+  private _savedNotRefreshed(doc: Document, reason: string, cause: unknown): SaveRefusal {
+    this._app.log.error(
+      `[DocumentManager] ${doc.descriptor.path} was written, and its new state could not be read: ${reason}`,
+      cause,
+    );
+    return {
+      reason: "saved-not-refreshed",
+      message: trans(
+        "%s was saved, but the application could not read the file again: %s",
+        doc.descriptor.name,
+        reason,
+      ),
+    };
   }
 
   /** The refusal a save owes when the review could not be persisted. */
