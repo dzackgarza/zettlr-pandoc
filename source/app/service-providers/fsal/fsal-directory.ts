@@ -28,6 +28,7 @@ import path from "path";
 import { parseQuartoProject } from "source/app/util/quarto-project";
 import { resolveRealPath } from "source/app/util/real-path";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
+import { writeTextFile } from "./util/write-text-file";
 
 /**
  * Determines what will be written to file (.ztr-directory)
@@ -209,7 +210,7 @@ async function persistSettings(dir: DirDescriptor): Promise<void> {
     }
     return;
   }
-  await fs.writeFile(settingsFile, JSON.stringify(authoredSettings(dir)));
+  await writeTextFile(settingsFile, JSON.stringify(authoredSettings(dir)));
 }
 
 /**

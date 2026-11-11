@@ -14,13 +14,14 @@
  * END HEADER
  */
 
-import { readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { readFileSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import FileDelete from "source/app/service-providers/commands/file-delete";
 import type ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
+import { writeTextFile } from "source/app/service-providers/fsal/util/write-text-file";
 import LogProvider from "source/app/service-providers/log";
 import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
@@ -105,9 +106,7 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       testAccess: FSAL.prototype.testAccess,
-      writeTextFile: async (filePath: string, content: string) => {
-        writeFileSync(filePath, content, "utf-8");
-      },
+      writeTextFile,
     },
     citeproc: {
       synchronizeDatabases: async (_libraries: string[]) => {},

@@ -19,6 +19,7 @@ import { app, ipcMain } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 import path from "path";
+import { writeTextFile } from "../fsal/util/write-text-file";
 import ProviderContract from "../provider-contract";
 
 export default class CssProvider extends ProviderContract {
@@ -94,7 +95,7 @@ export default class CssProvider extends ProviderContract {
    */
   async set(newContent: string): Promise<boolean> {
     try {
-      await fs.writeFile(this._filePath, newContent, { encoding: "utf8" });
+      await writeTextFile(this._filePath, newContent);
       this._emitter.emit("update", this._filePath);
       broadcastIpcMessage("css-provider", {
         command: "get-custom-css-path",

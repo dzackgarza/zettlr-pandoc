@@ -33,6 +33,7 @@ import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-se
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
 import { loadQuickTex } from "../../util/load-quicktex";
 import type ConfigProvider from "../config";
+import { writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
 import ProviderContract, { type IPCMessage } from "../provider-contract";
 
@@ -593,7 +594,7 @@ export default class AssetsProvider extends ProviderContract {
 
     try {
       // Stringify the new defaults according to the verbatim flag
-      await fs.writeFile(absPath, contents);
+      await writeTextFile(absPath, contents);
       return true;
     } catch (err: unknown) {
       this._logger.error(
@@ -798,7 +799,7 @@ export default class AssetsProvider extends ProviderContract {
     try {
       // Stringify the new defaults according to the verbatim flag
       const yaml = verbatim ? newDefaults : YAML.stringify(newDefaults);
-      await fs.writeFile(absPath, yaml);
+      await writeTextFile(absPath, yaml);
       return true;
     } catch (err: unknown) {
       this._logger.error(
@@ -1019,7 +1020,7 @@ export default class AssetsProvider extends ProviderContract {
     }
 
     try {
-      await fs.writeFile(this._snippetsFile, contents);
+      await writeTextFile(this._snippetsFile, contents);
       return { ok: true };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

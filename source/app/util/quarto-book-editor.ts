@@ -10,6 +10,7 @@ import {
   type YAMLMap,
   YAMLSeq,
 } from "yaml";
+import { writeTextFile } from "../service-providers/fsal/util/write-text-file";
 import { quartoPartFile } from "./quarto-project";
 import { resolveRealPath } from "./real-path";
 
@@ -311,5 +312,5 @@ export async function editQuartoBookManifest(
 ): Promise<void> {
   const source = await fs.readFile(manifestPath, "utf8");
   const edited = editQuartoBookSource(rootPath, manifestPath, source, edit);
-  await fs.writeFile(manifestPath, edited, "utf8");
+  await writeTextFile(manifestPath, edited);
 }

@@ -36,6 +36,7 @@ import {
   parsePortableProseCompletions,
   proseWordsFromHunspellDic,
 } from "../../util/prose-completion-files";
+import { writeTextFile } from "../fsal/util/write-text-file";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 
@@ -498,7 +499,7 @@ export default class DictionaryProvider extends ProviderContract {
     const data = this._userDictionary.join("\n");
     this._fileLock = true;
     this._unwrittenChanges = false; // NOTE that this has to come before the writing
-    await fs.writeFile(this._userDictionaryPath, data);
+    await writeTextFile(this._userDictionaryPath, data);
     this._fileLock = false;
 
     // After we're done, check if someone tried to call the function in the

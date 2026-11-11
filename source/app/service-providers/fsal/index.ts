@@ -65,6 +65,7 @@ import {
   visibilityChanges,
 } from "./util/read-directory";
 import { safeDelete } from "./util/safe-delete";
+import { writeTextFile } from "./util/write-text-file";
 
 /**
  * The time in which the FSAL collects events for one publication. A burst of
@@ -91,7 +92,7 @@ async function writeRulesFile(root: string, text: string): Promise<void> {
   if (text === "") {
     await fs.rm(rulesFile, { force: true });
   } else {
-    await fs.writeFile(rulesFile, text, "utf-8");
+    await writeTextFile(rulesFile, text);
   }
 }
 
@@ -856,8 +857,10 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Writes a given file using the provided contents. May throw an error if the
-   * FSAL cannot write to the given path.
+   * Writes a given file using the provided contents. A reader of the file
+   * gets the text before the write or the text after it (see
+   * `util/write-text-file.ts`). Rejects if the FSAL cannot write to the
+   * given path.
    *
    * @param  {string}  filePath  The file to write
    * @param  {string}  contents  The file contents to put in the file.
@@ -865,7 +868,7 @@ export default class FSAL extends ProviderContract {
   public async writeTextFile(filePath: string, contents: string): Promise<void> {
     // In case this file was cached, remove the cached data again.
     await this._cache.del(filePath);
-    await fs.writeFile(filePath, contents, "utf-8");
+    await writeTextFile(filePath, contents);
   }
 
   /**

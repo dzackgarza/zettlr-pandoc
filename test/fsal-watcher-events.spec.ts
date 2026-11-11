@@ -89,4 +89,41 @@ describe("FSAL watcher events", function () {
       [],
     );
   });
+
+  it("reports a write of a watched file as a change, and never as a removal", async function () {
+    // The documents provider watches the file of each tab with a watchdog of
+    // its own, and closes the tabs of a file that is reported as removed.
+    const watchdog = fsal.getWatchdog();
+    const reported: string[] = [];
+    watchdog.on("change", (event, reportedPath) => {
+      if (reportedPath === document) {
+        reported.push(event);
+      }
+    });
+    watchdog.watchPath(document);
+
+    // The watcher reports nothing before its first scan ends, so the write
+    // repeats until the watcher reports it.
+    const deadline = Date.now() + 20_000;
+    let writes = 0;
+    while (!reported.includes("change") && Date.now() < deadline) {
+      writes += 1;
+      await fsal.writeTextFile(document, `# Note\n\nSave ${writes}.\n`);
+      await sleep(250);
+    }
+    // Five more saves, and the time for their events to arrive.
+    for (let save = 1; save <= 5; save++) {
+      await fsal.writeTextFile(document, `# Note\n\nLate save ${save}.\n`);
+      await sleep(100);
+    }
+    await sleep(500);
+    await watchdog.shutdown();
+
+    assert.ok(reported.includes("change"), "a write is reported as a change");
+    assert.deepEqual(
+      reported.filter((event) => event !== "change"),
+      [],
+      "no write is reported as another event",
+    );
+  });
 });
