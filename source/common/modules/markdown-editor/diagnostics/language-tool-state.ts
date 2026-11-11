@@ -141,6 +141,11 @@ export function languageToolRunFinished(
   });
 }
 
+/** A run that gave no result ends the running state with its cause. */
+export function languageToolRunFailed(view: EditorView, cause: string): void {
+  view.dispatch({ effects: updateLTState.of({ running: false, lastError: cause }) });
+}
+
 export function languageToolCommand(
   view: EditorView,
   action: Extract<ExternalDiagnosticAction, { kind: "command" }>,

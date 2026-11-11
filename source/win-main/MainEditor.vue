@@ -769,6 +769,18 @@ const stopLinkUpdates = ipcRenderer.on("links", (_e) => {
   updateFileDatabase().catch((err) => reportError("Could not update file database", err));
 });
 
+// The author started the lint again (the Problems view). The editor of
+// the active tab lints its text again; an editor in a background tab does
+// it when its tab becomes active.
+let lintAgainOnActivation = false;
+const stopLintRetries = ipcRenderer.on("document-lint-retried", (_e) => {
+  if (!isActiveTab.value) {
+    lintAgainOnActivation = true;
+    return;
+  }
+  currentEditor?.lintAgain();
+});
+
 // MOUNTED HOOK
 onMounted(() => {
   mainEditorWrapper.value?.addEventListener(ANNOTATE_SELECTION_EVENT, requestAnnotationComposer);
@@ -785,6 +797,7 @@ onBeforeUnmount(() => {
     stopDocumentUpdates,
     stopReloads,
     stopLinkUpdates,
+    stopLintRetries,
   ]) {
     stop();
   }
@@ -1583,8 +1596,14 @@ async function activateTab(): Promise<void> {
   if (!editor.hasFocus() && !isTypingOutsideLeaf()) {
     editor.focus();
   }
+  // An editor that loaded now lints its text on its own.
+  const lintAgain = lintAgainOnActivation && !loadedNow;
+  lintAgainOnActivation = false;
   if (!loadedNow) {
     refreshActiveEditorAuxiliaryState();
+  }
+  if (lintAgain) {
+    editor.lintAgain();
   }
 }
 

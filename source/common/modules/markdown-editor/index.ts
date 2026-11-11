@@ -95,6 +95,7 @@ import {
   insertLink,
 } from "./commands/markdown";
 import { moveSection } from "./commands/move-section";
+import { externalLintAgain } from "./diagnostics/external-linter-adapter";
 import { languageToolState, updateLTState } from "./diagnostics/language-tool-state";
 // Main configuration
 import {
@@ -1439,6 +1440,15 @@ export default class MarkdownEditor extends EventEmitter {
    */
   setLanguageToolLanguage(language: string): void {
     this._instance.dispatch({ effects: updateLTState.of({ overrideLanguage: language }) });
+    forceLinting(this._instance);
+  }
+
+  /**
+   * Runs each linter again on the text that the editor has. The author asks
+   * for it after a lint that did not run.
+   */
+  lintAgain(): void {
+    this._instance.dispatch({ effects: externalLintAgain.of(null) });
     forceLinting(this._instance);
   }
 

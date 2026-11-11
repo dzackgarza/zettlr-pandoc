@@ -361,6 +361,10 @@ export type ApplicationIPCContract = {
     request: { payload: { from: string; to: string } };
     response: unknown;
   };
+  "retry-workspace-lint": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
   "root-close": {
     request: { payload: string };
     response: unknown;
