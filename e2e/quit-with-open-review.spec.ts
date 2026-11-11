@@ -24,12 +24,11 @@
  */
 
 import { strict as assert } from "node:assert";
-import { type ChildProcess, execFile } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { createPatch } from "diff";
 import { type Browser, type Page } from "playwright";
 import { sha256Text } from "../source/common/util/sha256";
@@ -48,8 +47,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
-
-const run = promisify(execFile);
+import { captureWindow, nativeDialog, pressKey } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-quit-with-review-e2e-latest");
 const REVIEWED = "# Genus\n\nTwo lattices in one genus are isometric over each localization.\n";
@@ -59,31 +57,6 @@ const REPLACED = "localiza";
 const DRAFT = "# Draft\n\n";
 const SENTENCE = "The Leech lattice has rank 24.";
 const QUIT_PROMPT_TITLE = "Unsaved changes";
-
-/** The X window of the native message box with this title, when it is on the screen. */
-async function nativeDialog(title: string): Promise<string> {
-  const { stdout } = await run(
-    "xdotool",
-    ["search", "--sync", "--onlyvisible", "--name", `^${title}$`],
-    { timeout: 30_000 },
-  );
-  const windows = stdout.trim().split("\n");
-  assert.equal(windows.length, 1, `one window has the title "${title}": ${stdout}`);
-  return windows[0];
-}
-
-async function captureWindow(window: string): Promise<Buffer> {
-  const { stdout } = await run("import", ["-window", window, "png:-"], {
-    encoding: "buffer",
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  return stdout;
-}
-
-/** Return activates the default button of a message box. */
-async function pressDefaultButton(window: string): Promise<void> {
-  await run("xdotool", ["windowfocus", "--sync", window, "key", "Return"], { timeout: 30_000 });
-}
 
 function collaborationSession(
   page: Page,
@@ -210,9 +183,9 @@ describe("assembled app: a quit with an open review in a pane", function () {
 
     const exited = once(running, "exit");
     await requestQuit(page);
-    const prompt = await nativeDialog(QUIT_PROMPT_TITLE);
+    const prompt = await nativeDialog(QUIT_PROMPT_TITLE, 30_000);
     screenshots.set("quit-prompt.png", await captureWindow(prompt));
-    await pressDefaultButton(prompt);
+    await pressKey(prompt, "Return");
 
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     assert.deepEqual(outcome, [0, null], "the answer Save changes ends the app");

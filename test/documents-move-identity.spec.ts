@@ -23,7 +23,7 @@
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -236,6 +236,29 @@ describe("Documents-provider identity of a moved document", function () {
         .items.map((item) => [item.annotationId, item.anchor.state]),
       [[secondState.annotation, "range"]],
       "the annotation is on its text when the moved document opens",
+    );
+  });
+
+  it("moves each document of a renamed folder when no sidecar can be written", async function () {
+    const first = write("drafts", "genus.md");
+    const second = write("drafts", "lattices.md");
+    const firstState = await openAndAnnotate(first);
+    const secondState = await openAndAnnotate(second);
+    const movedDirectory = path.join(root, "papers");
+
+    // The directory of the sidecars takes no new file: no state can go to
+    // the key of a new path.
+    const sidecars = path.join(userData, "review-sidecars");
+    chmodSync(sidecars, 0o500);
+    renameSync(path.dirname(first), movedDirectory);
+    await assert
+      .rejects(provider.hasMovedDir(path.dirname(first), movedDirectory))
+      .finally(() => chmodSync(sidecars, 0o700));
+
+    assert.deepEqual(
+      [provider.getDocumentPath(firstState.id), provider.getDocumentPath(secondState.id)],
+      [path.join(movedDirectory, "genus.md"), path.join(movedDirectory, "lattices.md")],
+      "each document is at its path in the renamed folder",
     );
   });
 

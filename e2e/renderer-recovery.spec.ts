@@ -22,12 +22,11 @@
  */
 
 import { strict as assert } from "node:assert";
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { type Browser, chromium, type Page } from "playwright";
 import {
   assertCleanExit,
@@ -43,8 +42,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
-
-const run = promisify(execFile);
+import { captureWindow, nativeDialogs, pressKey, searchWindows } from "./support/native-dialog";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-renderer-recovery-e2e-latest");
 const DRAFT = "# Orbits\n\n";
@@ -54,47 +52,6 @@ const NOT_RESPONDING_TITLE = "Window not responding";
 const QUIT_PROMPT_TITLE = "Unsaved changes";
 const HUNG_RENDERER_END =
   /^.*FATAL:content\/child\/child_thread_impl\.cc.*Crashing because hung$/gm;
-
-/** The X windows that `xdotool search` finds; none is exit status 1, not an error. */
-function searchWindows(criteria: string[]): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const search = spawn("xdotool", ["search", "--onlyvisible", ...criteria], {
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    let stdout = "";
-    search.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    search.once("error", reject);
-    search.once("close", () => {
-      resolve(stdout.split("\n").filter((line) => line !== ""));
-    });
-  });
-}
-
-/** The native message boxes with this title that are on the screen before the time limit. */
-async function nativeDialogs(title: string, timeoutMs: number): Promise<string[]> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const windows = await searchWindows(["--name", `^${title}$`]);
-    if (windows.length > 0 || Date.now() > deadline) {
-      return windows;
-    }
-    await delay(250);
-  }
-}
-
-async function captureWindow(window: string): Promise<Buffer> {
-  const { stdout } = await run("import", ["-window", window, "png:-"], {
-    encoding: "buffer",
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  return stdout;
-}
-
-async function pressKey(window: string, key: string): Promise<void> {
-  await run("xdotool", ["windowfocus", "--sync", window, "key", key], { timeout: 30_000 });
-}
 
 describe("assembled app: a main window whose renderer exits or hangs", function () {
   let appProcess: ChildProcess | undefined;
