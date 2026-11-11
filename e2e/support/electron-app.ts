@@ -641,6 +641,8 @@ export interface RunningApp {
   appProcess: ChildProcess;
   browser: Browser;
   getOutput: () => string;
+  /** Where a spec connects again after it left the connection of `browser`. */
+  devToolsUrl: string;
 }
 
 export async function attach(
@@ -670,7 +672,12 @@ export async function attach(
     }
 
     attached = true;
-    return { appProcess, browser: connectedBrowser, getOutput: () => processOutput };
+    return {
+      appProcess,
+      browser: connectedBrowser,
+      getOutput: () => processOutput,
+      devToolsUrl,
+    };
   })();
 
   return await running.finally(async () => {
