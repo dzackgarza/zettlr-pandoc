@@ -1,7 +1,7 @@
 <template>
   <div
     id="annotations-panel"
-    class="annotations-tab workspace-annotations-tab"
+    class="annotations-tab workspace-annotations-tab self-painted-controls"
   >
     <AnnotationHeader
       v-bind:outstanding-count="collaborationStore.workspaceUnresolvedCount"
@@ -191,7 +191,7 @@
     <AlertDialogRoot v-model:open="clearDialogOpen">
       <AlertDialogPortal>
         <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="annotation-dialog">
+        <AlertDialogContent class="annotation-dialog self-painted-controls">
           <AlertDialogTitle class="annotation-dialog-title">{{
             trans('Delete every resolved annotation?')
           }}</AlertDialogTitle>

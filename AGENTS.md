@@ -814,6 +814,28 @@ of an isolated instance are in the first comment of #132.
   in an endless loop, and a close of a stopped window). It answers native
   message boxes, so it runs on the display of the run only (§13).
 
+### 18. Controls that a surface paints itself
+
+- **The window chrome paints every control.** `generic.css`
+  (`common/vue/window/assets`) gives each `input`, `select`, `textarea` and
+  `button` of a window the look of the platform. Its dark rules have the
+  weight of two classes and two elements (`body.linux.dark button`), which is
+  more than the rule of a component for its own control.
+- **A surface that states the whole painting of its controls carries
+  `self-painted-controls`.** The platform rules leave out each control in a
+  subtree with that class, so the rules of the surface decide with any
+  weight. The collaboration surfaces carry it: the Annotations view, the
+  inline thread, the review bar, the review chunk, the create-annotation
+  dialog and the two delete confirmations.
+- **A portal is not in the subtree of its component.** A dialog that reka-ui
+  puts on `body` carries the class on its own content element.
+- **A surface with the class states every property that the platform rules
+  set** (background, colour, border, radius, padding, font) for each control
+  in it. A control without such a rule has the look of the browser.
+- **Proof:** `e2e/annotation-button-colours.spec.ts` (each control of each
+  collaboration surface, in dark and in light mode, has the colour of its
+  token and the same painting with and without the platform class).
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

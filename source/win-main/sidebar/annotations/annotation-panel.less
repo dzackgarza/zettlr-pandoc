@@ -146,9 +146,10 @@ button.annotation-line-locator {
 
 // Buttons: secondary by default, one primary per surface.
 button.annotation-button {
-  // Outside the panel — the confirmation dialog is a portal on `body` —
-  // nothing else has taken the native control painting away, and a native
-  // button keeps its own background whatever the author asks for.
+  // These rules state the whole painting of the button. The platform rules
+  // of the window chrome (`generic.css`) outweigh them, so each surface that
+  // uses these primitives carries the class `self-painted-controls`, in the
+  // window and in a portal on `body`.
   appearance: none;
   display: inline-flex;
   align-items: center;

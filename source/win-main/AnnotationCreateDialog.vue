@@ -5,7 +5,7 @@
       v-on:mousedown.self="cancel()"
     >
       <div
-        class="annotation-create-dialog"
+        class="annotation-create-dialog self-painted-controls"
         role="dialog"
         aria-modal="true"
         v-bind:aria-label="trans('AI Annotation')"

@@ -1,5 +1,5 @@
 <template>
-  <div class="suggestion-review-bar">
+  <div class="suggestion-review-bar self-painted-controls">
     <span class="suggestion-review-count">{{ pendingLabel }}</span>
     <button
       type="button"

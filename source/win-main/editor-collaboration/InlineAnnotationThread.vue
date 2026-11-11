@@ -1,6 +1,6 @@
 <template>
   <div
-    class="annotation-inline-thread"
+    class="annotation-inline-thread self-painted-controls"
     data-annotation-detail
     v-bind:data-annotation-id="card.annotation.annotationId"
     v-bind:class="card.annotation.state"
@@ -98,7 +98,7 @@
     <AlertDialogRoot v-model:open="confirmingDelete">
       <AlertDialogPortal>
         <AlertDialogOverlay class="annotation-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="annotation-dialog">
+        <AlertDialogContent class="annotation-dialog self-painted-controls">
           <AlertDialogTitle class="annotation-dialog-title">{{ trans('Delete this annotation?') }}</AlertDialogTitle>
           <AlertDialogDescription class="annotation-dialog-body">
             {{ trans('Its thread and any proposed changes go with it. This cannot be undone.') }}
