@@ -826,15 +826,19 @@ of an isolated instance are in the first comment of #132.
   subtree with that class, so the rules of the surface decide with any
   weight. The collaboration surfaces carry it: the Annotations view, the
   inline thread, the review bar, the review chunk, the create-annotation
-  dialog and the two delete confirmations.
+  dialog and the two delete confirmations. The Replace All and the Fix All
+  confirmations carry it too.
 - **A portal is not in the subtree of its component.** A dialog that reka-ui
-  puts on `body` carries the class on its own content element.
+  puts on `body` carries the class on its own content element, and no rule
+  for it is nested in the rule of the view that opens it.
 - **A surface with the class states every property that the platform rules
   set** (background, colour, border, radius, padding, font) for each control
   in it. A control without such a rule has the look of the browser.
 - **Proof:** `e2e/annotation-button-colours.spec.ts` (each control of each
   collaboration surface, in dark and in light mode, has the colour of its
-  token and the same painting with and without the platform class).
+  token and the same painting with and without the platform class),
+  `e2e/search-replace.spec.ts` and `e2e/fix-all.spec.ts` (the two
+  confirmations).
 
 ## Debugging entry points
 

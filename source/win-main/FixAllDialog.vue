@@ -2,7 +2,7 @@
   <AlertDialogRoot v-model:open="open">
     <AlertDialogPortal>
       <AlertDialogOverlay class="fix-all-backdrop"></AlertDialogOverlay>
-      <AlertDialogContent class="fix-all-dialog" data-fix-all-dialog>
+      <AlertDialogContent class="fix-all-dialog self-painted-controls" data-fix-all-dialog>
         <AlertDialogTitle class="fix-all-title">{{ title }}</AlertDialogTitle>
         <AlertDialogDescription class="fix-all-body" data-fix-all-summary>{{ summary }}</AlertDialogDescription>
         <template v-if="plan !== undefined && fixCount > 0">

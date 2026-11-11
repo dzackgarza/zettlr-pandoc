@@ -277,7 +277,7 @@
     <AlertDialogRoot v-model:open="confirmingReplaceAll">
       <AlertDialogPortal>
         <AlertDialogOverlay class="search-dialog-backdrop"></AlertDialogOverlay>
-        <AlertDialogContent class="search-dialog">
+        <AlertDialogContent class="search-dialog self-painted-controls">
           <AlertDialogTitle class="search-dialog-title">{{ trans('Replace All') }}</AlertDialogTitle>
           <AlertDialogDescription
             class="search-dialog-body"
@@ -1030,57 +1030,59 @@ body div#search-view {
     flex: 0 0 auto;
     gap: 0;
   }
+}
 
-  .search-dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.35);
-  }
+// The confirmation is a child of `body` (a reka-ui portal), so its rules
+// are not in the rule of the view.
+.search-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.35);
+}
 
-  .search-dialog {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 340px;
-    max-width: calc(100vw - 32px);
-    padding: 16px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 8px;
-    background-color: var(--chrome-surface);
-    color: inherit;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-  }
+.search-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background-color: var(--chrome-surface);
+  color: inherit;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
 
-  .search-dialog-title { margin: 0; font-size: 13px; font-weight: 600; }
-  .search-dialog-body { margin: 0; opacity: 0.8; }
+.search-dialog-title { margin: 0; font-size: 13px; font-weight: 600; }
+.search-dialog-body { margin: 0; opacity: 0.8; }
 
-  .search-dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-  }
+.search-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
 
-  button.search-button {
-    appearance: none;
-    margin: 0;
-    padding: 5px 10px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-    background-color: var(--chrome-surface);
-    color: inherit;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
+button.search-button {
+  appearance: none;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background-color: var(--chrome-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 
-    &.search-button-primary {
-      border-color: transparent;
-      background-color: var(--chrome-row-accent);
-      color: var(--chrome-row-accent-contrast, white);
-    }
+  &.search-button-primary {
+    border-color: transparent;
+    background-color: var(--chrome-row-accent);
+    color: var(--chrome-row-accent-contrast, white);
   }
 }
 </style>
