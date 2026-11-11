@@ -554,6 +554,36 @@ of an isolated instance are in the first comment of #132.
   oracle), `test/config-root-paths.spec.ts`, `test/explorer-ordering.spec.ts`,
   `e2e/nested-roots.spec.ts`.
 
+### 12. Citations and attachment files
+
+- **Locales.** `CiteprocProvider` reads its CSL locales from the one directory
+  that its owner gives: `BUNDLED_LOCALE_DIRECTORY` in the app, `static/csl-locales`
+  in a spec. The working directory decides nothing. The `en-US` locale is
+  required: the engine load stops with the read error when the file is absent or
+  unreadable. For another language an absent file is the answer `false` of the
+  citeproc-js `retrieveLocale` protocol; each other failure is an error.
+- **Attachments come from the library text.** `extractBibtexAttachments`
+  (`citeproc/util/extract-bibtex-attachments.ts`) reads the `file` field of each
+  entry as Zotero's BibTeX translator writes it: records apart by an unescaped
+  `;`, parts apart by an unescaped `:`. A change to what the loader keeps must
+  move the parse cache version.
+- **Only files on disk.** `getBibTexAttachments` gives the files that the library
+  names for a citation key and that exist. The open-attachment command opens the
+  first one. When the library names files and none exists, the command logs
+  that and asks Zotero (the Better BibTeX JSON-RPC).
+
+### 13. Assembled-app E2E runs
+
+- `just test-e2e` and `just test-e2e-file <spec>` drive the packaged build.
+  `currentPackagedBinary` (`e2e/support/electron-app.ts`) refuses a build whose
+  source fingerprint is not that of the tree: run `just package` first.
+- **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
+  Mocha process under one `xvfb-run`; a spec starts no X server of its own.
+- A Chromium probe of test-support code reports its exit code or signal, its
+  output and the X server errors when it fails (`test/visual/display-probe.ts`).
+- An e2e run and a `just package` build each need most of the memory of this
+  workstation. Run one at a time.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal
@@ -757,7 +787,7 @@ gh api graphql -f query='query { repository(owner:"dzackgarza", name:"zettlr-pan
 
 `thread-resolution` is red while any thread is unresolved, so a red `thread-resolution` says the triage loop has not been run. Triage every substantive thread through `pr-feedback-triage`: a disposition and its evidence on the thread itself, a commit behind any accepted finding, and no thread resolved on intent. Policy findings (`POLICY.FAIL_OPEN`, `POLICY.NO_ERROR_DISCARD`, `POLICY.RUNTIME_DEFAULT`, `POLICY.NO_HIDDEN_CONFIG`, `POLICY.NO_TYPE_ESCAPE`) are the global bridge-burning rules; they are not style notes and they are not waivable by a sentence in the PR body.
 
-The local commit hook exempts this fork from verification, and `e2e` specs that pass under the local xvfb harness still fail on the hosted runner. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
+The local commit hook exempts this fork from verification. The hosted `Unit Tests / Lint` job builds the packaged app and runs the assembled-app E2E suite on it. Neither a clean commit nor a green local run is evidence about the PR; the run over the branch head is.
 
 ## When Acting on Review Feedback
 
