@@ -91,6 +91,10 @@ class HeadlessBrowserWindow {
       send(...args) {
         messages.push(args);
       },
+      // A window of the harness has a renderer for its whole life.
+      isCrashed() {
+        return false;
+      },
     };
     openWindows.add(this);
   }
