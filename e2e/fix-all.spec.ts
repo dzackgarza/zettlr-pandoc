@@ -100,6 +100,8 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     const fixture = await createFixture("zettlr-fix-all-e2e-", {
       documentName: "index.md",
       documentContents: INDEX,
+      // Dark mode: the platform rules for a control weigh the most there.
+      config: { darkMode: true, autoDarkMode: "off" },
     });
     fixtureRoot = fixture.root;
     indexPath = fixture.documentPath;
@@ -145,6 +147,36 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       /math\/bare-operator\s*1/,
     );
     screenshots.set("fix-all-document.png", await page.screenshot());
+    const painted = await page.evaluate((dialogSelector) => {
+      const confirm = document.querySelector(`${dialogSelector} [data-fix-all-confirm]`);
+      const cancel = document.querySelector(`${dialogSelector} button:not([data-fix-all-confirm])`);
+      if (confirm == null || cancel == null) {
+        throw new Error("The Fix All confirmation has no two actions");
+      }
+      const probe = document.createElement("span");
+      document.body.append(probe);
+      probe.style.backgroundColor = "var(--chrome-row-accent)";
+      const accent = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "var(--chrome-surface)";
+      const surface = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return {
+        confirm: getComputedStyle(confirm).backgroundColor,
+        cancel: getComputedStyle(cancel).backgroundColor,
+        accent,
+        surface,
+      };
+    }, DIALOG);
+    assert.equal(
+      painted.confirm,
+      painted.accent,
+      "the action that fixes has the accent colour of the window",
+    );
+    assert.equal(
+      painted.cancel,
+      painted.surface,
+      "the action that cancels has the surface colour of the window",
+    );
 
     await page.locator(`${DIALOG} [data-fix-all-confirm]`).click();
     await page.locator(DIALOG).waitFor({ state: "detached", timeout: 10_000 });

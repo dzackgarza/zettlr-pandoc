@@ -52,6 +52,47 @@ async function clickRowAction(row: Locator, action: string): Promise<void> {
   await row.locator(ACTION(action)).click();
 }
 
+interface ConfirmationPainting {
+  centre: [number, number];
+  viewportCentre: [number, number];
+  replace: string;
+  cancel: string;
+  accent: string;
+  surface: string;
+}
+
+/**
+ * Where the Replace All confirmation is, the background of its two actions,
+ * and what the colour tokens of the window resolve to on an element of
+ * `body`, which is where the confirmation is.
+ */
+async function confirmationPainting(page: Page): Promise<ConfirmationPainting> {
+  return await page.evaluate(() => {
+    const replace = document.querySelector('[data-search-confirm="replace-all"]');
+    const dialog = replace?.closest('[role="alertdialog"]');
+    const cancel = dialog?.querySelector("button:not([data-search-confirm])");
+    if (replace == null || dialog == null || cancel == null) {
+      throw new Error("The Replace All confirmation is not open");
+    }
+    const box = dialog.getBoundingClientRect();
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    probe.style.backgroundColor = "var(--chrome-row-accent)";
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.style.backgroundColor = "var(--chrome-surface)";
+    const surface = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return {
+      centre: [Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2)],
+      viewportCentre: [Math.round(innerWidth / 2), Math.round(innerHeight / 2)],
+      replace: getComputedStyle(replace).backgroundColor,
+      cancel: getComputedStyle(cancel).backgroundColor,
+      accent,
+      surface,
+    };
+  });
+}
+
 const TERM = "subgroupoid";
 const REPLACES_WITH = "subcategory";
 
@@ -243,6 +284,23 @@ describe("the Search view", function () {
       await activePage.locator("[data-search-confirm-message]").innerText(),
       /3 occurrences across 2 files/,
       "the confirmation counts what it is about to change",
+    );
+    screenshots.set("replace-all-confirmation.png", await activePage.screenshot());
+    const painted = await confirmationPainting(activePage);
+    assert.deepEqual(
+      painted.centre,
+      painted.viewportCentre,
+      "the confirmation is in the middle of the window",
+    );
+    assert.equal(
+      painted.replace,
+      painted.accent,
+      "the action that replaces has the accent colour of the window",
+    );
+    assert.equal(
+      painted.cancel,
+      painted.surface,
+      "the action that cancels has the surface colour of the window",
     );
     await confirm.click();
 
