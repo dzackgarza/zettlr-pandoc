@@ -134,15 +134,20 @@ test-e2e-file file: sync-dependencies
 # each start finds it in `DISPLAY`. The default screen of xvfb-run is
 # 640x480; a new window sizes itself from the screen, and the three panes
 # need more than that.
+#
+# The command also gets a session bus of its own, without services
+# (`scripts/e2e-session-bus.conf`): a desktop notification of the app of a
+# run does not reach the desktop of the author.
 [private]
 [positional-arguments]
 _on-x-display +command:
     #!/usr/bin/env bash
     set -euo pipefail
+    session_bus=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
     if [[ -n "${DISPLAY:-}" ]]; then
-      exec "$@"
+      exec "${session_bus[@]}" "$@"
     fi
-    exec xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' "$@"
+    exec "${session_bus[@]}" xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:

@@ -739,6 +739,13 @@ of an isolated instance are in the first comment of #132.
   shutdown line through `readAppLog`.
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
   Mocha process under one `xvfb-run`; a spec starts no X server of its own.
+- **The run owns its session bus.** The recipe starts the Mocha process
+  under `dbus-run-session` with `scripts/e2e-session-bus.conf`, a bus without
+  services. A desktop notification of the app of a run goes to that bus and
+  not to the desktop of the author. The stock session configuration starts a
+  notification daemon on request, and that daemon draws on the compositor of
+  the author. A spec that needs a session service starts it on the bus of
+  the run.
 - A Chromium probe of test-support code reports its exit code or signal, its
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
