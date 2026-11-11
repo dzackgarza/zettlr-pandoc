@@ -5,7 +5,10 @@
     :menubar="shouldShowMenubar"
     :disable-vibrancy="!hasVibrancy"
   >
-    <div class="main-body">
+    <div
+      ref="mainBody"
+      class="main-body"
+    >
       <!-- The activity bar, then the three panes under one splitter (D8): the
          sidebar's drawer, the editor, the annotation panel. -->
       <ActivityBar
@@ -21,9 +24,11 @@
         direction="horizontal"
         class="main-panes"
         :class="{ animating: panesAnimating }"
+        :data-editor-anchor="editorSlide.anchor"
         :style="{
           '--annotation-panel-width': mountWidths.annotationPanel + 'px',
-          '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px'
+          '--navigation-sidebar-width': mountWidths.navigationSidebar + 'px',
+          '--editor-slide-width': editorSlide.width
         }"
       >
         <SplitterPanel
@@ -62,30 +67,32 @@
           :min-size="EDITOR_MINIMUM_PERCENT"
           @focusin="rememberEditorDesktopFocus"
         >
-          <EditorPane
-            v-if="paneConfiguration?.type === 'leaf'"
-            :node="paneConfiguration"
-            :leaf-id="paneConfiguration.id"
-            :editor-commands="editorCommands"
-            :window-id="windowId"
-            @global-search="startGlobalSearch($event)"
-            @reference-search="openReferenceSearch($event)"
-            @file-search="openFileLauncher()"
-            @create-reference-label="openCreateReferenceLabel($event)"
-            @open-pandoc-quick-help="showPandocQuickHelp = true"
-          />
-          <EditorBranch
-            v-else-if="paneConfiguration !== undefined"
-            :node="paneConfiguration"
-            :window-id="windowId"
-            :editor-commands="editorCommands"
-            :is-last="true"
-            @global-search="startGlobalSearch($event)"
-            @reference-search="openReferenceSearch($event)"
-            @file-search="openFileLauncher()"
-            @create-reference-label="openCreateReferenceLabel($event)"
-            @open-pandoc-quick-help="showPandocQuickHelp = true"
-          />
+          <div class="editor-frame">
+            <EditorPane
+              v-if="paneConfiguration?.type === 'leaf'"
+              :node="paneConfiguration"
+              :leaf-id="paneConfiguration.id"
+              :editor-commands="editorCommands"
+              :window-id="windowId"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @file-search="openFileLauncher()"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
+            <EditorBranch
+              v-else-if="paneConfiguration !== undefined"
+              :node="paneConfiguration"
+              :window-id="windowId"
+              :editor-commands="editorCommands"
+              :is-last="true"
+              @global-search="startGlobalSearch($event)"
+              @reference-search="openReferenceSearch($event)"
+              @file-search="openFileLauncher()"
+              @create-reference-label="openCreateReferenceLabel($event)"
+              @open-pandoc-quick-help="showPandocQuickHelp = true"
+            />
+          </div>
         </SplitterPanel>
         <SplitterResizeHandle
           class="main-pane-handle"
@@ -254,7 +261,7 @@ import {
   useWorkspaceStore,
 } from "source/pinia";
 import { type AnyDescriptor } from "source/types/common/fsal";
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import chimeFile from "./assets/chime.mp3";
 import alarmFile from "./assets/digital_alarm.mp3";
 // Import the sound effects for the pomodoro timer
@@ -293,6 +300,7 @@ import {
   resolveExternalFile,
 } from "./util/desktop-command-target";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
+import { EDITOR_FILLS_ITS_PANE, type EditorSlide, paneSlide } from "./util/pane-slide";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
 import { REFUSED_ACTION_TEXT } from "./util/refused-action-text";
 import { surfaceDocumentLoadFailure } from "./util/surface-document-load-error";
@@ -664,10 +672,9 @@ const sidebarVisible = computed<boolean>(() => configStore.config.window.sidebar
 
 // Showing and hiding a pane. The panes stay mounted and collapse to nothing
 // through the splitter's own collapse, so the width slides instead of
-// jumping and a pane comes back holding what it held. The transition is
-// armed only around a toggle: a window resize relays the panes too, and a
-// pane that eased after the window edge would lag behind the pointer.
-const PANE_ANIMATION_MS = 180;
+// jumping and a pane comes back holding what it held. The slide runs only
+// around a toggle: a window resize relays the panes too, and a pane that
+// eased after the window edge would lag behind the pointer.
 const PANE_VISIBLE_KEY: Record<
   DraggablePane,
   "window.fileManagerVisible" | "window.sidebarVisible"
@@ -681,8 +688,10 @@ const PANE_MINIMUM: Record<DraggablePane, number> = {
 };
 const navigationSidebarPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
 const annotationPanelPanel = ref<InstanceType<typeof SplitterPanel> | null>(null);
+const mainBody = ref<HTMLDivElement | null>(null);
 const panesAnimating = ref(false);
-let paneAnimationTimer: ReturnType<typeof setTimeout> | undefined;
+const editorSlide = ref<EditorSlide>(EDITOR_FILLS_ITS_PANE);
+const slidePanes = paneSlide({ animating: panesAnimating, editorSlide });
 let paneResizeFrame: number | undefined;
 
 /**
@@ -701,21 +710,16 @@ function panelFor(pane: DraggablePane): InstanceType<typeof SplitterPanel> | nul
 }
 
 /**
- * Slides a pane open or shut. A pane comes back at the width it was left
- * at, which is named here rather than left to the splitter: a pane the
- * window opened with hidden was never collapsed, so the splitter remembers
- * no width for it and would hand it its bare minimum.
+ * Opens or shuts a pane in the splitter. A pane comes back at the width it
+ * was left at, which is named here rather than left to the splitter: a pane
+ * the window opened with hidden was never collapsed, so the splitter
+ * remembers no width for it and would hand it its bare minimum.
  */
 function applyPaneVisibility(pane: DraggablePane, visible: boolean): void {
   const panel = panelFor(pane);
   if (panel === null) {
     return;
   }
-  panesAnimating.value = true;
-  clearTimeout(paneAnimationTimer);
-  paneAnimationTimer = setTimeout(() => {
-    panesAnimating.value = false;
-  }, PANE_ANIMATION_MS);
   if (visible) {
     panel.expand();
     panel.resize(mountWidths[pane]);
@@ -725,12 +729,23 @@ function applyPaneVisibility(pane: DraggablePane, visible: boolean): void {
 }
 
 watch([fileManagerVisible, sidebarVisible], ([sidebar, panel], [wasSidebar, wasPanel]) => {
+  const toggled = new Map<DraggablePane, boolean>();
   if (sidebar !== wasSidebar) {
-    applyPaneVisibility("navigationSidebar", sidebar);
+    toggled.set("navigationSidebar", sidebar);
   }
   if (panel !== wasPanel) {
-    applyPaneVisibility("annotationPanel", panel);
+    toggled.set("annotationPanel", panel);
   }
+  const group = mainBody.value?.querySelector<HTMLElement>(".main-panes");
+  if (group === null || group === undefined) {
+    return;
+  }
+  // The edge of the editor that does not move: the one away from the pane.
+  slidePanes(group, toggled.has("annotationPanel") ? "left" : "right", () => {
+    for (const [pane, visible] of toggled) {
+      applyPaneVisibility(pane, visible);
+    }
+  }).catch(reportError);
 });
 
 /**
@@ -1527,16 +1542,37 @@ body {
     }
   }
 
-  // A pane slides open and shut. `flex-grow` is what the splitter writes, so
-  // it is what eases; the panes beside it take up the room as it goes.
-  // During animation, the inner sidebar containers are held at target width and clipped
-  // by the collapsing outer pane so cards are not repeatedly reflowed across frames.
+  .editor-frame {
+    width: 100%;
+    height: 100%;
+  }
+
+  // A pane slides open and shut: `paneSlide` plays the `flex-grow` that the
+  // splitter writes from its value of before to its new value. During the
+  // slide the content of each pane is held at the width of the end and
+  // clipped by its pane, so no pane lays its content out again for a frame.
   .main-panes.animating {
     .main-pane {
-      transition: flex-grow 180ms ease;
       overflow: hidden !important;
     }
-    .main-pane-handle { transition: width 180ms ease; }
+
+    [data-pane="editor"] {
+      position: relative;
+
+      > .editor-frame {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: var(--editor-slide-width);
+        height: auto;
+      }
+    }
+
+    &[data-editor-anchor="right"] [data-pane="editor"] > .editor-frame {
+      left: auto;
+      right: 0;
+    }
 
     [data-pane="annotation-panel"] {
       position: relative;

@@ -500,6 +500,30 @@ of an isolated instance are in the first comment of #132.
   content again. `configField` keeps its object for a configuration update
   with equal values, so a renderer can compare the field by identity in
   `inputsChanged`.
+- **A change of one collaboration session costs work for its document only.**
+  The window store (`pinia/document-collaboration-store.ts`) holds each
+  session as the object that the main process sent: the map of sessions is
+  shallow (`shallowReactive`), each session is raw (`markRaw`), and a new
+  state replaces the session through `setSession`. No code changes a stored
+  session in place, and no watcher is deep. A value that the store derives
+  from a session (the cards, the review rows) is made one time for one
+  session object. A session whose annotation set is equal to the shown one
+  keeps the shown `annotations` object, so the editor watches that object by
+  identity. The Annotations view reads the workspace state again only when
+  its list of paths has a new member or lost one (#126). Proof:
+  `test/annotations-sidebar.spec.ts`,
+  `test/annotations-panel-animation.spec.ts`.
+- **The editor takes one new width for one slide of a side pane.** A side
+  pane of the main window slides for 180 ms. `paneSlide`
+  (`win-main/util/pane-slide.ts`) gives the panes their final sizes in one
+  step and plays the slide as an animation of `flex-grow` from the old sizes.
+  For the time of the slide the frame of the editor (`.editor-frame`) has
+  the width of the end state and is anchored to the side that does not move,
+  so the document wraps one time. On an open, the part of the editor pane
+  that the side pane did not reach yet is empty; on a close, the editor pane
+  clips its frame. A new pane that
+  slides beside the editor goes through `paneSlide`; no CSS transition
+  changes the width of the editor. Proof: `e2e/pane-slide.spec.ts`.
 - **An editor in a background tab receives no workspace transaction.** It
   reads the workspace state, the citation data and the completion databases
   when its tab becomes active (`refreshActiveEditorAuxiliaryState` in

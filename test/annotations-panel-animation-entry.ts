@@ -16,12 +16,17 @@ import { SplitterGroup, SplitterPanel, SplitterResizeHandle } from "reka-ui";
 import loadIcons from "source/common/modules/window-register/load-icons";
 import { useDocumentCollaborationStore, useDocumentTreeStore } from "source/pinia";
 import AnnotationsTab from "source/win-main/sidebar/AnnotationsTab.vue";
+import {
+  EDITOR_FILLS_ITS_PANE,
+  type EditorSlide,
+  PANE_ANIMATION_MS,
+  paneSlide,
+} from "source/win-main/util/pane-slide";
 import { createApp, h, nextTick, reactive, ref } from "vue";
 import { documentCollaborationIpcDouble } from "./document-collaboration-ipc-double";
 import editorConfig from "./fixtures/editor-config.json";
 
 const BENCHMARK_PATH = "/tmp/annotations-benchmark-doc.md";
-const PANE_ANIMATION_MS = 180;
 
 function generateAnnotations(count: number, docLength: number): TextAnnotation[] {
   const items: TextAnnotation[] = [];
@@ -86,7 +91,8 @@ declare global {
   }
 }
 
-// Inject splitter and animation rules matching App.vue
+// The rules of App.vue for the panes and their slide. The slide itself is the
+// one of the app (`paneSlide`).
 const appStyle = document.createElement("style");
 appStyle.id = "benchmark-splitter-styles";
 appStyle.textContent = `
@@ -107,12 +113,28 @@ appStyle.textContent = `
     }
   }
 
+  .editor-frame {
+    width: 100%;
+    height: 100%;
+  }
+
   .main-panes.animating {
     .main-pane {
-      transition: flex-grow 180ms ease;
       overflow: hidden !important;
     }
-    .main-pane-handle { transition: width 180ms ease; }
+
+    [data-pane="editor"] {
+      position: relative;
+
+      > .editor-frame {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: var(--editor-slide-width);
+        height: auto;
+      }
+    }
 
     [data-pane="annotation-panel"] {
       position: relative;
@@ -172,6 +194,8 @@ window.benchmarkReady = (async () => {
 
   const sidebarVisible = ref(true);
   const panesAnimating = ref(false);
+  const editorSlide = ref<EditorSlide>(EDITOR_FILLS_ITS_PANE);
+  const slidePanes = paneSlide({ animating: panesAnimating, editorSlide });
   const annotationPanelRef = ref<InstanceType<typeof SplitterPanel> | null>(null);
 
   const mountWidths = reactive({
@@ -179,16 +203,9 @@ window.benchmarkReady = (async () => {
     navigationSidebar: 240,
   });
 
-  let paneTimer: ReturnType<typeof setTimeout> | undefined;
-
   function applyVisibility(visible: boolean): void {
     const panel = annotationPanelRef.value;
     if (panel === null) return;
-    panesAnimating.value = true;
-    clearTimeout(paneTimer);
-    paneTimer = setTimeout(() => {
-      panesAnimating.value = false;
-    }, PANE_ANIMATION_MS);
     if (visible) {
       panel.expand();
       panel.resize(mountWidths.annotationPanel);
@@ -209,6 +226,7 @@ window.benchmarkReady = (async () => {
               style: {
                 "--annotation-panel-width": mountWidths.annotationPanel + "px",
                 "--navigation-sidebar-width": mountWidths.navigationSidebar + "px",
+                "--editor-slide-width": editorSlide.value.width,
                 width: "100%",
                 height: "100%",
               },
@@ -223,7 +241,12 @@ window.benchmarkReady = (async () => {
                   minSize: 300,
                 },
                 () => [
-                  h("div", { id: "benchmark-editor", style: { height: "100%", overflow: "auto" } }),
+                  h("div", { class: "editor-frame" }, [
+                    h("div", {
+                      id: "benchmark-editor",
+                      style: { height: "100%", overflow: "auto" },
+                    }),
+                  ]),
                 ],
               ),
               h(SplitterResizeHandle, {
@@ -358,7 +381,11 @@ window.benchmarkReady = (async () => {
     const startTime = performance.now();
     requestAnimationFrame(frameLoop);
 
-    applyVisibility(shouldOpen);
+    const group = document.querySelector<HTMLElement>(".main-panes");
+    if (group === null) {
+      throw new Error("The group of panes is missing");
+    }
+    await slidePanes(group, "left", () => applyVisibility(shouldOpen));
 
     await new Promise((r) => setTimeout(r, PANE_ANIMATION_MS + 60));
     running = false;
