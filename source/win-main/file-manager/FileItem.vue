@@ -21,6 +21,7 @@
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
       v-bind:data-read-error="readError?.code"
+      v-bind:data-metadata-problem="metadataProblemSources(item)"
       v-bind:title="readErrorTitle"
       v-bind:data-filename="getFilename"
       v-bind:draggable="isDraggable"
@@ -39,7 +40,7 @@
           class="is-solid"
         ></cds-icon>
         <cds-icon
-          v-if="readError !== undefined"
+          v-if="readErrorTitle !== undefined"
           v-bind:aria-label="readErrorTitle"
           shape="warning-standard"
           class="is-solid read-error-icon"
@@ -194,7 +195,13 @@ import { eventsChangeChildren } from "./util/events-change-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
-import { readErrorOf, readErrorSentence } from "./util/read-error";
+import {
+  metadataProblemSentence,
+  metadataProblemSources,
+  metadataProblemsOf,
+  readErrorOf,
+  readErrorSentence,
+} from "./util/read-error";
 
 const props = defineProps<{
   activeFile: AnyDescriptor | undefined;
@@ -228,9 +235,14 @@ const isIgnored = computed(() => {
 
 /** Why the text of this file could not be read; undefined for a file that was read. */
 const readError = computed(() => readErrorOf(props.item));
-const readErrorTitle = computed(() =>
-  readError.value === undefined ? undefined : readErrorSentence(readError.value),
-);
+/** Each cause that the application could not read this item for; undefined without one. */
+const readErrorTitle = computed(() => {
+  const causes = [
+    ...(readError.value === undefined ? [] : [readErrorSentence(readError.value)]),
+    ...metadataProblemsOf(props.item).map(metadataProblemSentence),
+  ];
+  return causes.length === 0 ? undefined : causes.join("\n");
+});
 
 const shouldCountChars = computed(() => configStore.config.editor.countChars);
 const writingTargets = computed(() => windowStateStore.writingTargets);

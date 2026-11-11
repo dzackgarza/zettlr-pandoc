@@ -2,6 +2,12 @@
   <PopoverWrapper v-bind:target="target" v-on:close="emit('close')">
     <div id="dir-props">
       <h4>{{ props.directory.name }}</h4>
+      <ul v-if="metadataProblems.length > 0" class="metadata-problems">
+        <li v-for="sentence, idx in metadataProblems" v-bind:key="idx">
+          <cds-icon shape="warning-standard" solid role="presentation"></cds-icon>
+          <span>{{ sentence }}</span>
+        </li>
+      </ul>
       <div class="properties-info-container">
         <div><span>{{ createdLabel }}: {{ creationTime }}</span></div>
         <div>
@@ -47,7 +53,11 @@
       <hr>
       <div id="dir-props-project">
         <!-- Project options -->
-        <template v-if="isQuartoProject">
+        <!--
+          A binding whose manifest gives no book is still a binding: the
+          author removes it here.
+        -->
+        <template v-if="isQuartoProject || boundManifest !== null">
           <span>{{ quartoProjectLabel }}: {{ boundManifest ?? DIRECTORY_MANIFEST }}</span>
           <ButtonControl
             v-if="boundManifest !== null"
@@ -159,6 +169,7 @@ import type { DirSettingsCommandAPI } from "source/app/service-providers/command
 import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
 import { computed, onBeforeMount, ref, toRef, watch } from "vue";
+import { metadataProblemSentence, metadataProblemsOf } from "./read-error";
 
 /** Where Quarto looks for a book's manifest when nothing says otherwise. */
 const DIRECTORY_MANIFEST = "_quarto.yml";
@@ -294,6 +305,10 @@ const isQuartoProject = computed(
   () => props.directory.settings.project?.manifest.kind === "quarto",
 );
 const boundManifest = computed(() => props.directory.settings.quartoManifest);
+/** The settings file or the manifest of the folder that could not be used. */
+const metadataProblems = computed(() =>
+  metadataProblemsOf(props.directory).map(metadataProblemSentence),
+);
 const manifestBinding = ref<string>(props.directory.settings.quartoManifest ?? "");
 
 const creationTime = computed(() => {
@@ -531,6 +546,26 @@ body {
 
     // A binding is a path, and a path has nowhere to wrap.
     #dir-props-project span { overflow-wrap: anywhere; }
+
+    .metadata-problems {
+      list-style: none;
+      margin: 0 0 10px;
+      padding: 0;
+
+      li {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        margin-bottom: 4px;
+        // The sentence holds a path and the message of the filesystem.
+        overflow-wrap: anywhere;
+      }
+
+      cds-icon {
+        flex: none;
+        color: var(--accent-orange);
+      }
+    }
 
     .form-control {
       padding: 5px 0;

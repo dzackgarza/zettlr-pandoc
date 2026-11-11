@@ -133,6 +133,12 @@ export default class FSAL extends ProviderContract {
   private readonly deadWorkspaces: Set<string>;
   /** The files whose last read of the text failed. */
   private readonly unreadableFiles = new Set<string>();
+  /**
+   * The manifest of each directory that is bound to a Quarto manifest. The
+   * watcher names a changed manifest, and this map gives the directories
+   * that the manifest describes.
+   */
+  private readonly boundManifests = new Map<string, string>();
   /** The events that wait for the next publication, in the order they happened */
   private readonly pendingEvents: FSALEventPayload[] = [];
   private readonly publishPendingEvents = _.throttle(
@@ -338,6 +344,13 @@ export default class FSAL extends ProviderContract {
       this.refreshIgnoreRules();
     }
 
+    if (event === "add" || event === "change" || event === "unlink") {
+      this.publishManifestOwners(absPath);
+    }
+    if (event === "unlinkDir") {
+      this.boundManifests.delete(absPath);
+    }
+
     // A path that the ignore rules hide is not listed, so its events stay
     // here. The event name says whether an unlinked path was a directory.
     if (!this.isListed(absPath, event === "addDir" || event === "unlinkDir")) {
@@ -378,6 +391,53 @@ export default class FSAL extends ProviderContract {
           err,
         );
       });
+  }
+
+  /**
+   * Publishes a change of each listed directory that the Quarto manifest at
+   * a path describes: the directory that holds the manifest, and each
+   * directory that is bound to it. The Project and the manifest problem of a
+   * directory are read from its manifest, and the watcher reports a manifest
+   * edit as a change of the manifest file only.
+   */
+  private publishManifestOwners(absPath: string): void {
+    const owners = new Set(
+      [...this.boundManifests]
+        .filter(([, manifest]) => manifest === absPath)
+        .map(([directory]) => directory),
+    );
+    if (path.basename(absPath) === FSALDir.QUARTO_MANIFEST_NAME) {
+      owners.add(path.dirname(absPath));
+    }
+
+    for (const directory of owners) {
+      if (!this.isListed(directory, true)) {
+        continue;
+      }
+      this.isDir(directory)
+        .then(async (isDirectory) => {
+          // A directory that went away with its manifest has its own event.
+          if (isDirectory) {
+            const descriptor = await this.getAnyDirectoryDescriptor(directory);
+            this.publishEvent({ event: "change", descriptor });
+          }
+        })
+        .catch((err: Error) => {
+          this._logger.error(
+            `[FSAL] Could not read "${directory}" again after a change of its Quarto manifest: ${err.message}`,
+            err,
+          );
+        });
+    }
+  }
+
+  /** Records which manifest a directory is bound to. */
+  private rememberBoundManifest(directory: DirDescriptor): void {
+    if (directory.settings.quartoManifest === null) {
+      this.boundManifests.delete(directory.path);
+    } else {
+      this.boundManifests.set(directory.path, FSALDir.quartoManifestLocation(directory));
+    }
   }
 
   /**
@@ -990,11 +1050,13 @@ export default class FSAL extends ProviderContract {
    *
    * @return  {Promise<FSALDir.QuartoManifestBinding>}  The binding, or why there is none
    */
-  public bindQuartoManifest(
+  public async bindQuartoManifest(
     src: DirDescriptor,
     manifestPath: string,
   ): Promise<FSALDir.QuartoManifestBinding> {
-    return FSALDir.bindQuartoManifest(src, manifestPath);
+    const binding = await FSALDir.bindQuartoManifest(src, manifestPath);
+    this.rememberBoundManifest(src);
+    return binding;
   }
 
   /**
@@ -1004,6 +1066,7 @@ export default class FSAL extends ProviderContract {
    */
   public async unbindQuartoManifest(src: DirDescriptor): Promise<void> {
     await FSALDir.unbindQuartoManifest(src);
+    this.rememberBoundManifest(src);
   }
 
   /**
@@ -1229,15 +1292,28 @@ export default class FSAL extends ProviderContract {
       }
     }
 
-    try {
-      return await this.getAnyDirectoryDescriptor(absPath);
-    } catch (err: unknown) {
-      const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
-      if (code === "EACCES" || code === "EPERM") {
-        return this.loadDummyDirectoryDescriptor(absPath);
-      }
-      return await this.getDescriptorForAnySupportedFile(absPath);
+    if (this.deadWorkspaces.has(absPath)) {
+      return this.loadDummyDirectoryDescriptor(absPath);
     }
+
+    // A path that the filesystem does not let the application examine (no
+    // search permission on a folder above it) is not known to be a file or a
+    // directory.
+    const isDirectory = await this.isDir(absPath).catch((cause: Error) => {
+      if (hasErrnoCode(cause, "EACCES", "EPERM")) {
+        return undefined;
+      }
+      throw cause;
+    });
+    if (isDirectory === undefined) {
+      return this.loadDummyDirectoryDescriptor(absPath);
+    }
+
+    // The error of a directory is the error of that directory: it is not
+    // read as a file.
+    return isDirectory
+      ? await this.getAnyDirectoryDescriptor(absPath)
+      : await this.getDescriptorForAnySupportedFile(absPath);
   }
 
   /**
@@ -1259,7 +1335,9 @@ export default class FSAL extends ProviderContract {
       throw new Error(`[FSAL] Cannot load directory ${absPath}: Not a directory`);
     }
 
-    return await FSALDir.parse(absPath);
+    const directory = await FSALDir.parse(absPath);
+    this.rememberBoundManifest(directory);
+    return directory;
   }
 
   /**

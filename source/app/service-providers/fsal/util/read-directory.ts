@@ -1,3 +1,4 @@
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type { AnyDescriptor } from "@dts/common/fsal";
 import { promises as fs } from "fs";
 import path from "path";
@@ -101,7 +102,9 @@ export async function readDirectoryFromDisk(
 
 /**
  * Lists a directory and everything below it that the app lists: the directory
- * itself, then each listed file and folder. A directory that cannot be read
+ * itself, then each listed file and folder. A directory that refuses its
+ * content is a path of the listing, without content: its descriptor names
+ * the cause. A directory that cannot be listed for another reason
  * contributes nothing.
  */
 export async function readDirectoryRecursivelyFromDisk(
@@ -109,27 +112,26 @@ export async function readDirectoryRecursivelyFromDisk(
   ignoreFilter: IgnoreFilter,
   logger: DirectoryReadLogger,
 ): Promise<string[]> {
-  try {
-    const children = await listedChildren(directoryPath, ignoreFilter);
-    const contents = await Promise.all(
-      children.map(async (child) => {
-        return child.isDirectory
-          ? await readDirectoryRecursivelyFromDisk(child.path, ignoreFilter, logger)
-          : [child.path];
-      }),
-    );
-    return [directoryPath, ...contents.flat()];
-  } catch (err: unknown) {
-    const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
-    if (code === "EACCES" || code === "EPERM") {
-      logger.error(
-        `[FSAL] Could not read directory ${directoryPath}: Could not read/access the directory (code: ${code})`,
-      );
-    } else if (err instanceof Error) {
-      logger.error(`[FSAL] Could not read directory: ${directoryPath}`, err);
+  const listing = await listedChildren(directoryPath, ignoreFilter).then(
+    (children) => ({ children }),
+    (cause: Error) => ({ cause }),
+  );
+  if ("cause" in listing) {
+    if (hasErrnoCode(listing.cause, "EACCES", "EPERM")) {
+      return [directoryPath];
     }
+    logger.error(`[FSAL] Could not read directory: ${directoryPath}`, listing.cause);
     return [];
   }
+
+  const contents = await Promise.all(
+    listing.children.map(async (child) => {
+      return child.isDirectory
+        ? await readDirectoryRecursivelyFromDisk(child.path, ignoreFilter, logger)
+        : [child.path];
+    }),
+  );
+  return [directoryPath, ...contents.flat()];
 }
 
 /**

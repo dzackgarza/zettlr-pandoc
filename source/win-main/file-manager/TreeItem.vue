@@ -13,11 +13,13 @@
         project: item.type === 'directory' && item.settings.project != null,
         'is-ignored': isIgnored,
         'is-unreadable': readError !== undefined,
+        'has-metadata-problem': metadataProblems.length > 0,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
       v-bind:data-read-error="readError?.code"
+      v-bind:data-metadata-problem="metadataProblemSources(item)"
       v-bind:style="{
         'padding-left': `calc(${depth} * var(--chrome-indent) + var(--chrome-inset))`
       }"
@@ -225,7 +227,13 @@ import { eventsChangeChildren } from "./util/events-change-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
-import { readErrorOf, readErrorSentence } from "./util/read-error";
+import {
+  metadataProblemSentence,
+  metadataProblemSources,
+  metadataProblemsOf,
+  readErrorOf,
+  readErrorSentence,
+} from "./util/read-error";
 
 const ipcRenderer = window.ipc;
 
@@ -309,7 +317,7 @@ const secondaryIcon = computed(() => (filteredChildren.value.length > 0 ? "angle
 const primaryIcon = computed(() => {
   const { attachmentExtensions } = configStore.config;
 
-  if (readError.value !== undefined) {
+  if (readError.value !== undefined || metadataProblems.value.length > 0) {
     return "warning-standard";
   } else if (props.item.type === "file" && writingTarget.value !== undefined) {
     return "writing-target";
@@ -396,11 +404,16 @@ const isIgnored = computed(() => {
 /** Why the text of this file could not be read; undefined for a file that was read. */
 const readError = computed(() => readErrorOf(props.item));
 
-/** The path of the item and, for a file that could not be read, the cause. */
+/** The settings file or the manifest of this folder that could not be used. */
+const metadataProblems = computed(() => metadataProblemsOf(props.item));
+
+/** The path of the item and each cause that the application could not read it for. */
 const rowTitle = computed(() =>
-  readError.value === undefined
-    ? props.item.path
-    : `${props.item.path}\n${readErrorSentence(readError.value)}`,
+  [
+    props.item.path,
+    ...(readError.value === undefined ? [] : [readErrorSentence(readError.value)]),
+    ...metadataProblems.value.map(metadataProblemSentence),
+  ].join("\n"),
 );
 
 /**
@@ -832,7 +845,8 @@ body {
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
       &.is-ignored { opacity: 0.58; }
-      &.is-unreadable .toggle-icon { color: var(--accent-orange); }
+      &.is-unreadable .toggle-icon,
+      &.has-metadata-problem .toggle-icon { color: var(--accent-orange); }
 
       .item-icon, .toggle-icon {
         display: flex;

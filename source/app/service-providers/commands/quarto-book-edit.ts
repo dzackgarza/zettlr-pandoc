@@ -1,6 +1,7 @@
 import type { ProjectSettings } from "@dts/common/fsal";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import { editQuartoBookManifest, type QuartoBookEdit } from "source/app/util/quarto-book-editor";
+import { trans } from "source/common/i18n-main";
 import ZettlrCommand from "./zettlr-command";
 
 export interface QuartoBookEditRequest {
@@ -29,7 +30,16 @@ export default class QuartoBookEditCommand extends ZettlrCommand {
 
     const refreshed = dir.settings.project;
     if (refreshed?.manifest.kind !== "quarto") {
-      throw new Error(`Couldn't reload the Quarto book after saving changes`);
+      const problem = dir.metadataProblems.find((candidate) => candidate.source === "manifest");
+      throw new Error(
+        problem === undefined
+          ? trans("The Quarto book file of %s no longer describes a book.", dir.path)
+          : trans(
+              "The Quarto book file %s could not be used after the change: %s",
+              problem.path,
+              problem.message,
+            ),
+      );
     }
     return refreshed;
   }

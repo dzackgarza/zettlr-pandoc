@@ -1097,10 +1097,34 @@ of an isolated instance are in the first comment of #132.
   `notSearched` of `GET /v1/workspace/search`. The Replace All confirmation
   says that those files keep their text. An error that is no filesystem
   error ends the search with the failure `stopped`, which names the file.
+- **A folder whose metadata cannot be used is listed.** The descriptor of
+  a folder names each such thing in `metadataProblems` (source, path,
+  message): a `.ztr-directory` that cannot be read, is not JSON or does not
+  hold settings (`settings`); a Quarto manifest that cannot be read or
+  parsed, and a bound manifest that is absent or describes no book
+  (`manifest`); a folder that refuses its content (`directory`). The folder
+  has the default settings and no Project. The manifest of a Quarto project
+  that is no book is no problem of a folder without a binding. One such
+  folder does not stop the index of its workspace or the start of the app,
+  and a folder that refuses its content is a path of its workspace.
+- **A load of a folder changes nothing on disk.** `parseSettings`
+  (`fsal-directory.ts`) leaves the settings file as it is. A change of the
+  settings of a folder whose settings file could not be read throws
+  `DirectorySettingsUnreadableError`, so no write replaces what the author
+  set; the dispatcher shows the message (§15).
+- **The row and the properties of the folder show each cause**
+  (`file-manager/util/read-error.ts`, the attribute
+  `data-metadata-problem`). The properties offer the removal of a binding
+  whose manifest gives no book.
+- **A change of a manifest is a change of its folder.** The FSAL keeps the
+  manifest location of each bound folder and publishes `change` for the
+  folder when its manifest is added, changed or removed.
 - **Proof:** `test/fsal-unreadable-file.spec.ts`,
   `test/document-lint-failure.spec.ts`, `test/agent-http-api.spec.ts`,
   `test/external-linter-adapter.spec.ts`, `e2e/lint-failure.spec.ts`,
-  `e2e/document-load-retry.spec.ts`, `e2e/search-replace.spec.ts`.
+  `e2e/document-load-retry.spec.ts`, `e2e/search-replace.spec.ts`,
+  `test/fsal-directory-metadata.spec.ts`,
+  `e2e/folder-metadata-problems.spec.ts`.
 
 ## Debugging entry points
 
