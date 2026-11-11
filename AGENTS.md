@@ -967,10 +967,17 @@ of an isolated instance are in the first comment of #132.
   A new command of that kind goes into the set; a command that an action of
   the author starts does not.
 - **A command that prompts answers its contract.** A command that showed the
-  cause itself in a native dialog (`dir-rename`, the project export of one
-  profile) returns its value and does not throw as well.
+  cause itself in a native dialog or in the error window (`dir-rename`, the
+  Project export) returns its value and does not throw as well.
+- **A Project export gives one message for all its profiles.** One profile
+  that does not export does not stop the other profiles. When a profile did
+  not export, `dir-project-export` opens one error window that names each
+  such profile with its cause, shows no success notification and answers
+  `false`. A new error window closes the one before it, so a command that
+  can fail in more than one part collects the causes and opens one window.
 - **Proof:** `e2e/command-refusal.spec.ts`,
-  `e2e/project-settings-refusal.spec.ts`.
+  `e2e/project-settings-refusal.spec.ts`, `test/project-export.spec.ts`,
+  `e2e/project-export-failure.spec.ts`.
 
 ### 16. Writes of authored text files
 
