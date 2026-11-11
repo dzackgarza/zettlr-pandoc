@@ -56,8 +56,9 @@ launch: sync-dependencies
     {{bun}} run start
 
 # Launch the desktop app in develop mode with the normal user configuration.
-# Extra arguments are file paths handed to Electron (electron-forge forwards
-# app arguments after `--`). [positional-arguments] exposes them as "$@" so
+# Extra arguments are file paths and app options handed to Electron
+# (electron-forge forwards app arguments after `--`); `--vue-devtools` loads
+# the Vue.js devtools extension. [positional-arguments] exposes them as "$@" so
 # paths containing spaces survive; bare {{args}} interpolation would word-split.
 [positional-arguments]
 launch-desktop *files: sync-dependencies

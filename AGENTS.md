@@ -94,9 +94,17 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
 ## Build process
 
 - **Dev mode** — `electron-forge start` (`just launch-desktop`). Webpack dev
-  build from source on every start; reflects the working tree. **Works.** The
-  desktop launcher uses this. `just launch` instead routes through the
-  repository's isolated GUI-test profile.
+  build from source on every start; reflects the working tree. **Works.**
+  `just launch` instead routes through the repository's isolated GUI-test
+  profile. The desktop launcher starts the packaged build.
+- **No browser extension without a request.** A start loads the Vue.js
+  devtools extension only with the app option `--vue-devtools`
+  (`just launch-desktop --vue-devtools`). The app downloads the extension, and
+  that start fails when the download fails. The content script of the
+  extension puts an inline script into each frame of a window; a frame that
+  has the content security policy of the window refuses it with a console
+  error. An e2e run therefore starts the app without the option (#183).
+  Proof: `e2e/window-frame-scripts.spec.ts`.
 - **Production** — `electron-forge package` (`just package`) → `out/Zettlr-Pandoc-linux-x64/resources/app.asar`.
   webpack configs: `webpack.main.config.js` (Node/main target), `webpack.renderer.config.js`
   (browser/renderer), assembled by `forge.config.js`. The wrapper fails if the build
