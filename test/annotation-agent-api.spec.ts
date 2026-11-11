@@ -26,6 +26,7 @@ import type { AgentApiComponents } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
+import { randomUUID } from "crypto";
 import { createPatch } from "diff";
 import {
   mkdirSync,
@@ -46,6 +47,9 @@ import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
 import { parse as parseYaml } from "yaml";
 import { userData } from "./headless-electron-harness.cjs";
+
+/** The token that the provider of this spec is started with. */
+const API_TOKEN = randomUUID();
 
 // ============================================================================
 // Schema conformance — validates every response against the OpenAPI document
@@ -232,7 +236,11 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           port: httpPort,
           path: pathname,
           method,
-          headers: { "Content-Type": "application/json", ...options.headers },
+          headers: {
+            authorization: `Bearer ${API_TOKEN}`,
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
         },
         (res) => {
           let data = "";
@@ -298,7 +306,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         },
       }),
     };
-    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, {
+    const agentHost = {
       config,
       links: { index: new WikilinkIndex([]) },
       search: createSearch(),
@@ -310,7 +318,15 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         env: {},
         userDataDirectory: scratch,
       }),
-    });
+    };
+    httpProvider = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      agentHost,
+      undefined,
+      undefined,
+      { env: { ZETTLR_AGENT_API_TOKEN: API_TOKEN } },
+    );
     await httpProvider.boot();
     httpPort = Number.parseInt(
       readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),

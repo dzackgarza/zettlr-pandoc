@@ -31,6 +31,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import Ajv2020 from "ajv/dist/2020";
 import { strict as assert } from "assert";
 import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import { createPatch } from "diff";
 import {
   existsSync,
@@ -50,7 +51,9 @@ import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
-import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
+import AgentHTTPProvider, {
+  AgentApiTokenRequiredError,
+} from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
@@ -106,6 +109,13 @@ const openApiDocument = parseYaml(
 };
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+/** The token that each provider of this spec is started with. */
+const API_TOKEN = randomUUID();
+/** The environment of a provider: the variable that the app reads its token from. */
+const TOKEN_ENVIRONMENT = { ZETTLR_AGENT_API_TOKEN: API_TOKEN };
+/** The header of a caller that holds the token. */
+const AUTHORIZED = { authorization: `Bearer ${API_TOKEN}` };
 
 /**
  * OpenAI publishes these constraints as prose, but it does not publish an
@@ -420,6 +430,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     options: {
       body?: string;
       headers?: Record<string, string>;
+      /** Send no token. */
+      anonymous?: true;
     } = {},
   ): Promise<{
     status: number;
@@ -433,9 +445,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           port: httpPort,
           path: pathname,
           method,
-          headers: {
-            ...options.headers,
-          },
+          headers:
+            options.anonymous === true
+              ? { ...options.headers }
+              : { ...AUTHORIZED, ...options.headers },
         },
         (res) => {
           let data = "";
@@ -468,7 +481,11 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       const child = spawn(
         process.execPath,
         [path.join(__dirname, "../scripts/desktop/zettlr-pandoc-review-diff"), ...args],
-        { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] },
+        {
+          cwd: path.join(__dirname, ".."),
+          env: { ...process.env, ...TOKEN_ENVIRONMENT },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
       );
       let stdout = "";
       let stderr = "";
@@ -605,7 +622,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       undefined,
       {
         homeDirectory: authoringHome,
-        env: {},
+        env: TOKEN_ENVIRONMENT,
       },
     );
     await httpProvider.boot();
@@ -881,24 +898,31 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       });
     });
 
-    const collided = new AgentHTTPProvider(new LogProvider(), provider, {
-      config: {
-        get: () => ({
-          app: { openWorkspaces: [scratch] },
-          export: { cslLibrary: "" },
-          tikz: { dataDir: "", figuresDir: "" },
-          editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
-          agentApi: {
-            enabled: true,
-            port: takenPort,
-            skillsDirectory: null,
-          },
-        }),
+    const collided = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      {
+        config: {
+          get: () => ({
+            app: { openWorkspaces: [scratch] },
+            export: { cslLibrary: "" },
+            tikz: { dataDir: "", figuresDir: "" },
+            editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+            agentApi: {
+              enabled: true,
+              port: takenPort,
+              skillsDirectory: null,
+            },
+          }),
+        },
+        search: createSearch(),
+        documentLint,
+        links,
       },
-      search: createSearch(),
-      documentLint,
-      links,
-    });
+      undefined,
+      undefined,
+      { env: TOKEN_ENVIRONMENT },
+    );
 
     try {
       await assert.rejects(
@@ -928,9 +952,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
-    const response = await httpRequest("GET", "/openapi.yaml", {
-      headers: {}, // No auth header
-    });
+    const response = await httpRequest("GET", "/openapi.yaml", { anonymous: true });
     assert.equal(response.status, 200);
     assert.ok(response.body.includes("openapi:"));
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
@@ -1031,8 +1053,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         securitySchemes?: NonNullable<OpenApiDefinition["components"]>["securitySchemes"];
       };
     };
-    assert.equal(withSecurity.security, undefined, "the API declares no authentication");
-    assert.equal(withSecurity.components.securitySchemes, undefined);
+    assert.deepEqual(withSecurity.security, [{ bearerToken: [] }]);
+    assert.deepEqual(withSecurity.components.securitySchemes, {
+      bearerToken: { type: "http", scheme: "bearer" },
+    });
   });
 
   it("marks every Custom GPT Action operation explicitly non-consequential", async function () {
@@ -1165,7 +1189,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // uncaught exception in the main process, not a failed request.
     const raw = await new Promise<string>((resolve, reject) => {
       const socket = net.connect(httpPort, "127.0.0.1", () => {
-        socket.write("GET http://[ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        socket.write(
+          `GET http://[ HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${API_TOKEN}\r\nConnection: close\r\n\r\n`,
+        );
       });
       let received = "";
       socket.on("data", (chunk: Buffer) => (received += chunk.toString("utf8")));
@@ -1253,7 +1279,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await zoteroClient.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/zotero/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     try {
       const { tools } = await zoteroClient.listTools();
@@ -1271,7 +1299,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     try {
       const { tools } = await client.listTools();
@@ -1457,27 +1487,121 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(etag.includes("sha256:"));
   });
 
-  it("accepts unauthenticated loopback requests", async function () {
-    const response = await new Promise<{
-      status: number;
-    }>((resolve, reject) => {
-      const req = http.request(
-        {
-          hostname: "127.0.0.1",
-          port: httpPort,
-          path: "/v1/context",
-          method: "GET",
-          // The application API intentionally has no authentication layer.
-        },
-        (res) => {
-          res.resume();
-          res.on("end", () => resolve({ status: res.statusCode ?? 0 }));
-        },
-      );
-      req.on("error", reject);
-      req.end();
+  describe("the token of a caller (#72)", function () {
+    /** The providers that a test of this group made itself. */
+    const started: AgentHTTPProvider[] = [];
+
+    afterEach(async function () {
+      for (const startedProvider of started.splice(0)) {
+        await startedProvider.shutdown();
+      }
     });
-    assert.equal(response.status, 200);
+
+    const WITHOUT_TOKEN: Array<{ method: string; route: string }> = [
+      { method: "GET", route: "/v1/workspaces" },
+      { method: "GET", route: "/v1/context" },
+      { method: "GET", route: "/v1/ping" },
+      { method: "GET", route: "/health" },
+      { method: "GET", route: "/v1/help" },
+      { method: "POST", route: "/mcp" },
+      { method: "POST", route: "/zotero/mcp" },
+      { method: "POST", route: "/openapi.json" },
+      { method: "GET", route: "/v1/no-such-route" },
+    ];
+
+    for (const { method, route } of WITHOUT_TOKEN) {
+      it(`refuses ${method} ${route} from a caller without the token`, async function () {
+        const response = await httpRequest(method, route, { anonymous: true });
+        assert.equal(response.status, 401, response.body);
+        assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "UNAUTHORIZED");
+        assert.equal(response.headers["www-authenticate"], "Bearer");
+      });
+    }
+
+    it("refuses a token that is not the token of the app", async function () {
+      const credentials = [
+        `Bearer ${randomUUID()}`,
+        `Bearer ${API_TOKEN}x`,
+        `Bearer ${API_TOKEN.slice(0, -1)}`,
+        "Bearer ",
+        `Basic ${API_TOKEN}`,
+        API_TOKEN,
+      ];
+      for (const authorization of credentials) {
+        const response = await httpRequest("GET", "/v1/workspaces", {
+          anonymous: true,
+          headers: { authorization },
+        });
+        assert.equal(response.status, 401, `${authorization.split(" ")[0]}: ${response.body}`);
+        assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "UNAUTHORIZED");
+      }
+    });
+
+    it("answers a caller that holds the token", async function () {
+      const response = await httpRequest("GET", "/v1/workspaces");
+      assert.equal(response.status, 200, response.body);
+      parseAs(response.body, "WorkspacesResponse");
+    });
+
+    it("changes nothing for a caller without the token", async function () {
+      const created = path.join(scratch, "from-a-stranger.md");
+      const response = await httpRequest("POST", "/v1/workspace/entries", {
+        anonymous: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: scratch,
+          path: "from-a-stranger.md",
+          kind: "file",
+          content: "# Not the author\n",
+        }),
+      });
+      assert.equal(response.status, 401, response.body);
+      assert.equal(existsSync(created), false);
+    });
+
+    it("does not tell a caller without the token where the token is", async function () {
+      const response = await httpRequest("GET", "/v1/workspaces", { anonymous: true });
+      assert.equal(response.status, 401);
+      for (const name of Object.keys(TOKEN_ENVIRONMENT)) {
+        assert.equal(response.body.includes(name), false);
+      }
+    });
+
+    it("serves the specification to a caller without the token", async function () {
+      const response = await httpRequest("GET", "/openapi.json", { anonymous: true });
+      assert.equal(response.status, 200, response.body);
+      const document = JSON.parse(response.body) as { security: Array<Record<string, string[]>> };
+      assert.deepEqual(document.security, [{ bearerToken: [] }]);
+    });
+
+    it("does not start an enabled API when its environment has no token", async function () {
+      for (const env of [{}, { ZETTLR_AGENT_API_TOKEN: "" }]) {
+        const unprotected = new AgentHTTPProvider(
+          new LogProvider(),
+          provider,
+          {
+            config: {
+              get: () => ({
+                app: { openWorkspaces: [scratch] },
+                export: { cslLibrary: "" },
+                tikz: { dataDir: "", figuresDir: "" },
+                editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+                agentApi: { enabled: true, port: 0, skillsDirectory: null },
+              }),
+            },
+            search: createSearch(),
+            documentLint,
+            links,
+          },
+          undefined,
+          undefined,
+          { env },
+        );
+        started.push(unprotected);
+        await assert.rejects(unprotected.boot(), AgentApiTokenRequiredError);
+        assert.equal(unprotected.isListening, false);
+      }
+    });
   });
 
   it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
@@ -1718,7 +1842,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     const client = new Client({ name: "agent-http-api-spec", version: "1.0.0" });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     const call = async <N extends keyof AgentApiSchemas & string>(
       name: string,
@@ -1793,7 +1919,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       version: "1.0.0",
     });
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`)),
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
+        requestInit: { headers: AUTHORIZED },
+      }),
     );
     const call = async <N extends keyof AgentApiSchemas & string>(
       name: string,
@@ -2492,6 +2620,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         },
         undefined,
         DEADLINE_MS,
+        { env: TOKEN_ENVIRONMENT },
       );
       await lifecycle.boot();
     });
@@ -2554,6 +2683,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const STALLED_REQUEST =
       "POST /v1/documents/doc-lifecycle/proposals HTTP/1.1\r\n" +
       "Host: 127.0.0.1\r\n" +
+      `Authorization: Bearer ${API_TOKEN}\r\n` +
       "Content-Type: application/json\r\n" +
       "Content-Length: 64\r\n" +
       "\r\n" +
@@ -2584,6 +2714,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             path: "/v1/documents/doc-lifecycle/proposals",
             method: "POST",
             headers: {
+              ...AUTHORIZED,
               "content-type": "application/json",
               "content-length": Buffer.byteLength(body),
             },
@@ -2648,7 +2779,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
       // And the server is still answering.
       const check = await connect();
-      check.write("GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+      check.write(
+        `GET /v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer ${API_TOKEN}\r\nConnection: close\r\n\r\n`,
+      );
       const response = await readUntilClose(check);
       assert.match(response, /^HTTP\/1\.1 200 /);
     });
