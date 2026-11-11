@@ -19,7 +19,10 @@
  *                  a tool installed during the session is found; a
  *                  render whose
  *                  pandoc process is killed reports the signal that killed it
- *                  rather than posing as a pandoc diagnostic; and the
+ *                  rather than posing as a pandoc diagnostic; a render that
+ *                  passes its time limit, loses its pandoc process or is
+ *                  active when the app exits leaves no process and no
+ *                  scratch file (issue #208); and the
  *                  request's docPath is the single representation of the
  *                  authoring document's location, empty when the buffer has
  *                  none.
@@ -64,6 +67,9 @@ const TIKZ_TEMPLATE = path.join(TIKZ_ASSET_DIR, "templates/standalone-tikz.tex")
  * document root", resolving \input against the working directory instead.
  */
 const NO_DOC_PATH = "";
+
+/** The time limit of a render that is expected to end. */
+const TIME_LIMIT_MS = 30000;
 
 const TIKZCD_OK = "\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}";
 const TIKZCD_BROKEN = "\\begin{tikzcd}\nA \\arrow[r] & B \\thisMacroDoesNotExist\n\\end{tikzcd}";
@@ -293,6 +299,7 @@ describe("TikZ render service (issue #14)", function () {
         { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
         {
           tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
           templatePath: TIKZ_TEMPLATE,
           cacheDir,
           env: { ...process.env, PATH: emptyBin },
@@ -325,6 +332,7 @@ describe("TikZ render service (issue #14)", function () {
         { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
         {
           tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
           templatePath: TIKZ_TEMPLATE,
           cacheDir,
           env: { ...process.env, PATH: binDir },
@@ -356,7 +364,13 @@ describe("TikZ render service (issue #14)", function () {
     this.timeout(120000);
     const result: TikzRenderResult = await renderTikz(
       { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
 
     if (!toolchainPresent) {
@@ -398,7 +412,13 @@ describe("TikZ render service (issue #14)", function () {
     const body = `A \\arrow[r, "f-${randomBytes(4).toString("hex")}"] & B`;
     const result = await renderTikz(
       { source: body, kind: "fence", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
 
     if (!toolchainPresent) {
@@ -423,7 +443,13 @@ describe("TikZ render service (issue #14)", function () {
     this.timeout(120000);
     const first = await renderTikz(
       { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -432,7 +458,13 @@ describe("TikZ render service (issue #14)", function () {
     const started = Date.now();
     const second = await renderTikz(
       { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     const elapsed = Date.now() - started;
     assert.ok(second.ok, "the repeat render succeeds");
@@ -448,6 +480,7 @@ describe("TikZ render service (issue #14)", function () {
     try {
       const config = {
         tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
         templatePath: TIKZ_TEMPLATE,
         cacheDir,
         env: { ...process.env, PATH: `${sessionBin}:${process.env.PATH ?? ""}` },
@@ -504,6 +537,7 @@ describe("TikZ render service (issue #14)", function () {
       };
       const config = {
         tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
         templatePath: TIKZ_TEMPLATE,
         cacheDir,
         env: { ...process.env, PATH: binDir },
@@ -551,6 +585,7 @@ describe("TikZ render service (issue #14)", function () {
       );
       const first = await renderTikz(request, {
         tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
         templatePath: template,
         cacheDir,
         env: process.env,
@@ -575,6 +610,7 @@ describe("TikZ render service (issue #14)", function () {
 
       const second = await renderTikz(request, {
         tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
         templatePath: template,
         cacheDir,
         env: process.env,
@@ -615,7 +651,13 @@ describe("TikZ render service (issue #14)", function () {
     const before = new Set(readdirSync(cacheDir).filter((name) => /^dzgtikz-.*\.svg$/.test(name)));
     const first = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -637,7 +679,13 @@ describe("TikZ render service (issue #14)", function () {
     await new Promise((resolve) => setTimeout(resolve, 25));
     const cached = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     assert.ok(cached.ok, "ordinary repeat render succeeds from cache");
     assert.strictEqual(
@@ -649,7 +697,13 @@ describe("TikZ render service (issue #14)", function () {
     await new Promise((resolve) => setTimeout(resolve, 25));
     const forced = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH, cachePolicy: "refresh" },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     assert.ok(forced.ok, "forced rerender succeeds");
     assert.ok(
@@ -664,7 +718,13 @@ describe("TikZ render service (issue #14)", function () {
     const before = new Set(readdirSync(cacheDir).filter((name) => /^dzgtikz-.*\.svg$/.test(name)));
     const first = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     if (!toolchainPresent) {
       assert.ok(!first.ok && first.kind === "missing-tools");
@@ -697,6 +757,7 @@ describe("TikZ render service (issue #14)", function () {
         { source, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH, cachePolicy: "refresh" },
         {
           tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
           templatePath: TIKZ_TEMPLATE,
           cacheDir,
           env: { ...process.env, PATH: `${failingBin}:${process.env.PATH ?? ""}` },
@@ -717,7 +778,13 @@ describe("TikZ render service (issue #14)", function () {
     this.timeout(120000);
     const result = await renderTikz(
       { source: TIKZCD_BROKEN, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     if (!toolchainPresent) {
       assert.ok(!result.ok && result.kind === "missing-tools");
@@ -772,6 +839,7 @@ describe("TikZ render service (issue #14)", function () {
     };
     const options = {
       tikzAssetDir: TIKZ_ASSET_DIR,
+      timeoutMs: TIME_LIMIT_MS,
       templatePath: TIKZ_TEMPLATE,
       cacheDir,
       env: process.env,
@@ -810,11 +878,23 @@ describe("TikZ render service (issue #14)", function () {
 
     const fromFirst = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: path.join(firstDir, "figures.md") },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     const fromSecond = await renderTikz(
       { source, kind: "raw", language: "tikzcd", docPath: path.join(secondDir, "notes.md") },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     await rm(firstDir, { recursive: true, force: true });
     await rm(secondDir, { recursive: true, force: true });
@@ -862,7 +942,13 @@ describe("TikZ render service (issue #14)", function () {
     try {
       const res = await renderTikz(
         { source: "\\input{diagram.tikz}", kind: "raw", language: "tikz", docPath },
-        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: process.env,
+        },
       );
       if (!toolchainPresent) {
         assert.ok(!res.ok && res.kind === "missing-tools");
@@ -887,7 +973,13 @@ describe("TikZ render service (issue #14)", function () {
         language: "tikz",
         docPath: NO_DOC_PATH,
       },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
     if (!toolchainPresent) {
       assert.ok(!result.ok && result.kind === "missing-tools");
@@ -931,6 +1023,7 @@ describe("TikZ render service (issue #14)", function () {
         },
         {
           tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
           templatePath: TIKZ_TEMPLATE,
           cacheDir,
           env: { ...process.env, FIGURES_SOURCE_DIR: centralFiguresDir },
@@ -959,11 +1052,23 @@ describe("TikZ render service (issue #14)", function () {
     try {
       const first = await renderTikz(
         { source, kind: "raw", language: "tikzcd", docPath: path.join(firstDir, "notes.md") },
-        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: process.env,
+        },
       );
       const second = await renderTikz(
         { source, kind: "raw", language: "tikzcd", docPath: path.join(secondDir, "notes.md") },
-        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: process.env,
+        },
       );
       if (!toolchainPresent) {
         assert.ok(!first.ok && first.kind === "missing-tools");
@@ -990,7 +1095,13 @@ describe("TikZ render service (issue #14)", function () {
     if (!toolchainPresent) {
       const result = await renderTikz(
         { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
-        { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          timeoutMs: TIME_LIMIT_MS,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          env: process.env,
+        },
       );
       assert.ok(
         !result.ok && result.kind === "missing-tools",
@@ -1010,7 +1121,13 @@ describe("TikZ render service (issue #14)", function () {
         language: "tikzcd",
         docPath: NO_DOC_PATH,
       },
-      { tikzAssetDir: TIKZ_ASSET_DIR, templatePath: TIKZ_TEMPLATE, cacheDir, env: process.env },
+      {
+        tikzAssetDir: TIKZ_ASSET_DIR,
+        timeoutMs: TIME_LIMIT_MS,
+        templatePath: TIKZ_TEMPLATE,
+        cacheDir,
+        env: process.env,
+      },
     );
 
     let signalled = 0;

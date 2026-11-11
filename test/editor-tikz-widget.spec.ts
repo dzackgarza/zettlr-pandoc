@@ -461,6 +461,18 @@ describe("TikZ editor widgets (issue #14)", function () {
     );
   });
 
+  it("names the time limit when the render was stopped at it", async function () {
+    respond = { ok: false, kind: "render-timeout", timeoutMs: 30000, log: "" };
+    const view = createEditor();
+    await waitFor(() => view.dom.querySelector(".tikz-error") !== null, "the timeout box");
+    const text = view.dom.querySelector<HTMLElement>(".tikz-error")?.textContent ?? "";
+    assert.ok(text.includes("30 s"), `the limit that the render passed is shown: ${text}`);
+    assert.ok(
+      !text.toLowerCase().includes("killed by"),
+      `a time limit is not reported as a signal from outside: ${text}`,
+    );
+  });
+
   it("surfaces a mapped compile failure in place, never silence", async function () {
     respond = (request) =>
       request.kind === "raw"

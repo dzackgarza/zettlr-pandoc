@@ -205,6 +205,16 @@ function populate(
       box.appendChild(log);
       break;
     }
+    case "render-timeout": {
+      // The limit is the point: the author learns that TeX did not end, not
+      // that TeX reported something about the figure.
+      summary = `TikZ render did not finish in ${String(result.timeoutMs / 1000)} s and was stopped`;
+      diagnosticText = result.log;
+      const log = document.createElement("pre");
+      log.textContent = result.log;
+      box.appendChild(log);
+      break;
+    }
     default: {
       const unhandled: never = result;
       throw new Error(

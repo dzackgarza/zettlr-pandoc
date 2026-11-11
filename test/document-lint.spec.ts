@@ -47,6 +47,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -90,6 +91,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -138,6 +140,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -180,6 +183,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -226,6 +230,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",
@@ -291,6 +296,7 @@ describe("main-process document lint", function () {
           "fixtures",
           "tikz-data",
         ),
+        timeoutMs: 30_000,
         templatePath: path.join(
           repositoryRoot,
           "packages",

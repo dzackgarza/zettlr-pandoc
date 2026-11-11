@@ -17,18 +17,21 @@
  *                  figure-compile error; this module owns the process
  *                  plumbing and translates every outcome into a typed result —
  *                  missing tools, a toolchain probe that failed for a reason
- *                  other than absence, compile failures and a render killed by
- *                  a signal are loud and distinct, never silence. The
- *                  environment every child runs under is supplied by the
- *                  caller, never read from ambient process state.
+ *                  other than absence, compile failures, a render killed by
+ *                  a signal and a render that passed its time limit are loud
+ *                  and distinct, never silence. The environment every child
+ *                  runs under is supplied by the caller, never read from
+ *                  ambient process state. A render that ends leaves no
+ *                  process and no scratch file, however it ends.
  *
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import { createHash } from "crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
+import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
 import path from "path";
 import { TEX_COMMAND_DECLARATION_RE } from "./tex-command-declarations";
 
@@ -385,6 +388,11 @@ export interface TikzRenderConfig {
   /** Effective centralized source tree used for authored figure inputs. */
   figuresSourceDir?: string;
   /**
+   * The time that one render may take. A render that takes longer is stopped
+   * with each process that it started and reports 'render-timeout'.
+   */
+  timeoutMs: number;
+  /**
    * The environment every child process of this render runs under. It decides
    * which pandoc, pdflatex and pdf2svg are found, so it is an input to the
    * render, not an ambient condition the service may read for itself: the
@@ -457,21 +465,29 @@ export type TikzRenderResult =
   | { ok: false; kind: "compile-error"; errors: TikzCompileError[]; log: string }
   | { ok: false; kind: "pandoc-error"; log: string }
   /**
-   * The render process was killed before it could finish (OOM killer, a
-   * timeout kill, an interrupt). This is not pandoc reporting a problem: no
-   * diagnostic was produced and nothing about the figure is known. The signal
-   * that ended it is the information that distinguishes this outcome.
+   * The render process was killed before it could finish (OOM killer, an
+   * interrupt). This is not pandoc reporting a problem: no diagnostic was
+   * produced and nothing about the figure is known. The signal that ended it
+   * is the information that distinguishes this outcome.
    */
-  | { ok: false; kind: "render-terminated"; signal: NodeJS.Signals; log: string };
+  | { ok: false; kind: "render-terminated"; signal: NodeJS.Signals; log: string }
+  /**
+   * The render passed the time limit of its configuration and was stopped.
+   * Nothing about the figure is known; a TeX loop that does not end is the
+   * usual cause.
+   */
+  | { ok: false; kind: "render-timeout"; timeoutMs: number; log: string };
 
 /**
  * How the pandoc child process ended. Node's 'close' event carries exactly one
  * of (code, signal): a process either exits with a status or is terminated by
- * a signal. Both are real outcomes, so both are carried as their own case.
+ * a signal. Both are real outcomes, so both are carried as their own case. A
+ * process that this module stopped at the time limit is the third case.
  */
 type PandocProcessOutcome =
   | { ended: "exit"; code: number; stdout: string; stderr: string }
-  | { ended: "signal"; signal: NodeJS.Signals; stdout: string; stderr: string };
+  | { ended: "signal"; signal: NodeJS.Signals; stdout: string; stderr: string }
+  | { ended: "timeout"; stderr: string };
 
 /** The tools the filter shells out to, checked before any render. */
 const REQUIRED_TOOLS = ["pandoc", "pdflatex", "pdf2svg"];
@@ -577,6 +593,130 @@ function assertExitedWithCode(
   }
 }
 
+/** The time between SIGTERM and SIGKILL for a render that passed its limit. */
+const KILL_GRACE_MS = 2_000;
+
+/** A render that has not ended: its pandoc process and its scratch files. */
+interface ActiveRender {
+  pandoc: ChildProcess;
+  scratchDir: string;
+}
+
+// The renders that have not ended. The pandoc process of a render leads a
+// process group of its own (`detached`), because a signal to one process does
+// not reach the processes that it started: the shell and the TeX of the filter
+// (https://nodejs.org/api/child_process.html#subprocesskillsignal). A signal
+// to the group reaches all of them, as `kill -- -PGID` does.
+const activeRenders = new Set<ActiveRender>();
+
+/**
+ * Signals each process of a render. A group in which no process is left has
+ * nothing to stop: kill(2) answers ESRCH for it, and that answer is no error
+ * (https://man7.org/linux/man-pages/man2/kill.2.html).
+ */
+function signalRender(pandoc: ChildProcess, signal: NodeJS.Signals): void {
+  if (pandoc.pid === undefined) {
+    // The process did not start.
+    return;
+  }
+  try {
+    process.kill(-pandoc.pid, signal);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) {
+      throw error;
+    }
+  }
+}
+
+// A render is apart from the process group of the app, so a signal to the app
+// does not reach it. The exit of the app stops the renders that have not
+// ended and removes their scratch files.
+process.on("exit", () => {
+  for (const render of activeRenders) {
+    signalRender(render.pandoc, "SIGKILL");
+    // A stopped process can write one more file while its directory is read.
+    rmSync(render.scratchDir, { recursive: true, maxRetries: 5, retryDelay: 20 });
+  }
+});
+
+/**
+ * Runs pandoc with the filter on one figure and says how the process ended.
+ * The promise settles when no process of the render is left: the fourth pipe
+ * has no reader and no writer, each process of the render inherits it, and
+ * Node gives 'close' only after the process has ended and each of its pipes
+ * is closed (https://nodejs.org/api/child_process.html#event-close).
+ */
+async function runFilter(
+  markdown: string,
+  filterPath: string,
+  env: NodeJS.ProcessEnv,
+  scratchDir: string,
+  timeoutMs: number,
+): Promise<PandocProcessOutcome> {
+  return await new Promise<PandocProcessOutcome>((resolve, reject) => {
+    const pandoc = spawn("pandoc", ["-f", "markdown", "-t", "html", "--lua-filter", filterPath], {
+      env,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+    });
+    const { stdin, stdout, stderr } = pandoc;
+    if (stdin === null || stdout === null || stderr === null) {
+      throw new Error("tikz-render: Node gave no pipe for a stream of pandoc that was asked for.");
+    }
+    const render: ActiveRender = { pandoc, scratchDir };
+    activeRenders.add(render);
+
+    let out = "";
+    let err = "";
+    let timedOut = false;
+    let graceTimer: NodeJS.Timeout | undefined;
+    const limitTimer = setTimeout(() => {
+      timedOut = true;
+      signalRender(pandoc, "SIGTERM");
+      graceTimer = setTimeout(() => {
+        signalRender(pandoc, "SIGKILL");
+      }, KILL_GRACE_MS);
+    }, timeoutMs);
+    const ended = (): void => {
+      activeRenders.delete(render);
+      clearTimeout(limitTimer);
+      clearTimeout(graceTimer);
+    };
+
+    stdout.on("data", (chunk) => {
+      out += String(chunk);
+    });
+    stderr.on("data", (chunk) => {
+      err += String(chunk);
+    });
+    pandoc.once("error", (spawnError: Error) => {
+      ended();
+      reject(spawnError);
+    });
+    pandoc.once("exit", (_exitCode, signal) => {
+      // A pandoc that was stopped did not wait for the shell and the TeX
+      // that its filter started. Their work has no reader.
+      if (signal !== null || timedOut) {
+        signalRender(pandoc, "SIGKILL");
+      }
+    });
+    pandoc.once("close", (exitCode, signal) => {
+      ended();
+      if (timedOut) {
+        resolve({ ended: "timeout", stderr: err });
+        return;
+      }
+      if (signal !== null) {
+        resolve({ ended: "signal", signal, stdout: out, stderr: err });
+        return;
+      }
+      assertExitedWithCode(exitCode, signal);
+      resolve({ ended: "exit", code: exitCode, stdout: out, stderr: err });
+    });
+    stdin.end(markdown);
+  });
+}
+
 /**
  * Renders one TikZ figure to inline SVG through the shared Pandoc filter.
  */
@@ -622,8 +762,14 @@ export async function renderTikz(
         : `\`\`\`tikz\n${request.source}\n\`\`\`\n`;
 
   const filterPath = path.join(config.tikzAssetDir, "filters/tikzcd.lua");
+  // pandoc makes the scratch directory of the filter below TMPDIR, and the
+  // filter removes it when TeX has ended. A filter that was stopped removes
+  // nothing, so each render has a temporary directory of its own, which this
+  // function removes.
+  const scratchDir = await mkdtemp(path.join(tmpdir(), "tikz-render-"));
   const renderEnv: NodeJS.ProcessEnv = {
     ...env,
+    TMPDIR: scratchDir,
     PANDOC_DIR: config.tikzAssetDir,
     FIGURE_TEMPLATE_FILE: config.templatePath,
     // The template is user-owned under ~/.pandoc and may load packages/macros
@@ -642,42 +788,24 @@ export async function renderTikz(
     TIKZ_FORCE_REBUILD: request.cachePolicy === "refresh" ? "1" : "0",
   };
 
-  const outcome = await new Promise<PandocProcessOutcome>((resolve, reject) => {
-    const proc = spawn("pandoc", ["-f", "markdown", "-t", "html", "--lua-filter", filterPath], {
-      env: renderEnv,
-    });
-    let out = "";
-    let err = "";
-    const timeoutMs = 30000;
-    const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      setTimeout(() => {
-        if (!proc.killed) {
-          proc.kill("SIGKILL");
-        }
-      }, 2000).unref();
-    }, timeoutMs);
-    proc.stdout.on("data", (chunk) => {
-      out += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      err += String(chunk);
-    });
-    proc.once("error", (spawnError: Error) => {
-      clearTimeout(timer);
-      reject(spawnError);
-    });
-    proc.once("close", (exitCode, signal) => {
-      clearTimeout(timer);
-      if (signal !== null) {
-        resolve({ ended: "signal", signal, stdout: out, stderr: err });
-        return;
-      }
-      assertExitedWithCode(exitCode, signal);
-      resolve({ ended: "exit", code: exitCode, stdout: out, stderr: err });
-    });
-    proc.stdin.end(markdown);
+  const outcome = await runFilter(
+    markdown,
+    filterPath,
+    renderEnv,
+    scratchDir,
+    config.timeoutMs,
+  ).finally(async () => {
+    await rm(scratchDir, { recursive: true });
   });
+
+  if (outcome.ended === "timeout") {
+    return {
+      ok: false,
+      kind: "render-timeout",
+      timeoutMs: config.timeoutMs,
+      log: outcome.stderr,
+    };
+  }
 
   if (outcome.ended === "signal") {
     // The render never ran to completion, so whatever landed on stderr is a

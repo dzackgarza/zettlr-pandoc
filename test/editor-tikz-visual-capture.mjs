@@ -54,6 +54,7 @@ async function computeResponses() {
   // for.
   const config = {
     tikzAssetDir: path.join(here, "../packages/tikz-render/test/fixtures/tikz-data"),
+    timeoutMs: 30_000,
     templatePath: path.join(
       here,
       "../packages/tikz-render/test/fixtures/tikz-data/templates/standalone-tikz.tex",

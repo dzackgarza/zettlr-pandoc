@@ -305,6 +305,14 @@ Zettlr starts it on one diagram.
   application gives the pane a `TikzPreviewHost` (`src/host.ts`); Zettlr's host
   is in `MainEditor.vue` (the `tikz-render` IPC). See
   `packages/tikz-render/README.md`.
+- **A render owns its processes and its scratch files.** The pandoc process
+  of a render leads a process group; the shell and the TeX that the filter
+  starts are in it. `renderTikz` stops the group at the time limit
+  (`TikzRenderConfig.timeoutMs`, result `render-timeout`), when a signal ends
+  pandoc, and when the app exits. It gives its result only when no process of
+  the render is left, and it removes the temporary directory of the render
+  (`TMPDIR` of the filter). The app sets the limit in
+  `source/app/util/resolve-tikz-render-config.ts`.
 - **Markdown detection stays in Zettlr:** `markdown-editor/tikz-block.ts` and
   `common/util/tikz-source-blocks.ts` turn Markdown into a `TikzSourceBlock`.
 - **Controls:** `render-tikz.ts` places a rebuild button and an "Edit in Visual

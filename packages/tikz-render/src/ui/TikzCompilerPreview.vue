@@ -176,6 +176,8 @@ function summarizeFailure(failure: TikzRenderFailure): string {
     }
     case "render-terminated":
       return `TikZ render was terminated by ${failure.signal}.`;
+    case "render-timeout":
+      return `TikZ render did not finish in ${String(failure.timeoutMs / 1000)} s and was stopped.`;
     default: {
       const unhandled: never = failure;
       return String(unhandled);
@@ -200,7 +202,11 @@ const failureDetails = computed(() => {
         .join("\n\n")
     );
   }
-  if (failure.kind === "pandoc-error" || failure.kind === "render-terminated") {
+  if (
+    failure.kind === "pandoc-error" ||
+    failure.kind === "render-terminated" ||
+    failure.kind === "render-timeout"
+  ) {
     return failure.log;
   }
   return "";
