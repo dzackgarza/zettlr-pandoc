@@ -3,8 +3,13 @@
  * text and leaves the author a next step. The file of the open document
  * loses its write permission, so the running application meets the error
  * that a read-only disk gives. The window names the file and offers a copy
- * of the text; the document stays modified, and the same save writes the
- * text when the file can be written again (#178).
+ * of the text. The action "Save a copy…" asks for a file in a native
+ * dialog and writes the text of the editor to it; the document stays
+ * modified, and the same save writes the text when the file can be written
+ * again (#178, #210).
+ *
+ * The spec answers a native dialog, so it runs on the display of the run
+ * only.
  */
 
 import { strict as assert } from "node:assert";
@@ -23,10 +28,13 @@ import {
   preserveArtifacts,
   shutdown,
 } from "./support/electron-app";
+import { captureWindow, nativeDialog, pressKey, searchWindows } from "./support/native-dialog";
 
 const CONTENTS = "# Lattices\n\nAn even unimodular lattice has a rank that 8 divides.\n";
 const SENTENCE = "The Leech lattice has rank 24.";
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
+const INFO_TOAST = "#zettlr-toast-container .zettlr-toast.info";
+const SAVE_DIALOG_TITLE = "Save file";
 
 /** File → Save: the menu item that Ctrl+S runs. */
 async function save(page: Page): Promise<void> {
@@ -111,8 +119,42 @@ describe("assembled app: a save that cannot write the file", function () {
       "the document has text that is not on disk, so it is modified",
     );
 
+    // The copy: the dialog proposes a file beside the document. The mnemonic
+    // of its Save button accepts the proposal; the Return key does not, with
+    // the focus in the name field of a GTK file chooser.
+    const copyPath = path.join(path.dirname(documentPath), "note copy.md");
+    await action.click();
+    const dialog = await nativeDialog(SAVE_DIALOG_TITLE, 30_000);
+    screenshots.set("save-copy-dialog.png", await captureWindow(dialog));
+    await pressKey(dialog, "alt+s");
+    const dialogDeadline = Date.now() + 30_000;
+    while ((await searchWindows(["--name", `^${SAVE_DIALOG_TITLE}$`])).length > 0) {
+      assert.ok(Date.now() < dialogDeadline, "the dialog closes when its Save button is used");
+      await delay(250);
+    }
+    const copied = editorPage.locator(INFO_TOAST, { hasText: "note copy.md" });
+    await copied.waitFor({ state: "visible", timeout: 30_000 });
+    screenshots.set("copy-saved.png", await editorPage.screenshot());
+    assert.equal(
+      await readFile(copyPath, "utf8"),
+      `${CONTENTS}${SENTENCE}`,
+      "the copy has the text of the editor",
+    );
+    assert.equal(await readFile(documentPath, "utf8"), CONTENTS, "the document file is as it was");
+    assert.deepEqual(
+      await modifiedDocuments(editorPage),
+      [documentPath],
+      "a copy does not save the document",
+    );
+    assert.equal(
+      await editorPage.locator(`[role="tab"][data-path="${documentPath}"].active`).count(),
+      1,
+      "the editor still shows the document, not the copy",
+    );
+
     // The application kept the text: the same save writes it when the file
-    // can be written again.
+    // can be written again. The focus is where the click on the message left
+    // it, outside the editor.
     await chmod(documentPath, 0o600);
     await save(editorPage);
     const expected = `${CONTENTS}${SENTENCE}`;
