@@ -26,10 +26,13 @@ export interface FlowmarkLintSuggestion {
   replacement: string;
 }
 
+/** How a Flowmark lint gave no diagnostics. */
+export type FlowmarkLintFailureKind =
+  | "flowmark-absent"
+  | "flowmark-error"
+  | "flowmark-timeout"
+  | "flowmark-invalid-output";
+
 export type FlowmarkLintResult =
   | { ok: true; diagnostics: FlowmarkLintDiagnostic[] }
-  | {
-      ok: false;
-      kind: "flowmark-absent" | "flowmark-error" | "flowmark-timeout" | "flowmark-invalid-output";
-      message: string;
-    };
+  | { ok: false; kind: FlowmarkLintFailureKind; message: string };

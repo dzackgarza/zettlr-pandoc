@@ -10,6 +10,14 @@ import LogProvider from "source/app/service-providers/log";
 import { ReferenceIndex } from "source/app/service-providers/references/reference-index";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 
+/** The code of the system error that an error of the provider names as its cause. */
+function systemErrorCode(failure: unknown): unknown {
+  assert.ok(failure instanceof Error, "the provider rejects with an error");
+  const cause = failure.cause;
+  assert.ok(cause instanceof Error && "code" in cause, "the error names a system error");
+  return cause.code;
+}
+
 describe("document lint cache", function () {
   this.timeout(120_000);
 
@@ -120,18 +128,21 @@ describe("document lint cache", function () {
     await provider.lint(documentPath, text);
 
     const deadline = Date.now() + 10_000;
-    for (;;) {
-      try {
-        await provider.lookup([{ path: documentPath, text }]);
-      } catch (error) {
-        assert.match(String(error), /ENOTDIR/);
-        break;
-      }
+    let failure: unknown;
+    while (failure === undefined) {
       assert.ok(Date.now() < deadline, "the failed cache write was not reported to readers");
       await new Promise((resolve) => setTimeout(resolve, 100));
+      failure = await provider.lookup([{ path: documentPath, text }]).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
     }
+    assert.equal(systemErrorCode(failure), "ENOTDIR");
 
-    await assert.rejects(provider.shutdown(), /ENOTDIR/);
+    await assert.rejects(provider.shutdown(), (error: unknown) => {
+      assert.equal(systemErrorCode(error), "ENOTDIR");
+      return true;
+    });
     providers.splice(providers.indexOf(provider), 1);
   });
 

@@ -34,19 +34,28 @@
  *                  have not changed. While the queue runs, it is one
  *                  long-running task with its progress.
  *
+ *                  A run that gave no result (a Flowmark process that
+ *                  failed, a run that stopped) is no result of the document.
+ *                  The provider keeps its cause for the session. A reader
+ *                  gets the cause, and the queue does not run the same text
+ *                  with the same inputs again until the author asks for it.
+ *
  * END HEADER
  */
 
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type { FixAllEdit, FixAllPlan } from "@dts/common/fix-all";
+import type { FlowmarkLintFailureKind } from "@dts/common/flowmark-lint";
 import type { DirDescriptor } from "@dts/common/fsal";
 import type {
   ApplyProblemFixRequest,
   ListProblemsRequest,
   ProblemDocument,
+  UnlintedDocument,
   WorkspaceProblems,
 } from "@dts/common/problems";
 import { tikzTemplateDependencyHash } from "@dzack/tikz-render/tikz-render";
@@ -79,6 +88,7 @@ import {
 } from "../../util/flowmark-lint-context";
 import { flowmarkInstallIdentity } from "../../util/flowmark-runtime";
 import { resolveTikzRenderConfig } from "../../util/resolve-tikz-render-config";
+import { systemErrorCause } from "../../util/system-error-cause";
 import { workspaceLintRows } from "../../util/workspace-lint-results";
 import ProviderContract from "../provider-contract";
 
@@ -95,10 +105,28 @@ export interface DocumentLintRecord {
   complete: boolean;
 }
 
+/** Why a run of a document gave no result. */
+export interface DocumentLintFailure {
+  /** How the Flowmark process failed; `lint-error` for a run that stopped outside that process. */
+  kind: FlowmarkLintFailureKind | "lint-error";
+  message: string;
+  /** ISO 8601 time the run ended. */
+  failedAt: string;
+}
+
 export interface DocumentLintLookup {
   record?: DocumentLintRecord;
   /** True when the record's key matches the document's current text and inputs. */
   current: boolean;
+  /** Present when the last run of this text with these inputs gave no result. */
+  failure?: DocumentLintFailure;
+}
+
+/** A run that gave no result, with the key that it ran under. */
+interface FailedRun extends DocumentLintFailure {
+  revision: string;
+  /** Absent for a run that stopped before its inputs were known. */
+  inputs?: string;
 }
 
 /** A document's current text, as the document authority or the disk has it. */
@@ -325,6 +353,8 @@ class LintPass {
 
 export default class DocumentLintProvider extends ProviderContract {
   private readonly entries = new Map<string, DocumentLintRecord>();
+  /** The last run of each document that gave no result. Not persisted. */
+  private readonly failures = new Map<string, FailedRun>();
   private readonly contentHashes = new ContentHashes();
   /** Each queued document, with the pass that found it without a current result. */
   private readonly queue = new Map<string, LintPass>();
@@ -335,6 +365,8 @@ export default class DocumentLintProvider extends ProviderContract {
   /** The status bar task of the running queue, from its first document until it drains. */
   private batch: { task: LongRunningTask; total: number; done: number; failed: number } | undefined;
   private flowmarkIdentity: string | undefined;
+  /** Why the installed Flowmark is unknown; then the queue lints no document. */
+  private flowmarkIdentityFailure: Error | undefined;
   private reconcileTimer: NodeJS.Timeout | undefined;
   private persistTimer: NodeJS.Timeout | undefined;
   private readonly backgroundTasks = new Set<Promise<void>>();
@@ -345,6 +377,7 @@ export default class DocumentLintProvider extends ProviderContract {
   private readonly onFsalEvents = (events: FSALEventPayload[]): void => {
     for (const payload of events) {
       if (payload.event === "unlink") {
+        this.failures.delete(payload.path);
         if (this.entries.delete(payload.path)) {
           this.schedulePersist();
         }
@@ -393,6 +426,24 @@ export default class DocumentLintProvider extends ProviderContract {
       return;
     }
     await this.refreshFlowmarkIdentity();
+    // Another Flowmark can lint what the last one could not.
+    this.failures.clear();
+    this.scheduleReconcile();
+  }
+
+  /**
+   * The author asks for the lint again. Each cause of a missing result is
+   * forgotten: the failed runs, an unknown Flowmark install and a failure of
+   * the background work. The results are written again, and the next
+   * reader queues each document without a current result.
+   */
+  async retry(): Promise<void> {
+    this.failures.clear();
+    this.backgroundFailure = undefined;
+    if (this.flowmarkIdentity === undefined) {
+      await this.refreshFlowmarkIdentity();
+    }
+    this.schedulePersist();
     this.scheduleReconcile();
   }
 
@@ -434,20 +485,38 @@ export default class DocumentLintProvider extends ProviderContract {
     return await Promise.all(
       sources.map(async (source) => {
         const record = this.entries.get(source.path);
-        const current =
-          record !== undefined &&
-          record.revision === sha256Text(source.text) &&
-          record.inputs ===
-            (await this.inputsKey(
-              source.path,
-              source.text,
-              await this.documentInputs(source.path, source.text, pass),
-              pass,
-            ));
-        if (!current) {
+        const failedRun = this.failures.get(source.path);
+        const revision = sha256Text(source.text);
+        const recordOfText = record !== undefined && record.revision === revision;
+        const failureOfText = failedRun !== undefined && failedRun.revision === revision;
+        // The inputs decide only for a result or a failure of this text.
+        const inputs =
+          recordOfText || (failureOfText && failedRun.inputs !== undefined)
+            ? await this.inputsKey(
+                source.path,
+                source.text,
+                await this.documentInputs(source.path, source.text, pass),
+                pass,
+              )
+            : undefined;
+        const current = recordOfText && record.inputs === inputs;
+        const failed =
+          failureOfText && (failedRun.inputs === undefined || failedRun.inputs === inputs);
+        if (!current && !failed) {
           this.enqueue(source.path, pass);
         }
-        return { record, current };
+        if (!failed) {
+          return { record, current };
+        }
+        return {
+          record,
+          current,
+          failure: {
+            kind: failedRun.kind,
+            message: failedRun.message,
+            failedAt: failedRun.failedAt,
+          },
+        };
       }),
     );
   }
@@ -492,9 +561,23 @@ export default class DocumentLintProvider extends ProviderContract {
       diagnostics: outcome.diagnostics,
       complete: outcome.complete,
     };
+    if (documentPath === "") {
+      return record;
+    }
     // A Flowmark failure (a timeout, a missing install) is not a result of
-    // the document; the next lint must try again.
-    if (outcome.complete && documentPath !== "" && this.flowmarkIdentity !== undefined) {
+    // the document. The cause is kept, so a reader gets it and the queue
+    // does not run this text with these inputs again.
+    if (outcome.failure !== undefined) {
+      this.failures.set(documentPath, {
+        ...outcome.failure,
+        failedAt: record.lintedAt,
+        revision: record.revision,
+        inputs,
+      });
+      return record;
+    }
+    this.failures.delete(documentPath);
+    if (this.flowmarkIdentity !== undefined) {
       this.entries.set(documentPath, record);
       this.schedulePersist();
     }
@@ -585,17 +668,22 @@ export default class DocumentLintProvider extends ProviderContract {
   }
 
   private async refreshFlowmarkIdentity(): Promise<void> {
-    try {
-      this.flowmarkIdentity = await flowmarkInstallIdentity();
-    } catch (error) {
-      // Without an identity no result can be keyed; lints still run and
-      // report the Flowmark failure themselves.
-      this.flowmarkIdentity = undefined;
-      this.deps.log.error(
-        "[Document Lint] Results are not cached: the installed Flowmark is unknown",
-        error,
-      );
-    }
+    await flowmarkInstallIdentity().then(
+      (identity) => {
+        this.flowmarkIdentity = identity;
+        this.flowmarkIdentityFailure = undefined;
+      },
+      (error: unknown) => {
+        // Without an identity no result can be keyed; lints still run and
+        // report the Flowmark failure themselves.
+        this.flowmarkIdentity = undefined;
+        this.flowmarkIdentityFailure = error instanceof Error ? error : new Error(String(error));
+        this.deps.log.error(
+          "[Document Lint] Results are not cached: the installed Flowmark is unknown",
+          error,
+        );
+      },
+    );
   }
 
   private scheduleReconcile(): void {
@@ -620,6 +708,8 @@ export default class DocumentLintProvider extends ProviderContract {
         const failure = error instanceof Error ? error : new Error(String(error));
         this.backgroundFailure = failure;
         this.deps.log.error(`[Document Lint] ${title} failed`, failure);
+        // An open reader asks again and gets the failure.
+        this.deps.onDrain?.();
         if (this.deps.lrt !== undefined) {
           const status = this.deps.lrt.registerTask(trans(title), "Flowmark", undefined, false);
           this.deps.lrt.settleTask(status, failure);
@@ -670,16 +760,13 @@ export default class DocumentLintProvider extends ProviderContract {
   async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
     this.assertBackgroundHealthy();
     const allPaths = await this.workspaceDocuments();
+    const workspacePath = request.workspacePath;
     const paths =
       request.scope === "all"
         ? allPaths
-        : request.workspacePath === undefined
+        : workspacePath === undefined
           ? []
-          : allPaths.filter(
-              (filePath) =>
-                filePath === request.workspacePath ||
-                filePath.startsWith(`${request.workspacePath}${path.sep}`),
-            );
+          : allPaths.filter((filePath) => isAtOrInsideRoot(filePath, workspacePath));
     const sources = await Promise.all(
       paths.map(async (filePath) => ({
         path: filePath,
@@ -689,11 +776,21 @@ export default class DocumentLintProvider extends ProviderContract {
     const lookups = await workspaceLintRows(this, sources);
     const documents: ProblemDocument[] = [];
     const pendingPaths: string[] = [];
+    const failed: UnlintedDocument[] = [];
     lookups.forEach((lookup, index) => {
       const filePath = paths[index];
       const record = lookup.record;
+      if (lookup.failure !== undefined) {
+        failed.push({
+          path: filePath,
+          name: path.basename(filePath),
+          cause: lookup.failure.message,
+        });
+      }
       if (record === undefined) {
-        pendingPaths.push(filePath);
+        if (lookup.failure === undefined) {
+          pendingPaths.push(filePath);
+        }
         return;
       }
       if (record.diagnostics.length === 0) {
@@ -725,9 +822,13 @@ export default class DocumentLintProvider extends ProviderContract {
     });
     documents.sort((a, b) => a.path.localeCompare(b.path));
     pendingPaths.sort();
+    failed.sort((a, b) => a.path.localeCompare(b.path));
     return {
       documents,
       pendingPaths,
+      failed,
+      queueStopped:
+        this.flowmarkIdentityFailure === undefined ? null : this.flowmarkIdentityFailure.message,
       documentCount: paths.length,
       queueActive: this.activeWorkers > 0 || this.queue.size > 0,
     };
@@ -884,13 +985,9 @@ export default class DocumentLintProvider extends ProviderContract {
         }
         const [documentPath, pass] = next.value;
         this.queue.delete(documentPath);
-        try {
-          await this.lintIn(pass, documentPath, await this.currentText(documentPath));
-        } catch (error) {
-          this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, error);
-          if (this.batch !== undefined) {
-            this.batch.failed += 1;
-          }
+        const linted = await this.lintQueued(pass, documentPath);
+        if (!linted && this.batch !== undefined) {
+          this.batch.failed += 1;
         }
         if (this.batch !== undefined) {
           this.batch.done += 1;
@@ -904,6 +1001,41 @@ export default class DocumentLintProvider extends ProviderContract {
         this.deps.onDrain?.();
       }
     }
+  }
+
+  /** Lints one document of the queue. Answers whether the run gave a result. */
+  private async lintQueued(pass: LintPass, documentPath: string): Promise<boolean> {
+    const text = await this.currentText(documentPath).catch((error: unknown) => {
+      // The file went away after a reader queued it; the next reader has
+      // the documents that are there.
+      this.deps.log.error(`[Document Lint] Could not read ${documentPath}`, error);
+      return undefined;
+    });
+    if (text === undefined) {
+      return false;
+    }
+    return await this.lintIn(pass, documentPath, text).then(
+      (record) => {
+        if (!record.complete) {
+          this.deps.log.error(
+            `[Document Lint] Flowmark could not lint ${documentPath}`,
+            this.failures.get(documentPath),
+          );
+        }
+        return record.complete;
+      },
+      (error: unknown) => {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        this.deps.log.error(`[Document Lint] Could not lint ${documentPath}`, failure);
+        this.failures.set(documentPath, {
+          kind: "lint-error",
+          message: failure.message,
+          failedAt: new Date().toISOString(),
+          revision: sha256Text(text),
+        });
+        return false;
+      },
+    );
   }
 
   private countQueued(): void {
@@ -941,7 +1073,10 @@ export default class DocumentLintProvider extends ProviderContract {
       batch.failed === 0
         ? undefined
         : new Error(
-            trans("%s documents could not be linted; the log names each one", batch.failed),
+            trans(
+              "%s documents could not be linted; the Problems view names each one",
+              batch.failed,
+            ),
           ),
     );
   }
@@ -992,6 +1127,17 @@ export default class DocumentLintProvider extends ProviderContract {
 
   private async persist(): Promise<void> {
     const file: CacheFile = { entries: Object.fromEntries(this.entries) };
-    await writeFileAtomic(this.cachePath, JSON.stringify(file), "utf8");
+    await writeFileAtomic(this.cachePath, JSON.stringify(file), "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        throw new Error(
+          trans(
+            "Could not write the lint results to %s: %s.",
+            this.cachePath,
+            systemErrorCause(error),
+          ),
+          { cause: error },
+        );
+      },
+    );
   }
 }

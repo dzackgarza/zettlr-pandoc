@@ -12,7 +12,8 @@
  *                  as a timeout. A reader of the cache gets the cause, and
  *                  the queue does not lint the same text with the same
  *                  inputs a second time. A new text and a retry start a new
- *                  run.
+ *                  run. A retry also ends the refusal that a failed write of
+ *                  the results leaves, and writes the results again.
  *
  * END HEADER
  */
@@ -20,7 +21,7 @@
 // The harness must load before provider modules, which import Electron.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
@@ -42,6 +43,7 @@ describe("a document that Flowmark cannot lint", function () {
 
   let root: string;
   let documentPath: string;
+  let userDataDirectory: string;
   let provider: DocumentLintProvider;
   let timeoutMs = NO_RUN_ENDS_MS;
   let drains = 0;
@@ -58,7 +60,7 @@ describe("a document that Flowmark cannot lint", function () {
   beforeEach(async function () {
     root = await mkdtemp(path.join(os.tmpdir(), "zettlr-document-lint-failure-"));
     const home = path.join(root, "home");
-    const userDataDirectory = path.join(root, "user-data");
+    userDataDirectory = path.join(root, "user-data");
     documentPath = path.join(root, "workspace", "note.md");
     await mkdir(path.join(home, ".pandoc", "styles", "macros"), { recursive: true });
     await mkdir(path.join(home, ".pandoc", "templates", "css"), { recursive: true });
@@ -134,6 +136,7 @@ describe("a document that Flowmark cannot lint", function () {
     await provider.lookup([{ path: documentPath, text: TEXT }]);
 
     const edited = `${TEXT}\nA second paragraph.\n`;
+    await writeFile(documentPath, edited);
     const [lookup] = await provider.lookup([{ path: documentPath, text: edited }]);
     assert.equal(lookup.failure, undefined, "the failure belongs to the text before the edit");
     await drained(2);
@@ -144,7 +147,7 @@ describe("a document that Flowmark cannot lint", function () {
     await drained(1);
 
     timeoutMs = USUAL_LIMIT_MS;
-    provider.retryFailedDocuments();
+    await provider.retry();
     const [queued] = await provider.lookup([{ path: documentPath, text: TEXT }]);
     assert.equal(queued.failure, undefined, "a retry forgets the cause");
     await drained(2);
@@ -158,5 +161,44 @@ describe("a document that Flowmark cannot lint", function () {
       ),
       "the result is the lint of the document",
     );
+  });
+
+  it("writes the results again after a retry", async function () {
+    timeoutMs = USUAL_LIMIT_MS;
+    // The directory of the results is a file, so no result can be written.
+    const aside = `${userDataDirectory}-aside`;
+    await rename(userDataDirectory, aside);
+    await writeFile(userDataDirectory, "not a directory");
+    await provider.lint(documentPath, TEXT);
+    const refusal = async (): Promise<unknown> =>
+      await provider.lookup([{ path: documentPath, text: TEXT }]).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    const deadline = Date.now() + 10_000;
+    while ((await refusal()) === undefined) {
+      assert.ok(Date.now() < deadline, "the failed write was not reported to a reader");
+      await delay(100);
+    }
+    const drainsAtRefusal = drains;
+    assert.ok(drainsAtRefusal > 0, "an open reader is told to ask again");
+
+    await rm(userDataDirectory);
+    await rename(aside, userDataDirectory);
+    await provider.retry();
+
+    const [lookup] = await provider.lookup([{ path: documentPath, text: TEXT }]);
+    assert.equal(lookup.current, true, "the result of the document is kept");
+    const cachePath = path.join(userDataDirectory, "document-lint-cache.json");
+    const written = async (): Promise<boolean> =>
+      await readFile(cachePath, "utf8").then(
+        (contents) => contents.includes(documentPath),
+        () => false,
+      );
+    const writeDeadline = Date.now() + 10_000;
+    while (!(await written())) {
+      assert.ok(Date.now() < writeDeadline, "the retry did not write the results");
+      await delay(100);
+    }
   });
 });

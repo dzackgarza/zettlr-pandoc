@@ -22,9 +22,22 @@ export interface ProblemDocument {
   counts: Record<ProblemSeverity, number>;
 }
 
+/** A document whose last lint run gave no result. */
+export interface UnlintedDocument {
+  path: string;
+  name: string;
+  /** Why the run gave no result. */
+  cause: string;
+}
+
 export interface WorkspaceProblems {
   documents: ProblemDocument[];
+  /** The documents that wait for their first result. */
   pendingPaths: string[];
+  /** The documents whose current text Flowmark could not lint. */
+  failed: UnlintedDocument[];
+  /** Why the background queue lints no document; null while it works. */
+  queueStopped: string | null;
   documentCount: number;
   queueActive: boolean;
 }
