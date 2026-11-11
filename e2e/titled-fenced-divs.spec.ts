@@ -1,0 +1,303 @@
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        Titled fenced div E2E
+ * CVM-Role:        TESTING
+ * Maintainer:      D. Zack Garza
+ * License:         GNU GPL v3
+ *
+ * Description:     Opens a document of Pandoc fenced divs with `title`
+ *                  attributes in the assembled app. At a wide and at a narrow
+ *                  window each header shows its label and its whole title,
+ *                  the badges of a definition are in the editor and beside
+ *                  the title, and the editor has no horizontal scroll. A
+ *                  definition far below the first one gets its badges when
+ *                  the author scrolls to it (#177).
+ *
+ * END HEADER
+ */
+
+import { strict as assert } from "node:assert";
+import { type ChildProcess } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { type Browser, type Page } from "playwright";
+import {
+  assertCleanExit,
+  attach,
+  createFixture,
+  delay,
+  findEditorPage,
+  hideDevServerOverlay,
+  preserveArtifacts,
+  requireInitialized,
+  shutdown,
+} from "./support/electron-app";
+
+const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-titled-div-e2e-latest");
+
+const LONG_TITLE = "Orbit, stabilizer, and the set of fixed points of a group action";
+const REMARK_TITLE = "Standard terminology and the convention of the database";
+const SHORT_TITLE = "Transitive actions";
+const LAST_KEY = "def:free-action";
+
+// Enough text that the editor draws the first and the last definition in
+// different viewports.
+const FILLER = Array.from(
+  { length: 240 },
+  (_, index) => `Paragraph ${String(index + 1)} between the definitions.\n`,
+).join("\n");
+
+const DOCUMENT = `## Orbits and stabilizers
+
+::: {.definition #def:orbit-stabilizer-fixed-points title="${LONG_TITLE}"}
+
+Let $G$ be a group that acts on a set $X$, and let $x\\in X$.
+
+The **orbit** of $x$ is
+$$
+G\\cdot x
+=
+\\{g\\cdot x \\mid g\\in G\\}
+.
+$$
+The **stabilizer** of $x$ is the subgroup $G_x=\\{g\\in G\\mid g\\cdot x=x\\}$.
+:::
+
+::: {.remark title="${REMARK_TITLE}"}
+
+The database fields \`action.orbit_representatives\`, \`action.stabilizer_generators\`, and \`action.fixed_point_count\` use this convention.
+:::
+
+::: {.definition #def:transitive-action title="${SHORT_TITLE}"}
+
+The action is **transitive** if $X$ is one orbit.
+:::
+
+${FILLER}
+::: {.definition #${LAST_KEY} title="Free actions"}
+
+The action is **free** if each stabilizer is trivial.
+:::
+`;
+
+interface Box {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+interface HeaderLayout {
+  label: string;
+  title: string;
+  /** The box of the title element: what the element shows of its text. */
+  titleBox: Box;
+  /** The rows of the title text, as the text is laid out. */
+  textRows: Box[];
+}
+
+interface EditorLayout {
+  clientWidth: number;
+  scrollWidth: number;
+  visible: Box;
+  headers: HeaderLayout[];
+  badges: Array<{ key: string; box: Box }>;
+}
+
+// The functions that run in the page hold no named function: the TypeScript
+// loader of the run wraps a named function in a helper that the page lacks.
+function readLayout(page: Page): Promise<EditorLayout> {
+  return page.evaluate(() => {
+    const scroller = document.querySelector(".cm-scroller");
+    if (scroller === null) {
+      throw new Error("The editor has no scroller");
+    }
+    const headers = [...scroller.querySelectorAll(".pandoc-div-header")].map((header) => {
+      const title = header.querySelector(".pandoc-div-header-title");
+      if (title === null) {
+        throw new Error("A header of this document has no title element");
+      }
+      const titleRect = title.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(title);
+      return {
+        label: header.querySelector(".pandoc-div-header-label")?.textContent ?? "",
+        title: title.textContent ?? "",
+        titleBox: {
+          left: titleRect.left,
+          right: titleRect.right,
+          top: titleRect.top,
+          bottom: titleRect.bottom,
+        },
+        textRows: [...text.getClientRects()].map((rect) => ({
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        })),
+      };
+    });
+    const badges = [...scroller.querySelectorAll(".reference-badge-group.positioned")].map(
+      (group) => {
+        const rect = group.getBoundingClientRect();
+        return {
+          key:
+            group.querySelector<HTMLElement>(".reference-definition-badge")?.dataset.referenceKey ??
+            "",
+          box: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+        };
+      },
+    );
+    const visible = scroller.getBoundingClientRect();
+    return {
+      clientWidth: scroller.clientWidth,
+      scrollWidth: scroller.scrollWidth,
+      visible: {
+        left: visible.left,
+        right: visible.right,
+        top: visible.top,
+        bottom: visible.bottom,
+      },
+      headers,
+      badges,
+    };
+  });
+}
+
+function overlap(a: Box, b: Box): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+describe("assembled app: fenced divs with a title", function () {
+  this.timeout(300_000);
+
+  let appProcess: ChildProcess | undefined;
+  let browser: Browser | undefined;
+  let page: Page | undefined;
+  let fixtureRoot: string | undefined;
+  let getOutput: () => string = () => "";
+  const rendererEvents: string[] = [];
+  const screenshots = new Map<string, Buffer>();
+
+  before(async function () {
+    const fixture = await createFixture("zettlr-titled-div-e2e-", {
+      documentName: "actions.md",
+      documentContents: DOCUMENT,
+      config: {
+        darkMode: true,
+        autoDarkMode: "off",
+        editor: { fontSize: 18 },
+        window: { fileManagerVisible: false, sidebarVisible: false },
+      },
+    });
+    fixtureRoot = fixture.root;
+    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    appProcess = app.appProcess;
+    browser = app.browser;
+    getOutput = app.getOutput;
+    page = await findEditorPage(app.browser, this.timeout());
+    await hideDevServerOverlay(page);
+    await page.locator(".pandoc-div-header").first().waitFor({
+      state: "visible",
+      timeout: this.timeout(),
+    });
+  });
+
+  after(async function () {
+    await shutdown(browser, appProcess);
+    await preserveArtifacts(
+      ARTIFACT_DIRECTORY,
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
+    if (fixtureRoot !== undefined) {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+    assertCleanExit(getOutput());
+  });
+
+  for (const width of [1400, 620]) {
+    it(`shows each label, each whole title and each badge at a window of ${String(width)} px`, async function () {
+      const editorPage = requireInitialized(page, "The editor window must be open");
+      await editorPage.setViewportSize({ width, height: 900 });
+      await editorPage
+        .locator(".reference-badge-group.positioned")
+        .nth(1)
+        .waitFor({ state: "visible", timeout: 30_000 });
+      // The badges take their places in the measure cycle after a resize.
+      await delay(1000);
+      screenshots.set(`titled-divs-${String(width)}.png`, await editorPage.screenshot());
+
+      const layout = await readLayout(editorPage);
+      assert.deepEqual(
+        layout.headers.map((header) => [header.label, header.title]),
+        [
+          ["Definition", LONG_TITLE],
+          ["Remark", REMARK_TITLE],
+          ["Definition", SHORT_TITLE],
+        ],
+      );
+      for (const header of layout.headers) {
+        assert.ok(header.textRows.length > 0, `the title has text: ${header.title}`);
+        for (const row of header.textRows) {
+          assert.ok(
+            row.right <= header.titleBox.right + 1 && row.bottom <= header.titleBox.bottom + 1,
+            `the title element shows its whole text: ${header.title}`,
+          );
+          assert.ok(
+            row.right <= layout.visible.right + 1,
+            `the title ends in the editor: ${header.title} ends at ${String(row.right)}, the editor at ${String(layout.visible.right)}`,
+          );
+        }
+      }
+      assert.equal(layout.scrollWidth, layout.clientWidth, "the editor has no horizontal scroll");
+      assert.deepEqual(
+        layout.badges.map((badge) => badge.key),
+        ["def:orbit-stabilizer-fixed-points", "def:transitive-action"],
+      );
+      for (const badge of layout.badges) {
+        assert.ok(
+          badge.box.right <= layout.visible.right + 1,
+          `the badges of ${badge.key} end in the editor: ${String(badge.box.right)} > ${String(layout.visible.right)}`,
+        );
+        for (const header of layout.headers) {
+          assert.ok(
+            !header.textRows.some((row) => overlap(badge.box, row)),
+            `the badges of ${badge.key} do not cover the title: ${header.title}`,
+          );
+        }
+      }
+    });
+  }
+
+  it("gives the badges of a definition that the author scrolls to", async function () {
+    const editorPage = requireInitialized(page, "The editor window must be open");
+    const badges = editorPage.locator(
+      `.reference-badge-group.positioned .reference-count-badge[data-reference-key="${LAST_KEY}"]`,
+    );
+    assert.equal(await badges.count(), 0, "the last definition starts outside the viewport");
+
+    await editorPage
+      .locator(".cm-scroller")
+      .evaluate((scroller) => scroller.scrollTo(0, scroller.scrollHeight));
+    const header = editorPage.locator(".pandoc-div-header", { hasText: "Free actions" });
+    await header.waitFor({ state: "visible", timeout: 30_000 });
+    // The badges take their places in the measure cycle after a scroll.
+    await delay(1000);
+    screenshots.set("titled-divs-last-definition.png", await editorPage.screenshot());
+
+    assert.equal(await badges.count(), 1, "the last definition has its badges");
+    const layout = await readLayout(editorPage);
+    const badge = layout.badges.find((candidate) => candidate.key === LAST_KEY);
+    assert.ok(badge !== undefined, "the badges of the last definition have a place");
+    assert.ok(
+      badge.box.top >= layout.visible.top && badge.box.bottom <= layout.visible.bottom,
+      "the badges of the last definition are in the visible part of the editor",
+    );
+  });
+});
