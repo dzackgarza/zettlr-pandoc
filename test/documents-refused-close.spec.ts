@@ -13,7 +13,9 @@
  *                  Each refusal names the document, and the command
  *                  `close-without-review` then closes the document or ends
  *                  the quit without that state. The sidecar stays as it was
- *                  last written (#178).
+ *                  last written. The answer "discard" at a close prompt is
+ *                  refused the same way when the discard cannot be done: the
+ *                  state cannot be written, or the file cannot be read (#178).
  *
  * END HEADER
  */
@@ -35,6 +37,7 @@ import {
   appListeners,
   appQuitRequests,
   ipcMainHandlers,
+  messageBoxes,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
@@ -48,6 +51,9 @@ const SOURCE = "An even unimodular lattice has a rank that 8 divides.\n";
 const ANNOTATED = "even unimodular";
 const REVISED = SOURCE.replace("rank", "signature");
 const SIDECARS = path.join(userData, "review-sidecars");
+const DRAFT = "Draft: ";
+// The second button of each close prompt: discard the unsaved text.
+const DISCARD = 1;
 
 describe("Documents-provider close that cannot write the collaboration state", function () {
   let root: string;
@@ -63,8 +69,11 @@ describe("Documents-provider close that cannot write the collaboration state", f
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
+    mkdirSync(SIDECARS);
     appListeners.delete("before-quit");
     appQuitRequests.length = 0;
+    messageBoxes.shown.length = 0;
+    messageBoxes.answer = undefined;
 
     provider = await bootDocumentManager(root);
     windowId = provider.windowKeys()[0];
@@ -126,6 +135,34 @@ describe("Documents-provider close that cannot write the collaboration state", f
       .items.map((item) => item.annotationId);
   }
 
+  /** The author types at the start of the document and does not save. */
+  async function typeDraft(): Promise<void> {
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: DRAFT },
+    ]);
+    assert.equal(provider.isModified(filePath), true, "the document has unsaved text");
+  }
+
+  /** Fires the before-quit listener. Answers whether the provider stopped the quit. */
+  function requestQuit(): boolean {
+    const listeners = appListeners.get("before-quit") ?? [];
+    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
+    let stopped = false;
+    listeners[0]({
+      preventDefault: () => {
+        stopped = true;
+      },
+    });
+    return stopped;
+  }
+
+  async function untilRefused(): Promise<void> {
+    const deadline = Date.now() + 5000;
+    while (refusedCloses().length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   it("closes a document in a pane without the state that it could not write", async function () {
     const { id, annotation } = await openAndAnnotate();
 
@@ -169,13 +206,8 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.ok(submitted.ok, "the proposal opens a review");
 
     chmodSync(SIDECARS, 0o500);
-    const listeners = appListeners.get("before-quit") ?? [];
-    assert.equal(listeners.length, 1, "the provider registers the one before-quit listener");
-    listeners[0]({ preventDefault: () => {} });
-    const deadline = Date.now() + 5000;
-    while (refusedCloses().length === 0 && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    assert.equal(requestQuit(), true);
+    await untilRefused();
     assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
     assert.equal(appQuitRequests.length, 0, "the quit did not go on");
     assert.equal(provider.readWorkingText(id), REVISED, "a refused quit keeps the document");
@@ -211,5 +243,75 @@ describe("Documents-provider close that cannot write the collaboration state", f
       "the open document stays open",
     );
     assert.deepEqual(annotationsInMemory(id), [annotation], "and it keeps its state");
+  });
+
+  it("closes a tab whose unsaved text the author discards, when the state cannot be written", async function () {
+    const { id, annotation } = await openAndAnnotate();
+    await typeDraft();
+
+    chmodSync(SIDECARS, 0o500);
+    messageBoxes.answer = DISCARD;
+    assert.equal(
+      await provider.closeFile(windowId, pane(), filePath),
+      false,
+      "the close is refused",
+    );
+    assert.deepEqual(refusedCloses(), [id], "the refusal names the document to the window");
+    assert.equal(
+      provider.readWorkingText(id),
+      `${DRAFT}${SOURCE}`,
+      "a refused discard keeps the text",
+    );
+    assert.deepEqual(annotationsInMemory(id), [annotation], "and the state");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.equal(messageBoxes.shown.length, 1, "the repeated close does not ask again");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+    assert.equal(provider.getActiveFile(pane()), undefined, "the pane shows no document");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the discarded text is not on disk");
+
+    chmodSync(SIDECARS, 0o700);
+    await provider.getDocument(filePath);
+    assert.equal(provider.readWorkingText(id), SOURCE, "the next load has the text of the file");
+    assert.deepEqual(annotationsInMemory(id), [annotation], "and the sidecar as last written");
+  });
+
+  it("ends a quit whose unsaved text the author discards, when the state cannot be written", async function () {
+    const { id } = await openAndAnnotate();
+    await typeDraft();
+
+    chmodSync(SIDECARS, 0o500);
+    messageBoxes.answer = DISCARD;
+    assert.equal(requestQuit(), true);
+    await untilRefused();
+    assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
+    assert.equal(appQuitRequests.length, 0, "the quit did not go on");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.equal(appQuitRequests.length, 1, "the quit goes on");
+    assert.equal(requestQuit(), false, "the repeated quit has nothing to settle");
+    assert.equal(messageBoxes.shown.length, 1, "and it does not ask again");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the discarded text is not on disk");
+  });
+
+  it("ends a quit whose unsaved text the author discards, when the file cannot be read", async function () {
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    const id = provider.getDocumentId(filePath);
+    assert.ok(id !== undefined, "a loaded document has an id");
+    await typeDraft();
+
+    chmodSync(filePath, 0o000);
+    messageBoxes.answer = DISCARD;
+    assert.equal(requestQuit(), true);
+    await untilRefused();
+    assert.deepEqual(refusedCloses(), [id], "the refused quit names the document to the window");
+    assert.equal(appQuitRequests.length, 0, "the quit did not go on");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.equal(appQuitRequests.length, 1, "the quit goes on");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+    chmodSync(filePath, 0o600);
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the discarded text is not on disk");
   });
 });

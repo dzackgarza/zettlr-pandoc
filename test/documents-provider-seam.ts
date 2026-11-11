@@ -20,6 +20,7 @@ import type { AppServiceContainer } from "source/app/app-service-container";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
+import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 
@@ -114,6 +115,10 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
     references: {
       reportAuthorityBuffer: (_filePath: string) => {},
       dropAuthorityBuffer: (_filePath: string) => {},
+    },
+    windows: {
+      // The real prompt, with no window to attach it to.
+      askSaveChanges: async (detail?: string) => await askSaveChanges(null, detail),
     },
   };
 
