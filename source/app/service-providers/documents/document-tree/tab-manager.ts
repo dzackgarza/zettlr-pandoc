@@ -292,10 +292,6 @@ export class TabManager {
   public replaceFilePath(oldPath: string, newPath: string): boolean {
     const file = this.openFiles.find((doc) => doc.path === oldPath);
     if (file === undefined) {
-      console.log(
-        `Didnt find file for path ${oldPath} -- nothing has changed.`,
-        this.openFiles.map((doc) => doc.path),
-      );
       return false;
     }
 

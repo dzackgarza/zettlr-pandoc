@@ -390,6 +390,10 @@ export type DocumentManagerIPCContract = {
     request: { payload: { path: string } };
     response: undefined;
   };
+  "close-without-review": {
+    request: { payload: { documentId: string } };
+    response: boolean;
+  };
   "get-open-workspace-files": {
     request: { payload: { path: string } };
     response: string[];
@@ -699,8 +703,21 @@ export default class DocumentManager
    */
   public readonly agentEvents = new EventEmitter();
 
-  /** Maps a path to its document ID for agent API lookups. */
+  /**
+   * The id of each document path, and the path of each document id. The
+   * two maps change together (_assignDocumentId, _moveDocumentId): an id
+   * names one path, and a path has one id.
+   */
   private readonly _documentIdByPath: Map<string, string>;
+  private readonly _documentPathById: Map<string, string>;
+
+  /**
+   * The closes that the provider refused because the collaboration state
+   * of a document could not be written, by document id. The value repeats
+   * the close. closeWithoutReview runs it when the author decides to close
+   * without that state.
+   */
+  private readonly _refusedCloses: Map<string, () => Promise<void>>;
 
   /** The load of each document that is loading now (getDocument). */
   private readonly _pendingLoads = new Map<
@@ -757,6 +774,8 @@ export default class DocumentManager
       },
     });
     this._documentIdByPath = new Map();
+    this._documentPathById = new Map();
+    this._refusedCloses = new Map();
     this.documents = [];
     this._shuttingDown = false;
     this._quitPromptOpen = false;
@@ -1060,6 +1079,9 @@ export default class DocumentManager
           await this.notifyRemoteChange(payload.path);
           return;
         }
+        case "close-without-review": {
+          return await this.closeWithoutReview(payload.documentId);
+        }
         case "get-open-workspace-files": {
           const { path } = payload;
           return this.getFilesForWorkspace(path);
@@ -1221,14 +1243,17 @@ export default class DocumentManager
     unsaved: Document[],
   ): Promise<boolean> {
     for (const document of parked) {
-      try {
-        await this._detachCollaboration(document.documentId);
-      } catch (err) {
-        this._announceDetachFailure(document.filePath, err);
+      const detached = await this._detachForClose(
+        document.documentId,
+        document.filePath,
+        async () => {
+          app.quit();
+        },
+      );
+      if (!detached) {
         return false;
       }
-      this.documents.splice(this.documents.indexOf(document), 1);
-      this._app.references.dropAuthorityBuffer(document.filePath);
+      this._unload(document);
     }
     if (parked.length > 0) {
       this.syncWatchedFilePaths();
@@ -1271,11 +1296,15 @@ export default class DocumentManager
    * the windowId may be closed. If this function returns true, the user agreed
    * to drop all changes, or there were no changes contained in the window.
    *
-   * @param   {string}            windowId  The window in question
+   * @param   {string}            windowId    The window in question
+   * @param   {Function}          closeAgain  Repeats the close of the window (closeWindow)
    *
-   * @return  {Promise<boolean>}            Returns false if the window may not be closed
+   * @return  {Promise<boolean>}              Returns false if the window may not be closed
    */
-  public async askUserToCloseWindow(windowId: string): Promise<boolean> {
+  public async askUserToCloseWindow(
+    windowId: string,
+    closeAgain: () => Promise<void>,
+  ): Promise<boolean> {
     if (this.isClean(windowId)) {
       return true;
     }
@@ -1302,11 +1331,7 @@ export default class DocumentManager
 
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
-      if (!this._shuttingDown) {
-        await this.closeWindow(windowId);
-      }
-
-      return true;
+      return await this.closeWindow(windowId, closeAgain);
     } else if (result.response === 0) {
       // Save this window's docs — the same set the discard branch throws away.
       for (const document of this._windowExclusiveDocuments(windowId)) {
@@ -1319,11 +1344,7 @@ export default class DocumentManager
 
       // If we're not shutting down, this function will only be called for when
       // the user wants to actively close a window for good
-      if (!this._shuttingDown) {
-        await this.closeWindow(windowId);
-      }
-
-      return true;
+      return await this.closeWindow(windowId, closeAgain);
     } else {
       return false;
     }
@@ -1430,9 +1451,15 @@ export default class DocumentManager
     this.syncToConfig();
   }
 
-  public async closeWindow(windowId: string): Promise<void> {
+  /**
+   * Removes a window from the provider. Resolves false when the window
+   * must stay: the collaboration state of one of its documents could not
+   * be written (_detachForClose). `closeAgain` is the request of the
+   * window owner that repeats this close.
+   */
+  public async closeWindow(windowId: string, closeAgain: () => Promise<void>): Promise<boolean> {
     if (this._shuttingDown) {
-      return; // During shutdown only the WindowManager should close windows
+      return true; // During shutdown only the WindowManager should close windows
     }
 
     const isLastWindow = Object.values(this._windows).length === 1;
@@ -1446,14 +1473,15 @@ export default class DocumentManager
       // necessary anymore.
       this._app.log.info(`[Documents Manager] Closing window ${windowId}!`);
       for (const document of this._windowExclusiveDocuments(windowId)) {
-        try {
-          await this._detachCollaboration(document.documentId);
-        } catch (err) {
-          this._announceDetachFailure(document.filePath, err);
-          return;
+        const detached = await this._detachForClose(
+          document.documentId,
+          document.filePath,
+          closeAgain,
+        );
+        if (!detached) {
+          return false;
         }
-        this.documents.splice(this.documents.indexOf(document), 1);
-        this._app.references.dropAuthorityBuffer(document.filePath);
+        this._unload(document);
       }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this._windows[windowId];
@@ -1461,6 +1489,7 @@ export default class DocumentManager
       this.syncToConfig();
       this.syncWatchedFilePaths();
     }
+    return true;
   }
 
   // Enable global event listening to updates of the config
@@ -1620,17 +1649,17 @@ export default class DocumentManager
    * editor view, unsaved changes, or a review has an owner beyond this
    * acquisition, and it is left exactly as it is.
    */
-  public async releaseTemporaryDocument(documentId: string): Promise<void> {
+  public async releaseTemporaryDocument(documentId: string): Promise<boolean> {
     const filePath = this.getDocumentPath(documentId);
     if (filePath === undefined) {
-      return;
+      return false;
     }
     const doc = this.documents.find((candidate) => candidate.filePath === filePath);
     if (doc === undefined || doc.currentVersion !== doc.lastSavedVersion) {
-      return;
+      return false;
     }
     if (this._reviewApplication.getReview(documentId) !== undefined) {
-      return;
+      return false;
     }
 
     let hasEditorView = false;
@@ -1641,12 +1670,12 @@ export default class DocumentManager
       return false;
     });
     if (hasEditorView) {
-      return;
+      return false;
     }
 
-    this.documents.splice(this.documents.indexOf(doc), 1);
-    this._app.references.dropAuthorityBuffer(filePath);
+    this._unload(doc);
     this.syncWatchedFilePaths();
+    return true;
   }
 
   private async pullUpdates(
@@ -2112,6 +2141,9 @@ current contents from the editor somewhere else, and restart the application.`,
     // opened in this session of Zettlr, hence it will not be modified, hence we
     // don't have to do anything.
     const openFile = this.documents.find((doc) => doc.filePath === filePath);
+    const repeatClose = async (): Promise<void> => {
+      await this.closeFile(windowId, leafId, filePath);
+    };
     if (openFile !== undefined && this.isModified(filePath) && numOpenInstances === 1) {
       const detail = trans("File: %s", openFile.descriptor.name);
       const result = await this._app.windows.askSaveChanges(detail);
@@ -2121,10 +2153,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // A saved review may survive the discard of a later edit. The
         // document is about to leave the live registry, so detach that
         // preserved review before removing its working-text resolver.
-        try {
-          await this._detachCollaboration(openFile.documentId);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
+        if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
           return false;
         }
         this.broadcastEvent(DP_EVENTS.CHANGE_FILE_STATUS, {
@@ -2140,10 +2169,7 @@ current contents from the editor somewhere else, and restart the application.`,
         // The save persists the review, but the final pane is leaving the
         // live registry. Detach before the splice so closed-file API reads do
         // not observe a review whose working-text authority is gone.
-        try {
-          await this._detachCollaboration(openFile.documentId);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
+        if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
           return false;
         }
       } else {
@@ -2153,23 +2179,15 @@ current contents from the editor somewhere else, and restart the application.`,
       }
 
       // Remove the file
-      this.documents.splice(this.documents.indexOf(openFile), 1);
-      this._app.references.dropAuthorityBuffer(filePath);
+      this._unload(openFile);
     } else if (openFile !== undefined && numOpenInstances === 1) {
       // The file is not modified, but this is still the last instance, so we
       // can close it without having to ask. Detach before the splice: the
       // sidecar export reads the working text through the live document.
-      const _id = this.getDocumentId(filePath);
-      if (_id !== undefined) {
-        try {
-          await this._detachCollaboration(_id);
-        } catch (err) {
-          this._announceDetachFailure(filePath, err);
-          return false;
-        }
+      if (!(await this._detachForClose(openFile.documentId, filePath, repeatClose))) {
+        return false;
       }
-      this.documents.splice(this.documents.indexOf(openFile), 1);
-      this._app.references.dropAuthorityBuffer(filePath);
+      this._unload(openFile);
     }
 
     const ret = leaf.tabMan.closeFile(filePath);
@@ -2295,6 +2313,33 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param   {string}  filePath  The file path in question
    */
   public async closeFileEverywhere(filePath: string): Promise<void> {
+    await this._closeTabsEverywhere(filePath);
+
+    // We also must splice the document out of our provider. Detach before
+    // the splice: the sidecar export reads the working text through the
+    // live document. When the export fails, the file is gone from disk and
+    // there is no reopening it to retry: the review stays in memory and the
+    // buffer stays loaded rather than being dropped along with the only
+    // copy of both.
+    const documentId = this.getDocumentId(filePath);
+    if (
+      documentId !== undefined &&
+      !(await this._detachForClose(documentId, filePath, async () => {
+        await this.closeFileEverywhere(filePath);
+      }))
+    ) {
+      return;
+    }
+    const document = this.documents.find((doc) => doc.filePath === filePath);
+    if (document !== undefined) {
+      this._unload(document);
+    }
+
+    this.syncWatchedFilePaths();
+  }
+
+  /** Closes the tab of a path in every pane, pinned or not. */
+  private async _closeTabsEverywhere(filePath: string): Promise<void> {
     await this.forEachLeaf(async (tabMan, windowId, leafId) => {
       if (tabMan.openFiles.map((x) => x.path).includes(filePath)) {
         tabMan.setPinnedStatus(filePath, false);
@@ -2317,29 +2362,6 @@ current contents from the editor somewhere else, and restart the application.`,
 
       return true;
     });
-
-    // We also must splice the document out of our provider. Detach before
-    // the splice: the sidecar export reads the working text through the
-    // live document.
-    const documentId = this.getDocumentId(filePath);
-    if (documentId !== undefined) {
-      try {
-        await this._detachCollaboration(documentId);
-      } catch (err) {
-        // The file is gone from disk, so there is no reopening it to retry
-        // the export; the review stays in memory and the buffer stays loaded
-        // rather than being dropped along with the only copy of both.
-        this._announceDetachFailure(filePath, err);
-        return;
-      }
-    }
-    const idx = this.documents.findIndex((doc) => doc.filePath === filePath);
-    if (idx > -1) {
-      this.documents.splice(idx, 1);
-      this._app.references.dropAuthorityBuffer(filePath);
-    }
-
-    this.syncWatchedFilePaths();
   }
 
   /**
@@ -2451,39 +2473,82 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param  {string}  newPath  The path it'll be afterwards
    */
   public async hasMovedFile(oldPath: string, newPath: string): Promise<void> {
-    // Basically we just have to close the oldPath, and "open" the new path.
-    const openDoc = this.documents.find((doc) => doc.filePath === oldPath);
-    if (openDoc === undefined) {
-      return; // Nothing to do
+    if (oldPath === newPath) {
+      return;
     }
+    await this._dropReplacedDocument(newPath);
 
-    // The collaboration sidecar is keyed by the OLD path's hash; carry it to
-    // the new path before anything else touches openDoc.filePath, so a crash
-    // between the two never leaves the sidecar unreachable under either name.
-    await this._reviewApplication.renameCollaboration(openDoc.documentId, oldPath, newPath);
+    // The document keeps its id, loaded or not: its annotations, its review
+    // and the agents that hold the id follow it to the new path (#178).
+    const documentId = this._assignDocumentId(oldPath);
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      this._movePathOfDocument(documentId, oldPath, newPath);
+      // The sidecar goes last. When it cannot be written, the error goes to
+      // the caller with the id, the tabs and the state in memory at the new
+      // path: the next write of the state lands there.
+      await this._reviewApplication.renameCollaboration(documentId, oldPath, newPath);
+    });
+  }
 
-    openDoc.filePath = newPath;
-    openDoc.descriptor.path = newPath;
-    openDoc.descriptor.dir = path.dirname(newPath);
-    openDoc.descriptor.name = path.basename(newPath);
-    openDoc.descriptor.ext = path.extname(newPath);
+  /**
+   * A move put another file at this path. The document that was there lost
+   * its file: its tabs close, and its buffer and its collaboration state in
+   * memory go with no write. The move of the sidecar replaces its sidecar.
+   */
+  private async _dropReplacedDocument(filePath: string): Promise<void> {
+    await this._closeTabsEverywhere(filePath);
+    const replacedId = this.getDocumentId(filePath);
+    if (replacedId !== undefined) {
+      await this._reviewApplication.withDocumentLock(replacedId, async () => {
+        this._reviewApplication.dropCollaboration(replacedId);
+      });
+    }
+    const replaced = this.documents.find((doc) => doc.filePath === filePath);
+    if (replaced !== undefined) {
+      this._unload(replaced);
+    }
+  }
 
-    // The buffer moved with the document: its live reference overlay moves
-    // too (issue #53) — the old path's overlay dies, the new path reports
-    // immediately (a move is a single event, not a typing storm).
-    this._app.references.dropAuthorityBuffer(oldPath);
-    if (openDoc.type === DocumentType.Markdown) {
-      this._app.references.reportAuthorityBuffer(newPath, true);
+  /**
+   * Every record of the provider that names the path of a document takes
+   * the new path, in one synchronous step: the id maps, the loaded
+   * document, the reference overlay, the tabs and the watcher.
+   */
+  private _movePathOfDocument(documentId: string, oldPath: string, newPath: string): void {
+    this._moveDocumentId(documentId, oldPath, newPath);
+    this._announcedRemoteModtime.delete(oldPath);
+    this._announcedRemoteModtime.delete(newPath);
+
+    const openDoc = this.documents.find((doc) => doc.filePath === oldPath);
+    if (openDoc !== undefined) {
+      openDoc.filePath = newPath;
+      openDoc.descriptor.path = newPath;
+      openDoc.descriptor.dir = path.dirname(newPath);
+      openDoc.descriptor.name = path.basename(newPath);
+      openDoc.descriptor.ext = path.extname(newPath);
+
+      // The buffer moved with the document: its live reference overlay moves
+      // too (issue #53) — the old path's overlay dies, the new path reports
+      // immediately (a move is a single event, not a typing storm).
+      this._app.references.dropAuthorityBuffer(oldPath);
+      if (openDoc.type === DocumentType.Markdown) {
+        this._app.references.reportAuthorityBuffer(newPath, true);
+      }
     }
 
     const leafsToNotify: Array<[string, string]> = [];
-    await this.forEachLeaf(async (tabMan, windowId, leafId) => {
-      const res = tabMan.replaceFilePath(oldPath, newPath);
-      if (res) {
-        leafsToNotify.push([windowId, leafId]);
+    let tabsChanged = false;
+    for (const [windowId, tree] of Object.entries(this._windows)) {
+      for (const leaf of tree.getAllLeafs()) {
+        if (leaf.tabMan.replaceFilePath(oldPath, newPath)) {
+          leafsToNotify.push([windowId, leaf.id]);
+          tabsChanged = true;
+        }
       }
-      return res;
-    });
+    }
+    if (tabsChanged) {
+      this.syncToConfig();
+    }
 
     this.syncWatchedFilePaths();
 
@@ -2514,13 +2579,29 @@ current contents from the editor somewhere else, and restart the application.`,
    * @param  {string}  newPath  The new path
    */
   public async hasMovedDir(oldPath: string, newPath: string): Promise<void> {
-    // Similar as hasMovedFile, but triggers the command for every affected file
-    const docs = this.documents.filter((doc) => isInsideRoot(doc.filePath, oldPath));
+    // Similar as hasMovedFile, but triggers the command for every affected
+    // file: each loaded document, each path with an id and each tab below
+    // the folder, then each document that has only a sidecar.
+    const known = new Set(
+      [
+        ...this.documents.map((doc) => doc.filePath),
+        ...this._documentIdByPath.keys(),
+        ...this._pathsShownInPanes(),
+      ].filter((filePath) => isInsideRoot(filePath, oldPath)),
+    );
+    for (const filePath of known) {
+      const movedPath = newPath + filePath.slice(oldPath.length);
+      this._app.log.info(`Replacing file path for doc ${filePath} with ${movedPath}`);
+      await this.hasMovedFile(filePath, movedPath);
+    }
 
-    for (const doc of docs) {
-      const movedPath = newPath + doc.filePath.slice(oldPath.length);
-      this._app.log.info(`Replacing file path for doc ${doc.filePath} with ${movedPath}`);
-      await this.hasMovedFile(doc.filePath, movedPath);
+    for (const sidecar of await this._reviewApplication.listCollaborationSidecars()) {
+      if (isInsideRoot(sidecar.documentPath, oldPath)) {
+        await this.hasMovedFile(
+          sidecar.documentPath,
+          newPath + sidecar.documentPath.slice(oldPath.length),
+        );
+      }
     }
   }
 
@@ -2645,24 +2726,25 @@ current contents from the editor somewhere else, and restart the application.`,
     // through the live document. After external drift the review arrives
     // here invalidated, and it is stored frozen until it is reapplied or
     // discarded.
-    const _id = this.getDocumentId(filePath);
-    if (_id !== undefined) {
-      try {
-        await this._detachCollaboration(_id);
-      } catch (err) {
-        // The reload is what would discard the in-memory review, so it does
-        // not happen: the buffer and the review stay, and the renderer is
-        // told why the file it saw change was not reloaded.
-        this._announceDetachFailure(filePath, err);
-        return;
-      }
+    // The reload is what would discard the in-memory review, so it does not
+    // happen when the detach fails: the buffer and the review stay, and the
+    // renderer is told why the file it saw change was not reloaded.
+    const documentId = this.getDocumentId(filePath);
+    if (
+      documentId !== undefined &&
+      !(await this._detachForClose(documentId, filePath, async () => {
+        await this.notifyRemoteChange(filePath);
+      }))
+    ) {
+      return;
     }
-    const idx = this.documents.findIndex((file) => file.filePath === filePath);
-    this.documents.splice(idx, 1);
-    this._announcedRemoteModtime.delete(filePath);
     // The reloading renderers re-trigger getDocument, which reports the
     // fresh buffer; until then the saved FSAL snapshot is the truth.
-    this._app.references.dropAuthorityBuffer(filePath);
+    const document = this.documents.find((file) => file.filePath === filePath);
+    if (document !== undefined) {
+      this._unload(document);
+    }
+    this._announcedRemoteModtime.delete(filePath);
     // Indicate to all affected editors that they should reload the file
     this.broadcastEvent(DP_EVENTS.FILE_REMOTELY_CHANGED, { filePath });
   }
@@ -2987,11 +3069,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * caller must not paper over with an empty string.
    */
   private _workingTextOf(documentId: string): string | undefined {
-    const filePath = this.getDocumentPath(documentId);
-    if (filePath === undefined) {
-      return undefined;
-    }
-    const doc = this.documents.find((d) => d.filePath === filePath);
+    const doc = this.documents.find((d) => d.documentId === documentId);
     return doc === undefined ? undefined : normalizeText(doc.document.toString());
   }
 
@@ -3590,11 +3668,73 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * A close aborted because the review could not be written through. The
-   * renderer surfaces this the same way it surfaces a refused save: the
-   * document is still open, and the reason has to reach the person who asked
-   * for the close rather than only the log.
+   * The detach of a close. Resolves false when the state could not be
+   * written: the close does not happen, the document stays loaded with its
+   * state, and every window names the cause with one action. That action
+   * is closeWithoutReview, which runs `repeatClose` after it dropped the
+   * state. No close is refused without it (#178).
    */
+  private async _detachForClose(
+    documentId: string,
+    filePath: string,
+    repeatClose: () => Promise<void>,
+  ): Promise<boolean> {
+    return await this._detachCollaboration(documentId).then(
+      () => {
+        this._refusedCloses.delete(documentId);
+        return true;
+      },
+      (err: unknown) => {
+        this._refusedCloses.set(documentId, repeatClose);
+        this._announceDetachFailure(filePath, documentId, err);
+        return false;
+      },
+    );
+  }
+
+  /** Removes a document from the loaded set, with its reference overlay. */
+  private _unload(document: Document): void {
+    const index = this.documents.indexOf(document);
+    if (index === -1) {
+      throw new Error(`Document ${document.filePath} is not loaded`);
+    }
+    this.documents.splice(index, 1);
+    this._refusedCloses.delete(document.documentId);
+    this._app.references.dropAuthorityBuffer(document.filePath);
+  }
+
+  /**
+   * The author's answer to a refused close: close without the state that
+   * could not be written. The state in memory goes; the sidecar stays as
+   * it was last written, so the next load of the document attaches that.
+   * Resolves false when no close of this document is refused now.
+   *
+   * A document that no pane shows is unloaded: its buffer is the working
+   * text of the review that goes. A document in a pane keeps its buffer,
+   * and the repeated close asks about unsaved text as each close does.
+   */
+  public async closeWithoutReview(documentId: string): Promise<boolean> {
+    const repeatClose = this._refusedCloses.get(documentId);
+    if (repeatClose === undefined) {
+      return false;
+    }
+    this._refusedCloses.delete(documentId);
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      this._reviewApplication.dropCollaboration(documentId);
+    });
+    const document = this.documents.find((doc) => doc.documentId === documentId);
+    if (document !== undefined) {
+      if (this._pathsShownInPanes().has(document.filePath)) {
+        this.broadcastCollaborationState(documentId);
+      } else {
+        this._unload(document);
+        this.syncWatchedFilePaths();
+      }
+    }
+    await repeatClose();
+    return true;
+  }
+
   /** The refusal a save owes when the review could not be persisted. */
   private _persistenceRefusal(filePath: string, err: unknown): SaveRefusal {
     const message =
@@ -3604,7 +3744,12 @@ current contents from the editor somewhere else, and restart the application.`,
     return { reason: "review-not-persisted", message };
   }
 
-  private _announceDetachFailure(filePath: string, err: unknown): void {
+  /**
+   * A close aborted because the review could not be written through. The
+   * window shows this as it shows a refused save, with the document that
+   * the author can close without that state (closeWithoutReview).
+   */
+  private _announceDetachFailure(filePath: string, documentId: string, err: unknown): void {
     const message =
       "The review could not be saved, so this document was left open: " +
       (err instanceof Error ? err.message : String(err));
@@ -3612,6 +3757,7 @@ current contents from the editor somewhere else, and restart the application.`,
     const payload: SaveRefusedBroadcast = {
       filePath,
       refusal: { reason: "review-not-persisted", message },
+      closeRefusedFor: documentId,
     };
     broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }
@@ -3713,12 +3859,7 @@ current contents from the editor somewhere else, and restart the application.`,
    * Get the file path for a documentId.
    */
   public getDocumentPath(documentId: string): string | undefined {
-    for (const [filePath, id] of this._documentIdByPath) {
-      if (id === documentId) {
-        return filePath;
-      }
-    }
-    return undefined;
+    return this._documentPathById.get(documentId);
   }
 
   public isDocumentOpen(documentPath: string): boolean {
@@ -3742,7 +3883,24 @@ current contents from the editor somewhere else, and restart the application.`,
     }
     const id = `doc-${randomUUID()}`;
     this._documentIdByPath.set(filePath, id);
+    this._documentPathById.set(id, filePath);
     return id;
+  }
+
+  /**
+   * The id of the document at `oldPath` names `newPath` from here on. An
+   * id that named `newPath` belonged to the file that the move replaced:
+   * it names no path, and a refused close of that document has no object.
+   */
+  private _moveDocumentId(documentId: string, oldPath: string, newPath: string): void {
+    const replacedId = this._documentIdByPath.get(newPath);
+    if (replacedId !== undefined) {
+      this._documentPathById.delete(replacedId);
+      this._refusedCloses.delete(replacedId);
+    }
+    this._documentIdByPath.delete(oldPath);
+    this._documentIdByPath.set(newPath, documentId);
+    this._documentPathById.set(documentId, newPath);
   }
 
   /**

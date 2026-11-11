@@ -1052,7 +1052,39 @@ onMounted(() => {
       payload.refusal === undefined
         ? trans('Could not save "%s".', name)
         : `${name}: ${payload.refusal.message}`;
-    showToast(message, "error", 12000);
+    const documentId = payload.closeRefusedFor;
+    if (documentId === undefined) {
+      showToast(message, "error", 12000);
+      return;
+    }
+    // The refusal stopped a close. The author can close without the review
+    // state that could not be written; no close is refused without that.
+    showToast(message, "error", 12000, {
+      label: trans("Close without saving the review"),
+      onAction: () => {
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-without-review",
+            payload: { documentId },
+          })
+          .then((closed: boolean) => {
+            if (!closed) {
+              showToast(trans("%s is not waiting to close.", name), "info", 12000);
+            }
+          })
+          .catch((err: unknown) => {
+            showToast(
+              trans(
+                "Could not close %s: %s",
+                name,
+                err instanceof Error ? err.message : String(err),
+              ),
+              "error",
+              12000,
+            );
+          });
+      },
+    });
   });
 
   // A loaded file changed on disk and the editor kept its contents. The user

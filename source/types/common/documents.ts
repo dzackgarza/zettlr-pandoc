@@ -148,7 +148,16 @@ export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal }
  * no renderer promise to hand the result back to. Without this the prompt simply
  * closes and the window stays open with nothing explaining why.
  */
-export type SaveRefusedBroadcast = { filePath: string; refusal?: SaveRefusal };
+export type SaveRefusedBroadcast = {
+  filePath: string;
+  refusal?: SaveRefusal;
+  /**
+   * Set when the refusal stopped a close: the id of the document whose
+   * collaboration state could not be written. The window offers the
+   * `close-without-review` command for it.
+   */
+  closeRefusedFor?: string;
+};
 
 export const SAVE_REFUSED_CHANNEL = "save-refused";
 

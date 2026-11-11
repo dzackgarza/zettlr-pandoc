@@ -408,16 +408,20 @@ export class CollaborationSidecarStore {
    * moved. The sidecar's on-disk name is a hash of the document path, so a
    * rename that only updates the in-memory documentPath field would strand
    * the file forever under its old hash — invisible to any future read()
-   * for the new path, and orphaned app-data debris to boot. No-op when the
-   * document has no sidecar to carry (nothing was ever written for it).
+   * for the new path, and orphaned app-data debris to boot.
+   *
+   * The new path then holds the state of the moved document and no other:
+   * a sidecar that was at the new path described the file that the move
+   * replaced, so a moved document with no sidecar leaves none there.
    */
   async rename(oldPath: string, newPath: string): Promise<void> {
     const sidecar = await this.read(oldPath);
     if (sidecar === undefined) {
+      await this.delete(newPath);
       return;
     }
     await this.write({ ...sidecar, documentPath: newPath });
-    await fs.rm(collaborationSidecarFilePath(this.directory, oldPath), { force: true });
+    await this.delete(oldPath);
   }
 
   /**

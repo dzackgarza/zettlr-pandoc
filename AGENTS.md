@@ -587,6 +587,38 @@ of an isolated instance are in the first comment of #132.
 - An e2e run and a `just package` build each need most of the memory of this
   workstation. Run one at a time.
 
+### 14. Document identity and refused closes
+
+- **The id of a document moves with its path.** `DocumentManager`
+  (`service-providers/documents/index.ts`) keeps the path of each id and the
+  id of each path. A rename or a move goes through `hasMovedFile` or
+  `hasMovedDir`, which move the id, the loaded document, its tabs and its
+  collaboration state under the document lock (`_movePathOfDocument`, then
+  `renameCollaboration`). A new transition that changes the path of a
+  document goes through them; it must not assign a new id to the new path.
+- **The sidecar follows the file.** The sidecar of a closed document moves
+  with the file too: `hasMovedDir` reads `listCollaborationSidecars()` for the
+  documents that are not loaded. A document whose file a move replaced is
+  dropped with its tabs, its state in memory and its sidecar
+  (`_dropReplacedDocument`).
+- **Collaboration state in memory belongs to a loaded document.** A document
+  that a refused proposal loaded and released has no state in memory.
+- **No close is refused without an action.** A close of a tab, a window
+  close and a quit detach the collaboration state through `_detachForClose`.
+  When the sidecar cannot be written, it records how to repeat that close
+  and broadcasts `save-refused` with `closeRefusedFor`. The window shows the
+  cause with the action "Close without saving the review" (`App.vue`), which
+  sends `close-without-review`. `closeWithoutReview` drops the state in
+  memory, leaves the sidecar as it was last written, and repeats the close.
+  A new path that closes a document detaches through `_detachForClose`.
+- **`closeWindow` answers whether the window may close.** The window
+  provider closes the `BrowserWindow` only for `true`, and gives the
+  documents provider the function that repeats the close.
+- **Proof:** `test/documents-move-identity.spec.ts`,
+  `test/documents-refused-close.spec.ts`,
+  `e2e/rename-annotated-document.spec.ts`,
+  `e2e/review-persistence-failure.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

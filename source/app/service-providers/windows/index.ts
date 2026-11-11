@@ -428,10 +428,14 @@ export default class WindowProvider extends ProviderContract {
       // changes shows the save-or-discard prompt first. askUserToCloseWindow drops the
       // window itself once answered, so the close it then permits comes back
       // through here with nothing left to ask about.
+      // What repeats this close after the documents provider refused it.
+      const closeAgain = async (): Promise<void> => {
+        window.close();
+      };
       if (!this._documents.isClean(key)) {
         event.preventDefault();
         this._documents
-          .askUserToCloseWindow(key)
+          .askUserToCloseWindow(key, closeAgain)
           .then((canCloseWindow) => {
             if (canCloseWindow) {
               documentCloseReady = true;
@@ -444,10 +448,12 @@ export default class WindowProvider extends ProviderContract {
       } else {
         event.preventDefault();
         this._documents
-          .closeWindow(key)
-          .then(() => {
-            documentCloseReady = true;
-            window.close();
+          .closeWindow(key, closeAgain)
+          .then((closed) => {
+            if (closed) {
+              documentCloseReady = true;
+              window.close();
+            }
           })
           .catch((err) => {
             this._logger.error("[WindowManager] Could not close clean window", err);

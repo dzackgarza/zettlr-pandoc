@@ -171,7 +171,8 @@ export interface CollaborationDocumentAuthority {
 
   commitWorkingTextReplacement: (prepared: PreparedDocumentMutation) => void;
 
-  releaseTemporaryDocument: (documentId: string) => Promise<void>;
+  /** Resolves true when the document left the loaded set. */
+  releaseTemporaryDocument: (documentId: string) => Promise<boolean>;
 
   /**
    * The last step of every mutation: tell the panes what the document's
@@ -745,23 +746,39 @@ export class CollaborationApplicationService {
    * sidecar file on disk — otherwise the NEXT mutation would relocate the
    * file out from under a read that still asks for the old path, and a
    * restart before that next mutation would find nothing at the new path.
+   *
+   * The caller holds the document lock, as for detachCollaboration. The
+   * state in memory moves first: when the sidecar cannot be written, the
+   * error goes to the caller and the next write of the state lands at the
+   * new path.
    */
   public async renameCollaboration(
     documentId: string,
     oldPath: string,
     newPath: string,
   ): Promise<void> {
-    await this.withDocumentLock(documentId, async () => {
-      await this.sidecars.rename(oldPath, newPath);
-      const annotationState = this.annotationStates.get(documentId);
-      if (annotationState !== undefined) {
-        this.annotationStates.set(documentId, { ...annotationState, documentPath: newPath });
-      }
-      const review = this.reviews.getReview(documentId);
-      if (review !== undefined) {
-        this.reviews.replaceReview(documentId, { ...review, documentPath: newPath });
-      }
-    });
+    const annotationState = this.annotationStates.get(documentId);
+    if (annotationState !== undefined) {
+      this.annotationStates.set(documentId, { ...annotationState, documentPath: newPath });
+    }
+    const review = this.reviews.getReview(documentId);
+    if (review !== undefined) {
+      this.reviews.replaceReview(documentId, { ...review, documentPath: newPath });
+    }
+    await this.sidecars.rename(oldPath, newPath);
+  }
+
+  /**
+   * Drop the state that this service holds in memory for a document, with
+   * no write. The sidecar stays as it was last written, so the next load of
+   * the document attaches that state. The caller holds the document lock.
+   *
+   * Two callers: a document whose file another file replaced, and the
+   * author's decision to close a document whose state could not be written.
+   */
+  public dropCollaboration(documentId: string): void {
+    this.reviews.removeReview(documentId);
+    this.annotationStates.delete(documentId);
   }
 
   /**
@@ -1255,8 +1272,14 @@ export class CollaborationApplicationService {
       }
       const acquired = await this.deps.authority.acquireDocument(input.documentId);
       const result = await this.applyProposal(input, acquired.documentPath);
-      if (!result.ok && !acquired.wasAlreadyLoaded) {
-        await this.deps.authority.releaseTemporaryDocument(input.documentId);
+      if (
+        !result.ok &&
+        !acquired.wasAlreadyLoaded &&
+        (await this.deps.authority.releaseTemporaryDocument(input.documentId))
+      ) {
+        // The load attached the annotations of the sidecar. They are on
+        // disk (I2), and a document that is not loaded has no state here.
+        this.annotationStates.delete(input.documentId);
       }
       return result;
     });
