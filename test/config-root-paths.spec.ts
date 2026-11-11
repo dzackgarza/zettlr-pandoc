@@ -14,8 +14,14 @@
  * END HEADER
  */
 
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { strict as assert } from "assert";
-import { consolidateRootPaths } from "source/app/service-providers/config/root-paths";
+import {
+  consolidateRootPaths,
+  rootPathsOnDisk,
+} from "source/app/service-providers/config/root-paths";
 
 describe("root paths of the configuration", function () {
   it("keeps a root file whose path starts with the path of an open workspace", function () {
@@ -49,5 +55,62 @@ describe("root paths of the configuration", function () {
       }),
       { openFiles: [], openWorkspaces: ["/u/notes", "/u/notes/zeta"] },
     );
+  });
+});
+
+describe("root paths of the configuration on disk", function () {
+  let scratch: string;
+  let file: string;
+  let workspace: string;
+  let unreachableFile: string;
+  let unreachableWorkspace: string;
+
+  before(async function () {
+    scratch = await mkdtemp(path.join(tmpdir(), "zettlr-root-paths-"));
+    file = path.join(scratch, "note.md");
+    workspace = path.join(scratch, "workspace");
+    // A symbolic link to itself: a look at a path below it fails with ELOOP,
+    // as a look at a path on a mount that went away fails.
+    const mount = path.join(scratch, "mount");
+    unreachableFile = path.join(mount, "note.md");
+    unreachableWorkspace = path.join(mount, "workspace");
+    await writeFile(file, "Note\n");
+    await mkdir(workspace);
+    await symlink(mount, mount);
+  });
+
+  after(async function () {
+    await rm(scratch, { recursive: true, force: true });
+  });
+
+  it("removes every root path that is not on disk", function () {
+    const missing = (name: string): string => path.join(scratch, name);
+    const reported: string[] = [];
+    assert.deepEqual(
+      rootPathsOnDisk(
+        {
+          openFiles: [missing("a.md"), missing("b.md"), file, workspace],
+          openWorkspaces: [missing("first"), missing("second"), workspace, file],
+        },
+        (rootPath) => reported.push(rootPath),
+      ),
+      { openFiles: [file], openWorkspaces: [workspace] },
+    );
+    assert.deepEqual(reported, []);
+  });
+
+  it("keeps and reports a root path that the filesystem cannot examine", function () {
+    const reported: Array<{ rootPath: string; code: string | undefined }> = [];
+    assert.deepEqual(
+      rootPathsOnDisk(
+        { openFiles: [unreachableFile, file], openWorkspaces: [unreachableWorkspace, workspace] },
+        (rootPath, error) => reported.push({ rootPath, code: error.code }),
+      ),
+      { openFiles: [unreachableFile, file], openWorkspaces: [unreachableWorkspace, workspace] },
+    );
+    assert.deepEqual(reported, [
+      { rootPath: unreachableFile, code: "ELOOP" },
+      { rootPath: unreachableWorkspace, code: "ELOOP" },
+    ]);
   });
 });
