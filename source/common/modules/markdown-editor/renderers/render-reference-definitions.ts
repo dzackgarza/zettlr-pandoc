@@ -50,6 +50,15 @@
  *                  applied in the measure cycle; badge groups whose
  *                  definition line has no layout yet stay unpositioned.
  *
+ *                  PLACE: a renderer that draws the line of a definition
+ *                  itself (the header of a fenced div) puts a
+ *                  referenceBadgeAnchor in its DOM. The layer gives that
+ *                  anchor the size of the badge group and puts the group on
+ *                  it, so the badges have room in the flow of the header and
+ *                  wrap with it. A definition without an anchor has its
+ *                  badges after the end of its line; they stay inside the
+ *                  layer, so they add no horizontal scroll.
+ *
  * END HEADER
  */
 
@@ -73,12 +82,55 @@ interface BadgeGroup {
   dom: HTMLElement;
 }
 
+/** The size of a badge group, with the space before it. */
+interface BadgeRoom {
+  width: number;
+  height: number;
+}
+
 /**
  * The measured place of one badge group; null when its line has no layout.
+ * `anchor` is the anchor that gives the group its room, when a renderer drew
+ * one for the line of the definition.
  */
 interface BadgePlacement {
   group: BadgeGroup;
   position: { left: number; top: number } | null;
+  anchor?: { element: HTMLElement; room: BadgeRoom };
+}
+
+/** The space between the end of a line and its badge group, in pixels. */
+const BADGE_GAP = 8;
+
+const ANCHOR_CLASS = "reference-badge-anchor";
+
+// The editor of each anchor: a widget learns of its removal with its DOM
+// only.
+const anchorViews = new WeakMap<Element, EditorView>();
+
+/**
+ * The room of the badges of one definition in the DOM of a renderer that
+ * draws the line of that definition itself. The badge layer gives the
+ * element the size of the badge group of the definition on that line and
+ * puts the group on it.
+ */
+export function referenceBadgeAnchor(view: EditorView): HTMLElement {
+  const anchor = document.createElement("span");
+  anchor.classList.add(ANCHOR_CLASS);
+  anchor.setAttribute("aria-hidden", "true");
+  anchorViews.set(anchor, view);
+  view.plugin(badgePlugin)?.requestPlacement();
+  return anchor;
+}
+
+/**
+ * Tells the badge layer that the editor removed the DOM of a renderer, so
+ * the badges that were on an anchor in it get the place of their line.
+ */
+export function referenceBadgeAnchorsRemoved(dom: HTMLElement): void {
+  for (const anchor of dom.querySelectorAll(`.${ANCHOR_CLASS}`)) {
+    anchorViews.get(anchor)?.plugin(badgePlugin)?.requestPlacement();
+  }
 }
 
 /**
@@ -166,6 +218,11 @@ class ReferenceDefinitionBadges {
     this.container.remove();
   }
 
+  /** Measures the places of the badge groups again in the next measure cycle. */
+  requestPlacement(): void {
+    this.view.requestMeasure(this.measureReq);
+  }
+
   /**
    * Rebuilds the badge DOM from the current workspace view: one badge group
    * per definition, in document order. While the field is null nothing
@@ -212,39 +269,86 @@ class ReferenceDefinitionBadges {
    */
   private measurePositions(): BadgePlacement[] {
     const base = this.container.getBoundingClientRect();
+    const { doc } = this.view.state;
     const { from, to } = this.view.viewport;
+
+    // The anchors that renderers drew, by the start of the line they are on.
+    const anchors = new Map<number, HTMLElement>();
+    for (const anchor of this.view.contentDOM.querySelectorAll<HTMLElement>(`.${ANCHOR_CLASS}`)) {
+      anchors.set(doc.lineAt(this.view.posAtDOM(anchor)).from, anchor);
+    }
+
     return this.groups.map((group) => {
       if (group.range.to < from || group.range.to > to) {
         return { group, position: null };
       }
 
-      const lineEnd = this.view.state.doc.lineAt(group.range.to).to;
-      const coords = this.view.coordsAtPos(lineEnd, -1);
+      const line = doc.lineAt(group.range.to);
+      const size = group.dom.getBoundingClientRect();
+      const anchor = anchors.get(line.from);
+      if (anchor !== undefined) {
+        const place = anchor.getBoundingClientRect();
+        // An anchor that wrapped to the start of a row has no text before
+        // it, so its group starts at the edge of the row.
+        const row = anchor.parentElement?.getBoundingClientRect().left ?? place.left;
+        const gap = place.left - row < 1 ? 0 : BADGE_GAP;
+        return {
+          group,
+          position: { left: place.left - base.left + gap, top: place.top - base.top },
+          anchor: {
+            element: anchor,
+            room: { width: Math.ceil(size.width) + BADGE_GAP, height: Math.ceil(size.height) },
+          },
+        };
+      }
+
+      const coords = this.view.coordsAtPos(line.to, -1);
       if (coords === null) {
         return { group, position: null };
       }
 
-      return {
-        group,
-        position: { left: coords.right - base.left + 8, top: coords.top - base.top },
-      };
+      // The group stays inside the layer: a group past the right edge would
+      // make the editor scroll horizontally.
+      const left = Math.min(coords.right - base.left + BADGE_GAP, base.width - size.width);
+      return { group, position: { left: Math.max(0, left), top: coords.top - base.top } };
     });
   }
 
   /**
-   * Write phase: positions every badge group, hiding groups whose line has
-   * no layout.
+   * Write phase: gives each anchor the room of its badge group, positions
+   * every badge group, and hides the groups whose line has no layout. A
+   * change of an anchor moves the text around it, so the places are measured
+   * again after it.
    */
   private applyPositions(placements: BadgePlacement[]): void {
-    for (const { group, position } of placements) {
+    let anchorChanged = false;
+    for (const { group, position, anchor } of placements) {
       if (position === null) {
+        // A group that is not shown is still laid out: it goes back to the
+        // corner of the layer, where it adds no scroll width.
         group.dom.classList.remove("positioned");
-        return;
+        group.dom.style.removeProperty("left");
+        group.dom.style.removeProperty("top");
+        continue;
+      }
+
+      if (anchor !== undefined) {
+        const width = `${anchor.room.width}px`;
+        const height = `${anchor.room.height}px`;
+        if (anchor.element.style.width !== width || anchor.element.style.height !== height) {
+          anchor.element.style.width = width;
+          anchor.element.style.height = height;
+          anchorChanged = true;
+        }
       }
 
       group.dom.classList.add("positioned");
       group.dom.style.left = `${position.left}px`;
       group.dom.style.top = `${position.top}px`;
+    }
+
+    if (anchorChanged) {
+      this.view.requestMeasure(this.measureReq);
     }
   }
 }
@@ -263,14 +367,23 @@ const badgeTheme = EditorView.baseTheme({
     zIndex: "2",
     pointerEvents: "none",
   },
+  // A group without a place is laid out and not shown: the layer reads the
+  // size of each group before it gives the group its place.
   ".reference-badge-group": {
     position: "absolute",
-    display: "none",
+    left: "0",
+    top: "0",
+    display: "inline-flex",
+    gap: "0.35em",
+    visibility: "hidden",
     whiteSpace: "nowrap",
   },
   ".reference-badge-group.positioned": {
-    display: "inline-flex",
-    gap: "0.35em",
+    visibility: "visible",
+  },
+  [`.${ANCHOR_CLASS}`]: {
+    display: "inline-block",
+    verticalAlign: "middle",
   },
   ".reference-definition-badge, .reference-count-badge": {
     display: "inline-block",

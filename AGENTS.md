@@ -428,6 +428,15 @@ of an isolated instance are in the first comment of #132.
   owns the whole source of its node and `view.posAtDOM` gives the start of
   that source. A replacement of lower precedence that starts at the same
   position (the hidden `$` code mark of an equation) is not drawn.
+- **A renderer that draws the line of a definition gives the badges their
+  room.** The reference badges are an overlay (`render-reference-definitions.ts`).
+  A widget that replaces the line of a definition (the header of a fenced div)
+  puts `referenceBadgeAnchor(view)` in its DOM and calls
+  `referenceBadgeAnchorsRemoved(dom)` in its `destroy`. The layer gives the
+  anchor the size of the badge group and puts the group on it, so the badges
+  wrap with the header. A definition without an anchor has its badges after
+  the end of its line, kept inside the layer: the badges add no horizontal
+  scroll. Proof: `e2e/titled-fenced-divs.spec.ts`.
 - **An equal value causes no transaction.** `setWorkspaceReferences`,
   `setWikilinkResolutions`, `setCompletionDatabase`, the collaboration session
   store and `modeSwitcher` (`renderers/index.ts`) dispatch or reconfigure only

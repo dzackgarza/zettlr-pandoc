@@ -93,6 +93,40 @@ By [@Ols04 Lem. 7.1, 7.2], some result follows.
 Outside the active div.
 `;
 
+// Divs with an identifier, a title, and both (#177). A title that is longer
+// than a narrow editor wraps; it is not cut off.
+const titled = `## Orbits and stabilizers
+
+::: {.definition #def:orbit-stabilizer-fixed-points title="Orbit, stabilizer, and the set of fixed points of a group action"}
+
+Let $G$ be a group that acts on a set $X$, and let $x\\in X$.
+
+The **orbit** of $x$ is
+$$
+G\\cdot x
+=
+\\{g\\cdot x \\mid g\\in G\\}
+.
+$$
+The **stabilizer** of $x$ is the subgroup $G_x=\\{g\\in G\\mid g\\cdot x=x\\}$.
+:::
+
+::: {.remark title="Standard terminology and the convention of the database"}
+
+The database fields \`action.orbit_representatives\`, \`action.stabilizer_generators\`, and \`action.fixed_point_count\` use this convention.
+:::
+
+::: {.definition #def:transitive-action title="Transitive actions"}
+
+The action is **transitive** if $X$ is one orbit.
+:::
+
+::: {.theorem title="The orbit of $x$ is in bijection with the cosets $G/G_x$ of its stabilizer"}
+
+The map $gG_x\\mapsto g\\cdot x$ is a bijection.
+:::
+`;
+
 async function mount(): Promise<void> {
   await initializeMathJax({ RR: "\\mathbb{R}" });
   window.getCitationCallback = () => (citations) =>
@@ -110,7 +144,9 @@ async function mount(): Promise<void> {
     ? active
     : scene === "nested"
       ? nested
-      : overview;
+      : scene === "titled"
+        ? titled
+        : overview;
   const anchor =
     scene === "active"
       ? doc.indexOf("*proper") + 2
