@@ -20,11 +20,11 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type ConfigProvider from "source/app/service-providers/config";
-import FSAL, { type FSALEventPayload } from "source/app/service-providers/fsal";
-import LogProvider, { LogLevel, type LogMessage } from "source/app/service-providers/log";
-import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
+import type FSAL from "source/app/service-providers/fsal";
+import type { FSALEventPayload } from "source/app/service-providers/fsal";
+import { LogLevel, type LogMessage } from "source/app/service-providers/log";
 import writeFileAtomic from "write-file-atomic";
+import { bootFsal } from "./fsal-seam";
 import { ipcMainHandlers } from "./headless-electron-harness.cjs";
 
 type LogChunkHandler = (
@@ -49,51 +49,9 @@ describe("FSAL watcher events", function () {
     document = path.join(root, "note.md");
     await writeFile(document, "# Note\n");
 
-    const log = new LogProvider();
+    fsal = await bootFsal(root);
     const handler = ipcMainHandlers.get("log-provider") as LogChunkHandler;
     readLog = () => handler(null, { command: "retrieve-log-chunk", nextIndex: 0 });
-
-    // The configuration values that the FSAL reads, with one workspace. With
-    // the filters off the FSAL lists every path, so the temporary file of an
-    // atomic write is a listed path like any other file.
-    const shown = { showInFilemanager: true };
-    const values = {
-      app: { openFiles: [], openWorkspaces: [root] },
-      fileManager: { ignoreRules: [], showIgnored: true, filters: { include: [] } },
-      files: {
-        images: shown,
-        pdf: shown,
-        msoffice: shown,
-        openOffice: shown,
-        dataFiles: shown,
-        dotFiles: shown,
-      },
-      attachmentExtensions: [],
-      zkn: { idRE: "(\\d{14})" },
-      system: { deleteOnFail: false },
-      watchdog: { activatePolling: false, stabilityThreshold: 1000 },
-    };
-    // The FSAL reads the whole configuration, and these values by their key.
-    const byKey = new Map<string, boolean | number>([
-      ["system.deleteOnFail", values.system.deleteOnFail],
-      ["watchdog.activatePolling", values.watchdog.activatePolling],
-      ["watchdog.stabilityThreshold", values.watchdog.stabilityThreshold],
-    ]);
-    const config = {
-      get: (key?: string) => {
-        if (key === undefined) {
-          return values;
-        }
-        const value = byKey.get(key);
-        assert.notEqual(value, undefined, `the FSAL read the configuration key ${key}`);
-        return value;
-      },
-      on: (_event: "update", _listener: (which?: string) => void) => {},
-      newVersionDetected: () => false,
-    };
-
-    fsal = new FSAL(log, config as unknown as ConfigProvider, new LongRunningTaskProvider(log));
-    await fsal.boot();
     fsal.on("fsal-events", (events) => published.push(...events));
   });
 
