@@ -42,6 +42,7 @@ const VIEW = '#navigation-sidebar[data-view="search"] #search-view';
 const QUERY = `${VIEW} input[name="search-input"]`;
 const REPLACEMENT = `${VIEW} input[name="replace-input"]`;
 const MESSAGE = `${VIEW} .search-message`;
+const NOT_SEARCHED = `${VIEW} [data-search-not-searched]`;
 const FILE_ROW = `${VIEW} .file-match`;
 const ACTION = (name: string): string => `[data-search-action="${name}"]`;
 const TOGGLE = (name: string): string => `${VIEW} [data-search-toggle="${name}"]`;
@@ -101,6 +102,8 @@ async function confirmationPainting(page: Page): Promise<ConfirmationPainting> {
 
 const TERM = "subgroupoid";
 const REPLACES_WITH = "subcategory";
+// A word of both files that no case replaces.
+const IN_BOTH_FILES = "maximal";
 
 async function waitUntil(
   probe: () => Promise<boolean>,
@@ -438,7 +441,7 @@ describe("the Search view", function () {
     await search(activePage, TERM, /result/);
   });
 
-  it("stops and names the file when it cannot read one, instead of counting a search that skipped it", async function () {
+  it("searches the other files and names the file that it cannot read", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await chmod(closedFile(), 0o000);
     await assert.rejects(
@@ -446,22 +449,47 @@ describe("the Search view", function () {
       "the fixture file must really be unreadable for this to prove anything",
     );
 
+    // sage.md is before categories.md in the order of the workspace: the
+    // search reads the file that it cannot read first.
+    // The view shows no message while a search runs, and the search of the
+    // case before can end after this one starts. The wait is therefore for
+    // a message of this search: its count, or an error.
     await activePage.locator(QUERY).fill("");
-    await activePage.locator(QUERY).fill(TERM);
+    await activePage.locator(QUERY).fill(IN_BOTH_FILES);
     await waitUntil(
       async () =>
         await activePage
           .locator(MESSAGE)
-          .evaluate((el) => el.classList.contains("search-message-error")),
-      "the view to report the file it could not read",
+          .evaluateAll((messages) =>
+            messages.some(
+              (message) =>
+                message.classList.contains("search-message-error") ||
+                /^1 result in 1 file/.test(message.textContent ?? ""),
+            ),
+          ),
+      "the search to end with a message",
+    );
+    screenshots.set("search-unreadable-file.png", await activePage.screenshot());
+    assert.deepEqual(
+      // The list keeps the rows that it recycles in the document, hidden.
+      await activePage.locator(`${FILE_ROW}:visible .file-match-name`).allTextContents(),
+      ["categories.md"],
+      "the file that can be read is searched",
     );
     assert.match(
       await activePage.locator(MESSAGE).innerText(),
-      /sage\.md/,
-      "the reason names the file the search could not read",
+      /1 result in 1 file/,
+      "the count is that of the files that were searched",
     );
-    screenshots.set("search-unreadable-file.png", await activePage.screenshot());
+    const notSearched = activePage.locator(NOT_SEARCHED);
+    assert.equal(await notSearched.count(), 1, "the view says that a file was not searched");
+    assert.match(await notSearched.innerText(), /sage\.md/, "the view names the file");
 
+    // The file can be read again: the next search reads it, and the view
+    // names no file.
     await chmod(closedFile(), 0o644);
+    await activePage.locator(QUERY).fill("");
+    await search(activePage, IN_BOTH_FILES, /2 results in 2 files/);
+    assert.equal(await notSearched.count(), 0, "each file was searched");
   });
 });

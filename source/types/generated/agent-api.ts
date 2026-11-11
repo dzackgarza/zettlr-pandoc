@@ -933,8 +933,16 @@ export interface components {
       open: boolean;
       matches: components["schemas"]["WorkspaceSearchMatch"][];
     };
+    WorkspaceSearchUnreadFile: {
+      path: string;
+      name: string;
+      /** @description The error of the read. */
+      cause: string;
+    };
     WorkspaceSearchResponse: {
       files: components["schemas"]["WorkspaceSearchFile"][];
+      /** @description The files that the search could not read. The search read each other file; a file in this list has no entry in files, and the answer says nothing about its text. */
+      notSearched: components["schemas"]["WorkspaceSearchUnreadFile"][];
       matchCount: number;
       /** @description True when the search stopped at maxMatches; narrow the query or the globs. */
       truncated: boolean;

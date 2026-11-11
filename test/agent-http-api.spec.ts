@@ -1472,6 +1472,31 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(refusal.error.message.includes(stallPath), refusal.error.message);
   });
 
+  it("GET /v1/workspace/search names a file that it could not read, and searches the other files", async function () {
+    const readablePath = path.join(scratch, "search-readable.md");
+    const unreadablePath = path.join(scratch, "search-unreadable.md");
+    writeFileSync(readablePath, "The genus of a lattice.\n", "utf8");
+    writeFileSync(unreadablePath, "The genus of a form.\n", "utf8");
+    chmodSync(unreadablePath, 0o000);
+
+    const found = await httpRequest("GET", "/v1/workspace/search?text=genus");
+    chmodSync(unreadablePath, 0o600);
+    assert.equal(found.status, 200, found.body);
+    const body = parseAs(found.body, "WorkspaceSearchResponse");
+    assert.deepEqual(
+      body.notSearched.map((file) => ({ path: file.path, name: file.name })),
+      [{ path: unreadablePath, name: "search-unreadable.md" }],
+      "the answer names the file that the search did not read",
+    );
+    assert.ok(body.notSearched[0].cause.length > 0, "the file has the cause of the read");
+    assert.deepEqual(
+      body.files.map((file) => file.path),
+      [readablePath],
+      "the file that can be read is searched",
+    );
+    assert.equal(body.matchCount, 1);
+  });
+
   it("GET /v1/documents/{id} returns document metadata", async function () {
     const filePath = path.join(scratch, "meta.md");
     const docId = await openFile(filePath, "content\n");

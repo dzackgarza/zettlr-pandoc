@@ -832,10 +832,25 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceSearchMatch"
+    WorkspaceSearchUnreadFile:
+      type: object
+      required:
+        - path
+        - name
+        - cause
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        cause:
+          type: string
+          description: The error of the read.
     WorkspaceSearchResponse:
       type: object
       required:
         - files
+        - notSearched
         - matchCount
         - truncated
       properties:
@@ -843,6 +858,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceSearchFile"
+        notSearched:
+          type: array
+          description: The files that the search could not read. The search read each
+            other file; a file in this list has no entry in files, and the answer says
+            nothing about its text.
+          items:
+            $ref: "#/components/schemas/WorkspaceSearchUnreadFile"
         matchCount:
           type: integer
         truncated:
