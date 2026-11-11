@@ -290,7 +290,6 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         agentApi: {
           enabled: true,
           port: 0,
-          claimDescriptionSimilarityThreshold: 0.94,
           skillsDirectory: null,
         },
       }),

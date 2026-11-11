@@ -101,6 +101,7 @@ import {
   freezeReview,
   INVALIDATED_REVIEW_MESSAGE,
   isTransitionError,
+  type ProposalRefusal,
   prepareAcceptAll,
   prepareChunkComment,
   prepareChunkDecision,
@@ -1247,7 +1248,7 @@ export class CollaborationApplicationService {
     claims: ClaimInput[];
     clientRequestId: string;
     expectedReviewGeneration: number;
-  }): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  }): Promise<SubmittedProposal | ProposalRefusal> {
     return this.withDocumentLock(input.documentId, async () => {
       if (this.deps.authority.resolveDocumentPath(input.documentId) === undefined) {
         return { ok: false as const, code: "DOCUMENT_NOT_FOUND", message: "Document not found." };
@@ -1270,7 +1271,7 @@ export class CollaborationApplicationService {
       expectedReviewGeneration: number;
     },
     documentPath: string,
-  ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  ): Promise<SubmittedProposal | ProposalRefusal> {
     const requestFingerprint = proposalRequestFingerprint({
       documentId: input.documentId,
       baselineSha256: input.baselineSha256,
@@ -1374,7 +1375,7 @@ export class CollaborationApplicationService {
       requestFingerprint,
     });
     if (isTransitionError(plan)) {
-      return { ok: false, code: plan.code, message: plan.message };
+      return plan;
     }
 
     const prepared = this.deps.authority.prepareWorkingTextReplacement(

@@ -541,7 +541,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           // Kernel-assigned: the provider owns the bind and publishes the
           // actual port, so no reservation can race the listener.
           port: 0,
-          claimDescriptionSimilarityThreshold: 0.94,
           skillsDirectory: configuredSkillsDirectory,
         },
         tikz: {
@@ -808,16 +807,20 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
-  it("rejects duplicate and near-duplicate claim descriptions", async function () {
-    const filePath = path.join(scratch, "duplicate-descriptions.md");
+  it("rejects a claim that has the description of an earlier claim and changes its text", async function () {
+    const filePath = path.join(scratch, "duplicate-claims.md");
     const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
     const middle = "Let V be a finite-dimensional vector space.\nAssume the form is symmetric.\n";
-    const after =
+    const again =
+      "Let V be a finite-dimensional real vector space.\nAssume the form is symmetric.\n";
+    const elsewhere =
       "Let V be a finite-dimensional vector space.\nAssume the form is symmetric and nondegenerate.\n";
     writeFileSync(filePath, before);
     const documentId = await openFile(filePath, before);
 
-    const exact = await httpRequest("POST", "/v1/review-submissions", {
+    // The second claim changes the words that the first claim wrote, and it
+    // has the description of the first claim up to case and whitespace.
+    const repeated = await httpRequest("POST", "/v1/review-submissions", {
       body: JSON.stringify({
         document: { uri: filePath },
         claims: [
@@ -827,58 +830,41 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           },
           {
             description: "  add   the missing hypothesis to THIS statement.  ",
-            patch: createPatch(filePath, middle, after),
+            patch: createPatch(filePath, middle, again),
           },
         ],
-        clientRequestId: "duplicate-description-exact",
+        clientRequestId: "duplicate-claim-same-text",
       }),
     });
-    assert.equal(exact.status, 400, exact.body);
-    const exactError = parseAs(exact.body, "AgentErrorResponse").error;
-    assert.equal(exactError.code, "DUPLICATE_CLAIM_DESCRIPTION");
-    assert.deepEqual(exactError.conflictingClaimIndices, [0, 1]);
-    assert.equal(exactError.descriptionSimilarity, 1);
+    assert.equal(repeated.status, 400, repeated.body);
+    const error = parseAs(repeated.body, "AgentErrorResponse").error;
+    assert.equal(error.code, "DUPLICATE_CLAIM");
+    assert.deepEqual(error.conflictingClaimIndices, [0, 1]);
 
-    const unchangedAfterExact = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
-    assert.equal(parseAs(unchangedAfterExact.body, "ReadDocumentResponse").content, before);
+    const unchanged = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(unchanged.body, "ReadDocumentResponse").content, before);
 
-    const fuzzyDescriptions = [
-      "Correct this theorem statement by adding the missing hypothesis at this location.",
-      "Correct this theorem statement by adding a missing hypothesis at this location.",
-    ];
-    const fuzzy = await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
+    // The same two descriptions on two sentences are two claims.
+    const apart = await httpRequest("POST", `/v1/documents/${documentId}/proposals`, {
       body: JSON.stringify({
         baselineSha256: sha256Text(before),
         expectedReviewGeneration: 0,
         claims: [
           {
-            description: fuzzyDescriptions[0],
+            description: "Add the missing hypothesis to this statement.",
             patch: createPatch(filePath, before, middle),
           },
           {
-            description: fuzzyDescriptions[1],
-            patch: createPatch(filePath, middle, after),
+            description: "  add   the missing hypothesis to THIS statement.  ",
+            patch: createPatch(filePath, middle, elsewhere),
           },
         ],
-        clientRequestId: "duplicate-description-fuzzy",
+        clientRequestId: "duplicate-claim-other-text",
       }),
     });
-    assert.equal(fuzzy.status, 400, fuzzy.body);
-    const fuzzyError = parseAs(fuzzy.body, "AgentErrorResponse").error;
-    assert.equal(fuzzyError.code, "DUPLICATE_CLAIM_DESCRIPTION");
-    assert.deepEqual(fuzzyError.conflictingClaimIndices, [0, 1]);
-    assert.ok(fuzzyError.descriptionSimilarity !== undefined);
-    assert.ok(fuzzyError.descriptionSimilarity >= 0.94);
-    assert.ok(fuzzyError.descriptionSimilarity < 1);
-
-    const unchangedAfterFuzzy = await httpRequest(
-      "GET",
-      `/v1/documents/${documentId}?includeContent=true`,
-    );
-    assert.equal(parseAs(unchangedAfterFuzzy.body, "ReadDocumentResponse").content, before);
+    assert.equal(apart.status, 200, apart.body);
+    const changed = await httpRequest("GET", `/v1/documents/${documentId}?includeContent=true`);
+    assert.equal(parseAs(changed.body, "ReadDocumentResponse").content, elsewhere);
   });
 
   it("fails enabled startup when the configured port is taken", async function () {
@@ -901,7 +887,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           agentApi: {
             enabled: true,
             port: takenPort,
-            claimDescriptionSimilarityThreshold: 0.94,
             skillsDirectory: null,
           },
         }),
@@ -2493,7 +2478,6 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,
-                claimDescriptionSimilarityThreshold: 0.94,
                 skillsDirectory: null,
               },
             }),

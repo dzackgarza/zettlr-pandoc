@@ -599,12 +599,7 @@ export interface components {
      * @description invalidated means the file changed on disk under the review. Its suggestions are frozen against the text they were made in: read them with view=chunks or view=diff, then call reapplyReview to map them onto the current text, or discardReview to remove them.
      * @enum {string}
      */
-    ReviewState:
-      | "active"
-      | "resolved-awaiting-save"
-      | "completed"
-      | "cleared"
-      | "invalidated";
+    ReviewState: "active" | "resolved-awaiting-save" | "completed" | "cleared" | "invalidated";
     ReviewSummary: {
       reviewId: string;
       state: components["schemas"]["ReviewState"];
@@ -666,7 +661,7 @@ export interface components {
     };
     /** @description One reviewable change: exactly one unified-diff hunk, justified by its own description. The reviewer keeps or undoes each claim on its own. An edit that repeats at several places in the document is several claims, each with its own description. */
     ProposalClaim: {
-      /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. Each claim in one submission needs a distinct description; duplicate or near-duplicate descriptions are rejected as DUPLICATE_CLAIM_DESCRIPTION. */
+      /** @description Justify this one change: what is wrong in these lines, what the edit changes, and why. One description on claims that change different text is accepted. A claim that has the description of an earlier claim of the submission and changes the text of that claim is rejected as DUPLICATE_CLAIM. */
       description: string;
       /** @description Unified diff implementing exactly this claim. Name the target in the ---/+++ headers as the literal `document` or as the document's absolute path (a git-style a/ or b/ prefix is allowed); any other filename, a create/delete/rename/binary/mode patch, or a diff that leaves the text unchanged is PATCH_INVALID. The change must be exactly one hunk when diffed with three lines of context (as `diff -u` and `git diff` do): changes more than six unchanged lines apart are separate hunks, and a patch whose change is two or more hunks is CLAIM_NOT_ATOMIC. */
       patch: string;
@@ -735,7 +730,7 @@ export interface components {
         | "WORKSPACE_NOT_FOUND"
         | "WORKSPACE_OUTSIDE_SCOPE"
         | "WORKSPACE_ENTRY_EXISTS"
-        | "DUPLICATE_CLAIM_DESCRIPTION"
+        | "DUPLICATE_CLAIM"
         | "BASELINE_MISMATCH"
         | "ZOTERO_UNAVAILABLE"
         | "ZOTERO_SOURCE_NOT_IDENTIFIED"
@@ -747,10 +742,8 @@ export interface components {
       reviewId?: string;
       /** @description REVIEW_GENERATION_MISMATCH: the generation the review is actually at, so the caller can re-read from exactly there. */
       reviewGeneration?: number;
-      /** @description DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair of claims whose normalized descriptions are too similar. */
+      /** @description DUPLICATE_CLAIM: zero-based indices of the first pair of claims that have one description and change the same text. */
       conflictingClaimIndices?: number[];
-      /** @description DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of the conflicting pair, where an exact match is 1.0. */
-      descriptionSimilarity?: number;
       remediation?: components["schemas"]["ZoteroSourceRemediation"];
     };
     AgentErrorResponse: {
@@ -1144,8 +1137,7 @@ export interface components {
       reviewId: string;
       linkedAt: string;
       /** @enum {string} */
-      terminalOutcome?:
-        "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
+      terminalOutcome?: "accepted" | "rejected" | "mixed" | "withdrawn" | "cleared";
     };
     AnnotationAgentStatus:
       | {

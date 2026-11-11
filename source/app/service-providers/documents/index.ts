@@ -102,6 +102,7 @@ import {
   type ChunkDecisionResponse,
   type ClearReviewResponse,
   type DiscardReviewResponse,
+  type ProposalRefusal,
   type ReapplyReviewResponse,
   type RetractProposalResponse,
 } from "./review-transitions";
@@ -3826,7 +3827,7 @@ current contents from the editor somewhere else, and restart the application.`,
     claims: ProposalClaim[],
     clientRequestId: string,
     expectedReviewGeneration: number,
-  ): Promise<SubmittedProposal | { ok: false; code: string; message: string }> {
+  ): Promise<SubmittedProposal | ProposalRefusal> {
     return this._reviewApplication.submitProposal({
       documentId,
       baselineSha256,

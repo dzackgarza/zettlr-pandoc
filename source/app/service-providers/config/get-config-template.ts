@@ -72,12 +72,6 @@ export type AgentApiConfig = {
    */
   port: number;
   /**
-   * Normalized Levenshtein similarity (0–1) at or above which two claims in
-   * one review submission count as sharing a description, and the submission
-   * is refused with DUPLICATE_CLAIM_DESCRIPTION.
-   */
-  claimDescriptionSimilarityThreshold: number;
-  /**
    * Read-only root exposed by the Agent API skills endpoint. `null` disables
    * that capability. The endpoint accepts only physical descendants and `.md`
    * files under this directory.
@@ -608,7 +602,6 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     agentApi: {
       enabled: true,
       port: 27412,
-      claimDescriptionSimilarityThreshold: 0.94,
       skillsDirectory: null,
     },
     references: {

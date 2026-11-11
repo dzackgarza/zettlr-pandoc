@@ -214,10 +214,10 @@ components:
           minLength: 1
           description: >-
             Justify this one change: what is wrong in these lines, what the
-            edit changes, and why. Each claim
-            in one submission needs a distinct description; duplicate or
-            near-duplicate descriptions are rejected as
-            DUPLICATE_CLAIM_DESCRIPTION.
+            edit changes, and why. One description on claims that change
+            different text is accepted. A claim that has the description of
+            an earlier claim of the submission and changes the text of that
+            claim is rejected as DUPLICATE_CLAIM.
         patch:
           type: string
           minLength: 1
@@ -359,7 +359,7 @@ components:
             - WORKSPACE_NOT_FOUND
             - WORKSPACE_OUTSIDE_SCOPE
             - WORKSPACE_ENTRY_EXISTS
-            - DUPLICATE_CLAIM_DESCRIPTION
+            - DUPLICATE_CLAIM
             - BASELINE_MISMATCH
             - ZOTERO_UNAVAILABLE
             - ZOTERO_SOURCE_NOT_IDENTIFIED
@@ -387,15 +387,8 @@ components:
             type: integer
             minimum: 0
           description: >-
-            DUPLICATE_CLAIM_DESCRIPTION: zero-based indices of the first pair
-            of claims whose normalized descriptions are too similar.
-        descriptionSimilarity:
-          type: number
-          minimum: 0
-          maximum: 1
-          description: >-
-            DUPLICATE_CLAIM_DESCRIPTION: normalized Levenshtein similarity of
-            the conflicting pair, where an exact match is 1.0.
+            DUPLICATE_CLAIM: zero-based indices of the first pair of claims
+            that have one description and change the same text.
         remediation:
           $ref: "#/components/schemas/ZoteroSourceRemediation"
     AgentErrorResponse:

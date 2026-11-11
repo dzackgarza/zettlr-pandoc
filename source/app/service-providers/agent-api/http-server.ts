@@ -77,7 +77,6 @@ import type { WorkspaceReferenceState } from "@providers/references/reference-in
 import type { SearchProvider } from "@providers/search";
 import crypto from "crypto";
 import { app } from "electron";
-import { get as levenshteinDistance } from "fast-levenshtein";
 import fs from "fs";
 import http from "http";
 import OpenAPIBackend, {
@@ -136,53 +135,6 @@ const ZOTERO_TAG = "zotero";
  */
 const REQUEST_BODY_DEADLINE_MS = 30_000;
 
-interface ClaimDescriptionCollision {
-  firstIndex: number;
-  secondIndex: number;
-  similarity: number;
-}
-
-function normalizeClaimDescription(description: string): string {
-  return description.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, "");
-}
-
-/**
- * Descriptions are per-claim review justifications, not batch labels. The
- * configured threshold (`agentApi.claimDescriptionSimilarityThreshold`)
- * catches copy/paste variants while leaving room for genuinely related edits
- * to share some vocabulary. Whitespace and case are ignored so superficial
- * formatting changes cannot evade the check.
- */
-function findClaimDescriptionCollision(
-  claims: readonly { description: string }[],
-  threshold: number,
-): ClaimDescriptionCollision | undefined {
-  const normalized = claims.map((claim) => normalizeClaimDescription(claim.description));
-  for (let firstIndex = 0; firstIndex < normalized.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < normalized.length; secondIndex += 1) {
-      const first = normalized[firstIndex];
-      const second = normalized[secondIndex];
-      const maxLength = Math.max(first.length, second.length);
-      const minLength = Math.min(first.length, second.length);
-
-      if (maxLength === 0) {
-        return { firstIndex, secondIndex, similarity: 1 };
-      }
-      // Levenshtein similarity cannot exceed minLength / maxLength, so skip
-      // pairs that cannot possibly cross the rejection threshold.
-      if (minLength / maxLength < threshold) {
-        continue;
-      }
-
-      const similarity = 1 - levenshteinDistance(first, second) / maxLength;
-      if (similarity >= threshold) {
-        return { firstIndex, secondIndex, similarity };
-      }
-    }
-  }
-  return undefined;
-}
-
 /**
  * The HTTP status an AgentErrorCode earns when a route has no code-specific
  * reason to answer otherwise. `Record<AgentErrorCode, number>` is exhaustive
@@ -237,7 +189,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   WORKSPACE_NOT_FOUND: 404,
   WORKSPACE_OUTSIDE_SCOPE: 403,
   WORKSPACE_ENTRY_EXISTS: 409,
-  DUPLICATE_CLAIM_DESCRIPTION: 400,
+  DUPLICATE_CLAIM: 400,
   INTERNAL_ERROR: 500,
   ZOTERO_UNAVAILABLE: 503,
   ZOTERO_SOURCE_NOT_IDENTIFIED: 422,
@@ -1648,29 +1600,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     proposal: SubmitProposalRequest,
     staleBaselineCode: "REVISION_MISMATCH" | "BASELINE_MISMATCH",
   ): Promise<void> {
-    const similarityThreshold = this._app.config.get().agentApi.claimDescriptionSimilarityThreshold;
-    const descriptionCollision = findClaimDescriptionCollision(
-      proposal.claims,
-      similarityThreshold,
-    );
-    if (descriptionCollision !== undefined) {
-      const { firstIndex, secondIndex, similarity } = descriptionCollision;
-      const similarityPercent = Math.round(similarity * 100);
-      this.sendError(
-        res,
-        STATUS_BY_CODE.DUPLICATE_CLAIM_DESCRIPTION,
-        "DUPLICATE_CLAIM_DESCRIPTION",
-        `claims[${firstIndex}] and claims[${secondIndex}] have descriptions that are ${similarityPercent}% similar ` +
-          `(limit: ${Math.round(similarityThreshold * 100)}%). ` +
-          "Give each claim its own description of the specific problem, change, and reason.",
-        {
-          conflictingClaimIndices: [firstIndex, secondIndex],
-          descriptionSimilarity: similarity,
-        },
-      );
-      return;
-    }
-
     // No request headers are read here. Concurrency rides in the body, because
     // an OpenAPI consumer that generates calls from the published document
     // drops header parameters and could never satisfy a header requirement.
@@ -1718,6 +1647,10 @@ export default class AgentHTTPProvider extends ProviderContract {
           res.setHeader("ETag", `"sha256:${sha256Text(current.document.toString())}"`);
         }
         this.sendError(res, 412, staleBaselineCode, result.message);
+      } else if ("conflictingClaimIndices" in result) {
+        this.sendError(res, STATUS_BY_CODE[result.code], result.code, result.message, {
+          conflictingClaimIndices: result.conflictingClaimIndices,
+        });
       } else {
         // Every other refusal, including ANNOTATION_NOT_FOUND — a claim's
         // addressesAnnotationIds named an id this document does not have.
