@@ -197,10 +197,8 @@ export default class Export extends ZettlrCommand {
             null,
             trans("Save"),
           );
-          if (folderSelection === undefined || folderSelection.length === 0) {
-            this._app.log.error(
-              "[Export] Could not run exporter: Folderselection did not have a result!",
-            );
+          // The author cancelled the dialog: a choice, and no failure.
+          if (folderSelection.length === 0) {
             return;
           }
           exporterOptions.targetDirectory = folderSelection[0];
