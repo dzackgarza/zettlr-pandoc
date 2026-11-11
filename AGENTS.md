@@ -574,9 +574,12 @@ of an isolated instance are in the first comment of #132.
 
 ### 13. Assembled-app E2E runs
 
-- `just test-e2e` and `just test-e2e-file <spec>` drive the packaged build.
-  `currentPackagedBinary` (`e2e/support/electron-app.ts`) refuses a build whose
-  source fingerprint is not that of the tree: run `just package` first.
+- `just test-e2e` and `just test-e2e-file <spec>` run the specs of `e2e/`. A spec
+  that starts the app through `attach` (`e2e/support/electron-app.ts`) runs
+  `electron-forge start`: a development build of the working tree for each start.
+  `e2e/application-lifecycle.spec.ts` starts the packaged binary.
+  `currentPackagedBinary` refuses a build whose source fingerprint is not that of
+  the tree: run `just package` before that spec.
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
   Mocha process under one `xvfb-run`; a spec starts no X server of its own.
 - A Chromium probe of test-support code reports its exit code or signal, its
