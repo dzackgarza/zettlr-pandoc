@@ -1066,10 +1066,17 @@ of an isolated instance are in the first comment of #132.
 - **A failed first load offers the load again.** The message of an editor
   that could not load its document has the action "Try again"
   (`surface-document-load-error.ts`, `loadAgain` in `MainEditor.vue`).
+- **A search reads the other files.** The workspace search
+  (`service-providers/search`) does not stop at a file that it cannot read.
+  It names each such file with the cause: the broadcast `search-unread` for
+  the Search view, which lists the files above the results, and the list
+  `notSearched` of `GET /v1/workspace/search`. The Replace All confirmation
+  says that those files keep their text. An error that is no filesystem
+  error ends the search with the failure `stopped`, which names the file.
 - **Proof:** `test/fsal-unreadable-file.spec.ts`,
   `test/document-lint-failure.spec.ts`, `test/agent-http-api.spec.ts`,
   `test/external-linter-adapter.spec.ts`, `e2e/lint-failure.spec.ts`,
-  `e2e/document-load-retry.spec.ts`.
+  `e2e/document-load-retry.spec.ts`, `e2e/search-replace.spec.ts`.
 
 ## Debugging entry points
 
