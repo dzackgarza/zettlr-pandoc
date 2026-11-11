@@ -18,7 +18,8 @@ import type LogProvider from "@providers/log";
 import { dialog, shell } from "electron";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import { PANDOC_WRITERS } from "source/common/pandoc-util/pandoc-maps";
+import { isHtmlWriter, isTexWriter, PANDOC_WRITERS } from "source/common/pandoc-util/pandoc-maps";
+import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import type { DirDescriptor, ProjectSettings } from "source/types/common/fsal";
 import type AssetsProvider from "../assets";
 import type { PandocProfileMetadata, ValidPandocProfile } from "../assets";
@@ -320,13 +321,6 @@ async function exportUsingProfile(
     return { path: file, name: path.basename(file), ext: path.extname(file) };
   });
 
-  let template;
-  if (profile.writer === "html" && config.templates.html !== "") {
-    template = config.templates.html;
-  } else if (profile.writer === "pdf" && config.templates.tex !== "") {
-    template = config.templates.tex;
-  }
-
   const opt: ExporterOptions = {
     profile,
     sourceFiles,
@@ -338,7 +332,7 @@ async function exportUsingProfile(
         typeof config.cslStyle === "string" && config.cslStyle.length > 0
           ? config.cslStyle
           : undefined,
-      template,
+      template: templateOf(config, profile),
     },
   };
 
@@ -366,6 +360,31 @@ async function exportUsingProfile(
     },
   });
   task.endTask("success");
+}
+
+/**
+ * The template of a Project for an export with a profile. The LaTeX template
+ * is for each export that goes through TeX: the writers of `isTexWriter` and
+ * the PDF recipe. The HTML template is for the writers of `isHtmlWriter`.
+ * These are the families of the settings `export.latexTemplate` and
+ * `export.htmlTemplate`.
+ *
+ * @param   {ProjectSettings}     config   The Project settings
+ * @param   {ValidPandocProfile}  profile  The profile
+ *
+ * @return  {string|undefined}             The template, or undefined when the
+ *                                         Project sets none for the profile
+ */
+function templateOf(config: ProjectSettings, profile: ValidPandocProfile): string | undefined {
+  const goesThroughTex =
+    profile.writer === "compile-pandoc" || isTexWriter(parseReaderWriter(profile.writer).name);
+  if (goesThroughTex && config.templates.tex !== "") {
+    return config.templates.tex;
+  }
+  if (isHtmlWriter(parseReaderWriter(profile.writer).name) && config.templates.html !== "") {
+    return config.templates.html;
+  }
+  return undefined;
 }
 
 function openDirectory(logger: LogProvider, dirPath: string): void {

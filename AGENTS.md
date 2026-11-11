@@ -204,6 +204,13 @@ they must be threaded through **four** layers:
   PDF is a **custom profile** (`writer: compile-pandoc`) in `getCustomProfiles`
   (`exporter/index.ts`); dispatch is in `makeExport`. The dzg templates require
   **pdflatex** (xelatex/lualatex fail).
+- **The templates of a Project go before the settings.** `templateOf`
+  (`commands/dir-project-export.ts`) gives an export profile the LaTeX
+  template of the Project when its writer is the PDF recipe or a TeX writer
+  (`isTexWriter`), and the HTML template of the Project when its writer is an
+  HTML writer (`isHtmlWriter`). `makeExport` gives the recipe that template;
+  an export without one gets `export.latexTemplate`. Proof:
+  `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
 - Export profile list: `list-export-profiles` in
   `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)

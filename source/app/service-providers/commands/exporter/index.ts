@@ -196,7 +196,14 @@ export async function makeExport(
     return await PLUGINS.textbundle(options, inputFiles, ctx);
   } else if (options.profile.writer === "compile-pandoc") {
     // PDF: delegate to the authoritative ~/.pandoc compile-pandoc recipe.
-    return await runRecipeExport(options, config.get().export.latexTemplate, wikilinks);
+    // A template of the export (the LaTeX template of a Project) goes before
+    // the template of the setting, as it does for a Pandoc profile.
+    const ownTemplate = options.defaultsOverride?.template;
+    return await runRecipeExport(
+      options,
+      ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
+      wikilinks,
+    );
   } else if (options.profile.writer === "script") {
     const script = config.get().export.scripts.find((s) => s.name === options.profile.name);
     if (script === undefined) {

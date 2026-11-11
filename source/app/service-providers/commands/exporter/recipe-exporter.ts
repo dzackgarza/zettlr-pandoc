@@ -38,7 +38,8 @@ const JUSTFILE = path.join(os.homedir(), ".pandoc", "justfile");
  * `compile-pandoc-project` recipe (ordered Project inputs, issue #1 Phase 7).
  *
  * @param   options        The exporter options (source files, target dir).
- * @param   latexTemplate  The configured LaTeX template (export.latexTemplate);
+ * @param   latexTemplate  The LaTeX template of the export: that of the
+ *                         Project, else the setting export.latexTemplate. An
  *                         empty string lets the recipe use its own default.
  * @param   wikilinks      The workspace index that resolves the wikilinks.
  */
