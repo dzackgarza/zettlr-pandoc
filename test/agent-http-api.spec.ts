@@ -233,6 +233,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   let provider: DocumentManager;
   let httpProvider: AgentHTTPProvider;
   let documentLint: DocumentLintProvider;
+  /** `editor.lint.flowmark.timeoutMs` of the configuration of a test. */
+  let flowmarkTimeoutMs: number;
+  /** How many times the background lint queue ran empty. */
+  let lintDrains: number;
   let httpPort: number;
   let authoringHome: string;
   let figuresRoot: string;
@@ -571,11 +575,13 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           dataDir: path.join(__dirname, "../packages/tikz-render/test/fixtures/tikz-data"),
           figuresDir: figuresRoot,
         },
-        editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+        editor: { lint: { flowmark: { timeoutMs: flowmarkTimeoutMs } } },
       }),
     };
     const lintUserData = path.join(authoringHome, "lint-user-data");
     mkdirSync(lintUserData);
+    flowmarkTimeoutMs = 60_000;
+    lintDrains = 0;
     documentLint = new DocumentLintProvider({
       log: new LogProvider(),
       config,
@@ -583,6 +589,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       homeDirectory: authoringHome,
       env: {},
       userDataDirectory: lintUserData,
+      onDrain: () => {
+        lintDrains += 1;
+      },
     });
     await documentLint.boot();
     const agentHost = new (class {
@@ -2570,6 +2579,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const workspacePayload = parseAs(workspace.body, "LintResponse");
     // Every document was linted above, so the workspace reads them all from the cache.
     assert.deepEqual(workspacePayload.pending, []);
+    assert.deepEqual(workspacePayload.failed, []);
+    assert.equal(workspacePayload.queueStopped, undefined);
     assert.deepEqual(
       new Set(workspacePayload.documents.map((item) => item.path)),
       new Set([focusedPath, otherOpenPath, closedPath]),
@@ -2596,6 +2607,56 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         (diagnostic) => diagnostic.severity !== "info",
       ),
     );
+  });
+
+  it("names each workspace document that Flowmark could not lint, with the kind of the failure", async function () {
+    const unlintedPath = path.join(scratch, "lint-unlinted.md");
+    writeFileSync(unlintedPath, "???\n", "utf8");
+    // No Flowmark process ends in this time.
+    flowmarkTimeoutMs = 1;
+    const route = `/v1/lint?scope=workspace&workspaceId=${encodeURIComponent(scratch)}`;
+
+    // The first request puts the document into the queue of the linter.
+    const queued = await httpRequest("GET", route);
+    assert.equal(queued.status, 200, queued.body);
+    const deadline = Date.now() + 60_000;
+    while (lintDrains === 0) {
+      assert.ok(Date.now() < deadline, "the run of the document did not end");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    const workspaceFiles = parseAs(
+      (
+        await httpRequest(
+          "GET",
+          `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+        )
+      ).body,
+      "WorkspaceFilesResponse",
+    );
+    const answered = await httpRequest("GET", route);
+    assert.equal(answered.status, 200, answered.body);
+    const payload = parseAs(answered.body, "LintResponse");
+    assert.deepEqual(payload.pending, [], "a document whose run ended is not awaited");
+    assert.deepEqual(payload.documents, [], "a failed run is no result of the document");
+    assert.deepEqual(
+      payload.failed.map((item) => ({
+        documentId: item.documentId,
+        path: item.path,
+        name: item.name,
+        kind: item.kind,
+      })),
+      [
+        {
+          documentId: workspaceFiles.files.find((file) => file.path === unlintedPath)?.documentId,
+          path: unlintedPath,
+          name: "lint-unlinted.md",
+          kind: "flowmark-timeout",
+        },
+      ],
+      answered.body,
+    );
+    assert.equal(payload.queueStopped, undefined, "the queue runs");
   });
 
   it("validates lint scope parameters instead of silently broadening the requested scope", async function () {

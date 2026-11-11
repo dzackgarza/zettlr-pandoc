@@ -20,7 +20,8 @@
  *                     with the same cause.
  *                  3. The installed Flowmark cannot be identified, so the
  *                     background queue lints no document. The Problems view
- *                     shows the cause.
+ *                     shows the cause, and a caller of the Agent API gets
+ *                     the same cause.
  *
  * END HEADER
  */
@@ -31,7 +32,9 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
+import type { components as AgentApiComponents } from "source/types/generated/agent-api";
 import {
+  AGENT_API_AUTHORIZATION,
   assertCleanExit,
   attach,
   createFixture,
@@ -39,8 +42,11 @@ import {
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  readAgentApiPort,
   shutdown,
 } from "./support/electron-app";
+
+type LintResponse = AgentApiComponents["schemas"]["LintResponse"];
 
 const INDEX = "Index of the notes.\n";
 const PROBLEM = "Residue ???\n";
@@ -269,6 +275,7 @@ describe("a lint that did not run", function () {
     let browser: Browser | undefined;
     let page: Page;
     let fixtureRoot: string | undefined;
+    let configDirectory: string;
     let getOutput: () => string = () => "";
     const rendererEvents: string[] = [];
     const screenshots = new Map<string, Buffer>();
@@ -277,9 +284,14 @@ describe("a lint that did not run", function () {
       const fixture = await createFixture("zettlr-lint-no-flowmark-e2e-", {
         documentName: "index.md",
         documentContents: PROBLEM,
-        config: { darkMode: true, editor: { autoSave: "off" } },
+        config: {
+          darkMode: true,
+          editor: { autoSave: "off" },
+          agentApi: { enabled: true, port: 0 },
+        },
       });
       fixtureRoot = fixture.root;
+      configDirectory = fixture.configDirectory;
       // uv has no Flowmark in these directories. Without a network and
       // with an empty cache it installs none, so the update at the start
       // of the app fails. The tools of the workstation stay as they are.
@@ -336,6 +348,23 @@ describe("a lint that did not run", function () {
         "a workspace that is not linted is not a workspace without problems",
       );
       screenshots.set("queue-stopped-dark.png", await page.screenshot());
+    });
+
+    it("gives a caller of the Agent API the same cause", async function () {
+      const shown = await page.locator(QUEUE_STOPPED).locator("p").innerText();
+      const port = await readAgentApiPort(configDirectory, 60_000);
+      const response = await fetch(`http://127.0.0.1:${port}/v1/lint?scope=all`, {
+        headers: AGENT_API_AUTHORIZATION,
+      });
+      const body = await response.text();
+      assert.equal(response.status, 200, body);
+      const answer: LintResponse = JSON.parse(body);
+      assert.equal(answer.queueStopped, shown, body);
+      assert.deepEqual(
+        answer.pending.map((document) => document.name),
+        ["index.md"],
+        "the document that no run lints is awaited, with the cause beside it",
+      );
     });
   });
 });

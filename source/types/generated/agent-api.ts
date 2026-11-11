@@ -500,7 +500,7 @@ export interface paths {
     };
     /**
      * Lint documents by editor/workspace scope
-     * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once; documents never linted are listed under pending while the background linter works through them.
+     * @description focused, open and document lint the current text through the lint cache. workspace and all read only the cache and return at once: pending lists the documents not linted yet, and failed lists the documents whose run gave no result, with the cause.
      */
     get: operations["lintDocuments"];
     put?: never;
@@ -1468,12 +1468,37 @@ export interface components {
       scope: "focused" | "open" | "document" | "workspace" | "all";
       documents: components["schemas"]["DocumentLintResult"][];
       documentCount: number;
-      /** @description Documents of a workspace or all scope with no lint result yet. The background linter is linting them; request the scope again to read their diagnostics. Always empty for the other scopes. */
+      /** @description Documents of a workspace or all scope with no lint result yet and no failed run. The background linter is linting them; request the scope again to read their diagnostics. While queueStopped is present the linter lints none of them. Always empty for the other scopes. */
       pending: {
         documentId: string;
         path: string;
         name: string;
       }[];
+      /** @description Documents of a workspace or all scope whose last lint run gave no result. The background linter does not lint such a document again until its text or a lint input changes, Flowmark is updated, or the author starts the lint again in the Problems view. A document with an older result is also in documents, with current false. Always empty for the other scopes: there a failed run is one error diagnostic of the document. */
+      failed: {
+        documentId: string;
+        path: string;
+        name: string;
+        /**
+         * @description How the run failed. flowmark-absent, flowmark-error, flowmark-timeout and flowmark-invalid-output are failures of the Flowmark process; lint-error is a run that stopped outside that process.
+         * @enum {string}
+         */
+        kind:
+          | "flowmark-absent"
+          | "flowmark-error"
+          | "flowmark-timeout"
+          | "flowmark-invalid-output"
+          | "lint-error";
+        /** @description The message of the failure. */
+        cause: string;
+        /**
+         * Format: date-time
+         * @description When the run ended.
+         */
+        failedAt: string;
+      }[];
+      /** @description Present while the background linter lints no document: the cause. The pending documents then stay pending, and each result in documents is the last one from before the stop. The author starts the linter again in the Problems view. */
+      queueStopped?: string;
       diagnosticCount: number;
       counts: components["schemas"]["LintSeverityCounts"];
     };
