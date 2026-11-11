@@ -35,12 +35,13 @@
  */
 
 import { strict as assert } from "assert";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { copyFile, mkdir, mkdtemp, rm } from "fs/promises";
 import os from "os";
 import path from "path";
 import { runRecipeExport } from "source/app/service-providers/commands/exporter/recipe-exporter";
 import type { ExporterOptions } from "source/app/service-providers/commands/exporter/types";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
+import { installRecordingJust, type RecordingJust } from "./recording-just";
 
 const JUSTFILE = path.join(os.homedir(), ".pandoc", "justfile");
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
@@ -55,62 +56,21 @@ const PDF_PROFILE = {
 
 describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
   let scratch: string;
-  let binDir: string;
-  let recordFile: string;
-  let originalPath: string | undefined;
+  let just: RecordingJust;
 
   before(async function () {
     scratch = await mkdtemp(path.join(os.tmpdir(), "zettlr-export-ordered-"));
-    binDir = path.join(scratch, "bin");
-    recordFile = path.join(binDir, "record.bin");
-    await mkdir(binDir);
-
-    // The recording boundary: a real `just` executable that captures its
-    // working directory and every argument it was spawned with, exactly as
-    // the shell delivered them.
-    const shim = path.join(binDir, "just");
-    await writeFile(
-      shim,
-      '#!/bin/sh\n{ printf \'%s\\0\' "$PWD" "$@"; printf \'\\036\'; } >> "$(dirname "$0")/record.bin"\nexit 0\n',
-    );
-    await chmod(shim, 0o755);
-
-    originalPath = process.env.PATH;
-    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+    just = await installRecordingJust();
   });
 
   after(async function () {
-    if (originalPath === undefined) {
-      delete process.env.PATH;
-    } else {
-      process.env.PATH = originalPath;
-    }
+    await just.remove();
     await rm(scratch, { recursive: true, force: true });
   });
 
   beforeEach(async function () {
-    // A fresh record stream per test: the shim APPENDS one record per spawn
-    // (issue #5, C9), so a stale file would hide or inflate spawn counts.
-    await rm(recordFile, { force: true });
+    await just.forget();
   });
-
-  /** The recorded { cwd, argv } of the SINGLE spawned `just` process. */
-  async function recorded(): Promise<{ cwd: string; argv: string[] }> {
-    const raw = await readFile(recordFile, "utf-8");
-    // One RS-terminated record per spawned process: a double spawn is a
-    // contract violation and must be visible, never overwritten away.
-    const spawns = raw.split("\x1e");
-    assert.strictEqual(spawns[spawns.length - 1], "", "the record stream is RS-terminated");
-    assert.strictEqual(
-      spawns.length - 1,
-      1,
-      "the exporter must spawn exactly ONE just process per export",
-    );
-    const tokens = spawns[0].split("\0");
-    assert.strictEqual(tokens[tokens.length - 1], "", "the record is NUL-terminated");
-    const [cwd, ...argv] = tokens.slice(0, -1);
-    return { cwd, argv };
-  }
 
   it("keeps the single-file export invocation unchanged", async function () {
     const dir = path.join(scratch, "single");
@@ -128,7 +88,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
       new WikilinkIndex([]),
     );
 
-    const { cwd, argv } = await recorded();
+    const { cwd, argv } = await just.onlyRun();
     assert.strictEqual(cwd, dir);
     assert.deepStrictEqual(argv, ["--justfile", JUSTFILE, "compile-pandoc", "input.md", "input"]);
   });
@@ -160,7 +120,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
       new WikilinkIndex([]),
     );
 
-    const { cwd, argv } = await recorded();
+    const { cwd, argv } = await just.onlyRun();
     assert.strictEqual(cwd, projectDir, "a Project export runs in the Project root");
     assert.deepStrictEqual(argv, [
       "--justfile",
@@ -203,7 +163,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
       new WikilinkIndex([]),
     );
 
-    const { argv } = await recorded();
+    const { argv } = await just.onlyRun();
     assert.deepStrictEqual(argv, [
       "--justfile",
       JUSTFILE,

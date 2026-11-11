@@ -33,6 +33,7 @@ import LongRunningTaskProvider from "source/app/service-providers/long-running-t
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFsal } from "./fsal-seam";
 import { notifications, userData } from "./headless-electron-harness.cjs";
+import { installRecordingJust, type RecordingJust } from "./recording-just";
 
 const CHAPTER = "# Genus\n\nTwo forms of one genus.\n";
 
@@ -231,33 +232,11 @@ describe("Project export", function () {
   });
 
   describe("with a TeX template in the settings of the Project", function () {
-    let recipeDirectory: string;
-    let recordFile: string;
+    let just: RecordingJust;
     let macroHome: string;
-    let pathOfTheRun: string | undefined;
 
     before(async function () {
-      // The recipe runner of this spec: a `just` that records its arguments
-      // and leaves the file that the recipe leaves, "<title>-<date>.pdf".
-      recipeDirectory = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-recipe-"));
-      recordFile = path.join(recipeDirectory, "record.bin");
-      const runner = path.join(recipeDirectory, "just");
-      await writeFile(
-        runner,
-        [
-          "#!/bin/sh",
-          `{ printf '%s\\0' "$@"; printf '\\036'; } >> "$(dirname "$0")/record.bin"`,
-          'case "$3" in',
-          '  compile-pandoc-project) title="$4" ;;',
-          '  *) title="$5" ;;',
-          "esac",
-          ': > "$PWD/$title-01-01-26.pdf"',
-          "",
-        ].join("\n"),
-      );
-      await chmod(runner, 0o755);
-      pathOfTheRun = process.env.PATH;
-      process.env.PATH = `${recipeDirectory}${path.delimiter}${pathOfTheRun}`;
+      just = await installRecordingJust();
 
       // An export reads the macro projection of the home directory.
       macroHome = path.join(tmpdir(), ".pandoc");
@@ -270,22 +249,17 @@ describe("Project export", function () {
     });
 
     beforeEach(async function () {
-      await rm(recordFile, { force: true });
+      await just.forget();
     });
 
     after(async function () {
-      process.env.PATH = pathOfTheRun;
-      await rm(recipeDirectory, { recursive: true });
+      await just.remove();
       await rm(macroHome, { recursive: true });
     });
 
     /** The arguments of each recipe run, in the order of the runs. */
     async function recipeRuns(): Promise<string[][]> {
-      const record = await readFile(recordFile, "utf8");
-      return record
-        .split("\x1e")
-        .slice(0, -1)
-        .map((run) => run.split("\0").slice(0, -1));
+      return (await just.runs()).map((run) => run.argv);
     }
 
     it("gives the recipe the template for a PDF of several chapters", async function () {
