@@ -653,7 +653,7 @@ of an isolated instance are in the first comment of #132.
   `test/unreadable-collaboration-sidecar.spec.ts`,
   `test/collaboration-sidecar.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,
-  `e2e/review-persistence-failure.spec.ts`.
+  `e2e/review-persistence-failure.spec.ts`, `e2e/refused-save.spec.ts`.
 
 ### 15. Failed application commands
 

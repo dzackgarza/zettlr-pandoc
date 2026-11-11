@@ -202,7 +202,7 @@ function renderToast(entry: NotificationEntry, timeout: number): HTMLElement {
     copy.textContent = "Copy";
     copy.setAttribute("data-toast-copy", "");
     copy.style.cssText =
-      "flex: 0 0 auto; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; cursor: pointer; font: inherit";
+      "flex: 0 0 auto; padding: 3px 10px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; cursor: pointer; font: inherit";
     copy.addEventListener("click", () => {
       copyNotificationText(entry.message, copy);
     });
