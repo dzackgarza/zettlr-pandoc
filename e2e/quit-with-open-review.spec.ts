@@ -44,6 +44,7 @@ import {
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  requestQuit,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -208,9 +209,7 @@ describe("assembled app: a quit with an open review in a pane", function () {
     screenshots.set("before-quit.png", await page.screenshot());
 
     const exited = once(running, "exit");
-    await page.evaluate(() => {
-      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
-    });
+    await requestQuit(page);
     const prompt = await nativeDialog(QUIT_PROMPT_TITLE);
     screenshots.set("quit-prompt.png", await captureWindow(prompt));
     await pressDefaultButton(prompt);

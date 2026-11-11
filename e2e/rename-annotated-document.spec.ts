@@ -41,6 +41,7 @@ import {
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  requestQuit,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -290,9 +291,7 @@ describe("a document that carries collaboration state, after a rename", function
     );
 
     const exited = once(running, "exit");
-    await editorPage.evaluate(() => {
-      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
-    });
+    await requestQuit(editorPage);
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     if (outcome === "still running") {
       screenshots.set("quit-refused.png", await editorPage.screenshot());

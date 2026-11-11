@@ -72,7 +72,6 @@ describe("assembled app: Save right after typing", function () {
     // One round loses its last characters only sometimes; ten rounds make
     // the loss show on most runs of a save path that does not wait.
     for (let round = 1; round <= 10; round++) {
-      const before = expected;
       const sentence = `Round ${round} ends here.`;
       expected = `${expected}${sentence}`;
       await editorPage.keyboard.press("ControlOrMeta+End");
@@ -82,9 +81,12 @@ describe("assembled app: Save right after typing", function () {
         window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.save" });
       });
 
+      // The save replaces the content of the file in place: a read during
+      // the write can give an empty or a partial file. The text that the
+      // file has when it stops changing is the text that the save wrote.
       const deadline = Date.now() + 5_000;
       let written = await readFile(documentPath, "utf8");
-      while (written === before && Date.now() < deadline) {
+      while (written !== expected && Date.now() < deadline) {
         await delay(50);
         written = await readFile(documentPath, "utf8");
       }

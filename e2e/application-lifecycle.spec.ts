@@ -10,6 +10,7 @@ import {
   delay,
   findEditorPage,
   readAppLog,
+  requestQuit,
   stopProcess,
   waitForDevTools,
 } from "./support/electron-app";
@@ -171,12 +172,7 @@ describe("application launch delivery", function () {
           }
         });
       });
-      await initial.evaluate(() => {
-        window.ipc.send("menu-provider", {
-          command: "click-menu-item",
-          payload: "menu-quit",
-        });
-      });
+      await requestQuit(initial);
       await stopping;
       secondary = spawn(
         binary,

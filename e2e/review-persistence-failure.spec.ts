@@ -50,6 +50,7 @@ import {
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  requestQuit,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -794,9 +795,7 @@ describe("a review that cannot be persisted", function () {
 
     await breakSidecarWrites(directory);
     const exited = once(running, "exit");
-    await activePage.evaluate(() => {
-      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
-    });
+    await requestQuit(activePage);
     const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
     const action = toast.first().locator("[data-toast-action]");
     await action.waitFor({ state: "visible", timeout: 30_000 });

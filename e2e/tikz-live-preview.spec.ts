@@ -106,11 +106,7 @@ describe("TikZ microlocal live preview in the assembled app", function () {
       0,
       "the pane offers no choice of editor",
     );
-    assert.strictEqual(
-      await page.locator("iframe").count(),
-      0,
-      "the window embeds no editor page",
-    );
+    assert.strictEqual(await page.locator("iframe").count(), 0, "the window embeds no editor page");
     assert.ok(
       await preview.getByRole("button", { name: "Edit in Visual TikZ Editor" }).isVisible(),
       "the pane starts Visual TikZ Editor on the active diagram",

@@ -681,6 +681,19 @@ export async function attach(
   });
 }
 
+/**
+ * Asks the app to quit, as File → Quit does. The page sends the request in a
+ * later task. A quit can close the page, and an evaluation whose page closes
+ * before its answer arrives rejects; this evaluation has answered by then.
+ */
+export async function requestQuit(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    setTimeout(() => {
+      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
+    }, 100);
+  });
+}
+
 export async function shutdown(
   browser: Browser | undefined,
   appProcess: ChildProcess | undefined,
