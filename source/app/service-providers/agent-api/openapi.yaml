@@ -16,7 +16,13 @@ info:
 servers:
   - url: http://127.0.0.1:27412
     description: Default loopback endpoint
+security:
+  - bearerToken: []
 components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
   schemas:
     DocumentRevision:
       type: object
@@ -324,6 +330,7 @@ components:
           enum:
             - APP_NOT_RUNNING
             - PROTOCOL_MISMATCH
+            - UNAUTHORIZED
             - NO_FOCUSED_DOCUMENT
             - DOCUMENT_NOT_FOUND
             - DOCUMENT_CLOSED

@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import {
+  AGENT_API_ENVIRONMENT,
   type AgentClient,
   agentClient,
   assertCleanExit,
@@ -159,7 +160,11 @@ describe("packaged app: a citation library is read on a thread of its own", func
         "--disable-hardware-acceleration",
         "--ozone-platform=x11",
       ],
-      { detached: true, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        detached: true,
+        env: { ...process.env, ...AGENT_API_ENVIRONMENT },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     const appendOutput = (chunk: Buffer): void => {
       processOutput = `${processOutput}${chunk.toString()}`.slice(-200_000);

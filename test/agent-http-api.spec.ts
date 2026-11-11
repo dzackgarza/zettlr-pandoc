@@ -472,7 +472,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
   }
 
-  function runReviewDiffCli(args: string[]): Promise<{
+  function runReviewDiffCli(
+    args: string[],
+    tokenEnvironment: NodeJS.ProcessEnv = TOKEN_ENVIRONMENT,
+  ): Promise<{
     code: number | null;
     stdout: string;
     stderr: string;
@@ -483,7 +486,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         [path.join(__dirname, "../scripts/desktop/zettlr-pandoc-review-diff"), ...args],
         {
           cwd: path.join(__dirname, ".."),
-          env: { ...process.env, ...TOKEN_ENVIRONMENT },
+          env: { ...process.env, ...tokenEnvironment },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
@@ -614,17 +617,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           }).map((entry) => path.join(entry.parentPath, entry.name)),
       };
     })();
-    httpProvider = new AgentHTTPProvider(
-      new LogProvider(),
-      provider,
-      agentHost,
-      undefined,
-      undefined,
-      {
-        homeDirectory: authoringHome,
-        env: TOKEN_ENVIRONMENT,
-      },
-    );
+    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
+      homeDirectory: authoringHome,
+      env: TOKEN_ENVIRONMENT,
+    });
     await httpProvider.boot();
     httpPort = Number.parseInt(
       readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
@@ -919,9 +915,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         documentLint,
         links,
       },
-      undefined,
-      undefined,
-      { env: TOKEN_ENVIRONMENT },
+      { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
     );
 
     try {
@@ -1593,15 +1587,53 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             documentLint,
             links,
           },
-          undefined,
-          undefined,
-          { env },
+          { homeDirectory: authoringHome, env },
         );
         started.push(unprotected);
         await assert.rejects(unprotected.boot(), AgentApiTokenRequiredError);
         assert.equal(unprotected.isListening, false);
       }
     });
+  });
+
+  it("sends nothing from the external CLI when its environment has no token", async function () {
+    let requestCount = 0;
+    const peer = http.createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: "1.0.0" }));
+    });
+    peerServers.push(peer);
+    await new Promise<void>((resolve) => {
+      peer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = peer.address();
+    assert.ok(address !== null && typeof address !== "string");
+
+    const filePath = path.join(scratch, "no-token.md");
+    const patchPath = path.join(scratch, "no-token.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    const result = await runReviewDiffCli(
+      [
+        "--document",
+        filePath,
+        "--patch",
+        patchPath,
+        "--description",
+        "no token",
+        "--port",
+        String(address.port),
+      ],
+      { ZETTLR_AGENT_API_TOKEN: "" },
+    );
+    assert.equal(result.code, 2);
+    assert.equal(result.stdout, "");
+    const refusal = JSON.parse(result.stderr) as { ok: boolean; error: { code: string } };
+    assert.equal(refusal.ok, false);
+    assert.equal(refusal.error.code, "TOKEN_REQUIRED");
+    assert.equal(requestCount, 0);
   });
 
   it("submits a review through the standalone external CLI process without changing the selected tab", async function () {
@@ -2618,9 +2650,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           documentLint,
           links,
         },
+        { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
         undefined,
         DEADLINE_MS,
-        { env: TOKEN_ENVIRONMENT },
       );
       await lifecycle.boot();
     });

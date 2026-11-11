@@ -192,6 +192,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._documentManager,
       this,
+      { homeDirectory: app.getPath("home"), env: process.env },
       this._citeprocProvider,
     );
     this._trayProvider = new TrayProvider(

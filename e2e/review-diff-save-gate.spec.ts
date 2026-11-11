@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright";
 import {
+  AGENT_API_AUTHORIZATION,
   assertCleanExit,
   attach,
   createFixture,
@@ -63,12 +64,13 @@ function agentClient(port: number): AgentClient {
     return JSON.parse(text);
   };
   return {
-    get: async (route) => await readResponse(await fetch(`${base}${route}`)),
+    get: async (route) =>
+      await readResponse(await fetch(`${base}${route}`, { headers: AGENT_API_AUTHORIZATION })),
     post: async (route, body) =>
       await readResponse(
         await fetch(`${base}${route}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
           body: JSON.stringify(body),
         }),
       ),

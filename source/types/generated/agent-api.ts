@@ -695,6 +695,7 @@ export interface components {
       code:
         | "APP_NOT_RUNNING"
         | "PROTOCOL_MISMATCH"
+        | "UNAUTHORIZED"
         | "NO_FOCUSED_DOCUMENT"
         | "DOCUMENT_NOT_FOUND"
         | "DOCUMENT_CLOSED"

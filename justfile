@@ -33,10 +33,12 @@ install-systemd-tunnel-resume:
     sudo systemctl daemon-reload
     sudo systemctl enable "openai-tunnel-zettlr-pandoc-resume@$(id -un).service"
 
-# Enable and start the Agent API tunnel service.
+# Enable the Agent API tunnel service and start it from the installed unit.
+# A tunnel that runs is started again, so a changed unit takes effect.
 start-systemd-tunnel:
     systemctl --user daemon-reload
-    systemctl --user enable --now "{{zettlr_agent_tunnel_service}}"
+    systemctl --user enable "{{zettlr_agent_tunnel_service}}"
+    systemctl --user restart "{{zettlr_agent_tunnel_service}}"
 
 # Stop and disable the Agent API tunnel service.
 stop-systemd-tunnel:

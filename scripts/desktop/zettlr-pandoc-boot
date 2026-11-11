@@ -5,7 +5,7 @@ set -euo pipefail
 
 : "${HOME:?HOME must be set}"
 
-for required_command in awk date dirname flock grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
+for required_command in awk date direnv dirname flock grep hyprctl jq just kill mkdir python3 readlink sed setsid sh sleep tail timeout tput; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     printf 'Required command is unavailable: %s\n' "$required_command" >&2
     exit 1
@@ -181,6 +181,14 @@ if ! fingerprint=$("$repo/scripts/desktop/zettlr-pandoc-source-fingerprint" "$re
   fail "Could not fingerprint the repository source."
 fi
 
+# The app answers Agent API callers only with the token of its environment,
+# and an app with an enabled API and no token does not start. A desktop
+# entry has no shell environment: direnv loads ~/.envrc, the one place
+# that holds the token, for the app and for nothing else.
+if [[ ! -f "$HOME/.envrc" ]]; then
+  fail "The environment file is unavailable: $HOME/.envrc"
+fi
+
 spinner_label='Building & starting'
 if "$running" || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$stamp_file") == "$fingerprint" ]]; }; then
   printf '\n   Starting \033[1mZettlr-Pandoc\033[0m (no rebuild)\n\n'
@@ -191,7 +199,7 @@ if "$running" || { [[ -x "$packaged_binary" && -f "$stamp_file" ]] && [[ $(<"$st
   # need no debugger of their own.
   debug_args=()
   if ! "$running"; then debug_args=(--remote-debugging-port=27413); fi
-  setsid "$packaged_binary" --ozone-platform=wayland "${debug_args[@]}" "$@" >>"$log" 2>&1 </dev/null 9>&- &
+  setsid direnv exec "$HOME" "$packaged_binary" --ozone-platform=wayland "${debug_args[@]}" "$@" >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!
 else
   printf '\n   Source changed \342\200\224 rebuilding \033[1mZettlr-Pandoc\033[0m before launch\n\n'
@@ -204,7 +212,8 @@ else
   debug_port="--remote-debugging-port=27413"
   setsid sh -c '
     repo="$1"; binary="$2"; debug="$3"; shift 3
-    cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package && exec "$binary" --ozone-platform=wayland "$debug" "$@"
+    cd -- "$repo" && ZETTLR_LOCAL_PACKAGE=1 just package &&
+      exec direnv exec "$HOME" "$binary" --ozone-platform=wayland "$debug" "$@"
   ' sh "$repo" "$packaged_binary" "$debug_port" "$@" \
     >>"$log" 2>&1 </dev/null 9>&- &
   launch_pid=$!

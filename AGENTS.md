@@ -129,7 +129,10 @@ Desktop entry → wrapper → splash → boot script:
   (Hyprland float/center via `hyprctl dispatch`).
 - `zettlr-pandoc-boot` is the actual launcher. It refreshes MathJax macros, then
   starts the verified packaged build through `just package` when the source
-  fingerprint is stale. It retains focus-if-running (intentional — do not
+  fingerprint is stale. A desktop entry has no shell environment, so the
+  script starts the binary under `direnv exec "$HOME"`: the app gets the
+  variables of `~/.envrc`, the Agent API token among them (§6). The script
+  stops when `direnv` or `~/.envrc` is absent. It retains focus-if-running (intentional — do not
   "fix"), Hyprland window-class detection (`class == zettlr-pandoc`), and
   fail-loud behavior on build or launch failure.
 - Launcher log: `~/.cache/zettlr-pandoc-dev.log`.
@@ -262,9 +265,30 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 
 ### 6. Agent API MCP tunnel
 
-- The agent API listens on `127.0.0.1:27412` only and has no authentication. It
-  serves the OpenAPI routes and, at `/mcp`, the same operations as an MCP server
+- The agent API listens on `127.0.0.1:27412` only. It serves the OpenAPI
+  routes and, at `/mcp`, the same operations as an MCP server
   (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- **Each request carries the token.** A caller sends
+  `Authorization: Bearer <token>`, where the token is the value of
+  `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`
+  (`http-server.ts`) verifies it before it reads the body or selects a
+  handler, and answers 401 `UNAUTHORIZED` without it. A loopback caller has no
+  exemption: each tunnel to the listener arrives from loopback. Only
+  `GET /openapi.yaml` and `GET /openapi.json` answer without the token, so an
+  importer can read the contract; the document declares the scheme
+  (`bearerToken`), which makes the import of a Custom GPT Action ask for the
+  key. An MCP tool call is a request of the same caller to the same listener
+  and carries the same header.
+- **The token has one home, `~/.envrc`.** No configuration key and no file of
+  the app holds it. An app with an enabled API and no token in its
+  environment does not start (`AgentApiTokenRequiredError`, a native error
+  dialog); `agentApi.enabled: false` starts it without the API. Each owner of
+  a process gives the variable: `zettlr-pandoc-boot` starts the app under
+  `direnv exec "$HOME"`, the tunnel unit sends the header through
+  `MCP_EXTRA_HEADERS`, `zettlr-pandoc-review-diff` reads the variable and
+  stops without it, and a development start (`just launch`,
+  `just launch-desktop`) takes it from the shell. An e2e run makes a token of
+  its own (`AGENT_API_TOKEN` in `e2e/support/electron-app.ts`).
 - Operations tagged `zotero` in `openapi.yaml` are served at `/zotero/mcp` (MCP
   server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
   leaves out their routes; the Custom GPT Action imports that document and has
@@ -284,7 +308,12 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs
   [`tunnel-client`](https://github.com/openai/tunnel-client) from
   `~/.local/bin`. It long-polls `api.openai.com` with `CONTROL_PLANE_API_KEY` from
-  `~/.envrc`, so it needs no inbound port and no public hostname. The unit sets
+  `~/.envrc`, so it needs no inbound port and no public hostname. The unit
+  gives tunnel-client the header `Authorization: Bearer <token>` in
+  `MCP_EXTRA_HEADERS`, made by a shell from the environment so that the token
+  is in no argument list; tunnel-client sends it with each request to `/mcp`.
+  A header that the ChatGPT app forwards replaces a static header of the same
+  name, so the app in ChatGPT has no authentication of its own. The unit sets
   `GODEBUG=http2client=0`: over HTTP/2 the client keeps one dead connection
   after a suspend and misses every request for about 16 minutes. The system
   unit `openai-tunnel-zettlr-pandoc-resume@.service` also restarts the tunnel

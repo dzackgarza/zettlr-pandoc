@@ -150,6 +150,7 @@ const REQUEST_BODY_DEADLINE_MS = 30_000;
 const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   APP_NOT_RUNNING: 503,
   PROTOCOL_MISMATCH: 400,
+  UNAUTHORIZED: 401,
   NO_FOCUSED_DOCUMENT: 404,
   DOCUMENT_NOT_FOUND: 404,
   DOCUMENT_CLOSED: 409,
@@ -318,6 +319,26 @@ export interface AgentApiRuntimeEnvironment {
   env: NodeJS.ProcessEnv;
 }
 
+/** The routes that answer a caller without the token: the specification. */
+const ANONYMOUS_GET_ROUTES: ReadonlySet<string> = new Set(["/openapi.yaml", "/openapi.json"]);
+
+/** The SHA-256 of a token: the value that two tokens are compared by. */
+function tokenDigest(token: string): Buffer {
+  return crypto.createHash("sha256").update(token, "utf8").digest();
+}
+
+/** An enabled Agent API was started in an environment without its token. */
+export class AgentApiTokenRequiredError extends Error {
+  constructor() {
+    super(
+      "The Agent API is enabled, and the environment of the app has no ZETTLR_AGENT_API_TOKEN. " +
+        "Start the app from a launcher that gives the variable, or turn the Agent API off " +
+        "(agentApi.enabled in config.json).",
+    );
+    this.name = "AgentApiTokenRequiredError";
+  }
+}
+
 /**
  * The endpoint-discovery file, written into userData next to config.json once
  * the listener is bound (the same pattern as Chromium's DevToolsActivePort).
@@ -351,6 +372,8 @@ export default class AgentHTTPProvider extends ProviderContract {
    * document: the operations tagged zotero at /zotero/mcp, all others at /mcp.
    */
   private _mcp: AgentMcpEndpoint | undefined;
+  /** The SHA-256 of the token. Absent until boot read the token. */
+  private _tokenDigest: Buffer | undefined;
   private _zoteroMcp: AgentMcpEndpoint | undefined;
   /** The Zotero operations. Absent when the app has no citation provider. */
   private readonly _zotero: ZoteroLibrary | undefined;
@@ -364,6 +387,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     private readonly _log: LogProvider,
     private readonly _documents: DocumentManager,
     private readonly _app: AgentApiHost,
+    /** The home directory and the environment variables of the app. */
+    private readonly _runtimeEnvironment: AgentApiRuntimeEnvironment,
     private readonly _citeproc?: CiteprocProvider,
     /**
      * Injectable so the request-body lifecycle tests can exercise the
@@ -371,7 +396,6 @@ export default class AgentHTTPProvider extends ProviderContract {
      * pass nothing.
      */
     private readonly _bodyDeadlineMs: number = REQUEST_BODY_DEADLINE_MS,
-    private readonly _runtimeEnvironment?: Partial<AgentApiRuntimeEnvironment>,
   ) {
     super();
     this._instanceId = crypto.randomUUID();
@@ -463,6 +487,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       // (`default:`). Ajv writes those defaults into the validated query and
       // body, so handlers read the document's value rather than restating it.
       ajvOpts: { useDefaults: true },
+      // The document declares the bearer scheme for every operation. The
+      // router asks this handler before it calls an operation.
+      securityHandlers: {
+        bearerToken: (c: Context) => this.holdsToken(c.request.headers.authorization),
+      },
       handlers: this.operationHandlers(),
     });
   }
@@ -473,6 +502,16 @@ export default class AgentHTTPProvider extends ProviderContract {
       this._log.info("[AgentHTTPProvider] Disabled by config, skipping boot");
       return;
     }
+
+    // An API that answers every caller is not a state that the app runs in:
+    // a caller of this API reads and changes the documents of the author.
+    // The launcher of the app gives the token in this variable, and each
+    // client reads the same variable.
+    const token = this._runtimeEnvironment.env.ZETTLR_AGENT_API_TOKEN;
+    if (token === undefined || token === "") {
+      throw new AgentApiTokenRequiredError();
+    }
+    this._tokenDigest = tokenDigest(token);
 
     // Compiles the document's route table and validation schemas. Done before
     // the listener binds, so the first request does not pay for it.
@@ -688,6 +727,20 @@ export default class AgentHTTPProvider extends ProviderContract {
     method: string,
     requestUrl: string,
   ): Promise<void> {
+    // The token is verified before anything of the request is read or
+    // parsed. No caller is exempt for its address: each tunnel to this
+    // listener arrives from loopback.
+    const target = requestUrl.split("?")[0];
+    const credentials = req.headers.authorization;
+    const anonymousRoute = method === "GET" && ANONYMOUS_GET_ROUTES.has(target);
+    if (!anonymousRoute && !this.holdsToken(credentials)) {
+      this._log.warning(
+        `[AgentHTTPProvider] Refused ${method} ${target}: the caller did not send the token`,
+      );
+      res.setHeader("WWW-Authenticate", "Bearer");
+      this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
+      return;
+    }
     const url = new URL(requestUrl, "http://127.0.0.1");
     const rawBody = await this.readBody(req);
     let body: unknown;
@@ -705,13 +758,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       const address = this._server?.address();
       if (
         endpoint === undefined ||
+        credentials === undefined ||
         address === undefined ||
         address === null ||
         typeof address === "string"
       ) {
         throw new Error("Agent API received an MCP request before boot finished");
       }
-      await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`);
+      await endpoint.handle(req, res, body, `http://127.0.0.1:${address.port}`, credentials);
       return;
     }
     if (method === "GET") {
@@ -744,6 +798,27 @@ export default class AgentHTTPProvider extends ProviderContract {
       req,
       res,
     );
+  }
+
+  /**
+   * Whether an `Authorization` header holds the token of the app as a bearer
+   * token (RFC 6750, section 2.1; the scheme name is case-insensitive, RFC
+   * 9110, section 11.1). The comparison is `crypto.timingSafeEqual` over two
+   * SHA-256 digests: the function needs inputs of one length, and its time
+   * does not follow the position of the first byte that differs.
+   */
+  private holdsToken(authorization: string | string[] | undefined): boolean {
+    if (this._tokenDigest === undefined) {
+      throw new Error("Agent API received a request before boot read its token");
+    }
+    if (typeof authorization !== "string") {
+      return false;
+    }
+    const match = /^bearer +(.*)$/i.exec(authorization);
+    if (match === null) {
+      return false;
+    }
+    return crypto.timingSafeEqual(tokenDigest(match[1]), this._tokenDigest);
   }
 
   /** Identity and instance facts, shared by /health and /v1/ping. */
@@ -2289,14 +2364,14 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private authoringHomeDirectory(): string {
-    return this._runtimeEnvironment?.homeDirectory ?? app.getPath("home");
+    return this._runtimeEnvironment.homeDirectory;
   }
 
   private centralFiguresDirectory(): string {
     return resolveCentralFiguresDirectory(
       this._app.config.get().tikz.figuresDir,
       this.authoringHomeDirectory(),
-      this._runtimeEnvironment?.env ?? process.env,
+      this._runtimeEnvironment.env,
     );
   }
 

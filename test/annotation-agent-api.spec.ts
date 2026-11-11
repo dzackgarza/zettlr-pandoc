@@ -319,14 +319,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         userDataDirectory: scratch,
       }),
     };
-    httpProvider = new AgentHTTPProvider(
-      new LogProvider(),
-      provider,
-      agentHost,
-      undefined,
-      undefined,
-      { env: { ZETTLR_AGENT_API_TOKEN: API_TOKEN } },
-    );
+    httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
+      homeDirectory: scratch,
+      env: { ZETTLR_AGENT_API_TOKEN: API_TOKEN },
+    });
     await httpProvider.boot();
     httpPort = Number.parseInt(
       readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),

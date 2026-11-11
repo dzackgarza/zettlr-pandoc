@@ -3,6 +3,7 @@
 // module is what stops the second spec from copying the first one's 300 lines.
 import { strict as assert } from "node:assert";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -356,12 +357,23 @@ export interface AgentClient {
   ) => Promise<{ status: number; body: unknown }>;
 }
 
+/**
+ * The Agent API answers only a caller that sends the token of the app's
+ * environment. Each run has a token of its own, so a token of the shell
+ * that started the run decides nothing.
+ */
+export const AGENT_API_TOKEN = randomUUID();
+/** What a start of the app adds to its environment. */
+export const AGENT_API_ENVIRONMENT = { ZETTLR_AGENT_API_TOKEN: AGENT_API_TOKEN };
+/** The header that each request to the Agent API carries. */
+export const AGENT_API_AUTHORIZATION = { authorization: `Bearer ${AGENT_API_TOKEN}` };
+
 export function agentClient(port: number): AgentClient {
   const base = `http://127.0.0.1:${port}`;
   const post = async (route: string, body: unknown): Promise<Response> =>
     await fetch(`${base}${route}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...AGENT_API_AUTHORIZATION, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
   const parse = async (response: Response): Promise<unknown> => {
@@ -378,7 +390,8 @@ export function agentClient(port: number): AgentClient {
     return parsed;
   };
   return {
-    get: async (route) => await require(await fetch(`${base}${route}`)),
+    get: async (route) =>
+      await require(await fetch(`${base}${route}`, { headers: AGENT_API_AUTHORIZATION })),
     post: async (route, body) => await require(await post(route, body)),
     postExpectingFailure: async (route, body) => {
       const response = await post(route, body);
@@ -434,9 +447,9 @@ export async function readAgentApiPort(
         Number.isInteger(port) && port > 0,
         `The Agent API port file holds no port: ${JSON.stringify(contents)}`,
       );
-      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`).catch(
-        transientConnectionFailure,
-      );
+      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, {
+        headers: AGENT_API_AUTHORIZATION,
+      }).catch(transientConnectionFailure);
       if (response?.ok === true) {
         return port;
       }
@@ -611,6 +624,7 @@ export async function launchElectron(
     ZETTLR_E2E: "1",
     ZETTLR_FORGE_RENDERER_PORT: String(rendererPort),
     ZETTLR_FORGE_LOGGER_PORT: String(loggerPort),
+    ...AGENT_API_ENVIRONMENT,
     ...options.environment,
   };
 
