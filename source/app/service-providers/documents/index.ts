@@ -40,6 +40,7 @@ import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
   type CollaborationFileUnreadableBroadcast,
   type DocumentCollaborationSession,
+  type OwnerlessCollaborationFile,
   type UnreadableCollaborationFile,
   type WorkspaceCollaborationListing,
 } from "@dts/common/document-collaboration";
@@ -240,6 +241,29 @@ interface RefusedClose {
    */
   textDiscarded: boolean;
 }
+
+/**
+ * The message of a refusal: what the application did not do and the cause.
+ * The message of a refused quit also says what its action does, because the
+ * label "Quit anyway" does not name the document that it changes.
+ */
+type RefusalMessage = (cause: string) => string;
+
+const REVIEW_NOT_SAVED: Record<RefusedAction, RefusalMessage> = {
+  close: (cause) => `The review could not be saved, so this document was left open: ${cause}`,
+  reload: (cause) => `The review could not be saved, so the disk version was not loaded: ${cause}`,
+  quit: (cause) =>
+    `The review could not be saved, so the application did not quit: ${cause}\n` +
+    '"Quit anyway" quits. The review stays as it was last saved, and it returns when the document is opened.',
+};
+
+const CHANGES_NOT_DISCARDED: Record<"close" | "quit", RefusalMessage> = {
+  close: (cause) =>
+    `The unsaved changes could not be discarded, so this document was left open: ${cause}`,
+  quit: (cause) =>
+    `The unsaved changes could not be discarded, so the application did not quit: ${cause}\n` +
+    '"Quit anyway" closes this document without its unsaved changes and quits.',
+};
 
 /**
  * Holds all information associated with a document that is currently loaded
@@ -1327,6 +1351,7 @@ export default class DocumentManager
         async () => {
           app.quit();
         },
+        "quit",
       );
       if (!detached) {
         return false;
@@ -1363,9 +1388,13 @@ export default class DocumentManager
           return false;
         }
       } else if (
-        !(await this._discardForClose(document, async () => {
-          app.quit();
-        }))
+        !(await this._discardForClose(
+          document,
+          async () => {
+            app.quit();
+          },
+          "quit",
+        ))
       ) {
         return false;
       }
@@ -1432,7 +1461,7 @@ export default class DocumentManager
       // changes, and a discard that reached every loaded document would throw
       // away edits the user is still holding in another window.
       for (const document of asked) {
-        if (!(await this._discardForClose(document, closeAgain))) {
+        if (!(await this._discardForClose(document, closeAgain, "close"))) {
           return false;
         }
       }
@@ -2286,7 +2315,7 @@ current contents from the editor somewhere else, and restart the application.`,
       const result = await this._app.windows.askSaveChanges(detail);
       // 0 = Save, 1 = Don't save, 2 = Cancel
       if (result.response === 1) {
-        if (!(await this._discardForClose(openFile, repeatClose))) {
+        if (!(await this._discardForClose(openFile, repeatClose, "close"))) {
           return false;
         }
         // A saved review may survive the discard of a later edit. The
@@ -3937,8 +3966,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * is closeWithoutReview, which runs `repeatClose` after it dropped the
    * state. No close is refused without it (#178).
    *
-   * A reload from disk detaches the same way: `action` says which of the
-   * two the refusal stopped.
+   * A reload from disk and a quit detach the same way: `action` says
+   * which of the three the refusal stopped. A quit detaches only a document
+   * that no pane shows, so its action leaves the review as its sidecar
+   * last held it; the message says so.
    */
   private async _detachForClose(
     documentId: string,
@@ -3957,9 +3988,7 @@ current contents from the editor somewhere else, and restart the application.`,
           filePath,
           documentId,
           "review-not-persisted",
-          action === "close"
-            ? "The review could not be saved, so this document was left open"
-            : "The review could not be saved, so the disk version was not loaded",
+          REVIEW_NOT_SAVED[action],
           err,
           action,
         );
@@ -3974,11 +4003,13 @@ current contents from the editor somewhere else, and restart the application.`,
    * written, or the file could not be read. The close does not happen, the
    * document keeps its text and its state, and every window names the
    * cause with the action of _detachForClose. That action closes the
-   * document with the text that the author discarded (#178).
+   * document with the text that the author discarded (#178). `action`
+   * says whether the prompt was that of a close or that of a quit.
    */
   private async _discardForClose(
     document: Document,
     repeatClose: () => Promise<void>,
+    action: "close" | "quit",
   ): Promise<boolean> {
     return await this._discardChanges(document).then(
       () => true,
@@ -3988,9 +4019,9 @@ current contents from the editor somewhere else, and restart the application.`,
           document.filePath,
           document.documentId,
           "discard-failed",
-          "The unsaved changes could not be discarded, so this document was left open",
+          CHANGES_NOT_DISCARDED[action],
           err,
-          "close",
+          action,
         );
         return false;
       },
@@ -4057,20 +4088,20 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * A close or a reload that the provider refused. The window shows this
-   * as it shows a refused save, with the document for which the author can
-   * repeat the action without the state that stopped it
+   * A close, a reload or a quit that the provider refused. The window shows
+   * this as it shows a refused save, with the document for which the author
+   * can repeat the action without the state that stopped it
    * (closeWithoutReview).
    */
   private _announceRefusedClose(
     filePath: string,
     documentId: string,
     reason: SaveRefusalReason,
-    what: string,
+    what: RefusalMessage,
     err: unknown,
     action: RefusedAction,
   ): void {
-    const message = `${what}: ${err instanceof Error ? err.message : String(err)}`;
+    const message = what(err instanceof Error ? err.message : String(err));
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
     const payload: SaveRefusedBroadcast = {
       filePath,
@@ -4682,6 +4713,10 @@ current contents from the editor somewhere else, and restart the application.`,
    *
    * A sidecar that cannot be read hides no other document: the listing
    * names the file, and the document of the file when `paths` holds it.
+   *
+   * A sidecar outside `paths` is the state of a document that the window
+   * does not list. The listing names it when its document has no file
+   * (_sidecarsOfNoDocument).
    */
   private async _workspaceCollaborationSessions(
     paths: readonly string[],
@@ -4707,8 +4742,13 @@ current contents from the editor somewhere else, and restart the application.`,
     // Enumerate the small set of sidecars once, then intersect it with the
     // workspace. This avoids one failed filesystem lookup per ordinary file.
     const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
+    const unlisted: string[] = [];
     for (const sidecar of sidecars) {
-      if (!wanted.has(sidecar.documentPath) || livePaths.has(sidecar.documentPath)) {
+      if (livePaths.has(sidecar.documentPath)) {
+        continue;
+      }
+      if (!wanted.has(sidecar.documentPath)) {
+        unlisted.push(sidecar.documentPath);
         continue;
       }
       const documentId = this.ensureDocumentId(sidecar.documentPath);
@@ -4722,7 +4762,49 @@ current contents from the editor somewhere else, and restart the application.`,
         }),
       );
     }
-    return { sessions, unreadable: this._documentsOfUnreadableFiles(unreadable, wanted) };
+    return {
+      sessions,
+      unreadable: this._documentsOfUnreadableFiles(unreadable, wanted),
+      ownerless: await this._sidecarsOfNoDocument(unlisted),
+    };
+  }
+
+  /**
+   * Of the given document paths, each of which has a sidecar, the ones
+   * where the application reaches no file: the author deleted the document,
+   * or a move of the document could not carry the state to its new path.
+   *
+   * Only a path in an open workspace that is there counts. The file of a
+   * workspace on a volume that is not mounted is not a deleted document,
+   * and the application knows nothing of a file outside every workspace. A
+   * document that is loaded keeps its state for as long as it is loaded.
+   */
+  private async _sidecarsOfNoDocument(
+    documentPaths: readonly string[],
+  ): Promise<OwnerlessCollaborationFile[]> {
+    const { openWorkspaces } = this._app.config.get().app;
+    const loaded = new Set(this.documents.map((document) => document.filePath));
+    const rootIsThere = new Map<string, boolean>();
+    const ownerless: OwnerlessCollaborationFile[] = [];
+    for (const documentPath of documentPaths) {
+      const root = innermostRoot(documentPath, openWorkspaces);
+      if (root === undefined || loaded.has(documentPath)) {
+        continue;
+      }
+      if (!rootIsThere.has(root)) {
+        rootIsThere.set(root, await this._app.fsal.testAccess(root, FSConstants.F_OK));
+      }
+      if (
+        rootIsThere.get(root) === true &&
+        !(await this._app.fsal.testAccess(documentPath, FSConstants.F_OK))
+      ) {
+        ownerless.push({
+          file: this._reviewApplication.sidecarFileOf(documentPath),
+          documentPath,
+        });
+      }
+    }
+    return ownerless;
   }
 
   /**

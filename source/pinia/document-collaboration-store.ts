@@ -47,6 +47,7 @@ import { reportError } from "@common/util/error-reporting";
 import type { AnnotationMessage, TextAnnotation } from "@dts/common/annotation-domain";
 import type {
   DocumentCollaborationSession,
+  OwnerlessCollaborationFile,
   UnreadableCollaborationFile,
   WorkspaceCollaborationListing,
 } from "@dts/common/document-collaboration";
@@ -89,6 +90,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   const workspaceDocumentPaths = ref<string[]>([]);
   /** The files of collaboration state that the application could not read. */
   const unreadableFiles = ref<UnreadableCollaborationFile[]>([]);
+  /** The files of collaboration state whose document has no file. */
+  const ownerlessFiles = ref<OwnerlessCollaborationFile[]>([]);
   const workspacePathSet = new Set<string>();
   let workspaceRefreshGeneration = 0;
 
@@ -315,7 +318,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       workspacePathSet.add(path);
     }
 
-    const { sessions, unreadable } = (await ipcRenderer.invoke("documents-provider", {
+    const { sessions, unreadable, ownerless } = (await ipcRenderer.invoke("documents-provider", {
       command: "get-workspace-collaboration-sessions",
       payload: { paths: uniquePaths },
     })) as WorkspaceCollaborationListing;
@@ -324,6 +327,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     }
     if (!_.isEqual(unreadableFiles.value, unreadable)) {
       unreadableFiles.value = unreadable;
+    }
+    if (!_.isEqual(ownerlessFiles.value, ownerless)) {
+      ownerlessFiles.value = ownerless;
     }
     const returned = new Set(sessions.map((session) => session.documentPath));
 
@@ -348,10 +354,11 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   /**
-   * Move a file of collaboration state that could not be read out of the way
-   * of its document, then read the workspace again. Answers where the file is.
+   * Move a file of collaboration state out of the way of its document, then
+   * read the workspace again. The file is one that could not be read or one
+   * whose document has no file. Answers where the file is.
    */
-  async function setAsideUnreadableFile(file: string): Promise<string> {
+  async function setAsideCollaborationFile(file: string): Promise<string> {
     const aside = (await ipcRenderer.invoke("documents-provider", {
       command: "set-aside-collaboration-sidecar",
       payload: { file },
@@ -838,7 +845,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     workspaceSessions,
     workspaceUnresolvedCount,
     unreadableFiles,
-    setAsideUnreadableFile,
+    ownerlessFiles,
+    setAsideCollaborationFile,
     selectedAnnotationId,
     showResolved,
     ensureSession,

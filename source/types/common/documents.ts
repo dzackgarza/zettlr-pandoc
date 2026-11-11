@@ -154,8 +154,11 @@ export interface SaveRefusal {
  */
 export type SaveFileResult = { ok: true } | { ok: false; refusal: SaveRefusal };
 
-/** The action of the author that a refusal stopped. */
-export type RefusedAction = "close" | "reload";
+/**
+ * The action of the author that a refusal stopped: the close of a document
+ * or of a window, a reload of a document from disk, or a quit.
+ */
+export type RefusedAction = "close" | "reload" | "quit";
 
 /**
  * Broadcast on SAVE_REFUSED_CHANNEL when a save the user did not initiate from
@@ -167,11 +170,11 @@ export type SaveRefusedBroadcast = {
   filePath: string;
   refusal: SaveRefusal;
   /**
-   * Set when the refusal stopped a close or a reload: the document whose
-   * collaboration state could not be written or whose unsaved text could
-   * not be discarded, and the action that was stopped. The window offers
-   * the `close-without-review` command for the document, which repeats
-   * that action without the state.
+   * Set when the refusal stopped a close, a reload or a quit: the document
+   * whose collaboration state could not be written or whose unsaved text
+   * could not be discarded, and the action that was stopped. The window
+   * offers the `close-without-review` command for the document, which
+   * repeats that action without the state.
    */
   refused?: { documentId: string; action: RefusedAction };
 };

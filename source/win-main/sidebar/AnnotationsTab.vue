@@ -57,8 +57,39 @@
       </div>
     </div>
 
+    <!--
+      A file of collaboration state whose document has no file belongs to no
+      document of the workspace. It is named here until the author moves it
+      aside.
+    -->
+    <div
+      v-for="entry in collaborationStore.ownerlessFiles"
+      v-bind:key="entry.file"
+      class="annotation-notice annotation-ownerless-file"
+      v-bind:data-ownerless-file="entry.file"
+    >
+      <p class="annotation-notice-reason">
+        {{
+          trans(
+            'The annotations and the review of %s belong to no document: no file is at that path.',
+            pathBasename(entry.documentPath),
+          )
+        }}
+      </p>
+      <p class="annotation-notice-cause annotation-muted">{{ entry.documentPath }}</p>
+      <div class="annotation-frozen-actions">
+        <button
+          type="button"
+          class="annotation-button annotation-ownerless-set-aside"
+          v-bind:title="trans('Rename the file, so that a new document at that path starts without this state. The file is kept.')"
+          v-bind:disabled="settingAside.has(entry.file)"
+          v-on:click="setAside(entry.file)"
+        >{{ trans('Move the file aside') }}</button>
+      </div>
+    </div>
+
     <p
-      v-if="groups.length === 0 && loadFailure === undefined && collaborationStore.unreadableFiles.length === 0"
+      v-if="groups.length === 0 && loadFailure === undefined && collaborationStore.unreadableFiles.length === 0 && collaborationStore.ownerlessFiles.length === 0"
       class="annotation-workspace-empty annotation-muted"
     >
       {{ trans('No pending annotations or proposed changes in this workspace.') }}
@@ -303,7 +334,7 @@ const acceptingDocuments = reactive(new Set<string>());
 const recoveringDocuments = reactive(new Set<string>());
 const globalBulkBusy = ref(false);
 const bulkDocuments = reactive(new Set<string>());
-/** The unreadable files that a set-aside request is running for. */
+/** The files of collaboration state that a set-aside request is running for. */
 const settingAside = reactive(new Set<string>());
 /** Why the last read of the workspace state failed. */
 const loadFailure = ref<string | undefined>(undefined);
@@ -417,14 +448,14 @@ function navigateAnnotation(documentPath: string, card: AnnotationCardView): voi
   });
 }
 
-/** Moves one unreadable file aside and says where it is. */
+/** Moves one file of collaboration state aside and says where it is. */
 async function setAside(file: string): Promise<void> {
   if (settingAside.has(file)) {
     return;
   }
   settingAside.add(file);
   await collaborationStore
-    .setAsideUnreadableFile(file)
+    .setAsideCollaborationFile(file)
     .then(
       (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
       (err: Error) =>

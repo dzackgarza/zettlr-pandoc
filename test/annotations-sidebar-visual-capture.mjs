@@ -586,6 +586,58 @@ await scene.capture("unreadable-review-file-dark");
 
 process.stderr.write("annotations-sidebar-visual-capture: unreadable review file verified\n");
 
+// A file of collaboration state whose document has no file: the panel names
+// the document and its path above the documents of the workspace, and offers
+// to move the file aside. The long path stays inside the panel.
+const OWNERLESS_BOXES = ["#annotations-panel", ".annotation-ownerless-file"];
+const OWNERLESS_FILE = `/home/author/.config/Zettlr-Pandoc/review-sidecars/${"5d0c7be19a44e3f2".repeat(4)}.json`;
+await page.evaluate(() => window.annotationsSceneSetUnreadableFile(false));
+await openSceneDocument(false);
+await page.evaluate(() => window.annotationsSceneSetOwnerlessFile(true));
+diag = await diagnostics();
+assert.deepStrictEqual(
+  diag.ownerlessFileNotices,
+  [
+    {
+      file: OWNERLESS_FILE,
+      reason:
+        "The annotations and the review of root-systems-and-their-weyl-groups.md belong to no document: no file is at that path.",
+      path: "/home/author/notes/lattice-theory/definite/root-systems-and-their-weyl-groups.md",
+      action: "Move the file aside",
+    },
+  ],
+  "ownerless: the panel names the document that has no file and offers the action",
+);
+assert.equal(diag.annotationRowCount, 2, "ownerless: the document of the workspace stays listed");
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no overflow");
+await scene.capture("ownerless-review-file-light");
+await setLayout(NARROW);
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no narrow overflow");
+await scene.capture("ownerless-review-file-narrow");
+await setLayout(WIDE);
+
+const ownerlessToasts = diag.toasts.length;
+const ownerlessRequest = await page.evaluate(() => window.annotationsSceneClickSetAsideOwnerless());
+assert.deepStrictEqual(
+  ownerlessRequest,
+  { channel: "set-aside-collaboration-sidecar", message: { file: OWNERLESS_FILE } },
+  "ownerless: the click asks the provider to move exactly that file",
+);
+diag = await diagnostics();
+assert.deepStrictEqual(diag.ownerlessFileNotices, [], "ownerless: the notice goes away");
+assert.equal(
+  diag.toasts.length,
+  ownerlessToasts + 1,
+  "ownerless: one message says where the file is",
+);
+
+await openSceneDocument(true);
+await page.evaluate(() => window.annotationsSceneSetOwnerlessFile(true));
+assert.deepStrictEqual(await overflowing(OWNERLESS_BOXES), [], "ownerless: no dark overflow");
+await scene.capture("ownerless-review-file-dark");
+
+process.stderr.write("annotations-sidebar-visual-capture: review file of no document verified\n");
+
 console.log(
   JSON.stringify({
     showProposalRevealedRanges: revealedRanges,

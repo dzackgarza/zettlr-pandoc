@@ -59,6 +59,7 @@ import {
 } from "./annotations-sidebar-scene-fixture";
 import {
   recordedRequests,
+  setAnnotationsSceneOwnerlessFiles,
   setAnnotationsSceneSession,
   setAnnotationsSceneUnreadableFiles,
 } from "./annotations-sidebar-visual-ipc-stub";
@@ -90,6 +91,11 @@ declare global {
     annotationsSceneSetUnreadableFile: (active: boolean) => Promise<void>;
     /** Clicks "Move the file aside" and reports the request it raised. */
     annotationsSceneClickSetAside: () => Promise<RaisedRequest | undefined>;
+    /** Makes the provider report one file of collaboration state whose
+     *  document has no file. */
+    annotationsSceneSetOwnerlessFile: (active: boolean) => Promise<void>;
+    /** Clicks "Move the file aside" of that file and reports the request. */
+    annotationsSceneClickSetAsideOwnerless: () => Promise<RaisedRequest | undefined>;
     /** Swap the cached session for the one scenes 04 and 06 need: the base
      *  three annotations plus a multi-turn thread and a partially decided
      *  proposal, review active. */
@@ -155,6 +161,8 @@ declare global {
       documentAcceptAllCount: number;
       /** The notices of files of collaboration state that cannot be read. */
       unreadableFileNotices: Array<{ file: string; reason: string; action: string }>;
+      /** The notices of files of collaboration state whose document has no file. */
+      ownerlessFileNotices: Array<{ file: string; reason: string; path: string; action: string }>;
       /** The text of each toast on the page. */
       toasts: string[];
       globalAcceptAllPresent: boolean;
@@ -213,6 +221,11 @@ const sceneUnreadableFile = {
   file: SCENE_UNREADABLE_FILE,
   cause: `Collaboration sidecar ${SCENE_UNREADABLE_FILE} is not a valid collaboration sidecar: /version must be equal to constant`,
   documentPath: "/tmp/even-unimodular-lattices.md",
+};
+/** The sidecar of a document that the author deleted. */
+const sceneOwnerlessFile = {
+  file: `/home/author/.config/Zettlr-Pandoc/review-sidecars/${"5d0c7be19a44e3f2".repeat(4)}.json`,
+  documentPath: "/home/author/notes/lattice-theory/definite/root-systems-and-their-weyl-groups.md",
 };
 const m10CapturesSession = buildSceneSessionForM10Captures();
 setAnnotationsSceneSession(sceneSession);
@@ -657,6 +670,12 @@ async function mount(): Promise<void> {
     await settle();
   };
 
+  window.annotationsSceneSetOwnerlessFile = async (active) => {
+    setAnnotationsSceneOwnerlessFiles(active ? [sceneOwnerlessFile] : []);
+    await collaborationStore.refreshWorkspaceSessions([SCENE_DOCUMENT_PATH]);
+    await settle();
+  };
+
   window.annotationsSceneClickChip = async (line) => {
     const marker = [
       ...paneHost.querySelectorAll<HTMLElement>(".cm-textAnnotation-gutterMarker"),
@@ -698,6 +717,11 @@ async function mount(): Promise<void> {
   window.annotationsSceneClickSetAside = async () =>
     await requestRaisedBy(() => {
       requireElement<HTMLButtonElement>(panelHost, ".annotation-unreadable-set-aside").click();
+    });
+
+  window.annotationsSceneClickSetAsideOwnerless = async () =>
+    await requestRaisedBy(() => {
+      requireElement<HTMLButtonElement>(panelHost, ".annotation-ownerless-set-aside").click();
     });
 
   const noteFieldAt = (index: number): HTMLInputElement => {
@@ -840,6 +864,14 @@ async function mount(): Promise<void> {
       ].map((element) => ({
         file: requireAttribute(element, "data-unreadable-file"),
         reason: trimmedText(requireElement(element, ".annotation-notice-reason")),
+        action: trimmedText(requireElement(element, "button")),
+      })),
+      ownerlessFileNotices: [
+        ...panelHost.querySelectorAll<HTMLElement>(".annotation-ownerless-file"),
+      ].map((element) => ({
+        file: requireAttribute(element, "data-ownerless-file"),
+        reason: trimmedText(requireElement(element, ".annotation-notice-reason")),
+        path: trimmedText(requireElement(element, ".annotation-notice-cause")),
         action: trimmedText(requireElement(element, "button")),
       })),
       toasts: [...document.querySelectorAll<HTMLElement>(".zettlr-toast")].map(

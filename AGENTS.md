@@ -752,11 +752,17 @@ of an isolated instance are in the first comment of #132.
   detach the collaboration state through `_detachForClose`. When the sidecar
   cannot be written, it records how to repeat that action and broadcasts
   `save-refused` with `refused: { documentId, action }`. The window shows
-  the cause with the action "Close anyway" or "Load from disk anyway"
-  (`App.vue`), which sends `close-without-review`. `closeWithoutReview`
-  drops the state in memory, leaves the sidecar as it was last written, and
-  repeats the action. A new path that closes or reloads a document detaches
-  through `_detachForClose`.
+  the cause with the action "Close anyway", "Load from disk anyway" or
+  "Quit anyway" (`win-main/util/refused-action-text.ts`), which sends
+  `close-without-review`. `closeWithoutReview` drops the state in memory,
+  leaves the sidecar as it was last written, and repeats the action. A new
+  path that closes or reloads a document detaches through
+  `_detachForClose`.
+- **The message of a refused quit says what its action does.** The quit
+  stops at one document, and "Quit anyway" changes that document: its
+  review stays as the sidecar last held it, or the document closes without
+  its unsaved text. The provider writes that sentence after the cause
+  (`REVIEW_NOT_SAVED`, `CHANGES_NOT_DISCARDED`).
 - **A refused save has a reason and names its cause.** `SaveFileResult` is
   `{ ok: true }` or a `SaveRefusal` (`types/common/documents.ts`); no save
   answers a bare `false`. The window shows the message of the refusal
@@ -773,6 +779,19 @@ of an isolated instance are in the first comment of #132.
   read) is a refused close with the same action. `closeWithoutReview` then
   closes the tabs of the document and unloads it: its buffer is the text
   that the author threw away.
+- **A discard changes only the state in memory.** `discardCollaboration`
+  does nothing for a document with no review and no annotations in memory.
+  The sidecar of such a document is the state of another time (the author
+  closed the document without it, or this version cannot read the file),
+  and the discard leaves the file as it is.
+- **A sidecar whose document has no file is named.** A deleted document
+  keeps its sidecar, and a move that cannot write the sidecar at the new
+  key leaves it at the old one. `_sidecarsOfNoDocument` gives each such
+  file in `WorkspaceCollaborationListing.ownerless`: a readable sidecar of a
+  path inside an open workspace that is there, where the application
+  reaches no file and no loaded document has the path. The Annotations
+  view shows it with the action "Move the file aside". A sidecar of a path
+  outside every open workspace is not named.
 - **`closeWindow` answers whether the window may close.** The window
   provider closes the `BrowserWindow` only for `true`, and gives the
   documents provider the function that repeats the close.
@@ -823,6 +842,7 @@ of an isolated instance are in the first comment of #132.
   `test/documents-refused-close.spec.ts`,
   `test/documents-refused-save.spec.ts`, `test/save-refusal-toast.spec.ts`,
   `test/unreadable-collaboration-sidecar.spec.ts`,
+  `test/collaboration-sidecar-of-no-document.spec.ts`,
   `test/collaboration-sidecar.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,
   `e2e/review-persistence-failure.spec.ts`, `e2e/refused-save.spec.ts`.

@@ -291,6 +291,7 @@ import {
 } from "./util/desktop-command-target";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
+import { REFUSED_ACTION_TEXT } from "./util/refused-action-text";
 
 const ipcRenderer = window.ipc;
 
@@ -1050,12 +1051,12 @@ onMounted(() => {
       showToast(message, "error", 12000, saveRefusalAction(payload.filePath, payload.refusal));
       return;
     }
-    // The refusal stopped a close or a reload. The author can repeat that
-    // action without the state that stopped it; no action is refused
-    // without that.
-    const isClose = refused.action === "close";
+    // The refusal stopped a close, a reload or a quit. The author can
+    // repeat that action without the state that stopped it; no action is
+    // refused without that.
+    const text = REFUSED_ACTION_TEXT[refused.action];
     showToast(message, "error", 12000, {
-      label: isClose ? trans("Close anyway") : trans("Load from disk anyway"),
+      label: text.label(),
       onAction: () => {
         ipcRenderer
           .invoke("documents-provider", {
@@ -1064,21 +1065,12 @@ onMounted(() => {
           })
           .then((repeated: boolean) => {
             if (!repeated) {
-              showToast(
-                isClose
-                  ? trans("%s is not waiting to close.", name)
-                  : trans("%s is not waiting to load from disk.", name),
-                "info",
-                12000,
-              );
+              showToast(text.notWaiting(name), "info", 12000);
             }
           })
           .catch((err: unknown) => {
-            const cause = err instanceof Error ? err.message : String(err);
             showToast(
-              isClose
-                ? trans("Could not close %s: %s", name, cause)
-                : trans("Could not load %s from disk: %s", name, cause),
+              text.failed(name, err instanceof Error ? err.message : String(err)),
               "error",
               12000,
             );
@@ -1105,7 +1097,7 @@ onMounted(() => {
         {
           label: trans("Move the file aside"),
           onAction: () => {
-            collaborationStore.setAsideUnreadableFile(payload.file).then(
+            collaborationStore.setAsideCollaborationFile(payload.file).then(
               (aside) => showToast(trans("The file is kept as %s.", aside), "info", 12000),
               (err: Error) =>
                 showToast(trans("Could not move the file aside: %s", err.message), "error", 12000),

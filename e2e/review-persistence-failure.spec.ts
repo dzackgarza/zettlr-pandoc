@@ -16,10 +16,12 @@
  *              chunk decision, an outstanding-review save, ordinary editor
  *              typing, and the detach a close performs.
  *
- *              A refused close or quit is not a dead end: the refusal offers
- *              the action "Close anyway", which closes the
- *              document or ends the quit and leaves the sidecar as it was last
- *              written (#178).
+ *              A refused close or quit is not a dead end: the refusal of a
+ *              close offers the action "Close anyway", which closes the
+ *              document, and the refusal of a quit offers "Quit anyway",
+ *              which ends the quit. Each leaves the sidecar as it was last
+ *              written (#178). The message of a refused quit says what its
+ *              action does to the review (#210).
  *
  *              What each one owes is the same: report the failure, claim
  *              nothing, destroy nothing, leave the previous sidecar valid, and
@@ -75,6 +77,7 @@ const BASELINE = [
 const PARKED = "# Genus\n\nTwo lattices in one genus are isometric over each localization.\n";
 const PARKED_REVISED = PARKED.replace("localization", "completion");
 const CLOSE_ACTION = "Close anyway";
+const QUIT_ACTION = "Quit anyway";
 
 /**
  * The real injection: the sidecar directory keeps its contents readable and
@@ -799,12 +802,20 @@ describe("a review that cannot be persisted", function () {
     const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
     const action = toast.first().locator("[data-toast-action]");
     await action.waitFor({ state: "visible", timeout: 30_000 });
+    const refusal = (await toast.first().locator("span").first().innerText()).split("\n");
     assert.match(
-      await toast.first().locator("span").first().innerText(),
-      /^parked\.md: The review could not be saved, so this document was left open: ./,
-      "the refused quit names the document that no pane shows",
+      refusal[0],
+      /^parked\.md: The review could not be saved, so the application did not quit: ./,
+      "the refused quit names the document that no pane shows and the quit that it stopped",
     );
-    assert.equal(await action.innerText(), CLOSE_ACTION);
+    assert.deepEqual(
+      refusal.slice(1),
+      [
+        '"Quit anyway" quits. The review stays as it was last saved, and it returns when the document is opened.',
+      ],
+      "the message says what the action does to the review",
+    );
+    assert.equal(await action.innerText(), QUIT_ACTION);
     assert.equal(running.exitCode, null, "the refused quit leaves the app running");
     screenshots.set("quit-refused.png", await activePage.screenshot());
 

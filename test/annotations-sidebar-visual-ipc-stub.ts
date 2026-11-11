@@ -15,6 +15,7 @@
 
 import type {
   DocumentCollaborationSession,
+  OwnerlessCollaborationFile,
   UnreadableCollaborationFile,
 } from "@dts/common/document-collaboration";
 import type { LeafNodeJSON } from "@dts/common/documents";
@@ -34,6 +35,7 @@ export interface RecordedRequest {
 
 let sceneSession: DocumentCollaborationSession | undefined;
 let sceneUnreadableFiles: UnreadableCollaborationFile[] = [];
+let sceneOwnerlessFiles: OwnerlessCollaborationFile[] = [];
 const recorded: RecordedRequest[] = [];
 
 // The capture page carries a window_id search param (see
@@ -56,11 +58,13 @@ documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
       return {
         sessions: sceneSession === undefined ? [] : [sceneSession],
         unreadable: sceneUnreadableFiles,
+        ownerless: sceneOwnerlessFiles,
       };
     case "set-aside-collaboration-sidecar": {
       // The provider renames the file: it is in no later listing.
       const { file } = message.payload as { file: string };
       sceneUnreadableFiles = sceneUnreadableFiles.filter((entry) => entry.file !== file);
+      sceneOwnerlessFiles = sceneOwnerlessFiles.filter((entry) => entry.file !== file);
       return `${file}.set-aside-${Date.now()}`;
     }
     case "get-file-modification-status":
@@ -89,6 +93,11 @@ export function setAnnotationsSceneSession(session: DocumentCollaborationSession
 /** The files of collaboration state that the provider reports as unreadable. */
 export function setAnnotationsSceneUnreadableFiles(files: UnreadableCollaborationFile[]): void {
   sceneUnreadableFiles = files;
+}
+
+/** The files of collaboration state that the provider reports as of no document. */
+export function setAnnotationsSceneOwnerlessFiles(files: OwnerlessCollaborationFile[]): void {
+  sceneOwnerlessFiles = files;
 }
 
 /** Every request the page raised, in order. */

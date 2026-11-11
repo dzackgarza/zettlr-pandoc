@@ -52,11 +52,28 @@ export interface UnreadableCollaborationFile {
   documentPath: string | undefined;
 }
 
+/**
+ * A file of collaboration state whose document has no file: the author
+ * deleted the document, or a move of the document could not carry the
+ * state. The file stays where it is until the author moves it aside.
+ */
+export interface OwnerlessCollaborationFile {
+  /** The absolute path of the file in the application data. */
+  file: string;
+  /** The path that the state belongs to, where no file is. */
+  documentPath: string;
+}
+
 /** The collaboration state of the documents of a workspace. */
 export interface WorkspaceCollaborationListing {
   sessions: DocumentCollaborationSession[];
   /** The files that could not be read. Their state is in no session. */
   unreadable: UnreadableCollaborationFile[];
+  /**
+   * The files whose document has no file, for the documents of the open
+   * workspaces. Their state is in no session.
+   */
+  ownerless: OwnerlessCollaborationFile[];
 }
 
 /**

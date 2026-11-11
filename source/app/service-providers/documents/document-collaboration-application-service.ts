@@ -793,6 +793,11 @@ export class CollaborationApplicationService {
    * screen a moment from now. I6 says the honest answer to that is
    * `orphaned` and the owner's Reattach — never a search for text that looks
    * like what the comment was about. The threads themselves survive.
+   *
+   * A document with no state in memory has none that the discarded bytes
+   * belong to. Its sidecar is the state of another time: the author closed
+   * the document without it (dropCollaboration), or this version cannot
+   * read the file. The discard leaves that file as it is.
    */
   public async discardCollaboration(
     documentId: string,
@@ -800,6 +805,9 @@ export class CollaborationApplicationService {
     diskText: string,
   ): Promise<void> {
     const review = this.reviews.getReview(documentId);
+    if (review === undefined && !this.annotationStates.has(documentId)) {
+      return;
+    }
     const persisted = review === undefined ? undefined : await this.sidecars.read(documentPath);
     const normalizedDisk = normalizeText(diskText);
     const preserveSavedReview =
