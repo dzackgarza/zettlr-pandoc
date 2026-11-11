@@ -22,6 +22,48 @@ const AstrociteAST = bibtex.AST;
 
 type BibTexAttachments = Record<string, string[] | false>;
 
+// The `file` field follows the parser of Zotero's BibTeX translator
+// (`parseFilePathRecord` and `decodeFilePathComponent` in
+// https://github.com/zotero/translators/blob/master/BibTeX.js). A field holds
+// records apart by `;`. A record is a path, or `title:path:type` (JabRef,
+// Zotero). A backslash before a character of a part makes that character
+// literal, so a title or a path can hold `:`, `;` and `\`.
+
+/** Splits `text` at each `separator` that no backslash makes literal. */
+function splitUnescaped(text: string, separator: ":" | ";"): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === "\\") {
+      index++;
+    } else if (text[index] === separator) {
+      parts.push(text.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/** The paths that a `file` field names, PDF files first. */
+function attachmentPaths(field: string, baseDir: string, logger?: LogProvider): string[] {
+  const paths: string[] = [];
+  for (const record of splitUnescaped(field, ";")) {
+    const parts = splitUnescaped(record, ":").map((part) =>
+      part.replace(/\\([^A-Za-z0-9.])/g, "$1"),
+    );
+    if (parts.length !== 1 && parts.length !== 3) {
+      logger?.warning(`[extractBibtexAttachments] Unknown file record format: ${record}`);
+      continue;
+    }
+    const filePath = parts.length === 1 ? parts[0] : parts[1];
+    if (filePath !== "") {
+      paths.push(path.isAbsolute(filePath) ? filePath : path.join(baseDir, filePath));
+    }
+  }
+  return paths.sort(pdfSorter);
+}
+
 /**
  * Returns a dictionary in the form citeKey: Array(files)
  * @param {String} fileContents The contents of a valid BibTex file
@@ -66,27 +108,10 @@ export default function extractBibtexAttachments(
           continue;
         }
 
-        // The file entry by JabRef is saved as description:path:type
-        // Multiple entries are delimited with ;
-        // Reference: https://github.com/JabRef/jabref/blob/93f47c9069d01247375cabbe6e1328f0a477472b/src/main/java/org/jabref/gui/filelist/FileListEntry.java#L46
-        let f = firstValue.value.split(";");
-        f = f.map((elem) => {
-          // Extract the file paths
-          if (elem.includes(":")) {
-            return elem.split(":")[1];
-          } else {
-            return elem;
-          }
-        });
-        // Now sort so that PDF-files are at the top
-        f = f.sort(pdfSorter);
-
-        // In case the paths are not absolute, make them this way.
-        if (!path.isAbsolute(f[0])) {
-          f = f.map((elem) => path.join(baseDir, elem));
+        const paths = attachmentPaths(firstValue.value, baseDir, logger);
+        if (paths.length > 0) {
+          files[entry.id] = paths;
         }
-        // Save them to the dictionary
-        files[entry.id] = f;
       }
     }
 

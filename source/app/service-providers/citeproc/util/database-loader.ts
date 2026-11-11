@@ -27,7 +27,7 @@ import extractBibTexAttachments from "./extract-bibtex-attachments";
  * Bump when the cached record's shape or the parser producing it changes:
  * a version mismatch is a cache miss, never an error.
  */
-const BIB_CACHE_VERSION = 1;
+const BIB_CACHE_VERSION = 2;
 
 /** What a .bib parse costs is what this file exists to avoid re-paying. */
 interface BibCacheFile {
@@ -302,11 +302,10 @@ async function loadBibTeX(
   }
 
   // If we're here, we had a BibTex library --> extract the attachments
-  const attachments = extractBibTexAttachments(data, path.dirname(databasePath));
-  record.bibtexAttachments = attachments;
+  record.bibtexAttachments = extractBibTexAttachments(data, path.dirname(databasePath), logger);
 
   logger?.info(
-    `BibTeX database loaded, ${Object.keys(record.cslData).length} items; ${record.bibtexAttachments.length} attachments found.`,
+    `BibTeX database loaded, ${Object.keys(record.cslData).length} items; ${Object.values(record.bibtexAttachments).filter((files) => files !== false).length} entries with attachments.`,
   );
 
   return record;
@@ -345,22 +344,10 @@ async function loadBibLaTeX(
     record.cslData[key] = item as CSLItem;
   }
 
-  // Now we also have to extract file fields (if they have been exported). The
-  // BibLaTeX parser counts it as an unexpected field, accessible from
-  // bib.entries[idx].unexpected_fields.file
-  for (const [key, item] of Object.entries(bib.entries)) {
-    if (!("unexpected_fields" in item)) {
-      record.bibtexAttachments[key] = false;
-      continue;
-    }
-
-    if (typeof item.unexpected_fields?.file !== "string") {
-      record.bibtexAttachments[key] = false;
-      continue;
-    }
-
-    record.bibtexAttachments[key] = [item.unexpected_fields.file];
-  }
+  // The BibLaTeX parser reads the `file` field as LaTeX text, which changes
+  // its escapes, and keys an entry by its position. The attachments come from
+  // the source text, by citation key.
+  record.bibtexAttachments = extractBibTexAttachments(data, path.dirname(databasePath), logger);
 
   logger?.info(`BibLaTeX database loaded, ${Object.keys(record.cslData).length} items.`);
 
