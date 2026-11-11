@@ -582,30 +582,16 @@ export async function launchElectron(
     `--data-dir=${configDirectory}`,
     "--remote-debugging-port=0",
     "--disable-hardware-acceleration",
-    // Under xvfb DISPLAY names the virtual server, but Chromium prefers a
-    // Wayland compositor whenever WAYLAND_DISPLAY is set, and then the
-    // window opens on the developer's desktop. X11 is where the harness
-    // looks, the same switch the capture scenes pass.
+    // The run owns the X display (`just test-e2e`, `just test-e2e-file`):
+    // DISPLAY names the desktop's server or the virtual one of the run.
+    // Chromium prefers a Wayland compositor whenever WAYLAND_DISPLAY is
+    // set, and then the window opens on the developer's desktop. X11 is
+    // where the harness looks, the same switch the capture scenes pass.
     "--ozone-platform=x11",
   ];
   if (options.files !== undefined) {
     forgeArguments.push(...options.files);
   }
-  const needsVirtualDisplay =
-    process.platform === "linux" &&
-    process.env.DISPLAY === undefined &&
-    process.env.WAYLAND_DISPLAY === undefined;
-  const executable = needsVirtualDisplay ? "xvfb-run" : forgeExecutable;
-  // xvfb-run's default screen is 640x480; a new window sizes itself from
-  // the screen, and the three panes' minimums need more than that.
-  const args = needsVirtualDisplay
-    ? [
-        "--auto-servernum",
-        "--server-args=-screen 0 1920x1080x24",
-        forgeExecutable,
-        ...forgeArguments,
-      ]
-    : forgeArguments;
 
   // Forge's dev server and logger need separate ports. Choose fresh loopback
   // ports for this launch; the application owns the subsequent bind and will
@@ -622,7 +608,7 @@ export async function launchElectron(
     ...options.environment,
   };
 
-  return spawn(executable, args, {
+  return spawn(forgeExecutable, forgeArguments, {
     cwd: REPO_ROOT,
     detached: true,
     env: childEnvironment,
