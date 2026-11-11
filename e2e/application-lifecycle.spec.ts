@@ -61,7 +61,11 @@ describe("application launch delivery", function () {
       // scheduling, not application behavior: the caller cannot yet be served.
       const deadline = Date.now() + 20_000;
       while (!existsSync(path.join(fixture.configDirectory, "SingletonSocket"))) {
-        assert.equal(primary.exitCode, null, primaryOutput);
+        assert.deepEqual(
+          { exitCode: primary.exitCode, signalCode: primary.signalCode },
+          { exitCode: null, signalCode: null },
+          `The owner ended before it held the lock:\n${primaryOutput}`,
+        );
         assert.ok(Date.now() < deadline, primaryOutput);
         await delay(10);
       }
@@ -106,7 +110,7 @@ describe("application launch delivery", function () {
       });
       assert.equal(rejectedStatus, 1, "A failed document open must fail the invoking process");
     } finally {
-      if (primary.pid !== undefined && primary.exitCode === null)
+      if (primary.pid !== undefined && primary.exitCode === null && primary.signalCode === null)
         process.kill(primary.pid, "SIGCONT");
       await browser?.close();
       for (const child of children.reverse()) await stopProcess(child);
@@ -210,7 +214,7 @@ describe("application launch delivery", function () {
         "Repeated quit requests must run cleanup once",
       );
     } finally {
-      if (primary.exitCode === null) process.kill(pid, "SIGCONT");
+      if (primary.exitCode === null && primary.signalCode === null) process.kill(pid, "SIGCONT");
       await browser?.close();
       await stopProcess(primary);
       await stopProcess(secondary);

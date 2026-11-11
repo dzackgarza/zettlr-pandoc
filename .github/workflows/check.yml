@@ -57,8 +57,7 @@ jobs:
       - name: Verify pinned Pandoc parser reference data
         run: bun run check:pandoc-reference-data
       - name: Configure Electron SUID sandbox
-        run: |
-          bash scripts/configure-electron-sandbox-ci.sh
+        run: bash scripts/configure-electron-sandbox-ci.sh node_modules/electron/dist
       - name: Run unit tests
         run: bun run test
       # Compile the real webpack bundles (main + renderer + preload). tsc/eslint
@@ -70,6 +69,10 @@ jobs:
       # E2E step starts this binary, so the build comes first.
       - name: Build app bundle
         run: just package
+      # The packaged app holds a copy of the Electron distribution. The
+      # launch-delivery cases start that binary itself.
+      - name: Configure the SUID sandbox of the packaged app
+        run: bash scripts/configure-electron-sandbox-ci.sh out/Zettlr-Pandoc-linux-x64
       - name: Run assembled-app E2E
         run: just test-e2e
       - name: Upload assembled-app E2E logs

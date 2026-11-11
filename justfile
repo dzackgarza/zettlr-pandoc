@@ -201,7 +201,7 @@ test-push:
 [private]
 test-ci:
     {{bun}} install --frozen-lockfile
-    bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh"
+    bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh" "{{justfile_directory()}}/node_modules/electron/dist"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
 
 # The scheduled QC run dispatches this tier: the whole-tree debt audit.
