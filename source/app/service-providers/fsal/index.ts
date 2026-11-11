@@ -14,6 +14,7 @@
  */
 
 import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
+import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type {
   AnyDescriptor,
   CodeFileDescriptor,
@@ -355,7 +356,19 @@ export default class FSAL extends ProviderContract {
           this.publishEvent({ event, descriptor });
         }
       })
-      .catch((err) => {
+      .catch(async (err: Error) => {
+        // A rename or a removal can take a file away before its `add` or
+        // `change` is handled, as the temporary file of an atomic write
+        // shows. Such a file has no descriptor, and its `unlink` event
+        // reports the removal. Any other failure is an error.
+        const gone = await fs.lstat(absPath).then(
+          () => false,
+          (statError: Error) => hasErrnoCode(statError, "ENOENT", "ENOTDIR"),
+        );
+        if (gone) {
+          this._logger.verbose(`[FSAL] No event ${event} for path "${absPath}": the path is gone.`);
+          return;
+        }
         this._logger.error(
           `[FSAL] Could not emit event ${event} for path "${absPath}": ${err.message}`,
           err,
@@ -790,6 +803,9 @@ export default class FSAL extends ProviderContract {
   public async shutdown(): Promise<void> {
     this._logger.verbose("FSAL shutting down ...");
     this.publishPendingEvents.cancel();
+    // Each watcher holds the process open until it is closed.
+    await Promise.all([...this.watchers.values()].map((watcher) => watcher.shutdown()));
+    this.watchers.clear();
     await this._cache.persist();
   }
 

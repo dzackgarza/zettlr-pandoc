@@ -20,7 +20,6 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import _ from "lodash";
 import type ConfigProvider from "source/app/service-providers/config";
 import FSAL, { type FSALEventPayload } from "source/app/service-providers/fsal";
 import LogProvider, { LogLevel, type LogMessage } from "source/app/service-providers/log";
@@ -74,8 +73,21 @@ describe("FSAL watcher events", function () {
       system: { deleteOnFail: false },
       watchdog: { activatePolling: false, stabilityThreshold: 1000 },
     };
+    // The FSAL reads the whole configuration, and these values by their key.
+    const byKey = new Map<string, boolean | number>([
+      ["system.deleteOnFail", values.system.deleteOnFail],
+      ["watchdog.activatePolling", values.watchdog.activatePolling],
+      ["watchdog.stabilityThreshold", values.watchdog.stabilityThreshold],
+    ]);
     const config = {
-      get: (key?: string) => (key === undefined ? values : _.get(values, key)),
+      get: (key?: string) => {
+        if (key === undefined) {
+          return values;
+        }
+        const value = byKey.get(key);
+        assert.notEqual(value, undefined, `the FSAL read the configuration key ${key}`);
+        return value;
+      },
       on: (_event: "update", _listener: (which?: string) => void) => {},
       newVersionDetected: () => false,
     };
