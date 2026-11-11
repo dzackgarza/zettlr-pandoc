@@ -206,6 +206,7 @@ import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plu
 import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
 import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
+import { loadFromDiskAction, saveRefusalAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
@@ -1039,37 +1040,41 @@ onMounted(() => {
   // given anywhere the user can see.
   ipcRenderer.on(SAVE_REFUSED_CHANNEL, (event, payload: SaveRefusedBroadcast) => {
     const name = pathBasename(payload.filePath);
-    const message =
-      payload.refusal === undefined
-        ? trans('Could not save "%s".', name)
-        : `${name}: ${payload.refusal.message}`;
-    const documentId = payload.closeRefusedFor;
-    if (documentId === undefined) {
-      showToast(message, "error", 12000);
+    const message = `${name}: ${payload.refusal.message}`;
+    const refused = payload.refused;
+    if (refused === undefined) {
+      showToast(message, "error", 12000, saveRefusalAction(payload.filePath, payload.refusal));
       return;
     }
-    // The refusal stopped a close. The author can close without the state
-    // that stopped it; no close is refused without that.
+    // The refusal stopped a close or a reload. The author can repeat that
+    // action without the state that stopped it; no action is refused
+    // without that.
+    const isClose = refused.action === "close";
     showToast(message, "error", 12000, {
-      label: trans("Close anyway"),
+      label: isClose ? trans("Close anyway") : trans("Load from disk anyway"),
       onAction: () => {
         ipcRenderer
           .invoke("documents-provider", {
             command: "close-without-review",
-            payload: { documentId },
+            payload: { documentId: refused.documentId },
           })
-          .then((closed: boolean) => {
-            if (!closed) {
-              showToast(trans("%s is not waiting to close.", name), "info", 12000);
+          .then((repeated: boolean) => {
+            if (!repeated) {
+              showToast(
+                isClose
+                  ? trans("%s is not waiting to close.", name)
+                  : trans("%s is not waiting to load from disk.", name),
+                "info",
+                12000,
+              );
             }
           })
           .catch((err: unknown) => {
+            const cause = err instanceof Error ? err.message : String(err);
             showToast(
-              trans(
-                "Could not close %s: %s",
-                name,
-                err instanceof Error ? err.message : String(err),
-              ),
+              isClose
+                ? trans("Could not close %s: %s", name, cause)
+                : trans("Could not load %s from disk: %s", name, cause),
               "error",
               12000,
             );
@@ -1114,27 +1119,7 @@ onMounted(() => {
     const message = payload.unsavedChanges
       ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
       : trans("%s changed on disk. The editor keeps its contents.", name);
-    showToast(message, "info", 12000, {
-      label: trans("Load from disk"),
-      onAction: () => {
-        ipcRenderer
-          .invoke("documents-provider", {
-            command: "load-from-disk",
-            payload: { path: payload.filePath },
-          })
-          .catch((err: unknown) => {
-            showToast(
-              trans(
-                "Could not load %s from disk: %s",
-                name,
-                err instanceof Error ? err.message : String(err),
-              ),
-              "error",
-              12000,
-            );
-          });
-      },
-    });
+    showToast(message, "info", 12000, loadFromDiskAction(payload.filePath));
   });
 
   // The window-level shortcuts this component owns, by their typed name. The

@@ -30,7 +30,7 @@ import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { sha256Text } from "source/common/util/sha256";
-import { SAVE_REFUSED_CHANNEL } from "source/types/common/documents";
+import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from "source/types/common/documents";
 import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
@@ -46,15 +46,10 @@ type IpcHandler = (
   message: { command: string; payload?: unknown },
 ) => Promise<unknown> | unknown;
 
-/** What the window reads of a refusal. */
-interface Refusal {
-  filePath: string;
-  refusal?: { reason: string; message: string };
-  refused?: { documentId: string; action: string };
-}
-
 const SOURCE = "An even unimodular lattice has a rank that 8 divides.\n";
 const REVISED = SOURCE.replace("rank", "signature");
+// The file as another program wrote it while the document was open.
+const EXTERNAL = `${SOURCE}The Leech lattice has rank 24.\n`;
 const SIDECARS = path.join(userData, "review-sidecars");
 // The first button of the quit prompt: save the unsaved text.
 const SAVE = 0;
@@ -121,10 +116,10 @@ describe("Documents-provider save that it must refuse", function () {
     return id;
   }
 
-  function refusals(): Refusal[] {
+  function refusals(): SaveRefusedBroadcast[] {
     return sentMessagesFor(window)
       .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
-      .map(([, payload]) => payload as Refusal);
+      .map(([, payload]) => payload as SaveRefusedBroadcast);
   }
 
   async function untilRefused(): Promise<void> {
@@ -147,7 +142,7 @@ describe("Documents-provider save that it must refuse", function () {
     const saved = await provider.saveFile(filePath);
 
     assert.deepEqual(
-      [saved.ok, saved.ok ? undefined : saved.refusal?.reason],
+      [saved.ok, saved.ok ? undefined : saved.refusal.reason],
       [false, "disk-unreadable"],
       "the save is refused, with the reason that the file cannot be read",
     );
@@ -167,7 +162,7 @@ describe("Documents-provider save that it must refuse", function () {
     await untilRefused();
 
     assert.deepEqual(
-      refusals().map((entry) => [entry.filePath, entry.refusal?.reason]),
+      refusals().map((entry) => [entry.filePath, entry.refusal.reason]),
       [[filePath, "disk-unreadable"]],
       "the window receives the refusal of the save, with its reason",
     );
@@ -178,7 +173,7 @@ describe("Documents-provider save that it must refuse", function () {
     const saved = await provider.saveFile(filePath);
 
     assert.deepEqual(
-      [saved.ok, saved.ok ? undefined : saved.refusal?.reason],
+      [saved.ok, saved.ok ? undefined : saved.refusal.reason],
       [false, "not-loaded"],
       "a refused save has a reason",
     );
@@ -186,6 +181,7 @@ describe("Documents-provider save that it must refuse", function () {
 
   it("says that a reload was refused when the review of a reloaded document cannot be written", async function () {
     const id = await openWithReview();
+    writeFileSync(filePath, EXTERNAL, "utf-8");
     chmodSync(SIDECARS, 0o500);
 
     await invoke("load-from-disk", { path: filePath });
@@ -197,10 +193,11 @@ describe("Documents-provider save that it must refuse", function () {
     );
     assert.equal(provider.readWorkingText(id), REVISED, "a refused reload keeps the buffer");
 
-    // The action of the refusal loads the disk version without the review.
+    // The action of the refusal loads the disk version without the review
+    // state that could not be written.
     assert.equal(await invoke("close-without-review", { documentId: id }), true);
     assert.deepEqual(provider.loadedDocuments, [], "the document waits for its editors to load it");
     await provider.getDocument(filePath);
-    assert.equal(provider.readWorkingText(id), SOURCE, "the editors load the text of the file");
+    assert.equal(provider.readWorkingText(id), EXTERNAL, "the editors load the text of the file");
   });
 });

@@ -50,6 +50,7 @@ import {
   type LeafNodeJSON,
   type OpenDocument,
   REMOTE_CHANGE_KEPT_CHANNEL,
+  type RefusedAction,
   type RemoteChangeKeptBroadcast,
   SAVE_REFUSED_CHANNEL,
   type SaveFileResult,
@@ -1875,17 +1876,14 @@ current contents from the editor somewhere else, and restart the application.`,
           // makes the reason findable instead of inventing a silent success.
           // A failed disk write leaves the text only in memory, so the user
           // learns of it now, through the same toast as a refused close.
-          if (result.refusal?.reason === "write-failed") {
+          if (result.refusal.reason === "write-failed") {
             const payload: SaveRefusedBroadcast = {
               filePath: doc.filePath,
               refusal: result.refusal,
             };
             broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
           }
-          const reason =
-            result.refusal === undefined
-              ? "no reason reported"
-              : `${result.refusal.reason}: ${result.refusal.message}`;
+          const reason = `${result.refusal.reason}: ${result.refusal.message}`;
           this._app.log.warning(
             `[Document Provider] Autosave refused for ${doc.filePath} (${reason}). ` +
               "The buffer is unchanged and still unsaved; the next explicit save will " +
@@ -2771,9 +2769,14 @@ current contents from the editor somewhere else, and restart the application.`,
     const documentId = this.getDocumentId(filePath);
     if (
       documentId !== undefined &&
-      !(await this._detachForClose(documentId, filePath, async () => {
-        await this.notifyRemoteChange(filePath);
-      }))
+      !(await this._detachForClose(
+        documentId,
+        filePath,
+        async () => {
+          await this.notifyRemoteChange(filePath);
+        },
+        "reload",
+      ))
     ) {
       return;
     }
@@ -3414,8 +3417,28 @@ current contents from the editor somewhere else, and restart the application.`,
     // Pending chunks do not block a save: saving persists the document as-is
     // and the review's status alongside it, so a pending review can be closed
     // and revisited later. The only refusal left is external drift.
-    const diskContents = await this._app.fsal.loadAnySupportedFile(filePath);
-    if (sha256Text(normalizeText(diskContents)) !== review.diskFenceSha256) {
+    const disk = await this._app.fsal.loadAnySupportedFile(filePath).then(
+      (contents): { contents: string } => ({ contents }),
+      (err: unknown): { unreadable: string } => {
+        this._app.log.error(
+          `[DocumentManager] Save gate closed for ${filePath}: the file could not be read.`,
+          err,
+        );
+        return { unreadable: err instanceof Error ? err.message : String(err) };
+      },
+    );
+    if ("unreadable" in disk) {
+      // The gate cannot tell whether the file changed after the review
+      // opened, so the save does not replace the file.
+      return {
+        reason: "disk-unreadable",
+        message: trans(
+          "The file could not be read, so the save could not compare it with its review, and nothing was written: %s",
+          disk.unreadable,
+        ),
+      };
+    }
+    if (sha256Text(normalizeText(disk.contents)) !== review.diskFenceSha256) {
       this._app.log.warning(
         `[DocumentManager] Save gate closed for ${filePath}: the document changed on disk ` +
           "after the review opened; the external edit was preserved.",
@@ -3423,7 +3446,7 @@ current contents from the editor somewhere else, and restart the application.`,
       return {
         reason: "disk-changed",
         message: trans(
-          "The document changed on disk after this review opened. The external edit was preserved.",
+          "The document changed on disk after this review opened, so it was not saved. Load the disk version, or reapply or discard the review in the Annotations view and save again.",
         ),
       };
     }
@@ -3451,7 +3474,16 @@ current contents from the editor somewhere else, and restart the application.`,
       this._app.log.error(
         `[Document Provider] Could not save file ${filePath}: Not found in loaded documents!`,
       );
-      return { ok: false };
+      return {
+        ok: false,
+        refusal: {
+          reason: "not-loaded",
+          message: trans(
+            "The application holds no text of %s, so nothing was written. Open the document again.",
+            path.basename(filePath),
+          ),
+        },
+      };
     }
 
     // If saveFile was called from a timeout, clearTimeout does nothing but the
@@ -3676,10 +3708,8 @@ current contents from the editor somewhere else, and restart the application.`,
       return;
     }
     this._app.log.warning(
-      `[DocumentManager] Close aborted: ${filePath} could not be saved` +
-        (result.refusal === undefined
-          ? " and reported no reason."
-          : ` (${result.refusal.reason}): ${result.refusal.message}`),
+      `[DocumentManager] Close aborted: ${filePath} could not be saved ` +
+        `(${result.refusal.reason}): ${result.refusal.message}`,
     );
     const payload: SaveRefusedBroadcast = {
       filePath,
@@ -3712,11 +3742,15 @@ current contents from the editor somewhere else, and restart the application.`,
    * state, and every window names the cause with one action. That action
    * is closeWithoutReview, which runs `repeatClose` after it dropped the
    * state. No close is refused without it (#178).
+   *
+   * A reload from disk detaches the same way: `action` says which of the
+   * two the refusal stopped.
    */
   private async _detachForClose(
     documentId: string,
     filePath: string,
     repeatClose: () => Promise<void>,
+    action: RefusedAction = "close",
   ): Promise<boolean> {
     return await this._detachCollaboration(documentId).then(
       () => {
@@ -3729,8 +3763,11 @@ current contents from the editor somewhere else, and restart the application.`,
           filePath,
           documentId,
           "review-not-persisted",
-          "The review could not be saved, so this document was left open",
+          action === "close"
+            ? "The review could not be saved, so this document was left open"
+            : "The review could not be saved, so the disk version was not loaded",
           err,
+          action,
         );
         return false;
       },
@@ -3759,6 +3796,7 @@ current contents from the editor somewhere else, and restart the application.`,
           "discard-failed",
           "The unsaved changes could not be discarded, so this document was left open",
           err,
+          "close",
         );
         return false;
       },
@@ -3825,9 +3863,10 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * A close that the provider refused. The window shows this as it shows a
-   * refused save, with the document that the author can close without the
-   * state that stopped the close (closeWithoutReview).
+   * A close or a reload that the provider refused. The window shows this
+   * as it shows a refused save, with the document for which the author can
+   * repeat the action without the state that stopped it
+   * (closeWithoutReview).
    */
   private _announceRefusedClose(
     filePath: string,
@@ -3835,13 +3874,14 @@ current contents from the editor somewhere else, and restart the application.`,
     reason: SaveRefusalReason,
     what: string,
     err: unknown,
+    action: RefusedAction,
   ): void {
     const message = `${what}: ${err instanceof Error ? err.message : String(err)}`;
     this._app.log.error(`[DocumentManager] Close aborted for ${filePath}: ${message}`, err);
     const payload: SaveRefusedBroadcast = {
       filePath,
       refusal: { reason, message },
-      closeRefusedFor: documentId,
+      refused: { documentId, action },
     };
     broadcastIpcMessage(SAVE_REFUSED_CHANNEL, payload);
   }

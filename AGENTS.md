@@ -603,14 +603,22 @@ of an isolated instance are in the first comment of #132.
   (`_dropReplacedDocument`).
 - **Collaboration state in memory belongs to a loaded document.** A document
   that a refused proposal loaded and released has no state in memory.
-- **No close is refused without an action.** A close of a tab, a window
-  close and a quit detach the collaboration state through `_detachForClose`.
-  When the sidecar cannot be written, it records how to repeat that close
-  and broadcasts `save-refused` with `closeRefusedFor`. The window shows the
-  cause with the action "Close anyway" (`App.vue`), which
-  sends `close-without-review`. `closeWithoutReview` drops the state in
-  memory, leaves the sidecar as it was last written, and repeats the close.
-  A new path that closes a document detaches through `_detachForClose`.
+- **No close and no reload is refused without an action.** A close of a
+  tab, a window close, a quit and a reload from disk (`notifyRemoteChange`)
+  detach the collaboration state through `_detachForClose`. When the sidecar
+  cannot be written, it records how to repeat that action and broadcasts
+  `save-refused` with `refused: { documentId, action }`. The window shows
+  the cause with the action "Close anyway" or "Load from disk anyway"
+  (`App.vue`), which sends `close-without-review`. `closeWithoutReview`
+  drops the state in memory, leaves the sidecar as it was last written, and
+  repeats the action. A new path that closes or reloads a document detaches
+  through `_detachForClose`.
+- **A refused save has a reason and names its cause.** `SaveFileResult` is
+  `{ ok: true }` or a `SaveRefusal` (`types/common/documents.ts`); no save
+  answers a bare `false`. The window shows the message of the refusal
+  (`save-buffer.ts`, `App.vue`). A refusal that the disk version resolves
+  (`disk-changed`) and a failed reload of a changed file offer "Load from
+  disk" (`common/util/load-document-from-disk.ts`).
 - **The answer "discard" at a close prompt goes through `_discardForClose`.**
   A discard that fails (the sidecar cannot be written, the file cannot be
   read) is a refused close with the same action. `closeWithoutReview` then
@@ -636,6 +644,7 @@ of an isolated instance are in the first comment of #132.
   the Agent API listings reject while an unreadable file exists.
 - **Proof:** `test/documents-move-identity.spec.ts`,
   `test/documents-refused-close.spec.ts`,
+  `test/documents-refused-save.spec.ts`, `test/save-refusal-toast.spec.ts`,
   `test/unreadable-collaboration-sidecar.spec.ts`,
   `test/collaboration-sidecar.spec.ts`,
   `e2e/rename-annotated-document.spec.ts`,

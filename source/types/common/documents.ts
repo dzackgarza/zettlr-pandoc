@@ -123,6 +123,11 @@ export enum DP_EVENTS {
  */
 export type SaveRefusalReason =
   | "disk-changed"
+  // The file could not be read, so the save could not compare it with the
+  // review. Nothing was written.
+  | "disk-unreadable"
+  // The provider holds no text of the document. Nothing was written.
+  | "not-loaded"
   // The disk write itself failed (permissions, a full disk, a removed
   // directory). The buffer keeps the text.
   | "write-failed"
@@ -141,9 +146,13 @@ export interface SaveRefusal {
 /**
  * A save either wrote the file or refused with a reason. Deliberately not a bare
  * boolean: `false` is what let the save gate fail silently at the IPC boundary,
- * leaving the renderer to log "falsy result" with no cause.
+ * leaving the renderer to log "falsy result" with no cause. Each refusal has
+ * a reason and a message that names the cause.
  */
-export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal };
+export type SaveFileResult = { ok: true } | { ok: false; refusal: SaveRefusal };
+
+/** The action of the author that a refusal stopped. */
+export type RefusedAction = "close" | "reload";
 
 /**
  * Broadcast on SAVE_REFUSED_CHANNEL when a save the user did not initiate from
@@ -153,14 +162,15 @@ export type SaveFileResult = { ok: true } | { ok: false; refusal?: SaveRefusal }
  */
 export type SaveRefusedBroadcast = {
   filePath: string;
-  refusal?: SaveRefusal;
+  refusal: SaveRefusal;
   /**
-   * Set when the refusal stopped a close: the id of the document whose
+   * Set when the refusal stopped a close or a reload: the document whose
    * collaboration state could not be written or whose unsaved text could
-   * not be discarded. The window offers the `close-without-review` command
-   * for it.
+   * not be discarded, and the action that was stopped. The window offers
+   * the `close-without-review` command for the document, which repeats
+   * that action without the state.
    */
-  closeRefusedFor?: string;
+  refused?: { documentId: string; action: RefusedAction };
 };
 
 export const SAVE_REFUSED_CHANNEL = "save-refused";

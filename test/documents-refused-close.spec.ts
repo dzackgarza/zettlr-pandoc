@@ -121,7 +121,7 @@ describe("Documents-provider close that cannot write the collaboration state", f
   function refusedCloses(): Array<string | undefined> {
     return sentMessagesFor(window)
       .filter(([channel]) => channel === SAVE_REFUSED_CHANNEL)
-      .map(([, payload]) => (payload as SaveRefusedBroadcast).closeRefusedFor);
+      .map(([, payload]) => (payload as SaveRefusedBroadcast).refused?.documentId);
   }
 
   /** The command that the action of the refusal sends. */

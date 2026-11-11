@@ -15,12 +15,11 @@
 import type { EditorState } from "@codemirror/state";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { saveRefusalAction } from "@common/util/load-document-from-disk";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import showToast from "@common/util/show-toast";
 import type { SaveFileResult } from "@dts/common/documents";
 import { whenAuthoritySynced } from "./when-authority-synced";
-
-const ipcRenderer = window.ipc;
 
 /**
  * Saves the document at `filePath` and resolves with whether it is now on disk.
@@ -35,7 +34,9 @@ const ipcRenderer = window.ipc;
  *
  * A refusal from the provider (an unresolved review, an external edit) is
  * shown on the closable toast, not in a main-process modal, which would block
- * the app until dismissed.
+ * the app until dismissed. The toast has the message of the refusal, which
+ * names the cause, and the action that resolves the refusal when one exists.
+ * A request that fails is shown with its error.
  *
  * @param   {() => EditorState}  getState  Reads the current editor state.
  * @param   {string}             filePath  The document to save.
@@ -60,22 +61,27 @@ export async function saveBuffer(getState: () => EditorState, filePath: string):
 
   let result: SaveFileResult;
   try {
-    result = await ipcRenderer.invoke("documents:save-file", { path: filePath });
+    result = await window.ipc.invoke("documents:save-file", { path: filePath });
   } catch (error) {
     reportError(`[saveBuffer] The save request for ${filePath} failed`, error);
-    showToast(trans('Could not save "%s".', pathBasename(filePath)), "error", 12000);
+    showToast(
+      trans(
+        'Could not save "%s": %s',
+        pathBasename(filePath),
+        error instanceof Error ? error.message : String(error),
+      ),
+      "error",
+      12000,
+    );
     return false;
   }
   if (result.ok) {
     return true;
   }
-  const message = result.refusal?.message ?? trans('Could not save "%s".', pathBasename(filePath));
+  const { refusal } = result;
   reportError(
-    `[saveBuffer] Main refused to save ${filePath}` +
-      (result.refusal !== undefined
-        ? ` (${result.refusal.reason}): ${result.refusal.message}`
-        : ""),
+    `[saveBuffer] Main refused to save ${filePath} (${refusal.reason}): ${refusal.message}`,
   );
-  showToast(message, "error", 12000);
+  showToast(refusal.message, "error", 12000, saveRefusalAction(filePath, refusal));
   return false;
 }

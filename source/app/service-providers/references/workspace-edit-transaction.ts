@@ -290,11 +290,9 @@ export async function saveUpdatedBuffers(
   for (const documentPath of documentPaths) {
     const saved = await saveFile(documentPath);
     if (!saved.ok) {
-      const reason =
-        saved.refusal === undefined
-          ? "the documents provider refused the save and named no reason"
-          : saved.refusal.message;
-      throw new Error(`[Workspace Edit] Could not save ${documentPath} after the edit: ${reason}`);
+      throw new Error(
+        `[Workspace Edit] Could not save ${documentPath} after the edit: ${saved.refusal.message}`,
+      );
     }
   }
 }
