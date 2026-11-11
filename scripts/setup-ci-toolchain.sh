@@ -60,7 +60,7 @@ fetch() {
 }
 
 sudo apt-get update
-sudo apt-get install --yes pdf2svg xvfb
+sudo apt-get install --yes imagemagick pdf2svg xdotool xvfb
 
 # TeX comes from upstream TeX Live, as on the workstation: the central
 # preamble loads packages (luahyperbolic among them) that the distribution's

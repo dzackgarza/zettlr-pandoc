@@ -24,6 +24,7 @@
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
+import { BrowserWindow } from "electron";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
@@ -31,12 +32,14 @@ import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import type { ReviewStatus } from "source/app/service-providers/documents/review-diff-store";
 import { sha256Text } from "source/common/util/sha256";
+import { type DocumentsUpdateContext, DP_EVENTS } from "source/types/common/documents";
 import { bootDocumentManager } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
   ipcMainHandlers,
   messageBoxes,
+  sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
 
@@ -267,6 +270,30 @@ describe("Documents-provider quit with an open review", function () {
         "the discard of other changes leaves the review",
       );
       assert.equal(provider.readMarkdownBufferContent(reviewedPath), REVIEWED_TARGET);
+    });
+  });
+
+  describe("a review that returns from its sidecar when the document loads", function () {
+    it("reaches the window with the text that the editor loads", async function () {
+      await propose();
+      // The quit puts the review of a document that no pane shows in its sidecar.
+      await requestQuit();
+      await restart();
+      const window = new BrowserWindow();
+
+      await provider.getDocument(reviewedPath);
+
+      const sessions = sentMessagesFor(window)
+        .filter(([channel]) => channel === "documents-update")
+        .map(([, payload]) => payload as { event: DP_EVENTS; context: DocumentsUpdateContext })
+        .filter(({ event }) => event === DP_EVENTS.DOCUMENT_COLLABORATION)
+        .map(({ context }) => context.collaborationSession);
+      window.close();
+      assert.deepEqual(
+        sessions.map((session) => [session?.workingText, session?.review?.suggestions.length]),
+        [[REVIEWED_TARGET, 1]],
+        "the one session that the window receives has the text of the review",
+      );
     });
   });
 
