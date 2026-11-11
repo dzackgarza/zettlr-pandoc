@@ -108,7 +108,6 @@ describe("Editor theme enum in the assembled app", function () {
         // completely correct.
         darkMode: true,
         darkModeEditor: "dark",
-        autoDarkMode: "off",
       },
     });
     fixtureRoot = fixture.root;

@@ -44,10 +44,7 @@ async function bootWithTabRow(fixture: RunningFixture, darkMode: boolean): Promi
   const created = await createFixture("zettlr-dirty-buffer-indicator-e2e-", {
     documentName: "first-note.md",
     documentContents: "# First note\n\nSome prose to type into.\n",
-    // autoDarkMode defaults to following the OS, which would render both runs
-    // in whatever theme this machine happens to be set to and quietly turn a
-    // two-theme check into the same theme twice.
-    config: { darkMode, autoDarkMode: "off", editor: { inputMode: "default" } },
+    config: { darkMode, editor: { inputMode: "default" } },
   });
   fixture.fixtureRoot = created.root;
 

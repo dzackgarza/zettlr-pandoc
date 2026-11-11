@@ -101,7 +101,7 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
       documentName: "index.md",
       documentContents: INDEX,
       // Dark mode: the platform rules for a control weigh the most there.
-      config: { darkMode: true, autoDarkMode: "off" },
+      config: { darkMode: true },
     });
     fixtureRoot = fixture.root;
     indexPath = fixture.documentPath;

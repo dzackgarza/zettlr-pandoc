@@ -142,7 +142,6 @@ describe("assembled app: a citation style that cannot be loaded", function () {
       documentContents: DOCUMENT,
       config: {
         darkMode: false,
-        autoDarkMode: "off",
         window: { fileManagerVisible: true, sidebarVisible: true },
         agentApi: { enabled: true, port: 0 },
         export: { cslLibrary: library, cslStyle: missingStyle },

@@ -270,7 +270,6 @@ describe("assembled app: fenced divs with a title", function () {
       documentContents: DOCUMENT,
       config: {
         darkMode: true,
-        autoDarkMode: "off",
         editor: { fontSize: 18 },
         window: { fileManagerVisible: false, sidebarVisible: false },
       },

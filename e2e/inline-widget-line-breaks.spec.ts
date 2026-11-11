@@ -195,7 +195,6 @@ describe("assembled app: line breaks beside inline widgets", function () {
       documentContents: DOCUMENT,
       config: {
         darkMode: true,
-        autoDarkMode: "off",
         editor: { fontSize: 18 },
         window: { fileManagerVisible: false, sidebarVisible: false },
       },

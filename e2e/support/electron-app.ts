@@ -540,6 +540,12 @@ async function writeFixtureState(
           openWorkspaces: [workspaceDirectory],
         },
         system: { checkForUpdates: false },
+        // The shipped default takes the theme of the host, so `darkMode`
+        // would decide nothing and a spec would see another theme on each
+        // machine. A fixture states its theme: light, or the `darkMode` of
+        // its own config.
+        autoDarkMode: "off",
+        darkMode: false,
         // The shipped default binds the Agent API to a fixed port, which a
         // fixture would take from whatever Zettlr the developer is running.
         // A spec that needs the API asks for it and gets a kernel-assigned
