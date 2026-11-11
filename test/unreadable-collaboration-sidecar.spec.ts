@@ -1,0 +1,202 @@
+/**
+ * @ignore
+ * BEGIN HEADER
+ *
+ * Contains:        Unreadable collaboration sidecar specs
+ * CVM-Role:        TESTING
+ * Maintainer:      D. Zack Garza
+ * License:         GNU GPL v3
+ *
+ * Description:     The annotations and the review of a closed document are in
+ *                  one file of the application data. A file that this version
+ *                  of the application cannot read (written by a later
+ *                  version, or damaged) must not hide the state of the other
+ *                  documents, and the author must be able to act on it. This
+ *                  spec drives the real documents provider: the workspace
+ *                  listing names the unreadable file and still lists the
+ *                  other documents, the author can move the file aside, the
+ *                  window is told when such a document opens, and a move of a
+ *                  directory still carries the state of its documents (#178).
+ *
+ * END HEADER
+ */
+
+// The harness must load before provider modules, which import Electron.
+import "./headless-electron-harness.cjs";
+import { strict as assert } from "assert";
+import { BrowserWindow } from "electron";
+import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import type DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import { bootDocumentManager } from "./documents-provider-seam";
+import { ipcMainHandlers, sentMessagesFor, userData } from "./headless-electron-harness.cjs";
+
+type IpcHandler = (
+  event: unknown,
+  message: { command: string; payload?: unknown },
+) => Promise<unknown> | unknown;
+
+interface WorkspaceListing {
+  sessions: Array<{ documentPath: string; annotations: { items: unknown[] } }>;
+  unreadable: Array<{ file: string; cause: string }>;
+}
+
+const GENUS = "A genus holds finitely many isometry classes.\n";
+const LATTICE = "An even unimodular lattice has a rank that 8 divides.\n";
+const SIDECARS = path.join(userData, "review-sidecars");
+const UNREADABLE_CHANNEL = "collaboration-sidecar-unreadable";
+
+describe("A collaboration sidecar that the application cannot read", function () {
+  let root: string;
+  let genusPath: string;
+  let latticePath: string;
+  let provider: DocumentManager;
+  let windowId: string;
+  let window: BrowserWindow;
+  let unreadableFile: string;
+  let unreadableBytes: string;
+
+  beforeEach(async function () {
+    root = await mkdtemp(path.join(tmpdir(), "zettlr-unreadable-sidecar-"));
+    genusPath = path.join(root, "genus.md");
+    latticePath = path.join(root, "forms", "lattice.md");
+    mkdirSync(path.dirname(latticePath));
+    writeFileSync(genusPath, GENUS, "utf-8");
+    writeFileSync(latticePath, LATTICE, "utf-8");
+    mkdirSync(path.join(userData, "logs"), { recursive: true });
+    await rm(path.join(userData, "documents.yaml"), { force: true });
+    await rm(SIDECARS, { recursive: true, force: true });
+    mkdirSync(SIDECARS);
+
+    provider = await bootDocumentManager(root);
+    windowId = provider.windowKeys()[0];
+    window = new BrowserWindow();
+
+    await annotateAndClose(genusPath, "genus");
+    await annotateAndClose(latticePath, "lattice");
+
+    // The sidecar of genus.md as a later version of the application writes
+    // it: this version has no reader for that schema.
+    unreadableFile = collaborationSidecarFilePath(SIDECARS, genusPath);
+    const written: { version: number } = JSON.parse(readFileSync(unreadableFile, "utf-8"));
+    unreadableBytes = JSON.stringify({ ...written, version: written.version + 1 });
+    writeFileSync(unreadableFile, unreadableBytes, "utf-8");
+  });
+
+  afterEach(async function () {
+    window.close();
+    await provider.shutdown();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  function pane(): string {
+    const leaves = provider.leafIds(windowId);
+    assert.equal(leaves.length, 1, "the window has one pane");
+    return leaves[0];
+  }
+
+  /** Gives the document one annotation on `word` and closes it: its state is in a sidecar. */
+  async function annotateAndClose(filePath: string, word: string): Promise<void> {
+    await provider.getDocument(filePath);
+    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    const id = provider.getDocumentId(filePath);
+    assert.ok(id !== undefined, "a loaded document has an id");
+    const from = readFileSync(filePath, "utf-8").indexOf(word);
+    const created = await provider.createAnnotation(
+      id,
+      "owner",
+      from,
+      from + word.length,
+      "State the indefinite case.",
+      provider.annotationQueries.getAnnotations(id).generation,
+    );
+    if ("ok" in created) {
+      assert.fail(`The annotation was refused: ${created.code}`);
+    }
+    assert.equal(await provider.closeFileEverywhere(filePath), true);
+  }
+
+  async function invoke(command: string, payload: unknown): Promise<unknown> {
+    const handler = ipcMainHandlers.get("documents-provider") as IpcHandler | undefined;
+    assert.ok(handler !== undefined, "the documents-provider handler is registered");
+    return await handler(undefined, { command, payload });
+  }
+
+  /** The listing that the Annotations view reads. */
+  async function workspaceListing(paths: string[]): Promise<WorkspaceListing> {
+    return (await invoke("get-workspace-collaboration-sessions", { paths })) as WorkspaceListing;
+  }
+
+  it("lists the other documents and names the file", async function () {
+    const listing = await workspaceListing([genusPath, latticePath]);
+
+    assert.deepEqual(
+      listing.sessions.map((session) => [session.documentPath, session.annotations.items.length]),
+      [[latticePath, 1]],
+      "the document with a readable sidecar is listed with its annotation",
+    );
+    assert.deepEqual(
+      listing.unreadable.map((entry) => entry.file),
+      [unreadableFile],
+      "the listing names the file that could not be read",
+    );
+    assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
+  });
+
+  it("moves the file aside when the author asks, and keeps its bytes", async function () {
+    await invoke("set-aside-collaboration-sidecar", { file: unreadableFile });
+
+    const listing = await workspaceListing([genusPath, latticePath]);
+    assert.deepEqual(listing.unreadable, [], "no unreadable file is left in the listing");
+    assert.deepEqual(
+      listing.sessions.map((session) => session.documentPath),
+      [latticePath],
+    );
+    const kept = readdirSync(SIDECARS)
+      .filter((name) => !name.endsWith(".json"))
+      .map((name) => readFileSync(path.join(SIDECARS, name), "utf-8"));
+    assert.deepEqual(kept, [unreadableBytes], "the bytes of the file are kept beside the sidecars");
+
+    // The document takes new annotations, and they are listed.
+    await annotateAndClose(genusPath, "isometry");
+    assert.deepEqual(
+      (await workspaceListing([genusPath, latticePath])).sessions
+        .map((session) => session.documentPath)
+        .sort(),
+      [genusPath, latticePath].sort(),
+    );
+  });
+
+  it("tells the window when the document of the file opens", async function () {
+    await provider.getDocument(genusPath);
+    assert.equal(await provider.openFile(windowId, pane(), genusPath), true);
+
+    const told = sentMessagesFor(window)
+      .filter(([channel]) => channel === UNREADABLE_CHANNEL)
+      .map(([, payload]) => payload as { filePath: string; file: string });
+    assert.deepEqual(
+      told.map((entry) => [entry.filePath, entry.file]),
+      [[genusPath, unreadableFile]],
+      "the window is told one time which document opened without its state, and which file holds it",
+    );
+    assert.equal(readFileSync(unreadableFile, "utf-8"), unreadableBytes, "the file is unchanged");
+  });
+
+  it("carries the state of a moved directory's documents", async function () {
+    const movedDirectory = path.join(root, "quadratic-forms");
+    const movedPath = path.join(movedDirectory, "lattice.md");
+    renameSync(path.dirname(latticePath), movedDirectory);
+
+    await provider.hasMovedDir(path.dirname(latticePath), movedDirectory);
+
+    const listing = await workspaceListing([genusPath, movedPath, latticePath]);
+    assert.deepEqual(
+      listing.sessions.map((session) => [session.documentPath, session.annotations.items.length]),
+      [[movedPath, 1]],
+      "the annotation of the moved document is at its new path",
+    );
+  });
+});
