@@ -310,17 +310,28 @@ export default class CiteprocProvider extends ProviderContract {
     });
   } // END constructor
 
+  /**
+   * The database paths that a citation database names. The sentinel
+   * CITEPROC_MAIN_DB names the globally configured library, and
+   * `export.cslLibrary` is optional: the sentinel gives the path of that
+   * library when one is configured and loaded, and gives nothing otherwise.
+   */
+  private databasePaths(database: CitationDatabase): string[] {
+    const requestedPaths = Array.isArray(database) ? database : [database];
+    return requestedPaths
+      .filter((databasePath) => databasePath !== CITEPROC_MAIN_DB || this.hasMainLibrary())
+      .map((databasePath) => (databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath));
+  }
+
   public hasBibTexAttachments(database: CitationDatabase): boolean {
-    const paths = Array.isArray(database) ? database : [database];
-    return paths.some((dbPath) => {
+    return this.databasePaths(database).some((dbPath) => {
       const db = this.databases.get(dbPath);
       return db !== undefined && Object.keys(db.bibtexAttachments).length > 0;
     });
   }
 
   public getBibTexAttachments(database: CitationDatabase, id: string): string[] | false {
-    const paths = Array.isArray(database) ? database : [database];
-    for (const dbPath of paths) {
+    for (const dbPath of this.databasePaths(database)) {
       const attachments = this.databases.get(dbPath)?.bibtexAttachments[id];
       if (attachments !== undefined) {
         return attachments;
@@ -585,14 +596,9 @@ export default class CiteprocProvider extends ProviderContract {
    * @param   {string}  dbPath  The database to select
    */
   private selectDatabase(database: CitationDatabase): void {
-    const requestedPaths = Array.isArray(database) ? database : [database];
-    // The sentinel names the globally configured library, and `export.cslLibrary`
-    // is optional: it contributes that library when one is configured and loaded,
-    // and contributes nothing otherwise. An empty selection selects no items --
-    // the same state as a library holding nothing -- rather than an error.
-    const paths = requestedPaths
-      .filter((databasePath) => databasePath !== CITEPROC_MAIN_DB || this.hasMainLibrary())
-      .map((databasePath) => (databasePath === CITEPROC_MAIN_DB ? this.mainLibrary : databasePath));
+    // An empty selection selects no items -- the same state as a library
+    // holding nothing -- rather than an error.
+    const paths = this.databasePaths(database);
     const identity = paths.join("\u0000");
     const items: Record<string, CSLItem> = {};
 
