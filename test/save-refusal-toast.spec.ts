@@ -13,8 +13,9 @@
  *                  `saveBuffer` and the real load-failure surface against a
  *                  preload bridge that answers as the documents provider
  *                  does. The message names the cause that the provider gave,
- *                  and a refusal that the disk version resolves offers that
- *                  as an action (#178).
+ *                  a refusal that the disk version resolves offers that as
+ *                  an action, and a refusal that leaves text which cannot
+ *                  reach its file offers a copy of that text (#178).
  *
  * END HEADER
  */
@@ -105,17 +106,39 @@ describe("A save or a reload that the window asked for and that did not happen",
     );
   });
 
-  it("offers no disk version for a refusal that the disk version does not resolve", async function () {
+  it("offers a copy of the text when the file cannot be written", async function () {
     providerAnswers(async () => ({
       ok: false,
-      refusal: { reason: "write-failed", message: "Could not save file lattices.md: ENOSPC" },
+      refusal: { reason: "write-failed", message: "Could not save file lattices.md: EROFS" },
+    }));
+
+    assert.equal(await saveBuffer(() => state, FILE), false);
+
+    assert.deepEqual(
+      errors().map((entry) => entry.message),
+      ["Could not save file lattices.md: EROFS"],
+      "the refusal of the provider is shown",
+    );
+    assert.equal(errors()[0].action !== undefined, true, "the refusal has an action");
+    runNotificationAction(errors()[0].id);
+    assert.deepEqual(
+      requests.filter((request) => request.command !== "documents:save-file"),
+      [{ command: "save-copy", payload: { path: FILE } }],
+      "the action asks for a copy of the text of that document, and for no disk version",
+    );
+  });
+
+  it("offers no action for a refusal that leaves no text to rescue", async function () {
+    providerAnswers(async () => ({
+      ok: false,
+      refusal: { reason: "not-loaded", message: "The application holds no text of lattices.md." },
     }));
 
     assert.equal(await saveBuffer(() => state, FILE), false);
 
     assert.deepEqual(
       errors().map((entry) => [entry.message, entry.action]),
-      [["Could not save file lattices.md: ENOSPC", undefined]],
+      [["The application holds no text of lattices.md.", undefined]],
     );
   });
 

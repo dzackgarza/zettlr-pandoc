@@ -18,10 +18,12 @@ import { readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import FileDelete from "source/app/service-providers/commands/file-delete";
+import type ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
+import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
 import { extractReferences } from "source/common/pandoc-util/extract-references";
 import type { MDFileDescriptor } from "source/types/common/fsal";
 
@@ -75,23 +77,27 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
     unwatchPath: (_filePath: string) => {},
     shutdown: async () => {},
   };
-  const appSeam = {
-    log: new LogProvider(),
-    config: {
-      get: () => ({
-        app: { openFiles: [], openWorkspaces: [root] },
-        editor: { autoSave: "off" as const },
-        system: { avoidNewTabs: false },
-        appLang: "en-US",
-        files: {
-          images: { openWith: "zettlr" as const },
-          pdf: { openWith: "zettlr" as const },
-        },
-        alwaysReloadFiles: false,
-      }),
-      addPath: (_filePath: string) => false,
-      set: (_key: string, _value: unknown) => {},
+  const log = new LogProvider();
+  const settings = {
+    app: { openFiles: [], openWorkspaces: [root] },
+    editor: { autoSave: "off" as const },
+    system: { avoidNewTabs: false },
+    appLang: "en-US",
+    files: {
+      images: { openWith: "zettlr" as const },
+      pdf: { openWith: "zettlr" as const },
     },
+    alwaysReloadFiles: false,
+  };
+  const config = {
+    // The directory that the last file dialog showed is the one keyed value.
+    get: (key?: string) => (key === "dialogPaths.askFileDialog" ? root : settings),
+    addPath: (_filePath: string) => false,
+    set: (_key: string, _value: unknown) => {},
+  };
+  const appSeam = {
+    log,
+    config,
     fsal: {
       getWatchdog: () => watcher,
       getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
@@ -120,6 +126,9 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
     windows: {
       // The real prompt, with no window to attach it to.
       askSaveChanges: async (detail?: string) => await askSaveChanges(null, detail),
+      // The real file dialog, with no window to attach it to.
+      saveFile: async (filePath: string) =>
+        await saveFileDialog(log, config as unknown as ConfigProvider, null, filePath),
     },
   };
 

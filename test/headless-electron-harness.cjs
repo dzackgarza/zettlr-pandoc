@@ -74,6 +74,15 @@ const appQuitRequests = [];
  */
 const messageBoxes = { shown: [], answer: undefined };
 
+/**
+ * Every dialog.showSaveDialog() call, with the options it was shown. A spec
+ * sets `answer` to the path that the user chooses, or to `null` for a user
+ * who cancels; while it is unset a dialog throws, as a message box does.
+ *
+ * @type {{ shown: Array<{ title?: string, defaultPath?: string }>, answer: string | null | undefined }}
+ */
+const saveDialogs = { shown: [], answer: undefined };
+
 class HeadlessBrowserWindow {
   constructor() {
     const messages = [];
@@ -155,6 +164,16 @@ Module._load = function (request, ...rest) {
           }
           return { response: messageBoxes.answer, checkboxChecked: false };
         },
+        async showSaveDialog(...args) {
+          const options = args[args.length - 1];
+          saveDialogs.shown.push(options);
+          if (saveDialogs.answer === undefined) {
+            throw new Error(`Unscripted dialog: ${options.title}`);
+          }
+          return saveDialogs.answer === null
+            ? { canceled: true, filePath: "" }
+            : { canceled: false, filePath: saveDialogs.answer };
+        },
       },
       shell: { openPath: async () => "" },
       nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
@@ -181,6 +200,7 @@ module.exports = {
   appQuitRequests,
   ipcMainHandlers,
   messageBoxes,
+  saveDialogs,
   sentMessagesFor,
   userData,
 };

@@ -17,7 +17,8 @@
  *                  a quit still asks the author about that text. A
  *                  refused save that the author asked for at a quit goes to
  *                  the window, and a refused reload says that a reload was
- *                  refused (#178).
+ *                  refused. The author can write the text of a document
+ *                  that cannot be saved to another file (#178).
  *
  * END HEADER
  */
@@ -27,7 +28,7 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -40,6 +41,7 @@ import {
   appQuitRequests,
   ipcMainHandlers,
   messageBoxes,
+  saveDialogs,
   sentMessagesFor,
   userData,
 } from "./headless-electron-harness.cjs";
@@ -76,6 +78,8 @@ describe("Documents-provider save that it must refuse", function () {
     appQuitRequests.length = 0;
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
+    saveDialogs.shown.length = 0;
+    saveDialogs.answer = undefined;
 
     provider = await bootDocumentManager(root);
     windowId = provider.windowKeys()[0];
@@ -191,6 +195,35 @@ describe("Documents-provider save that it must refuse", function () {
       "the document has text that is not on disk, so it is modified",
     );
     assert.equal(provider.isClean(), false, "a quit asks the author about that text");
+  });
+
+  it("writes the text of a document that cannot be saved to the file that the author chooses", async function () {
+    await openWithReview();
+    chmodSync(filePath, 0o400);
+    const copyPath = path.join(root, "rescued.md");
+    saveDialogs.answer = copyPath;
+
+    assert.equal(await invoke("save-copy", { path: filePath }), copyPath);
+
+    assert.deepEqual(
+      saveDialogs.shown.map((options) => options.defaultPath),
+      [path.join(root, "note copy.md")],
+      "the dialog starts beside the document, at a name that is not the name of the document",
+    );
+    assert.equal(readFileSync(copyPath, "utf-8"), REVISED, "the copy has the text of the editor");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the file of the document is unchanged");
+    assert.equal(provider.isModified(filePath), true, "the document keeps its unsaved text");
+  });
+
+  it("writes nothing when the author cancels the copy", async function () {
+    await openWithReview();
+    saveDialogs.answer = null;
+
+    assert.equal(await invoke("save-copy", { path: filePath }), undefined);
+
+    assert.equal(saveDialogs.shown.length, 1, "the author was asked for a file");
+    assert.deepEqual(readdirSync(root), ["note.md"], "no file was made");
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "the file of the document is unchanged");
   });
 
   it("answers with a reason for a document that is not loaded", async function () {
