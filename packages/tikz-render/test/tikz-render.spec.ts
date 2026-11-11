@@ -34,13 +34,15 @@
  */
 
 import { strict as assert } from "assert";
-import { ChildProcess, spawnSync } from "child_process";
+import { ChildProcess, spawn, spawnSync } from "child_process";
 import { randomBytes } from "crypto";
 import { subscribe, unsubscribe } from "diagnostics_channel";
+import { once } from "events";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "fs/promises";
-import { tmpdir } from "os";
+import { tmpdir, userInfo } from "os";
 import path from "path";
+import { setTimeout as sleep } from "timers/promises";
 import {
   latexBaseFontSizePt,
   renderTikz,
@@ -196,9 +198,80 @@ async function startedProcesses(work: () => Promise<void>): Promise<string[][]> 
   return started.map((child) => child.spawnargs);
 }
 
-/** The filter's per-figure scratch directories, named /tmp/<prefix>-<hash>. */
-function filterScratchDirs(): string[] {
-  return readdirSync(tmpdir()).filter((entry) => /^tikz(cd|full)-[0-9a-f]+$/.test(entry));
+/** The entries of the temporary directory that `before` does not hold. */
+function newTemporaryEntries(before: ReadonlySet<string>): string[] {
+  return readdirSync(tmpdir()).filter((entry) => !before.has(entry));
+}
+
+/** One process that has not ended, with the name of its command. */
+interface MarkedProcess {
+  pid: number;
+  command: string;
+}
+
+/**
+ * The processes that hold `marker` in their environment and have not ended.
+ * A process inherits the environment of the process that started it, so a
+ * marker in the environment of a render names each process of that render.
+ * `ps e` prints the environment of a process after its command. A process in
+ * state Z has ended; its entry stays until its parent collects it.
+ */
+function processesWithMarker(marker: string): MarkedProcess[] {
+  const listed = spawnSync("ps", ["eww", "-u", String(userInfo().uid), "-o", "pid=,stat=,args="], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  assert.strictEqual(listed.status, 0, "ps lists the processes of this user");
+  return listed.stdout
+    .split("\n")
+    .filter((line) => line.includes(marker))
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([, state]) => !state.startsWith("Z"))
+    .map(([pid, , command]) => ({ pid: Number(pid), command: path.basename(command) }));
+}
+
+/** The commands of the processes with `marker`. */
+function commandsWithMarker(marker: string): string[] {
+  return processesWithMarker(marker).map((found) => found.command);
+}
+
+/** The commands with `marker` that are alive after a short time to end. */
+async function survivingCommands(marker: string): Promise<string[]> {
+  const deadline = Date.now() + 3000;
+  let alive = commandsWithMarker(marker);
+  while (alive.length > 0 && Date.now() < deadline) {
+    await sleep(20);
+    alive = commandsWithMarker(marker);
+  }
+  return alive;
+}
+
+/**
+ * The result of a render, or undefined when the render gives none in
+ * `limitMs`. A render that does not return is an outcome that a case must be
+ * able to state.
+ */
+async function resultWithin(
+  pending: Promise<TikzRenderResult>,
+  limitMs: number,
+): Promise<TikzRenderResult | undefined> {
+  return await Promise.race([
+    pending,
+    sleep(limitMs, undefined, { ref: false }).then(() => undefined),
+  ]);
+}
+
+/** The outcome of a render in one word. */
+function outcomeOf(result: TikzRenderResult | undefined): string {
+  if (result === undefined) {
+    return "no result";
+  }
+  return result.ok ? "ok" : result.kind;
+}
+
+/** A diagram that no previous run compiled and whose TeX does not end. */
+function endlessTikzpicture(): string {
+  return `\\begin{tikzpicture}\n% ${randomBytes(8).toString("hex")}\n\\loop\\iftrue\\repeat\n\\end{tikzpicture}`;
 }
 
 describe("TikZ render service (issue #14)", function () {
@@ -926,7 +999,7 @@ describe("TikZ render service (issue #14)", function () {
       return;
     }
 
-    const scratchBefore = new Set(filterScratchDirs());
+    const temporaryBefore = new Set(readdirSync(tmpdir()));
     const runningBefore = new Set(filterProcessPids());
     // A real render of an uncached figure: pandoc runs the filter, which runs
     // pdflatex, so the process is alive long enough to be signalled.
@@ -959,13 +1032,11 @@ describe("TikZ render service (issue #14)", function () {
 
     const result = await pending;
 
-    // pdflatex outlives the pandoc process it was launched from; its scratch
-    // directory is normally removed by the filter, which never got to run.
-    for (const entry of filterScratchDirs()) {
-      if (!scratchBefore.has(entry)) {
-        await rm(path.join(tmpdir(), entry), { recursive: true, force: true });
-      }
-    }
+    assert.deepStrictEqual(
+      newTemporaryEntries(temporaryBefore),
+      [],
+      "the scratch files of the stopped render are gone",
+    );
 
     assert.ok(!result.ok, "a killed render never produced a figure");
     if (!result.ok) {
@@ -1045,6 +1116,218 @@ describe("TikZ render service (issue #14)", function () {
       () => resolveTikzDataDir("", path.join(cacheDir, "home-without-pandoc")),
       /shared Pandoc data tree.*filters\/tikzcd\.lua/,
       "missing shared Pandoc machinery is a startup/configuration defect, not a cue to fork filter behavior",
+    );
+  });
+});
+
+describe("TikZ render process lifetime (issue #208)", function () {
+  const MARKER_NAME = "ZETTLR_TIKZ_RENDER_PROOF";
+  let marker: string;
+  let markerValue: string;
+  let cacheDir: string;
+  let temporaryBefore: Set<string>;
+
+  beforeEach(async function () {
+    markerValue = randomBytes(8).toString("hex");
+    marker = `${MARKER_NAME}=${markerValue}`;
+    cacheDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-lifetime-"));
+    temporaryBefore = new Set(readdirSync(tmpdir()));
+  });
+
+  afterEach(async function () {
+    // A failed case leaves the TeX process of its render and its files.
+    const left = processesWithMarker(marker).map((found) => String(found.pid));
+    if (left.length > 0) {
+      spawnSync("kill", ["-KILL", ...left]);
+    }
+    for (const entry of newTemporaryEntries(temporaryBefore)) {
+      await rm(path.join(tmpdir(), entry), { recursive: true, force: true });
+    }
+    await rm(cacheDir, { recursive: true, force: true });
+  });
+
+  it("stops each process of a render that passes its time limit and removes its scratch files", async function () {
+    this.timeout(120000);
+    const config = {
+      tikzAssetDir: TIKZ_ASSET_DIR,
+      templatePath: TIKZ_TEMPLATE,
+      cacheDir,
+      timeoutMs: 5000,
+      env: { ...process.env, [MARKER_NAME]: markerValue },
+    };
+    const request = {
+      source: endlessTikzpicture(),
+      kind: "raw",
+      language: "tikz",
+      docPath: NO_DOC_PATH,
+    } as const;
+    if (!toolchainPresent) {
+      const result = await renderTikz(request, config);
+      assert.ok(
+        !result.ok && result.kind === "missing-tools",
+        "without the toolchain the typed missing-tools result is required",
+      );
+      return;
+    }
+
+    const pending = renderTikz(request, config);
+    // The limit, the time for the processes to end, and a margin.
+    const deadline = Date.now() + 20000;
+    const started = new Set<string>();
+    let result: TikzRenderResult | undefined;
+    while (result === undefined && Date.now() < deadline) {
+      for (const command of commandsWithMarker(marker)) {
+        started.add(command);
+      }
+      result = await resultWithin(pending, 50);
+    }
+
+    assert.ok(
+      started.has("pdflatex"),
+      `the render must reach TeX for this proof to mean anything, saw ${[...started].join(", ")}`,
+    );
+    assert.deepStrictEqual(
+      {
+        outcome: outcomeOf(result),
+        limit:
+          result?.ok === false && result.kind === "render-timeout" ? result.timeoutMs : undefined,
+        processes: commandsWithMarker(marker),
+        temporaryEntries: newTemporaryEntries(temporaryBefore),
+      },
+      { outcome: "render-timeout", limit: 5000, processes: [], temporaryEntries: [] },
+    );
+  });
+
+  it("stops TeX and removes the scratch files when a signal ends the pandoc process of a render", async function () {
+    this.timeout(120000);
+    const config = {
+      tikzAssetDir: TIKZ_ASSET_DIR,
+      templatePath: TIKZ_TEMPLATE,
+      cacheDir,
+      timeoutMs: 600000,
+      env: { ...process.env, [MARKER_NAME]: markerValue },
+    };
+    const request = {
+      source: endlessTikzpicture(),
+      kind: "raw",
+      language: "tikz",
+      docPath: NO_DOC_PATH,
+    } as const;
+    if (!toolchainPresent) {
+      const result = await renderTikz(request, config);
+      assert.ok(
+        !result.ok && result.kind === "missing-tools",
+        "without the toolchain the typed missing-tools result is required",
+      );
+      return;
+    }
+
+    const pending = renderTikz(request, config);
+    const deadline = Date.now() + 60000;
+    let running = processesWithMarker(marker);
+    while (!running.some((found) => found.command === "pdflatex") && Date.now() < deadline) {
+      await sleep(50);
+      running = processesWithMarker(marker);
+    }
+    assert.deepStrictEqual(
+      running.map((found) => found.command).sort(),
+      ["pandoc", "pdflatex", "sh"],
+      "the render runs TeX below one pandoc process",
+    );
+    for (const found of running.filter((found) => found.command === "pandoc")) {
+      process.kill(found.pid, "SIGTERM");
+    }
+
+    const result = await resultWithin(pending, 20000);
+    assert.deepStrictEqual(
+      {
+        outcome: outcomeOf(result),
+        signal:
+          result?.ok === false && result.kind === "render-terminated" ? result.signal : undefined,
+        processes: commandsWithMarker(marker),
+        temporaryEntries: newTemporaryEntries(temporaryBefore),
+      },
+      { outcome: "render-terminated", signal: "SIGTERM", processes: [], temporaryEntries: [] },
+    );
+  });
+
+  it("leaves no process and no scratch file of a render that is active when the app exits", async function () {
+    this.timeout(120000);
+    if (!toolchainPresent) {
+      const result = await renderTikz(
+        { source: TIKZCD_OK, kind: "raw", language: "tikzcd", docPath: NO_DOC_PATH },
+        {
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          timeoutMs: 5000,
+          env: process.env,
+        },
+      );
+      assert.ok(
+        !result.ok && result.kind === "missing-tools",
+        "without the toolchain the typed missing-tools result is required",
+      );
+      return;
+    }
+
+    // An app process that starts a render and exits, when its input ends,
+    // while the render is active.
+    const app = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "--eval",
+        [
+          `import { renderTikz } from ${JSON.stringify(path.resolve(__dirname, "../src/tikz-render.ts"))};`,
+          "const [request, config] = process.argv.slice(-2).map((value) => JSON.parse(value));",
+          "void renderTikz(request, { ...config, env: process.env });",
+          'process.stdin.once("end", () => {',
+          "  process.exit(0);",
+          "});",
+          "process.stdin.resume();",
+        ].join("\n"),
+        JSON.stringify({
+          source: endlessTikzpicture(),
+          kind: "raw",
+          language: "tikz",
+          docPath: NO_DOC_PATH,
+        }),
+        JSON.stringify({
+          tikzAssetDir: TIKZ_ASSET_DIR,
+          templatePath: TIKZ_TEMPLATE,
+          cacheDir,
+          timeoutMs: 600000,
+        }),
+      ],
+      {
+        // tsx keeps a cache in the temporary directory; that file is not one
+        // of the render.
+        env: { ...process.env, [MARKER_NAME]: markerValue, TSX_DISABLE_CACHE: "1" },
+        stdio: ["pipe", "inherit", "inherit"],
+      },
+    );
+    const exited = once(app, "exit");
+
+    let reachedTeX = false;
+    while (!reachedTeX && app.exitCode === null && app.signalCode === null) {
+      reachedTeX = commandsWithMarker(marker).includes("pdflatex");
+      await sleep(50);
+    }
+    assert.ok(reachedTeX, "the render must reach TeX for this proof to mean anything");
+
+    app.stdin.end();
+    const [exitCode] = await exited;
+
+    assert.deepStrictEqual(
+      {
+        exitCode,
+        processes: await survivingCommands(marker),
+        temporaryEntries: newTemporaryEntries(temporaryBefore),
+      },
+      { exitCode: 0, processes: [], temporaryEntries: [] },
     );
   });
 });
