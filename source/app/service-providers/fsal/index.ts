@@ -13,6 +13,7 @@
  * END HEADER
  */
 
+import { statPath } from "@common/util/examine-path";
 import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type {
@@ -887,9 +888,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a dir
    */
   public async isDir(absPath: string): Promise<boolean> {
-    // A missing entry is the only answer of "no"; any other stat error throws.
-    const stat = statSync(absPath, { throwIfNoEntry: false });
-    return stat !== undefined && stat.isDirectory();
+    return statPath(absPath, true)?.isDirectory() === true;
   }
 
   /**
@@ -900,9 +899,7 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<boolean>}           Returns true, if absPath is a file
    */
   public async isFile(absPath: string): Promise<boolean> {
-    // A missing entry is the only answer of "no"; any other stat error throws.
-    const stat = statSync(absPath, { throwIfNoEntry: false });
-    return stat !== undefined && stat.isFile();
+    return statPath(absPath, true)?.isFile() === true;
   }
 
   /**

@@ -364,7 +364,12 @@ export default class ConfigProvider extends ProviderContract {
     this.config.app.openWorkspaces = [...new Set(this.config.app.openWorkspaces)];
 
     // Check for the existence of the files and folders
-    const onDisk = rootPathsOnDisk(this.config.app);
+    const onDisk = rootPathsOnDisk(this.config.app, (rootPath, error) => {
+      this._logger.error(
+        `[Config Provider] Could not examine the root path ${rootPath}. It stays in the configuration: ${error.message}`,
+        error,
+      );
+    });
     this.config.app.openFiles = onDisk.openFiles;
     this.config.app.openWorkspaces = onDisk.openWorkspaces;
 

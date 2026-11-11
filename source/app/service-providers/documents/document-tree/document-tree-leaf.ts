@@ -16,7 +16,7 @@
  * END HEADER
  */
 
-import isFile from "@common/util/is-file";
+import { examinePath } from "@common/util/examine-path";
 import type { LeafNodeJSON } from "@dts/common/documents";
 import { v4 as uuid4 } from "uuid";
 import { DocumentTree } from "./document-tree";
@@ -195,8 +195,16 @@ export class DTLeaf {
 
       const { path, pinned } = file;
 
-      if (typeof path !== "string" || typeof pinned !== "boolean" || !isFile(path)) {
+      if (typeof path !== "string" || typeof pinned !== "boolean") {
         continue; // Invalid entry
+      }
+
+      // A path that is not a file has no tab. A path that the filesystem
+      // could not examine has given no answer: its tab stays, and the access
+      // check of the session restore logs the error.
+      const examination = examinePath(path, false);
+      if (examination.examined && examination.stats?.isFile() !== true) {
+        continue;
       }
 
       const success = leaf.tabMan.openFile(path, false);

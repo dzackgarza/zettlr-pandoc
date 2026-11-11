@@ -59,6 +59,11 @@ describe("Documents-provider session restore", () => {
     }
 
     provider = await bootDocumentManager(root);
+    // The specs of one process share the saved session, so the tabs that an
+    // earlier spec left are closed first.
+    for (const key of provider.windowKeys()) {
+      await provider.closeAllTabs(key);
+    }
     const windowId = provider.windowKeys()[0];
     const leafId = provider.leafIds(windowId)[0];
     for (const file of [kept, removed, unreachable]) {

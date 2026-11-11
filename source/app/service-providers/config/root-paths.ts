@@ -13,8 +13,8 @@
  * END HEADER
  */
 
-import isDir from "source/common/util/is-dir";
-import isFile from "source/common/util/is-file";
+import type { Stats } from "fs";
+import { examinePath } from "source/common/util/examine-path";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 
 export interface RootPaths {
@@ -30,27 +30,29 @@ export function consolidateRootPaths({ openFiles, openWorkspaces }: RootPaths): 
   };
 }
 
+/** Receives a root path that the filesystem could not examine, and the error. */
+export type UnexaminedRootReport = (rootPath: string, error: NodeJS.ErrnoException) => void;
+
 /**
- * The root paths that are on disk: each open file as a file, each open
- * workspace as a directory.
+ * The root paths without those that are not on disk: an open file must be a
+ * file, an open workspace a directory. A root path that the filesystem could
+ * not examine has given no answer. It stays, and `report` receives it: a
+ * workspace on a mount that fails at one start is not removed for good.
  */
-export function rootPathsOnDisk(roots: RootPaths): RootPaths {
-  const openFiles = [...roots.openFiles];
-  const openWorkspaces = [...roots.openWorkspaces];
-
-  for (const file of openFiles) {
-    if (!isFile(file)) {
-      const idx = openFiles.indexOf(file);
-      openFiles.splice(idx, 1);
+export function rootPathsOnDisk(roots: RootPaths, report: UnexaminedRootReport): RootPaths {
+  const keeps = (rootPath: string, isKind: (stats: Stats) => boolean): boolean => {
+    const examination = examinePath(rootPath, false);
+    if (!examination.examined) {
+      report(rootPath, examination.error);
+      return true;
     }
-  }
+    return examination.stats !== undefined && isKind(examination.stats);
+  };
 
-  for (const workspace of openWorkspaces) {
-    if (!isDir(workspace)) {
-      const idx = openWorkspaces.indexOf(workspace);
-      openWorkspaces.splice(idx, 1);
-    }
-  }
-
-  return { openFiles, openWorkspaces };
+  return {
+    openFiles: roots.openFiles.filter((file) => keeps(file, (stats) => stats.isFile())),
+    openWorkspaces: roots.openWorkspaces.filter((workspace) =>
+      keeps(workspace, (stats) => stats.isDirectory()),
+    ),
+  };
 }
