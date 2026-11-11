@@ -456,17 +456,10 @@ describe("the Search view", function () {
     // a message of this search: its count, or an error.
     await activePage.locator(QUERY).fill("");
     await activePage.locator(QUERY).fill(IN_BOTH_FILES);
+    const refused = activePage.locator(`${MESSAGE}.search-message-error`);
+    const counted = activePage.locator(MESSAGE, { hasText: /^1 result in 1 file/ });
     await waitUntil(
-      async () =>
-        await activePage
-          .locator(MESSAGE)
-          .evaluateAll((messages) =>
-            messages.some(
-              (message) =>
-                message.classList.contains("search-message-error") ||
-                /^1 result in 1 file/.test(message.textContent ?? ""),
-            ),
-          ),
+      async () => (await refused.count()) + (await counted.count()) > 0,
       "the search to end with a message",
     );
     screenshots.set("search-unreadable-file.png", await activePage.screenshot());
