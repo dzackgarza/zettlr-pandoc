@@ -98,7 +98,7 @@ describe("Quarto editor citation resolution and startup race", function () {
     };
     const windows: CiteprocErrorDisplay = { showErrorMessage: () => {} };
 
-    citeproc = new CiteprocProvider(log, config, windows);
+    citeproc = new CiteprocProvider(log, config, windows, path.resolve("static", "csl-locales"));
     await citeproc.boot();
     await citeproc.synchronizeDatabases([
       path.join(ROOT, "references.bib"),

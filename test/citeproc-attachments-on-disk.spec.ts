@@ -74,7 +74,12 @@ describe("citation attachments on disk", function () {
         export: { cslLibrary: libraryPath, cslStyle: CHICAGO_STYLE },
       }),
     };
-    provider = new CiteprocProvider(new LogProvider(), config, { showErrorMessage: () => {} });
+    provider = new CiteprocProvider(
+      new LogProvider(),
+      config,
+      { showErrorMessage: () => {} },
+      path.resolve("static", "csl-locales"),
+    );
     await provider.boot();
   });
 

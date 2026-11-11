@@ -14,13 +14,11 @@
  */
 
 import { installErrorReporter } from "@common/util/error-reporting";
-import AgentHTTPProvider, {
-  type AgentApiHost,
-} from "@providers/agent-api/http-server";
+import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
 import AppearanceProvider from "@providers/appearance";
 import AssetsProvider from "@providers/assets";
-import CiteprocProvider from "@providers/citeproc";
+import CiteprocProvider, { BUNDLED_LOCALE_DIRECTORY } from "@providers/citeproc";
 import CommandProvider from "@providers/commands";
 import ConfigProvider from "@providers/config";
 import CssProvider from "@providers/css";
@@ -45,11 +43,7 @@ import path from "path";
 import { trans } from "source/common/i18n-main";
 import LongRunningTaskProvider from "./service-providers/long-running-tasks";
 import { SearchProvider } from "./service-providers/search";
-import {
-  closeSplashScreen,
-  showSplashScreen,
-  updateSplashScreen,
-} from "./util/splash-screen";
+import { closeSplashScreen, showSplashScreen, updateSplashScreen } from "./util/splash-screen";
 
 // We need module-global variables so that garbage collect won't shut down the
 // providers before the app is shut down.
@@ -121,39 +115,19 @@ export class AppServiceContainer {
     });
     this._configProvider = new ConfigProvider(this._logProvider);
     this._lrtProvider = new LongRunningTaskProvider(this._logProvider); // Not really crucial, but the FSAL needs access
-    this._fsal = new FSAL(
-      this._logProvider,
-      this._configProvider,
-      this._lrtProvider,
-    );
+    this._fsal = new FSAL(this._logProvider, this._configProvider, this._lrtProvider);
 
     // Now according to their dependencies
-    this._recentDocsProvider = new RecentDocumentsProvider(
-      this._logProvider,
-      this._configProvider,
-    );
-    this._assetsProvider = new AssetsProvider(
-      this._logProvider,
-      this._configProvider,
-    );
+    this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider, this._configProvider);
+    this._assetsProvider = new AssetsProvider(this._logProvider, this._configProvider);
     this._cssProvider = new CssProvider(this._logProvider);
     this._statsProvider = new StatsProvider(this._logProvider);
 
-    this._appearanceProvider = new AppearanceProvider(
-      this._logProvider,
-      this._configProvider,
-    );
-    this._dictionaryProvider = new DictionaryProvider(
-      this._logProvider,
-      this._configProvider,
-    );
+    this._appearanceProvider = new AppearanceProvider(this._logProvider, this._configProvider);
+    this._dictionaryProvider = new DictionaryProvider(this._logProvider, this._configProvider);
 
     this._targetProvider = new TargetProvider(this._logProvider, this._fsal);
-    this._linkProvider = new LinkProvider(
-      this._logProvider,
-      this._configProvider,
-      this._fsal,
-    );
+    this._linkProvider = new LinkProvider(this._logProvider, this._configProvider, this._fsal);
     // The document provider accesses only the FSAL in its constructor
     this._documentManager = new DocumentManager(this);
     // The search provider reads open buffers through the document authority
@@ -209,6 +183,7 @@ export class AppServiceContainer {
       this._logProvider,
       this._configProvider,
       this._windowProvider,
+      BUNDLED_LOCALE_DIRECTORY,
     );
     this._agentHTTPProvider = new AgentHTTPProvider(
       this._logProvider,
@@ -283,10 +258,7 @@ export class AppServiceContainer {
     // the FSAL.
 
     await this.fsal.reindexFiles((absPath, currentPercent) => {
-      updateSplashScreen(
-        trans("Indexing %s…", path.basename(absPath)),
-        currentPercent,
-      );
+      updateSplashScreen(trans("Indexing %s…", path.basename(absPath)), currentPercent);
     });
 
     await this._informativeBoot(this._targetProvider, "TargetProvider");
@@ -304,18 +276,12 @@ export class AppServiceContainer {
     await this._informativeBoot(this._citeprocProvider, "CiteprocProvider");
 
     await this._informativeBoot(this._documentManager, "DocumentManager");
-    await this._informativeBoot(
-      this._documentLintProvider,
-      "DocumentLintProvider",
-    );
+    await this._informativeBoot(this._documentLintProvider, "DocumentLintProvider");
     await this._informativeBoot(this._agentHTTPProvider, "AgentHTTPProvider");
     await this._informativeBoot(this._menuProvider, "MenuProvider");
     await this._informativeBoot(this._updateProvider, "UpdateProvider");
 
-    await this._informativeBoot(
-      this._lrtProvider,
-      "Long-Running Tasks Provider",
-    );
+    await this._informativeBoot(this._lrtProvider, "Long-Running Tasks Provider");
 
     this._menuProvider.set(); // TODO
 
@@ -325,14 +291,10 @@ export class AppServiceContainer {
     // Now that the config provider is definitely set up, let's see if we
     // should copy the interactive tutorial to the documents directory.
     if (this.config.isFirstStart()) {
-      this.log.info(
-        "[AppServiceContainer] Copying over the interactive tutorial!",
-      );
+      this.log.info("[AppServiceContainer] Copying over the interactive tutorial!");
       this.commands
         .run("tutorial-open", {})
-        .catch((err) =>
-          this.log.error("[AppServiceContainer] Could not open tutorial", err),
-        );
+        .catch((err) => this.log.error("[AppServiceContainer] Could not open tutorial", err));
     }
 
     clearTimeout(timeout);
@@ -411,9 +373,7 @@ export class AppServiceContainer {
   public get workspaceFsal(): AgentApiHost["workspaceFsal"] {
     return {
       isDir: this._fsal.isDir.bind(this._fsal),
-      readDirectoryRecursively: this._fsal.readDirectoryRecursively.bind(
-        this._fsal,
-      ),
+      readDirectoryRecursively: this._fsal.readDirectoryRecursively.bind(this._fsal),
       createDir: this._fsal.createDir.bind(this._fsal),
       createFile: this._fsal.createFile.bind(this._fsal),
     };
@@ -438,10 +398,7 @@ export class AppServiceContainer {
     await this._safeShutdown(this._lrtProvider, "Long-running Task Provider");
     await this._safeShutdown(this._commandProvider, "CommandProvider");
     await this._safeShutdown(this._agentHTTPProvider, "AgentHTTPProvider");
-    await this._safeShutdown(
-      this._documentLintProvider,
-      "DocumentLintProvider",
-    );
+    await this._safeShutdown(this._documentLintProvider, "DocumentLintProvider");
     await this._safeShutdown(this._documentManager, "DocumentManager");
     await this._safeShutdown(this._fsal, "FSAL");
 

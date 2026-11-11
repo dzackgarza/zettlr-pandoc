@@ -91,6 +91,12 @@ export type CiteprocProviderIPCAPI =
 // The default style Zettlr ships with
 const DEFAULT_CHICAGO_STYLE = path.join(__dirname, "./assets/csl-styles/chicago-author-date.csl");
 
+/**
+ * The CSL locales of the built app: the build copies `static/csl-locales`
+ * beside the main bundle (webpack.main.config.js).
+ */
+export const BUNDLED_LOCALE_DIRECTORY = path.join(__dirname, "./assets/csl-locales");
+
 const CITEPROC_EMPTY_SENTINELS = [
   "[NO_PRINTED_FORM]",
   "[CSL STYLE ERROR: reference with no printed form.]",
@@ -175,6 +181,8 @@ export default class CiteprocProvider extends ProviderContract {
     private readonly _logger: LogProvider,
     private readonly _config: CiteprocConfig,
     private readonly _windows: CiteprocErrorDisplay,
+    /** The one directory that holds the CSL locales (`locales-<lang>.xml`). */
+    private readonly _localeDirectory: string,
   ) {
     super();
 
@@ -681,37 +689,28 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
-   * Reads in a language XML file and returns either its contents, or false (in
-   * which case the engine will fall back some times until it ends with en-US)
+   * The CSL locale of a language, from the locale directory of this provider.
+   * `false` says that the directory has no locale of that language; the
+   * engine then uses a more general locale, at the end en-US. The en-US
+   * locale is required, so its read failure is an error, as is each failure
+   * other than an absent file.
+   * See https://citeproc-js.readthedocs.io/en/latest/running.html#retrievelocale
    *
    * @param   {string}          lang  The language to be loaded.
    * @return  {string|boolean}        Either the contents of the XML file, or false.
    */
   private getLocale(lang: string): string | false {
-    // Takes a lang in the format xx-XX and has to return the corresponding XML
-    // file. Let's do just that!
-
     if (lang === "us") {
       // From the docs: "The function _must_ return a value for the us locale."
-      // See https://citeproc-js.readthedocs.io/en/latest/running.html#retrievelocale
       lang = "en-US";
     }
 
-    const candidatePaths = [
-      path.join(__dirname, `./assets/csl-locales/locales-${lang}.xml`),
-      path.resolve(process.cwd(), `static/csl-locales/locales-${lang}.xml`),
-    ];
-    for (const localePath of candidatePaths) {
-      try {
-        const content = readFileSync(localePath, { encoding: "utf8" });
-        this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`);
-        return content;
-      } catch {
-        // Try next candidate path
-      }
+    const localePath = path.join(this._localeDirectory, `locales-${lang}.xml`);
+    if (lang !== "en-US" && !isFile(localePath)) {
+      return false;
     }
-    // File not found -> Let the engine fall back to a default.
-    return false;
+    this._logger.info(`[Citeproc Provider] Loading CSL locale file at ${localePath} ...`);
+    return readFileSync(localePath, { encoding: "utf8" });
   }
 
   /**

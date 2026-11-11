@@ -90,7 +90,12 @@ describe("Citeproc printable-form invariant", function () {
   });
 
   async function providerFor(stylePath: string): Promise<CiteprocProvider> {
-    const provider = new CiteprocProvider(log, config(stylePath), windows);
+    const provider = new CiteprocProvider(
+      log,
+      config(stylePath),
+      windows,
+      path.resolve("static", "csl-locales"),
+    );
     await provider.boot();
     await provider.synchronizeDatabases([libraryPath]);
     return provider;

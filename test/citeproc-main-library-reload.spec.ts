@@ -68,6 +68,7 @@ describe("A changed main citation library", function () {
           throw new Error(`${title}: ${message}`);
         },
       },
+      path.resolve("static", "csl-locales"),
     );
     await provider.boot();
   });

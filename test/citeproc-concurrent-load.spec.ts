@@ -66,6 +66,7 @@ describe("Concurrent requests for one citation database", function () {
           throw new Error(`${title}: ${message}`);
         },
       },
+      path.resolve("static", "csl-locales"),
     );
     await provider.boot();
   });

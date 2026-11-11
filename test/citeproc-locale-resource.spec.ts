@@ -28,7 +28,7 @@ import LogProvider from "source/app/service-providers/log";
 import { userData } from "./headless-electron-harness.cjs";
 
 const CHICAGO_STYLE = path.resolve("static", "csl-styles", "chicago-author-date.csl");
-const SHIPPED_EN_US = path.resolve("static", "csl-locales", "locales-en-US.xml");
+const SHIPPED_LOCALES = path.resolve("static", "csl-locales");
 
 const LIBRARY = `@article{AW71,
   title = {Degenerate {{Fibers}} and {{Stable Reduction}} of {{Curves}}},
@@ -59,14 +59,23 @@ describe("citation locale resource", function () {
     directory = mkdtempSync(path.join(os.tmpdir(), "zettlr-citeproc-locale-"));
     libraryPath = path.join(directory, "references.bib");
     writeFileSync(libraryPath, LIBRARY);
-    // The declared directory holds one locale, en-US, whose word between two
-    // author names is not the word of the locale in this checkout.
+    // The declared directory holds two locales. In each, the word between
+    // two author names is not the word of the same locale in this checkout.
     declaredLocales = path.join(directory, "declared");
     mkdirSync(declaredLocales);
-    const shipped = readFileSync(SHIPPED_EN_US, "utf8");
-    const marked = shipped.replace('<term name="and">and</term>', '<term name="and">et</term>');
-    assert.notEqual(marked, shipped);
-    writeFileSync(path.join(declaredLocales, "locales-en-US.xml"), marked);
+    for (const [language, word, markedWord] of [
+      ["en-US", "and", "et"],
+      ["sv-SE", "och", "samt"],
+    ]) {
+      const name = `locales-${language}.xml`;
+      const shipped = readFileSync(path.join(SHIPPED_LOCALES, name), "utf8");
+      const marked = shipped.replace(
+        `<term name="and">${word}</term>`,
+        `<term name="and">${markedWord}</term>`,
+      );
+      assert.notEqual(marked, shipped);
+      writeFileSync(path.join(declaredLocales, name), marked);
+    }
     emptyLocales = path.join(directory, "empty");
     mkdirSync(emptyLocales);
     rmSync(path.join(userData, "citeproc-cache"), { recursive: true, force: true });
@@ -104,15 +113,16 @@ describe("citation locale resource", function () {
     );
   });
 
-  it("renders a language that the declared directory lacks with its en-US locale", async function () {
-    // The checkout has a de-DE locale; the declared directory has none.
-    const provider = providerWith("de-DE", declaredLocales);
+  it("renders a language that has no locale file of its own with the base locale of the language", async function () {
+    // The app language sv-SV has no CSL locale. citeproc-js asks for the base
+    // locale of Swedish, sv-SE, and then for sv-SV, which no directory has.
+    const provider = providerWith("sv-SV", declaredLocales);
     await provider.boot();
     await provider.synchronizeDatabases([libraryPath]);
 
     assert.equal(
       provider.getCitation(libraryPath, [{ id: "AW71" }], false),
-      "(Artin et Winters 1971)",
+      "(Artin samt Winters 1971)",
     );
   });
 

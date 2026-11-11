@@ -87,6 +87,7 @@ describe("Zotero operations of the agent API against live Zotero (#142)", functi
           throw new Error(`${title}: ${message}`);
         },
       },
+      path.resolve("static", "csl-locales"),
     );
     await citeproc.boot();
     zotero = new ZoteroLibrary(citeproc);

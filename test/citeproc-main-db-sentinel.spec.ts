@@ -148,7 +148,12 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
     before(async function () {
       const windows = makeWindowRecorder();
       dialogs = windows.dialogs;
-      provider = new CiteprocProvider(log, makeConfigSeam(""), windows.display);
+      provider = new CiteprocProvider(
+        log,
+        makeConfigSeam(""),
+        windows.display,
+        path.resolve("static", "csl-locales"),
+      );
       await provider.boot();
     });
 
@@ -180,6 +185,7 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
         log,
         makeConfigSeam(globalLibraryPath),
         makeWindowRecorder().display,
+        path.resolve("static", "csl-locales"),
       );
       await provider.boot();
     });
