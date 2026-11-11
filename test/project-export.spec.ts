@@ -18,6 +18,7 @@
 
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
+import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -57,6 +58,8 @@ interface ProjectFixture {
   chapters: string[];
   /** The TeX template of its settings. */
   texTemplate: string;
+  /** The citation style of its settings. */
+  cslStyle: string;
 }
 
 /** An error window that the command opened. */
@@ -97,7 +100,7 @@ describe("Project export", function () {
           title: name,
           profiles: fixture.profiles,
           files: fixture.chapters,
-          cslStyle: "",
+          cslStyle: fixture.cslStyle,
           templates: { tex: fixture.texTemplate, html: "" },
         },
         icon: null,
@@ -115,6 +118,8 @@ describe("Project export", function () {
   let pdfOfChapters: string;
   let pdfOfOneChapter: string;
   let latex: string;
+  let absentStyle: string;
+  let styleIsNoFile: string;
 
   before(async function () {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-"));
@@ -130,17 +135,25 @@ describe("Project export", function () {
       profiles: [noEngine, listing],
       chapters,
       texTemplate: "",
+      cslStyle: "",
     });
     twoFailed = await project("two-failed", {
       profiles: [noEngine, noTemplate],
       chapters,
       texTemplate: "",
+      cslStyle: "",
     });
-    allExported = await project("all-exported", { profiles: [listing], chapters, texTemplate: "" });
+    allExported = await project("all-exported", {
+      profiles: [listing],
+      chapters,
+      texTemplate: "",
+      cslStyle: "",
+    });
     apostrophe = await project("Halphen's pencils", {
       profiles: [listing],
       chapters,
       texTemplate: "",
+      cslStyle: "",
     });
 
     template = path.join(scripts, "thesis.tex");
@@ -149,13 +162,27 @@ describe("Project export", function () {
       profiles: ["PDF.yaml"],
       chapters: ["one.md", "two.md"],
       texTemplate: template,
+      cslStyle: "",
     });
     pdfOfOneChapter = await project("pdf-of-one-chapter", {
       profiles: ["PDF.yaml"],
       chapters,
       texTemplate: template,
+      cslStyle: "",
     });
-    latex = await project("latex", { profiles: ["LaTeX.yaml"], chapters, texTemplate: template });
+    latex = await project("latex", {
+      profiles: ["LaTeX.yaml"],
+      chapters,
+      texTemplate: template,
+      cslStyle: "",
+    });
+    absentStyle = path.join(scripts, "no-such-style.csl");
+    styleIsNoFile = await project("style-is-no-file", {
+      profiles: ["LaTeX.yaml"],
+      chapters,
+      texTemplate: "",
+      cslStyle: absentStyle,
+    });
 
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
@@ -243,6 +270,16 @@ describe("Project export", function () {
     assert.deepEqual(errorWindows, []);
     assert.equal(exported, true);
     assert.match(await readFile(path.join(apostrophe, "listing.txt"), "utf8"), /^chapter\.md$/m);
+  });
+
+  it("does not export with a citation style of the Project that is no file", async function () {
+    const exported = await exportProject(services, styleIsNoFile);
+
+    assert.equal(exported, false);
+    assert.equal(errorWindows.length, 1, "one failure of an export opens one error window");
+    const [shown] = errorWindows;
+    assert.equal(`${shown.message}\n${shown.contents}`.includes(absentStyle), true);
+    assert.equal(existsSync(path.join(styleIsNoFile, "style-is-no-file.tex")), false);
   });
 
   describe("with a TeX template in the settings of the Project", function () {
