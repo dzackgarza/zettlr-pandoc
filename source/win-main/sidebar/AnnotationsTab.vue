@@ -543,15 +543,19 @@ body {
     border-bottom: 1px solid var(--annotation-border);
   }
 
+  // The actions of a document go to a second line when the panel is too
+  // narrow for them. The name keeps a line with the count: its basis is
+  // small, so its length does not decide where the row breaks.
   .annotation-document-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px 6px;
     min-width: 0;
   }
 
   .annotation-document-name {
-    flex: 1 1 auto;
+    flex: 1 1 60px;
     min-width: 0;
     padding: 0;
     overflow: hidden;
