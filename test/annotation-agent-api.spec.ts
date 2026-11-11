@@ -174,6 +174,10 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         }),
         getFirstMainWindow: () => undefined,
         getMainWindowKey: (_window: unknown) => activeWindowId,
+        // No operation of this spec asks the author for a file.
+        saveFile: async (_filePath: string): Promise<string | undefined> => {
+          throw new Error("This spec shows no save dialog");
+        },
       },
       references: {
         reportAuthorityBuffer: (_filePath: string) => {},

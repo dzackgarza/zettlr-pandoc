@@ -618,7 +618,12 @@ of an isolated instance are in the first comment of #132.
   answers a bare `false`. The window shows the message of the refusal
   (`save-buffer.ts`, `App.vue`). A refusal that the disk version resolves
   (`disk-changed`) and a failed reload of a changed file offer "Load from
-  disk" (`common/util/load-document-from-disk.ts`).
+  disk" (`common/util/load-document-from-disk.ts`). A refusal that leaves
+  text which cannot reach its file (`write-failed`, `disk-unreadable`,
+  `review-not-persisted`) offers "Save a copy…"
+  (`common/util/save-refusal-action.ts`): the command `save-copy` writes the
+  text of the document to a file that the author chooses, and the document
+  stays unsaved.
 - **The answer "discard" at a close prompt goes through `_discardForClose`.**
   A discard that fails (the sidecar cannot be written, the file cannot be
   read) is a refused close with the same action. `closeWithoutReview` then

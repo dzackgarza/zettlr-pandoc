@@ -174,7 +174,7 @@ type DocumentManagerApp = {
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
-    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey"
+    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey" | "saveFile"
   >;
 };
 
@@ -413,6 +413,11 @@ export type DocumentManagerIPCContract = {
   "close-without-review": {
     request: { payload: { documentId: string } };
     response: boolean;
+  };
+  // The path of the copy, or undefined when the author chose no file.
+  "save-copy": {
+    request: { payload: { path: string } };
+    response: string | undefined;
   };
   "get-open-workspace-files": {
     request: { payload: { path: string } };
@@ -1105,6 +1110,9 @@ export default class DocumentManager
         }
         case "close-without-review": {
           return await this.closeWithoutReview(payload.documentId);
+        }
+        case "save-copy": {
+          return await this.saveCopy(payload.path);
         }
         case "get-open-workspace-files": {
           const { path } = payload;
@@ -3467,6 +3475,72 @@ current contents from the editor somewhere else, and restart the application.`,
     );
   }
 
+  /**
+   * Writes the text that the application holds of a document to a file that
+   * the author chooses. The document keeps its path, its unsaved text and
+   * its review. This is the way out for text that a refused save cannot put
+   * into the file of the document.
+   *
+   * @return The path of the copy, or undefined when the author chose no file.
+   * @throws {Error} If the document is not loaded, if the chosen file is the
+   *                 file of a loaded document, or if the write fails.
+   */
+  public async saveCopy(filePath: string): Promise<string | undefined> {
+    const name = path.basename(filePath);
+    const notLoaded = (): Error =>
+      new Error(trans("The application holds no text of %s, so there is nothing to copy.", name));
+    if (!this.documents.some((doc) => doc.filePath === filePath)) {
+      throw notLoaded();
+    }
+
+    const extension = path.extname(filePath);
+    const target = await this._app.windows.saveFile(
+      path.join(
+        path.dirname(filePath),
+        trans("%s copy", path.basename(filePath, extension)) + extension,
+      ),
+    );
+    if (target === undefined) {
+      return undefined;
+    }
+    // A write to the file of a loaded document is a save of that document,
+    // and a save goes through its own gates.
+    if (this.documents.some((doc) => doc.filePath === target)) {
+      throw new Error(
+        trans(
+          "%s is open in the application. Choose another file for the copy.",
+          path.basename(target),
+        ),
+      );
+    }
+
+    // The text is read under the document lock, so the copy is one state of
+    // the document. The dialog is not: the author can type while it is open.
+    return await this._reviewApplication.withDocumentLock(
+      this.ensureDocumentId(filePath),
+      async () => {
+        const doc = this.documents.find((doc) => doc.filePath === filePath);
+        if (doc === undefined) {
+          throw notLoaded();
+        }
+        const content = [...doc.document.iterLines()].join("\n");
+        await this._app.fsal.writeTextFile(target, this._fileTextOf(doc, content));
+        return target;
+      },
+    );
+  }
+
+  /**
+   * The text of a file of `doc` that holds `content`. The application keeps
+   * every text with LF line ends; a Markdown file has the byte order mark
+   * and the line ends that it had when it was read.
+   */
+  private _fileTextOf(doc: Document, content: string): string {
+    return doc.descriptor.type === "file"
+      ? doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed)
+      : content;
+  }
+
   private async _saveFileLocked(filePath: string): Promise<SaveFileResult> {
     const doc = this.documents.find((doc) => doc.filePath === filePath);
 
@@ -3538,11 +3612,7 @@ current contents from the editor somewhere else, and restart the application.`,
 
     let written = false;
     try {
-      const fileContents =
-        doc.descriptor.type === "file"
-          ? doc.descriptor.bom + content.split("\n").join(doc.descriptor.linefeed)
-          : content;
-      await this._app.fsal.writeTextFile(doc.descriptor.path, fileContents);
+      await this._app.fsal.writeTextFile(doc.descriptor.path, this._fileTextOf(doc, content));
       // The file has the text. The watcher compares the file with
       // lastSavedContent, so it is recorded before the next await.
       written = true;

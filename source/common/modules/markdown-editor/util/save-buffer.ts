@@ -15,8 +15,8 @@
 import type { EditorState } from "@codemirror/state";
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
-import { saveRefusalAction } from "@common/util/load-document-from-disk";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { saveRefusalAction } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import type { SaveFileResult } from "@dts/common/documents";
 import { whenAuthoritySynced } from "./when-authority-synced";

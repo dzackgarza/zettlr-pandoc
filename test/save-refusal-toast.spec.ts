@@ -122,7 +122,7 @@ describe("A save or a reload that the window asked for and that did not happen",
     assert.equal(errors()[0].action !== undefined, true, "the refusal has an action");
     runNotificationAction(errors()[0].id);
     assert.deepEqual(
-      requests.filter((request) => request.command !== "documents:save-file"),
+      requests.filter((request) => ["save-copy", "load-from-disk"].includes(request.command)),
       [{ command: "save-copy", payload: { path: FILE } }],
       "the action asks for a copy of the text of that document, and for no disk version",
     );

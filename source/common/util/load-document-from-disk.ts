@@ -17,7 +17,6 @@
 import { trans } from "@common/i18n-renderer";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import showToast, { type ToastAction } from "@common/util/show-toast";
-import type { SaveRefusal } from "@dts/common/documents";
 
 /**
  * The action that replaces the editor text of the document at `filePath`
@@ -45,13 +44,4 @@ export function loadFromDiskAction(filePath: string): ToastAction {
         });
     },
   };
-}
-
-/**
- * The action that resolves a refused save of the document at `filePath`.
- * The disk version resolves a save that was refused because the file
- * changed on disk; no other refusal has an action here.
- */
-export function saveRefusalAction(filePath: string, refusal: SaveRefusal): ToastAction | undefined {
-  return refusal.reason === "disk-changed" ? loadFromDiskAction(filePath) : undefined;
 }

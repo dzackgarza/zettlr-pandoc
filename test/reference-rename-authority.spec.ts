@@ -151,6 +151,10 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       askSaveChanges: async (_detail?: string) => ({ response: 0, checkboxChecked: false }),
       getFirstMainWindow: () => undefined,
       getMainWindowKey: (_window: unknown) => "",
+      // No operation of this spec asks the author for a file.
+      saveFile: async (_filePath: string): Promise<string | undefined> => {
+        throw new Error("This spec shows no save dialog");
+      },
     },
     references: {
       reportAuthorityBuffer: (filePath: string, immediate?: boolean) => {

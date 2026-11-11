@@ -206,10 +206,11 @@ import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plu
 import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
 import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
-import { loadFromDiskAction, saveRefusalAction } from "@common/util/load-document-from-disk";
+import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
+import { saveRefusalAction } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";

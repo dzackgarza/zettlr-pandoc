@@ -335,6 +335,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         }),
         getFirstMainWindow: () => undefined,
         getMainWindowKey: (_window: unknown) => activeWindowId,
+        // No operation of this spec asks the author for a file.
+        saveFile: async (_filePath: string): Promise<string | undefined> => {
+          throw new Error("This spec shows no save dialog");
+        },
       },
       // The manager drives the references provider's live overlay at its
       // mutation points (issue #53); this spec asserts the agent API, so
