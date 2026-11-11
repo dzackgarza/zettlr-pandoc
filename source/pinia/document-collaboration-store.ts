@@ -16,7 +16,9 @@
  *                  first (ensureSession), and every subsequent change
  *                  reaches every caller through the same
  *                  DP_EVENTS.DOCUMENT_COLLABORATION broadcast this store is
- *                  the sole listener for.
+ *                  the sole listener for. The answer to a read never
+ *                  replaces the session of a broadcast that arrived after
+ *                  the store sent that read.
  *
  *                  The workspace panel also asks this store for one merged
  *                  projection spanning loaded workspace paths, including
@@ -107,6 +109,28 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     );
   }
 
+  // The main process sends a session on two channels: the broadcast of a
+  // change and the answer to a read. A read is not instant in the main
+  // process (the workspace read takes the live sessions and then lists the
+  // sidecars on disk), so its answer can arrive after the broadcast of a
+  // later change. Each source has a time on one count: a read has the time
+  // at which the store sent it, a broadcast the time at which it arrived.
+  // The newest source of a path owns the cache entry of that path. A
+  // broadcast that arrives while a read is open is thus kept: the read saw
+  // that change or an older state, and each later change of an open
+  // document has a broadcast of its own.
+  let sourceClock = 0;
+  const newestSourceByPath = new Map<string, number>();
+
+  /** Gives a path to a source, unless a newer source has it. */
+  function ownsPath(documentPath: string, sourceTime: number): boolean {
+    if ((newestSourceByPath.get(documentPath) ?? 0) > sourceTime) {
+      return false;
+    }
+    newestSourceByPath.set(documentPath, sourceTime);
+    return true;
+  }
+
   // Fetches in flight, keyed by path. Two panes mounting on the same
   // document in the same tick must not turn into two IPC reads: the second
   // caller joins the first caller's promise instead of starting its own.
@@ -117,15 +141,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     (_event, payload: { event: DP_EVENTS; context: DocumentsUpdateContext }) => {
       const { event, context } = payload;
       if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
-        // ponytail: a broadcast is trusted to be newer than whatever is
-        // cached, with no generation comparison against a fetch that might
-        // still be in flight for the same path. The read path that fetch
-        // resolves through does no disk I/O, while every mutation that can
-        // produce a broadcast writes the sidecar first — so a fetch issued
-        // around the same time as a mutation resolves before that mutation's
-        // broadcast in practice. Add a per-half generation guard here if a
-        // real out-of-order arrival is ever observed.
         if (context.collaborationSession !== undefined) {
+          newestSourceByPath.set(context.filePath, ++sourceClock);
           sessionsByDocumentPath[context.filePath] = context.collaborationSession;
           updateCardsForSession(context.filePath, context.collaborationSession);
         }
@@ -171,13 +188,14 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     if (inFlight !== undefined) {
       return await inFlight;
     }
+    const sentAt = ++sourceClock;
     const fetch = ipcRenderer
       .invoke("documents-provider", {
         command: "get-collaboration-session",
         payload: { path: documentPath },
       })
       .then((session: DocumentCollaborationSession | undefined) => {
-        if (session !== undefined) {
+        if (session !== undefined && ownsPath(documentPath, sentAt)) {
           sessionsByDocumentPath[documentPath] = session;
           updateCardsForSession(documentPath, session);
         }
@@ -202,6 +220,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    * "reload review" operation. The authoritative session read is that reload.
    */
   async function refreshSession(documentPath: string): Promise<void> {
+    const sentAt = ++sourceClock;
     let session = (await ipcRenderer.invoke("documents-provider", {
       command: "get-collaboration-session",
       payload: { path: documentPath },
@@ -212,6 +231,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
         payload: { paths: [documentPath] },
       })) as DocumentCollaborationSession[];
       session = detached.find((candidate) => candidate.documentPath === documentPath);
+    }
+    if (!ownsPath(documentPath, sentAt)) {
+      return;
     }
     if (session === undefined) {
       Reflect.deleteProperty(sessionsByDocumentPath, documentPath);
@@ -278,6 +300,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
    */
   async function refreshWorkspaceSessions(paths: readonly string[]): Promise<void> {
     const refreshGeneration = ++workspaceRefreshGeneration;
+    const sentAt = ++sourceClock;
     const uniquePaths = [...new Set(paths)];
     workspaceDocumentPaths.value = uniquePaths;
     workspacePathSet.clear();
@@ -295,12 +318,15 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     const returned = new Set(sessions.map((session) => session.documentPath));
 
     for (const path of uniquePaths) {
-      if (!returned.has(path)) {
+      if (!returned.has(path) && ownsPath(path, sentAt)) {
         delete sessionsByDocumentPath[path];
         delete cardsByDocumentPath[path];
       }
     }
     for (const session of sessions) {
+      if (!ownsPath(session.documentPath, sentAt)) {
+        continue;
+      }
       // An equal session stays the same object: each editor of the document
       // watches it, and a new object is a change to each of them.
       if (_.isEqual(sessionsByDocumentPath[session.documentPath], session)) {
