@@ -15,7 +15,6 @@
 import { trans } from "@common/i18n-main";
 import { CODE_EXT, MD_EXT } from "@common/util/file-extention-checks";
 import { ignorePath } from "@common/util/ignore-path";
-import isErrnoException from "@common/util/is-errno-exception";
 import { type DirDescriptor } from "@dts/common/fsal";
 import { app } from "electron";
 import path from "path";
@@ -83,22 +82,13 @@ export default class RootOpen extends ZettlrCommand {
 
     for (const workspace of ret) {
       const isDir = await this._app.fsal.isDir(workspace);
-      if (
-        !isDir ||
-        ignorePath(workspace) ||
-        workspace === app.getPath("home")
-      ) {
+      if (!isDir || ignorePath(workspace) || workspace === app.getPath("home")) {
         // We cannot add this dir, because it is in the list of ignored directories.
-        this._app.log.error(
-          `The chosen workspace "${workspace}" is on the ignore list.`,
-        );
+        this._app.log.error(`The chosen workspace "${workspace}" is on the ignore list.`);
         this._app.windows.prompt({
           type: "error",
           title: trans("Cannot open workpace"),
-          message: trans(
-            'Cannot open workspace "%s".',
-            path.basename(workspace),
-          ),
+          message: trans('Cannot open workspace "%s".', path.basename(workspace)),
         });
       }
     }
@@ -131,8 +121,7 @@ export default class RootOpen extends ZettlrCommand {
     const firstWin = this._app.windows.getFirstMainWindow();
     const winKey =
       firstWin !== undefined
-        ? (this._app.windows.getMainWindowKey(firstWin) ??
-          this._app.documents.windowKeys()[0])
+        ? (this._app.windows.getMainWindowKey(firstWin) ?? this._app.documents.windowKeys()[0])
         : this._app.documents.windowKeys()[0];
 
     const leafId = this._app.documents.leafIds(winKey)[0];
@@ -140,16 +129,13 @@ export default class RootOpen extends ZettlrCommand {
     for (const absPath of pathlist) {
       const isFile = await this._app.fsal.isFile(absPath);
       const isDir = await this._app.fsal.isDir(absPath);
-      if (!isFile && !isDir)
-        throw new Error(`Cannot open missing path: ${absPath}`);
+      if (!isFile && !isDir) throw new Error(`Cannot open missing path: ${absPath}`);
       // First check if this thing is already added. If so, simply write
       // the existing file/dir into the newFile/newDir vars. They will be
       // opened accordingly.
       if (
         isFile &&
-        (newFile =
-          await this._app.fsal.getDescriptorForAnySupportedFile(absPath)) !==
-          undefined
+        (newFile = await this._app.fsal.getDescriptorForAnySupportedFile(absPath)) !== undefined
       ) {
         // Open the file immediately
         await this._app.documents.openFile(winKey, leafId, newFile.path, true);
@@ -157,10 +143,7 @@ export default class RootOpen extends ZettlrCommand {
         // navigate to the directory. The directory of the latest file will
         // remain open afterwards.
         newDir = await this._app.fsal.getAnyDirectoryDescriptor(newFile.dir);
-      } else if (
-        isDir &&
-        this._app.config.get().app.openWorkspaces.includes(absPath)
-      ) {
+      } else if (isDir && this._app.config.get().app.openWorkspaces.includes(absPath)) {
         // Do nothing
       } else {
         // The path is not yet loaded -> load it now. NOTE: Adding a path will
@@ -177,22 +160,16 @@ export default class RootOpen extends ZettlrCommand {
 
         try {
           // If it was a file and not a directory, immediately open it.
-          const file =
-            await this._app.fsal.getDescriptorForAnySupportedFile(absPath);
+          const file = await this._app.fsal.getDescriptorForAnySupportedFile(absPath);
           if (file !== undefined && file.type !== "other") {
             await this._app.documents.openFile(winKey, leafId, file.path, true);
           } else {
             throw new Error(`Could not load document: ${absPath}`);
           }
         } catch (err) {
-          // Something went wrong, so remove the path again.
+          // Something went wrong, so remove the path again. The command
+          // dispatcher shows the cause in the window.
           this._app.config.removePath(absPath);
-          this._app.log.error(`Could not open root ${absPath}`, err);
-          // Only a filesystem error is a state the user can act on.
-          if (!isErrnoException(err)) {
-            throw err;
-          }
-          this._app.windows.reportFSError("Could not open new root", err);
           throw err;
         }
       }

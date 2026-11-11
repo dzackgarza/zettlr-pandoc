@@ -30,15 +30,13 @@ export default class Print extends ZettlrCommand {
     const filePath = arg;
 
     if (filePath == null) {
-      this._app.log.error("[Print] Cannot print document: Not found.");
-      return;
+      throw new Error("Cannot print: no document was given.");
     }
 
     const fileDescriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath);
 
     if (fileDescriptor === undefined) {
-      this._app.log.error("[Print] Cannot print document: Not found.");
-      return;
+      throw new Error(`Cannot print ${filePath}: the file was not found.`);
     }
 
     this._app.windows.showPrintWindow(fileDescriptor.path);

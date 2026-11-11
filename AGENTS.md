@@ -624,6 +624,32 @@ of an isolated instance are in the first comment of #132.
   `e2e/rename-annotated-document.spec.ts`,
   `e2e/review-persistence-failure.spec.ts`.
 
+### 15. Failed application commands
+
+- **A command that cannot do its work throws.** A command
+  (`service-providers/commands/`) throws an `Error` whose message names the
+  file or folder and the cause. It does not write the cause to the log and
+  answer `false`: `false` is a value of the contract of some commands, and a
+  caller cannot tell it from a failure.
+- **The dispatcher shows each failure once.** `CommandProvider.run`
+  (`commands/index.ts`) logs the error, broadcasts it on `command-failed`
+  (`types/common/command-failure.ts`) and rejects to the caller. The main
+  window shows the message as an error (`App.vue`). A command that runs a
+  command (`force-open`, `tutorial-open`) passes the same error on; the
+  dispatcher shows it one time.
+- **A caller does not show a rejection of a command.** It logs the rejection
+  (`reportError`) and stops its own work: no success message, no further
+  step. A second message in the caller repeats the first.
+- **`CALLER_SHOWS_FAILURE`** names the commands that a window runs on its
+  own (a lint pass, a figure render, a hover preview). Their callers show the
+  failure in their own place, and the dispatcher broadcasts nothing for them.
+  A new command of that kind goes into the set; a command that an action of
+  the author starts does not.
+- **A command that prompts answers its contract.** A command that showed the
+  cause itself in a native dialog (`dir-rename`, the project export of one
+  profile) returns its value and does not throw as well.
+- **Proof:** `e2e/command-refusal.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

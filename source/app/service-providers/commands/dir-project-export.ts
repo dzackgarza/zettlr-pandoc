@@ -52,15 +52,13 @@ export default class DirProjectExport extends ZettlrCommand {
     const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg);
 
     if (dir === undefined) {
-      this._app.log.error("Could not export project: Directory not found.");
-      return false;
+      throw new Error(`Could not export the project: ${arg} is not a loaded directory.`);
     }
 
     const config = dir.settings.project;
 
     if (config === null) {
-      this._app.log.error(`Could not export project: Directory ${dir.name} is not a project.`);
-      return false;
+      throw new Error(`Could not export the project: ${dir.name} is not a project.`);
     }
 
     // Now, we have to retrieve the files. We have a directory descriptor that
@@ -112,17 +110,19 @@ export default class DirProjectExport extends ZettlrCommand {
         .get()
         .export.customCommands.find((c) => c.command === profilePathOrCommand);
 
+      // The other profiles of the project still export. Each profile that
+      // cannot run is reported in the window.
       if (profile === undefined && command === undefined) {
-        this._app.log.warning(
-          `Could not export project ${dir.name} using profile or command ${profilePathOrCommand}: Not found`,
-        );
+        const message = `Could not export project ${dir.name}: the profile or command ${profilePathOrCommand} was not found.`;
+        this._app.log.error(message);
+        this._app.windows.showErrorMessage(trans("Export error"), message);
         continue;
       }
 
       if (profile?.isInvalid === true) {
-        this._app.log.error(
-          `Could not export project ${dir.name} using profile ${profilePathOrCommand}: ${profile.reason}`,
-        );
+        const message = `Could not export project ${dir.name} with the profile ${profilePathOrCommand}: ${profile.reason}`;
+        this._app.log.error(message);
+        this._app.windows.showErrorMessage(trans("Export error"), message);
         continue;
       }
 

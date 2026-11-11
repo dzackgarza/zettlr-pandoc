@@ -24,9 +24,11 @@ import type {
   ReferenceRenamePreview,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
+import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles from "@common/util/enum-dict-files";
 import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
+import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import type { DocumentType } from "@dts/common/documents";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import type { ProjectSettings } from "@dts/common/fsal";
@@ -416,8 +418,27 @@ export type ApplicationIPCContract = {
 
 export type ApplicationIPCAPI = IPCMessage<ApplicationIPCContract>;
 
+/**
+ * Commands that a window runs on its own, not on an action of the author: a
+ * lint pass, a figure render, a hover preview, a refresh of the Problems view.
+ * The caller shows a failure of these in its own place (the tooltip, the
+ * figure, the view). A message in the window for each one would repeat with
+ * each keystroke or pointer move. The preview of a reference rename is here
+ * because its one caller shows each failure of the rename protocol.
+ */
+const CALLER_SHOWS_FAILURE: ReadonlySet<string> = new Set([
+  "fetch-link-preview",
+  "file-find-and-return-meta-data",
+  "list-workspace-lint",
+  "preview-reference-rename",
+  "run-external-linter",
+  "tikz-render",
+]);
+
 export default class CommandProvider extends ProviderContract {
   private readonly _commands: ZettlrCommand[];
+  /** The errors that the windows already show: a command can run a command. */
+  private readonly _shownFailures = new WeakSet<Error>();
 
   // TODO: Right now this just injects the full service container into the
   // commands, but it mayt be better to only provide those which are actually
@@ -438,7 +459,10 @@ export default class CommandProvider extends ProviderContract {
   }
 
   /**
-   * Runs a command through the application pipeline
+   * Runs a command through the application pipeline. A command that throws
+   * rejects: its caller receives the value of the contract or the error, never
+   * a substitute. Most callers only log a rejection, so the windows show the
+   * cause of each failure once.
    *
    * @param   {string}  command  The command to run
    * @param   {CommandWireValue}  payload  The payload the command requires
@@ -446,6 +470,23 @@ export default class CommandProvider extends ProviderContract {
    * @return  {Promise<CommandWireValue>}  The return from running the command
    */
   async run(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
+    try {
+      return await this._dispatch(command, payload);
+    } catch (err: unknown) {
+      const failure = err instanceof Error ? err : new Error(String(err));
+      if (!this._shownFailures.has(failure)) {
+        this._shownFailures.add(failure);
+        this._app.log.error(`[Application] The command ${command} failed: ${failure.message}`, err);
+        if (!CALLER_SHOWS_FAILURE.has(command)) {
+          const broadcast: CommandFailedBroadcast = { command, message: failure.message };
+          broadcastIpcMessage(COMMAND_FAILED_CHANNEL, broadcast);
+        }
+      }
+      throw failure;
+    }
+  }
+
+  private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     // FIRST: Try to run a minimal command for which its own custom function
     // wouldn't make sense.
     if (command === "copy-img-to-clipboard") {
@@ -539,16 +580,7 @@ export default class CommandProvider extends ProviderContract {
       );
       if (cmd !== undefined) {
         // Return the return value of the command, if there is any
-        try {
-          return await cmd.run(command, payload);
-        } catch (err: unknown) {
-          this._app.log.error(
-            "[Application] Error received while running command: " +
-              (err instanceof Error ? err.message : "Unknown error"),
-            err,
-          );
-          return false;
-        }
+        return await cmd.run(command, payload);
       } else if (command === "get-available-languages") {
         return enumLangFiles().map((elem) => elem.tag);
       } else if (command === "get-available-dictionaries") {

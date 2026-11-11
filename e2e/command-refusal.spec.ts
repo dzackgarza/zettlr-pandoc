@@ -40,16 +40,26 @@ const CONTENTS = "# Lattices\n\nAn even unimodular lattice has a rank that 8 div
 const HELD_CONTENTS = "# Genus\n\nA genus holds finitely many isometry classes.\n";
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 
-function renameFile(page: Page, target: string, name: string): Promise<unknown> {
+/** Sends a rename as the file manager does. Answers whether the command was refused. */
+function renameIsRefused(page: Page, target: string, name: string): Promise<boolean> {
   return page.evaluate(
-    async (payload) => await window.ipc.invoke("application", { command: "file-rename", payload }),
+    async (payload) =>
+      await window.ipc.invoke("application", { command: "file-rename", payload }).then(
+        () => false,
+        () => true,
+      ),
     { path: target, name },
   );
 }
 
-function moveFile(page: Page, from: string, to: string): Promise<unknown> {
+/** Sends a move as the file manager does. Answers whether the command was refused. */
+function moveIsRefused(page: Page, from: string, to: string): Promise<boolean> {
   return page.evaluate(
-    async (payload) => await window.ipc.invoke("application", { command: "request-move", payload }),
+    async (payload) =>
+      await window.ipc.invoke("application", { command: "request-move", payload }).then(
+        () => false,
+        () => true,
+      ),
     { from, to },
   );
 }
@@ -105,9 +115,17 @@ describe("an application command that cannot do its work", function () {
   after(async function () {
     await chmod(lockedDirectory, 0o700);
     // A document with unsaved changes stops the shutdown at a native prompt.
+    // The save is the IPC call that the save-file shortcut makes: CDP key
+    // events do not run the main-process menu accelerators.
     if (page !== undefined) {
-      await page.locator(".cm-content").click();
-      await page.keyboard.press("Control+s");
+      assert.deepEqual(
+        await page.evaluate(
+          async (pathInPage) =>
+            await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+          notePath,
+        ),
+        { ok: true },
+      );
       await page
         .locator(`[role="tab"][data-path="${notePath}"]:not(.modified)`)
         .waitFor({ state: "visible", timeout: 20_000 });
@@ -132,8 +150,9 @@ describe("an application command that cannot do its work", function () {
     await chmod(lockedDirectory, 0o500);
     assert.deepEqual(await errorMessages(editorPage), [], "no error is shown before the rename");
 
-    await renameFile(editorPage, heldPath, "genus.md");
+    const refused = await renameIsRefused(editorPage, heldPath, "genus.md");
 
+    assert.equal(refused, true, "the rename reports that it did not happen");
     await editorPage.locator(ERROR_TOAST).first().waitFor({ state: "visible", timeout: 20_000 });
     const messages = await errorMessages(editorPage);
     assert.equal(messages.length, 1, `one error is shown: ${JSON.stringify(messages)}`);
@@ -159,9 +178,9 @@ describe("an application command that cannot do its work", function () {
       .waitFor({ state: "visible", timeout: 20_000 });
     assert.deepEqual(await errorMessages(editorPage), [], "no error is shown before the move");
 
-    const moved = await moveFile(editorPage, notePath, archiveDirectory);
+    const refused = await moveIsRefused(editorPage, notePath, archiveDirectory);
 
-    assert.equal(moved, false, "the move reports that it did not happen");
+    assert.equal(refused, true, "the move reports that it did not happen");
     await editorPage.locator(ERROR_TOAST).first().waitFor({ state: "visible", timeout: 20_000 });
     const messages = await errorMessages(editorPage);
     assert.equal(messages.length, 1, `one error is shown: ${JSON.stringify(messages)}`);

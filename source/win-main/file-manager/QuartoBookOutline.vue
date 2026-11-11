@@ -172,7 +172,6 @@ import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { projectRelativePath } from "@common/util/explorer-ordering";
 import { isInsideRoot, pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
-import showToast from "@common/util/show-toast";
 import type { MDFileDescriptor, ProjectNavigationItem } from "@dts/common/fsal";
 import type { QuartoBookEdit, QuartoChapterPlacement } from "source/app/util/quarto-book-editor";
 import { useWorkspaceStore } from "source/pinia";
@@ -360,11 +359,8 @@ async function editBook(edit: QuartoBookEdit): Promise<void> {
       payload: { rootPath: props.rootPath, edit },
     });
   } catch (err) {
+    // The application shows the cause of a failed command in the window.
     reportError("Could not edit the Quarto book", err);
-    showToast(
-      trans("Could not edit the Quarto book: %s", err instanceof Error ? err.message : String(err)),
-      "error",
-    );
   }
 }
 
@@ -398,13 +394,6 @@ async function createChapter(): Promise<void> {
     newChapterName.value = "";
   } catch (err) {
     reportError("Could not create a Quarto chapter", err);
-    showToast(
-      trans(
-        "Could not create a Quarto chapter: %s",
-        err instanceof Error ? err.message : String(err),
-      ),
-      "error",
-    );
   }
 }
 

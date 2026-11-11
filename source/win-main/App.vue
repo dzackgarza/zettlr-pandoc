@@ -211,6 +211,7 @@ import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
+import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import {
   DocumentType,
   type LeafNodeJSON,
@@ -801,12 +802,7 @@ function openDesktopPath(target: string | undefined, missingMessage: string): vo
         showToast(trans("Could not open %s: %s", target, error), "error");
       }
     })
-    .catch((err) => {
-      showToast(
-        trans("Could not open %s: %s", target, err instanceof Error ? err.message : String(err)),
-        "error",
-      );
-    });
+    .catch((err) => reportError(`Could not open ${target}`, err));
 }
 
 /** Open the focused file using its desktop MIME association. */
@@ -837,13 +833,7 @@ function editConfiguredTextFile(target: string, operationLabel: string): void {
       recordRendererError(`${operationLabel} failed`, failure);
       showToast(trans("%s failed: %s", operationLabel, error), "error");
     })
-    .catch((err) => {
-      recordRendererError(`${operationLabel} failed`, err);
-      showToast(
-        trans("%s failed: %s", operationLabel, err instanceof Error ? err.message : String(err)),
-        "error",
-      );
-    });
+    .catch((err) => recordRendererError(`${operationLabel} failed`, err));
 }
 
 function editSnippets(): void {
@@ -879,16 +869,7 @@ function openTerminalHere(): void {
         showToast(trans("Could not open a terminal in %s: %s", target, error), "error");
       }
     })
-    .catch((err) => {
-      showToast(
-        trans(
-          "Could not open a terminal in %s: %s",
-          target,
-          err instanceof Error ? err.message : String(err),
-        ),
-        "error",
-      );
-    });
+    .catch((err) => reportError(`Could not open a terminal in ${target}`, err));
 }
 
 const windowTitle = computed<string>(() => {
@@ -1042,6 +1023,12 @@ watch(distractionFree, (newValue) => {
 });
 
 onMounted(() => {
+  // A command of the application that threw answers `false` to its caller, and
+  // most callers drop that answer. The cause is shown here.
+  ipcRenderer.on(COMMAND_FAILED_CHANNEL, (event, failure: CommandFailedBroadcast) => {
+    showToast(failure.message, "error", 12000);
+  });
+
   // Saves that main initiated — the close-and-save prompts — have no renderer
   // promise to carry their result, so the provider broadcasts refusals here.
   // Without this the prompt closes and the window stays open with no reason

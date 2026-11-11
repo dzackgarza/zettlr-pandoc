@@ -44,13 +44,7 @@ export default class DirDelete extends ZettlrCommand {
       return false;
     }
 
-    try {
-      await this._app.fsal.removeDir(arg.path);
-    } catch (err: unknown) {
-      this._app.log.error(err instanceof Error ? err.message : "unknown error", err);
-      return false;
-    }
-
+    await this._app.fsal.removeDir(arg.path);
     return true;
   }
 }

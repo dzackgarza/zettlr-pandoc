@@ -32,8 +32,7 @@ export default class DirRename extends ZettlrCommand {
   async run(evt: string, arg: { path: string; name: string }): Promise<boolean> {
     const sourceDir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
     if (sourceDir === undefined) {
-      this._app.log.error("Could not rename directory: Not found.");
-      return false;
+      throw new Error(`Could not rename the directory: ${arg.path} is not a loaded directory.`);
     }
 
     const sanitizedName = sanitize(arg.name, { replacement: "-" });
@@ -53,13 +52,18 @@ export default class DirRename extends ZettlrCommand {
         this._app.config.removePath(sourceDir.path);
       }
 
-      await this._app.fsal.rename(arg.path, newPath);
+      // The workspace follows the directory: to its new path, or back to its
+      // old path when the rename failed. A later failure leaves it open.
+      const renamed = this._app.fsal.rename(arg.path, newPath);
+      if (isRoot) {
+        await renamed.then(
+          () => this._app.config.addPath(newPath),
+          () => this._app.config.addPath(sourceDir.path),
+        );
+      }
+      await renamed;
       // Notify the documents provider so it can exchange any files if necessary
       await this._app.documents.hasMovedDir(arg.path, newPath);
-
-      if (isRoot) {
-        this._app.config.addPath(newPath);
-      }
 
       // Keep every wikilink pointing at the document it named before the rename
       const move = { from: arg.path, to: newPath };

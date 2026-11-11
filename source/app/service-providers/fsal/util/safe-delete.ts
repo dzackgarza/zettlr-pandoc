@@ -15,8 +15,10 @@ export async function safeDelete(
       logger.error(`[FSAL File] Forcing deletion of "${absPath}"!`);
       await fs.rm(absPath, { recursive: true, force: true });
     } else {
+      // The window shows this message. It names the setting that changes
+      // what the application does next time.
       if (err instanceof Error) {
-        err.message = `[FSAL File] Could not remove file ${absPath}: ${err.message}`;
+        err.message = `Could not move ${absPath} to the trash: ${err.message}. To delete such a file, set "Delete items irreversibly if moving them to trash fails" in Preferences, Advanced.`;
       }
       throw err;
     }

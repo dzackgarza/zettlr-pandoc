@@ -68,8 +68,7 @@ export default class FileNew extends ZettlrCommand {
     const windowId = arg.windowId;
 
     if (windowId === undefined) {
-      this._app.log.error("Cannot create new file: No window id provided");
-      return;
+      throw new Error("Cannot create a new file: no main window is open.");
     }
 
     // Assume there is no directory we could salvage, so choose the documents

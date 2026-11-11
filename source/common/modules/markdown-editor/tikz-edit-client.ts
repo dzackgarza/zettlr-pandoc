@@ -59,15 +59,21 @@ export async function editTikzInVisualEditor(
   // that the author types while the editor starts.
   const id = crypto.randomUUID();
   view.dispatch({ effects: beginTikzEditSession.of({ id, from: target.from, to: target.to }) });
-  const result = await window.ipc.invoke("application", {
-    command: "tikz-edit-open",
-    payload: {
-      id,
-      docPath: target.docPath,
-      language: target.language,
-      source: view.state.sliceDoc(target.from, target.to),
-    },
-  });
+  const result = await window.ipc
+    .invoke("application", {
+      command: "tikz-edit-open",
+      payload: {
+        id,
+        docPath: target.docPath,
+        language: target.language,
+        source: view.state.sliceDoc(target.from, target.to),
+      },
+    })
+    .catch((error: Error) => {
+      // A command that failed started no editor, so there is no session.
+      view.dispatch({ effects: endTikzEditSession.of(id) });
+      throw error;
+    });
   if (result.outcome === "opened") {
     return;
   }

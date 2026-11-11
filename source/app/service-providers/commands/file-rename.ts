@@ -88,7 +88,7 @@ export default class FileRename extends ZettlrCommand {
 
     const file = await this._app.fsal.getDescriptorForAnySupportedFile(arg.path);
     if (file === undefined) {
-      return this._app.log.error(`Could not find file ${String(arg.path)}`);
+      throw new Error(`Could not rename the file: ${String(arg.path)} was not found.`);
     }
 
     if (this._app.documents.isModified(file.path)) {
@@ -141,55 +141,47 @@ export default class FileRename extends ZettlrCommand {
       }
     }
 
-    try {
-      // The links resolve against the workspace as it is before the rename.
-      const linksBefore = this._app.links.snapshot();
+    // The links resolve against the workspace as it is before the rename.
+    const linksBefore = this._app.links.snapshot();
 
-      // Before renaming the file, let's see if it is a root file. Because if it
-      // is, we have to close it first.
-      const { openFiles } = this._app.config.getConfig().app;
-      const isRoot = openFiles.includes(file.path);
+    // Before renaming the file, let's see if it is a root file. Because if it
+    // is, we have to close it first.
+    const { openFiles } = this._app.config.getConfig().app;
+    const isRoot = openFiles.includes(file.path);
 
-      if (isRoot) {
-        this._app.config.removePath(file.path);
-      }
+    if (isRoot) {
+      this._app.config.removePath(file.path);
+    }
 
-      // Now, rename the file.
-      await this._app.fsal.rename(file.path, newPath);
-      // Notify the documents provider so it can exchange any files if necessary
-      await this._app.documents.hasMovedFile(file.path, newPath);
-
-      if (isRoot) {
-        this._app.config.addPath(newPath);
-      }
-
-      // Finally, let's check if we can update some internal links to that file.
-      const move = { from: file.path, to: newPath };
-      const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-      if (changedFiles.length > 0) {
-        const response = await dialog.showMessageBox({
-          title: trans("Confirm"),
-          message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
-          buttons: [trans("Yes"), trans("No")],
-          defaultId: 1,
-        });
-
-        if (response.response === 1) {
-          return; // Do not update the links.
-        }
-
-        await this._app.links.retargetAfterMove(
-          linksBefore,
-          move,
-          changedFiles,
-          this._app.documents,
-        );
-      }
-    } catch (err: unknown) {
-      this._app.log.error(
-        `Error during renaming file: ${err instanceof Error ? err.message : "Unknown error"}`,
-        err,
+    // Now, rename the file. The root follows it: to its new path, or back to
+    // its old path when the rename failed. A later failure leaves it open.
+    const renamed = this._app.fsal.rename(file.path, newPath);
+    if (isRoot) {
+      await renamed.then(
+        () => this._app.config.addPath(newPath),
+        () => this._app.config.addPath(file.path),
       );
+    }
+    await renamed;
+    // Notify the documents provider so it can exchange any files if necessary
+    await this._app.documents.hasMovedFile(file.path, newPath);
+
+    // Finally, let's check if we can update some internal links to that file.
+    const move = { from: file.path, to: newPath };
+    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
+    if (changedFiles.length > 0) {
+      const response = await dialog.showMessageBox({
+        title: trans("Confirm"),
+        message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
+        buttons: [trans("Yes"), trans("No")],
+        defaultId: 1,
+      });
+
+      if (response.response === 1) {
+        return; // Do not update the links.
+      }
+
+      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
     }
   }
 }

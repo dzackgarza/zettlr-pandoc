@@ -448,13 +448,13 @@ function sendBinding(manifest: string | null): void {
         showToast(describeBindingRejection(outcome.reason), "error");
       }
     })
-    .catch((err) => surfaceBindingFailure(err));
+    .catch((err) => reportError(err));
 }
 
 /**
- * Reports a binding that never reached the application. The gesture's whole
- * point is a visible outcome, so a failed call says so where the user is
- * looking, not only in the console.
+ * Reports a manifest picker that failed. The gesture's whole point is a
+ * visible outcome, so a failed call says so where the user is looking, not
+ * only in the console.
  *
  * @param  {unknown}  err  The error the call rejected with
  */

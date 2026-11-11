@@ -218,11 +218,7 @@ export default class Export extends ZettlrCommand {
 
     // We should have at least one file present now
     if (exporterOptions.sourceFiles.length === 0) {
-      this._app.log.error(
-        "[Export] Could not run exporter: No source files were given. Arguments provided:",
-        arg,
-      );
-      return;
+      throw new Error("Could not export: no source file was given.");
     }
 
     const task = this._app.lrt.registerTask(

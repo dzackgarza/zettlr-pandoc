@@ -167,16 +167,7 @@ export function displayFileContext(
             .then(() => {
               showToast(trans("Added %s to the Quarto book.", fileObject.name));
             })
-            .catch((err) => {
-              reportError("Could not add file to the Quarto book", err);
-              showToast(
-                trans(
-                  "Could not add the file to the Quarto book: %s",
-                  err instanceof Error ? err.message : String(err),
-                ),
-                "error",
-              );
-            });
+            .catch((err) => reportError("Could not add file to the Quarto book", err));
         }
         break;
     }

@@ -73,10 +73,7 @@ export default class TutorialOpen extends ZettlrCommand {
     // short, when the next lines of this command are executed, the workspace is
     // not yet loaded, so below's check will always fail.
     if (!this._app.config.get().app.openWorkspaces.includes(targetPath)) {
-      this._app.log.error(
-        "[Application] Could not open tutorial files: Directory has not been added to Configuration",
-      );
-      return;
+      throw new Error(`Could not open the tutorial: ${targetPath} is not an open workspace.`);
     }
 
     this._app.config.set("openDirectory", targetPath);
@@ -100,8 +97,7 @@ export default class TutorialOpen extends ZettlrCommand {
     });
 
     if (leafId === undefined) {
-      this._app.log.error("[Application] Could not open tutorial: Could not retrieve leafID");
-      return;
+      throw new Error("Could not open the tutorial: no editor pane is open.");
     }
 
     // What follows basically emulates a user opening the welcome and the split
@@ -128,10 +124,7 @@ export default class TutorialOpen extends ZettlrCommand {
     });
 
     if (leafId === undefined) {
-      this._app.log.error(
-        "[Application] Could not find new split leaf ID -- aborting opening tutorial files.",
-      );
-      return;
+      throw new Error("Could not open the tutorial: the second editor pane was not found.");
     }
 
     // Open the links file ...

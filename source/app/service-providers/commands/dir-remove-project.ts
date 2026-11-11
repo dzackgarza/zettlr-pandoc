@@ -27,11 +27,10 @@ export default class DirRemoveProject extends ZettlrCommand {
    * @param  {any}    arg  The payload
    */
   async run(evt: string, arg: { path: string }): Promise<void> {
-    let dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
-    if (dir !== undefined) {
-      await this._app.fsal.removeProject(dir);
-    } else {
-      this._app.log.error("Could not remove project: Could not find directory!");
+    const dir = await this._app.fsal.getAnyDirectoryDescriptor(arg.path);
+    if (dir === undefined) {
+      throw new Error(`Could not remove the project: ${arg.path} is not a loaded directory.`);
     }
+    await this._app.fsal.removeProject(dir);
   }
 }

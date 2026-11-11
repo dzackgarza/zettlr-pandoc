@@ -36,9 +36,9 @@ export default class RequestMove extends ZettlrCommand {
     const to = await this._app.fsal.getAnyDirectoryDescriptor(arg.to);
 
     if (to === undefined || from === undefined) {
-      // If findDir doesn't return anything then it's a file
-      this._app.log.error("Could not find the target directory for moving.");
-      return false;
+      throw new Error(
+        `Could not move ${arg.from} to ${arg.to}: ${from === undefined ? "the source" : "the target directory"} was not found.`,
+      );
     }
 
     // It can happen that the user begins to drag a file but then realizes they
@@ -74,10 +74,9 @@ export default class RequestMove extends ZettlrCommand {
     // A final check: If from is a file, and the file is modified, we cannot
     // move, lest we want to induce data loss, see issue #2347
     if (this._app.documents.isModified(arg.from)) {
-      this._app.log.error(
-        `[Application] Cannot move file ${arg.from} to ${arg.to}, since it is modified.`,
+      throw new Error(
+        trans("Cannot move %s: it has unsaved changes. Save the file, then move it.", from.name),
       );
-      return false;
     }
 
     // Now we can move the source to the target.
