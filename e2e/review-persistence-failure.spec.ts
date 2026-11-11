@@ -538,6 +538,16 @@ describe("a review that cannot be persisted", function () {
       buffer.includes("refused-edit"),
       `the typed text stays in the buffer: a refused push destroys nothing.\n${buffer}`,
     );
+    const toast = activePage.locator("#zettlr-toast-container .zettlr-toast.error");
+    await toast.first().waitFor({ state: "visible", timeout: 30_000 });
+    const refusals = await toastMessages(activePage);
+    assert.equal(refusals.length, 1, `one error is shown: ${JSON.stringify(refusals)}`);
+    assert.ok(
+      refusals[0].includes(path.basename(activePath)),
+      `the error names the document: ${refusals[0]}`,
+    );
+    screenshots.set("push-refused.png", await activePage.screenshot());
+    await toast.first().locator('button[aria-label="Dismiss"]').click();
     assert.equal(
       await activePage
         .locator(`${EDITOR} .suggestion-chunk`)
@@ -547,11 +557,28 @@ describe("a review that cannot be persisted", function () {
       "the annotated chunk must still be rendered",
     );
 
-    // Retry on a fresh editor: a rejected push leaves this pane's sync loop
-    // holding its in-flight flag, so the unsent edit never goes out again from
-    // here. Closing and reopening is also what proves the sidecar written
-    // before the failure is still loadable — the review comes back from it.
+    // The editor sends the rejected update again. When the sidecar can be
+    // written, the authority takes the text that the author typed during the
+    // failure, and the save of that text succeeds.
     await allowSidecarWrites(directory);
+    await waitForWorkingText(activeApi, (text) => text.includes("refused-edit"), 30_000);
+    assert.deepEqual(
+      await activePage.evaluate(
+        async (pathInPage: string) =>
+          await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        activePath,
+      ),
+      { ok: true },
+      "the text typed during the failure is saved",
+    );
+    assert.ok(
+      (await readFile(activePath, "utf8")).includes("refused-edit"),
+      "the file has the text that the authority rejected before",
+    );
+    assert.deepEqual(await toastMessages(activePage), [], "the accepted update shows no error");
+
+    // A close and a new editor prove that the review comes back from the
+    // sidecar that was written after the failure.
     await activePage.evaluate(
       async (pathInPage: string) =>
         await window.ipc.invoke("documents-provider", {

@@ -52,7 +52,9 @@ class Authority {
   ): Promise<boolean> => {
     if (this.refusing) {
       this.refusals += 1;
-      throw new Error("The review of the document could not be written");
+      // The cause of a real rejection names the temporary file of that write,
+      // so no two rejections have the same message.
+      throw new Error(`The review file review.json.${this.refusals} could not be written`);
     }
     if (version !== this.updates.length) {
       return false;
