@@ -54,12 +54,16 @@ const PROJECT_LIBRARY = `@article{Cob19,
 }
 `;
 
+/** The file that the global library attaches to its entry, beside the library. */
+const GLOBAL_ATTACHMENT = "Nikulin1980.pdf";
+
 /** The library `export.cslLibrary` points at once the user configures one. */
 const GLOBAL_LIBRARY = `@article{Nik80,
   author = {Nikulin, V. V.},
   title = {Integral symmetric bilinear forms and some of their applications},
   year = {1980},
   journaltitle = {Mathematics of the USSR-Izvestiya},
+  file = {${GLOBAL_ATTACHMENT}},
 }
 `;
 
@@ -160,6 +164,11 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
       assert.deepEqual(await citekeysFor([projectLibraryPath, CITEPROC_MAIN_DB]), ["Cob19"]);
       assert.deepEqual(dialogs, []);
     });
+
+    it("reports no attachment for a document carrying no library of its own", function () {
+      assert.equal(provider.hasBibTexAttachments(CITEPROC_MAIN_DB), false);
+      assert.equal(provider.getBibTexAttachments(CITEPROC_MAIN_DB, "Nik80"), false);
+    });
   });
 
   describe("with a global library configured", function () {
@@ -187,6 +196,23 @@ describe("CITEPROC_MAIN_DB sentinel", function () {
 
     it("resolves the bare sentinel to the global library", async function () {
       assert.deepEqual(await citekeysFor(CITEPROC_MAIN_DB), ["Nik80"]);
+    });
+
+    // The open-attachment command asks with the library of the document:
+    // the bare sentinel, or the project bibliographies and the sentinel.
+    it("finds the attachment of a global entry for a document with no library of its own", function () {
+      assert.equal(provider.hasBibTexAttachments(CITEPROC_MAIN_DB), true);
+      assert.deepEqual(provider.getBibTexAttachments(CITEPROC_MAIN_DB, "Nik80"), [
+        path.join(directory, GLOBAL_ATTACHMENT),
+      ]);
+    });
+
+    it("finds the attachment of a global entry behind a project bibliography", async function () {
+      const library = [projectLibraryPath, CITEPROC_MAIN_DB];
+      assert.deepEqual(await citekeysFor(library), ["Cob19", "Nik80"]);
+      assert.deepEqual(provider.getBibTexAttachments(library, "Nik80"), [
+        path.join(directory, GLOBAL_ATTACHMENT),
+      ]);
     });
   });
 });
