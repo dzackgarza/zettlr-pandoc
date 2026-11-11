@@ -10,8 +10,11 @@
  * Description:     Drives the REAL DocumentManager into a save and a reload
  *                  that it must refuse. Each refusal has a reason and names
  *                  its cause: the file of a reviewed document cannot be read,
- *                  the document is not loaded, or the review of a document
- *                  that the author loads from disk cannot be written. A
+ *                  the file cannot be written, the document is not loaded,
+ *                  or the review of a document that the author loads from
+ *                  disk cannot be written. A document whose save was refused
+ *                  keeps its unsaved text and stays modified, so a close or
+ *                  a quit still asks the author about that text. A
  *                  refused save that the author asked for at a quit goes to
  *                  the window, and a refused reload says that a reload was
  *                  refused (#178).
@@ -167,6 +170,27 @@ describe("Documents-provider save that it must refuse", function () {
       "the window receives the refusal of the save, with its reason",
     );
     assert.equal(appQuitRequests.length, 0, "the quit did not go on");
+  });
+
+  it("keeps the document modified when its file cannot be written", async function () {
+    await openWithReview();
+    // The file can be read and not written.
+    chmodSync(filePath, 0o400);
+
+    const saved = await provider.saveFile(filePath);
+
+    assert.deepEqual(
+      [saved.ok, saved.ok ? undefined : saved.refusal.reason],
+      [false, "write-failed"],
+      "the save is refused, with the reason that the write failed",
+    );
+    assert.equal(readFileSync(filePath, "utf-8"), SOURCE, "nothing was written");
+    assert.equal(
+      provider.isModified(filePath),
+      true,
+      "the document has text that is not on disk, so it is modified",
+    );
+    assert.equal(provider.isClean(), false, "a quit asks the author about that text");
   });
 
   it("answers with a reason for a document that is not loaded", async function () {
