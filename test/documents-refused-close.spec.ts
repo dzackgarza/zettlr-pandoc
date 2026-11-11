@@ -25,14 +25,19 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { sha256Text } from "source/common/util/sha256";
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from "source/types/common/documents";
-import { bootDocumentManager, fileDeleteCommand, openMainWindow } from "./documents-provider-seam";
+import {
+  bootDocumentManager,
+  emitWatchdogEvent,
+  fileDeleteCommand,
+  openMainWindow,
+} from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
@@ -376,6 +381,22 @@ describe("Documents-provider close that cannot write the collaboration state", f
     assert.equal(await closeWithoutReview(id), true);
     assert.equal(provider.getActiveFile(pane()), undefined, "the pane shows no document");
     assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+  });
+
+  it("keeps a document whose file another program removed, and names the cause", async function () {
+    const { id, annotation } = await openAndAnnotate();
+
+    chmodSync(SIDECARS, 0o500);
+    unlinkSync(filePath);
+    emitWatchdogEvent("unlink", filePath);
+    await untilRefused();
+
+    assert.deepEqual(refusedCloses(), [id], "the window gets the cause of the close that failed");
+    assert.equal(provider.getActiveFile(pane()), filePath, "the pane still shows the document");
+    assert.deepEqual(annotationsInMemory(id), [annotation], "the annotation is still in memory");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.deepEqual(provider.loadedDocuments, [], "the action closes the document");
   });
 
   it("does not delete a file whose document it could not close", async function () {
