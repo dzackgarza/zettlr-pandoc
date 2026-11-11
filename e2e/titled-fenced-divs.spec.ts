@@ -13,7 +13,9 @@
  *                  the badges of a definition are in the editor and beside
  *                  the title, and the editor has no horizontal scroll. A
  *                  definition far below the first one gets its badges when
- *                  the author scrolls to it (#177).
+ *                  the author scrolls to it (#177). The badges of a heading
+ *                  with an id are beside the text of the heading or on a row
+ *                  of their own, and never on that text (#212).
  *
  * END HEADER
  */
@@ -50,6 +52,18 @@ const FILLER = Array.from(
   (_, index) => `Paragraph ${String(index + 1)} between the definitions.\n`,
 ).join("\n");
 
+// Headings with an id, each one word longer than the one before it: at each
+// width of the window some of them end where the row has no room for badges.
+const HEADING_WORDS =
+  "Orbits of a finite group that acts on the left cosets of a subgroup by a left translation of each coset".split(
+    " ",
+  );
+const HEADING_KEYS = HEADING_WORDS.map((_, index) => `sec:step-${String(index + 1)}`);
+const HEADINGS = HEADING_WORDS.map(
+  (_, index) =>
+    `### Step ${String(index + 1)}: ${HEADING_WORDS.slice(0, index + 1).join(" ")} {#${HEADING_KEYS[index]}}\n`,
+).join("\n");
+
 const DOCUMENT = `## Orbits and stabilizers
 
 ::: {.definition #def:orbit-stabilizer-fixed-points title="${LONG_TITLE}"}
@@ -77,6 +91,7 @@ The action is **transitive** if $X$ is one orbit.
 :::
 
 ${FILLER}
+${HEADINGS}
 ::: {.definition #${LAST_KEY} title="Free actions"}
 
 The action is **free** if each stabilizer is trivial.
@@ -165,6 +180,73 @@ function readLayout(page: Page): Promise<EditorLayout> {
       badges,
     };
   });
+}
+
+interface HeadingLayout {
+  key: string;
+  /** The box of the line of the heading. */
+  line: Box;
+  /** The rows of the text of the heading: the boxes of its text nodes. */
+  textRows: Box[];
+  /** The box of the badge group of the heading; null when it has no place. */
+  badges: Box | null;
+}
+
+function readHeadings(page: Page, keys: string[]): Promise<HeadingLayout[]> {
+  return page.evaluate((headingKeys) => {
+    const scroller = document.querySelector(".cm-scroller");
+    if (scroller === null) {
+      throw new Error("The editor has no scroller");
+    }
+    const lines = [...scroller.querySelectorAll(".cm-line")];
+    return headingKeys.map((key) => {
+      const step = `Step ${key.slice("sec:step-".length)}:`;
+      const line = lines.find((candidate) => (candidate.textContent ?? "").includes(step));
+      if (line === undefined) {
+        throw new Error(`The editor draws no line for ${key}`);
+      }
+      const textRows = [];
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode() !== null) {
+        const range = document.createRange();
+        range.selectNodeContents(walker.currentNode);
+        for (const rect of range.getClientRects()) {
+          if (rect.width > 0 && rect.height > 0) {
+            textRows.push({
+              left: rect.left,
+              right: rect.right,
+              top: rect.top,
+              bottom: rect.bottom,
+            });
+          }
+        }
+      }
+      const group = scroller
+        .querySelector(`.reference-badge-group.positioned [data-reference-key="${key}"]`)
+        ?.closest(".reference-badge-group");
+      const groupRect = group?.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      return {
+        key,
+        line: {
+          left: lineRect.left,
+          right: lineRect.right,
+          top: lineRect.top,
+          bottom: lineRect.bottom,
+        },
+        textRows,
+        badges:
+          groupRect === undefined
+            ? null
+            : {
+                left: groupRect.left,
+                right: groupRect.right,
+                top: groupRect.top,
+                bottom: groupRect.bottom,
+              },
+      };
+    });
+  }, keys);
 }
 
 function overlap(a: Box, b: Box): boolean {
@@ -300,4 +382,57 @@ describe("assembled app: fenced divs with a title", function () {
       "the badges of the last definition are in the visible part of the editor",
     );
   });
+
+  for (const width of [1400, 620]) {
+    it(`puts the badges of a heading beside its text or below it at a window of ${String(width)} px`, async function () {
+      const editorPage = requireInitialized(page, "The editor window must be open");
+      // The window is high enough to show every heading of the series.
+      await editorPage.setViewportSize({ width, height: 4000 });
+      await editorPage
+        .locator(".cm-scroller")
+        .evaluate((scroller) => scroller.scrollTo(0, scroller.scrollHeight));
+      await editorPage
+        .locator(`.reference-badge-group.positioned [data-reference-key="${HEADING_KEYS[0]}"]`)
+        .first()
+        .waitFor({ state: "visible", timeout: 30_000 });
+      // The badges take their places in the measure cycle after a resize.
+      await delay(1000);
+      screenshots.set(`heading-badges-${String(width)}.png`, await editorPage.screenshot());
+
+      const layout = await readLayout(editorPage);
+      const headings = await readHeadings(editorPage, HEADING_KEYS);
+      assert.equal(layout.scrollWidth, layout.clientWidth, "the editor has no horizontal scroll");
+
+      const allTextRows = headings.flatMap((heading) => heading.textRows);
+      let beside = 0;
+      let below = 0;
+      for (const heading of headings) {
+        const badges = heading.badges;
+        assert.ok(badges !== null, `the heading ${heading.key} has its badges`);
+        assert.ok(heading.textRows.length > 0, `the heading ${heading.key} has text`);
+        assert.ok(
+          !allTextRows.some((row) => overlap(badges, row)),
+          `the badges of ${heading.key} cover no text of a heading`,
+        );
+        assert.ok(
+          badges.left >= layout.visible.left - 1 && badges.right <= layout.visible.right + 1,
+          `the badges of ${heading.key} are in the editor`,
+        );
+        assert.ok(
+          badges.top >= heading.line.top - 1 && badges.bottom <= heading.line.bottom + 1,
+          `the badges of ${heading.key} are in the line of the heading`,
+        );
+        const lastRowBottom = Math.max(...heading.textRows.map((row) => row.bottom));
+        if (badges.top >= lastRowBottom - 1) {
+          below += 1;
+        } else {
+          beside += 1;
+        }
+      }
+      // The series holds both cases at this width; without both, the
+      // assertions above do not prove the rule.
+      assert.ok(beside > 0, "a heading of the series has its badges beside its text");
+      assert.ok(below > 0, "a heading of the series has its badges on a row of their own");
+    });
+  }
 });
