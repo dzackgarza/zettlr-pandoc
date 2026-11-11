@@ -36,6 +36,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { splitAndOpen } from "./support/panes";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-window-statusbar-e2e-latest");
 
@@ -79,62 +80,6 @@ async function waitUntil(
     await delay(150);
   }
   throw new Error(`Timed out waiting for ${what}`);
-}
-
-/**
- * Splits the one pane side by side and opens a document in the new pane;
- * returns the new leaf's id. The page-side code declares no inner function:
- * the loader's name-keeping helper does not exist in the page.
- */
-async function splitAndOpen(page: Page, documentPath: string): Promise<string> {
-  return await page.evaluate(async (pathInPage: string) => {
-    const windowId = new URLSearchParams(location.search).get("window_id");
-    if (windowId === null) {
-      throw new Error("The main window carries no window_id");
-    }
-    const leavesOf: string[][] = [];
-    for (let pass = 0; pass < 2; pass++) {
-      if (pass === 1) {
-        // 'horizontal' is the document manager's side-by-side direction.
-        await window.ipc.invoke("documents-provider", {
-          command: "split-leaf",
-          payload: {
-            originWindow: windowId,
-            originLeaf: leavesOf[0][0],
-            direction: "horizontal",
-            insertion: "after",
-          },
-        });
-      }
-      const tree: unknown = await window.ipc.invoke("documents-provider", {
-        command: "retrieve-tab-config",
-        payload: { windowId },
-      });
-      const leaves: string[] = [];
-      const stack: unknown[] = [tree];
-      while (stack.length > 0) {
-        const node = stack.pop() as { type: string; id: string; nodes: unknown[] };
-        if (node.type === "leaf") {
-          leaves.push(node.id);
-        } else {
-          stack.push(...node.nodes);
-        }
-      }
-      leavesOf.push(leaves);
-      if (pass === 0 && leaves.length !== 1) {
-        throw new Error(`Expected a single leaf to split, found ${leaves.length}`);
-      }
-    }
-    const created = leavesOf[1].find((id) => !leavesOf[0].includes(id));
-    if (created === undefined) {
-      throw new Error("The split produced no new leaf");
-    }
-    await window.ipc.invoke("documents-provider", {
-      command: "open-file",
-      payload: { windowId, leafId: created, path: pathInPage, newTab: true },
-    });
-    return created;
-  }, documentPath);
 }
 
 async function closeLeaf(page: Page, leafId: string): Promise<void> {
