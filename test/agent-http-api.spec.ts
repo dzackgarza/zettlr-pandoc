@@ -770,6 +770,44 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("accepts one description on claims that change different text", async function () {
+    const filePath = path.join(scratch, "one-note-two-places.md");
+    const lines = Array.from({ length: 12 }, (_, index) => `Statement ${index + 1} holds.`);
+    const withLine = (source: readonly string[], index: number): string[] =>
+      source.map((line, at) => (at === index ? `${line} [@Nik80]` : line));
+    const middleLines = withLine(lines, 2);
+    const before = `${lines.join("\n")}\n`;
+    const middle = `${middleLines.join("\n")}\n`;
+    const after = `${withLine(middleLines, 9).join("\n")}\n`;
+    writeFileSync(filePath, before);
+    await openFile(filePath, before);
+    const description = "This sentence needs a citation.";
+
+    const response = await httpRequest("POST", "/v1/review-submissions", {
+      body: JSON.stringify({
+        document: { uri: filePath },
+        claims: [
+          { description, patch: createPatch(filePath, before, middle) },
+          { description, patch: createPatch(filePath, middle, after) },
+        ],
+        clientRequestId: "same-note-two-places",
+      }),
+    });
+
+    assert.equal(response.status, 200, response.body);
+    const result = parseAs(response.body, "ReviewSubmissionResponse");
+    const content = await httpRequest(
+      "GET",
+      `/v1/documents/${result.documentId}?includeContent=true`,
+    );
+    assert.equal(parseAs(content.body, "ReadDocumentResponse").content, after);
+    const packets = await httpRequest("GET", `/v1/reviews/${result.reviewId}?view=packets`);
+    assert.deepEqual(
+      parseAs(packets.body, "ReviewPacketsResponse").packets.map((packet) => packet.description),
+      [description, description],
+    );
+  });
+
   it("rejects duplicate and near-duplicate claim descriptions", async function () {
     const filePath = path.join(scratch, "duplicate-descriptions.md");
     const before = "Let V be a vector space.\nAssume the form is symmetric.\n";
