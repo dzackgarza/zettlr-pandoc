@@ -16,7 +16,7 @@
 
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -125,5 +125,49 @@ describe("FSAL watcher events", function () {
       [],
       "no write is reported as another event",
     );
+  });
+
+  it("reports a rename over a watched file as a removal of the source only", async function () {
+    // A rename of the file of one tab onto the file of another tab: the
+    // documents provider moves the document to the target, and a removal
+    // that the watcher reported for the target would close it there.
+    const source = path.join(root, "source.md");
+    const target = path.join(root, "target.md");
+    await writeFile(source, "# Source\n");
+    await writeFile(target, "# Target\n");
+    const watchdog = fsal.getWatchdog();
+    const reported: Array<[string, string]> = [];
+    watchdog.on("change", (event, reportedPath) => {
+      reported.push([event, reportedPath]);
+    });
+    watchdog.watchPath(source);
+    watchdog.watchPath(target);
+
+    // The watcher reports nothing before its first scan ends, so the write
+    // repeats until the watcher reports it for each file.
+    const sawChange = (filePath: string): boolean =>
+      reported.some(([event, reportedPath]) => event === "change" && reportedPath === filePath);
+    const deadline = Date.now() + 20_000;
+    let writes = 0;
+    while (!(sawChange(source) && sawChange(target)) && Date.now() < deadline) {
+      writes += 1;
+      await writeFile(source, `# Source\n\nWrite ${writes}.\n`);
+      await writeFile(target, `# Target\n\nWrite ${writes}.\n`);
+      await sleep(250);
+    }
+    assert.ok(sawChange(source) && sawChange(target), "the watcher follows both files");
+
+    await rename(source, target);
+    const removalDeadline = Date.now() + 10_000;
+    const removals = (): string[] =>
+      reported.filter(([event]) => event === "unlink").map(([, reportedPath]) => reportedPath);
+    while (removals().length === 0 && Date.now() < removalDeadline) {
+      await sleep(100);
+    }
+    // The time for a late event of the target.
+    await sleep(1_000);
+    await watchdog.shutdown();
+
+    assert.deepEqual(removals(), [source], "the source is reported as removed, the target is not");
   });
 });

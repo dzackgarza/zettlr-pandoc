@@ -299,6 +299,42 @@ describe("Documents-provider identity of a moved document", function () {
     assert.deepEqual(provider.loadedDocuments, []);
   });
 
+  it("keeps the moved document when the watcher events of the rename arrive after the move", async function () {
+    const replaced = write("target.md");
+    const moving = write("source.md");
+    await provider.getDocument(replaced);
+    assert.equal(await provider.openFile(windowId, pane(), replaced), true);
+    await provider.getDocument(moving);
+    assert.equal(await provider.openFile(windowId, pane(), moving, true), true);
+    const movingId = provider.getDocumentId(moving);
+
+    renameSync(moving, replaced);
+    await provider.hasMovedFile(moving, replaced);
+    // The watcher reports a rename over a watched file as a removal of the
+    // source and a change of the target (test/fsal-watcher-events.spec.ts).
+    emitWatchdogEvent("unlink", moving);
+    emitWatchdogEvent("change", replaced);
+    for (let tick = 0; tick < 20; tick++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    assert.deepEqual(
+      provider.loadedDocuments.map((document) => [document.filePath, document.documentId]),
+      [[replaced, movingId]],
+      "the moved document stays loaded at the target",
+    );
+    assert.equal(
+      provider.isModified(replaced),
+      false,
+      "the moved document has the text of its file",
+    );
+    assert.equal(
+      await provider.closeFile(windowId, pane(), replaced),
+      true,
+      "the pane still has the tab of the moved document",
+    );
+  });
+
   it("holds no collaboration state for a document that a refused proposal loaded and released", async function () {
     const filePath = write("annotated.md");
     const { id, annotation } = await openAndAnnotate(filePath);
