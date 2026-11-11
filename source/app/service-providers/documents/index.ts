@@ -775,6 +775,9 @@ export default class DocumentManager
   /** True while the before-quit save-or-discard dialog is unanswered. */
   private _quitPromptOpen: boolean;
 
+  /** The time of the last update that an editor sent; 0 for none. */
+  private _lastEditorInputAt = 0;
+
   private readonly _lastEditor: {
     windowId: string | undefined;
     leafId: string | undefined;
@@ -1817,10 +1820,20 @@ export default class DocumentManager
     clientVersion: number,
     clientUpdates: SerializedUpdate[],
   ): Promise<boolean> {
+    this._lastEditorInputAt = Date.now();
     return this._reviewApplication.withDocumentLock(
       this.ensureDocumentId(filePath),
       async () => await this.pushUpdatesLocked(filePath, clientVersion, clientUpdates),
     );
+  }
+
+  /**
+   * The time (epoch milliseconds) of the last update that an editor sent to
+   * this authority, and 0 when no editor sent one. Background work that takes
+   * processor time from the window waits on it (the lint queue, #139).
+   */
+  public lastEditorInputAt(): number {
+    return this._lastEditorInputAt;
   }
 
   private async pushUpdatesLocked(

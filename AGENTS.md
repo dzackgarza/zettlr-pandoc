@@ -468,6 +468,14 @@ of an isolated instance are in the first comment of #132.
   an edit that changes no citation starts no Pandoc process.
 - **One probe of an external tool in a session** (`tikz-render.ts`,
   `flowmarkToolPython`).
+- **Background processes wait for a pause in the editor.** The lint queue
+  (`DocumentLintProvider.work`) starts no Flowmark run until the document
+  authority had no editor update for one second
+  (`DocumentManager.lastEditorInputAt`, `INPUT_IDLE_MS`). A run that started
+  goes to its end. The lint of the active document is not in the queue and
+  does not wait. New background work that starts processes while the author
+  can type waits on the same time. Proof:
+  `test/document-lint-idle-gate.spec.ts`.
 - **One load of a citation database.** `CiteprocProvider` shares the load that
   runs for a database path between concurrent requests.
 - **`@codemirror/collab` is patched**

@@ -121,6 +121,8 @@ export interface DocumentLintDependencies {
   /** Open buffers win over the disk. */
   buffers: {
     readMarkdownBufferContent: (filePath: string) => string | undefined;
+    /** The time (epoch milliseconds) of the last update that an editor sent; 0 for none. */
+    lastEditorInputAt: () => number;
   };
   references?: { getSnapshot: () => WorkspaceReferenceState };
   /** The workspace's wikilink index, which resolves the document's wikilinks. */
@@ -145,6 +147,8 @@ const CACHE_FILE = "document-lint-cache.json";
 // A change arrives as a burst of file system events; one reconcile follows it.
 const RECONCILE_DEBOUNCE_MS = 1_000;
 const PERSIST_DEBOUNCE_MS = 2_000;
+// The background queue starts no Flowmark run until the editors had no input for this long.
+const INPUT_IDLE_MS = 1_000;
 // Each Flowmark run is one single-threaded Python process.
 const WORKER_COUNT = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
 // flowmark/config.py searches each directory upward for these names.
@@ -326,6 +330,8 @@ export default class DocumentLintProvider extends ProviderContract {
   private readonly queue = new Map<string, LintPass>();
   private readonly inFlight = new Map<string, Promise<DocumentLintRecord>>();
   private activeWorkers = 0;
+  /** Ends the wait of each worker that waits for the editors to be idle. */
+  private readonly idleWaits = new Set<() => void>();
   /** The status bar task of the running queue, from its first document until it drains. */
   private batch: { task: LongRunningTask; total: number; done: number; failed: number } | undefined;
   private flowmarkIdentity: string | undefined;
@@ -369,6 +375,9 @@ export default class DocumentLintProvider extends ProviderContract {
 
   async shutdown(): Promise<void> {
     this.stopped = true;
+    for (const endWait of [...this.idleWaits]) {
+      endWait();
+    }
     this.deps.fsal?.off("fsal-events", this.onFsalEvents);
     clearTimeout(this.reconcileTimer);
     clearTimeout(this.persistTimer);
@@ -825,12 +834,55 @@ export default class DocumentLintProvider extends ProviderContract {
     }
   }
 
+  /**
+   * Resolves when no editor had input for INPUT_IDLE_MS. A Flowmark run takes
+   * processor time from the window, so the queue starts none while the author
+   * types (#139). The TypeScript extension of VS Code delays its diagnostics
+   * request in the same way while a buffer changes (typescript-language-features,
+   * bufferSyncSupport.ts, `diagnosticDelayer`).
+   */
+  private async editorsIdle(): Promise<void> {
+    for (;;) {
+      const remaining = INPUT_IDLE_MS - (Date.now() - this.deps.buffers.lastEditorInputAt());
+      if (remaining <= 0 || this.stopped) {
+        return;
+      }
+      if (this.batch !== undefined) {
+        this.batch.task.update({
+          info: trans(
+            "%s of %s documents; waiting for a pause in the editor",
+            this.batch.done,
+            this.batch.total,
+          ),
+          percentage: this.batch.done / this.batch.total,
+        });
+      }
+      await new Promise<void>((resolve) => {
+        const endWait = (): void => {
+          clearTimeout(timer);
+          this.idleWaits.delete(endWait);
+          resolve();
+        };
+        const timer = setTimeout(endWait, remaining);
+        this.idleWaits.add(endWait);
+      });
+      if (this.batch !== undefined) {
+        this.showProgress(this.batch);
+      }
+    }
+  }
+
   private async work(): Promise<void> {
     try {
-      for (const [documentPath, pass] of this.queue) {
-        if (this.stopped) {
+      while (!this.stopped && this.queue.size > 0) {
+        await this.editorsIdle();
+        // Another worker can take a document during the wait, and a newer
+        // pass can replace the pass of a queued document.
+        const next = this.queue.entries().next();
+        if (this.stopped || next.done === true) {
           break;
         }
+        const [documentPath, pass] = next.value;
         this.queue.delete(documentPath);
         try {
           await this.lintIn(pass, documentPath, await this.currentText(documentPath));

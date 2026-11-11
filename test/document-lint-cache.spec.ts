@@ -33,7 +33,7 @@ describe("document lint cache", function () {
           editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
         }),
       },
-      buffers: { readMarkdownBufferContent: () => undefined },
+      buffers: { readMarkdownBufferContent: () => undefined, lastEditorInputAt: () => 0 },
       references,
       homeDirectory: home,
       env: {},
