@@ -11,6 +11,7 @@ import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
 import { promisify } from "util";
 import { runInNewContext } from "vm";
 import YAML from "yaml";
+import { runProbe } from "./visual/display-probe";
 
 // Example macro fixture loaded through the real loader; the app ships none.
 let macros: Record<string, MathJaxMacro>;
@@ -167,17 +168,9 @@ describe("Pandoc math export headers", function () {
     );
 
     await runPandoc(defaultsFile, outputFile);
-    const { stderr } = await execFileAsync(
-      "xvfb-run",
-      [
-        "-a",
-        "node",
-        path.join(process.cwd(), "test/pandoc-math-html-probe.mjs"),
-        outputFile,
-        screenshot,
-        renderedDocument,
-      ],
-      { maxBuffer: 4 * 1024 * 1024 },
+    const { stdout, stderr } = await runProbe(
+      path.join(process.cwd(), "test/pandoc-math-html-probe.mjs"),
+      [outputFile, screenshot, renderedDocument],
     );
     const html = await readFile(renderedDocument, { encoding: "utf8" });
 
@@ -191,8 +184,11 @@ describe("Pandoc math export headers", function () {
     assert.ok(html.includes('data-latex="\\mathbb{R}"'));
     assert.ok(html.includes("<strong>ι</strong>"));
     assert.ok(html.includes('data-latex="\\ce{H2O}"'));
-    assert.ok(!stderr.includes("MathJax Warning: Package 'boldsymbol' not found"));
-    assert.ok(!stderr.includes("MathJax Warning: Package 'mhchem' not found"));
+    // The xvfb-run of some distributions joins the error output of the probe
+    // to its output.
+    const probeOutput = stdout + stderr;
+    assert.ok(!probeOutput.includes("MathJax Warning: Package 'boldsymbol' not found"));
+    assert.ok(!probeOutput.includes("MathJax Warning: Package 'mhchem' not found"));
   });
   it("writes copied Reveal defaults through the exporter seam before real Pandoc output", async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-write-defaults-"));
