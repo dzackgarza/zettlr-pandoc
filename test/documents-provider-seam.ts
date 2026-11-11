@@ -14,9 +14,10 @@
  * END HEADER
  */
 
-import { readFileSync, statSync, writeFileSync } from "fs";
+import { readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import FileDelete from "source/app/service-providers/commands/file-delete";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
@@ -125,4 +126,21 @@ export async function bootDocumentManager(root: string): Promise<DocumentManager
   const provider = new DocumentManager(appSeam as unknown as AppServiceContainer);
   await provider.boot();
   return provider;
+}
+
+/**
+ * The real file-delete command over `provider`. Its delete removes the file
+ * from the disk, with no trash.
+ */
+export function fileDeleteCommand(provider: DocumentManager): FileDelete {
+  const appSeam = {
+    log: new LogProvider(),
+    documents: provider,
+    fsal: {
+      removeFile: async (filePath: string) => {
+        unlinkSync(filePath);
+      },
+    },
+  };
+  return new FileDelete(appSeam as unknown as AppServiceContainer);
 }

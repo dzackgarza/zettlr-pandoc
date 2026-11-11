@@ -25,14 +25,14 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
 import { sha256Text } from "source/common/util/sha256";
 import { SAVE_REFUSED_CHANNEL, type SaveRefusedBroadcast } from "source/types/common/documents";
-import { bootDocumentManager } from "./documents-provider-seam";
+import { bootDocumentManager, fileDeleteCommand } from "./documents-provider-seam";
 import {
   appListeners,
   appQuitRequests,
@@ -54,6 +54,8 @@ const SIDECARS = path.join(userData, "review-sidecars");
 const DRAFT = "Draft: ";
 // The second button of each close prompt: discard the unsaved text.
 const DISCARD = 1;
+// The first button of the delete prompt: delete the file.
+const DELETE = 0;
 
 describe("Documents-provider close that cannot write the collaboration state", function () {
   let root: string;
@@ -243,6 +245,43 @@ describe("Documents-provider close that cannot write the collaboration state", f
       "the open document stays open",
     );
     assert.deepEqual(annotationsInMemory(id), [annotation], "and it keeps its state");
+  });
+
+  it("keeps the tab of a document that it could not close in every pane", async function () {
+    const { id, annotation } = await openAndAnnotate();
+
+    chmodSync(SIDECARS, 0o500);
+    const closed = await provider.closeFileEverywhere(filePath);
+    assert.equal(provider.getActiveFile(pane()), filePath, "the pane still shows the document");
+    assert.equal(closed, false, "the close is refused");
+    assert.deepEqual(refusedCloses(), [id], "the refusal names the document to the window");
+    assert.deepEqual(annotationsInMemory(id), [annotation], "a refused close keeps the state");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.equal(provider.getActiveFile(pane()), undefined, "the pane shows no document");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
+  });
+
+  it("does not delete a file whose document it could not close", async function () {
+    const { id, annotation } = await openAndAnnotate();
+    const command = fileDeleteCommand(provider);
+
+    chmodSync(SIDECARS, 0o500);
+    messageBoxes.answer = DELETE;
+    const outcome = await command.run("file-delete", { path: filePath }).then(
+      () => "deleted",
+      () => "refused",
+    );
+    assert.equal(existsSync(filePath), true, "the file is on disk");
+    assert.equal(outcome, "refused", "the command reports that it did not delete the file");
+    assert.deepEqual(refusedCloses(), [id], "the refusal names the document to the window");
+    assert.equal(provider.getActiveFile(pane()), filePath, "the pane still shows the document");
+    assert.deepEqual(annotationsInMemory(id), [annotation], "a refused close keeps the state");
+
+    chmodSync(SIDECARS, 0o700);
+    assert.equal(await command.run("file-delete", { path: filePath }), true, "the retry deletes");
+    assert.equal(existsSync(filePath), false, "the file is gone");
+    assert.deepEqual(provider.loadedDocuments, [], "the document is closed");
   });
 
   it("closes a tab whose unsaved text the author discards, when the state cannot be written", async function () {
