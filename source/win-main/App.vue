@@ -210,7 +210,7 @@ import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
-import { saveRefusalAction } from "@common/util/save-refusal-action";
+import { saveCopyAction, saveRefusalAction } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
@@ -220,6 +220,8 @@ import {
 import {
   DocumentType,
   DP_EVENTS,
+  FILE_REMOVED_KEPT_CHANNEL,
+  type FileRemovedKeptBroadcast,
   type LeafNodeJSON,
   REMOTE_CHANGE_KEPT_CHANNEL,
   type RemoteChangeKeptBroadcast,
@@ -1112,6 +1114,33 @@ onMounted(() => {
       ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
       : trans("%s changed on disk. The editor keeps its contents.", name);
     showToast(message, "info", 12000, loadFromDiskAction(payload.filePath));
+  });
+
+  // The file of a document with unsaved text was removed, and the document
+  // stayed open. The save of a document with a review needs the file, so
+  // that document offers a copy of its text.
+  ipcRenderer.on(FILE_REMOVED_KEPT_CHANNEL, (event, payload: FileRemovedKeptBroadcast) => {
+    const name = pathBasename(payload.filePath);
+    if (payload.saveWritesFile) {
+      showToast(
+        trans(
+          "%s was removed from disk. The editor keeps your unsaved changes; a save writes the file again.",
+          name,
+        ),
+        "info",
+        12000,
+      );
+      return;
+    }
+    showToast(
+      trans(
+        "%s was removed from disk. The editor keeps your unsaved changes. A save compares the file with the review of the document, so it is refused while the file is not there.",
+        name,
+      ),
+      "info",
+      12000,
+      saveCopyAction(payload.filePath),
+    );
   });
 
   // A loaded file changed on disk and could not be read. The window shows the

@@ -48,6 +48,8 @@ import {
   type BranchNodeJSON,
   DocumentType,
   DP_EVENTS,
+  FILE_REMOVED_KEPT_CHANNEL,
+  type FileRemovedKeptBroadcast,
   type LeafNodeJSON,
   type OpenDocument,
   REMOTE_CHANGE_KEPT_CHANNEL,
@@ -862,13 +864,15 @@ export default class DocumentManager
         this._app.log.warning("[DocumentManager] Ignoring watchdog change with a non-string path.");
         return;
       }
-      if (changeEvent !== "unlink" && changeEvent !== "change") {
+      // A file that was removed and is written again arrives as `add`: the
+      // watcher follows the path of a tab through a removal.
+      if (changeEvent !== "unlink" && changeEvent !== "change" && changeEvent !== "add") {
         this._app.log.warning(
           `[DocumentManager] Received unexpected event ${String(changeEvent)} for ${changedPath}.`,
         );
         return;
       }
-      if (this._ignoreChanges.includes(changedPath) && changeEvent === "change") {
+      if (this._ignoreChanges.includes(changedPath) && changeEvent !== "unlink") {
         this._app.log.info(`[DocumentManager] Ignoring change for ${changedPath}`);
         this._ignoreChanges.splice(this._ignoreChanges.indexOf(changedPath), 1);
         return;
@@ -876,7 +880,12 @@ export default class DocumentManager
         this._app.log.info(`[DocumentManager] Processing ${changeEvent} for ${changedPath}`);
       }
 
-      if (changeEvent === "unlink") {
+      if (changeEvent === "unlink" && this.isModified(changedPath)) {
+        // The text of the document is only in the application now. The
+        // document stays open with it, and the author decides: a save writes
+        // the file again, a close asks about the text.
+        this._announceRemovedFileKept(changedPath);
+      } else if (changeEvent === "unlink") {
         // Close the file everywhere
         this.closeFileEverywhere(changedPath).catch((err: unknown) =>
           this._app.log.error(err instanceof Error ? err.message : String(err)),
@@ -2556,6 +2565,20 @@ current contents from the editor somewhere else, and restart the application.`,
     const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
     // Filter: supported file extensions, and exclude the workspace directory itself
     return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
+  }
+
+  /** Tells every window that a removed file left a document with unsaved text. */
+  private _announceRemovedFileKept(filePath: string): void {
+    const documentId = this.getDocumentId(filePath);
+    const payload: FileRemovedKeptBroadcast = {
+      filePath,
+      saveWritesFile:
+        documentId === undefined || this._reviewApplication.getReview(documentId) === undefined,
+    };
+    this._app.log.warning(
+      `[DocumentManager] ${filePath} was removed from disk; its document has unsaved text and stays open.`,
+    );
+    broadcastIpcMessage(FILE_REMOVED_KEPT_CHANNEL, payload);
   }
 
   /**

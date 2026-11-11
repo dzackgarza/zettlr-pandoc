@@ -62,7 +62,7 @@ type WatchdogListener = (event: string, filePath: string) => void;
 let watchdogListener: WatchdogListener | undefined;
 
 /** Reports a disk event to the booted manager, as the FSAL watchdog does. */
-export function emitWatchdogEvent(event: "change" | "unlink", filePath: string): void {
+export function emitWatchdogEvent(event: "add" | "change" | "unlink", filePath: string): void {
   if (watchdogListener === undefined) {
     throw new Error("No DocumentManager subscribed to the watchdog");
   }

@@ -190,6 +190,16 @@ export type RemoteChangeKeptBroadcast = { filePath: string; unsavedChanges: bool
 
 export const REMOTE_CHANGE_KEPT_CHANNEL = "remote-change-kept";
 
+/**
+ * Broadcast on FILE_REMOVED_KEPT_CHANNEL when the file of a loaded document
+ * with unsaved text was removed and the document stayed open with that
+ * text. `saveWritesFile` is false for a document with a review: its save
+ * compares the file with the review and is refused while no file is there.
+ */
+export type FileRemovedKeptBroadcast = { filePath: string; saveWritesFile: boolean };
+
+export const FILE_REMOVED_KEPT_CHANNEL = "file-removed-kept";
+
 /** Opaque `ChangeSet.toJSON()` payload; only `ChangeSet.fromJSON` reads it. */
 export type SerializedChanges = readonly (number | readonly (number | string)[])[];
 

@@ -835,7 +835,18 @@ of an isolated instance are in the first comment of #132.
   applies the working text of the sidecar and then broadcasts the state. The
   window keeps the session that it gets for a document, and an editor shows a
   review only while its text is the working text of that session.
+- **A removed file closes only a document whose text is on disk.** The
+  watcher reports the removal of the file of a tab (`unlink`). A document
+  without unsaved text closes with its tabs. A document with unsaved text
+  stays loaded with its tabs, and each window gets one message
+  (`FILE_REMOVED_KEPT_CHANNEL`): a save writes the file again, or, for a
+  document with a review, the save is refused and the message offers
+  "Save a copy…". The watcher follows the path through the removal: a
+  file that is written again arrives as `add`, which the provider handles
+  as a change (the `add` of its own save is not a change).
 - **Proof:** `test/documents-move-identity.spec.ts`,
+  `test/documents-removed-file.spec.ts`,
+  `e2e/external-delete-unsaved.spec.ts`,
   `test/documents-quit-with-review.spec.ts`,
   `test/documents-edit-collaboration.spec.ts`,
   `e2e/quit-with-open-review.spec.ts`,
@@ -897,7 +908,7 @@ of an isolated instance are in the first comment of #132.
   Node has no interface to them.
 - **The watcher reports a change.** The rename arrives as `change` for the
   file and never as `unlink`; the documents provider closes the tabs of a
-  removed file. The temporary file `<name>.<number>` gets `add` and `unlink`
+  removed file whose document has no unsaved text (§14). The temporary file `<name>.<number>` gets `add` and `unlink`
   events. It is of no known type, so the file filters hide it (§10).
 - **Proof:** `test/fsal-write-text-file.spec.ts`,
   `test/fsal-watcher-events.spec.ts`, `e2e/save-after-typing.spec.ts`,
