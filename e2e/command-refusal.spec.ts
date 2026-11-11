@@ -156,7 +156,11 @@ describe("an application command that cannot do its work", function () {
     await editorPage.locator(ERROR_TOAST).first().waitFor({ state: "visible", timeout: 20_000 });
     const messages = await errorMessages(editorPage);
     assert.equal(messages.length, 1, `one error is shown: ${JSON.stringify(messages)}`);
-    assert.ok(messages[0].includes("held.md"), `the error names the file: ${messages[0]}`);
+    assert.equal(
+      messages[0],
+      "Could not rename held.md: permission denied.",
+      "the error names the file and the cause, without the call and the paths of the system error",
+    );
     assert.deepEqual(
       await readdir(lockedDirectory),
       ["held.md"],
