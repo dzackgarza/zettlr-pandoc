@@ -15,6 +15,8 @@
 import { trans } from "@common/i18n-main";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { runEachStep } from "source/app/util/run-each-step";
+import { systemErrorCause } from "source/app/util/system-error-cause";
 import { isAtOrInsideRoot } from "source/common/util/renderer-path-polyfill";
 import ZettlrCommand from "./zettlr-command";
 
@@ -81,18 +83,37 @@ export default class RequestMove extends ZettlrCommand {
 
     // Now we can move the source to the target.
     const linksBefore = this._app.links.snapshot();
-    await this._app.fsal.rename(from.path, newPath);
-    // Notify the documents provider so it can exchange any files if necessary
-    if (await this._app.fsal.isFile(newPath)) {
-      await this._app.documents.hasMovedFile(from.path, newPath);
-    } else {
-      await this._app.documents.hasMovedDir(from.path, newPath);
-    }
+    await this._app.fsal.rename(from.path, newPath).catch((failure: NodeJS.ErrnoException) => {
+      throw new Error(
+        trans("Could not move %s to %s: %s.", from.name, to.name, systemErrorCause(failure)),
+        { cause: failure },
+      );
+    });
 
-    // Keep every wikilink pointing at the document it named before the move
+    // The source is at its new place. Each step that follows runs, also when
+    // the step before it failed: the links follow a document whose
+    // collaboration state could not.
     const move = { from: from.path, to: newPath };
-    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
+    await runEachStep([
+      // Notify the documents provider so it can exchange any files if necessary
+      async () => {
+        if (await this._app.fsal.isFile(newPath)) {
+          await this._app.documents.hasMovedFile(from.path, newPath);
+        } else {
+          await this._app.documents.hasMovedDir(from.path, newPath);
+        }
+      },
+      // Keep every wikilink pointing at the document it named before the move
+      async () => {
+        const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
+        await this._app.links.retargetAfterMove(
+          linksBefore,
+          move,
+          changedFiles,
+          this._app.documents,
+        );
+      },
+    ]);
 
     return true;
   }

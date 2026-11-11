@@ -51,7 +51,7 @@ const INDEX = "# Index\n\nSee [[note]], [[drafts/genus]] and [[notes/rank]].\n";
 const INSTRUCTION = "State the signature condition.";
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 const LINK_PROMPT_TITLE = "Confirm";
-const FOLDER_ERROR_TITLE = "Error";
+const FOLDER_ERROR_TITLE = "Rename directory";
 
 /** Sends a rename as the file manager does. Answers whether the command was refused. */
 function renameIsRefused(page: Page, target: string, name: string): Promise<boolean> {
@@ -280,5 +280,18 @@ describe("a move whose review state cannot follow the document", function () {
       [],
       "the message box is the one message of a folder rename",
     );
+
+    // The file manager shows each document where it is.
+    const row = (target: string): string => `.tree-item[data-path=${JSON.stringify(target)}]`;
+    await editorPage
+      .locator(row(path.join(workspace, "lattices.md")))
+      .waitFor({ state: "attached", timeout: 20_000 });
+    await editorPage
+      .locator(row(path.join(workspace, "results")))
+      .waitFor({ state: "attached", timeout: 20_000 });
+    for (const former of [notePath, genusPath, path.join(workspace, "notes")]) {
+      await editorPage.locator(row(former)).waitFor({ state: "detached", timeout: 20_000 });
+    }
+    screenshots.set("after-the-moves.png", await editorPage.screenshot());
   });
 });

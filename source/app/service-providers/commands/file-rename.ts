@@ -20,6 +20,10 @@ import { constants as FSConstants } from "fs";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import type { WikilinkSnapshot } from "source/app/service-providers/links";
+import { runEachStep } from "source/app/util/run-each-step";
+import { systemErrorCause } from "source/app/util/system-error-cause";
+import type { PathMove } from "source/common/util/replace-links";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileRename extends ZettlrCommand {
@@ -155,7 +159,13 @@ export default class FileRename extends ZettlrCommand {
 
     // Now, rename the file. The root follows it: to its new path, or back to
     // its old path when the rename failed. A later failure leaves it open.
-    const renamed = this._app.fsal.rename(file.path, newPath);
+    const renamed = this._app.fsal
+      .rename(file.path, newPath)
+      .catch((failure: NodeJS.ErrnoException) => {
+        throw new Error(trans("Could not rename %s: %s.", file.name, systemErrorCause(failure)), {
+          cause: failure,
+        });
+      });
     if (isRoot) {
       await renamed.then(
         () => this._app.config.addPath(newPath),
@@ -163,25 +173,37 @@ export default class FileRename extends ZettlrCommand {
       );
     }
     await renamed;
-    // Notify the documents provider so it can exchange any files if necessary
-    await this._app.documents.hasMovedFile(file.path, newPath);
 
-    // Finally, let's check if we can update some internal links to that file.
+    // The file has its new name. Each step that follows runs, also when the
+    // step before it failed: the links follow a document whose collaboration
+    // state could not.
     const move = { from: file.path, to: newPath };
+    await runEachStep([
+      // Notify the documents provider so it can exchange any files if necessary
+      async () => await this._app.documents.hasMovedFile(file.path, newPath),
+      async () => await this._offerLinkUpdate(linksBefore, move, newName),
+    ]);
+  }
+
+  /** Asks whether the links to the renamed file follow it, and updates them for "Yes". */
+  private async _offerLinkUpdate(
+    linksBefore: WikilinkSnapshot,
+    move: PathMove,
+    newName: string,
+  ): Promise<void> {
     const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-    if (changedFiles.length > 0) {
-      const response = await dialog.showMessageBox({
-        title: trans("Confirm"),
-        message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
-        buttons: [trans("Yes"), trans("No")],
-        defaultId: 1,
-      });
-
-      if (response.response === 1) {
-        return; // Do not update the links.
-      }
-
-      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
+    if (changedFiles.length === 0) {
+      return;
     }
+    const response = await dialog.showMessageBox({
+      title: trans("Confirm"),
+      message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
+      buttons: [trans("Yes"), trans("No")],
+      defaultId: 1,
+    });
+    if (response.response === 1) {
+      return; // Do not update the links.
+    }
+    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
   }
 }

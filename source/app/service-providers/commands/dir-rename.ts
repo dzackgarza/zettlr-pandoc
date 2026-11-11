@@ -15,6 +15,8 @@
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { runEachStep } from "source/app/util/run-each-step";
+import { systemErrorCause } from "source/app/util/system-error-cause";
 import { trans } from "source/common/i18n-main";
 import ZettlrCommand from "./zettlr-command";
 
@@ -40,54 +42,69 @@ export default class DirRename extends ZettlrCommand {
 
     // At this point no file is open in that directory anymore, so we can easily
     // rename the directory. The FSAL will reflect the changes.
-    try {
-      // Before renaming the dir, let's see if it is a workspace. Because if it
-      // is, we have to close it first.
-      const { openWorkspaces } = this._app.config.getConfig().app;
-      const isRoot = openWorkspaces.includes(sourceDir.path);
-
-      const linksBefore = this._app.links.snapshot();
-
-      if (isRoot) {
-        this._app.config.removePath(sourceDir.path);
-      }
-
-      // The workspace follows the directory: to its new path, or back to its
-      // old path when the rename failed. A later failure leaves it open.
-      const renamed = this._app.fsal.rename(arg.path, newPath);
-      if (isRoot) {
-        await renamed.then(
-          () => this._app.config.addPath(newPath),
-          () => this._app.config.addPath(sourceDir.path),
-        );
-      }
-      await renamed;
-      // Notify the documents provider so it can exchange any files if necessary
-      await this._app.documents.hasMovedDir(arg.path, newPath);
-
-      // Keep every wikilink pointing at the document it named before the rename
-      const move = { from: arg.path, to: newPath };
-      const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-      await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        this._app.log.error(`Error during renaming file: ${err.message}`, err);
+    return await this._rename(arg.path, newPath).then(
+      () => true,
+      (failure: Error) => {
+        // The command shows the cause itself, so it answers its contract and
+        // does not throw as well.
+        this._app.log.error(`Error during renaming directory: ${failure.message}`, failure);
         this._app.windows.prompt({
           type: "error",
-          title: err.name,
-          message: err.message,
+          title: trans("Rename directory"),
+          message: failure.message,
         });
-      } else {
-        this._app.log.error("Unknown error while renaming file.", err);
-        this._app.windows.prompt({
-          type: "error",
-          title: trans("Could not rename file"),
-          message: trans("There was an error renaming the file."),
-        });
-      }
-      return false;
+        return false;
+      },
+    );
+  }
+
+  private async _rename(sourcePath: string, newPath: string): Promise<void> {
+    // Before renaming the dir, let's see if it is a workspace. Because if it
+    // is, we have to close it first.
+    const { openWorkspaces } = this._app.config.getConfig().app;
+    const isRoot = openWorkspaces.includes(sourcePath);
+
+    const linksBefore = this._app.links.snapshot();
+
+    if (isRoot) {
+      this._app.config.removePath(sourcePath);
     }
 
-    return true;
+    // The workspace follows the directory: to its new path, or back to its
+    // old path when the rename failed. A later failure leaves it open.
+    const renamed = this._app.fsal
+      .rename(sourcePath, newPath)
+      .catch((failure: NodeJS.ErrnoException) => {
+        throw new Error(
+          trans("Could not rename %s: %s.", path.basename(sourcePath), systemErrorCause(failure)),
+          { cause: failure },
+        );
+      });
+    if (isRoot) {
+      await renamed.then(
+        () => this._app.config.addPath(newPath),
+        () => this._app.config.addPath(sourcePath),
+      );
+    }
+    await renamed;
+
+    // The directory has its new name. Each step that follows runs, also when
+    // the step before it failed: the links follow a document whose
+    // collaboration state could not.
+    const move = { from: sourcePath, to: newPath };
+    await runEachStep([
+      // Notify the documents provider so it can exchange any files if necessary
+      async () => await this._app.documents.hasMovedDir(sourcePath, newPath),
+      // Keep every wikilink pointing at the document it named before the rename
+      async () => {
+        const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
+        await this._app.links.retargetAfterMove(
+          linksBefore,
+          move,
+          changedFiles,
+          this._app.documents,
+        );
+      },
+    ]);
   }
 }

@@ -73,6 +73,7 @@ import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
+import { throwFailures } from "source/app/util/run-each-step";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -103,6 +104,7 @@ import {
   type ReviewStatus,
   reviewFromSidecar,
 } from "./review-diff-store";
+import { ReviewStateNotMovedError } from "./review-state-not-moved-error";
 import {
   type AcceptAllChunksResponse,
   type AddReviewCommentResponse,
@@ -2657,7 +2659,11 @@ current contents from the editor somewhere else, and restart the application.`,
       // The sidecar goes last. When it cannot be written, the error goes to
       // the caller with the id, the tabs and the state in memory at the new
       // path: the next write of the state lands there.
-      await this._reviewApplication.renameCollaboration(documentId, oldPath, newPath);
+      await this._reviewApplication
+        .renameCollaboration(documentId, oldPath, newPath)
+        .catch((failure: Error) => {
+          throw ReviewStateNotMovedError.of(newPath, failure);
+        });
     });
   }
 
@@ -2746,6 +2752,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * Will internally call hasMovedFile for every affected file to ensure a
    * smooth user experience.
    *
+   * Each document of the folder moves, also after the move of another
+   * failed. The documents whose collaboration state stayed at the old path
+   * are one error (ReviewStateNotMovedError).
+   *
    * @param  {string}  oldPath  The old path
    * @param  {string}  newPath  The new path
    */
@@ -2760,22 +2770,34 @@ current contents from the editor somewhere else, and restart the application.`,
         ...this._pathsShownInPanes(),
       ].filter((filePath) => isInsideRoot(filePath, oldPath)),
     );
+    const failures: Error[] = [];
+    const move = async (filePath: string): Promise<void> => {
+      await this.hasMovedFile(filePath, newPath + filePath.slice(oldPath.length)).catch(
+        (failure: Error) => {
+          failures.push(failure);
+        },
+      );
+    };
     for (const filePath of known) {
-      const movedPath = newPath + filePath.slice(oldPath.length);
-      this._app.log.info(`Replacing file path for doc ${filePath} with ${movedPath}`);
-      await this.hasMovedFile(filePath, movedPath);
+      this._app.log.info(`Replacing file path for doc ${filePath} with one in ${newPath}`);
+      await move(filePath);
     }
 
-    // A file that cannot be read stays where it is. It stops no move.
+    // A file that cannot be read stays where it is. It stops no move. A
+    // document of the first loop whose sidecar stayed at the old path is
+    // not moved a second time: that move would replace the document.
     const { sidecars } = await this._reviewApplication.collaborationSidecarInventory();
     for (const sidecar of sidecars) {
-      if (isInsideRoot(sidecar.documentPath, oldPath)) {
-        await this.hasMovedFile(
-          sidecar.documentPath,
-          newPath + sidecar.documentPath.slice(oldPath.length),
-        );
+      if (isInsideRoot(sidecar.documentPath, oldPath) && !known.has(sidecar.documentPath)) {
+        await move(sidecar.documentPath);
       }
     }
+
+    const stateStayed = failures.filter((failure) => failure instanceof ReviewStateNotMovedError);
+    throwFailures([
+      ...(stateStayed.length > 1 ? [ReviewStateNotMovedError.merged(stateStayed)] : stateStayed),
+      ...failures.filter((failure) => !(failure instanceof ReviewStateNotMovedError)),
+    ]);
   }
 
   /**

@@ -28,6 +28,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import { ReviewStateNotMovedError } from "source/app/service-providers/documents/review-state-not-moved-error";
 import { sha256Text } from "source/common/util/sha256";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
 import { appListeners, appQuitRequests, userData } from "./headless-electron-harness.cjs";
@@ -252,7 +253,17 @@ describe("Documents-provider identity of a moved document", function () {
     chmodSync(sidecars, 0o500);
     renameSync(path.dirname(first), movedDirectory);
     await assert
-      .rejects(provider.hasMovedDir(path.dirname(first), movedDirectory))
+      .rejects(
+        provider.hasMovedDir(path.dirname(first), movedDirectory),
+        (failure) =>
+          failure instanceof ReviewStateNotMovedError &&
+          failure.documentPaths.join() ===
+            [
+              path.join(movedDirectory, "genus.md"),
+              path.join(movedDirectory, "lattices.md"),
+            ].join(),
+        "one error names the two documents whose state stayed",
+      )
       .finally(() => chmodSync(sidecars, 0o700));
 
     assert.deepEqual(
