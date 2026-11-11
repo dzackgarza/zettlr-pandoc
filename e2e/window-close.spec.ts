@@ -12,8 +12,9 @@
  *                  answer Cancel leaves the window and its text, and the
  *                  answer No closes the window and writes nothing. A window
  *                  whose document has a review that cannot be written stays
- *                  open with the cause and the action "Close anyway". That
- *                  action closes the window: the file keeps its text, no
+ *                  open with the cause and the action "Close anyway"; the
+ *                  other window shows no message. That action closes the
+ *                  window: the file keeps its text, no
  *                  prompt offers to save the proposal, and the review
  *                  returns with the next open of the document (#210).
  *
@@ -232,6 +233,11 @@ describe("assembled app: the close of a main window", function () {
     ]);
     assert.equal(await second.locator(NOTE).count(), 1, "the review stays in the window");
     screenshots.set("first-window-at-refusal.png", await first.screenshot());
+    assert.equal(
+      await first.locator(ERROR_TOAST).count(),
+      0,
+      "the window that the author did not close shows no message",
+    );
 
     await toast.first().locator("[data-toast-action]").click();
     const prompts = await nativeDialogs(PROMPT_TITLE, 5_000);
