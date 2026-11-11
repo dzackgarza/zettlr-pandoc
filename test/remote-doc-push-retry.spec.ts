@@ -28,6 +28,7 @@ import {
   configField,
   getDefaultConfig,
 } from "source/common/modules/markdown-editor/util/configuration";
+import { dismissAllNotifications, notificationEntries } from "source/common/util/show-toast";
 import type { SerializedUpdate } from "source/types/common/documents";
 
 const FILE = "/notes/lattices.md";
@@ -86,6 +87,7 @@ describe("An editor whose update the document authority rejected", function () {
   let authority: Authority;
 
   beforeEach(function () {
+    dismissAllNotifications();
     authority = new Authority();
     const config = getDefaultConfig();
     view = new EditorView({
@@ -123,6 +125,23 @@ describe("An editor whose update the document authority rejected", function () {
       "the authority has the text that it rejected before",
     );
     assert.equal(sendableUpdates(view.state).length, 0, "the editor holds no unsent update");
+  });
+
+  it("tells the author one time that the document did not take the text", async function () {
+    authority.refusing = true;
+    type(TYPED);
+    await until(() => authority.refusals > 0, 2000);
+    const shown = (): string[] =>
+      notificationEntries()
+        .filter((entry) => entry.kind === "error")
+        .map((entry) => entry.message);
+    await until(() => shown().length > 0, 2000);
+    assert.equal(shown().length, 1, `one error is shown: ${JSON.stringify(shown())}`);
+    assert.ok(shown()[0].includes("lattices.md"), `the error names the document: ${shown()[0]}`);
+
+    await until(() => authority.refusals > 1, 5000);
+    assert.equal(authority.refusals > 1, true, "the editor sent the update a second time");
+    assert.equal(shown().length, 1, "the second rejection of the same update shows no new error");
   });
 
   it("sends the rejected text together with the text that the author typed after it", async function () {
