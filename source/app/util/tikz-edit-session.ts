@@ -29,6 +29,15 @@ export const VISUAL_TIKZ_EDITOR_COMMAND = "visual-tikz-editor";
 /** The editor saves with one write; this delay lets that write finish. */
 const SAVE_SETTLE_MS = 50;
 
+/**
+ * The time that an editor has to end after SIGTERM. An editor that still
+ * runs then ends on SIGKILL, which no process can ignore: the stop of a
+ * session and the exit of the app have a time limit, as a stopped systemd
+ * unit has (`TimeoutStopSec=`, then `SIGKILL` to the control group:
+ * https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html).
+ */
+const KILL_GRACE_MS = 2_000;
+
 export interface TikzEditContext {
   /** The MathJax macro projection that the editor's Quiver view uses. */
   macrosPath: string;
@@ -52,6 +61,8 @@ interface Session {
   child: ChildProcess;
   stopped: Promise<void>;
   running: boolean;
+  /** Set when the editor was told to stop: ends the editor that still runs. */
+  kill: NodeJS.Timeout | undefined;
 }
 
 export class TikzEditSessions {
@@ -143,9 +154,11 @@ export class TikzEditSessions {
     const session: Session = {
       child,
       running: true,
+      kill: undefined,
       stopped: new Promise<void>((resolve) => {
         child.once("exit", (code) => {
           session.running = false;
+          clearTimeout(session.kill);
           this.sessions.delete(id);
           void release().then(() => {
             if (this.listening) {
@@ -160,15 +173,34 @@ export class TikzEditSessions {
     return { outcome: "opened", id };
   }
 
-  /** Stop the editor of session `id`. A session that already ended is left alone. */
+  /**
+   * Stop the editor of session `id`. A session that already ended, or that
+   * was already told to stop, is left alone. An editor that still runs after
+   * `KILL_GRACE_MS` ends on SIGKILL.
+   */
   close(id: string): void {
     const session = this.sessions.get(id);
-    if (session?.running === true && session.child.pid !== undefined) {
-      process.kill(-session.child.pid, "SIGTERM");
+    if (session?.running !== true || session.child.pid === undefined) {
+      return;
     }
+    if (session.kill !== undefined) {
+      return;
+    }
+    // While the editor runs, its process id is the id of its process group,
+    // and the system gives that id to no other process.
+    const group = -session.child.pid;
+    process.kill(group, "SIGTERM");
+    session.kill = setTimeout(() => {
+      if (session.running) {
+        process.kill(group, "SIGKILL");
+      }
+    }, KILL_GRACE_MS);
   }
 
-  /** Stop every editor and wait until each one is gone. */
+  /**
+   * Stop every editor and wait until each one is gone. The wait has a limit:
+   * `close` ends an editor that does not end on SIGTERM.
+   */
   async shutdown(): Promise<void> {
     this.listening = false;
     const sessions = [...this.sessions.entries()];

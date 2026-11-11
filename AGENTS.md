@@ -350,9 +350,11 @@ Zettlr starts it on one diagram.
 - **End of a session:** the editor stops when its view state goes away (a
   closed tab, a document loaded again: `tikz-edit-close`) and when the app
   quits (`CommandProvider.shutdown` calls the `shutdown` of each command and
-  waits until each editor is gone). The session directory is removed when the
-  editor exits.
+  waits until each editor is gone). The stop has a time limit: the process
+  group of the editor gets SIGTERM, and an editor that still runs two seconds
+  later gets SIGKILL. The session directory is removed when the editor exits.
 - **Proof:** `test/tikz-edit-sessions.spec.ts` (the range and refusal rules),
+  `test/tikz-edit-process.spec.ts` (the time limit of a stop),
   `e2e/tikz-live-preview.spec.ts` (the pane), and
   `e2e/desktop/tikz-external-editor.spec.ts` (the assembled app with the
   installed editor; a workstation proof, not a hosted CI job).
