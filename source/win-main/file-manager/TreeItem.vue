@@ -12,10 +12,12 @@
         active: activeItem === item.path,
         project: item.type === 'directory' && item.settings.project != null,
         'is-ignored': isIgnored,
+        'is-unreadable': readError !== undefined,
         root: isRoot
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
+      v-bind:data-read-error="readError?.code"
       v-bind:style="{
         'padding-left': `calc(${depth} * var(--chrome-indent) + var(--chrome-inset))`
       }"
@@ -61,7 +63,7 @@
           v-bind:class="{
             'special': typeof primaryIcon !== 'boolean' && ![ 'right', 'down' ].includes(primaryIcon)
           }"
-          v-bind:solid="typeof primaryIcon !== 'boolean' && [ 'disconnect', 'blocks-group' ].includes(primaryIcon)"
+          v-bind:solid="typeof primaryIcon !== 'boolean' && [ 'disconnect', 'blocks-group', 'warning-standard' ].includes(primaryIcon)"
         ></cds-icon>
       </span>
       <span
@@ -73,7 +75,7 @@
         role="button"
         v-bind:aria-label="`Select ${item.name}`"
         v-bind:draggable="!isRoot && !nameEditing"
-        v-bind:title="item.path"
+        v-bind:title="rowTitle"
         v-on:dragstart="beginDragging"
         v-on:drag="onDragHandler"
       >
@@ -223,6 +225,7 @@ import { eventsChangeChildren } from "./util/events-change-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
+import { readErrorOf, readErrorSentence } from "./util/read-error";
 
 const ipcRenderer = window.ipc;
 
@@ -306,7 +309,9 @@ const secondaryIcon = computed(() => (filteredChildren.value.length > 0 ? "angle
 const primaryIcon = computed(() => {
   const { attachmentExtensions } = configStore.config;
 
-  if (props.item.type === "file" && writingTarget.value !== undefined) {
+  if (readError.value !== undefined) {
+    return "warning-standard";
+  } else if (props.item.type === "file" && writingTarget.value !== undefined) {
     return "writing-target";
   } else if (props.item.type === "file") {
     return "markdown";
@@ -387,6 +392,16 @@ const isIgnored = computed(() => {
     ignoreRulesStore.filter.matches(props.item.path, props.item.type === "directory")
   );
 });
+
+/** Why the text of this file could not be read; undefined for a file that was read. */
+const readError = computed(() => readErrorOf(props.item));
+
+/** The path of the item and, for a file that could not be read, the cause. */
+const rowTitle = computed(() =>
+  readError.value === undefined
+    ? props.item.path
+    : `${props.item.path}\n${readErrorSentence(readError.value)}`,
+);
 
 /**
  * Returns true if the file manager mode is set to "combined"
@@ -817,6 +832,7 @@ body {
       &.yellow { color: var(--accent-yellow); }
       &.green { color: var(--accent-green); }
       &.is-ignored { opacity: 0.58; }
+      &.is-unreadable .toggle-icon { color: var(--accent-orange); }
 
       .item-icon, .toggle-icon {
         display: flex;

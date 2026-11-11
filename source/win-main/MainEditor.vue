@@ -478,7 +478,29 @@ function publishActiveEditorState(editor: MarkdownEditor): void {
 }
 
 function reportDocumentLoadError(error: unknown): void {
-  surfaceDocumentLoadError(props.file.path, error);
+  surfaceDocumentLoadError(props.file.path, error, loadAgain);
+}
+
+/** True after the tab of this pane closed: the pane has no place for an editor. */
+let paneClosed = false;
+
+/**
+ * The action of the message of a failed load. A pane without an editor
+ * loads its document, a pane with an editor loads the text again, and for a
+ * pane that closed the window opens the file.
+ */
+function loadAgain(): void {
+  if (paneClosed) {
+    ipcRenderer
+      .invoke("documents-provider", {
+        command: "open-file",
+        payload: { path: props.file.path, windowId: props.windowId },
+      })
+      .catch((error: unknown) => reportError(error));
+    return;
+  }
+  const load = currentEditor === null ? activateTab() : currentEditor.reload();
+  load.catch(reportDocumentLoadError);
 }
 
 /**
@@ -781,6 +803,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  paneClosed = true;
   for (const stop of [
     stopCiteprocUpdates,
     stopReferenceUpdates,

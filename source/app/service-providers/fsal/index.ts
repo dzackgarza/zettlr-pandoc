@@ -131,6 +131,8 @@ export default class FSAL extends ProviderContract {
   private readonly _emitter: EventEmitter;
   private readonly watchers: Map<string, FSALWatchdog>;
   private readonly deadWorkspaces: Set<string>;
+  /** The files whose last read of the text failed. */
+  private readonly unreadableFiles = new Set<string>();
   /** The events that wait for the next publication, in the order they happened */
   private readonly pendingEvents: FSALEventPayload[] = [];
   private readonly publishPendingEvents = _.throttle(
@@ -344,6 +346,7 @@ export default class FSAL extends ProviderContract {
 
     // In unlink-events, there won't be a descriptor.
     if (event === "unlink" || event === "unlinkDir") {
+      this.unreadableFiles.delete(absPath);
       this.publishEvent({ event, path: absPath });
       return;
     }
@@ -1153,9 +1156,11 @@ export default class FSAL extends ProviderContract {
   ): Promise<MDFileDescriptor | CodeFileDescriptor | OtherFileDescriptor> {
     if (await this.isFile(absPath)) {
       if (hasMarkdownExt(absPath)) {
-        return await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser());
+        return this.noteReadResult(
+          await FSALFile.parse(absPath, this._cache, this.getMarkdownFileParser()),
+        );
       } else if (hasCodeExt(absPath)) {
-        return await FSALCodeFile.parse(absPath, this._cache);
+        return this.noteReadResult(await FSALCodeFile.parse(absPath, this._cache));
       } else {
         return await FSALAttachment.parse(absPath, this._cache);
       }
@@ -1166,6 +1171,31 @@ export default class FSAL extends ProviderContract {
     }
 
     throw new Error(`[FSAL] Cannot load file ${absPath}: Not found`);
+  }
+
+  /**
+   * Follows whether the text of a file can be read. The first read that
+   * fails is logged. Each change, a read that fails after a read that gave
+   * the text and the reverse, is a `change` event of the file: a descriptor
+   * that a consumer holds has another `readError` than this one.
+   */
+  private noteReadResult<T extends MDFileDescriptor | CodeFileDescriptor>(descriptor: T): T {
+    const wasUnreadable = this.unreadableFiles.has(descriptor.path);
+    if ((descriptor.readError !== undefined) === wasUnreadable) {
+      return descriptor;
+    }
+    if (descriptor.readError === undefined) {
+      this.unreadableFiles.delete(descriptor.path);
+    } else {
+      this.unreadableFiles.add(descriptor.path);
+      this._logger.warning(
+        `[FSAL] Could not read the text of ${descriptor.path}: ${descriptor.readError.message}`,
+      );
+    }
+    if (this.isListed(descriptor.path, false)) {
+      this.publishEvent({ event: "change", descriptor });
+    }
+    return descriptor;
   }
 
   /**

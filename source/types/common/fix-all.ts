@@ -28,7 +28,10 @@ export interface FixAllPlan {
   documents: FixAllDocument[];
   /** How many documents the scope held. */
   documentsChecked: number;
-  /** The documents Flowmark could not lint, so their fixes are unknown. */
+  /**
+   * The documents without a lint result (a failed Flowmark run, a file that
+   * gave no text), so their fixes are unknown.
+   */
   unlinted: string[];
 }
 

@@ -972,6 +972,34 @@ of an isolated instance are in the first comment of #132.
   `e2e/search-replace.spec.ts` and `e2e/fix-all.spec.ts` (the two
   confirmations).
 
+### 19. A file that cannot be read
+
+- **The file has a descriptor.** A workspace file whose text the filesystem
+  refuses to read (`EACCES`, `EIO`) is listed. Its Markdown or code
+  descriptor carries `readError` (the code and the message of the error);
+  the other fields describe a file without text. The parsers read through
+  `readFileText` (`fsal/util/read-file-text.ts`). A path that is gone still
+  rejects. One such file does not stop the index of its workspace or the
+  start of the app.
+- **The descriptor is not cached.** Each request for it reads the file
+  again. The FSAL logs the cause one time, and publishes `change` for the
+  file when its read state changes: the watcher does not report a change of
+  permissions.
+- **The file manager shows the cause.** A row of such a file has the warning
+  icon, the attribute `data-read-error` and the cause in its title
+  (`file-manager/util/read-error.ts`).
+- **A document without text is a document that was not linted.**
+  `DocumentLintSource` is a text or the cause (`unreadable`). The Problems
+  view, the Fix All plan and `/v1/lint` (scopes `workspace` and `all`, kind
+  `unreadable` in `failed`) name the document and answer for the other
+  documents. No failure is kept for it: each reader reads the file again.
+- **A failed first load offers the load again.** The message of an editor
+  that could not load its document has the action "Try again"
+  (`surface-document-load-error.ts`, `loadAgain` in `MainEditor.vue`).
+- **Proof:** `test/fsal-unreadable-file.spec.ts`,
+  `test/document-lint-failure.spec.ts`, `test/agent-http-api.spec.ts`,
+  `e2e/document-load-retry.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

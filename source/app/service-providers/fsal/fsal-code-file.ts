@@ -21,6 +21,7 @@ import type FSALCache from "./fsal-cache";
 import extractBOM from "./util/extract-bom";
 import { extractLinefeed } from "./util/extract-linefeed";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
+import { readFileText } from "./util/read-file-text";
 
 /**
  * Applies a cached file, saving time where the file is not being parsed.
@@ -98,7 +99,13 @@ export async function parse(
 
   if (!hasCache) {
     // Read in the file, parse the contents and make sure to cache the file
-    let content = await fs.readFile(filePath, { encoding: "utf8" });
+    const content = await readFileText(filePath);
+    if (typeof content !== "string") {
+      // A file without text is not cached: the next request reads it again.
+      file.readError = content;
+      await cache?.del(file.path);
+      return file;
+    }
     parseFileContents(file, content);
     if (cache !== null) {
       await cacheFile(file, cache);

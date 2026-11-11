@@ -45,6 +45,7 @@
 
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import isErrnoException from "@common/util/is-errno-exception";
 import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
@@ -107,8 +108,12 @@ export interface DocumentLintRecord {
 
 /** Why a run of a document gave no result. */
 export interface DocumentLintFailure {
-  /** How the Flowmark process failed; `lint-error` for a run that stopped outside that process. */
-  kind: FlowmarkLintFailureKind | "lint-error";
+  /**
+   * How the Flowmark process failed; `lint-error` for a run that stopped
+   * outside that process; `unreadable` for a document whose file gave no
+   * text, so that no run started.
+   */
+  kind: FlowmarkLintFailureKind | "lint-error" | "unreadable";
   message: string;
   /** ISO 8601 time the run ended. */
   failedAt: string;
@@ -129,11 +134,13 @@ interface FailedRun extends DocumentLintFailure {
   inputs?: string;
 }
 
-/** A document's current text, as the document authority or the disk has it. */
-export interface DocumentLintSource {
-  path: string;
-  text: string;
-}
+/**
+ * A document's current text, as the document authority or the disk has it,
+ * or the cause when the file of the document gave no text.
+ */
+export type DocumentLintSource =
+  | { path: string; text: string }
+  | { path: string; unreadable: string };
 
 export interface DocumentLintDependencies {
   log: LogProvider;
@@ -484,6 +491,18 @@ export default class DocumentLintProvider extends ProviderContract {
     const pass = new LintPass(this.contentHashes);
     return await Promise.all(
       sources.map(async (source) => {
+        if ("unreadable" in source) {
+          // No run can start, and the cause is that of this read: the next
+          // reader reads the file again.
+          return {
+            current: false,
+            failure: {
+              kind: "unreadable" as const,
+              message: source.unreadable,
+              failedAt: new Date().toISOString(),
+            },
+          };
+        }
         const record = this.entries.get(source.path);
         const failedRun = this.failures.get(source.path);
         const revision = sha256Text(source.text);
@@ -738,10 +757,7 @@ export default class DocumentLintProvider extends ProviderContract {
       }
     }
     const sources = await Promise.all(
-      paths.map(async (documentPath) => ({
-        path: documentPath,
-        text: await this.currentText(documentPath),
-      })),
+      paths.map(async (documentPath) => await this.source(documentPath)),
     );
     await this.lookup(sources);
   }
@@ -772,18 +788,14 @@ export default class DocumentLintProvider extends ProviderContract {
         : workspacePath === undefined
           ? []
           : allPaths.filter((filePath) => isAtOrInsideRoot(filePath, workspacePath));
-    const sources = await Promise.all(
-      paths.map(async (filePath) => ({
-        path: filePath,
-        text: await this.currentText(filePath),
-      })),
-    );
+    const sources = await Promise.all(paths.map(async (filePath) => await this.source(filePath)));
     const lookups = await workspaceLintRows(this, sources);
     const documents: ProblemDocument[] = [];
     const pendingPaths: string[] = [];
     const failed: UnlintedDocument[] = [];
     lookups.forEach((lookup, index) => {
       const filePath = paths[index];
+      const source = sources[index];
       const record = lookup.record;
       if (lookup.failure !== undefined) {
         failed.push({
@@ -792,7 +804,7 @@ export default class DocumentLintProvider extends ProviderContract {
           cause: lookup.failure.message,
         });
       }
-      if (record === undefined) {
+      if (record === undefined || "unreadable" in source) {
         if (lookup.failure === undefined) {
           pendingPaths.push(filePath);
         }
@@ -820,7 +832,7 @@ export default class DocumentLintProvider extends ProviderContract {
         path: filePath,
         name: path.basename(filePath),
         state: lookup.current ? "current" : "stale",
-        sourceHash: hashDocumentSource(sources[index].text),
+        sourceHash: hashDocumentSource(source.text),
         diagnostics,
         counts,
       });
@@ -880,7 +892,16 @@ export default class DocumentLintProvider extends ProviderContract {
       while (next < documentPaths.length) {
         const documentPath = documentPaths[next];
         next += 1;
-        const text = await this.currentText(documentPath);
+        const source = await this.source(documentPath);
+        if ("unreadable" in source) {
+          this.deps.log.error(
+            `[Document Lint] Could not read ${documentPath}: ${source.unreadable}`,
+          );
+          plan.unlinted.push(documentPath);
+          done += 1;
+          continue;
+        }
+        const text = source.text;
         const record = await this.lintIn(pass, documentPath, text);
         if (!record.complete) {
           plan.unlinted.push(documentPath);
@@ -915,6 +936,23 @@ export default class DocumentLintProvider extends ProviderContract {
     plan.documents.sort((a, b) => a.documentPath.localeCompare(b.documentPath));
     plan.unlinted.sort();
     return plan;
+  }
+
+  /**
+   * The current text of a workspace document, or the cause when the
+   * filesystem gives no text. One such document does not stop the answer
+   * for the other documents of a workspace.
+   */
+  private async source(documentPath: string): Promise<DocumentLintSource> {
+    return await this.currentText(documentPath).then(
+      (text) => ({ path: documentPath, text }),
+      (error: unknown) => {
+        if (!isErrnoException(error)) {
+          throw error;
+        }
+        return { path: documentPath, unreadable: error.message };
+      },
+    );
   }
 
   private async currentText(documentPath: string): Promise<string> {

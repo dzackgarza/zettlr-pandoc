@@ -1474,13 +1474,13 @@ export interface components {
         path: string;
         name: string;
       }[];
-      /** @description Documents of a workspace or all scope whose last lint run gave no result. The background linter does not lint such a document again until its text or a lint input changes, Flowmark is updated, or the author starts the lint again in the Problems view. A document with an older result is also in documents, with current false. Always empty for the other scopes: there a failed run is one error diagnostic of the document. */
+      /** @description Documents of a workspace or all scope whose last lint run gave no result. The background linter does not lint such a document again until its text or a lint input changes, Flowmark is updated, or the author starts the lint again in the Problems view. A document with an older result is also in documents, with current false. A document whose file gave no text (kind unreadable) is here too, and is read again for each request. Always empty for the other scopes: there a failed run is one error diagnostic of the document. */
       failed: {
         documentId: string;
         path: string;
         name: string;
         /**
-         * @description How the run failed. flowmark-absent, flowmark-error, flowmark-timeout and flowmark-invalid-output are failures of the Flowmark process; lint-error is a run that stopped outside that process.
+         * @description Why the document has no result. flowmark-absent, flowmark-error, flowmark-timeout and flowmark-invalid-output are failures of the Flowmark process; lint-error is a run that stopped outside that process; unreadable is a document whose file gave no text, so that no run started.
          * @enum {string}
          */
         kind:
@@ -1488,12 +1488,13 @@ export interface components {
           | "flowmark-error"
           | "flowmark-timeout"
           | "flowmark-invalid-output"
-          | "lint-error";
+          | "lint-error"
+          | "unreadable";
         /** @description The message of the failure. */
         cause: string;
         /**
          * Format: date-time
-         * @description When the run ended.
+         * @description When the run ended, or when the read failed.
          */
         failedAt: string;
       }[];

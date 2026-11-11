@@ -30,7 +30,7 @@
           </ul>
         </template>
         <p v-if="plan !== undefined && plan.unlinted.length > 0" class="fix-all-body" data-fix-all-unlinted>
-          {{ trans('Flowmark could not lint %s; they stay as they are.', documentsPhrase(plan.unlinted.length)) }}
+          {{ trans('The lint gave no result for %s; they stay as they are.', documentsPhrase(plan.unlinted.length)) }}
         </p>
         <div class="fix-all-actions">
           <AlertDialogCancel class="fix-all-button">{{ fixCount > 0 ? trans('Cancel') : trans('Close') }}</AlertDialogCancel>

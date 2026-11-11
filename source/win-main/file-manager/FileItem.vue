@@ -15,10 +15,13 @@
         active: activeFile !== undefined && item.path === activeFile.path,
         'has-meta-info': fileMeta,
         directory: item.type === 'directory',
-        'is-ignored': isIgnored
+        'is-ignored': isIgnored,
+        'is-unreadable': readError !== undefined
       }"
       v-bind:data-id="item.type === 'file' ? item.id : ''"
       v-bind:data-path="item.path"
+      v-bind:data-read-error="readError?.code"
+      v-bind:title="readErrorTitle"
       v-bind:data-filename="getFilename"
       v-bind:draggable="isDraggable"
       v-on:click.stop="requestSelection"
@@ -34,6 +37,12 @@
           aria-label="Project"
           shape="blocks-group"
           class="is-solid"
+        ></cds-icon>
+        <cds-icon
+          v-if="readError !== undefined"
+          v-bind:aria-label="readErrorTitle"
+          shape="warning-standard"
+          class="is-solid read-error-icon"
         ></cds-icon>
         <input
           v-if="nameEditing"
@@ -185,6 +194,7 @@ import { eventsChangeChildren } from "./util/events-change-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
+import { readErrorOf, readErrorSentence } from "./util/read-error";
 
 const props = defineProps<{
   activeFile: AnyDescriptor | undefined;
@@ -215,6 +225,12 @@ const isIgnored = computed(() => {
     ignoreRulesStore.filter.matches(props.item.path, props.item.type === "directory")
   );
 });
+
+/** Why the text of this file could not be read; undefined for a file that was read. */
+const readError = computed(() => readErrorOf(props.item));
+const readErrorTitle = computed(() =>
+  readError.value === undefined ? undefined : readErrorSentence(readError.value),
+);
 
 const shouldCountChars = computed(() => configStore.config.editor.countChars);
 const writingTargets = computed(() => windowStateStore.writingTargets);
@@ -502,6 +518,7 @@ body {
 
       &.has-meta-info { height: 70px; }
       &.is-ignored { opacity: 0.58; }
+      .read-error-icon { color: var(--accent-orange); }
 
       // The meta information div in the extended file list
       div.meta-info {

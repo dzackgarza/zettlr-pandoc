@@ -22,11 +22,11 @@ export interface ProblemDocument {
   counts: Record<ProblemSeverity, number>;
 }
 
-/** A document whose last lint run gave no result. */
+/** A document without a lint result: its last run failed, or its file gave no text. */
 export interface UnlintedDocument {
   path: string;
   name: string;
-  /** Why the run gave no result. */
+  /** Why the document has no result. */
   cause: string;
 }
 
@@ -34,7 +34,7 @@ export interface WorkspaceProblems {
   documents: ProblemDocument[];
   /** The documents that wait for their first result. */
   pendingPaths: string[];
-  /** The documents whose current text Flowmark could not lint. */
+  /** The documents whose current text has no lint result, each with the cause. */
   failed: UnlintedDocument[];
   /** Why the background queue lints no document; null while it works. */
   queueStopped: string | null;

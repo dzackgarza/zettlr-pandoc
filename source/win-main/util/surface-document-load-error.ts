@@ -40,9 +40,17 @@ export function surfaceDocumentLoadFailure(filePath: string, failure: DocumentLo
 
 /**
  * Reports that an editor could not load its document. The provider holds no
- * text of that document, so the message has no action: the author opens the
- * file again.
+ * text of that document, so the message offers the load itself again: the
+ * caller gives the function that starts it.
  */
-export default function surfaceDocumentLoadError(filePath: string, error: unknown): void {
-  show(filePath, { message: errorMessage(error), diagnostic: errorToString(error) });
+export default function surfaceDocumentLoadError(
+  filePath: string,
+  error: unknown,
+  loadAgain: () => void,
+): void {
+  show(
+    filePath,
+    { message: errorMessage(error), diagnostic: errorToString(error) },
+    { label: trans("Try again"), onAction: loadAgain },
+  );
 }

@@ -20,6 +20,7 @@ import path from "path";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
 import type FSALCache from "./fsal-cache";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
+import { readFileText } from "./util/read-file-text";
 
 export const PARSER_VERSION = 2;
 
@@ -128,7 +129,13 @@ export async function parse(
 
   if (!hasCache) {
     // Read in the file, parse the contents and make sure to cache the file
-    let content = await fs.readFile(filePath, { encoding: "utf8" });
+    const content = await readFileText(filePath);
+    if (typeof content !== "string") {
+      // A file without text is not cached: the next request reads it again.
+      file.readError = content;
+      await cache?.del(file.path);
+      return file;
+    }
     parser(file, content);
     if (cache !== null) {
       await cacheFile(file, cache);

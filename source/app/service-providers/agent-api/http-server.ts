@@ -22,6 +22,7 @@
  */
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
+import isErrnoException from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -56,7 +57,7 @@ import type CiteprocProvider from "@providers/citeproc";
 import { CitationStyleError, CiteprocRenderInvariantError } from "@providers/citeproc";
 import type { AgentApiConfig, ConfigOptions } from "@providers/config/get-config-template";
 import type DocumentLintProvider from "@providers/document-lint";
-import type { DocumentLintRecord } from "@providers/document-lint";
+import type { DocumentLintRecord, DocumentLintSource } from "@providers/document-lint";
 import type DocumentManager from "@providers/documents";
 import type {
   AnnotationFailure,
@@ -2699,20 +2700,18 @@ export default class AgentHTTPProvider extends ProviderContract {
 
       const severityWeight = { info: 0, warning: 1, error: 2 } as const;
       const minimum = query.minimumSeverity;
-      const sources = await Promise.all(
-        targets.map(async (target) => {
-          const read = await this._queries.readDocumentContent(
-            target.documentId,
-            "working",
-            1,
-            Number.MAX_SAFE_INTEGER,
-          );
-          if (read === undefined || read === "OUTSIDE_WORKSPACE") {
-            throw new Error(`Could not read selected lint document ${target.path}`);
-          }
-          return { path: target.path, text: read.content };
-        }),
-      );
+      const textOf = async (target: Target): Promise<string> => {
+        const read = await this._queries.readDocumentContent(
+          target.documentId,
+          "working",
+          1,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (read === undefined || read === "OUTSIDE_WORKSPACE") {
+          throw new Error(`Could not read selected lint document ${target.path}`);
+        }
+        return read.content;
+      };
       const result = (
         target: Target,
         record: DocumentLintRecord,
@@ -2738,6 +2737,22 @@ export default class AgentHTTPProvider extends ProviderContract {
         // brings every outdated or pending document current. It does not
         // lint again a document whose run gave no result, so the caller gets
         // that document with the cause and does not wait for it.
+        // A document whose file gives no text is one of the documents that
+        // were not linted; the answer for the other documents stands.
+        const sources = await Promise.all(
+          targets.map(
+            async (target): Promise<DocumentLintSource> =>
+              await textOf(target).then(
+                (text) => ({ path: target.path, text }),
+                (error: unknown) => {
+                  if (!isErrnoException(error)) {
+                    throw error;
+                  }
+                  return { path: target.path, unreadable: error.message };
+                },
+              ),
+          ),
+        );
         const lookups = await workspaceLintRows(this._app.documentLint, sources);
         lookups.forEach((lookup, index) => {
           const target = targets[index];
@@ -2762,8 +2777,8 @@ export default class AgentHTTPProvider extends ProviderContract {
         });
       } else {
         const records = await Promise.all(
-          sources.map(
-            async (source) => await this._app.documentLint.lint(source.path, source.text),
+          targets.map(
+            async (target) => await this._app.documentLint.lint(target.path, await textOf(target)),
           ),
         );
         records.forEach((record, index) => {
