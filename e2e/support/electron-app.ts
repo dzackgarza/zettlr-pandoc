@@ -583,6 +583,12 @@ async function writeFixtureState(
   await writeFile(path.join(configDirectory, "documents.yaml"), stringify(documents), "utf8");
 }
 
+/**
+ * A version of `org.freedesktop.portal.FileChooser` that no portal has; the
+ * interface is at version 4.
+ */
+const NO_PORTAL_FILE_CHOOSER_VERSION = 1000;
+
 export interface LaunchOptions {
   /** Files delivered as literal application arguments on a cold start. */
   files?: string[];
@@ -607,6 +613,12 @@ export async function launchElectron(
     // set, and then the window opens on the developer's desktop. X11 is
     // where the harness looks, the same switch the capture scenes pass.
     "--ozone-platform=x11",
+    // A file dialog goes to the desktop portal of the session when the
+    // portal has this version of the file chooser interface, and the
+    // portal draws it on the desktop of the author. No portal has the
+    // version below, so the app draws its own dialog on the display of
+    // the run, where a spec finds it (`native-dialog.ts`).
+    `--xdg-portal-required-version=${NO_PORTAL_FILE_CHOOSER_VERSION}`,
   ];
   if (options.files !== undefined) {
     forgeArguments.push(...options.files);
