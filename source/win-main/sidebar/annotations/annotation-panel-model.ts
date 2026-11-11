@@ -320,12 +320,15 @@ export interface SuggestionCardView {
 
 /** A review's outstanding chunks, in the order the provider projected them. */
 export function buildSuggestionCards(review: ReviewDiffSession): SuggestionCardView[] {
-  const notes = new Map(review.chunkComments.map((item) => [item.chunkId, item.comment]));
-  return review.suggestions.map((suggestion) => ({
-    suggestionId: suggestion.suggestionId,
-    description: suggestion.description,
-    comment: notes.get(suggestion.suggestionId) ?? null,
-  }));
+  const notes = new Map(review.chunkComments.map((item) => [item.chunkId, item]));
+  return review.suggestions.map((suggestion) => {
+    const note = notes.get(suggestion.suggestionId);
+    return {
+      suggestionId: suggestion.suggestionId,
+      description: suggestion.description,
+      comment: note === undefined ? null : note.comment,
+    };
+  });
 }
 
 /** The text a chunk-note field shows for a note: a chunk with no note shows an empty field. */
