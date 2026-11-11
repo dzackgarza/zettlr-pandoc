@@ -279,4 +279,100 @@ describe("useDocumentCollaborationStore", function () {
       [2],
     );
   });
+
+  // The main process sends a session on two channels: the broadcast of a
+  // change and the answer to a read. The answer to a read that the store
+  // sent before a broadcast can arrive after that broadcast.
+  it("keeps the session of a broadcast when the answer to an earlier workspace read arrives after it", async function () {
+    const { authority, service } = harness();
+    const created = await annotate(service);
+    const beforeReply = sessionFor(authority, service);
+    const workspaceRead = Promise.withResolvers<DocumentCollaborationSession[]>();
+
+    documentCollaborationIpcDouble.setInvokeResponder(async (message) => {
+      return message.command === "get-workspace-collaboration-sessions"
+        ? await workspaceRead.promise
+        : structuredClone(beforeReply);
+    });
+
+    const store = useDocumentCollaborationStore();
+    await store.ensureSession(DOCUMENT_PATH);
+    const refresh = store.refreshWorkspaceSessions([DOCUMENT_PATH]);
+
+    await service.addAnnotationMessage({
+      documentId: DOCUMENT_ID,
+      annotationId: created.annotationId,
+      actor: "agent",
+      text: "A shorter opening line follows.",
+      clientRequestId: "agent-reply-1",
+      expectedAnnotationGeneration: 1,
+    });
+    const afterReply = sessionFor(authority, service);
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: DP_EVENTS.DOCUMENT_COLLABORATION,
+      context: { filePath: DOCUMENT_PATH, collaborationSession: afterReply },
+    });
+
+    workspaceRead.resolve([structuredClone(beforeReply)]);
+    await refresh;
+
+    assert.deepEqual(store.getSession(DOCUMENT_PATH), afterReply);
+    assert.deepEqual(
+      store.getCards(DOCUMENT_PATH).map((card) => card.annotation.messages.length),
+      [2],
+    );
+  });
+
+  it("keeps the session of a broadcast when the answer to an earlier first read arrives after it", async function () {
+    const { authority, service } = harness();
+    const created = await annotate(service);
+    const beforeReply = sessionFor(authority, service);
+    const firstRead = Promise.withResolvers<DocumentCollaborationSession>();
+
+    documentCollaborationIpcDouble.setInvokeResponder(async () => await firstRead.promise);
+
+    const store = useDocumentCollaborationStore();
+    const ensured = store.ensureSession(DOCUMENT_PATH);
+
+    await service.addAnnotationMessage({
+      documentId: DOCUMENT_ID,
+      annotationId: created.annotationId,
+      actor: "agent",
+      text: "A shorter opening line follows.",
+      clientRequestId: "agent-reply-1",
+      expectedAnnotationGeneration: 1,
+    });
+    const afterReply = sessionFor(authority, service);
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: DP_EVENTS.DOCUMENT_COLLABORATION,
+      context: { filePath: DOCUMENT_PATH, collaborationSession: afterReply },
+    });
+
+    firstRead.resolve(structuredClone(beforeReply));
+    await ensured;
+
+    assert.deepEqual(store.getSession(DOCUMENT_PATH), afterReply);
+  });
+
+  it("removes no session of a broadcast when an earlier workspace read found none", async function () {
+    const { authority, service } = harness();
+    const workspaceRead = Promise.withResolvers<DocumentCollaborationSession[]>();
+
+    documentCollaborationIpcDouble.setInvokeResponder(async () => await workspaceRead.promise);
+
+    const store = useDocumentCollaborationStore();
+    const refresh = store.refreshWorkspaceSessions([DOCUMENT_PATH]);
+
+    await annotate(service);
+    const annotated = sessionFor(authority, service);
+    documentCollaborationIpcDouble.emit("documents-update", {
+      event: DP_EVENTS.DOCUMENT_COLLABORATION,
+      context: { filePath: DOCUMENT_PATH, collaborationSession: annotated },
+    });
+
+    workspaceRead.resolve([]);
+    await refresh;
+
+    assert.deepEqual(store.getSession(DOCUMENT_PATH), annotated);
+  });
 });
