@@ -294,7 +294,6 @@ import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
 import {
   type AnnotationCardView,
-  buildSuggestionNavigatorRows,
   describeAcceptFailures,
   filterCards,
   openAnnotationCount,
@@ -353,9 +352,20 @@ function bulkBusy(documentPath: string): boolean {
   return globalBulkBusy.value || bulkDocuments.has(documentPath);
 }
 
+// The owner of the view makes a new array for each change of a file
+// descriptor in the workspace. Only a change of the list is a reason to
+// read the workspace state from the main process again; each change of a
+// session arrives as a broadcast.
 watch(
   () => props.workspacePaths,
-  (paths) => {
+  (paths, shown) => {
+    if (
+      shown !== undefined &&
+      shown.length === paths.length &&
+      shown.every((path, index) => path === paths[index])
+    ) {
+      return;
+    }
     collaborationStore.refreshWorkspaceSessions(paths).then(
       () => {
         loadFailure.value = undefined;
@@ -380,13 +390,13 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
           .filter((card) => card.annotation.state === "open"),
         filterQuery.value,
       );
-      const suggestions = (
-        session.review === undefined ? [] : buildSuggestionNavigatorRows(session.review)
-      ).filter(
-        (card) =>
-          normalizedFilter.value.length === 0 ||
-          card.description.toLowerCase().includes(normalizedFilter.value),
-      );
+      const suggestions = collaborationStore
+        .getSuggestionRows(session.documentPath)
+        .filter(
+          (card) =>
+            normalizedFilter.value.length === 0 ||
+            card.description.toLowerCase().includes(normalizedFilter.value),
+        );
       return {
         documentPath: session.documentPath,
         documentName: pathBasename(session.documentPath),

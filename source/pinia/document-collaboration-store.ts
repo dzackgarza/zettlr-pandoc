@@ -75,16 +75,30 @@ import type {
 import {
   type AnnotationCardView,
   buildAnnotationCards,
+  buildSuggestionNavigatorRows,
+  type SuggestionNavigatorView,
   unresolvedCollaborationCount,
 } from "source/win-main/sidebar/annotations/annotation-panel-model";
 import _ from "underscore";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, markRaw, ref, shallowReactive } from "vue";
 
 const ipcRenderer = window.ipc;
 
 export const useDocumentCollaborationStore = defineStore("document-collaboration", () => {
-  const sessionsByDocumentPath = reactive<Record<string, DocumentCollaborationSession>>({});
-  const cardsByDocumentPath = reactive<Record<string, AnnotationCardView[]>>({});
+  // A session is a snapshot of the main process: the store replaces it and
+  // never changes it in place. The map is therefore shallow, and a reader
+  // follows the entry of its document only. A deep reactive map makes a
+  // proxy of each annotation that a view reads, and a change of one session
+  // is then work for the readers of each session (#126).
+  const sessionsByDocumentPath = shallowReactive<Record<string, DocumentCollaborationSession>>({});
+  // What the views derive from one session, built at the first request for
+  // it. The key is the session object: a new session of a document has no
+  // value here, and the value of a session goes away with the session.
+  const cardsBySession = new WeakMap<DocumentCollaborationSession, AnnotationCardView[]>();
+  const suggestionRowsBySession = new WeakMap<
+    DocumentCollaborationSession,
+    SuggestionNavigatorView[]
+  >();
   const selectedAnnotationId = ref<string | null>(null);
   const showResolved = ref(false);
   const workspaceDocumentPaths = ref<string[]>([]);
@@ -108,14 +122,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     ),
   );
 
-  function updateCardsForSession(
-    documentPath: string,
-    session: DocumentCollaborationSession,
-  ): void {
-    cardsByDocumentPath[documentPath] = buildAnnotationCards(
-      session.annotations.items,
-      session.workingText,
+  /**
+   * Makes a session the session of its document. The annotation set that
+   * the store has stays the same object when the new set is equal to it:
+   * each editor of the document draws its annotations again for a new set,
+   * and the broadcast of typed text carries an equal one.
+   */
+  function setSession(documentPath: string, session: DocumentCollaborationSession): void {
+    const shown = sessionsByDocumentPath[documentPath];
+    sessionsByDocumentPath[documentPath] = markRaw(
+      shown !== undefined && _.isEqual(shown.annotations, session.annotations)
+        ? { ...session, annotations: shown.annotations }
+        : session,
     );
+  }
+
+  function dropSession(documentPath: string): void {
+    delete sessionsByDocumentPath[documentPath];
   }
 
   // The main process sends a session on two channels: the broadcast of a
@@ -153,33 +176,18 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       if (event === DP_EVENTS.DOCUMENT_COLLABORATION && context.filePath !== undefined) {
         if (context.collaborationSession !== undefined) {
           newestSourceByPath.set(context.filePath, ++sourceClock);
-          sessionsByDocumentPath[context.filePath] = context.collaborationSession;
-          updateCardsForSession(context.filePath, context.collaborationSession);
+          setSession(context.filePath, context.collaborationSession);
         }
       } else if (event === DP_EVENTS.CLOSE_FILE && context.filePath !== undefined) {
         // Workspace panel state outlives editor panes. A closed workspace
         // document keeps its last authoritative snapshot until the next
         // workspace refresh projects its persisted sidecar.
         if (!workspacePathSet.has(context.filePath)) {
-          delete sessionsByDocumentPath[context.filePath];
-          delete cardsByDocumentPath[context.filePath];
+          dropSession(context.filePath);
         }
         pendingFetches.delete(context.filePath);
       }
     },
-  );
-
-  // Precompute cards in the background whenever sessionsByDocumentPath updates
-  watch(
-    sessionsByDocumentPath,
-    (sessions) => {
-      for (const [path, session] of Object.entries(sessions)) {
-        if (session !== undefined) {
-          updateCardsForSession(path, session);
-        }
-      }
-    },
-    { deep: true },
   );
 
   /**
@@ -206,8 +214,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       })
       .then((session: DocumentCollaborationSession | undefined) => {
         if (session !== undefined && ownsPath(documentPath, sentAt)) {
-          sessionsByDocumentPath[documentPath] = session;
-          updateCardsForSession(documentPath, session);
+          setSession(documentPath, session);
         }
       })
       .catch((err: unknown) => {
@@ -246,12 +253,10 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       return;
     }
     if (session === undefined) {
-      Reflect.deleteProperty(sessionsByDocumentPath, documentPath);
-      Reflect.deleteProperty(cardsByDocumentPath, documentPath);
+      dropSession(documentPath);
       return;
     }
-    sessionsByDocumentPath[documentPath] = session;
-    updateCardsForSession(documentPath, session);
+    setSession(documentPath, session);
   }
 
   function isStaleReviewFailure(result: ReviewFailure): boolean {
@@ -335,8 +340,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
 
     for (const path of uniquePaths) {
       if (!returned.has(path) && ownsPath(path, sentAt)) {
-        delete sessionsByDocumentPath[path];
-        delete cardsByDocumentPath[path];
+        dropSession(path);
       }
     }
     for (const session of sessions) {
@@ -348,8 +352,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
       if (_.isEqual(sessionsByDocumentPath[session.documentPath], session)) {
         continue;
       }
-      sessionsByDocumentPath[session.documentPath] = session;
-      updateCardsForSession(session.documentPath, session);
+      setSession(session.documentPath, session);
     }
   }
 
@@ -371,18 +374,34 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     return sessionsByDocumentPath[documentPath];
   }
 
+  /** The annotation cards of a document: one array for one session. */
   function getCards(documentPath: string): AnnotationCardView[] {
-    const cached = cardsByDocumentPath[documentPath];
-    if (cached !== undefined) {
-      return cached;
-    }
     const session = sessionsByDocumentPath[documentPath];
-    if (session !== undefined) {
-      const computedCards = buildAnnotationCards(session.annotations.items, session.workingText);
-      cardsByDocumentPath[documentPath] = computedCards;
-      return computedCards;
+    if (session === undefined) {
+      return [];
     }
-    return [];
+    const built = cardsBySession.get(session);
+    if (built !== undefined) {
+      return built;
+    }
+    const cards = buildAnnotationCards(session.annotations.items, session.workingText);
+    cardsBySession.set(session, cards);
+    return cards;
+  }
+
+  /** The review rows of a document in the Annotations view: one array for one session. */
+  function getSuggestionRows(documentPath: string): SuggestionNavigatorView[] {
+    const session = sessionsByDocumentPath[documentPath];
+    if (session?.review === undefined) {
+      return [];
+    }
+    const built = suggestionRowsBySession.get(session);
+    if (built !== undefined) {
+      return built;
+    }
+    const rows = buildSuggestionNavigatorRows(session.review);
+    suggestionRowsBySession.set(session, rows);
+    return rows;
   }
 
   /** Mark one annotation active in editor locator rendering, or clear it. */
@@ -840,7 +859,6 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
 
   return {
     sessionsByDocumentPath,
-    cardsByDocumentPath,
     workspaceDocumentPaths,
     workspaceSessions,
     workspaceUnresolvedCount,
@@ -853,6 +871,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     refreshWorkspaceSessions,
     getSession,
     getCards,
+    getSuggestionRows,
     selectAnnotation,
     toggleShowResolved,
     addAnnotationMessage,

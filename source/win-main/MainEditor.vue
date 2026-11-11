@@ -1292,23 +1292,33 @@ const EMPTY_ANNOTATION_SET: AnnotationSet = { generation: 0, items: [] };
 // forwards the current set — the editor's own field only distinguishes and
 // re-renders locators, never mutates them. `immediate` covers the pane that
 // mounts onto a document another pane already cached the session for.
-// The set plus editor locator selection/resolved visibility travel together;
-// the workspace sidebar does not own a duplicate detail view. A document swap
-// builds a fresh editor state, so
-// pushing the set alone would leave the new state with no selection and the
-// resolved switch back at its default.
+// The store gives a new set object only for a changed set, so the editor
+// draws its locators again only then. The selection and the resolved switch
+// each have a watcher of their own: a change of one is one effect in the
+// editor. A document swap builds a fresh editor state, and loadDocument
+// gives that state all three values.
 watch(
-  [
-    () => collaborationSession.value?.annotations,
-    () => collaborationStore.selectedAnnotationId,
-    () => collaborationStore.showResolved,
-  ],
-  ([annotations, selectedAnnotationId, showResolved]) => {
+  () => collaborationSession.value?.annotations,
+  (annotations) => {
     currentEditor?.setAnnotations(annotations ?? EMPTY_ANNOTATION_SET);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => collaborationStore.selectedAnnotationId,
+  (selectedAnnotationId) => {
     currentEditor?.setActiveAnnotation(selectedAnnotationId);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => collaborationStore.showResolved,
+  (showResolved) => {
     currentEditor?.setShowResolvedAnnotations(showResolved);
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 );
 
 // METHODS

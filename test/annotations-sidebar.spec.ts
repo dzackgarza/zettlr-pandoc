@@ -299,7 +299,7 @@ describe("useDocumentCollaborationStore panel surface", function () {
     documentCollaborationIpcDouble.reset();
   });
 
-  it("precomputes cards in the background upon ensureSession and getCards reads them directly", async function () {
+  it("gives the cards of a session that ensureSession read", async function () {
     documentCollaborationIpcDouble.setInvokeResponder(async () => session);
     const store = useDocumentCollaborationStore();
     await store.ensureSession(session.documentPath);
@@ -310,7 +310,7 @@ describe("useDocumentCollaborationStore panel surface", function () {
     assert.ok(cards[0].lineLocator.startsWith("Ln ") || cards[0].lineLocator === "Orphaned");
   });
 
-  it("precomputes cards in the background upon document-collaboration broadcast", function () {
+  it("gives the cards of a session that a broadcast carried", function () {
     const store = useDocumentCollaborationStore();
     documentCollaborationIpcDouble.emit("documents-update", {
       event: "document-collaboration",
@@ -322,10 +322,6 @@ describe("useDocumentCollaborationStore panel surface", function () {
 
     const cards = store.getCards(session.documentPath);
     assert.equal(cards.length, session.annotations.items.length);
-    assert.equal(
-      store.cardsByDocumentPath[session.documentPath]?.length,
-      session.annotations.items.length,
-    );
   });
 
   /** The broadcast of one session, as the main process sends it. */
