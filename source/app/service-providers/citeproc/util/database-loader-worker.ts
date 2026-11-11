@@ -19,6 +19,7 @@
 import { parentPort, workerData } from "worker_threads";
 import type { LogDetails } from "../../log";
 import { type LoaderLog, loadDatabase } from "./database-loader";
+import { encodeRecord } from "./database-record-transfer";
 import type { DatabaseLoadMessage, DatabaseLoadTask } from "./load-database-on-thread";
 
 if (parentPort === null) {
@@ -43,7 +44,12 @@ const log: LoaderLog = {
 };
 
 loadDatabase(task.databasePath, log, task.cacheDir).then(
-  (record) => send({ kind: "loaded", record }),
+  (record) => {
+    const sent = encodeRecord(record);
+    owner.postMessage({ kind: "loaded", record: sent } satisfies DatabaseLoadMessage, [
+      sent.entries.buffer,
+    ]);
+  },
   (cause: unknown) =>
     send({ kind: "failed", cause: cause instanceof Error ? cause : new Error(String(cause)) }),
 );

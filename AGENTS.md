@@ -617,6 +617,14 @@ of an isolated instance are in the first comment of #132.
   (`.webpack/main/database-loader-worker.cjs`, `BUNDLED_DATABASE_LOADER_THREAD`).
   The thread program and what it imports must import nothing of Electron. A
   spec gives the provider the TypeScript program (`test/citeproc-loader-thread.ts`).
+- **The record of a library comes to the main thread one entry at a time.**
+  A record that goes through `postMessage` as one object is made again on
+  the main thread in one step, whose time follows the size of the library.
+  The thread serializes each entry on its own into one buffer and transfers
+  the buffer; the main thread reads one entry in each turn of its event loop
+  (`citeproc/util/database-record-transfer.ts`). A new value that a thread
+  sends to the main process and whose size follows a library or a workspace
+  goes the same way.
 - **Nothing waits for a library.** The start of the app and the open, close
   and save of a document name the libraries and do not wait for the reads
   (`startDatabaseSynchronization`). A window draws its citations again when a

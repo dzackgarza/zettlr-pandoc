@@ -12,7 +12,10 @@
  *                  seconds and gives no turn to the event loop, so it must
  *                  not run on the thread of the main process (#138). One load
  *                  owns one thread: the thread ends with the load, and a load
- *                  that its owner stops ends its thread.
+ *                  that its owner stops ends its thread. The record comes
+ *                  as one transferred buffer, and the owner reads it one
+ *                  entry in each turn of its event loop
+ *                  (database-record-transfer.ts).
  *
  *                  The thread is a Node worker thread:
  *                  https://nodejs.org/api/worker_threads.html
@@ -24,6 +27,7 @@ import { Worker } from "worker_threads";
 import type { LogDetails } from "../../log";
 import type { DatabaseRecord } from "..";
 import type { LoaderLog } from "./database-loader";
+import { decodeRecord, type SentRecord } from "./database-record-transfer";
 
 /** What the thread reads: `workerData` of the worker. */
 export interface DatabaseLoadTask {
@@ -35,14 +39,15 @@ export interface DatabaseLoadTask {
 /** What the thread sends to its owner. The last message is `loaded` or `failed`. */
 export type DatabaseLoadMessage =
   | { kind: "log"; level: keyof LoaderLog; message: string; details: LogDetails }
-  | { kind: "loaded"; record: DatabaseRecord }
+  | { kind: "loaded"; record: SentRecord }
   | { kind: "failed"; cause: Error };
 
 /**
  * The record of a database, read by the thread program at `threadFile`.
- * Rejects with the cause of a failed read. When `stop` aborts, the thread is
- * ended and the promise rejects with the reason of the abort, after the
- * thread is gone.
+ * Rejects with the cause of a failed read. When `stop` aborts while the
+ * thread reads, the thread is ended and the promise rejects with the reason
+ * of the abort, after the thread is gone. When `stop` aborts after the thread
+ * sent its record, the promise rejects with that reason too.
  */
 export async function loadDatabaseOnThread(
   threadFile: string,
@@ -73,7 +78,7 @@ export async function loadDatabaseOnThread(
         log[message.level](message.message, message.details);
       } else if (message.kind === "loaded") {
         end();
-        resolve(message.record);
+        decodeRecord(message.record, stop).then(resolve, reject);
       } else {
         end();
         reject(message.cause);
