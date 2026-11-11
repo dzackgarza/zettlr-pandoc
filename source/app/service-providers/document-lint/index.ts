@@ -756,6 +756,11 @@ export default class DocumentLintProvider extends ProviderContract {
       .map((descriptor) => descriptor.path);
   }
 
+  /** Why the background queue lints no document; null while it runs. */
+  queueStopped(): string | null {
+    return this.flowmarkIdentityFailure === undefined ? null : this.flowmarkIdentityFailure.message;
+  }
+
   /** Answer the Problems view from cached records and queue outdated documents. */
   async workspaceProblems(request: ListProblemsRequest): Promise<WorkspaceProblems> {
     this.assertBackgroundHealthy();
@@ -827,8 +832,7 @@ export default class DocumentLintProvider extends ProviderContract {
       documents,
       pendingPaths,
       failed,
-      queueStopped:
-        this.flowmarkIdentityFailure === undefined ? null : this.flowmarkIdentityFailure.message,
+      queueStopped: this.queueStopped(),
       documentCount: paths.length,
       queueActive: this.activeWorkers > 0 || this.queue.size > 0,
     };

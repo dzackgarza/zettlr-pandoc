@@ -296,7 +296,7 @@ export interface AgentApiHost {
     };
   };
   references?: { getSnapshot(): WorkspaceReferenceState };
-  documentLint: Pick<DocumentLintProvider, "lint" | "lookup">;
+  documentLint: Pick<DocumentLintProvider, "lint" | "lookup" | "queueStopped">;
   search: Pick<SearchProvider, "searchWorkspace">;
   fsal?: Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
   /**
@@ -2732,20 +2732,32 @@ export default class AgentHTTPProvider extends ProviderContract {
       };
       const documents: LintResponse["documents"] = [];
       const pending: LintResponse["pending"] = [];
+      const failed: LintResponse["failed"] = [];
       if (scope === "workspace" || scope === "all") {
         // A workspace answers from the lint cache; the background linter
-        // brings every outdated or pending document current.
+        // brings every outdated or pending document current. It does not
+        // lint again a document whose run gave no result, so the caller gets
+        // that document with the cause and does not wait for it.
         const lookups = await workspaceLintRows(this._app.documentLint, sources);
         lookups.forEach((lookup, index) => {
           const target = targets[index];
-          if (lookup.record === undefined) {
-            pending.push({
-              documentId: target.documentId,
-              path: target.path,
-              name: target.name,
+          const identity = {
+            documentId: target.documentId,
+            path: target.path,
+            name: target.name,
+          };
+          if (lookup.failure !== undefined) {
+            failed.push({
+              ...identity,
+              kind: lookup.failure.kind,
+              cause: lookup.failure.message,
+              failedAt: lookup.failure.failedAt,
             });
-          } else {
+          }
+          if (lookup.record !== undefined) {
             documents.push(result(target, lookup.record, lookup.current));
+          } else if (lookup.failure === undefined) {
+            pending.push(identity);
           }
         });
       } else {
@@ -2760,11 +2772,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
 
       const allDiagnostics = documents.flatMap((document) => document.diagnostics);
+      const queueStopped = this._app.documentLint.queueStopped();
       this.sendJson(res, 200, {
         scope,
         documents,
         documentCount: documents.length,
         pending,
+        failed,
+        ...(queueStopped === null ? {} : { queueStopped }),
         diagnosticCount: allDiagnostics.length,
         counts: AgentHTTPProvider.lintCounts(allDiagnostics),
       });
