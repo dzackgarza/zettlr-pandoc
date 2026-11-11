@@ -8,8 +8,10 @@
  * License:         GNU GPL v3
  *
  * Description:     Boots the REAL DocumentManager over a workspace directory,
- *                  with the FSAL reading and writing the real files. A spec
- *                  must import the headless Electron harness before this.
+ *                  with the FSAL reading and writing the real files. The
+ *                  descriptor of a file is the one that the parser of the
+ *                  FSAL makes. A spec must import the headless Electron
+ *                  harness before this.
  *
  * END HEADER
  */
@@ -22,41 +24,13 @@ import FileDelete from "source/app/service-providers/commands/file-delete";
 import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
+import { parse as parseMarkdownFile } from "source/app/service-providers/fsal/fsal-file";
+import getMarkdownFileParser from "source/app/service-providers/fsal/util/file-parser";
 import { writeTextFile } from "source/app/service-providers/fsal/util/write-text-file";
 import LogProvider from "source/app/service-providers/log";
 import askSaveChanges from "source/app/service-providers/windows/dialog/ask-save-changes";
 import saveFileDialog from "source/app/service-providers/windows/dialog/save-dialog";
-import { extractReferences } from "source/common/pandoc-util/extract-references";
-import extractYamlFrontmatter from "source/common/util/extract-yaml-frontmatter";
-import type { AnyDescriptor, MDFileDescriptor } from "source/types/common/fsal";
-
-function descriptorFor(filePath: string): MDFileDescriptor {
-  const content = readFileSync(filePath, "utf-8");
-  const stat = statSync(filePath);
-  return {
-    dir: path.dirname(filePath),
-    path: filePath,
-    name: path.basename(filePath),
-    ext: path.extname(filePath),
-    size: stat.size,
-    id: "",
-    tags: [],
-    links: [],
-    citekeys: [],
-    bom: "",
-    type: "file",
-    wordCount: 0,
-    charCount: content.length,
-    modtime: stat.mtimeMs,
-    creationtime: stat.birthtimeMs,
-    linefeed: "\n",
-    firstHeading: null,
-    yamlTitle: undefined,
-    aliases: [],
-    frontmatter: extractYamlFrontmatter(content).frontmatter,
-    references: extractReferences(filePath, content),
-  };
-}
+import type { AnyDescriptor } from "source/types/common/fsal";
 
 type WatchdogListener = (event: string, filePath: string) => void;
 let watchdogListener: WatchdogListener | undefined;
@@ -119,14 +93,18 @@ export async function bootDocumentManager(
   // and opens the onboarding window.
   const dialogConfig = new ConfigProvider(log, [path.resolve("static", "lang")]);
   dialogConfig.set("dialogPaths.askFileDialog", root);
+  // The descriptor of a Markdown file, read from the disk at each request.
+  const parseDocument = getMarkdownFileParser(dialogConfig.get().zkn.idRE);
+  const descriptorFor = async (filePath: string) =>
+    await parseMarkdownFile(filePath, null, parseDocument);
   const appSeam = {
     log,
     config,
     fsal: {
       getWatchdog: () => watcher,
-      getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
+      getDescriptorForAnySupportedFile: descriptorFor,
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
-      getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+      getDescriptorFor: descriptorFor,
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       testAccess: FSAL.prototype.testAccess,
       writeTextFile,
