@@ -89,17 +89,19 @@ describe("Documents-provider close that cannot write the collaboration state", f
     await rm(root, { recursive: true, force: true });
   });
 
-  /** The one pane of the window. The provider makes a new one when the last tab closes. */
-  function pane(): string {
-    const leaves = provider.leafIds(windowId);
+  /** The one pane of a window. The provider makes a new one when the last tab closes. */
+  function pane(ofWindow: string = windowId): string {
+    const leaves = provider.leafIds(ofWindow);
     assert.equal(leaves.length, 1, "the window has one pane");
     return leaves[0];
   }
 
-  /** Opens the file in the pane and gives it one annotation. */
-  async function openAndAnnotate(): Promise<{ id: string; annotation: string }> {
+  /** Opens the file in the pane of a window and gives it one annotation. */
+  async function openAndAnnotate(
+    inWindow: string = windowId,
+  ): Promise<{ id: string; annotation: string }> {
     await provider.getDocument(filePath);
-    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    assert.equal(await provider.openFile(inWindow, pane(inWindow), filePath), true);
     const id = provider.getDocumentId(filePath);
     assert.ok(id !== undefined, "a loaded document has an id");
     const from = SOURCE.indexOf(ANNOTATED);
@@ -245,6 +247,30 @@ describe("Documents-provider close that cannot write the collaboration state", f
       "the open document stays open",
     );
     assert.deepEqual(annotationsInMemory(id), [annotation], "and it keeps its state");
+  });
+
+  it("keeps a window whose document it could not close", async function () {
+    provider.newWindow();
+    const second = provider.windowKeys().find((key) => key !== windowId);
+    assert.ok(second !== undefined, "the provider has a second window");
+    const { id, annotation } = await openAndAnnotate(second);
+    const repeated: string[] = [];
+    const closeAgain = async (): Promise<void> => {
+      repeated.push(second);
+    };
+
+    chmodSync(SIDECARS, 0o500);
+    assert.equal(await provider.closeWindow(second, closeAgain), false, "the window must stay");
+    assert.deepEqual(provider.windowKeys(), [windowId, second], "the provider keeps the window");
+    assert.deepEqual(refusedCloses(), [id], "the refusal names the document to the window");
+    assert.deepEqual(annotationsInMemory(id), [annotation], "a refused close keeps the state");
+    assert.deepEqual(repeated, [], "nothing repeats the close before the author answers");
+
+    assert.equal(await closeWithoutReview(id), true);
+    assert.deepEqual(repeated, [second], "the action of the refusal repeats the close");
+    assert.equal(await provider.closeWindow(second, closeAgain), true, "the window may close");
+    assert.deepEqual(provider.windowKeys(), [windowId], "the provider has the first window only");
+    assert.deepEqual(provider.loadedDocuments, [], "the document of the window is closed");
   });
 
   it("keeps the tab of a document that it could not close in every pane", async function () {
