@@ -48,6 +48,7 @@ describe("a link that cannot be followed", function () {
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
+  let lastScreenshot = Buffer.alloc(0);
 
   before(async function () {
     const fixture = await createFixture("zettlr-follow-link-refused-e2e-", {
@@ -92,19 +93,36 @@ describe("a link that cannot be followed", function () {
   });
 
   /**
+   * The state of the window, read through the DevTools protocol. A link to
+   * an address starts a navigation that the application stops, and
+   * Playwright waits for the end of that navigation before each read of the
+   * page; a protocol call does not.
+   */
+  async function readWindow(
+    activePage: Page,
+  ): Promise<{ messages: string[]; documentShown: boolean }> {
+    const session = await activePage.context().newCDPSession(activePage);
+    const result = (await session.send("Runtime.evaluate", {
+      expression: `({
+        messages: [...document.querySelectorAll(${JSON.stringify(`${ERROR_TOAST} span:first-child`)})]
+          .map((span) => span.textContent),
+        documentShown: [...document.querySelectorAll(".cm-line")]
+          .some((line) => line.textContent.includes("The proof is in")),
+      })`,
+      returnByValue: true,
+    })) as { result: { value: { messages: string[]; documentShown: boolean } } };
+    const screenshot = (await session.send("Page.captureScreenshot")) as { data: string };
+    lastScreenshot = Buffer.from(screenshot.data, "base64");
+    await session.detach();
+    return result.result.value;
+  }
+
+  /**
    * Ctrl-clicks the label of a link, which the editor draws in place of its
    * source, and gives the messages of the window one second after the first.
    */
   async function follow(label: string, screenshot: string): Promise<string[]> {
     const activePage = requireInitialized(page, "The editor page must be initialized");
-    const error = activePage.locator(`${ERROR_TOAST} span:first-child`);
-    for (const close of await activePage
-      .locator(`${ERROR_TOAST} button[aria-label="Dismiss"]`)
-      .all()) {
-      await close.click();
-    }
-    await error.first().waitFor({ state: "detached", timeout: 10_000 });
-
     const link = activePage.locator(".cm-preview-link", { hasText: label });
     await link.waitFor({ state: "visible", timeout: 30_000 });
     // A locator click waits for the navigation that the click starts, and the
@@ -117,16 +135,18 @@ describe("a link that cannot be followed", function () {
     await activePage.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await activePage.keyboard.up("Control");
 
-    await error.first().waitFor({ state: "visible", timeout: 20_000 });
+    const deadline = Date.now() + 20_000;
+    let state = await readWindow(activePage);
+    while (state.messages.length === 0 && Date.now() < deadline) {
+      await delay(100);
+      state = await readWindow(activePage);
+    }
     // The window gets no second message for the same refusal.
     await delay(1000);
-    screenshots.set(screenshot, await activePage.screenshot());
-    assert.equal(
-      await activePage.locator(".cm-line", { hasText: "The proof is in" }).count(),
-      1,
-      "the document stays the active one",
-    );
-    return await error.allInnerTexts();
+    state = await readWindow(activePage);
+    screenshots.set(screenshot, lastScreenshot);
+    assert.ok(state.documentShown, "the document stays the active one");
+    return state.messages;
   }
 
   it("names the path of a link to a file that does not exist", async function () {
@@ -137,6 +157,12 @@ describe("a link that cannot be followed", function () {
   });
 
   it("names the address of a web link that the desktop does not open", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    for (const dismiss of await activePage
+      .locator(`${ERROR_TOAST} button[aria-label="Dismiss"]`)
+      .all()) {
+      await dismiss.click();
+    }
     const messages = await follow("the web", "web-refused.png");
     assert.equal(messages.length, 1, "the window shows one message");
     assert.ok(messages[0].includes(WEB_PAGE), `the message names the address: ${messages[0]}`);
