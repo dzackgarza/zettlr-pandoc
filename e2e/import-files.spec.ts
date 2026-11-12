@@ -183,14 +183,20 @@ describe("an import of files into a folder of the author", function () {
 
     await importFile("genus.md");
 
+    // The import ends with a message or with a changed note: the wait ends
+    // at the first of the two, and the note is checked before the message.
     const toast = editorPage.locator(ERROR_TOAST);
-    await toast.first().waitFor({ state: "visible", timeout: 30_000 });
+    const deadline = Date.now() + 30_000;
+    while ((await toast.count()) === 0 && (await readFile(documentPath, "utf8")) === AUTHORED) {
+      assert.ok(Date.now() < deadline, "the import ends with a message or a changed note");
+      await delay(100);
+    }
     screenshots.set("refused.png", await editorPage.screenshot());
+    assert.equal(await readFile(documentPath, "utf8"), AUTHORED, "the note keeps its text");
     assert.equal(await toast.count(), 1, "one refused import shows one message");
     assert.equal(
       await toast.first().locator("span:first-child").innerText(),
       "Could not import genus.md: genus.md exists already in the import folder.",
     );
-    assert.equal(await readFile(documentPath, "utf8"), AUTHORED, "the note keeps its text");
   });
 });
