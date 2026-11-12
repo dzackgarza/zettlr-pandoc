@@ -44,6 +44,8 @@ const SEARCH_HIT_LIMIT = 500;
 export class CentralFigureInputError extends Error {}
 export class CentralFigureNotFoundError extends Error {}
 export class CentralFigureAlreadyExistsError extends Error {}
+/** The figures directory of the settings does not exist. */
+export class CentralFiguresDirectoryNotFoundError extends Error {}
 
 function expandHome(value: string, homeDirectory: string): string {
   if (value === "~") {
