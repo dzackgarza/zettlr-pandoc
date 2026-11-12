@@ -13,6 +13,7 @@ import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type Browser, chromium, type Page } from "playwright";
 import {
   assertCleanExit,
+  clickToClose,
   delay,
   launchElectron,
   observeRenderer,
@@ -132,7 +133,7 @@ describe("assembled app: first-start onboarding and the file type filters", func
     assert.deepEqual(await readFileTypes(page), before);
     screenshots.set("onboarding-other-files-off.png", await page.screenshot());
 
-    await page.locator('nav button:has-text("Skip")').click();
+    await clickToClose(page, page.locator('nav button:has-text("Skip")'));
     assert.ok(appProcess !== undefined, "the app process runs");
     await waitForApplicationBoot(appProcess, () => output, this.timeout());
   });

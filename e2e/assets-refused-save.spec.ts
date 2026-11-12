@@ -34,6 +34,7 @@ import {
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -275,9 +276,7 @@ describe("a refused operation in the Assets window", function () {
     // window closes before the main window does.
     if (assetsPage !== undefined && !assetsPage.isClosed()) {
       const closed = assetsPage.waitForEvent("close", { timeout: 10_000 });
-      await assetsPage.evaluate(() => {
-        window.ipc.send("window-controls", { command: "win-close" });
-      });
+      await requestWindowClose(assetsPage);
       await closed;
     }
     await shutdown(browser, appProcess);

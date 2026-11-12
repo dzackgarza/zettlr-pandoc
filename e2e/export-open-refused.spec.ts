@@ -29,6 +29,7 @@ import type { PandocProfileMetadata } from "source/app/service-providers/assets"
 import {
   assertCleanExit,
   attach,
+  clickToClose,
   createFixture,
   delay,
   findEditorPage,
@@ -74,9 +75,7 @@ async function onlyErrorWindow(browser: Browser, timeoutMs: number): Promise<Pag
 
 /** Closes an error window with its button. */
 async function closeErrorWindow(shown: Page): Promise<void> {
-  const closed = shown.waitForEvent("close", { timeout: 10_000 });
-  await shown.getByRole("button", { name: "Ok" }).click();
-  await closed;
+  await clickToClose(shown, shown.getByRole("button", { name: "Ok" }));
 }
 
 /** What `get-tasks` of the task provider answers for one task. */

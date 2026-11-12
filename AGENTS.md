@@ -768,7 +768,15 @@ of an isolated instance are in the first comment of #132.
 - A Chromium probe of test-support code reports its exit code or signal, its
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this
-  workstation. Run one at a time.
+  workstation. Run one at a time. A start from the desktop launcher runs
+  `just package` when the source changed, and the build replaces `.webpack`
+  under a running e2e start: that run stops with "Cannot find module
+  '.webpack/main/index.cjs'" or a closed page. Run it again after the build.
+- **A click that closes its page goes through `clickToClose`.** Playwright
+  stops each action of a page that closes before the action ends, so a click
+  whose handler closes the window races the close. `clickToClose` and
+  `requestWindowClose` (`e2e/support/electron-app.ts`) act in a later task
+  of the page, as `requestQuit` does.
 - **A function that runs in the page declares no named function.** tsx
   compiles a spec with esbuild's `keepNames`, which puts a call of the helper
   `__name` around each function that a `const` or a declaration names. The

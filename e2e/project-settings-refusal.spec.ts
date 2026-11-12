@@ -31,6 +31,7 @@ import {
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -150,9 +151,7 @@ describe("a refused change of Project settings", function () {
     // properties window closes before the main window does.
     if (propertiesPage !== undefined && !propertiesPage.isClosed()) {
       const closed = propertiesPage.waitForEvent("close", { timeout: 10_000 });
-      await propertiesPage.evaluate(() => {
-        window.ipc.send("window-controls", { command: "win-close" });
-      });
+      await requestWindowClose(propertiesPage);
       await closed;
     }
     await shutdown(browser, appProcess);

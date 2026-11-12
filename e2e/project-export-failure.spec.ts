@@ -24,6 +24,7 @@ import type { Browser, Page } from "playwright";
 import {
   assertCleanExit,
   attach,
+  clickToClose,
   createFixture,
   delay,
   findEditorPage,
@@ -164,9 +165,7 @@ describe("a Project export with profiles that did not export", function () {
 
     // The application quits when its last window closes, so the error
     // window closes before the main window does.
-    const closed = shown.waitForEvent("close", { timeout: 10_000 });
-    await shown.getByRole("button", { name: "Ok" }).click();
-    await closed;
+    await clickToClose(shown, shown.getByRole("button", { name: "Ok" }));
     assert.equal(errorWindow.isClosed(), true);
   });
 });

@@ -42,6 +42,7 @@ import {
   hideDevServerOverlay,
   preserveArtifacts,
   readAgentApiPort,
+  requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -64,13 +65,6 @@ function modifiedDocuments(page: Page): Promise<string[]> {
     async () =>
       await window.ipc.invoke("documents-provider", { command: "get-file-modification-status" }),
   );
-}
-
-/** The close control of the window: the request that the window manager guards. */
-async function closeWindow(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    window.ipc.send("window-controls", { command: "win-close" });
-  });
 }
 
 /** Resolves true when the window of the page went away inside the time limit. */
@@ -177,7 +171,7 @@ describe("assembled app: the close of a main window", function () {
     await modifiedTab.waitFor({ state: "visible", timeout: 30_000 });
 
     // Cancel: the window and its text stay.
-    await closeWindow(second);
+    await requestWindowClose(second);
     const cancelled = await nativeDialog(PROMPT_TITLE, 30_000);
     screenshots.set("unsaved-prompt.png", await captureWindow(cancelled));
     await pressKey(cancelled, "Escape");
@@ -189,7 +183,7 @@ describe("assembled app: the close of a main window", function () {
     );
 
     // No: the window closes, and the file keeps its text.
-    await closeWindow(second);
+    await requestWindowClose(second);
     const discarded = await nativeDialog(PROMPT_TITLE, 30_000);
     await pressKey(discarded, "Tab");
     await pressKey(discarded, "space");
@@ -222,7 +216,7 @@ describe("assembled app: the close of a main window", function () {
     // The sidecar directory loses write permission: the real error of a
     // disk that is read-only or full.
     await chmod(sidecarDirectory, 0o500);
-    await closeWindow(second);
+    await requestWindowClose(second);
     const toast = second.locator(ERROR_TOAST);
     await toast.first().waitFor({ state: "visible", timeout: 30_000 });
     screenshots.set("close-refused.png", await second.screenshot());

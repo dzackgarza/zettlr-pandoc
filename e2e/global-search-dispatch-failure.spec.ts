@@ -29,6 +29,7 @@ import {
   delay,
   findEditorPage,
   preserveArtifacts,
+  requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -354,9 +355,7 @@ describe("global-search and project-properties failure recovery", function () {
       await waitForProjectTitle(projectSettingsFile, "Recovered project title", 10_000);
     } finally {
       if (!propertiesPage.isClosed()) {
-        await propertiesPage.evaluate(() => {
-          window.ipc.send("window-controls", { command: "win-close" });
-        });
+        await requestWindowClose(propertiesPage);
         await propertiesPage.waitForEvent("close", { timeout: 10_000 });
       }
     }

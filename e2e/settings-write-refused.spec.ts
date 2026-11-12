@@ -25,6 +25,7 @@ import type { Browser, Page } from "playwright";
 import {
   assertCleanExit,
   attach,
+  clickToClose,
   createFixture,
   delay,
   findEditorPage,
@@ -120,8 +121,6 @@ describe("a change of a setting that the disk refuses", function () {
     const text = await shown.locator("#error").innerText();
     assert.ok(text.includes(configFile), `the error window does not name ${configFile}:\n${text}`);
 
-    const closed = shown.waitForEvent("close", { timeout: 10_000 });
-    await shown.getByRole("button", { name: "Ok" }).click();
-    await closed;
+    await clickToClose(shown, shown.getByRole("button", { name: "Ok" }));
   });
 });

@@ -9,7 +9,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/pr
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import { type Browser, chromium, type Locator, type Page } from "playwright";
 import { stringify } from "yaml";
 
 export const REPO_ROOT = path.resolve(process.cwd());
@@ -731,6 +731,38 @@ export async function requestQuit(page: Page): Promise<void> {
       window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu-quit" });
     }, 100);
   });
+}
+
+/**
+ * Asks the window of the page to close, as its close control does. The
+ * request goes in a later task of the page, for the reason of `requestQuit`.
+ * The window manager can refuse the close; the caller waits for what it
+ * expects.
+ */
+export async function requestWindowClose(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    setTimeout(() => {
+      window.ipc.send("window-controls", { command: "win-close" });
+    }, 100);
+  });
+}
+
+/**
+ * Clicks a control whose action closes its page, and waits for the close.
+ * Playwright stops each action of a page that closes before the action ends,
+ * so a click whose handler closes the page races that close. The page clicks
+ * the control in a later task, after the evaluation has answered.
+ */
+export async function clickToClose(page: Page, control: Locator): Promise<void> {
+  await control.waitFor({ state: "visible", timeout: 10_000 });
+  assert.ok(await control.isEnabled(), "the control that closes the page is enabled");
+  const closed = page.waitForEvent("close", { timeout: 10_000 });
+  await control.evaluate((element: HTMLElement) => {
+    setTimeout(() => {
+      element.click();
+    }, 100);
+  });
+  await closed;
 }
 
 export async function shutdown(
