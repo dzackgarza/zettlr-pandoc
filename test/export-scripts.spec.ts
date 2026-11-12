@@ -74,7 +74,7 @@ describe("Pipeline-integrated export scripts", function () {
 
     const options: ExporterOptions = {
       profile: { name: "Marked TeX", reader: "markdown", writer: "script", isInvalid: false },
-      sourceFiles: [{ name: "input.md", ext: ".md", path: inputFile }],
+      sourceFiles: [{ name: "input.md", ext: ".md", path: inputFile, textFile: inputFile }],
       targetDirectory: directory,
     };
     const script = {

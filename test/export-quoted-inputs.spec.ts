@@ -88,6 +88,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
           path: path.join(projectDir, name),
           name,
           ext: ".md",
+          textFile: path.join(projectDir, name),
         })),
         targetDirectory: projectDir,
         cwd: projectDir,
@@ -125,7 +126,9 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
     await runRecipeExport(
       {
         profile: PDF_PROFILE,
-        sourceFiles: [{ path: inputFile, name: "Enriques' Notes.md", ext: ".md" }],
+        sourceFiles: [
+          { path: inputFile, name: "Enriques' Notes.md", ext: ".md", textFile: inputFile },
+        ],
         targetDirectory: dir,
       } as ExporterOptions,
       "",
@@ -158,6 +161,7 @@ describe("Quote-bearing export inputs (review B2/B11)", function () {
           path: path.join(projectDir, name),
           name,
           ext: ".md",
+          textFile: path.join(projectDir, name),
         })),
         targetDirectory: projectDir,
         cwd: projectDir,

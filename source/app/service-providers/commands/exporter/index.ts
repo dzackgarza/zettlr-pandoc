@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import { EXT2READER, isHtmlWriter, isTexWriter } from "@common/pandoc-util/pandoc-maps";
 import {
   enableExtension,
@@ -157,8 +158,9 @@ export async function makeExport(
   assets: AssetsProvider,
   wikilinks: WikilinkIndex,
 ): Promise<ExporterOutput> {
-  // We already know where the exported file will end up, so set the property
-  const inputFiles = options.sourceFiles.map((file) => file.path);
+  // The text of each document. Pandoc resolves relative resources against
+  // its working directory, not against the folder of an input.
+  const inputFiles = options.sourceFiles.map((file) => file.textFile);
 
   // Load the central ~/.pandoc MathJax projection once for this export.
   const macros = await loadCanonicalMathJaxMacros(app.getPath("home"));
@@ -259,14 +261,23 @@ export async function writeDefaults(
   // selected database. This could break in a lot of places, but until Pandoc
   // respects a file-defined bibliography, this is our best shot.
   // const bibliography = global.citeproc.getSelectedDatabase()
-  if (isFile(cslLibrary)) {
+  // An empty setting names no file. A setting that names a file which is
+  // absent stops the export: an export without it would have other citations
+  // than the author asked for.
+  if (cslLibrary !== "") {
+    if (!isFile(cslLibrary)) {
+      throw new Error(trans("The citation library %s is no file.", cslLibrary));
+    }
     defaults.bibliography.push(cslLibrary);
   }
 
-  if (defaultsOverride?.csl !== undefined && isFile(defaultsOverride.csl)) {
-    defaults.csl = defaultsOverride.csl;
-  } else if (isFile(cslStyle)) {
-    defaults.csl = cslStyle;
+  // The style of the export (that of a Project) goes before the setting.
+  const style = defaultsOverride?.csl !== undefined ? defaultsOverride.csl : cslStyle;
+  if (style !== "") {
+    if (!isFile(style)) {
+      throw new Error(trans("The citation style %s is no file.", style));
+    }
+    defaults.csl = style;
   }
 
   // Now add metadata values for our GUI settings the user can choose. NOTE that

@@ -85,7 +85,14 @@ async function main (): Promise<void> {
   const options: any = {
     profile,
     targetDirectory: targetDir,
-    sourceFiles: [ { path: sourceFile, name: path.basename(sourceFile), ext: path.extname(sourceFile) } ],
+    sourceFiles: [
+      {
+        path: sourceFile,
+        name: path.basename(sourceFile),
+        ext: path.extname(sourceFile),
+        textFile: sourceFile,
+      },
+    ],
     cwd: path.dirname(sourceFile)
   }
 

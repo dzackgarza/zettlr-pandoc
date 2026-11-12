@@ -92,6 +92,8 @@ describe("Export math-header injection toggle", function () {
     const htmlProfile = YAML.parse(
       await readFile("static/defaults/HTML.yaml", { encoding: "utf8" }),
     ) as Record<string, unknown>;
+    // The exporter can change the object of the profile.
+    const methodOfProfile = structuredClone(htmlProfile["html-math-method"]);
     const noInject = { export: { ...config.export, injectMathHeaders: false }, zkn: config.zkn };
 
     await writeDefaults(
@@ -109,8 +111,8 @@ describe("Export math-header injection toggle", function () {
     ) as Record<string, unknown>;
     const headers = (written["include-in-header"] ?? []) as string[];
     assert.ok(!headers.some((h) => /zettlr-mathjax/.test(h)), "no injected MathJax header");
-    // Injection deletes the profile's html-math-method; skipping preserves it.
-    assert.ok(written["html-math-method"] !== undefined, "profile html-math-method survives");
+    // Injection sets the method of its own; skipping keeps that of the profile.
+    assert.deepStrictEqual(written["html-math-method"], methodOfProfile);
   });
 });
 

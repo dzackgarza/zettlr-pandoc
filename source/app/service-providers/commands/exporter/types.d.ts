@@ -16,13 +16,22 @@
 import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type { PandocRunnerOutput } from "../../../util/run-pandoc";
 
-// The exporter only needs a few properties, so by defining a minimal type here
-// we can make the exporter more flexible to accept also objects that only
-// contain path information
-interface MinimalFile {
+/**
+ * One document of an export.
+ */
+export interface MinimalFile {
+  /**
+   * The path of the document. Its folder is where the relative resources of
+   * the document are, and its path is what a wikilink resolves to.
+   */
   path: string;
   name: string;
   ext: string;
+  /**
+   * The file that holds the text to export: `path` for a document whose text
+   * is on disk, another file for a document with unsaved text.
+   */
+  textFile: string;
 }
 
 interface DefaultsOverride {

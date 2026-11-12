@@ -81,7 +81,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
     await runRecipeExport(
       {
         profile: PDF_PROFILE,
-        sourceFiles: [{ path: inputFile, name: "input.md", ext: ".md" }],
+        sourceFiles: [{ path: inputFile, name: "input.md", ext: ".md", textFile: inputFile }],
         targetDirectory: dir,
       } as ExporterOptions,
       "",
@@ -111,6 +111,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
           path: path.join(projectDir, name),
           name,
           ext: ".md",
+          textFile: path.join(projectDir, name),
         })),
         targetDirectory: projectDir,
         cwd: projectDir,
@@ -154,6 +155,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
           path: path.join(projectDir, name),
           name,
           ext: ".md",
+          textFile: path.join(projectDir, name),
         })),
         targetDirectory: projectDir,
         cwd: projectDir,

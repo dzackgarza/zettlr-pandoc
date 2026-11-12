@@ -211,6 +211,18 @@ they must be threaded through **four** layers:
   HTML writer (`isHtmlWriter`). `makeExport` gives the recipe that template;
   an export without one gets `export.latexTemplate`. Proof:
   `test/project-export.spec.ts`.
+- **An export of unsaved text is an export of the document.** A
+  `MinimalFile` (`exporter/types.d.ts`) has `path`, the document, and
+  `textFile`, the file with the text. `exportDocument` (`commands/export.ts`)
+  writes unsaved text to a directory of its own and removes it after the
+  export. The recipe runs in the folder of the document and gets the text
+  file by its absolute path; a textbundle takes its images from the folder of
+  the document; a wikilink resolves to the document. A declared
+  `pandoc_working_dir` is read from the folder of the document, and one that
+  is no folder refuses the export. A citation library or style of the
+  settings or of the Project that is no file refuses the export
+  (`writeDefaults`). Proof: `test/export-document.spec.ts`,
+  `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
 - Export profile list: `list-export-profiles` in
   `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)

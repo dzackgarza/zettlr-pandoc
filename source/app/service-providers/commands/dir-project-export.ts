@@ -318,7 +318,7 @@ async function exportUsingProfile(
   };
 
   const sourceFiles = files.map((file) => {
-    return { path: file, name: path.basename(file), ext: path.extname(file) };
+    return { path: file, name: path.basename(file), ext: path.extname(file), textFile: file };
   });
 
   const opt: ExporterOptions = {

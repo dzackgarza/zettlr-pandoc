@@ -25,12 +25,26 @@ import path from "path";
 import sanitize from "sanitize-filename";
 import { runProcess } from "./run-shell-command";
 import { splitLines } from "./split-lines";
-import type { ExporterOptions, ExporterOutput } from "./types";
+import type { ExporterOptions, ExporterOutput, MinimalFile } from "./types";
 
 // The canonical recipe file. compile-pandoc has no internal `pandoc::` module
 // reference, so it is invocable directly via --justfile without a project
 // justfile declaring `mod pandoc`.
 const JUSTFILE = path.join(os.homedir(), ".pandoc", "justfile");
+
+/**
+ * The input argument of a recipe for one document. The recipe runs in
+ * `runDir` and reads a relative input from there: a document whose text is on
+ * disk is the path from `runDir`, with Unix separators. Unsaved text is in a
+ * file elsewhere, which the recipe gets by its absolute path; the relative
+ * resources of the document still resolve against `runDir`.
+ */
+function recipeInput(file: MinimalFile, runDir: string): string {
+  if (file.textFile !== file.path) {
+    return file.textFile;
+  }
+  return path.relative(runDir, file.path).split(path.sep).join("/");
+}
 
 /**
  * Exports the source Markdown to PDF by delegating to the pandoc-config
@@ -73,9 +87,7 @@ export async function runRecipeExport(
     // ProjectSettings order. The argv is a LITERAL vector (shell: false,
     // review B2): every token — spaces, quotes, and all — arrives at the
     // recipe as exactly one argument, with no quoting layer to break.
-    const orderedInputs = options.sourceFiles.map((file) =>
-      path.relative(runDir, file.path).split(path.sep).join("/"),
-    );
+    const orderedInputs = options.sourceFiles.map((file) => recipeInput(file, runDir));
     // compile-pandoc-project's template parameter is positional BEFORE the
     // variadic input list, so it cannot be omitted the way compile-pandoc's
     // trailing template can. An unconfigured template passes the companion's
@@ -92,11 +104,10 @@ export async function runRecipeExport(
     ];
   } else {
     runDir = path.dirname(source.path);
-    const sourceBase = path.basename(source.path);
     // Override ONLY what the app owns: the input file, the output base name,
     // and the template when one is configured. Bibliography, build dir,
     // filters, flags, and pdf-engine all come from the recipe's own defaults.
-    argv = ["--justfile", JUSTFILE, "compile-pandoc", sourceBase, title];
+    argv = ["--justfile", JUSTFILE, "compile-pandoc", recipeInput(source, runDir), title];
     if (latexTemplate.trim() !== "") {
       argv.push(latexTemplate.trim());
     }
@@ -107,7 +118,7 @@ export async function runRecipeExport(
   const inputs = await Promise.all(
     options.sourceFiles.map(async (file) => ({
       path: file.path,
-      markdown: await fs.readFile(file.path, "utf8"),
+      markdown: await fs.readFile(file.textFile, "utf8"),
     })),
   );
   const mapDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "zettlr-wikilinks-"));

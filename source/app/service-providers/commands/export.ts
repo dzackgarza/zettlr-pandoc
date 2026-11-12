@@ -177,81 +177,98 @@ export async function exportDocument(
 ): Promise<void> {
   const { file, profile, exportTo } = arg;
 
-  const exporterOptions: ExporterOptions = {
-    profile,
-    targetDirectory: "",
-    sourceFiles: [],
-    cwd: undefined,
-  };
-
-  // If the file is modified, then the document manager will have a more
-  // recent version of the file in its cache. In that case, we'll silently
-  // overwrite the source file with a temporary one that we create with the
-  // contents of said modified file.
-  const isModified = app.documents.isModified(file);
-  const filename = path.basename(file);
-  const tempPath = path.join(electronApp.getPath("temp"), filename);
-  if (isModified) {
-    const cachedVersion = await app.documents.getDocument(file);
-    await fs.writeFile(tempPath, cachedVersion.content, { encoding: "utf8" });
-  }
-
   // We must have an absolute path given in file
   const fileDescriptor = await app.fsal.getDescriptorForAnySupportedFile(file);
-  if (fileDescriptor !== undefined) {
-    // If we have a cached version, we already have a file to export.
-    // Otherwise, use the regular one from disk.
-    if (isModified) {
-      exporterOptions.sourceFiles.push({
-        path: tempPath,
-        name: filename,
-        ext: path.extname(filename),
-      });
-    } else {
-      exporterOptions.sourceFiles.push(fileDescriptor);
+
+  // The export runs in the folder of the document. A document can name
+  // another folder in its front matter (zettlr.pandoc_working_dir), as an
+  // absolute path or as a path from its own folder.
+  let cwd = fileDescriptor.dir;
+  const declaredWorkingDir =
+    fileDescriptor.type === "file" ? frontmatterWorkingDir(fileDescriptor.frontmatter) : undefined;
+  if (declaredWorkingDir !== undefined) {
+    cwd = path.resolve(fileDescriptor.dir, declaredWorkingDir);
+    if (!(await app.fsal.isDir(cwd))) {
+      app.windows.showErrorMessage(
+        trans("Export error"),
+        trans(
+          "%s declares the working directory %s, which is no folder. The document was not exported.",
+          fileDescriptor.name,
+          cwd,
+        ),
+      );
+      return;
     }
+  }
 
-    // The cwd, however, is the source file one's
-    exporterOptions.cwd = fileDescriptor.dir;
-
-    // A user can override this default by providing in a frontmatter the
-    // key zettlr.pandoc_working_dir: /path/to/directory
-    const declaredWorkingDir =
-      fileDescriptor.type === "file"
-        ? frontmatterWorkingDir(fileDescriptor.frontmatter)
-        : undefined;
-    if (declaredWorkingDir !== undefined && (await app.fsal.isDir(declaredWorkingDir))) {
-      exporterOptions.cwd = declaredWorkingDir;
-    }
-
-    switch (exportTo) {
-      case "ask": {
-        const folderSelection = await app.windows.askDir(
-          trans("Choose export destination"),
-          null,
-          trans("Save"),
-        );
-        // The author cancelled the dialog: a choice, and no failure.
-        if (folderSelection.length === 0) {
-          return;
-        }
-        exporterOptions.targetDirectory = folderSelection[0];
-        break;
+  let targetDirectory = fileDescriptor.dir;
+  switch (exportTo) {
+    case "ask": {
+      const folderSelection = await app.windows.askDir(
+        trans("Choose export destination"),
+        null,
+        trans("Save"),
+      );
+      // The author cancelled the dialog: a choice, and no failure.
+      if (folderSelection.length === 0) {
+        return;
       }
-      case "temp":
-        exporterOptions.targetDirectory = electronApp.getPath("temp");
-        break;
-      case "cwd":
-      default:
-        exporterOptions.targetDirectory = fileDescriptor.dir;
-        break;
+      targetDirectory = folderSelection[0];
+      break;
     }
+    case "temp":
+      targetDirectory = electronApp.getPath("temp");
+      break;
+    case "cwd":
+    default:
+      break;
   }
 
-  // We should have at least one file present now
-  if (exporterOptions.sourceFiles.length === 0) {
-    throw new Error("Could not export: no source file was given.");
+  const { path: documentPath, name, ext } = fileDescriptor;
+  const exportOf = (textFile: string): ExporterOptions => {
+    return {
+      profile,
+      targetDirectory,
+      sourceFiles: [{ path: documentPath, name, ext, textFile }],
+      cwd,
+    };
+  };
+
+  if (!app.documents.isModified(file)) {
+    await runDocumentExport(app, arg, exportOf(documentPath));
+    return;
   }
+
+  // The document has unsaved text. The export is of that text, as the
+  // document that it is: its path, its folder and its resources stay. The
+  // text goes to a file in a directory of this export, which the export
+  // removes.
+  const scratch = await fs.mkdtemp(path.join(electronApp.getPath("temp"), "zettlr-export-"));
+  const textFile = path.join(scratch, name);
+  await app.documents
+    .getDocument(file)
+    .then(async (unsaved) => {
+      await fs.writeFile(textFile, unsaved.content, { encoding: "utf8" });
+      await runDocumentExport(app, arg, exportOf(textFile));
+    })
+    .finally(async () => {
+      await fs.rm(scratch, { recursive: true });
+    });
+}
+
+/**
+ * Runs the export of one document and tells the author its result.
+ *
+ * @param   {DocumentExportServices}  app              The services of the application
+ * @param   {ExportIPCAPI}            arg              The document and the profile
+ * @param   {ExporterOptions}         exporterOptions  What the exporter gets
+ */
+async function runDocumentExport(
+  app: DocumentExportServices,
+  arg: ExportIPCAPI,
+  exporterOptions: ExporterOptions,
+): Promise<void> {
+  const { file, profile } = arg;
 
   const task = app.lrt.registerTask(
     trans("Exporting file %s", path.basename(file)),

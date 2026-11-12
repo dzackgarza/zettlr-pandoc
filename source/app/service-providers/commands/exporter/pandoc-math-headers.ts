@@ -88,7 +88,11 @@ export async function injectPandocMathHeaders(
       { encoding: "utf8" },
     );
     defaults["include-in-header"] = [...headerFiles(defaults), header];
-    delete defaults["html-math-method"];
+    // Pandoc writes the math that it can convert as text and leaves the other
+    // math as TeX, which the MathJax of the header renders. The method is
+    // stated: the default of Pandoc is `plain` before version 3.11 and
+    // `mathml` from it.
+    defaults["html-math-method"] = { method: "plain" };
   } else if (isTexWriter(writer)) {
     const header = path.join(temporaryDirectory, "zettlr-mathjax-header.tex");
     await fs.writeFile(header, `\\usepackage[version=4]{mhchem}\n${projectTexHeader(macros)}\n`, {
