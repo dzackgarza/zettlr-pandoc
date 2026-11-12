@@ -27,6 +27,7 @@ import FileDelete from "source/app/service-providers/commands/file-delete";
 import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
 import FSAL from "source/app/service-providers/fsal";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { parse as parseMarkdownFile } from "source/app/service-providers/fsal/fsal-file";
 import getMarkdownFileParser from "source/app/service-providers/fsal/util/file-parser";
 import { writeTextFile } from "source/app/service-providers/fsal/util/write-text-file";
@@ -132,6 +133,9 @@ export async function bootDocumentManager(
       getDescriptorForAnySupportedFile: descriptorFor,
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: descriptorFor,
+      // The descriptor of a folder, read from the disk at each request: the
+      // Project of a document comes from its folder.
+      getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       testAccess: FSAL.prototype.testAccess,
       writeTextFile,
