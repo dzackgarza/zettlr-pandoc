@@ -1543,6 +1543,39 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
   });
 
+  it("answers the metadata of a closed workspace document", async function () {
+    // The workspace listing gives the id of a closed file; its metadata
+    // describes the text that a read of the same id gives.
+    const filePath = path.join(scratch, "closed-metadata.md");
+    writeFileSync(filePath, "alpha\nbeta\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}`);
+
+    assert.equal(response.status, 200, response.body);
+    const summary = parseAs(response.body, "DocumentSummary");
+    assert.deepEqual(
+      {
+        path: summary.path,
+        type: summary.type,
+        dirty: summary.dirty,
+        revision: summary.revision,
+        lineCount: summary.lineCount,
+        byteLength: summary.byteLength,
+        views: summary.views,
+      },
+      {
+        path: filePath,
+        type: "markdown",
+        dirty: false,
+        revision: { sha256: sha256Text("alpha\nbeta\n") },
+        lineCount: 3,
+        byteLength: 11,
+        views: [],
+      },
+    );
+  });
+
   it("answers that a closed document whose file was removed is not found", async function () {
     const filePath = path.join(scratch, "closed-removed.md");
     writeFileSync(filePath, "alpha\n", "utf8");
