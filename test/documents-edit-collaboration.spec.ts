@@ -195,4 +195,68 @@ describe("Documents-provider edits of a document with annotations", function () 
     assert.equal(provider.readMarkdownBufferContent(filePath), SOURCE, "the buffer is restored");
     assert.deepEqual(anchors(), [{ state: "range", from, to, quotedText: TARGET_TEXT }]);
   });
+
+  it("keeps the text that the author types while a workspace edit is rolled back", async function () {
+    const typed = "Compare the genus.\n";
+    const closedPath = path.join(root, "locked", "Closed.md");
+    const closedSource = "A closed document.\n";
+    writeFileSync(closedPath, closedSource, "utf-8");
+    chmodSync(path.join(root, "locked"), 0o500);
+    const editor = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
+    assert.ok(editor !== undefined, "the provider answers its editors");
+
+    // The author types at the end of the document after the transaction
+    // changed the buffer and before it writes the closed file.
+    let authorTyped = false;
+    const authority = {
+      readMarkdownBufferContent: (file: string) => provider.readMarkdownBufferContent(file),
+      applyWorkspaceTextEdits: async (
+        edits: Parameters<DocumentManager["applyWorkspaceTextEdits"]>[0],
+      ) => {
+        const updated = await provider.applyWorkspaceTextEdits(edits);
+        const current = provider.readMarkdownBufferContent(filePath);
+        if (!authorTyped && current !== undefined) {
+          authorTyped = true;
+          const { startVersion } = await provider.getDocument(filePath);
+          const accepted = await editor(undefined, {
+            command: "push-updates",
+            payload: {
+              filePath,
+              version: startVersion,
+              updates: [
+                {
+                  clientID: "editor-under-test",
+                  changes: ChangeSet.of(
+                    { from: current.length, insert: typed },
+                    current.length,
+                  ).toJSON(),
+                },
+              ],
+            },
+          });
+          assert.equal(accepted, true, "the provider takes the update of the editor");
+        }
+        return updated;
+      },
+    };
+
+    await assert.rejects(
+      runWorkspaceEditTransaction(authority, root, {
+        edits: [
+          { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+          { documentPath: closedPath, range: { from: 0, to: 0 }, insert: PREFIX },
+        ],
+        expectedSourceHashes: {
+          [filePath]: hashDocumentSource(SOURCE),
+          [closedPath]: hashDocumentSource(closedSource),
+        },
+      }),
+    );
+
+    assert.equal(
+      provider.readMarkdownBufferContent(filePath),
+      `${SOURCE}${typed}`,
+      "the rollback removes the edit of the transaction and keeps the typed text",
+    );
+  });
 });
