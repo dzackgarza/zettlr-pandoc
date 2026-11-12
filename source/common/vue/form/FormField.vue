@@ -179,9 +179,19 @@
     v-bind:reset="props.field.reset"
     v-on:update:model-value="emit('update:modelValue', $event)"
   ></ShortcutCaptureControl>
+  <ZtrAdmonition
+    v-if="props.refusal !== undefined"
+    class="form-field-refusal"
+    role="alert"
+    v-bind:type="'error'"
+  >
+    {{ trans("Not saved: %s", props.refusal) }}
+  </ZtrAdmonition>
 </template>
 
 <script setup lang="ts">
+import { trans } from "@common/i18n-renderer";
+import ZtrAdmonition from "../ZtrAdmonition.vue";
 import Button from "./elements/ButtonControl.vue";
 import CheckboxInput from "./elements/CheckboxControl.vue";
 import ColorInput from "./elements/ColorControl.vue";
@@ -216,7 +226,12 @@ import type { FormField } from "./FormBuilder.vue";
  * END HEADER
  */
 
-const props = defineProps<{ field: FormField; model: any }>();
+const props = defineProps<{
+  field: FormField;
+  model: any;
+  /** Why the owner of the value refused the last value of the field. */
+  refusal?: string;
+}>();
 const emit = defineEmits<(e: "update:modelValue", newValue: any) => void>();
 </script>
 
@@ -236,5 +251,10 @@ const emit = defineEmits<(e: "update:modelValue", newValue: any) => void>();
 .form-field-plain-text {
   font-size: 13px;
   margin-bottom: 10px;
+}
+
+.form-field-refusal {
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 </style>

@@ -51,26 +51,40 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   /**
-   * Writes a value of the preferences form. The form builds its fields from a
-   * schema, so the type of a value depends on the field at runtime; the main
-   * process checks the path and the value.
+   * Writes a value whose path the caller builds at runtime. A refusal is a
+   * defect of the caller and throws.
    */
   function setConfigFromForm(property: string, value: ConfigJsonValue): void {
-    // The main-process provider is the authority and validates every write; it
-    // answers with the reason it refused one.
+    const refusal = submitFormValue(property, value);
+    if (refusal !== null) {
+      throw new Error(refusal);
+    }
+  }
+
+  /**
+   * Writes a value that the author entered in a field of the preferences
+   * form. The form builds its fields from a schema, so the type of a value
+   * depends on the field at runtime. The main process is the authority: it
+   * checks the path and the value against the rule of the setting, keeps the
+   * old value for a refused one, and answers with the reason.
+   *
+   * @return  The reason of the refusal, or null for a saved value.
+   */
+  function submitFormValue(property: string, value: ConfigJsonValue): string | null {
     const refusal: string | null = ipcRenderer.sendSync("config-provider", {
       command: "set-config-single",
       payload: { key: property, val: value },
     });
     if (refusal !== null) {
-      throw new Error(refusal);
+      return refusal;
     }
 
     // Its update broadcast reaches this store asynchronously (and is throttled),
     // but callers such as sidebar reveal handlers may need the reactive mirror
     // to reflect the write before the next Vue render.
     config.value = retrieveConfig();
+    return null;
   }
 
-  return { config, setConfigValue, setConfigFromForm };
+  return { config, setConfigValue, setConfigFromForm, submitFormValue };
 });

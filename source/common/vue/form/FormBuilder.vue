@@ -25,6 +25,7 @@
             <FormFieldControl
               v-bind:field="fieldset.titleField"
               v-bind:model="getModelValue(fieldset.titleField.model)"
+              v-bind:refusal="props.refusals?.[fieldset.titleField.model]"
               v-on:update:model-value="emit('update:modelValue', fieldset.titleField.model, $event)"
             ></FormFieldControl>
           </div>
@@ -46,6 +47,7 @@
             v-if="'model' in field"
             v-bind:field="field"
             v-bind:model="getModelValue(field.model)"
+            v-bind:refusal="props.refusals?.[field.model]"
             v-on:update:model-value="emit('update:modelValue', field.model, $event)"
           ></FormFieldControl>
           <div
@@ -64,6 +66,7 @@
                   v-if="'model' in subField"
                   v-bind:field="subField"
                   v-bind:model="getModelValue(subField.model)"
+                  v-bind:refusal="props.refusals?.[subField.model]"
                   v-on:update:model-value="emit('update:modelValue', subField.model, $event)"
                 ></FormFieldControl>
                 <FormFieldControl
@@ -90,6 +93,7 @@
                   v-if="'model' in subField"
                   v-bind:field="subField"
                   v-bind:model="getModelValue(subField.model)"
+                  v-bind:refusal="props.refusals?.[subField.model]"
                   v-on:update:model-value="emit('update:modelValue', subField.model, $event)"
                 ></FormFieldControl>
                 <FormFieldControl
@@ -381,6 +385,8 @@ export interface FormSchema {
 const props = defineProps<{
   model: any;
   schema: FormSchema;
+  /** For each model whose last value its owner refused, the reason. */
+  refusals?: Record<string, string>;
 }>();
 
 const emit = defineEmits<(e: "update:modelValue", key: string, value: any) => void>();

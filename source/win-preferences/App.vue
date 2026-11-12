@@ -42,6 +42,7 @@
           ref="form"
           v-bind:model="model"
           v-bind:schema="schema"
+          v-bind:refusals="refusals"
           v-on:update:model-value="handleInput"
         ></FormBuilder>
         <div v-else id="no-results-message">
@@ -149,6 +150,11 @@ const showKeyboardShortcutsEditor = computed(
 
 // The files of the citation settings that the citation provider could not load
 const citationProblems = ref<CitationResourceProblem[]>([]);
+
+// For each setting whose last value from its field the main process refused,
+// the reason. The setting keeps its old value until the field gives one that
+// its rule accepts.
+const refusals = ref<Record<string, string>>({});
 
 const fieldsets = computed(() => {
   return getPreferenceFieldsets(configStore.config, appLangOptions.value, citationProblems.value);
@@ -359,7 +365,12 @@ function handleInput(prop: string, val: unknown): void {
     // do it the brute-force-way and stringify it. This will basically read
     // out every value from the proxy and store it in vanilla objects/arrays
     // again.
-    configStore.setConfigFromForm(prop, JSON.parse(JSON.stringify(val)));
+    const refusal = configStore.submitFormValue(prop, JSON.parse(JSON.stringify(val)));
+    if (refusal === null) {
+      delete refusals.value[prop];
+    } else {
+      refusals.value[prop] = refusal;
+    }
   }
 }
 
