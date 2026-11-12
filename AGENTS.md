@@ -993,11 +993,12 @@ of an isolated instance are in the first comment of #132.
   failure in their own place, and the dispatcher broadcasts nothing for them.
   A new command of that kind goes into the set; a command that an action of
   the author starts does not.
-- **A refused open of a document is shown in the window that asked.** The
-  `open-file` request of the documents provider sends its refusal on
-  `command-failed` to the window that sent it (`_showOpenRefusal`); each
-  caller in the window logs the rejection and stops. Proof:
-  `e2e/follow-link-refused.spec.ts`.
+- **A refused open of a document or a link is shown in the window that
+  asked.** The `open-file` request of the documents provider and the
+  navigation handler (`attach-app-navigation-handlers.ts`) send the refusal
+  on `command-failed` to that window (`showRefusalInWindow`,
+  `app/util/show-refusal-in-window.ts`); each caller in the window logs the
+  rejection and stops. Proof: `e2e/follow-link-refused.spec.ts`.
 - **A command that prompts answers its contract.** A command that showed the
   cause itself in a native dialog or in the error window (`dir-rename`, the
   Project export) returns its value and does not throw as well.
@@ -1246,7 +1247,12 @@ of an isolated instance are in the first comment of #132.
   commands, a file that the app does not open itself). A command that is
   only the open waits, and its refusal is shown once: by the dispatcher
   (§15) or by `showRefusal` in the window that asked.
+- **An address goes through `openExternal`** (the same module); no other
+  code calls `shell.openExternal`. On Linux that promise resolves although
+  `xdg-open` fails, so `openExternal` runs `xdg-open` as `openPath` does
+  and rejects with the address and the cause.
 - **Proof:** `e2e/export-open-refused.spec.ts`, `e2e/preferences-open-refused.spec.ts`,
+  `e2e/follow-link-refused.spec.ts`,
   `test/menu-file-navigation.spec.ts`, `test/assets-authored-files.spec.ts`,
   `e2e/assets-refused-save.spec.ts`.
 
