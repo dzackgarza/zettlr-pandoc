@@ -732,6 +732,7 @@ export interface components {
         | "FIGURE_ALREADY_EXISTS"
         | "SKILLS_NOT_CONFIGURED"
         | "SKILL_NOT_FOUND"
+        | "FILE_UNREADABLE"
         | "WORKSPACE_NOT_FOUND"
         | "WORKSPACE_OUTSIDE_SCOPE"
         | "WORKSPACE_ENTRY_EXISTS"
@@ -1349,11 +1350,19 @@ export interface components {
       size: number;
       modifiedAt: string;
     };
+    SkillNotRead: {
+      /** @description Path relative to the configured skills directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     SkillsListResponse: {
       /** @description Canonical absolute path of the configured skills directory. */
       root: string;
       count: number;
       entries: components["schemas"]["SkillTreeEntry"][];
+      /** @description The folders whose entries, and the entries whose metadata, could not be read. A folder of this list is an entry; its content is not. */
+      notListed: components["schemas"]["SkillNotRead"][];
     };
     SkillFileResponse: {
       /** @description Canonical absolute path of the configured skills directory. */
@@ -1694,6 +1703,15 @@ export interface operations {
       };
       /** @description Skill Markdown file not found. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The filesystem refuses to read the skill file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -2793,6 +2811,15 @@ export interface operations {
       };
       /** @description The figure file does not exist (FIGURE_NOT_FOUND), or the configured figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND). */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The filesystem refuses to read the figure file or a folder on its path (FILE_UNREADABLE); the message names the cause. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

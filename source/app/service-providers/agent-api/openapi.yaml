@@ -367,6 +367,7 @@ components:
             - FIGURE_ALREADY_EXISTS
             - SKILLS_NOT_CONFIGURED
             - SKILL_NOT_FOUND
+            - FILE_UNREADABLE
             - WORKSPACE_NOT_FOUND
             - WORKSPACE_OUTSIDE_SCOPE
             - WORKSPACE_ENTRY_EXISTS
@@ -1928,6 +1929,19 @@ components:
           minimum: 0
         modifiedAt:
           type: string
+    SkillNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the configured skills directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     SkillsListResponse:
       type: object
       additionalProperties: false
@@ -1935,6 +1949,7 @@ components:
         - root
         - count
         - entries
+        - notListed
       properties:
         root:
           type: string
@@ -1946,6 +1961,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillTreeEntry"
+        notListed:
+          type: array
+          description: >-
+            The folders whose entries, and the entries whose metadata, could not
+            be read. A folder of this list is an entry; its content is not.
+          items:
+            $ref: "#/components/schemas/SkillNotRead"
     SkillFileResponse:
       type: object
       additionalProperties: false
@@ -2778,6 +2800,14 @@ paths:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "404":
           description: Skill Markdown file not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: >-
+            The filesystem refuses to read the skill file or a folder on its
+            path (FILE_UNREADABLE); the message names the cause.
           content:
             application/json:
               schema:
@@ -3815,6 +3845,14 @@ paths:
           description: >-
             The figure file does not exist (FIGURE_NOT_FOUND), or the configured
             figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: >-
+            The filesystem refuses to read the figure file or a folder on its
+            path (FILE_UNREADABLE); the message names the cause.
           content:
             application/json:
               schema:

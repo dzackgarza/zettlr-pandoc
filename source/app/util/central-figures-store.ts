@@ -7,6 +7,7 @@
 import { createHash } from "crypto";
 import { type Dirent, promises as fs, type Stats } from "fs";
 import path from "path";
+import isErrnoException from "../../common/util/is-errno-exception";
 import { writeTextFile } from "../service-providers/fsal/util/write-text-file";
 
 export type CentralFigureEntryKind = "file" | "directory" | "symlink";
@@ -61,6 +62,18 @@ export class CentralFigureNotFoundError extends Error {}
 export class CentralFigureAlreadyExistsError extends Error {}
 /** The figures directory of the settings does not exist. */
 export class CentralFiguresDirectoryNotFoundError extends Error {}
+/** A figure whose entry or content the filesystem refuses. */
+export class CentralFigureUnreadableError extends Error {}
+
+function unreadableFigure(error: NodeJS.ErrnoException, normalized: string): Error {
+  if (error.code === "ENOENT") {
+    return new CentralFigureNotFoundError(`Figure file not found: ${normalized}`);
+  }
+  return new CentralFigureUnreadableError(
+    `Figure file ${normalized} cannot be read: ${error.message}`,
+    { cause: error },
+  );
+}
 
 function expandHome(value: string, homeDirectory: string): string {
   if (value === "~") {
@@ -146,10 +159,8 @@ async function resolveExistingFile(
   try {
     stats = await fs.lstat(candidate);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new CentralFigureNotFoundError(`Figure file not found: ${normalized}`);
-    }
-    throw error;
+    if (!isErrnoException(error)) throw error;
+    throw unreadableFigure(error, normalized);
   }
   if (stats.isSymbolicLink()) {
     throw new CentralFigureInputError(
@@ -210,7 +221,11 @@ async function prepareWritableFile(
  * error goes on.
  */
 function causeOf(error: NodeJS.ErrnoException): string {
-  if (error instanceof CentralFigureNotFoundError || error.code !== undefined) {
+  if (
+    error instanceof CentralFigureNotFoundError ||
+    error instanceof CentralFigureUnreadableError ||
+    error.code !== undefined
+  ) {
     return error.message;
   }
   throw error;
@@ -286,7 +301,14 @@ export async function readCentralFigure(
   relativePath: string,
 ): Promise<CentralFigureReadResult> {
   const resolved = await resolveExistingFile(root, relativePath);
-  const [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  let buffer: Buffer;
+  let stats: Stats;
+  try {
+    [buffer, stats] = await Promise.all([fs.readFile(resolved.path), fs.stat(resolved.path)]);
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    throw unreadableFigure(error, resolved.relativePath);
+  }
   const text = decodeUtf8(buffer);
   return {
     path: resolved.relativePath,

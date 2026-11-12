@@ -94,6 +94,7 @@ import {
   CentralFigureInputError,
   CentralFigureNotFoundError,
   CentralFiguresDirectoryNotFoundError,
+  CentralFigureUnreadableError,
   createCentralTikzFigure,
   listCentralFigures,
   readCentralFigure,
@@ -118,6 +119,7 @@ import {
   readSkillMarkdown,
   resolveSkillsDirectory,
   SkillFileNotFoundError,
+  SkillFileUnreadableError,
   SkillsDirectoryUnavailableError,
   SkillsPathInputError,
 } from "./skills-store";
@@ -195,6 +197,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   FIGURE_ALREADY_EXISTS: 409,
   SKILLS_NOT_CONFIGURED: 503,
   SKILL_NOT_FOUND: 404,
+  FILE_UNREADABLE: 409,
   WORKSPACE_NOT_FOUND: 404,
   WORKSPACE_OUTSIDE_SCOPE: 403,
   WORKSPACE_ENTRY_EXISTS: 409,
@@ -2491,8 +2494,8 @@ export default class AgentHTTPProvider extends ProviderContract {
 
   private async handleListSkills(res: http.ServerResponse): Promise<void> {
     try {
-      const { root, entries } = await listSkillTree(this.skillsDirectory());
-      this.sendJson(res, 200, { root, count: entries.length, entries });
+      const { root, entries, notListed } = await listSkillTree(this.skillsDirectory());
+      this.sendJson(res, 200, { root, count: entries.length, entries, notListed });
     } catch (error) {
       if (error instanceof SkillsDirectoryUnavailableError) {
         this.sendError(res, 503, "SKILLS_NOT_CONFIGURED", error.message);
@@ -2517,6 +2520,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       }
       if (error instanceof SkillFileNotFoundError) {
         this.sendError(res, 404, "SKILL_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof SkillFileUnreadableError) {
+        this.sendError(res, 409, "FILE_UNREADABLE", error.message);
         return;
       }
       if (error instanceof SkillsPathInputError) {
@@ -2609,6 +2616,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch (error) {
       if (error instanceof CentralFigureNotFoundError) {
         this.sendError(res, 404, "FIGURE_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof CentralFigureUnreadableError) {
+        this.sendError(res, 409, "FILE_UNREADABLE", error.message);
         return;
       }
       if (error instanceof CentralFiguresDirectoryNotFoundError) {

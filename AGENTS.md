@@ -351,7 +351,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - `agentApi.skillsDirectory` in `config.json` is a read-only filesystem
   capability exposed through the existing `getHelp` MCP tool: use
   `resource=skills`, with `action=list` or `action=read` plus a relative `.md`
-  `path`. Symlinks, traversal, and non-Markdown files are not exposed. The
+  `path`. Symlinks, traversal, and non-Markdown files are not exposed. A
+  folder that the filesystem refuses is in the `notListed` of the listing,
+  and a refused read of a skill or a figure answers 409 `FILE_UNREADABLE`. The
   ChatGPT connector has a hard 30-tool limit; `/mcp` itself must therefore stay
   at 30 tools rather than hiding extra operations only from `/openapi.json`.
 
