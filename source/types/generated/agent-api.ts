@@ -699,6 +699,7 @@ export interface components {
         | "NO_FOCUSED_DOCUMENT"
         | "DOCUMENT_NOT_FOUND"
         | "DOCUMENT_CLOSED"
+        | "DOCUMENT_UNREADABLE"
         | "REVISION_MISMATCH"
         | "REVIEW_GENERATION_MISMATCH"
         | "REVIEW_NOT_FOUND"
@@ -1985,6 +1986,15 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
+      /** @description The file of the closed document cannot be read */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
     };
   };
   searchDocument: {
@@ -2035,6 +2045,15 @@ export interface operations {
       };
       /** @description Search timed out */
       408: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The file of the closed document cannot be read */
+      409: {
         headers: {
           [name: string]: unknown;
         };

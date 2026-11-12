@@ -334,6 +334,7 @@ components:
             - NO_FOCUSED_DOCUMENT
             - DOCUMENT_NOT_FOUND
             - DOCUMENT_CLOSED
+            - DOCUMENT_UNREADABLE
             - REVISION_MISMATCH
             - REVIEW_GENERATION_MISMATCH
             - REVIEW_NOT_FOUND
@@ -3024,6 +3025,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: The file of the closed document cannot be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
   /v1/documents/{documentId}/search:
     post:
       operationId: searchDocument
@@ -3071,6 +3078,12 @@ paths:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "404":
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
+        "409":
+          description: The file of the closed document cannot be read
           content:
             application/json:
               schema:

@@ -22,7 +22,6 @@
  */
 
 import { hasMarkdownExt } from "@common/util/file-extention-checks";
-import isErrnoException from "@common/util/is-errno-exception";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -105,6 +104,7 @@ import { documentCrossReferenceSystem } from "../../util/document-bibliographies
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import AgentDocumentQueries, {
   canonicalPath,
+  DocumentUnreadableError,
   SEARCH_DEADLINE_MS,
   SearchPatternError,
   SearchTimeoutError,
@@ -156,6 +156,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   NO_FOCUSED_DOCUMENT: 404,
   DOCUMENT_NOT_FOUND: 404,
   DOCUMENT_CLOSED: 409,
+  DOCUMENT_UNREADABLE: 409,
   REVISION_MISMATCH: 409,
   BASELINE_MISMATCH: 412,
   REVIEW_GENERATION_MISMATCH: 409,
@@ -683,6 +684,13 @@ export default class AgentHTTPProvider extends ProviderContract {
           "REQUEST_BODY_TIMEOUT",
           `Request body was not received within ${this._bodyDeadlineMs} ms`,
         );
+        return;
+      }
+      if (err instanceof DocumentUnreadableError) {
+        // The author's file refuses its read: a state of that file, not a
+        // defect of this provider.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
+        this.sendError(res, 409, "DOCUMENT_UNREADABLE", err.message);
         return;
       }
       if (err instanceof RequestAbandonedError) {
@@ -1479,23 +1487,13 @@ export default class AgentHTTPProvider extends ProviderContract {
     // request parameter's default describes what the server assumes when the
     // caller omits it, so this is where it is applied.
     const side = query.side ?? "working";
-    let response;
-    try {
-      response = await this._queries.readDocumentContent(
-        documentId,
-        side,
-        query.startLine ?? 1,
-        query.endLine ?? Number.MAX_SAFE_INTEGER,
-      );
-    } catch (error) {
-      this.sendError(
-        res,
-        500,
-        "INTERNAL_ERROR",
-        error instanceof Error ? error.message : String(error),
-      );
-      return;
-    }
+    // A failure of the read reaches the dispatcher, which answers it.
+    const response = await this._queries.readDocumentContent(
+      documentId,
+      side,
+      query.startLine ?? 1,
+      query.endLine ?? Number.MAX_SAFE_INTEGER,
+    );
     if (response === "OUTSIDE_WORKSPACE") {
       this.sendError(
         res,
@@ -2751,7 +2749,7 @@ export default class AgentHTTPProvider extends ProviderContract {
               await textOf(target).then(
                 (text) => ({ path: target.path, text }),
                 (error: unknown) => {
-                  if (!isErrnoException(error)) {
+                  if (!(error instanceof DocumentUnreadableError)) {
                     throw error;
                   }
                   return { path: target.path, unreadable: error.message };

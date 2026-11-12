@@ -14,7 +14,7 @@
  */
 
 import { Text } from "@codemirror/state";
-import { hasErrnoCode } from "@common/util/is-errno-exception";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
@@ -53,6 +53,17 @@ import vm from "vm";
 const SEARCH_CONTEXT_DEFAULT = 3;
 export const SEARCH_DEADLINE_MS = 1000;
 export const MAX_SEARCH_HITS = 1000;
+
+/**
+ * The file of a closed document refuses its read (`EACCES`, `EIO`). The
+ * Agent API answers 409 `DOCUMENT_UNREADABLE` with this message.
+ */
+export class DocumentUnreadableError extends Error {
+  constructor(filePath: string, cause: NodeJS.ErrnoException) {
+    super(`Cannot read ${filePath}: ${cause.message}`, { cause });
+    this.name = "DocumentUnreadableError";
+  }
+}
 
 export class SearchPatternError extends Error {
   constructor(cause?: unknown) {
@@ -684,10 +695,14 @@ export default class AgentDocumentQueries {
         reviewGeneration: sidecar.review?.generation ?? 0,
       };
     }
-    // A closed document whose file is gone has no text.
+    // A closed document whose file is gone has no text; a file that the
+    // filesystem refuses to read is a state of the author's file.
     const disk = await this.documents.readSupportedFile(filePath).catch((error: unknown) => {
       if (hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
         return undefined;
+      }
+      if (isErrnoException(error)) {
+        throw new DocumentUnreadableError(filePath, error);
       }
       throw error;
     });
