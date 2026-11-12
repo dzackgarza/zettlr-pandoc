@@ -24,68 +24,13 @@ import {
   pathExtname,
   relativePath,
 } from "@common/util/renderer-path-polyfill";
-import { type SaveImageFromClipboardAPI } from "source/app/service-providers/commands/save-image-from-clipboard";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { configField } from "../util/configuration";
+import { normalizePathForInsertion, saveClipboardImage } from "../util/save-clipboard-image";
 
 const ipcRenderer = window.ipc;
 
 const imageRE = /\.(?:png|jpe?g|gif|bmp|svg|tiff?)$/i;
-
-/**
- * This function normalizes an absolute path in a way that is suitable for the
- * main editor, i.e., it should be easily readable for humans and as short as
- * possible.
- *
- * @param   {string}  p         The path to be normalized
- * @param   {string}  basePath  The base path for turning `p` relative.
- *
- * @return  {string}            The normalized path.
- */
-function normalizePathForInsertion(p: string, basePath: string): string {
-  const relative = relativePath(basePath, p);
-  let sanitizedPath = relative.replace(/\\/g, "/");
-  if (!sanitizedPath.startsWith("./") && !sanitizedPath.startsWith("../")) {
-    sanitizedPath = "./" + sanitizedPath;
-  }
-  return sanitizedPath;
-}
-
-/**
- * Handles the code required to save an image from the clipboard. It returns the
- * image tag with the image path as soon as the image has been saved to disk.
- *
- * @param   {string}           basePath  The base path for the image
- * @param   {File}             file      The image object
- *
- * @return  {Promise<string>}            Resolves with the image tag or undefined.
- */
-async function saveImageFromClipboard(basePath: string, file: File): Promise<string | undefined> {
-  const imageData = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-
-    // Hook event listeners
-    reader.addEventListener("abort", () => reject(new Error("Image read was aborted")));
-    reader.addEventListener("error", () => reject(new Error("Could not read image data")));
-    reader.addEventListener("load", () => resolve(reader.result as string));
-
-    // Start loading (as a data URL)
-    reader.readAsDataURL(file);
-  });
-
-  const pathToInsert: string | undefined = await ipcRenderer.invoke("application", {
-    command: "save-image-from-clipboard",
-    payload: { basePath, imageData, imageName: file.name } as SaveImageFromClipboardAPI,
-  });
-
-  // If the user aborts the pasting process, the command will return
-  // undefined, so we have to check for this.
-  if (pathToInsert !== undefined) {
-    const p = normalizePathForInsertion(pathToInsert, basePath);
-    const tag = `![${pathBasename(p)}](${p})`;
-    return tag;
-  }
-}
 
 /**
  * These handlers hook into the editor and attempt to intercept events that need
@@ -157,7 +102,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
             // `![]()`.
             allPromises.push(
               new Promise((resolve, reject) => {
-                saveImageFromClipboard(basePath, file)
+                saveClipboardImage(basePath, file, file.name)
                   .then((tag) => {
                     if (tag !== undefined) {
                       insertions.push(tag);
@@ -232,7 +177,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
           // It's an image --> offer to save
           allPromises.push(
             new Promise((resolve, reject) => {
-              saveImageFromClipboard(cwd, file)
+              saveClipboardImage(cwd, file, file.name)
                 .then((tag) => {
                   if (tag !== undefined) {
                     insertions.push(tag);

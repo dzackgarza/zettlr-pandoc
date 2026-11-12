@@ -18,10 +18,9 @@ import { type EditorView } from "@codemirror/view";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
 import html2md from "@common/util/html-to-md";
-import { pathBasename, pathDirname, relativePath } from "@common/util/renderer-path-polyfill";
+import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { configField } from "./configuration";
-
-const ipcRenderer = window.ipc;
+import { saveClipboardImage } from "./save-clipboard-image";
 
 /**
  * Handles a paste event (both images and text/HTML)
@@ -38,20 +37,9 @@ async function handlePaste(view: EditorView): Promise<void> {
     const hasHTML = item.types.includes("text/html");
 
     if (item.types.includes("image/png")) {
-      const pathToInsert: string | undefined = await ipcRenderer.invoke("application", {
-        command: "save-image-from-clipboard",
-        payload: { startPath: basePath },
-      });
-
-      // If the user aborts the pasting process, the command will return
-      // undefined, so we have to check for this.
-      if (pathToInsert !== undefined) {
-        // Replace backward slashes with forward slashes to make Windows
-        // paths cross-platform compatible
-        const relative = relativePath(basePath, pathToInsert);
-        const sanitizedPath = relative.replace(/\\/g, "/");
-        // We need to replace spaces, since the Markdown parser is strict here
-        const tag = `![${pathBasename(sanitizedPath)}](${sanitizedPath.replace(/ /g, "%20")})`;
+      // The clipboard API gives an image no file name.
+      const tag = await saveClipboardImage(basePath, await item.getType("image/png"), undefined);
+      if (tag !== undefined) {
         view.dispatch(view.state.replaceSelection(tag), { scrollIntoView: true });
       }
       return; // NOTE: We are ignoring additional images here, because (a) this

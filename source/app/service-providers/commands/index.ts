@@ -383,7 +383,7 @@ export type ApplicationIPCContract = {
     response: ExternalLinterRunResponse;
   };
   "save-image-from-clipboard": {
-    request: { payload: SaveImageFromClipboardAPI | { startPath: string } };
+    request: { payload: SaveImageFromClipboardAPI };
     response: string | undefined;
   };
   "set-directory-setting": {

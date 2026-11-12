@@ -141,7 +141,15 @@ describe("assembled app: paste of an image from the clipboard", function () {
 
     const imagePath = path.join(path.dirname(documentPath), `${IMAGE_NAME}.png`);
     const link = `![${IMAGE_NAME}.png](./${IMAGE_NAME}.png)`;
-    await shown.keyboard.press("Control+s");
+    // The editor inserts the link when the command answers; the author saves after that.
+    await shown
+      .locator(".cm-content", { hasText: `./${IMAGE_NAME}.png` })
+      .waitFor({ state: "visible", timeout: 10_000 });
+    // File → Save: the menu item that Ctrl+S runs.
+    await shown.locator(".cm-content").click();
+    await shown.evaluate(() => {
+      window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.save" });
+    });
     const text = await textThat(documentPath, (contents) => contents.includes(link));
     screenshots.set("pasted-image.png", await shown.screenshot());
     assert.ok(text.includes(link), `the document has no link to the image: ${text}`);
