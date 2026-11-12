@@ -17,22 +17,22 @@ the reported failure. That review is the next task after the merge.
 | Item | Acceptance | Status |
 | --- | --- | --- |
 | PR #209 merged | Required checks green on the head, no open review thread | Open until the merge |
-| Review of the fixes of #209 | Each red test reproduces the reported failure through the real path; a test that does not is replaced by one that does | Not started |
+| Review of the fixes of #209 | Each red test reproduces the reported failure through the real path; a test that does not is replaced by one that does | Review done, findings in #217; no rewrite done |
 | Issues that #209 does not close | Fixed with a red proof, or found not reproducible with evidence on the issue | Open |
 
 Issues that #209 does not close: #115, #118, #123, #131, #132, #160, #181,
-#197, #198, #199, #202, #203, #204, #210 (four updater defects), #216
-(not reproduced).
+#197, #199, #202, #203, #204, #210 (four updater defects), #216
+(not reproduced), #217.
 
 ## Next work
 
 1. If #209 is not merged, read `gh pr checks 209` and merge when the
    required checks pass. Then watch the push run of `develop`.
-2. Review the red tests of #209 against their issues (the first item
-   above). Start with the fixes that #210 names as answers to constructed
-   failures.
-3. Work the remaining issues by root cause: #197 and its children (#198,
-   #199, #202, #203, #204) are one family; #132 is the responsiveness
+2. Act on #217: give each listed commit a red proof that reproduces
+   its report, decide each drop candidate with evidence, and file an issue
+   for each defect that the wrong-issue table names.
+3. Work the remaining issues by root cause: #197 and its children (#199,
+   #202, #203, #204) are one family; #132 is the responsiveness
    backlog.
 
 Before you believe a claim of this file, check it against the issue, the
