@@ -50,7 +50,7 @@ export default function getMarkdownFileParser(
     const ast = markdownToAST(content);
 
     const tags = extractASTNodes(ast, "ZettelkastenTag") as ZettelkastenTag[];
-    file.tags = tags.map((tag) => tag.value.toLowerCase());
+    file.tags = [...new Set(tags.map((tag) => tag.value.toLowerCase()))];
 
     const links = extractASTNodes(ast, "ZettelkastenLink") as ZettelkastenLink[];
     file.links = links.map((link) => link.target);
@@ -151,7 +151,7 @@ export default function getMarkdownFileParser(
         // the YAML parser will obviously cast those to numbers, but we don't want
         // this, so forcefully cast everything to string (see issue #1433).
         const sanitizedKeywords = keywords.map(String).map((tag) => tag.toLowerCase());
-        file.tags.push(...sanitizedKeywords.filter((each) => !file.tags.includes(each)));
+        file.tags = [...new Set([...file.tags, ...sanitizedKeywords])];
       }
     } catch (err) {
       // Invalid YAML leaves the descriptor without frontmatter metadata; every

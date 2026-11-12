@@ -33,6 +33,7 @@ import {
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  requestWindowClose,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -72,6 +73,7 @@ describe("a tag rename in the tag manager", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
+  let manager: Page | undefined;
   let fixtureRoot: string | undefined;
   let comma = "";
   let numbers = "";
@@ -111,6 +113,13 @@ describe("a tag rename in the tag manager", function () {
   });
 
   after(async function () {
+    // The application quits when its last window closes, so the tag manager
+    // closes before the main window does.
+    if (manager !== undefined && !manager.isClosed()) {
+      const closed = manager.waitForEvent("close", { timeout: 10_000 });
+      await requestWindowClose(manager);
+      await closed;
+    }
     await shutdown(browser, appProcess);
     await preserveArtifacts(
       ARTIFACT_DIRECTORY,
@@ -131,7 +140,7 @@ describe("a tag rename in the tag manager", function () {
     await activePage.evaluate(() => {
       window.ipc.send("menu-provider", { command: "click-menu-item", payload: "menu.tags" });
     });
-    const manager = await findTagManagerPage(requireInitialized(browser, "browser"), 30_000);
+    manager = await findTagManagerPage(requireInitialized(browser, "browser"), 30_000);
     const row = manager
       .locator("tr.tag-flex")
       .filter({ has: manager.locator("td:first-child span", { hasText: /^lattice-theory$/ }) });

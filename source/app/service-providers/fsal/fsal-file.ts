@@ -22,7 +22,7 @@ import type FSALCache from "./fsal-cache";
 import { getFilesystemMetadata } from "./util/get-fs-metadata";
 import { readFileText } from "./util/read-file-text";
 
-export const PARSER_VERSION = 2;
+export const PARSER_VERSION = 3;
 
 /**
  * Applies a cached file, saving time where the file is not being parsed.

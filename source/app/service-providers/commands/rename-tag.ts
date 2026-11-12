@@ -25,13 +25,16 @@ export default class RenameTag extends ZettlrCommand {
   }
 
   /**
-   * Remove a directory.
+   * Replace a tag in each file that has it.
    * @param {String} evt The event name
-   * @param  {Object} arg An object containing hash of containing and name of new dir.
+   * @param  {Object} arg The old and the new name of the tag.
    */
   async run(evt: string, arg: { oldName: string; newName: string }): Promise<boolean> {
     const oldName: string = arg.oldName;
-    const newName: string = arg.newName;
+    const newName: string = arg.newName.trim();
+    if (newName === "") {
+      throw new Error(trans('The tag "%s" needs a new name.', oldName));
+    }
 
     // First, retrieve all files from the FSAL
     const allFiles = (await this._app.fsal.getAllLoadedDescriptors()).filter(
@@ -58,22 +61,42 @@ export default class RenameTag extends ZettlrCommand {
     }
 
     // Lastly, do the replacing file by file. NOTE: This rests on the fact that
-    // the FSAL will pick up those changes via the file system itself.
+    // the FSAL will pick up those changes via the file system itself. One file
+    // that cannot be changed does not stop the others; the command names each.
+    const refusals: string[] = [];
     for (const file of relevantFiles) {
-      const content = await this._app.fsal.readTextFile(file.path);
-      const newContent = replaceTags(content, oldName, newName);
-      if (newContent !== content) {
-        await this._app.fsal.writeTextFile(file.path, newContent);
-        this._app.log.info(
-          `[Application] Replaced tag "${oldName}" with "${newName}" in file ${file.path}`,
-        );
-      } else {
-        this._app.log.warning(
-          `[Application] Could not replace "${oldName}" with "${newName}" in file ${file.path}. Note that the tag replacer does not yet work with comma-separated keyword lists.`,
-        );
+      const refusal = await this.renameIn(file.path, oldName, newName).then(
+        () => undefined,
+        (err: Error) => `${file.path}: ${err.message}`,
+      );
+      if (refusal !== undefined) {
+        refusals.push(refusal);
       }
     }
 
+    if (refusals.length > 0) {
+      throw new Error(
+        trans(
+          'The tag "%s" was not replaced in %s of %s files:\n%s',
+          oldName,
+          refusals.length,
+          relevantFiles.length,
+          refusals.join("\n"),
+        ),
+      );
+    }
     return true;
+  }
+
+  private async renameIn(filePath: string, oldName: string, newName: string): Promise<void> {
+    const content = await this._app.fsal.readTextFile(filePath);
+    const newContent = replaceTags(content, oldName, newName);
+    if (newContent === content) {
+      throw new Error(trans("The file does not contain the tag."));
+    }
+    await this._app.fsal.writeTextFile(filePath, newContent);
+    this._app.log.info(
+      `[Application] Replaced tag "${oldName}" with "${newName}" in file ${filePath}`,
+    );
   }
 }
