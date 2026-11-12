@@ -7,6 +7,7 @@ import {
   loadCanonicalMathJaxMacros,
   loadCanonicalTexMacroCommands,
   loadMathJaxMacros,
+  MacroSourcesUnavailableError,
 } from "source/app/util/load-mathjax-macros";
 
 const VALID = "test/fixtures/mathjax-macros.json";
@@ -51,10 +52,7 @@ describe("central ~/.pandoc MathJax projection", function () {
 
   it("fails loudly when the central generated projection is absent", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-macros-missing-"));
-    await assert.rejects(
-      loadCanonicalMathJaxMacros(home),
-      /Can't find the generated MathJax macro file/,
-    );
+    await assert.rejects(loadCanonicalMathJaxMacros(home), MacroSourcesUnavailableError);
   });
 });
 

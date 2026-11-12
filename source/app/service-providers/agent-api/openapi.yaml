@@ -368,6 +368,7 @@ components:
             - SKILLS_NOT_CONFIGURED
             - SKILL_NOT_FOUND
             - FILE_UNREADABLE
+            - MACROS_UNAVAILABLE
             - WORKSPACE_NOT_FOUND
             - WORKSPACE_OUTSIDE_SCOPE
             - WORKSPACE_ENTRY_EXISTS
@@ -1889,6 +1890,19 @@ components:
             $ref: "#/components/schemas/MacroDeclaration"
         mathjax:
           $ref: "#/components/schemas/MacroMathJaxDefinition"
+    MacroSourceNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the TeX macro directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     MacroInventoryResponse:
       type: object
       additionalProperties: false
@@ -1896,6 +1910,7 @@ components:
         - root
         - count
         - macros
+        - notRead
       properties:
         root:
           type: string
@@ -1907,6 +1922,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MacroEntry"
+        notRead:
+          type: array
+          description: >-
+            The folders and source files of the macro directory whose content
+            the filesystem refuses. Their declarations are not in macros.
+          items:
+            $ref: "#/components/schemas/MacroSourceNotRead"
     SkillTreeEntry:
       type: object
       additionalProperties: false
@@ -3789,6 +3811,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MacroInventoryResponse"
+        "503":
+          description: >-
+            The TeX macro directory cannot be read, or the generated MathJax
+            projection cannot be read or is not a macro projection
+            (MACROS_UNAVAILABLE); the message names the cause.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentErrorResponse"
         "500":
           description: Macro inspection failed
           content:

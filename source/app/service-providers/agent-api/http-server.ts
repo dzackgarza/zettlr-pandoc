@@ -103,7 +103,10 @@ import {
   writeCentralFigure,
 } from "../../util/central-figures-store";
 import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
-import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import {
+  loadCanonicalMacroInventory,
+  MacroSourcesUnavailableError,
+} from "../../util/load-mathjax-macros";
 import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
 import AgentDocumentQueries, {
   canonicalPath,
@@ -198,6 +201,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   SKILLS_NOT_CONFIGURED: 503,
   SKILL_NOT_FOUND: 404,
   FILE_UNREADABLE: 409,
+  MACROS_UNAVAILABLE: 503,
   WORKSPACE_NOT_FOUND: 404,
   WORKSPACE_OUTSIDE_SCOPE: 403,
   WORKSPACE_ENTRY_EXISTS: 409,
@@ -2481,8 +2485,13 @@ export default class AgentHTTPProvider extends ProviderContract {
         root: inventory.root,
         count: macros.length,
         macros,
+        notRead: inventory.notRead,
       });
     } catch (error) {
+      if (error instanceof MacroSourcesUnavailableError) {
+        this.sendError(res, 503, "MACROS_UNAVAILABLE", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,

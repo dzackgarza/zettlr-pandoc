@@ -15,6 +15,7 @@
  * END HEADER
  */
 
+import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import { type MathJaxMacro, parseMathJaxMacros } from "@dzack/tikz-render/mathjax-config";
 import {
@@ -47,10 +48,23 @@ export interface CanonicalMacroEntry {
   mathjax?: CanonicalMacroMathJaxDefinition;
 }
 
+/** A path of the macro tree whose content the filesystem refuses, with the cause. */
+export interface MacroSourceNotRead {
+  path: string;
+  cause: string;
+}
+
 export interface CanonicalMacroInventory {
   root: string;
   macros: CanonicalMacroEntry[];
+  notRead: MacroSourceNotRead[];
 }
+
+/**
+ * The macro tree of ~/.pandoc cannot be read, or its generated MathJax
+ * projection cannot be read or is not a macro projection.
+ */
+export class MacroSourcesUnavailableError extends Error {}
 
 /** Resolve the generated MathJax projection owned by ~/.pandoc. */
 export function canonicalMathJaxMacrosPath(homeDirectory: string): string {
@@ -66,13 +80,29 @@ export async function loadCanonicalMathJaxMacros(
   homeDirectory: string,
 ): Promise<Record<string, MathJaxMacro>> {
   const filePath = canonicalMathJaxMacrosPath(homeDirectory);
-  if (!isFile(filePath)) {
-    throw new Error(
-      `Can't find the generated MathJax macro file ${filePath}. ` +
+  let contents: string;
+  try {
+    contents = await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if (!isErrnoException(error)) throw error;
+    throw new MacroSourcesUnavailableError(
+      `Can't read the generated MathJax macro file ${filePath}: ${error.message}. ` +
         "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+      { cause: error },
     );
   }
-  return await loadMathJaxMacros(filePath);
+  try {
+    return parseMathJaxMacros(JSON.parse(contents));
+  } catch (error) {
+    // JSON.parse throws a SyntaxError and parseMathJaxMacros a TypeError for
+    // text that is no macro projection.
+    if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
+    throw new MacroSourcesUnavailableError(
+      `The generated MathJax macro file ${filePath} is not a macro projection: ${error.message}. ` +
+        "Run ~/.pandoc/bin/generate-mathjax-config.py to rebuild it.",
+      { cause: error },
+    );
+  }
 }
 
 /**
@@ -133,14 +163,20 @@ function mathJaxDefinition(definition: MathJaxMacro): CanonicalMacroMathJaxDefin
 /**
  * Inspect the complete canonical user macro vocabulary. Compiler-only TeX
  * declarations and MathJax-projected declarations are merged by control word;
- * duplicate authored declarations are deliberately preserved.
+ * duplicate authored declarations are deliberately preserved. A folder or a
+ * source file whose content the filesystem refuses is in `notRead`, and its
+ * declarations are not in the inventory; a root that refuses its content is
+ * a MacroSourcesUnavailableError.
  */
 export async function loadCanonicalMacroInventory(
   homeDirectory: string,
 ): Promise<CanonicalMacroInventory> {
   const root = path.join(homeDirectory, ".pandoc", "styles", "macros");
   const found: Array<{ name: string; declaration: CanonicalMacroDeclaration }> = [];
+  const notRead: MacroSourceNotRead[] = [];
   const queue: string[] = [root];
+  const relativeToRoot = (absolute: string): string =>
+    path.relative(root, absolute).split(path.sep).join("/");
 
   while (queue.length > 0) {
     const directory = queue.shift();
@@ -151,12 +187,15 @@ export async function loadCanonicalMacroInventory(
     try {
       entries = await fs.readdir(directory, { withFileTypes: true });
     } catch (error) {
+      if (!isErrnoException(error)) throw error;
       if (directory === root) {
-        throw new Error(`Can't read the TeX macro directory ${root}.`, {
-          cause: error,
-        });
+        throw new MacroSourcesUnavailableError(
+          `Can't read the TeX macro directory ${root}: ${error.message}`,
+          { cause: error },
+        );
       }
-      throw error;
+      notRead.push({ path: relativeToRoot(directory), cause: error.message });
+      continue;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
@@ -168,8 +207,15 @@ export async function loadCanonicalMacroInventory(
       if (!entry.isFile() || !TEX_SOURCE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         continue;
       }
-      const source = await fs.readFile(absolute, "utf8");
-      const sourcePath = path.relative(root, absolute).split(path.sep).join("/");
+      const sourcePath = relativeToRoot(absolute);
+      let source: string;
+      try {
+        source = await fs.readFile(absolute, "utf8");
+      } catch (error) {
+        if (!isErrnoException(error)) throw error;
+        notRead.push({ path: sourcePath, cause: error.message });
+        continue;
+      }
       for (const command of texCommandDeclarationEntries(source)) {
         found.push({
           name: command.name,
@@ -204,7 +250,7 @@ export async function loadCanonicalMacroInventory(
       };
     });
 
-  return { root, macros };
+  return { root, macros, notRead };
 }
 
 /**

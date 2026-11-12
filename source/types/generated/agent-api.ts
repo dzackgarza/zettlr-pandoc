@@ -733,6 +733,7 @@ export interface components {
         | "SKILLS_NOT_CONFIGURED"
         | "SKILL_NOT_FOUND"
         | "FILE_UNREADABLE"
+        | "MACROS_UNAVAILABLE"
         | "WORKSPACE_NOT_FOUND"
         | "WORKSPACE_OUTSIDE_SCOPE"
         | "WORKSPACE_ENTRY_EXISTS"
@@ -1336,11 +1337,19 @@ export interface components {
       declarations: components["schemas"]["MacroDeclaration"][];
       mathjax?: components["schemas"]["MacroMathJaxDefinition"];
     };
+    MacroSourceNotRead: {
+      /** @description Path relative to the TeX macro directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     MacroInventoryResponse: {
       /** @description Absolute TeX macro directory. */
       root: string;
       count: number;
       macros: components["schemas"]["MacroEntry"][];
+      /** @description The folders and source files of the macro directory whose content the filesystem refuses. Their declarations are not in macros. */
+      notRead: components["schemas"]["MacroSourceNotRead"][];
     };
     SkillTreeEntry: {
       /** @description Path relative to the configured skills directory. */
@@ -2764,6 +2773,15 @@ export interface operations {
       };
       /** @description Macro inspection failed */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The TeX macro directory cannot be read, or the generated MathJax projection cannot be read or is not a macro projection (MACROS_UNAVAILABLE); the message names the cause. */
+      503: {
         headers: {
           [name: string]: unknown;
         };
