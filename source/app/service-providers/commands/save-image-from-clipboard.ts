@@ -13,7 +13,6 @@
  */
 
 import { trans } from "@common/i18n-main";
-import { showNativeNotification } from "@common/util/show-notification";
 import { clipboard, ipcMain, nativeImage } from "electron";
 import { promises as fs } from "fs";
 import md5 from "md5";
@@ -111,35 +110,19 @@ export default class SaveImage extends ZettlrCommand {
 
     // First check the name for sanity
     let targetFile = sanitize(target.name, { replacement: "-" });
-
-    // A file must be opened and active, and the name valid
     if (targetFile === "") {
-      showNativeNotification(trans("The provided name did not contain any allowed letters."));
+      throw new Error(trans("The provided name did not contain any allowed letters."));
     }
 
-    // Now check the extension of the name (some users may
-    // prefer to choose to provide it already)
-    if (![".png", ".jpg"].includes(path.extname(targetFile).toLowerCase())) {
+    // The author may give the extension; an image of another type is a PNG.
+    if (![".png", ".jpg", ".jpeg"].includes(path.extname(targetFile).toLowerCase())) {
       targetFile += ".png";
     }
 
-    // Now resolve the path correctly, taking into account a potential relative
-    // path the user has chosen.
-
-    // Now we need to make sure the directory exists.
-    try {
-      await fs.lstat(target.targetDir);
-    } catch {
-      await fs.mkdir(target.targetDir, { recursive: true });
-    }
-
-    // If something went wrong or the user did not provide a directory, abort
-    if (!(await this._app.fsal.isDir(target.targetDir))) {
-      showNativeNotification(trans("The requested directory was not found."));
-    }
-
-    // Build the correct path
-    let imagePath = path.join(target.targetDir, targetFile);
+    // The folder of the image may not exist yet. A path that is a file
+    // rejects the creation, and the dispatcher shows the cause.
+    await fs.mkdir(target.targetDir, { recursive: true });
+    const imagePath = path.join(target.targetDir, targetFile);
 
     let size = image.getSize();
     let resizeWidth = parseInt(target.width);
@@ -157,11 +140,18 @@ export default class SaveImage extends ZettlrCommand {
 
     this._app.log.info(`Saving image ${targetFile} to ${imagePath} ...`);
 
-    if (path.extname(imagePath).toLowerCase() === ".png") {
-      await fs.writeFile(imagePath, image.toPNG());
-    } else if (path.extname(imagePath).toLowerCase() === ".jpg") {
-      await fs.writeFile(imagePath, image.toJPEG(100));
-    }
+    // A paste replaces no file of the author: the write creates the file, or
+    // it rejects with EEXIST.
+    const bytes =
+      path.extname(imagePath).toLowerCase() === ".png" ? image.toPNG() : image.toJPEG(100);
+    await fs.writeFile(imagePath, bytes, { flag: "wx" }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "EEXIST") {
+        throw new Error(
+          trans("%s already exists. Paste the image again with another name.", imagePath),
+        );
+      }
+      throw error;
+    });
 
     return imagePath;
   }

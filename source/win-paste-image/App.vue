@@ -129,8 +129,8 @@ const windowTitle = trans("Insert Image from Clipboard");
 const dimensionsLabel = trans("Image size");
 const aspectRatioLabel = trans("Retain aspect ratio");
 const resizeToLabel = trans("Resize image to");
-const pathLabel = trans("Filename");
-const pathPlaceholder = trans("A unique filename");
+const pathLabel = trans("Folder");
+const pathPlaceholder = trans("The folder of the image");
 const filenameLabel = trans("A unique filename");
 const statusbarControls: StatusbarControl[] = [
   // primary: true // It's a primary button
