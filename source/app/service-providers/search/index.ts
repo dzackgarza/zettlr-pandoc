@@ -409,7 +409,9 @@ export class SearchProvider implements ProviderContract {
     const { openWorkspaces, openFiles } = this._config.get().app;
     const roots = [...openWorkspaces];
     const candidates = (
-      await Promise.all(roots.map(async (root) => await this._fsal.readDirectoryRecursively(root)))
+      await Promise.all(
+        roots.map(async (root) => (await this._fsal.readDirectoryRecursively(root)).paths),
+      )
     ).flat();
     if (!isCurrent()) {
       return undefined;

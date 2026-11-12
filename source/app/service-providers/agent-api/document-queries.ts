@@ -25,6 +25,7 @@ import type {
   DocumentSummary,
   EditorContext,
   EditorViewSummary,
+  FolderNotListed,
   ReadDocumentResponse,
   ReadSide,
   SearchDocumentRequest,
@@ -36,6 +37,7 @@ import type {
   WorkspaceEntryCreateRequest,
   WorkspaceEntryResponse,
   WorkspaceFileEntry,
+  WorkspaceFilesResponse,
 } from "@dts/common/agent-api";
 import type { AnnotationSet, TextAnnotation } from "@dts/common/annotation-domain";
 import { DocumentType } from "@dts/common/documents";
@@ -50,6 +52,7 @@ import {
   reviewReferenceText,
   reviewStatus,
 } from "@providers/documents/review-diff-store";
+import type { DirectoryListing } from "@providers/fsal/util/read-directory";
 import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
@@ -134,7 +137,7 @@ export interface AgentDocumentQueryHost {
    */
   fsal?: {
     isDir: (absPath: string) => Promise<boolean>;
-    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<DirectoryListing>;
     createDir: (dirPath: string) => Promise<void>;
     createFile: (filePath: string, content: string) => Promise<void>;
   };
@@ -607,19 +610,21 @@ export default class AgentDocumentQueries {
   }
 
   /**
-   * Every file a workspace holds, flat, open or not. Undefined when
-   * `workspacePath` names no configured workspace, so the route can answer 404
-   * rather than an empty listing.
+   * Every file a workspace holds, flat, open or not, and each folder whose
+   * content the listing does not hold. Undefined when `workspacePath` names
+   * no configured workspace, so the route can answer 404 rather than an empty
+   * listing.
    */
   public async listWorkspaceFilesByWorkspace(
     workspacePath: string,
-  ): Promise<WorkspaceFileEntry[] | undefined> {
+  ): Promise<WorkspaceFilesResponse | undefined> {
     if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
       return undefined;
     }
     const files: WorkspaceFileEntry[] = [];
     const wikilinks = this.app.links.index;
-    for (const filePath of await this.documents.getFilesForWorkspace(workspacePath)) {
+    const listing = await this.documents.getFilesForWorkspace(workspacePath);
+    for (const filePath of listing.files) {
       files.push({
         documentId: this.documents.ensureDocumentId(filePath),
         path: filePath,
@@ -629,35 +634,40 @@ export default class AgentDocumentQueries {
         ...(wikilinks.has(filePath) ? { linkTarget: wikilinks.canonical(filePath) } : {}),
       });
     }
-    return files;
+    return { files, notListed: listing.notListed };
   }
 
   /**
-   * Every file across every configured workspace, flat, open or not. The
-   * orientation projection behind `getContext`; the per-workspace
-   * `include=files` listing shares its entry shape.
+   * Every file across every configured workspace, flat, open or not, and each
+   * folder whose content the listing does not hold. The per-workspace
+   * `include=files` listing shares its shape.
    */
-  public async listWorkspaceFiles(): Promise<WorkspaceFileEntry[]> {
-    const files: WorkspaceFileEntry[] = [];
+  public async listWorkspaceFiles(): Promise<WorkspaceFilesResponse> {
+    const listing: WorkspaceFilesResponse = { files: [], notListed: [] };
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
-      const workspaceFiles = await this.listWorkspaceFilesByWorkspace(workspacePath);
-      if (workspaceFiles !== undefined) {
-        files.push(...workspaceFiles);
+      const workspaceListing = await this.listWorkspaceFilesByWorkspace(workspacePath);
+      if (workspaceListing !== undefined) {
+        listing.files.push(...workspaceListing.files);
+        listing.notListed.push(...workspaceListing.notListed);
       }
     }
-    return files;
+    return listing;
   }
 
   public async listWorkspaceDocuments(
     workspacePath: string,
     query: string | undefined,
-  ): Promise<{ workspaceId: string; documents: WorkspaceDocumentEntry[] } | undefined> {
+  ): Promise<
+    | { workspaceId: string; documents: WorkspaceDocumentEntry[]; notListed: FolderNotListed[] }
+    | undefined
+  > {
     if (!this.app.config.get().app.openWorkspaces.includes(workspacePath)) {
       return undefined;
     }
     const normalizedQuery = query === undefined ? "" : query.toLowerCase().trim();
     const documents: WorkspaceDocumentEntry[] = [];
-    for (const documentPath of await this.documents.getFilesForWorkspace(workspacePath)) {
+    const listing = await this.documents.getFilesForWorkspace(workspacePath);
+    for (const documentPath of listing.files) {
       const documentId = this.documents.ensureDocumentId(documentPath);
       if (normalizedQuery.length > 0 && !documentPath.toLowerCase().includes(normalizedQuery)) {
         continue;
@@ -676,7 +686,7 @@ export default class AgentDocumentQueries {
           : { ...summary, workspaceId: workspacePath, loaded: true },
       );
     }
-    return { workspaceId: workspacePath, documents };
+    return { workspaceId: workspacePath, documents, notListed: listing.notListed };
   }
 
   /**
@@ -879,6 +889,7 @@ export default class AgentDocumentQueries {
    * root. A folder whose name the ignore rules hide does not enter the walk
    * (`readDirectoryRecursively`), so the listing is the same set the file
    * manager shows. The workspace root itself is not a child and is not listed.
+   * A folder whose content the walk does not hold is in `notListed`.
    */
   public async listWorkspaceDirectories(
     workspacePath: string,
@@ -890,9 +901,9 @@ export default class AgentDocumentQueries {
     if (fsal === undefined) {
       throw new Error("The workspace directory listing has no filesystem access");
     }
-    const allPaths = await fsal.readDirectoryRecursively(workspacePath);
+    const listing = await fsal.readDirectoryRecursively(workspacePath);
     const directories: WorkspaceDirectoryEntry[] = [];
-    for (const candidate of allPaths) {
+    for (const candidate of listing.paths) {
       if (candidate === workspacePath || !(await fsal.isDir(candidate))) {
         continue;
       }
@@ -903,7 +914,7 @@ export default class AgentDocumentQueries {
         parent: path.dirname(candidate),
       });
     }
-    return { workspaceId: workspacePath, directories };
+    return { workspaceId: workspacePath, directories, notListed: listing.notListed };
   }
 
   /**

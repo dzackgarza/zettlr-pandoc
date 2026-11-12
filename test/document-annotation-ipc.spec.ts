@@ -129,10 +129,12 @@ describe("Document annotation IPC (M6, WU-14)", function () {
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
       },
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
       recentDocs: { add: (_path: string) => {}, markEdited: (_path: string) => {} },

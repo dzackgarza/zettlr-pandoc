@@ -67,6 +67,7 @@ import type { DocumentLocation, SourceRange, WorkspaceTextEdit } from "@dts/comm
 import { IpcListener } from "@electron-toolkit/typed-ipc/main";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import { type TabManager } from "@providers/documents/document-tree/tab-manager";
+import type { FolderNotListed } from "@providers/fsal/util/read-directory";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
@@ -1184,7 +1185,7 @@ export default class DocumentManager
         }
         case "get-open-workspace-files": {
           const { path } = payload;
-          return this.getFilesForWorkspace(path);
+          return (await this.getFilesForWorkspace(path)).files;
         }
         case "sort-open-files": {
           const { windowId, leafId, newOrder } = payload;
@@ -2620,24 +2621,17 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * For the provided root workspace directory at `filePath`,
-   * retrieve a list of filepaths representing every open file
-   * within the workspace.
-   *
-   * @param {string}      filePath  Path of the workspace directory
-   *
-   * @returns {string[]}            A list of file paths representing the
-   *                                open files within `filePath`.
+   * Every Markdown and code file of the workspace at `workspacePath`, by the
+   * walk of the FSAL, and each folder whose content that walk does not hold.
    */
-  /**
-   * For the provided root workspace directory at `workspacePath`,
-   * retrieve a list of filepaths representing every supported file
-   * within the workspace, using FSAL as the source of truth.
-   */
-  public async getFilesForWorkspace(workspacePath: string): Promise<string[]> {
-    const allPaths = await this._app.fsal.readDirectoryRecursively(workspacePath);
-    // Filter: supported file extensions, and exclude the workspace directory itself
-    return allPaths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p));
+  public async getFilesForWorkspace(
+    workspacePath: string,
+  ): Promise<{ files: string[]; notListed: FolderNotListed[] }> {
+    const listing = await this._app.fsal.readDirectoryRecursively(workspacePath);
+    return {
+      files: listing.paths.filter((p) => p !== workspacePath && hasMdOrCodeExt(p) && !isDir(p)),
+      notListed: listing.notListed,
+    };
   }
 
   /** Tells the author that a removed file left a document with unsaved text. */

@@ -88,7 +88,7 @@ describe("FSAL listing under ignore rules", function () {
   });
 
   it("lists the whole tree without a rule", async function () {
-    const listed = await readDirectoryRecursivelyFromDisk(root, filterOf([]), logger);
+    const { paths: listed } = await readDirectoryRecursivelyFromDisk(root, filterOf([]), logger);
     assert.deepEqual(relative(listed), [
       "",
       "AGENTS.md",
@@ -109,7 +109,7 @@ describe("FSAL listing under ignore rules", function () {
 
   it("leaves the files and folders that a rule matches out of the recursive listing", async function () {
     const ignoreFilter = filterOf(["*scripts*", "*_files/", "references/", "AGENTS.md"]);
-    const listed = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
+    const { paths: listed } = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
     assert.deepEqual(relative(listed), ["", "coble", "coble/notes.md", "notes.md"]);
   });
 
@@ -126,7 +126,7 @@ describe("FSAL listing under ignore rules", function () {
 
   it("lists every path while the reveal toggle is on", async function () {
     const ignoreFilter = filterOf(["*scripts*", "*_files/", "references/", "AGENTS.md"], "", true);
-    const listed = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
+    const { paths: listed } = await readDirectoryRecursivelyFromDisk(root, ignoreFilter, logger);
     assert.equal(listed.length, 14);
   });
 

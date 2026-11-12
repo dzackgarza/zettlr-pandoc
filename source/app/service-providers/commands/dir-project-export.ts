@@ -99,7 +99,7 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
   // that specifies files and a sorting for export. We need to check that all
   // files specified in the config still exist. If a file is missing, display
   // a warning but export anyway.
-  const availableFiles = await app.fsal.readDirectoryRecursively(dir.path);
+  const availableFiles = (await app.fsal.readDirectoryRecursively(dir.path)).paths;
 
   // Since the config.files array already includes relative paths, we
   // basically just have to make them absolute relative to the directory and

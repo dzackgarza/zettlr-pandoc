@@ -60,6 +60,7 @@ import getMarkdownFileParser from "./util/file-parser";
 import { pathExists } from "./util/fs";
 import { type FilesystemMetadata, getFilesystemMetadata } from "./util/get-fs-metadata";
 import {
+  type DirectoryListing,
   readDirectoryFromDisk,
   readDirectoryRecursivelyFromDisk,
   visibilityChanges,
@@ -194,7 +195,7 @@ export default class FSAL extends ProviderContract {
         if (await this.isFile(payload)) {
           return [payload];
         } else if (await this.isDir(payload)) {
-          return await this.readDirectoryRecursively(payload);
+          return (await this.readDirectoryRecursively(payload)).paths;
         } else {
           return [];
         }
@@ -780,7 +781,7 @@ export default class FSAL extends ProviderContract {
    * shows its root with the cause.
    */
   private async loseWorkspace(rootPath: string, problem: DirectoryMetadataProblem): Promise<void> {
-    const listed = (await this.readDirectoryRecursively(rootPath)).filter(
+    const listed = (await this.readDirectoryRecursively(rootPath)).paths.filter(
       (listedPath) => listedPath !== rootPath,
     );
     const removals: FSALEventPayloadUnlink[] = [];
@@ -835,7 +836,7 @@ export default class FSAL extends ProviderContract {
     await this.queueIgnoreUpdate(async () => {
       await this.applyIgnoreSources(await this.readIgnoreSources());
     });
-    for (const childPath of await this.readDirectoryRecursively(rootPath)) {
+    for (const childPath of (await this.readDirectoryRecursively(rootPath)).paths) {
       const descriptor = await this.getDescriptorFor(childPath, false);
       this.publishEvent({
         event: descriptor.type === "directory" ? "addDir" : "add",
@@ -888,7 +889,7 @@ export default class FSAL extends ProviderContract {
         continue;
       }
 
-      const allPaths = await this.readDirectoryRecursively(workspace);
+      const allPaths = (await this.readDirectoryRecursively(workspace)).paths;
       pathsToIndex.push(...allPaths);
     }
 
@@ -973,7 +974,7 @@ export default class FSAL extends ProviderContract {
       }
 
       try {
-        const allPaths = await this.readDirectoryRecursively(workspace);
+        const allPaths = (await this.readDirectoryRecursively(workspace)).paths;
         for (const child of allPaths) {
           try {
             const descriptor = await this.getDescriptorFor(child);
@@ -1532,25 +1533,24 @@ export default class FSAL extends ProviderContract {
   // *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
 
   /**
-   * Reads `absPath` into an array of absolute paths. If `absPath` is a file,
-   * the array will only contain that, allowing you to skip any check for
-   * whether a root path is a file or folder. If it is a directory, it will read
-   * in the directory and any children recursively to construct a list of every
-   * file and folder within `absPath` and return it.
-   *
-   * NOTE: This function will already exclude dotfiles, ignored directories and
-   * the paths that the ignore rules hide, so this function is safe to consume
-   * in terms of what Zettlr should display.
-   *
-   * @param   {string}             directoryPath  The absolute path to parse
-   *
-   * @return  {Promise<string[]>}           Returns a list of the entire directory
+   * Lists a directory and each path below it that the app lists: the
+   * directory first, then each file and folder that the ignore rules and the
+   * file types show. A folder whose content the filesystem refuses, and a
+   * directory that cannot be listed, is a path without content and is in
+   * `notListed` with the cause, so a consumer can name what its listing does
+   * not hold.
    */
-  public async readDirectoryRecursively(directoryPath: string): Promise<string[]> {
-    if (!(await this.isDir(directoryPath))) {
-      throw new Error(`[FSAL] Cannot read path ${directoryPath}: Not a directory!`);
+  public async readDirectoryRecursively(directoryPath: string): Promise<DirectoryListing> {
+    // A missing workspace lists no path below its root until "Check for
+    // directory" loads it: without its rules the FSAL does not know which
+    // paths the author hid.
+    const problems = this.deadWorkspaces.get(directoryPath);
+    if (problems !== undefined) {
+      return {
+        paths: [directoryPath],
+        notListed: problems.map((problem) => ({ path: directoryPath, cause: problem.message })),
+      };
     }
-
     return await readDirectoryRecursivelyFromDisk(directoryPath, this.ignoreFilter, this._logger);
   }
 

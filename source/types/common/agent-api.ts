@@ -79,6 +79,7 @@ export type WorkspaceDocumentEntry = Schemas["WorkspaceDocumentSummary"];
 export type WorkspaceDocumentsResponse = Schemas["WorkspaceDocumentsResponse"];
 export type WorkspaceFileEntry = Schemas["WorkspaceFileEntry"];
 export type WorkspaceFilesResponse = Schemas["WorkspaceFilesResponse"];
+export type FolderNotListed = Schemas["FolderNotListed"];
 export type WorkspaceDirectoryEntry = Schemas["WorkspaceDirectoryEntry"];
 export type WorkspaceDirectoriesResponse = Schemas["WorkspaceDirectoriesResponse"];
 export type WorkspaceEntryCreateRequest = Schemas["WorkspaceEntryCreateRequest"];

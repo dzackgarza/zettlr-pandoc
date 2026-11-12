@@ -161,10 +161,12 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
       },
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
       recentDocs: {
@@ -213,10 +215,12 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     return new SearchProvider(
       new LogProvider(),
       {
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
+        readDirectoryRecursively: async (workspacePath: string) => ({
+          paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })
             .filter((entry) => entry.isFile())
             .map((entry) => path.join(entry.parentPath, entry.name)),
+          notListed: [],
+        }),
         isFile: async (filePath: string) => statSync(filePath).isFile(),
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),

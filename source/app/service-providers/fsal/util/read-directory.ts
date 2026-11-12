@@ -1,4 +1,4 @@
-import { hasErrnoCode } from "@common/util/is-errno-exception";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import type { AnyDescriptor } from "@dts/common/fsal";
 import { promises as fs } from "fs";
 import path from "path";
@@ -95,38 +95,68 @@ export async function readDirectoryFromDisk(
   }
 }
 
+/** A folder of a listing whose content the listing does not hold, with the cause. */
+export interface FolderNotListed {
+  path: string;
+  cause: string;
+}
+
+/** The paths that a walk lists, and the folders whose content it does not hold. */
+export interface DirectoryListing {
+  paths: string[];
+  notListed: FolderNotListed[];
+}
+
 /**
  * Lists a directory and everything below it that the app lists: the directory
- * itself, then each listed file and folder. A directory that refuses its
- * content is a path of the listing, without content: its descriptor names
- * the cause. A directory that cannot be listed for another reason
- * contributes nothing.
+ * itself, then each listed file and folder. A directory whose content the
+ * filesystem refuses is a path of the listing, without content, and is in
+ * `notListed` with the cause. A folder below the directory that is gone when
+ * the walk reaches it (`ENOENT`, `ENOTDIR`) is not a path of the listing.
  */
 export async function readDirectoryRecursivelyFromDisk(
   directoryPath: string,
   ignoreFilter: IgnoreFilter,
   logger: DirectoryReadLogger,
-): Promise<string[]> {
+): Promise<DirectoryListing> {
+  return await walkDirectory(directoryPath, true, ignoreFilter, logger);
+}
+
+async function walkDirectory(
+  directoryPath: string,
+  isTop: boolean,
+  ignoreFilter: IgnoreFilter,
+  logger: DirectoryReadLogger,
+): Promise<DirectoryListing> {
   const listing = await listedChildren(directoryPath, ignoreFilter).then(
     (children) => ({ children }),
-    (cause: Error) => ({ cause }),
+    (cause: unknown) => ({ cause }),
   );
   if ("cause" in listing) {
-    if (hasErrnoCode(listing.cause, "EACCES", "EPERM")) {
-      return [directoryPath];
+    const cause = listing.cause;
+    if (!isErrnoException(cause)) {
+      throw cause;
     }
-    logger.error(`[FSAL] Could not read directory: ${directoryPath}`, listing.cause);
-    return [];
+    if (!isTop && hasErrnoCode(cause, "ENOENT", "ENOTDIR")) {
+      return { paths: [], notListed: [] };
+    }
+    if (!hasErrnoCode(cause, "EACCES", "EPERM")) {
+      logger.error(`[FSAL] Could not read directory: ${directoryPath}`, cause);
+    }
+    return { paths: [directoryPath], notListed: [{ path: directoryPath, cause: cause.message }] };
   }
 
   const contents = await Promise.all(
-    listing.children.map(async (child) => {
+    listing.children.map(async (child): Promise<DirectoryListing> => {
       return child.isDirectory
-        ? await readDirectoryRecursivelyFromDisk(child.path, ignoreFilter, logger)
-        : [child.path];
+        ? await walkDirectory(child.path, false, ignoreFilter, logger)
+        : { paths: [child.path], notListed: [] };
     }),
   );
-  return [directoryPath, ...contents.flat()];
+  return {
+    paths: [directoryPath, ...contents.flatMap((content) => content.paths)],
+    notListed: contents.flatMap((content) => content.notListed),
+  };
 }
 
 /**

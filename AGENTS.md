@@ -1172,6 +1172,14 @@ of an isolated instance are in the first comment of #132.
   `notSearched` of `GET /v1/workspace/search`. The Replace All confirmation
   says that those files keep their text. An error that is no filesystem
   error ends the search with the failure `stopped`, which names the file.
+- **A walk names the folders that it could not read.**
+  `FSAL.readDirectoryRecursively` gives a `DirectoryListing`: the paths,
+  and in `notListed` each folder whose content the filesystem refused, with
+  the cause. A refused folder is in `paths` too. The walk of a missing
+  workspace (§24) gives its root and its causes, and no other path. The
+  Agent API workspace listings (`include=files`, `documents`,
+  `directories`) answer 200 with `notListed`; a root that refuses its
+  content is a listing with no files and the root in `notListed`.
 - **A folder whose metadata cannot be used is listed.** The descriptor of
   a folder names each such thing in `metadataProblems` (source, path,
   message): a `.ztr-directory` that cannot be read, is not JSON or does not

@@ -71,6 +71,7 @@ import {
   toWirePacket,
 } from "@providers/documents/review-diff-store";
 import type FSAL from "@providers/fsal";
+import type { DirectoryListing } from "@providers/fsal/util/read-directory";
 import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
@@ -321,7 +322,7 @@ export interface AgentApiHost {
    */
   workspaceFsal?: {
     isDir: (absPath: string) => Promise<boolean>;
-    readDirectoryRecursively: (directoryPath: string) => Promise<string[]>;
+    readDirectoryRecursively: (directoryPath: string) => Promise<DirectoryListing>;
     createDir: (dirPath: string) => Promise<void>;
     createFile: (filePath: string, content: string) => Promise<void>;
   };
@@ -1297,9 +1298,7 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private async handleListWorkspaceFiles(res: http.ServerResponse): Promise<void> {
     try {
-      this.sendJson(res, 200, {
-        files: await this._queries.listWorkspaceFiles(),
-      });
+      this.sendJson(res, 200, await this._queries.listWorkspaceFiles());
     } catch (error) {
       this.sendError(
         res,
@@ -1336,12 +1335,12 @@ export default class AgentHTTPProvider extends ProviderContract {
     workspaceId: string,
   ): Promise<void> {
     try {
-      const files = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
-      if (files === undefined) {
+      const listing = await this._queries.listWorkspaceFilesByWorkspace(workspaceId);
+      if (listing === undefined) {
         this.sendError(res, 404, "WORKSPACE_NOT_FOUND", "Workspace not found");
         return;
       }
-      this.sendJson(res, 200, { files });
+      this.sendJson(res, 200, listing);
     } catch (error) {
       this.sendError(
         res,
@@ -2729,7 +2728,7 @@ export default class AgentHTTPProvider extends ProviderContract {
             focused: document.documentId === focusedDocumentId,
           }));
       } else {
-        const workspaceFiles = await this._queries.listWorkspaceFiles();
+        const workspaceFiles = (await this._queries.listWorkspaceFiles()).files;
         if (scope === "document") {
           if (query.documentId === undefined || query.documentId === "") {
             this.sendError(res, 400, "INVALID_PARAMS", "scope=document requires documentId");

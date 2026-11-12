@@ -131,7 +131,10 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
-      readDirectoryRecursively: async (_workspacePath: string) => [definitionPath, occurrencePath],
+      readDirectoryRecursively: async (_workspacePath: string) => ({
+        paths: [definitionPath, occurrencePath],
+        notListed: [],
+      }),
       testAccess: async (_filePath: string) => true,
       writeTextFile: async (filePath: string, content: string) => {
         writeFileSync(filePath, content, "utf-8");

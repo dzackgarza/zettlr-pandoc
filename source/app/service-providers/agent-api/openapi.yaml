@@ -665,6 +665,7 @@ components:
       required:
         - workspaceId
         - documents
+        - notListed
       properties:
         workspaceId:
           type: string
@@ -672,6 +673,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceDocumentSummary"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceFileEntry:
       type: object
       required:
@@ -697,15 +706,37 @@ components:
           description: >-
             How other documents link to this Markdown file: [[linkTarget]]. The
             shortest path suffix that names it alone. Absent for other files.
+    FolderNotListed:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Absolute path of the folder.
+        cause:
+          type: string
+          description: The error of the filesystem, or why the workspace is missing.
     WorkspaceFilesResponse:
       type: object
       required:
         - files
+        - notListed
       properties:
         files:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceFileEntry"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceDirectoryEntry:
       type: object
       required:
@@ -731,6 +762,7 @@ components:
       required:
         - workspaceId
         - directories
+        - notListed
       properties:
         workspaceId:
           type: string
@@ -738,6 +770,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceDirectoryEntry"
+        notListed:
+          type: array
+          description: >-
+            Each folder of the workspace whose content the listing does not
+            hold, with the cause: a folder that the filesystem refuses, or a
+            workspace that the app lists as missing.
+          items:
+            $ref: "#/components/schemas/FolderNotListed"
     WorkspaceEntryCreateRequest:
       type: object
       additionalProperties: false

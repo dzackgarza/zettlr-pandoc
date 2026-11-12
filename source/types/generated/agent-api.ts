@@ -870,6 +870,8 @@ export interface components {
     WorkspaceDocumentsResponse: {
       workspaceId: string;
       documents: components["schemas"]["WorkspaceDocumentSummary"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceFileEntry: {
       documentId: string;
@@ -881,8 +883,16 @@ export interface components {
       /** @description How other documents link to this Markdown file: [[linkTarget]]. The shortest path suffix that names it alone. Absent for other files. */
       linkTarget?: string;
     };
+    FolderNotListed: {
+      /** @description Absolute path of the folder. */
+      path: string;
+      /** @description The error of the filesystem, or why the workspace is missing. */
+      cause: string;
+    };
     WorkspaceFilesResponse: {
       files: components["schemas"]["WorkspaceFileEntry"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceDirectoryEntry: {
       /** @description Absolute path of the folder. */
@@ -895,6 +905,8 @@ export interface components {
     WorkspaceDirectoriesResponse: {
       workspaceId: string;
       directories: components["schemas"]["WorkspaceDirectoryEntry"][];
+      /** @description Each folder of the workspace whose content the listing does not hold, with the cause: a folder that the filesystem refuses, or a workspace that the app lists as missing. */
+      notListed: components["schemas"]["FolderNotListed"][];
     };
     WorkspaceEntryCreateRequest: {
       /** @description Absolute destination path, or a path relative to the target workspace. The destination folder must exist. */
