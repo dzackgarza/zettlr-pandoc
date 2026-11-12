@@ -155,4 +155,54 @@ describe("a workspace whose file filters cannot be read", function () {
     assert.equal(await workspaceRow(activePage).getAttribute("data-metadata-problem"), null);
     assert.equal(await fileRow(activePage, scratch).count(), 0, "the rule hides scratch.md");
   });
+
+  it("hides a file of the other workspace after the rules file of this one became unreadable", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await chmod(rulesFile, 0o000);
+
+    await fileRow(activePage, genus).locator(".display-text").click({ button: "right" });
+    const item = activePage
+      .locator('.application-menu .menu-item[data-id="menu.ignore_path"]')
+      .last();
+    await item.waitFor({ state: "visible", timeout: 10_000 });
+    await item.click();
+
+    await fileRow(activePage, genus).waitFor({ state: "detached", timeout: 10_000 });
+    await fileRow(activePage, lattice).waitFor({ state: "detached", timeout: 10_000 });
+    screenshots.set("rules-lost.png", await activePage.screenshot());
+    assert.equal(await workspaceRow(activePage).getAttribute("data-metadata-problem"), "rules");
+    assert.equal(
+      await readFile(path.join(path.dirname(genus), ".zettlrignore"), "utf8"),
+      "/genus.md\n",
+    );
+  });
+
+  it("does not replace a rules file that it cannot read", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    await activePage.evaluate(() => {
+      window.ipc.send("menu-provider", {
+        command: "click-menu-item",
+        payload: "menu.edit_ignore_rules",
+      });
+    });
+    const field = activePage.locator(`[data-ignore-rules-workspace=${JSON.stringify(notes)}]`);
+    await field.waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("rules-dialog.png", await activePage.screenshot());
+    assert.ok(await field.isDisabled(), "the rules of the workspace cannot be edited");
+    await activePage.keyboard.press("Escape");
+
+    const refused = await activePage.evaluate(
+      async (root) =>
+        await window.ipc
+          .invoke("fsal", { command: "set-workspace-ignore-rules", payload: { root, text: "" } })
+          .then(
+            () => false,
+            () => true,
+          ),
+      notes,
+    );
+    assert.ok(refused, "the application refuses to write the rules file");
+    await chmod(rulesFile, 0o644);
+    assert.equal(await readFile(rulesFile, "utf8"), "scratch.md\n");
+  });
 });
