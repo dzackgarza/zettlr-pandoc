@@ -19,10 +19,11 @@
  */
 
 import { BrowserWindow } from "electron";
-import { readFileSync, statSync, unlinkSync } from "fs";
+import { readFileSync, rmSync, statSync, unlinkSync } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import type CiteprocProvider from "source/app/service-providers/citeproc";
+import DirDelete from "source/app/service-providers/commands/dir-delete";
 import FileDelete from "source/app/service-providers/commands/file-delete";
 import ConfigProvider from "source/app/service-providers/config";
 import DocumentManager from "source/app/service-providers/documents";
@@ -189,6 +190,20 @@ export function fileDeleteCommand(provider: DocumentManager): FileDelete {
     fsal: {
       removeFile: async (filePath: string) => {
         unlinkSync(filePath);
+      },
+    },
+  });
+}
+
+/**
+ * The real dir-delete command over `provider`. Its delete removes the
+ * folder from the disk, with no trash.
+ */
+export function dirDeleteCommand(_provider: DocumentManager): DirDelete {
+  return new DirDelete({
+    fsal: {
+      removeDir: async (dirPath: string) => {
+        rmSync(dirPath, { recursive: true });
       },
     },
   });

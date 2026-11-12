@@ -13,13 +13,18 @@
  */
 
 import { trans } from "@common/i18n-main";
+import type FSAL from "@providers/fsal";
 import { dialog, type MessageBoxOptions } from "electron";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import ZettlrCommand from "./zettlr-command";
 
-export default class DirDelete extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+/** The services that the command uses. */
+export interface DirDeleteServices {
+  fsal: Pick<FSAL, "removeDir">;
+}
+
+export default class DirDelete extends ZettlrCommand<DirDeleteServices> {
+  constructor(app: DirDeleteServices) {
     super(app, "dir-delete");
   }
 
