@@ -80,14 +80,15 @@ onMounted(() => {
     return;
   }
 
-  Promise.all([
-    ipcRenderer.invoke("application", { command: "get-document-text", payload: filePath }),
-    documentCitationDatabase(filePath),
-  ]).then(
-    ([fileContents, library]) => render(fileContents, library),
+  // The bibliography comes from the text of the document, so the window asks
+  // for it after the text: a file that cannot be read is one failure.
+  ipcRenderer
+    .invoke("application", { command: "get-document-text", payload: filePath })
+    .then(async (fileContents: string) => {
+      render(fileContents, await documentCitationDatabase(filePath));
+    })
     // The dispatcher showed the failure of the command in this window.
-    (failure: Error) => reportError(failure),
-  );
+    .catch((failure: Error) => reportError(failure));
 });
 
 /**
