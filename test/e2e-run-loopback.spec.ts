@@ -56,7 +56,7 @@ describe("E2E run loopback (#215)", function () {
 
     const run = spawnSync(
       "just",
-      ["_on-x-display", process.execPath, "-e", BIND_SOURCE, String(address.port)],
+      ["_e2e-run", process.execPath, "-e", BIND_SOURCE, String(address.port)],
       { cwd: REPOSITORY, encoding: "utf8" },
     );
 

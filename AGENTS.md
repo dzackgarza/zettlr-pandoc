@@ -788,6 +788,19 @@ of an isolated instance are in the first comment of #132.
   notification daemon on request, and that daemon draws on the compositor of
   the author. A spec that needs a session service starts it on the bus of
   the run.
+- **The run owns its loopback.** The recipe (`_e2e-run`) starts the run in
+  a network namespace with `lo` and no other interface. An app of the run
+  binds the Agent API port, the Forge ports and each other port there, so
+  the desktop app of the author on port 27412 takes no port from a first
+  start of the run (#215). The run reaches no service of the host (Zotero)
+  and no network: a spec that needs a service starts it in the run. On the
+  hosted runner, `just setup-ci` permits the namespace
+  (`kernel.apparmor_restrict_unprivileged_userns`). Proof:
+  `test/e2e-run-loopback.spec.ts`.
+- **A provider that cannot start is in the log before its error box.** The
+  native box of `_informativeBoot` stops the main process, and the app exits
+  after it; the log has the cause first (`LogProvider.flush`). Proof:
+  `e2e/agent-api-port-in-use.spec.ts`.
 - A Chromium probe of test-support code reports its exit code or signal, its
   output and the X server errors when it fails (`test/visual/display-probe.ts`).
 - An e2e run and a `just package` build each need most of the memory of this

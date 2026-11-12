@@ -485,8 +485,11 @@ export class AppServiceContainer {
     } catch (err: unknown) {
       const title = `Error starting ${displayName}`;
       const message = `Could not start ${displayName}: ${err instanceof Error ? err.message : "unknown error"}`;
-      dialog.showErrorBox(title, message);
+      // The box stops the main process until the author answers it, and the
+      // app exits after it: the cause is in the logfile before the box shows.
       this._logProvider.error(`[AppServiceContainer] ${message}`, err);
+      await this._logProvider.flush();
+      dialog.showErrorBox(title, message);
       throw err; // Re-Throw since we need to quit the app now.
     }
   }

@@ -125,29 +125,39 @@ test-file file: sync-dependencies
 # Run one assembled-app spec with enough time for Electron to boot.
 test-e2e-file file: sync-dependencies
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _on-x-display "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
+    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --timeout 180000 "{{file}}"
 
-# Run a command on an X display: the display of the environment, or one
-# virtual display for the whole command when the environment has none. An
-# assembled-app spec starts the app with `--ozone-platform=x11`, through
-# Forge or as the packaged binary itself, so the run owns the display and
-# each start finds it in `DISPLAY`. The default screen of xvfb-run is
-# 640x480; a new window sizes itself from the screen, and the three panes
-# need more than that.
+# Run a command in the environment of an e2e run. The run owns its X
+# display, its session bus and its loopback.
 #
-# The command also gets a session bus of its own, without services
-# (`scripts/e2e-session-bus.conf`): a desktop notification of the app of a
-# run does not reach the desktop of the author.
+# The display is the one of the environment, or one virtual display for the
+# whole command when the environment has none. An assembled-app spec starts
+# the app with `--ozone-platform=x11`, through Forge or as the packaged
+# binary itself, and each start finds the display in `DISPLAY`. The default
+# screen of xvfb-run is 640x480; a new window sizes itself from the screen,
+# and the three panes need more than that.
+#
+# The session bus has no services (`scripts/e2e-session-bus.conf`): a desktop
+# notification of the app of a run does not reach the desktop of the author.
+#
+# The loopback is a network namespace with `lo` and no other interface. An
+# app of the run binds its ports there: a process of the host, such as the
+# desktop app of the author on the default Agent API port, takes no port
+# from the run, and the run reaches no service of the host and no network
+# (#215). The hosted runner permits the namespace after `just setup-ci`.
+# The namespace has the user of the run; the command starts without the
+# capabilities that set up `lo`.
 [private]
 [positional-arguments]
-_on-x-display +command:
+_e2e-run +command:
     #!/usr/bin/env bash
     set -euo pipefail
-    session_bus=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
-    if [[ -n "${DISPLAY:-}" ]]; then
-      exec "${session_bus[@]}" "$@"
+    run=(dbus-run-session --config-file="{{justfile_directory()}}/scripts/e2e-session-bus.conf" --)
+    if [[ -z "${DISPLAY:-}" ]]; then
+      run+=(xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24')
     fi
-    exec "${session_bus[@]}" xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' "$@"
+    exec unshare --user --map-current-user --net --keep-caps -- \
+      bash -c 'ip link set lo up && exec setpriv --inh-caps=-all --ambient-caps=-all -- "$@"' e2e-run "${run[@]}" "$@"
 
 # Install or upgrade the flowmark and flowmark-lint commands from Flowmark's main branch.
 install-flowmark:
@@ -198,7 +208,7 @@ test: sync-dependencies
 test-e2e:
     {{bun}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _on-x-display {{bun}} run test:e2e
+    @just _e2e-run {{bun}} run test:e2e
 
 # Run the workstation-owned desktop-launcher proofs (e2e/desktop/). These
 # drive the installed desktop entry through a live Hyprland compositor and

@@ -62,6 +62,12 @@ fetch() {
 sudo apt-get update
 sudo apt-get install --yes dbus-daemon imagemagick pdf2svg xdotool xvfb
 
+# An e2e run has a network namespace of its own (`_e2e-run` in the
+# justfile). The AppArmor policy of the hosted Ubuntu runner gives a user
+# namespace of an unprivileged process no capabilities, so the run could not
+# set up its loopback. The runner is a machine of one job.
+sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
+
 # TeX comes from upstream TeX Live, as on the workstation: the central
 # preamble loads packages (luahyperbolic among them) that the distribution's
 # frozen TeX Live does not ship. The repository is rolling, so it has no
