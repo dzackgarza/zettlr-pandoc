@@ -2591,8 +2591,10 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
-   * Closes each document at or inside `rootPath`: each loaded document and
-   * each tab, also of a path that the file filters hide. Unsaved text is
+   * Closes each document at or inside `rootPath` that no other open root
+   * holds: each loaded document and each tab, also of a path that the file
+   * filters hide. A document of a workspace inside `rootPath` or around it
+   * stays open with its text. Unsaved text is
    * asked about one time, as at the close of a window; a document with an
    * undecided proposal is not asked about, its close puts the review in the
    * sidecar. Resolves false when a document stays open: the author
@@ -2603,7 +2605,11 @@ current contents from the editor somewhere else, and restart the application.`,
     rootPath: string,
     closeAgain: () => Promise<void>,
   ): Promise<boolean> {
-    const inside = (filePath: string): boolean => isAtOrInsideRoot(filePath, rootPath);
+    const { openFiles, openWorkspaces } = this._app.config.get().app;
+    const otherRoots = [...openFiles, ...openWorkspaces].filter((root) => root !== rootPath);
+    const inside = (filePath: string): boolean =>
+      isAtOrInsideRoot(filePath, rootPath) &&
+      !otherRoots.some((root) => isAtOrInsideRoot(filePath, root));
     const loaded = this.documents.filter((document) => inside(document.filePath));
     const asked = this._documentsToAskAbout(loaded);
     if (asked.length > 0) {
