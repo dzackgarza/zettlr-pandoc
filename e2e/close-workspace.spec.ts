@@ -57,9 +57,16 @@ function modifiedDocuments(page: Page): Promise<string[]> {
 
 /** The paths of the tabs of every pane of the window. */
 async function openTabs(page: Page): Promise<string[]> {
-  return await page
-    .locator('[role="tab"][data-path]')
-    .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-path") ?? ""));
+  return await page.locator('[role="tab"][data-path]').evaluateAll((tabs) =>
+    tabs.map((tab) => {
+      // The selector holds only tabs with the attribute.
+      const tabPath = tab.getAttribute("data-path");
+      if (tabPath === null) {
+        throw new Error("A tab of the selector has no data-path");
+      }
+      return tabPath;
+    }),
+  );
 }
 
 async function waitUntil(

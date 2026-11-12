@@ -191,7 +191,7 @@ describe("Export of one document", function () {
     await mkdir(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     fsal = await bootFsal(root);
-    documents = await bootDocumentManager(root);
+    documents = await bootDocumentManager([root]);
 
     const log = new LogProvider();
     services = {

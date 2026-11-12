@@ -58,7 +58,7 @@ describe("Documents-provider session restore", () => {
       await writeFile(file, `${path.basename(file)}\n`);
     }
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     // The specs of one process share the saved session, so the tabs that an
     // earlier spec left are closed first.
     for (const key of provider.windowKeys()) {
@@ -78,7 +78,7 @@ describe("Documents-provider session restore", () => {
     await rm(mount, { recursive: true });
     await symlink(mount, mount);
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     assert.deepEqual(await openTabs(provider), [kept, unreachable]);
     assert.deepEqual(provider.windowKeys(), [windowId]);
   });

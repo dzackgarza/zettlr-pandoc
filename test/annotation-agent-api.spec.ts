@@ -335,6 +335,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
         export: { cslLibrary: "" },
         tikz: { dataDir: "", figuresDir: "" },
         editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+        zotero: { localServer: "http://127.0.0.1:23119" },
         agentApi: {
           enabled: true,
           port: 0,

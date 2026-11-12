@@ -591,6 +591,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         app: {
           openWorkspaces,
         },
+        zotero: { localServer: "http://127.0.0.1:23119" },
         agentApi: {
           enabled: true,
           // Kernel-assigned: the provider owns the bind and publishes the
@@ -936,6 +937,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
             export: { cslLibrary: "" },
             tikz: { dataDir: "", figuresDir: "" },
             editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+            zotero: { localServer: "http://127.0.0.1:23119" },
             agentApi: {
               enabled: true,
               port: takenPort,
@@ -1964,6 +1966,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
                 export: { cslLibrary: "" },
                 tikz: { dataDir: "", figuresDir: "" },
                 editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+                zotero: { localServer: "http://127.0.0.1:23119" },
                 agentApi: { enabled: true, port: 0, skillsDirectory: null },
               }),
             },
@@ -3194,6 +3197,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
               export: { cslLibrary: "" },
               tikz: { dataDir: "", figuresDir: "" },
               editor: { lint: { flowmark: { timeoutMs: 60_000 } } },
+              zotero: { localServer: "http://127.0.0.1:23119" },
               agentApi: {
                 enabled: true,
                 port: lifecyclePort,

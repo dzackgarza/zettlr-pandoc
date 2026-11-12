@@ -80,7 +80,7 @@ describe("Documents-provider removed file", function () {
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     leafId = provider.leafIds(windowId)[0];
     closedFiles = [];

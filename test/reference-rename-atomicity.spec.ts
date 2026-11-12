@@ -181,6 +181,15 @@ interface ScratchWorkspace {
   originals: Map<string, string>;
 }
 
+/** The text that a scratch file had at setup. Each scratch file has one. */
+function originalText(originals: Map<string, string>, documentPath: string): string {
+  const text = originals.get(documentPath);
+  if (text === undefined) {
+    throw new Error(`${documentPath} is no file of the scratch workspace`);
+  }
+  return text;
+}
+
 async function setUpScratchWorkspace(
   journalDirectory: string = userData,
 ): Promise<ScratchWorkspace> {
@@ -282,7 +291,7 @@ async function setUpScratchWorkspace(
   // Halphen_Surfaces.md is OPEN in the document authority (content identical
   // to disk), and the authority reported the load (issue #53). The commit
   // must route Halphen through the authority, never through a disk write.
-  authorityBuffers.set(paths.halphen, originals.get(paths.halphen) ?? "");
+  authorityBuffers.set(paths.halphen, originalText(originals, paths.halphen));
   provider.reportAuthorityBuffer(paths.halphen);
   fireScheduled();
 
@@ -350,16 +359,16 @@ describe("Workspace rename commit protocol", function () {
         edit.expectedSourceHashes,
         {
           [scratch.paths.theorems]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.theorems) ?? "",
+            originalText(scratch.originals, scratch.paths.theorems),
           ),
           [scratch.paths.otherPaper]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.otherPaper) ?? "",
+            originalText(scratch.originals, scratch.paths.otherPaper),
           ),
           [scratch.paths.halphen]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.halphen) ?? "",
+            originalText(scratch.originals, scratch.paths.halphen),
           ),
           [scratch.paths.standalone]: hashDocumentSource(
-            scratch.originals.get(scratch.paths.standalone) ?? "",
+            originalText(scratch.originals, scratch.paths.standalone),
           ),
         },
         "every touched document must be fenced at its current workspace content",
@@ -377,7 +386,7 @@ describe("Workspace rename commit protocol", function () {
       // preview, with NO FSAL event — the provider's index still holds the
       // stale snapshot, so the commit must RE-READ THE DISK to notice.
       const mutated =
-        (scratch.originals.get(scratch.paths.standalone) ?? "") + "\nAppended concurrent edit.\n";
+        originalText(scratch.originals, scratch.paths.standalone) + "\nAppended concurrent edit.\n";
       writeFileSync(scratch.paths.standalone, mutated, "utf-8");
 
       const expectedBytes = new Map(scratch.originals);
@@ -427,7 +436,7 @@ describe("Workspace rename commit protocol", function () {
       const halphen = state.snapshots.find((s) => s.documentPath === scratch.paths.halphen);
       assert.equal(
         halphen?.sourceHash,
-        hashDocumentSource(scratch.originals.get(scratch.paths.halphen) ?? ""),
+        hashDocumentSource(originalText(scratch.originals, scratch.paths.halphen)),
         "a conflicted commit must leave the open buffer overlay untouched",
       );
     });
@@ -482,7 +491,7 @@ describe("Workspace rename commit protocol", function () {
         expectedBytes.set(
           closedPath,
           applyEdits(
-            scratch.originals.get(closedPath) ?? "",
+            originalText(scratch.originals, closedPath),
             previewedEdit.edits.filter((e) => e.documentPath === closedPath),
           ),
         );
@@ -501,7 +510,7 @@ describe("Workspace rename commit protocol", function () {
       assert.equal(
         scratch.authorityBuffers.get(scratch.paths.halphen),
         applyEdits(
-          scratch.originals.get(scratch.paths.halphen) ?? "",
+          originalText(scratch.originals, scratch.paths.halphen),
           previewedEdit.edits.filter((e) => e.documentPath === scratch.paths.halphen),
         ),
         "the central authority owns the renamed open-buffer text",
@@ -532,7 +541,7 @@ describe("Workspace rename commit protocol", function () {
       );
 
       const renamedTheorems = applyEdits(
-        scratch.originals.get(scratch.paths.theorems) ?? "",
+        originalText(scratch.originals, scratch.paths.theorems),
         previewedEdit.edits.filter((e) => e.documentPath === scratch.paths.theorems),
       );
 
@@ -737,7 +746,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
         expected.set(
           documentPath,
           applyEdits(
-            scratch.originals.get(documentPath) ?? "",
+            originalText(scratch.originals, documentPath),
             edit.edits.filter((textEdit) => textEdit.documentPath === documentPath),
           ),
         );

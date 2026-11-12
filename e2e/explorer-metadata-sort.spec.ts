@@ -158,7 +158,14 @@ describe("the metadata-field sort of a folder", function () {
       `.tree-item.file[data-path^=${JSON.stringify(`${conversations}${path.sep}`)}]`,
     );
     const paths = await rows.evaluateAll((elements) =>
-      elements.map((element) => element.getAttribute("data-path") ?? ""),
+      elements.map((element) => {
+        // The selector holds only rows with the attribute.
+        const rowPath = element.getAttribute("data-path");
+        if (rowPath === null) {
+          throw new Error("A row of the selector has no data-path");
+        }
+        return rowPath;
+      }),
     );
     return paths.map((entry) => path.basename(entry));
   }

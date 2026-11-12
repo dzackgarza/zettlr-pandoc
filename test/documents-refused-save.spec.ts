@@ -81,7 +81,7 @@ describe("Documents-provider save that it must refuse", function () {
     saveDialogs.shown.length = 0;
     saveDialogs.answer = undefined;
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     window = new BrowserWindow();
   });

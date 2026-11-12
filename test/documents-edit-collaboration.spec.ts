@@ -79,7 +79,7 @@ describe("Documents-provider edits of a document with annotations", function () 
     await rm(SIDECARS, { recursive: true, force: true });
     appListeners.delete("before-quit");
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     await provider.getDocument(filePath);
     documentId = provider.ensureDocumentId(filePath);
   });

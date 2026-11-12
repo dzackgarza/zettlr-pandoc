@@ -317,8 +317,11 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   server `zettlr-pandoc-zotero`), not at `/mcp`, and the served `/openapi.json`
   leaves out their routes; the Custom GPT Action imports that document and has
   a limit of 30 operations. `ZoteroLibrary` (`agent-api/zotero-library.ts`)
-  searches through the Zotero local API (`127.0.0.1:23119/api`) and imports
-  through the `/write` route of the zotero-local-write-api add-on. Zotero
+  searches through the Zotero local API (`/api`) and imports through the
+  `/write` route of the zotero-local-write-api add-on. The setting
+  `zotero.localServer` (`http://127.0.0.1:23119`, the port of the Zotero
+  preference `extensions.zotero.httpServer.port`) is the origin of these
+  routes and of the Better BibTeX JSON-RPC of the open-attachment command. Zotero
   identifies the source and fetches the metadata and the PDF; the caller sends
   no BibTeX. A source that Zotero cannot identify answers 422
   `ZOTERO_SOURCE_NOT_IDENTIFIED` with the add-on's remediation (known-good

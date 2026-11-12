@@ -70,21 +70,20 @@ interface DocumentManagerParts {
   citeproc: Pick<CiteprocProvider, "synchronizeDatabases">;
   /** The descriptors of the workspace, as `FSAL.getAllLoadedDescriptors` gives them. */
   loadedDescriptors?: () => Promise<AnyDescriptor[]>;
-  /** The open workspaces of the configuration, when `root` is not the only one. */
-  workspaces?: string[];
 }
 
 /**
- * A booted DocumentManager whose only workspace is `root`, or whose workspaces
- * are `parts.workspaces`. Without `parts`, no citation provider gets the
- * bibliographies of its documents.
+ * A booted DocumentManager whose open workspaces are `workspaces`. The file
+ * dialogs open in the first one. Without `parts`, no citation provider gets
+ * the bibliographies of its documents.
  */
 export async function bootDocumentManager(
-  root: string,
+  workspaces: [string, ...string[]],
   parts: DocumentManagerParts = {
     citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
   },
 ): Promise<DocumentManager> {
+  const [root] = workspaces;
   const watcher = {
     on: (_name: string, listener: WatchdogListener) => {
       watchdogListener = listener;
@@ -96,7 +95,7 @@ export async function bootDocumentManager(
   };
   const log = new LogProvider();
   const settings = {
-    app: { openFiles: [], openWorkspaces: parts.workspaces ?? [root] },
+    app: { openFiles: [], openWorkspaces: workspaces },
     editor: { autoSave: "off" as const },
     system: { avoidNewTabs: false },
     appLang: "en-US",

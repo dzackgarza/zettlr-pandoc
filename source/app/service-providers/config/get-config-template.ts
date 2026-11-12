@@ -81,6 +81,17 @@ export type AgentApiConfig = {
 
 export type ReferenceConfig = { authorityReportDebounceMs: number };
 
+export type ZoteroConfig = {
+  /**
+   * The origin of Zotero's local HTTP server: the address and the port of the
+   * Zotero preference `extensions.zotero.httpServer.port`. The local API, the
+   * local-write-api add-on and the JSON-RPC API of Better BibTeX answer there.
+   * The address is 127.0.0.1, not localhost: the network stack of Electron
+   * stopped resolving localhost there and answered ECONNREFUSED.
+   */
+  localServer: string;
+};
+
 export type ConfigOptions = {
   version: string;
   buildDate: string;
@@ -90,6 +101,8 @@ export type ConfigOptions = {
   agentApi: AgentApiConfig;
   /** Workspace-reference extraction policy. */
   references: ReferenceConfig;
+  /** Where the app reaches Zotero. */
+  zotero: ZoteroConfig;
 
   darkMode: boolean;
   darkModeEditor: "match" | "light" | "dark";
@@ -610,6 +623,9 @@ export function getConfigTemplate(appLang: string): ConfigOptions {
     },
     references: {
       authorityReportDebounceMs: 500,
+    },
+    zotero: {
+      localServer: "http://127.0.0.1:23119",
     },
   };
 }

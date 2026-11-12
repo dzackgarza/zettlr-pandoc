@@ -80,7 +80,7 @@ describe("A collaboration sidecar that the application cannot read", function ()
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     window = new BrowserWindow();
 

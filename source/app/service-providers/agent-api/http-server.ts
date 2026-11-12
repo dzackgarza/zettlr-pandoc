@@ -127,7 +127,7 @@ import {
   SkillsDirectoryUnavailableError,
   SkillsPathInputError,
 } from "./skills-store";
-import ZoteroLibrary, { ZOTERO_ORIGIN, type ZoteroResult } from "./zotero-library";
+import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -305,6 +305,7 @@ export interface AgentApiHost {
       app: { openWorkspaces: string[] };
       export: { cslLibrary: string };
       tikz: Pick<ConfigOptions["tikz"], "dataDir" | "figuresDir">;
+      zotero: ConfigOptions["zotero"];
       editor: {
         lint: { flowmark: ConfigOptions["editor"]["lint"]["flowmark"] };
       };
@@ -391,7 +392,6 @@ export default class AgentHTTPProvider extends ProviderContract {
   private _tokenDigest: Buffer | undefined;
   private _zoteroMcp: AgentMcpEndpoint | undefined;
   /** The Zotero operations. Absent when the app has no citation provider. */
-  private readonly _zotero: ZoteroLibrary | undefined;
   /** The published protocol version — `info.version` of the document. */
   private readonly _protocolVersion: string;
   /** The routes of the operations tagged zotero, which the served document leaves out. */
@@ -415,8 +415,6 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     this._helpText = HELP_DOCUMENT;
-    this._zotero =
-      _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc, ZOTERO_ORIGIN);
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,
@@ -2225,12 +2223,13 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private async zoteroLibrary(res: http.ServerResponse): Promise<ZoteroLibrary | undefined> {
     await this.citationDatabasesRead();
-    if (this._zotero === undefined) {
+    if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return undefined;
     }
-    return this.citationDatabaseAvailable(res, this._zotero.citeproc, CITEPROC_MAIN_DB)
-      ? this._zotero
+    // The setting of each request: a change of the address needs no restart.
+    return this.citationDatabaseAvailable(res, this._citeproc, CITEPROC_MAIN_DB)
+      ? new ZoteroLibrary(this._citeproc, this._app.config.get().zotero.localServer)
       : undefined;
   }
 

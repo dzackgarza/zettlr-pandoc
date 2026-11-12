@@ -66,7 +66,7 @@ describe("Documents-provider identity of a moved document", function () {
     appListeners.delete("before-quit");
     appQuitRequests.length = 0;
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
   });
 

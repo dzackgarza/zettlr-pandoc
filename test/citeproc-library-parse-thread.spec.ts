@@ -390,7 +390,7 @@ describe("The parse of a large citation library (#138)", function () {
         `---\nbibliography: ${libraryPath}\n---\n\nThe covers [@${key(1)}] exist.\n`,
       );
       writeFileSync(other, "A second document.\n");
-      documents = await bootDocumentManager(root, { citeproc });
+      documents = await bootDocumentManager([root], { citeproc });
       const windowId = documents.windowKeys()[0];
       const leafId = documents.leafIds(windowId)[0];
       assert.equal(await documents.openFile(windowId, leafId, cited, true), true);
@@ -416,7 +416,7 @@ describe("The parse of a large citation library (#138)", function () {
       );
       const fsal = await bootFsal(root);
 
-      documents = await bootDocumentManager(root, {
+      documents = await bootDocumentManager([root], {
         citeproc,
         loadedDescriptors: async () => await fsal.getAllLoadedDescriptors(),
       });

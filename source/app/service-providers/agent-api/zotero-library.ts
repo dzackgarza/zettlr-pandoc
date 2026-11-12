@@ -33,9 +33,6 @@ import type {
 } from "@dts/common/agent-api";
 import type CiteprocProvider from "@providers/citeproc";
 
-/** Zotero's local HTTP server, at the default of its httpServer.port preference. */
-export const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
-
 /**
  * How long an import waits for its key to reach the main citation database.
  * Better BibTeX exports the library some seconds after a change, and the

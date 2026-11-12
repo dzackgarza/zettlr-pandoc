@@ -42,7 +42,7 @@ describe("Documents-provider concurrent load", function () {
     writeFileSync(filePath, SOURCE, "utf-8");
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
   });
 
   afterEach(async function () {

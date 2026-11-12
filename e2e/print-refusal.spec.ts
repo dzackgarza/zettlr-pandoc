@@ -107,14 +107,18 @@ describe("a print window for a document that it cannot show", function () {
 
   after(async function () {
     // The application quits when its last window closes, so the print window
-    // closes before the main window does.
-    const printPages = (browser?.contexts() ?? [])
-      .flatMap((context) => context.pages())
-      .filter((candidate) => !candidate.isClosed() && candidate.url().includes("/print/"));
-    for (const printPage of printPages) {
-      const closed = printPage.waitForEvent("close", { timeout: 10_000 });
-      await requestWindowClose(printPage);
-      await closed;
+    // closes before the main window does. A run whose app did not start has
+    // no window.
+    if (browser !== undefined) {
+      const printPages = browser
+        .contexts()
+        .flatMap((context) => context.pages())
+        .filter((candidate) => !candidate.isClosed() && candidate.url().includes("/print/"));
+      for (const printPage of printPages) {
+        const closed = printPage.waitForEvent("close", { timeout: 10_000 });
+        await requestWindowClose(printPage);
+        await closed;
+      }
     }
     await shutdown(browser, appProcess);
     await preserveArtifacts(

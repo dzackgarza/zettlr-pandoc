@@ -47,6 +47,7 @@ const RULES = {
   "display.imageHeight": "required|number|min:1|max:100",
   "watchdog.stabilityThreshold": "optional|number|min:1|max:100000",
   "ui.recentFilesLimit": "required|number|min:1|max:1000",
+  "zotero.localServer": "required|string",
 } satisfies Partial<Record<ConfigPath, string>>;
 
 /**

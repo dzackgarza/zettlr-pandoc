@@ -79,7 +79,7 @@ describe("Documents-provider kept remote change", function () {
     await rm(path.join(userData, "documents.yaml"), { force: true });
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     await provider.getDocument(filePath);
     window = new BrowserWindow();
   });

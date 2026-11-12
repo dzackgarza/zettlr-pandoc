@@ -15,12 +15,9 @@
  * END HEADER
  */
 
-import isErrnoException from "@common/util/is-errno-exception";
+import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import type { FileReadError } from "@dts/common/fsal";
 import { promises as fs } from "fs";
-
-/** The codes of a path that is no file: the caller has no descriptor to give. */
-const MISSING_PATH_CODES = ["ENOENT", "ENOTDIR"];
 
 /**
  * The text of a file, or the cause when the filesystem refuses the read. A
@@ -28,10 +25,12 @@ const MISSING_PATH_CODES = ["ENOENT", "ENOTDIR"];
  */
 export async function readFileText(filePath: string): Promise<string | FileReadError> {
   return await fs.readFile(filePath, { encoding: "utf8" }).catch((error: unknown) => {
+    // ENOENT and ENOTDIR: the path is no file, and the caller has no
+    // descriptor to give.
     if (
       !isErrnoException(error) ||
       error.code === undefined ||
-      MISSING_PATH_CODES.includes(error.code)
+      hasErrnoCode(error, "ENOENT", "ENOTDIR")
     ) {
       throw error;
     }

@@ -105,7 +105,7 @@ describe("Documents-provider quit prompt", function () {
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     leafId = provider.leafIds(windowId)[0];
   });

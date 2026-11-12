@@ -103,7 +103,7 @@ describe("Documents-provider quit with an open review", function () {
   async function restart(): Promise<void> {
     await provider.shutdown();
     appListeners.delete("before-quit");
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
   }
 
@@ -167,7 +167,7 @@ describe("Documents-provider quit with an open review", function () {
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
 
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     leafId = provider.leafIds(windowId)[0];
   });

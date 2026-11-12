@@ -800,7 +800,10 @@ export default class FSAL extends ProviderContract {
     for (const removal of removals) {
       this.publishEvent(removal);
     }
-    this.publishEvent({ event: "change", descriptor: this.loadDummyDirectoryDescriptor(rootPath) });
+    this.publishEvent({
+      event: "change",
+      descriptor: this.missingWorkspaceDescriptor(rootPath, [problem]),
+    });
   }
 
   /** Starts the watcher of a root. A watched root is not missing. */
@@ -988,11 +991,12 @@ export default class FSAL extends ProviderContract {
     }
 
     for (const workspace of openWorkspaces) {
-      if (this.deadWorkspaces.has(workspace)) {
+      const problems = this.deadWorkspaces.get(workspace);
+      if (problems !== undefined) {
         this._logger.info(
           `[FSAL] Not trying to load descriptors from workspace ${workspace}: Marked as dead`,
         );
-        allDescriptors.push(this.loadDummyDirectoryDescriptor(workspace));
+        allDescriptors.push(this.missingWorkspaceDescriptor(workspace, problems));
         continue;
       }
 
@@ -1055,19 +1059,14 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Ever in need for a descriptor mocking a non existing directory? Call this
-   * function.
-   *
-   * @param   {string}         dirPath  The directory path this descriptor
-   *                                    should represent
-   *
-   * @return  {DirDescriptor}           The descriptor
+   * The descriptor of a missing workspace: a root without children that names
+   * the causes that keep it missing.
    */
-  public loadDummyDirectoryDescriptor(dirPath: string): DirDescriptor {
-    return {
-      ...FSALDir.getDirNotFoundDescriptor(dirPath),
-      metadataProblems: [...(this.deadWorkspaces.get(dirPath) ?? [])],
-    };
+  private missingWorkspaceDescriptor(
+    rootPath: string,
+    problems: DirectoryMetadataProblem[],
+  ): DirDescriptor {
+    return { ...FSALDir.getDirNotFoundDescriptor(rootPath), metadataProblems: [...problems] };
   }
 
   /**
@@ -1463,8 +1462,9 @@ export default class FSAL extends ProviderContract {
     absPath: string,
     avoidDiskAccess: boolean = true,
   ): Promise<AnyDescriptor> {
-    if (this.deadWorkspaces.has(absPath)) {
-      return this.loadDummyDirectoryDescriptor(absPath);
+    const problems = this.deadWorkspaces.get(absPath);
+    if (problems !== undefined) {
+      return this.missingWorkspaceDescriptor(absPath, problems);
     }
 
     if (avoidDiskAccess) {
@@ -1487,7 +1487,7 @@ export default class FSAL extends ProviderContract {
       throw cause;
     });
     if (isDirectory === undefined) {
-      return this.loadDummyDirectoryDescriptor(absPath);
+      return FSALDir.getDirNotFoundDescriptor(absPath);
     }
 
     // The error of a directory is the error of that directory: it is not
@@ -1508,8 +1508,9 @@ export default class FSAL extends ProviderContract {
    * @throws if the path is not a directory
    */
   public async getAnyDirectoryDescriptor(absPath: string): Promise<DirDescriptor> {
-    if (this.deadWorkspaces.has(absPath)) {
-      return this.loadDummyDirectoryDescriptor(absPath);
+    const problems = this.deadWorkspaces.get(absPath);
+    if (problems !== undefined) {
+      return this.missingWorkspaceDescriptor(absPath, problems);
     }
 
     if (!(await this.isDir(absPath))) {

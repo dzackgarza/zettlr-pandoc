@@ -76,7 +76,7 @@ describe("Background lint queue while an editor receives input", function () {
       await writeFile(path.join(workspace, name), QUEUED_TEXT);
     }
 
-    documents = await bootDocumentManager(workspace);
+    documents = await bootDocumentManager([workspace]);
     lint = new DocumentLintProvider({
       log: new LogProvider(),
       config: {

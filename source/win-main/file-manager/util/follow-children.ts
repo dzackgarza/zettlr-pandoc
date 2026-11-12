@@ -34,7 +34,12 @@ function dispatch(events: FSALEventPayload[]): void {
     parents.add(pathDirname("path" in payload ? payload.path : payload.descriptor.path));
   }
   for (const parent of parents) {
-    for (const onChange of followers.get(parent) ?? []) {
+    // A directory that no item shows has no followers.
+    const onChanges = followers.get(parent);
+    if (onChanges === undefined) {
+      continue;
+    }
+    for (const onChange of onChanges) {
       onChange();
     }
   }

@@ -54,9 +54,8 @@ describe("Documents-provider close of a workspace inside a workspace", function 
     messageBoxes.shown.length = 0;
     messageBoxes.answer = undefined;
 
-    provider = await bootDocumentManager(root, {
+    provider = await bootDocumentManager([root, inner], {
       citeproc: { synchronizeDatabases: async (_libraries: string[]) => {} },
-      workspaces: [root, inner],
     });
     windowId = provider.windowKeys()[0];
     const [leaf] = provider.leafIds(windowId);

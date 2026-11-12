@@ -66,7 +66,7 @@ describe("A collaboration sidecar whose document has no file", function () {
     messageBoxes.answer = undefined;
 
     // The one open workspace is `root`.
-    provider = await bootDocumentManager(root);
+    provider = await bootDocumentManager([root]);
     windowId = provider.windowKeys()[0];
     window = new BrowserWindow();
   });

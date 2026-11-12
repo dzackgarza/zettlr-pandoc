@@ -29,9 +29,6 @@ import type { AppServiceContainer } from "source/app/app-service-container";
 import { openPath } from "source/app/util/open-path";
 import ZettlrCommand from "./zettlr-command";
 
-/** The JSON-RPC API of Better BibTeX in Zotero. */
-const BBT_JSON_RPC = "http://127.0.0.1:23119/better-bibtex/json-rpc";
-
 // This function overwrites the getBibliographyForDescriptor function to ensure
 // the library is always absolute. We have to do it this ridiculously since the
 // function is called in both main and renderer processes, and we still have the
@@ -120,11 +117,10 @@ export default class OpenAttachment extends ZettlrCommand {
    * @return  {Promise<string>}  The path of the PDF
    */
   private async zoteroPdf(citekey: string): Promise<string> {
-    // NOTE: We have replaced localhost with 127.0.0.1 since at some point
-    // either got or Electron stopped resolving localhost there, resulting in
-    // ECONNREFUSED errors.
+    // The JSON-RPC API of Better BibTeX, on Zotero's local server.
+    const endpoint = new URL("/better-bibtex/json-rpc", this._app.config.get().zotero.localServer);
     const res: unknown = await ky
-      .post(BBT_JSON_RPC, {
+      .post(endpoint, {
         json: {
           jsonrpc: "2.0",
           method: "item.attachments",
@@ -140,7 +136,7 @@ export default class OpenAttachment extends ZettlrCommand {
       .json()
       .catch((err: Error) => {
         const reason = err.cause instanceof Error ? err.cause.message : err.message;
-        throw new Error(trans("Zotero did not answer at %s: %s", BBT_JSON_RPC, reason));
+        throw new Error(trans("Zotero did not answer at %s: %s", endpoint.href, reason));
       });
 
     if (typeof res !== "object" || res === null) {
