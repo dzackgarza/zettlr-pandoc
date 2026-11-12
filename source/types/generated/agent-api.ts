@@ -700,6 +700,7 @@ export interface components {
         | "DOCUMENT_NOT_FOUND"
         | "DOCUMENT_CLOSED"
         | "DOCUMENT_UNREADABLE"
+        | "COLLABORATION_STATE_UNREADABLE"
         | "REVISION_MISMATCH"
         | "REVIEW_GENERATION_MISMATCH"
         | "REVIEW_NOT_FOUND"

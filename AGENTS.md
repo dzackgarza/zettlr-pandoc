@@ -889,8 +889,13 @@ of an isolated instance are in the first comment of #132.
   with its cause; the Annotations view and a message at the open of the
   document show the file with the action "Move the file aside"
   (`set-aside-collaboration-sidecar`), which renames the file in the sidecar
-  directory and keeps its bytes. `list()` is the complete set or an error:
-  the Agent API listings reject while an unreadable file exists.
+  directory and keeps its bytes. `list()` is the complete set or an error.
+  A read of such a file and `list()` reject with
+  `CollaborationSidecarUnreadableError`, which the Agent API answers with
+  409 `COLLABORATION_STATE_UNREADABLE` and that action. The Agent API
+  listings reject while an unreadable file exists; the lookup of an
+  annotation of a loaded document and the read of another closed document
+  do not read that file (`test/annotation-agent-api.spec.ts`).
 - **A prompt for many documents does not decide a review.** A quit and a
   window close ask the author to save or discard only the documents of
   `_documentsToAskAbout`. A document whose review has an undecided proposal

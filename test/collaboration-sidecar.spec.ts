@@ -41,12 +41,17 @@ import {
 import type { CollaborationSidecarData } from "source/app/service-providers/documents/collaboration-sidecar-schema";
 import {
   CollaborationSidecarStore,
+  CollaborationSidecarUnreadableError,
   collaborationSidecarFilePath,
 } from "source/app/service-providers/documents/collaboration-sidecar-store";
 import type { TextAnnotation } from "source/types/common/annotation-domain";
 
-function annotationIssue(code: AnnotationDomainValidationCode): (error: unknown) => boolean {
-  return (error) => error instanceof AnnotationDomainValidationError && error.issue.code === code;
+/** A refused read of a sidecar file whose annotations break the domain rule `code`. */
+function annotationIssue(code: AnnotationDomainValidationCode): (error: Error) => boolean {
+  return (error) =>
+    error instanceof CollaborationSidecarUnreadableError &&
+    error.cause instanceof AnnotationDomainValidationError &&
+    error.cause.issue.code === code;
 }
 
 const FINGERPRINT = "1111111111111111111111111111111111111111111111111111111111111111";

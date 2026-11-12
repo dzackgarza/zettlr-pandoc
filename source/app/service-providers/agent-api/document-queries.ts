@@ -179,6 +179,33 @@ interface LocatedAnnotation {
   workingText: string;
 }
 
+/** A document with annotation state: its live state when loaded, its sidecar when closed. */
+interface AnnotationDocument {
+  documentId: string;
+  open: boolean;
+  workingText: string;
+  annotations: AnnotationSet;
+}
+
+/** The annotation with the id among the documents, located. */
+function locateAnnotation(
+  documents: AnnotationDocument[],
+  annotationId: string,
+): LocatedAnnotation | undefined {
+  for (const located of documents) {
+    const found = located.annotations.items.find((item) => item.annotationId === annotationId);
+    if (found !== undefined) {
+      return {
+        documentId: located.documentId,
+        annotation: found,
+        annotationGeneration: located.annotations.generation,
+        workingText: located.workingText,
+      };
+    }
+  }
+  return undefined;
+}
+
 /** A document's working text, and the text its review started from. */
 interface DocumentText {
   attached: boolean;
@@ -398,56 +425,36 @@ export default class AgentDocumentQueries {
    * need, since neither carries a documentId.
    */
   public async findAnnotationQuery(annotationId: string): Promise<LocatedAnnotation | undefined> {
-    for (const located of await this._annotationDocuments()) {
-      const found = located.annotations.items.find((item) => item.annotationId === annotationId);
-      if (found !== undefined) {
-        return {
-          documentId: located.documentId,
-          annotation: found,
-          annotationGeneration: located.annotations.generation,
-          workingText: located.workingText,
-        };
-      }
-    }
-    return undefined;
+    // An annotation of a loaded document is found without a read of the
+    // sidecars, so a sidecar that cannot be read refuses no lookup of it.
+    return (
+      locateAnnotation(this._loadedAnnotationDocuments(), annotationId) ??
+      locateAnnotation(await this._closedAnnotationDocuments(), annotationId)
+    );
+  }
+
+  /** The annotation documents that are loaded, with their live state. */
+  private _loadedAnnotationDocuments(): AnnotationDocument[] {
+    return this.documents.loadedDocuments.map((document) => ({
+      documentId: document.documentId,
+      open: true,
+      workingText: document.document.toString(),
+      annotations: this.annotations.getAnnotations(document.documentId),
+    }));
   }
 
   /**
-   * Every document that has annotation state, open or closed — the merged
-   * projection behind the annotations routes. Open documents read their live
-   * state; closed documents read the sidecar that carries exactly what the
-   * UI workspace panel shows for them.
-   *
-   * A sidecar outside every configured workspace is not served: the sidecar
-   * directory is keyed by path hash, not provenance, and a workspace removed
-   * since the sidecar was written must not leak into an agent's answer.
+   * The annotation documents that are closed, from their sidecars. Rejects
+   * with CollaborationSidecarUnreadableError while a sidecar cannot be read:
+   * the answer would not be the complete set.
    */
-  private async _annotationDocuments(): Promise<
-    Array<{
-      documentId: string;
-      open: boolean;
-      workingText: string;
-      annotations: AnnotationSet;
-    }>
-  > {
-    const documents: Array<{
-      documentId: string;
-      open: boolean;
-      workingText: string;
-      annotations: AnnotationSet;
-    }> = [];
-    const detachedPaths = new Set<string>();
-    for (const document of this.documents.loadedDocuments) {
-      documents.push({
-        documentId: document.documentId,
-        open: true,
-        workingText: document.document.toString(),
-        annotations: this.annotations.getAnnotations(document.documentId),
-      });
-      detachedPaths.add(path.resolve(document.filePath));
-    }
+  private async _closedAnnotationDocuments(): Promise<AnnotationDocument[]> {
+    const loadedPaths = new Set(
+      this.documents.loadedDocuments.map((document) => path.resolve(document.filePath)),
+    );
+    const documents: AnnotationDocument[] = [];
     for (const sidecar of await this.annotations.listCollaborationSidecars()) {
-      if (detachedPaths.has(path.resolve(sidecar.documentPath))) {
+      if (loadedPaths.has(path.resolve(sidecar.documentPath))) {
         continue;
       }
       if (!(await this.isOpenable(sidecar.documentPath))) {
@@ -461,6 +468,20 @@ export default class AgentDocumentQueries {
       });
     }
     return documents;
+  }
+
+  /**
+   * Every document that has annotation state, open or closed — the merged
+   * projection behind the annotations routes. Open documents read their live
+   * state; closed documents read the sidecar that carries exactly what the
+   * UI workspace panel shows for them.
+   *
+   * A sidecar outside every configured workspace is not served: the sidecar
+   * directory is keyed by path hash, not provenance, and a workspace removed
+   * since the sidecar was written must not leak into an agent's answer.
+   */
+  private async _annotationDocuments(): Promise<AnnotationDocument[]> {
+    return [...this._loadedAnnotationDocuments(), ...(await this._closedAnnotationDocuments())];
   }
 
   /**
@@ -487,20 +508,15 @@ export default class AgentDocumentQueries {
       if (!(await this.isOpenable(filePath))) {
         return undefined;
       }
-      const sidecar = await this.annotations
-        .listCollaborationSidecars()
-        .then((sidecars) =>
-          sidecars.find(
-            (candidate) => path.resolve(candidate.documentPath) === path.resolve(filePath),
-          ),
-        );
-      if (sidecar !== undefined) {
-        return {
-          open: false,
-          workingText: sidecar.workingText,
-          annotations: sidecar.annotations,
-        };
+      const sidecar = await this.reviews.readSidecar(filePath);
+      if (sidecar === undefined) {
+        return undefined;
       }
+      return {
+        open: false,
+        workingText: sidecar.workingText,
+        annotations: sidecar.annotations,
+      };
     }
     // The id may have been minted for a closed document this manager has
     // never seen open (a workspace listing hands those out). Scan the

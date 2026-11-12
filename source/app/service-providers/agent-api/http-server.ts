@@ -102,6 +102,7 @@ import {
 } from "../../util/central-figures-store";
 import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
+import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
 import AgentDocumentQueries, {
   canonicalPath,
   DocumentUnreadableError,
@@ -157,6 +158,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   DOCUMENT_NOT_FOUND: 404,
   DOCUMENT_CLOSED: 409,
   DOCUMENT_UNREADABLE: 409,
+  COLLABORATION_STATE_UNREADABLE: 409,
   REVISION_MISMATCH: 409,
   BASELINE_MISMATCH: 412,
   REVIEW_GENERATION_MISMATCH: 409,
@@ -691,6 +693,18 @@ export default class AgentHTTPProvider extends ProviderContract {
         // defect of this provider.
         this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
         this.sendError(res, 409, "DOCUMENT_UNREADABLE", err.message);
+        return;
+      }
+      if (err instanceof CollaborationSidecarUnreadableError) {
+        // A sidecar of the author that this version cannot read. The author
+        // decides what happens to its bytes, so the answer names the action.
+        this._log.warning(`[AgentHTTPProvider] ${method} ${pathname}: ${err.message}`);
+        this.sendError(
+          res,
+          409,
+          "COLLABORATION_STATE_UNREADABLE",
+          `${err.message}. The author can keep the bytes of each such file and free its document with "Move the file aside" in the Annotations view.`,
+        );
         return;
       }
       if (err instanceof RequestAbandonedError) {

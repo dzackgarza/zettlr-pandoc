@@ -329,6 +329,35 @@ function assertMatchesFilename(sidecar: CollaborationSidecarData, target: string
   }
 }
 
+/** The state that the bytes of a sidecar file hold, and whether they were of an earlier version. */
+interface DecodedSidecar {
+  sidecar: CollaborationSidecarData;
+  lifted: boolean;
+}
+
+/** The sidecar that `raw` holds, lifted to the current version; throws for bytes that hold none. */
+function decodeSidecar(raw: string, target: string): DecodedSidecar {
+  const parsed = parseJson(raw, target);
+  let decoded: DecodedSidecar;
+  if (validateLegacyReviewSidecar(parsed)) {
+    decoded = { sidecar: migrateV4ToV5Sidecar(parsed), lifted: true };
+  } else if (validateEarlyCollaborationSidecarV5(parsed)) {
+    decoded = { sidecar: liftEarlyV5Sidecar(parsed), lifted: true };
+  } else if (validateCollaborationSidecar(parsed)) {
+    decoded = { sidecar: parsed, lifted: false };
+  } else {
+    throw new Error(
+      `Collaboration sidecar ${target} is not a valid collaboration sidecar: ` +
+        (validateCollaborationSidecar.errors ?? [])
+          .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
+          .join("; "),
+    );
+  }
+  assertCollaborationSidecarSemantics(decoded.sidecar, target);
+  assertMatchesFilename(decoded.sidecar, target);
+  return decoded;
+}
+
 /** A sidecar file that this version of the application cannot read. */
 export interface UnreadableSidecarFile {
   file: string;
@@ -338,6 +367,21 @@ export interface UnreadableSidecarFile {
 export interface CollaborationSidecarInventory {
   sidecars: CollaborationSidecarData[];
   unreadable: UnreadableSidecarFile[];
+}
+
+/**
+ * Sidecar files that this version cannot read, each with its cause. A read
+ * of one such file and a listing that meets one reject with it: the bytes
+ * are a state of the files of the author, not a defect of the application.
+ */
+export class CollaborationSidecarUnreadableError extends Error {
+  constructor(
+    readonly files: UnreadableSidecarFile[],
+    options?: ErrorOptions,
+  ) {
+    super(files.map((entry) => entry.cause).join("; "), options);
+    this.name = "CollaborationSidecarUnreadableError";
+  }
 }
 
 export class CollaborationSidecarStore {
@@ -395,7 +439,8 @@ export class CollaborationSidecarStore {
    * The sidecar for a document, or undefined when none exists. A version-4
    * file is lifted to version 5 and written back before it is returned, so a
    * second read (a later reopen, an app restart) sees version 5 directly. A
-   * file that exists but parses as neither version throws.
+   * file that exists and holds no sidecar of a known version rejects with
+   * CollaborationSidecarUnreadableError.
    */
   async read(documentPath: string): Promise<CollaborationSidecarData | undefined> {
     return await this.readFile(collaborationSidecarFilePath(this.directory, documentPath));
@@ -404,48 +449,25 @@ export class CollaborationSidecarStore {
   private async readFile(target: string): Promise<CollaborationSidecarData | undefined> {
     // Until this read succeeds, the file is one that the store cannot read.
     this.examined.delete(target);
-    let raw: string;
+    let decoded: DecodedSidecar;
     try {
-      raw = await fs.readFile(target, "utf8");
+      decoded = decodeSidecar(await fs.readFile(target, "utf8"), target);
     } catch (error) {
       if (isMissingFile(error)) {
         this.examined.add(target);
         return undefined;
       }
-      throw error;
-    }
-    const sidecar = await this.parseAndMigrate(raw, target);
-    this.examined.add(target);
-    return sidecar;
-  }
-
-  private async parseAndMigrate(raw: string, target: string): Promise<CollaborationSidecarData> {
-    const parsed = parseJson(raw, target);
-    if (validateLegacyReviewSidecar(parsed)) {
-      const migrated = migrateV4ToV5Sidecar(parsed);
-      assertCollaborationSidecarSemantics(migrated, target);
-      assertMatchesFilename(migrated, target);
-      await this.store(migrated, target);
-      return migrated;
-    }
-    if (validateEarlyCollaborationSidecarV5(parsed)) {
-      const lifted = liftEarlyV5Sidecar(parsed);
-      assertCollaborationSidecarSemantics(lifted, target);
-      assertMatchesFilename(lifted, target);
-      await this.store(lifted, target);
-      return lifted;
-    }
-    if (!validateCollaborationSidecar(parsed)) {
-      throw new Error(
-        `Collaboration sidecar ${target} is not a valid collaboration sidecar: ` +
-          (validateCollaborationSidecar.errors ?? [])
-            .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`.trim())
-            .join("; "),
+      throw new CollaborationSidecarUnreadableError(
+        [{ file: target, cause: error instanceof Error ? error.message : String(error) }],
+        { cause: error },
       );
     }
-    assertCollaborationSidecarSemantics(parsed, target);
-    assertMatchesFilename(parsed, target);
-    return parsed;
+    if (decoded.lifted) {
+      // Written back, so a second read sees the current version directly.
+      await this.store(decoded.sidecar, target);
+    }
+    this.examined.add(target);
+    return decoded.sidecar;
   }
 
   /** Remove a document's sidecar. Absent is fine — deletion is idempotent. */
@@ -491,7 +513,7 @@ export class CollaborationSidecarStore {
   async list(): Promise<CollaborationSidecarData[]> {
     const { sidecars, unreadable } = await this.inventory();
     if (unreadable.length > 0) {
-      throw new Error(unreadable.map((entry) => entry.cause).join("; "));
+      throw new CollaborationSidecarUnreadableError(unreadable);
     }
     return sidecars;
   }
