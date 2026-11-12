@@ -29,10 +29,10 @@ describe("the temporary directories of a unit-test run", function () {
     const reportDirectory = await mkdtemp(path.join(tmpdir(), "zettlr-temp-probe-report-"));
     const report = path.join(reportDirectory, "directory.txt");
 
+    // The probe runs through the launcher of the unit-test recipes.
     await promisify(execFile)(
-      process.execPath,
+      "scripts/run-unit-tests.sh",
       [
-        "node_modules/mocha/bin/mocha.js",
         "--no-config",
         "--node-option",
         "import=tsx",
