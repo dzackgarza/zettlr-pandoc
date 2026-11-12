@@ -120,7 +120,7 @@ import {
   SkillsDirectoryUnavailableError,
   SkillsPathInputError,
 } from "./skills-store";
-import ZoteroLibrary, { type ZoteroResult } from "./zotero-library";
+import ZoteroLibrary, { ZOTERO_ORIGIN, type ZoteroResult } from "./zotero-library";
 
 export { MAX_SEARCH_HITS } from "./document-queries";
 
@@ -405,7 +405,8 @@ export default class AgentHTTPProvider extends ProviderContract {
     super();
     this._instanceId = crypto.randomUUID();
     this._helpText = HELP_DOCUMENT;
-    this._zotero = _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc);
+    this._zotero =
+      _citeproc === undefined ? undefined : new ZoteroLibrary(_citeproc, ZOTERO_ORIGIN);
     this._queries = new AgentDocumentQueries(
       _documents,
       _documents.reviewQueries,

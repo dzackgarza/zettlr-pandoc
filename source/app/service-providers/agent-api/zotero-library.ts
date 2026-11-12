@@ -34,7 +34,7 @@ import type {
 import type CiteprocProvider from "@providers/citeproc";
 
 /** Zotero's local HTTP server, at the default of its httpServer.port preference. */
-const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
+export const ZOTERO_ORIGIN = "http://127.0.0.1:23119";
 
 /**
  * How long an import waits for its key to reach the main citation database.
@@ -129,10 +129,14 @@ interface AddonChildrenEnvelope {
 }
 
 export default class ZoteroLibrary {
-  constructor(readonly citeproc: CiteprocProvider) {}
+  /** `origin` is the address of Zotero's local HTTP server. */
+  constructor(
+    readonly citeproc: CiteprocProvider,
+    readonly origin: string,
+  ) {}
 
   async extractions(itemKey: string): Promise<ZoteroResult<ZoteroExtractionsResponse>> {
-    const response = await this.request<AddonChildrenEnvelope>(new URL("/write", ZOTERO_ORIGIN), {
+    const response = await this.request<AddonChildrenEnvelope>(new URL("/write", this.origin), {
       operation: "get_item_children",
       item_key: itemKey,
     });
@@ -170,7 +174,7 @@ export default class ZoteroLibrary {
   }
 
   async search(query: string, limit: number): Promise<ZoteroResult<ZoteroSearchResponse>> {
-    const url = new URL("/api/users/0/items/top", ZOTERO_ORIGIN);
+    const url = new URL("/api/users/0/items/top", this.origin);
     url.search = new URLSearchParams({
       q: query,
       limit: String(limit),
@@ -271,7 +275,7 @@ export default class ZoteroLibrary {
   }
 
   private async write<Body>(body: AddonWriteRequest): Promise<ZoteroResult<Body>> {
-    return await this.request<Body>(new URL("/write", ZOTERO_ORIGIN), body);
+    return await this.request<Body>(new URL("/write", this.origin), body);
   }
 
   /**
@@ -299,7 +303,7 @@ export default class ZoteroLibrary {
         ok: false,
         status: 503,
         code: "ZOTERO_UNAVAILABLE",
-        message: `Zotero does not answer at ${ZOTERO_ORIGIN}: ${String(error.cause ?? error.message)}`,
+        message: `Zotero does not answer at ${this.origin}: ${String(error.cause ?? error.message)}`,
       };
     }
     const text = await response.text();
