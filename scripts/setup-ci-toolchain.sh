@@ -60,7 +60,7 @@ fetch() {
 }
 
 sudo apt-get update
-sudo apt-get install --yes dbus-daemon imagemagick pdf2svg xdotool xvfb
+sudo apt-get install --yes dbus-daemon imagemagick pdf2svg poppler-utils xdotool xvfb
 
 # An e2e run has a network namespace of its own (`_e2e-run` in the
 # justfile). The AppArmor policy of the hosted Ubuntu runner gives a user
