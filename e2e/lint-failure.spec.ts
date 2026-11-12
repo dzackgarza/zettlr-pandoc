@@ -8,7 +8,10 @@
  * License:         GNU GPL v3
  *
  * Description:     Three causes stop a lint, and the author gets each one
- *                  with the action that starts the lint again.
+ *                  with the action that starts the lint again. Each cause
+ *                  has its own start of the app. A case waits for the line
+ *                  of the cause in the app log and then reads the text of
+ *                  the Problems view.
  *
  *                  1. No Flowmark run ends in the time limit of 1 ms. The
  *                     Problems view names each document with the cause, the
@@ -83,6 +86,34 @@ async function editorErrorMessage(page: Page): Promise<string> {
   return message;
 }
 
+/**
+ * Waits until the app log has a line. The main process writes the cause of
+ * a lint that did not run before a window can show it.
+ */
+async function appLogged(getOutput: () => string, line: string): Promise<void> {
+  const deadline = Date.now() + 90_000;
+  while (!getOutput().includes(line)) {
+    assert.ok(Date.now() < deadline, `the app log has "${line}"`);
+    await delay(200);
+  }
+}
+
+/**
+ * Asks the Problems view for a new answer and gives the text that it shows:
+ * the first text that holds the expected cause, or the text after 30 s.
+ */
+async function problemsViewText(page: Page, expected: string): Promise<string> {
+  await page.getByRole("button", { name: "Refresh problems" }).click();
+  const view = page.locator("#problems-view");
+  const deadline = Date.now() + 30_000;
+  let text = await view.innerText();
+  while (!text.includes(expected) && Date.now() < deadline) {
+    await delay(200);
+    text = await view.innerText();
+  }
+  return text;
+}
+
 /** Waits until the status bar counts this many errors in the document. */
 async function statusBarCountsErrors(page: Page, errors: number): Promise<void> {
   const counts = async (): Promise<number[]> =>
@@ -122,14 +153,13 @@ function finding(page: Page, documentName: string): ReturnType<Page["locator"]> 
 describe("a lint that did not run", function () {
   this.timeout(240_000);
 
-  describe("a Flowmark run that fails, and results that cannot be written", function () {
+  describe("a Flowmark run that fails", function () {
     let appProcess: ChildProcess | undefined;
     let browser: Browser | undefined;
     let page: Page;
     let fixtureRoot: string | undefined;
     let workspace = "";
     let indexPath = "";
-    let cachePath = "";
     let getOutput: () => string = () => "";
     const rendererEvents: string[] = [];
     const screenshots = new Map<string, Buffer>();
@@ -146,7 +176,6 @@ describe("a lint that did not run", function () {
       fixtureRoot = fixture.root;
       indexPath = fixture.documentPath;
       workspace = path.dirname(indexPath);
-      cachePath = path.join(fixture.configDirectory, "document-lint-cache.json");
       await writeFile(path.join(workspace, "problem.md"), PROBLEM, "utf8");
       const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
       appProcess = app.appProcess;
@@ -174,6 +203,18 @@ describe("a lint that did not run", function () {
 
     it("names each document that Flowmark could not lint, with the cause", async function () {
       await page.locator('[data-activity="problems"]').click();
+      for (const documentPath of [indexPath, path.join(workspace, "problem.md")]) {
+        await appLogged(getOutput, `Flowmark could not lint ${documentPath}`);
+      }
+      const shown = await problemsViewText(page, TIME_LIMIT_CAUSE);
+      screenshots.set("not-linted-first-answer.png", await page.screenshot());
+      assert.ok(
+        !shown.split("\n").includes("No problems"),
+        `a workspace that was not linted is not a workspace without problems: ${shown}`,
+      );
+      assert.ok(shown.includes(TIME_LIMIT_CAUSE), `the view gives the cause: ${shown}`);
+      assert.ok(shown.includes("Try again"), `the view offers the retry: ${shown}`);
+
       const notLinted = page.locator(NOT_LINTED);
       await notLinted.waitFor({ state: "visible", timeout: 90_000 });
       for (const name of ["index.md", "problem.md"]) {
@@ -211,10 +252,59 @@ describe("a lint that did not run", function () {
       await statusBarCountsErrors(page, 0);
       screenshots.set("linted-after-retry.png", await page.screenshot());
     });
+  });
+
+  describe("results that cannot be written", function () {
+    let appProcess: ChildProcess | undefined;
+    let browser: Browser | undefined;
+    let page: Page;
+    let fixtureRoot: string | undefined;
+    let workspace = "";
+    let indexPath = "";
+    let cachePath = "";
+    let getOutput: () => string = () => "";
+    const rendererEvents: string[] = [];
+    const screenshots = new Map<string, Buffer>();
+
+    before(async function () {
+      const fixture = await createFixture("zettlr-lint-unwritable-e2e-", {
+        documentName: "index.md",
+        documentContents: INDEX,
+        config: { darkMode: false, editor: { autoSave: "off" } },
+      });
+      fixtureRoot = fixture.root;
+      indexPath = fixture.documentPath;
+      workspace = path.dirname(indexPath);
+      cachePath = path.join(fixture.configDirectory, "document-lint-cache.json");
+      await writeFile(path.join(workspace, "problem.md"), PROBLEM, "utf8");
+      const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+      appProcess = app.appProcess;
+      browser = app.browser;
+      getOutput = app.getOutput;
+      page = await findEditorPage(app.browser, this.timeout());
+      await hideDevServerOverlay(page);
+      await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
+      await page.locator('[data-activity="problems"]').click();
+    });
+
+    after(async function () {
+      await shutdown(browser, appProcess);
+      await preserveArtifacts(
+        path.join(tmpdir(), "zettlr-lint-unwritable-e2e-latest"),
+        fixtureRoot,
+        getOutput(),
+        rendererEvents,
+        screenshots,
+      );
+      if (fixtureRoot !== undefined) {
+        await rm(fixtureRoot, { recursive: true, force: true });
+      }
+      assertCleanExit(getOutput());
+    });
 
     it("shows why no lint runs while the results cannot be written", async function () {
       // The results of both documents are in the file, so no write waits.
-      const deadline = Date.now() + 30_000;
+      const deadline = Date.now() + 90_000;
       const resultsWritten = async (): Promise<boolean> =>
         await readFile(cachePath, "utf8").then(
           (contents) => contents.includes("index.md") && contents.includes("problem.md"),
@@ -224,10 +314,19 @@ describe("a lint that did not run", function () {
         assert.ok(Date.now() < deadline, "the results of the two documents were not written");
         await delay(200);
       }
-      // A directory is in the place of the file: the next write fails.
+      // A directory is in the place of the file: the next write fails. An
+      // atomic write replaces a file without write permission, so a mode
+      // change of the file refuses no write.
       await rm(cachePath);
       await mkdir(cachePath);
       await writeFile(path.join(workspace, "late.md"), "Late ???\n", "utf8");
+
+      await appLogged(getOutput, "[Document Lint] Write the workspace lint cache failed");
+      const writeCause = `Could not write the lint results to ${cachePath}: `;
+      const shown = await problemsViewText(page, writeCause);
+      screenshots.set("results-not-written-first-answer.png", await page.screenshot());
+      assert.ok(shown.includes(writeCause), `the view names the file and the cause: ${shown}`);
+      assert.ok(shown.includes("Try again"), `the view offers the retry: ${shown}`);
 
       const notLoaded = page.locator(NOT_LOADED);
       await notLoaded.waitFor({ state: "visible", timeout: 90_000 });
@@ -334,6 +433,13 @@ describe("a lint that did not run", function () {
 
     it("shows why the background queue lints no document", async function () {
       await page.locator('[data-activity="problems"]').click();
+      await appLogged(getOutput, "Results are not cached: the installed Flowmark is unknown");
+      const cause = "Cannot identify the installed Flowmark";
+      const shown = await problemsViewText(page, cause);
+      screenshots.set("queue-stopped-first-answer.png", await page.screenshot());
+      assert.ok(shown.includes(cause), `the view gives the cause: ${shown}`);
+      assert.ok(shown.includes("Try again"), `the view offers the retry: ${shown}`);
+
       const stopped = page.locator(QUEUE_STOPPED);
       await stopped.waitFor({ state: "visible", timeout: 90_000 });
       assert.match(
