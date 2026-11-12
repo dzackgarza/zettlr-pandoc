@@ -47,14 +47,9 @@ async function listedChildren(
 export async function readDirectoryFromDisk(
   absPath: string,
   ignoreFilter: IgnoreFilter,
-  isDeadWorkspace: boolean,
   getDescriptor: (absPath: string) => Promise<AnyDescriptor>,
   logger: DirectoryReadLogger,
 ): Promise<AnyDescriptor[]> {
-  if (isDeadWorkspace) {
-    throw new Error(`[FSAL] Cannot read path ${absPath}: Not a directory!`);
-  }
-
   let isDirectory: boolean;
   try {
     isDirectory = (await fs.lstat(absPath)).isDirectory();

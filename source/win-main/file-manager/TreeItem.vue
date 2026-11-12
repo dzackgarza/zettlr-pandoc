@@ -575,10 +575,10 @@ onMounted(async () => {
         operationType.value = "createDir";
       }
     });
-
-    await fetchChildren();
   }
 
+  // The row follows the events before its first read, so a read that fails
+  // leaves a row that a later event of its children still updates.
   stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
     // A batch that pertains to a direct child of this item needs handling.
     // We'll make it easy and simply re-fetch the list of children, once.
@@ -595,6 +595,10 @@ onMounted(async () => {
   // Initially scroll into view if this item is selected
   if (isSelected.value) {
     scrollIntoView();
+  }
+
+  if (props.item.type === "directory") {
+    await fetchChildren();
   }
 });
 

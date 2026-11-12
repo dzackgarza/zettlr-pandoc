@@ -7,7 +7,7 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This command rescans a not-found directory.
+ * Description:     Loads a workspace whose folder was missing.
  *
  * END HEADER
  */
@@ -21,12 +21,11 @@ export default class DirRescan extends ZettlrCommand {
   }
 
   /**
-   * Rescans a directory
-   * @param {String} evt The event name
-   * @param  {Object} arg The path of the descriptor
+   * Loads the workspace at `arg.path` when its folder is there again.
+   *
+   * @throws when the folder is still missing
    */
-  async run(event: string, _arg: { path: string }): Promise<void> {
-    // DEBUG: DEPRECATED
-    throw new Error("rescanForDirectory not re-implemented");
+  async run(_event: string, arg: { path: string }): Promise<void> {
+    await this._app.fsal.loadMissingWorkspace(arg.path);
   }
 }

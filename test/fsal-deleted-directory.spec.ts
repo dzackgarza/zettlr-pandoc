@@ -48,7 +48,7 @@ describe("FSAL directory reads after explorer deletion events", function () {
     await fs.rm(deletedDirectory, { recursive: true });
 
     assert.deepStrictEqual(
-      await readDirectoryFromDisk(deletedDirectory, rules, false, getDescriptor, logger),
+      await readDirectoryFromDisk(deletedDirectory, rules, getDescriptor, logger),
       [],
     );
   });
@@ -71,8 +71,7 @@ describe("FSAL directory reads after explorer deletion events", function () {
 
     const results = await Promise.allSettled(
       deletedDescendants.map(
-        async (directory) =>
-          await readDirectoryFromDisk(directory, rules, false, getDescriptor, logger),
+        async (directory) => await readDirectoryFromDisk(directory, rules, getDescriptor, logger),
       ),
     );
 
@@ -91,7 +90,7 @@ describe("FSAL directory reads after explorer deletion events", function () {
     await fs.writeFile(regularFile, "content");
 
     await assert.rejects(
-      async () => await readDirectoryFromDisk(regularFile, rules, false, getDescriptor, logger),
+      async () => await readDirectoryFromDisk(regularFile, rules, getDescriptor, logger),
       /Not a directory/,
     );
   });
@@ -101,7 +100,7 @@ describe("FSAL directory reads after explorer deletion events", function () {
     await fs.mkdir(emptyDirectory);
 
     assert.deepStrictEqual(
-      await readDirectoryFromDisk(emptyDirectory, rules, false, getDescriptor, logger),
+      await readDirectoryFromDisk(emptyDirectory, rules, getDescriptor, logger),
       [],
     );
   });

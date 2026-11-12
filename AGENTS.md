@@ -1295,6 +1295,30 @@ of an isolated instance are in the first comment of #132.
 - **Proof:** `e2e/explorer-metadata-sort.spec.ts`,
   `e2e/folder-metadata-problems.spec.ts`, `e2e/quarto-bound-book.spec.ts`.
 
+### 24. A workspace whose folder is missing
+
+- **A folder that does not exist leaves the configuration.** At start the
+  config check (`rootPathsOnDisk`, `config/root-paths.ts`) removes a
+  workspace or an open file whose path gives `ENOENT`.
+- **A folder that the filesystem cannot examine stays.** A failed mount or a
+  parent folder without search permission (`EACCES`) is not a removed folder.
+  The workspace stays in the configuration, and the FSAL lists it as missing
+  (`deadWorkspaces`): a root descriptor with `dirNotFoundFlag`, no children,
+  no watcher, no ignore rules. The other workspaces load. An open file that
+  cannot be examined stays in the configuration and is not loaded.
+- **"Check for directory …" loads it.** The context menu item
+  (`menu.rescan_dir`) runs the command `rescan-dir`, which calls
+  `FSAL.loadMissingWorkspace`. While the folder cannot be read, the command
+  throws with the cause, and the dispatcher shows it (§15). When it can be
+  read, the FSAL watches it and publishes `addDir` and `add` for each listed
+  path, so each window shows the workspace with its files.
+- **A row follows the events before its first read.** `TreeItem.vue`
+  registers its `fsal-events` listener before it reads its children, so a
+  row whose first read gives nothing still shows the children that a later
+  event adds.
+- **Proof:** `e2e/missing-workspace.spec.ts`,
+  `test/fsal-deleted-directory.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { statPath } from "@common/util/examine-path";
+import { examinePath, statPath } from "@common/util/examine-path";
 import { hasCodeExt, hasMarkdownExt } from "@common/util/file-extention-checks";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
 import type {
@@ -180,6 +180,12 @@ export default class FSAL extends ProviderContract {
 
     ipcMain.handle("fsal", async (event, { command, payload }) => {
       if (command === "read-path-recursively" && typeof payload === "string") {
+        if (this.deadWorkspaces.has(payload)) {
+          return [payload];
+        }
+        if (!examinePath(payload, true).examined) {
+          return [];
+        }
         if (await this.isFile(payload)) {
           return [payload];
         } else if (await this.isDir(payload)) {
@@ -199,7 +205,11 @@ export default class FSAL extends ProviderContract {
           for (const absPath of payload) {
             // Check every path for existence to ensure an array lookup does not
             // fail.
-            if ((await this.isFile(absPath)) || (await this.isDir(absPath))) {
+            if (
+              this.deadWorkspaces.has(absPath) ||
+              (await this.isFile(absPath)) ||
+              (await this.isDir(absPath))
+            ) {
               descriptors.push(await this.getDescriptorFor(absPath));
             } else {
               this._logger.error(
@@ -464,7 +474,7 @@ export default class FSAL extends ProviderContract {
     } = this._config.get();
     const workspaceRules = new Map<string, string>();
     for (const root of openWorkspaces) {
-      workspaceRules.set(root, await readRulesFile(root));
+      workspaceRules.set(root, this.deadWorkspaces.has(root) ? "" : await readRulesFile(root));
     }
     return {
       globalRules: [...fileManager.ignoreRules],
@@ -634,10 +644,20 @@ export default class FSAL extends ProviderContract {
     // An open file can go missing between two sessions. Removing missing
     // files here prevents errors on boot. Unlike workspaces, the files are
     // removed. (Workspaces can be marked as "dead" so that users don't
-    // lose them.)
+    // lose them.) A file that the filesystem cannot examine stays in the
+    // configuration, as the config check keeps it, and is not loaded.
     const workingOpenFiles: string[] = [];
+    const unexaminedFiles = new Set<string>();
     for (const file of openFiles) {
-      if (await this.isFile(file)) {
+      const examination = examinePath(file, true);
+      if (!examination.examined) {
+        this._logger.error(
+          `[FSAL] Not loading the open file ${file}: ${examination.error.message}`,
+          examination.error,
+        );
+        unexaminedFiles.add(file);
+        workingOpenFiles.push(file);
+      } else if (examination.stats?.isFile() === true) {
         workingOpenFiles.push(file);
       }
     }
@@ -654,30 +674,36 @@ export default class FSAL extends ProviderContract {
 
     const allRoots = openFiles.concat(openWorkspaces);
 
+    // A workspace that is missing stays missing until the author asks for it
+    // (`loadMissingWorkspace`), which tells the windows.
     for (const rootPath of allRoots) {
-      if (this.watchers.has(rootPath)) {
-        continue; // This path has already been loaded
+      if (
+        this.watchers.has(rootPath) ||
+        this.deadWorkspaces.has(rootPath) ||
+        unexaminedFiles.has(rootPath)
+      ) {
+        continue;
       }
 
       try {
         const descriptor = await this.getDescriptorFor(rootPath, false);
-        if (descriptor === undefined) {
-          // Mount a "dummy" workspace indicating an unlinked root
-          this._logger.error(`Could not load root ${rootPath}. Mounting dummy...`);
-          // TODO
+        if (descriptor.type === "directory" && descriptor.dirNotFoundFlag === true) {
+          this._logger.error(
+            `[FSAL] The filesystem cannot examine the workspace ${rootPath}. It is listed as missing.`,
+          );
+          this.deadWorkspaces.add(rootPath);
         } else {
-          // Start watching the root path.
-          const watcher = new FSALWatchdog(this._logger, this._config);
-          watcher.on("change", (event, absPath, stats) => {
-            this.emitChokidarEvent(event, absPath, stats);
-          });
-          watcher.watchPath(rootPath);
-          this.watchers.set(rootPath, watcher);
-          this.deadWorkspaces.delete(rootPath);
+          this.watchRoot(rootPath);
         }
       } catch (err: unknown) {
         this._logger.error(`Could not load root ${rootPath}.`, err);
         this.deadWorkspaces.add(rootPath);
+      }
+    }
+
+    for (const rootPath of this.deadWorkspaces) {
+      if (!allRoots.includes(rootPath)) {
+        this.deadWorkspaces.delete(rootPath);
       }
     }
 
@@ -689,6 +715,44 @@ export default class FSAL extends ProviderContract {
         this.watchers.delete(rootPath);
       }
     }
+  }
+
+  /** Starts the watcher of a root. A watched root is not missing. */
+  private watchRoot(rootPath: string): void {
+    const watcher = new FSALWatchdog(this._logger, this._config);
+    watcher.on("change", (event, absPath, stats) => {
+      this.emitChokidarEvent(event, absPath, stats);
+    });
+    watcher.watchPath(rootPath);
+    this.watchers.set(rootPath, watcher);
+    this.deadWorkspaces.delete(rootPath);
+  }
+
+  /**
+   * Loads a workspace whose folder was missing when the roots were loaded.
+   * The root and each path below it reach the consumers as `addDir` and `add`
+   * events, as a folder that appears does.
+   *
+   * @throws when the path is not a missing workspace, or its folder is still
+   *         not there
+   */
+  public async loadMissingWorkspace(rootPath: string): Promise<void> {
+    if (!this.deadWorkspaces.has(rootPath)) {
+      throw new Error(`[FSAL] Cannot load ${rootPath}: It is not a missing workspace`);
+    }
+    if (!(await this.isDir(rootPath))) {
+      throw new Error(trans('The folder "%s" of the workspace is still missing.', rootPath));
+    }
+
+    this.watchRoot(rootPath);
+    for (const childPath of await this.readDirectoryRecursively(rootPath)) {
+      const descriptor = await this.getDescriptorFor(childPath, false);
+      this.publishEvent({
+        event: descriptor.type === "directory" ? "addDir" : "add",
+        descriptor,
+      });
+    }
+    this.refreshIgnoreRules();
   }
 
   /**
@@ -712,6 +776,10 @@ export default class FSAL extends ProviderContract {
     const { openFiles, openWorkspaces } = this._config.get().app;
     const pathsToIndex: string[] = [];
     for (const file of openFiles) {
+      if (!examinePath(file, true).examined) {
+        this._logger.warning(`[FSAL] Not re-indexing ${file}: The filesystem cannot examine it.`);
+        continue;
+      }
       if (!(await this.isFile(file))) {
         this._logger.warning(`[FSAL] Could not re-index standalone file ${file}: File not found.`);
         continue;
@@ -1282,6 +1350,10 @@ export default class FSAL extends ProviderContract {
     absPath: string,
     avoidDiskAccess: boolean = true,
   ): Promise<AnyDescriptor> {
+    if (this.deadWorkspaces.has(absPath)) {
+      return this.loadDummyDirectoryDescriptor(absPath);
+    }
+
     if (avoidDiskAccess) {
       const cacheHit = await this._cache.get(absPath);
       if (
@@ -1290,10 +1362,6 @@ export default class FSAL extends ProviderContract {
       ) {
         return cacheHit;
       }
-    }
-
-    if (this.deadWorkspaces.has(absPath)) {
-      return this.loadDummyDirectoryDescriptor(absPath);
     }
 
     // A path that the filesystem does not let the application examine (no
@@ -1406,10 +1474,13 @@ export default class FSAL extends ProviderContract {
    * @return  {Promise<AnyDescriptor>[]}           The children.
    */
   public async readDirectory(absPath: string): Promise<AnyDescriptor[]> {
+    // A missing workspace lists no children until "Check for directory" loads it.
+    if (this.deadWorkspaces.has(absPath)) {
+      return [];
+    }
     return readDirectoryFromDisk(
       absPath,
       this.ignoreFilter,
-      this.deadWorkspaces.has(absPath),
       async (childPath) => await this.getDescriptorFor(childPath),
       this._logger,
     );

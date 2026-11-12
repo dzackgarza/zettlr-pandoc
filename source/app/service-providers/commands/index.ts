@@ -214,6 +214,10 @@ export type ApplicationIPCContract = {
     request: { payload: { path: string; name: string } };
     response: unknown;
   };
+  "rescan-dir": {
+    request: { payload: { path: string } };
+    response: unknown;
+  };
   export: {
     request: { payload: ExportIPCAPI };
     response: unknown;

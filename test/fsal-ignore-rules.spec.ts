@@ -118,7 +118,6 @@ describe("FSAL listing under ignore rules", function () {
     const children = await readDirectoryFromDisk(
       path.join(root, "coble"),
       ignoreFilter,
-      false,
       getDescriptor,
       logger,
     );

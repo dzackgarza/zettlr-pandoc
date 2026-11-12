@@ -146,17 +146,13 @@ export function displayDirContext(
           payload: { itemPath: dirObject.path },
         } as WindowControlsIPCAPI);
         break;
-      case "menu.project_build":
-        ipcRenderer.send("message", {
-          command: "dir-project-export",
-          content: { path: dirObject.path },
-        });
-        break;
       case "menu.rescan_dir":
-        ipcRenderer.send("message", {
-          command: "rescan-dir",
-          content: { path: dirObject.path },
-        });
+        ipcRenderer
+          .invoke("application", {
+            command: "rescan-dir",
+            payload: { path: dirObject.path },
+          })
+          .catch((err) => reportError(err));
     }
   });
 }
