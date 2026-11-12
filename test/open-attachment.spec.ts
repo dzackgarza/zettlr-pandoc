@@ -30,10 +30,11 @@ import { existsSync } from "fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import type { CiteprocConfig } from "source/app/service-providers/citeproc";
 import CiteprocProvider from "source/app/service-providers/citeproc";
-import OpenAttachment from "source/app/service-providers/commands/open-attachment";
+import OpenAttachment, {
+  type OpenAttachmentServices,
+} from "source/app/service-providers/commands/open-attachment";
 import type DocumentManager from "source/app/service-providers/documents";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
@@ -69,7 +70,7 @@ describe("Open attachment of a citation", function () {
   let directory = "";
   let notePath = "";
   let openedLog = "";
-  let originalPath: string | undefined;
+  let originalPath: string;
   let citeproc: CiteprocProvider;
   let documents: DocumentManager;
   let command: OpenAttachment;
@@ -95,8 +96,10 @@ describe("Open attachment of a citation", function () {
     const xdgOpen = path.join(bin, "xdg-open");
     await writeFile(xdgOpen, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${openedLog}'\n`);
     await chmod(xdgOpen, 0o755);
-    originalPath = process.env.PATH;
-    process.env.PATH = `${bin}:${originalPath ?? ""}`;
+    const inherited = process.env.PATH;
+    assert.ok(inherited !== undefined, "the test process has a PATH");
+    originalPath = inherited;
+    process.env.PATH = `${bin}:${originalPath}`;
 
     await rm(path.join(userData, "citeproc-cache"), { recursive: true, force: true });
     const config: CiteprocConfig = {
@@ -114,7 +117,7 @@ describe("Open attachment of a citation", function () {
     );
     await citeproc.boot();
     documents = await bootDocumentManager([directory]);
-    const app = {
+    const app: OpenAttachmentServices = {
       log: new LogProvider(),
       citeproc,
       documents,
@@ -124,7 +127,7 @@ describe("Open attachment of a citation", function () {
       // A loopback port that no server holds: Zotero does not answer.
       config: { get: () => ({ zotero: { localServer: "http://127.0.0.1:9" } }) },
     };
-    command = new OpenAttachment(app as unknown as AppServiceContainer);
+    command = new OpenAttachment(app);
   });
 
   after(async function () {

@@ -16,14 +16,30 @@
  */
 
 import { trans } from "@common/i18n-main";
+import type CiteprocProvider from "@providers/citeproc";
+import type DocumentManager from "@providers/documents";
+import type FSAL from "@providers/fsal";
+import type LogProvider from "@providers/log";
 import ky from "ky";
-import type { AppServiceContainer } from "source/app/app-service-container";
 import { documentBibliography } from "source/app/util/document-bibliographies";
 import { openPath } from "source/app/util/open-path";
 import ZettlrCommand from "./zettlr-command";
 
-export default class OpenAttachment extends ZettlrCommand {
-  constructor(app: AppServiceContainer) {
+/** The services that the command uses. */
+export interface OpenAttachmentServices {
+  log: Pick<LogProvider, "warning">;
+  documents: Pick<DocumentManager, "readDocumentText">;
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">;
+  citeproc: Pick<
+    CiteprocProvider,
+    "loadDatabases" | "hasBibTexAttachments" | "getBibTexAttachments"
+  >;
+  /** The origin of the Zotero local server. */
+  config: { get: () => { zotero: { localServer: string } } };
+}
+
+export default class OpenAttachment extends ZettlrCommand<OpenAttachmentServices> {
+  constructor(app: OpenAttachmentServices) {
     super(app, "open-attachment");
   }
 

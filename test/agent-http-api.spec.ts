@@ -1314,26 +1314,36 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
    * The workspace listings of a workspace that the real FSAL holds, for each
    * `include` that lists the paths of a workspace.
    */
+  /** The listing of each `include` that names files: its status, its body and its files. */
   async function listingsOfFsalWorkspace(root: string): Promise<
     Array<{
       status: number;
       body: string;
+      files: Array<{ path: string }>;
+      notListed: Array<{ path: string; cause: string }>;
     }>
   > {
     const booted = await bootFsal(root);
     fsal = booted;
     walk = async (directoryPath: string) => await booted.readDirectoryRecursively(directoryPath);
     openWorkspaces = [root];
-    const responses = [];
-    for (const include of ["files", "documents"]) {
-      responses.push(
-        await httpRequest(
-          "GET",
-          `/v1/workspaces?workspaceId=${encodeURIComponent(root)}&include=${include}`,
-        ),
+    const listings = [];
+    for (const include of ["files", "documents"] as const) {
+      const response = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(root)}&include=${include}`,
       );
+      assert.equal(response.status, 200, response.body);
+      const body = JSON.parse(response.body) as Record<
+        typeof include,
+        Array<{ path: string }> | undefined
+      > & { notListed?: Array<{ path: string; cause: string }> };
+      const files = body[include];
+      assert.ok(files !== undefined, `the listing of ${include} names its ${include}`);
+      assert.ok(body.notListed !== undefined, `the listing of ${include} has notListed`);
+      listings.push({ ...response, files, notListed: body.notListed });
     }
-    return responses;
+    return listings;
   }
 
   it("names a workspace whose folder the filesystem does not let it examine (#210)", async function () {
@@ -1345,16 +1355,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(path.join(root, "genus.md"), "# Genus\n", "utf8");
     chmodSync(parent, 0o600);
     try {
-      for (const response of await listingsOfFsalWorkspace(root)) {
-        assert.equal(response.status, 200, response.body);
-        const body = JSON.parse(response.body) as {
-          files?: unknown[];
-          documents?: unknown[];
-          notListed: Array<{ path: string; cause: string }>;
-        };
-        assert.deepEqual(body.files ?? body.documents, []);
+      for (const listing of await listingsOfFsalWorkspace(root)) {
+        assert.deepEqual(listing.files, []);
         assert.deepEqual(
-          body.notListed.map((folder) => folder.path),
+          listing.notListed.map((folder) => folder.path),
           [root],
         );
       }
@@ -1373,20 +1377,14 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     writeFileSync(rules, "drafts/\n", "utf8");
     chmodSync(rules, 0o000);
     try {
-      for (const response of await listingsOfFsalWorkspace(root)) {
-        assert.equal(response.status, 200, response.body);
-        const body = JSON.parse(response.body) as {
-          files?: Array<{ path: string }>;
-          documents?: Array<{ path: string }>;
-          notListed?: Array<{ path: string; cause: string }>;
-        };
+      for (const listing of await listingsOfFsalWorkspace(root)) {
         assert.deepEqual(
-          (body.files ?? body.documents ?? []).map((file) => path.relative(root, file.path)),
+          listing.files.map((file) => path.relative(root, file.path)),
           [],
           "a file that the rules may hide is not listed",
         );
         assert.deepEqual(
-          body.notListed?.map((folder) => folder.path),
+          listing.notListed.map((folder) => folder.path),
           [root],
         );
       }
