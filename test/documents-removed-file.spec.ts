@@ -11,7 +11,9 @@
  *                  The REAL DocumentManager keeps a document whose text is
  *                  not on disk and tells each window what a save does: it
  *                  writes the file again, or, for a document with a review,
- *                  it is refused. A document whose text is on disk closes.
+ *                  it is refused. An annotation of such a document is kept,
+ *                  and a proposal is refused with the cause. A document
+ *                  whose text is on disk closes (#210).
  *
  * END HEADER
  */
@@ -159,6 +161,62 @@ describe("Documents-provider removed file", function () {
       assert.fail("a save cannot compare a file that is not there with the review");
     }
     assert.equal(saved.refusal.reason, "disk-unreadable");
+  });
+
+  it("takes an annotation on a kept document, which a save writes with the file", async function () {
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+    ]);
+    await removeOnDisk();
+    const documentId = provider.ensureDocumentId(filePath);
+
+    const created = await provider.createAnnotation(
+      documentId,
+      "owner",
+      PREFIX.length,
+      PREFIX.length + 9,
+      "Say which group.",
+      0,
+    );
+    if ("ok" in created) {
+      assert.fail(`the annotation is refused: ${created.message}`);
+    }
+    assert.equal(created.instruction, "Say which group.");
+
+    assert.deepEqual(await provider.saveFile(filePath), { ok: true });
+    assert.equal(readFileSync(filePath, "utf-8"), `${PREFIX}${SOURCE}`);
+    assert.deepEqual(
+      provider.annotationQueries.getAnnotations(documentId).items.map((item) => item.instruction),
+      ["Say which group."],
+      "the annotation stays with the saved file",
+    );
+  });
+
+  it("refuses a proposal for a kept document with the cause", async function () {
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 0, to: 0 }, insert: PREFIX },
+    ]);
+    await removeOnDisk();
+    const documentId = provider.ensureDocumentId(filePath);
+    const working = `${PREFIX}${SOURCE}`;
+
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text(working),
+      [
+        {
+          description: "Name the symmetry",
+          patch: createPatch("document", working, `${PREFIX}${TARGET}`, "", "", { context: 0 }),
+        },
+      ],
+      "removed-file-proposal",
+      0,
+    );
+    if (submitted.ok) {
+      assert.fail("a review needs the file that its proposals are compared with");
+    }
+    assert.equal(submitted.code, "DOCUMENT_UNREADABLE");
+    assert.equal(provider.readMarkdownBufferContent(filePath), working, "the text stays");
   });
 
   it("closes a document whose text is on disk", async function () {
