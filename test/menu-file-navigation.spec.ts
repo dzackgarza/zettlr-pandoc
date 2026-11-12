@@ -24,7 +24,11 @@ import {
   MenuItem,
   type MenuItemConstructorOptions,
 } from "electron";
+import { mkdtemp, rm, unlink, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
+import LogProvider from "source/app/service-providers/log";
 import getDarwinMenu from "source/app/service-providers/menu/menu.darwin";
 import getWin32Menu from "source/app/service-providers/menu/menu.win32";
 import type {
@@ -35,6 +39,8 @@ import type {
   MenuRecentDocuments,
   MenuWindows,
 } from "source/app/service-providers/menu/menu-dependencies";
+import RecentDocumentsProvider from "source/app/service-providers/recent-docs";
+import { bootDocumentManager } from "./documents-provider-seam";
 import { sentMessagesFor } from "./headless-electron-harness.cjs";
 
 Object.defineProperty(globalThis, "__UPDATES_DISABLED__", {
@@ -223,8 +229,26 @@ describe("Edit ▸ authoring source files", function () {
 });
 
 describe("File ▸ Recent files", function () {
-  it("win32/linux: a recent file that is gone gives one error window that names it", async function () {
-    const gone = "/tmp/zettlr-menu-spec/a-removed-recent-document.md";
+  let workspace = "";
+
+  beforeEach(async function () {
+    workspace = await mkdtemp(path.join(tmpdir(), "zettlr-menu-recent-"));
+  });
+
+  afterEach(async function () {
+    await rm(workspace, { recursive: true, force: true });
+  });
+
+  it("win32/linux: a recent file that another program removed gives one error window that names it", async function () {
+    const gone = path.join(workspace, "orbits.md");
+    await writeFile(gone, "# Orbits\n");
+    // The real list and the real document manager: the author opened the
+    // file once, and the menu was built while the file was on disk.
+    const recentDocs = new RecentDocumentsProvider(new LogProvider(), {
+      get: () => ({ ui: { recentFilesLimit: 10 } }),
+    });
+    recentDocs.add(gone);
+    const documents = await bootDocumentManager([workspace]);
     const shown: Array<{ title: string; message: string }> = [];
     const windows: MenuWindows = {
       showAboutWindow: () => {},
@@ -236,17 +260,10 @@ describe("File ▸ Recent files", function () {
         shown.push({ title, message });
       },
     };
-    // The refusal of `DocumentManager.openFile` for a path that is no file.
-    const documents: MenuDocuments = {
-      newWindow: () => {},
-      openFile: async (_windowId, _leafId, filePath) => {
-        throw new Error(`Could not open file ${filePath}: Not an existing file.`);
-      },
-    };
     const template = getWin32Menu(
       { error: () => {} },
       new TestMenuConfig(),
-      { get: () => [gone], clear: () => {} },
+      recentDocs,
       { run: async () => undefined },
       windows,
       documents,
@@ -256,12 +273,18 @@ describe("File ▸ Recent files", function () {
     const item = findItem(template, `menu.recent_docs.${gone}`);
     assert.ok(item?.click !== undefined, "the menu lists the recent file");
 
+    // Another program removes the file; the menu still lists it.
+    await unlink(gone);
     const focusedWindow = new BrowserWindow();
     item.click(new MenuItem(item), focusedWindow, { triggeredByAccelerator: false });
     focusedWindow.close();
-    await new Promise((resolve) => setImmediate(resolve));
+    const deadline = Date.now() + 5_000;
+    while (shown.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
     assert.equal(shown.length, 1, "one refused open opens one error window");
-    assert.ok(shown[0].message.includes(gone), `the message does not name ${gone}`);
+    assert.ok(shown[0].message.includes(gone), `the message names ${gone}: ${shown[0].message}`);
+    await documents.shutdown();
   });
 });
