@@ -360,6 +360,10 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         saveFile: async (_filePath: string): Promise<string | undefined> => {
           throw new Error("This spec shows no save dialog");
         },
+        // No operation of this spec opens a file with the desktop.
+        showErrorMessage: (_title: string, _message: string, _contents?: string) => {
+          throw new Error("This spec opens no file with the desktop");
+        },
       },
       // The manager drives the references provider's live overlay at its
       // mutation points (issue #53); this spec asserts the agent API, so

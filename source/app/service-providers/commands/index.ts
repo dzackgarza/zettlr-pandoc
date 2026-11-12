@@ -42,10 +42,11 @@ import type {
 import type { WorkspaceReferenceEdit } from "@dts/common/references";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
-import { clipboard, ipcMain, nativeImage, shell, type WebContents } from "electron";
+import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
+import { openPath } from "source/app/util/open-path";
 import type { LanguageToolIgnoredRuleEntry } from "../config/get-config-template";
 import type { RecentFiles } from "../recent-docs";
 import AddLanguageToolIgnoreRule from "./add-language-tool-ignore-rule";
@@ -274,11 +275,11 @@ export type ApplicationIPCContract = {
     request: { payload: { citekey: string; filePath: string } };
     response: unknown;
   };
-  // Answered inline by run(): Electron delegates the path to the desktop's
-  // configured MIME handler and returns an empty string on success.
+  // Answered inline by run(): the desktop opens the path with the
+  // application of its type (`openPath`). A refusal rejects.
   "open-desktop-path": {
     request: { payload: string };
-    response: string;
+    response: void;
   };
   "edit-text-file": {
     request: { payload: string };
@@ -556,7 +557,8 @@ export default class CommandProvider extends ProviderContract {
       this._app.windows.showPreferences(payload as PreferenceNavigationTarget | undefined);
       return true;
     } else if (command === "open-desktop-path" && typeof payload === "string") {
-      return await shell.openPath(payload);
+      await openPath(payload);
+      return;
     } else if (command === "edit-text-file" && typeof payload === "string") {
       return await launchKitty(path.dirname(payload), ["nvim", payload]);
     } else if (

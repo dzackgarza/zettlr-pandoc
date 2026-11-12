@@ -822,13 +822,9 @@ function openDesktopPath(target: string | undefined, missingMessage: string): vo
     showToast(missingMessage, "error");
     return;
   }
+  // The dispatcher shows a refusal (`command-failed`).
   ipcRenderer
     .invoke("application", { command: "open-desktop-path", payload: target })
-    .then((error) => {
-      if (error !== "") {
-        showToast(trans("Could not open %s: %s", target, error), "error");
-      }
-    })
     .catch((err) => reportError(`Could not open ${target}`, err));
 }
 

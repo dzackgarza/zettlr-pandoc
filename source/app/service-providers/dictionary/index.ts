@@ -30,6 +30,7 @@ import { promises as fs } from "fs";
 import Nodehun from "nodehun/build/Release/Nodehun.node";
 // import { Nodehun } from 'nodehun'
 import path from "path";
+import { openPath } from "source/app/util/open-path";
 import {
   appendPortableProseCompletion,
   normalizeProseCompletionEntry,
@@ -137,7 +138,7 @@ export default class DictionaryProvider extends ProviderContract {
       } else if (command === "add-prose-completion") {
         return this.addProseCompletion(message.payload.entry);
       } else if (command === "open-prose-completion-file") {
-        return shell.openPath(this._proseCompletionFile);
+        return openPath(this._proseCompletionFile);
       }
     });
 

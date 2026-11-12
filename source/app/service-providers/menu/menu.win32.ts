@@ -18,6 +18,7 @@ import { trans } from "@common/i18n-main";
 import { DocumentType } from "@dts/common/documents";
 import { app, BrowserWindow, dialog, type MenuItemConstructorOptions, shell } from "electron";
 import path from "path";
+import { openPath } from "source/app/util/open-path";
 import { cmShortcutToElectron } from "source/common/util/shortcuts";
 import { zoomIn, zoomOut } from "./font-zoom";
 import type {
@@ -311,16 +312,9 @@ export default function getMenu(
           label: trans("Import dictionary…"),
           click: function (_menuitem, _focusedWindow) {
             const msg = "[Menu Provider] Could not open dictionary directory: ";
-            shell
-              .openPath(path.join(app.getPath("userData"), "/dict"))
-              .then((potentialError) => {
-                if (potentialError !== "") {
-                  logger.error(msg + potentialError);
-                }
-              })
-              .catch((err: Error) => {
-                logger.error(msg + err.message, err);
-              });
+            openPath(path.join(app.getPath("userData"), "/dict")).catch((err: Error) => {
+              logger.error(msg + err.message, err);
+            });
           },
         },
         {

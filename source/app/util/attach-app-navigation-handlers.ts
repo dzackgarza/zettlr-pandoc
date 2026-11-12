@@ -17,6 +17,7 @@ import { spawn } from "node:child_process";
 import { reportError } from "@common/util/error-reporting";
 import { app, shell } from "electron";
 import type LogProvider from "../service-providers/log";
+import { openPath } from "./open-path";
 
 /**
  * Takes an URL and decides if we should open it externally (web browser,
@@ -46,8 +47,8 @@ function maybeOpenExternal(url: string): void {
     // unlike UNIX, absolute paths start with a letter, not a slash)
     const leadingSlash = unencoded.startsWith("/") && process.platform === "win32";
     const realPath = leadingSlash ? unencoded.substring(1) : unencoded;
-    // We need to remove the protocol to ensure shell.openPath works.
-    shell.openPath(realPath).catch((err) => {
+    // The path without the protocol goes to the desktop.
+    openPath(realPath).catch((err: Error) => {
       reportError(`[Window Manager] Could not open path ${realPath}: ${err.message}.`);
     });
   } else {

@@ -15,9 +15,10 @@
 import { trans } from "@common/i18n-main";
 import { showNativeNotification } from "@common/util/show-notification";
 import type LogProvider from "@providers/log";
-import { dialog, shell } from "electron";
+import { dialog } from "electron";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { openPath } from "source/app/util/open-path";
 import { isHtmlWriter, isTexWriter, PANDOC_WRITERS } from "source/common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
 import type { DirDescriptor, ProjectSettings } from "source/types/common/fsal";
@@ -170,12 +171,12 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     trans('Project "%s" successfully exported. Click to show.', config.title),
     trans("Project Export"),
     () => {
-      openDirectory(app.log, dir.path);
+      openShowingRefusal(app, dir.path);
     },
   );
 
   if (!notificationShown) {
-    openDirectory(app.log, dir.path);
+    openShowingRefusal(app, dir.path);
   }
 
   return true;
@@ -354,9 +355,7 @@ async function exportUsingProfile(
     title: trans('Project "%s" has been exported.', config.title),
     info: trans("Project has been exported to %s.", readableFormat),
     successInteraction: () => {
-      shell.openPath(result.targetFile).catch((err) => {
-        app.log.error(`[Project] Could not open file '${result.targetFile}'`, err);
-      });
+      openShowingRefusal(app, result.targetFile);
     },
   });
   task.endTask("success");
@@ -387,13 +386,17 @@ function templateOf(config: ProjectSettings, profile: ValidPandocProfile): strin
   return undefined;
 }
 
-function openDirectory(logger: LogProvider, dirPath: string): void {
-  // Whoever thought it would be great to have an async function RESOLVE
-  // with the error instead of rejecting was definitely a f***ing genius.
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  shell.openPath(dirPath).then((error) => {
-    if (error !== "") {
-      logger.error(`[Project Export] Error opening the directory: ${error}`, error);
-    }
+/**
+ * Opens an export or the Project folder with the application of the desktop.
+ * The export does not wait for that application; a refusal is a message of
+ * its own.
+ */
+function openShowingRefusal(
+  app: Pick<ProjectExportServices, "log" | "windows">,
+  target: string,
+): void {
+  openPath(target).catch((refusal: Error) => {
+    app.log.error(refusal.message, refusal);
+    app.windows.showErrorMessage(trans("Could not open the export"), refusal.message);
   });
 }

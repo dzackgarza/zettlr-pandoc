@@ -28,6 +28,7 @@ import { app as electronApp, shell } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { openPath } from "source/app/util/open-path";
 import { makeExport } from "./exporter";
 import { runShellCommand } from "./exporter/run-shell-command";
 import type { ExporterOptions } from "./exporter/types";
@@ -292,14 +293,19 @@ async function runDocumentExport(
       const readableFormat =
         profile.writer in PANDOC_WRITERS ? PANDOC_WRITERS[profile.writer] : profile.writer;
       showNativeNotification(trans("Exported to %s", readableFormat));
+      // The export is done when the file is written. An open of the file
+      // that the desktop refuses is a message of its own, and the command
+      // does not wait for the application that shows the file.
+      const openExportedFile = (): void => {
+        openPath(output.targetFile).catch((refusal: Error) => {
+          app.log.error(refusal.message, refusal);
+          app.windows.showErrorMessage(trans("Could not open the exported file"), refusal.message);
+        });
+      };
       task.update({
         title: trans("File %s has been exported", path.basename(file)),
         info: trans("File has been exported to %s", readableFormat),
-        successInteraction: () => {
-          shell.openPath(output.targetFile).catch((err) => {
-            app.log.error(`[Project] Could not open file '${output.targetFile}'`, err);
-          });
-        },
+        successInteraction: openExportedFile,
       });
       task.endTask("success");
 
@@ -308,10 +314,7 @@ async function runDocumentExport(
         if (["textbundle", "textpack"].includes(profile.writer)) {
           shell.showItemInFolder(output.targetFile);
         } else {
-          const potentialError = await shell.openPath(output.targetFile);
-          if (potentialError !== "") {
-            throw new Error("Could not open exported file: " + potentialError);
-          }
+          openExportedFile();
         }
       }
     } else {

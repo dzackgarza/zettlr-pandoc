@@ -1222,10 +1222,18 @@ of an isolated instance are in the first comment of #132.
   also for the save shortcut. A refused save leaves the text in the editor
   with the status "Unsaved changes".
 - **An open that the desktop refuses rejects.** `openPath`
-  (`app/util/open-path.ts`) reads the answer of `shell.openPath`, which is
-  the words of the refusal. New code that opens a path with the desktop
-  calls it.
-- **Proof:** `test/assets-authored-files.spec.ts`,
+  (`app/util/open-path.ts`) is the one open of a path with the desktop; no
+  other code calls `shell.openPath`. On Linux it starts `xdg-open` and reads
+  its exit code: since electron/electron#48079 the promise of
+  `shell.openPath` never settles there, and a caller that waits for it waits
+  for ever. The promise of `openPath` settles when `xdg-open` ends; outside a
+  desktop that `xdg-open` knows (Hyprland), that is when the author closes
+  the application. A caller that has no work after the open does not wait:
+  it shows the refusal in an error window that names the file (the export
+  commands, a file that the app does not open itself). A command that is
+  only the open waits, and its refusal is shown once: by the dispatcher
+  (§15) or by `showRefusal` in the window that asked.
+- **Proof:** `e2e/export-open-refused.spec.ts`, `test/assets-authored-files.spec.ts`,
   `e2e/assets-refused-save.spec.ts`.
 
 ## Debugging entry points

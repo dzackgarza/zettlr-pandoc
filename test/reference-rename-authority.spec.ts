@@ -161,6 +161,10 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       saveFile: async (_filePath: string): Promise<string | undefined> => {
         throw new Error("This spec shows no save dialog");
       },
+      // No operation of this spec opens a file with the desktop.
+      showErrorMessage: (_title: string, _message: string, _contents?: string) => {
+        throw new Error("This spec opens no file with the desktop");
+      },
     },
     references: {
       reportAuthorityBuffer: (filePath: string, immediate?: boolean) => {

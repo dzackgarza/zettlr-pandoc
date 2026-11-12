@@ -70,11 +70,12 @@ import { type TabManager } from "@providers/documents/document-tree/tab-manager"
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
-import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions, shell } from "electron";
+import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
 import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
+import { openPath } from "source/app/util/open-path";
 import { throwFailures } from "source/app/util/run-each-step";
 import {
   getDocumentTypeForExtension,
@@ -179,7 +180,12 @@ type DocumentManagerApp = {
   stats: Pick<AppServiceContainer["stats"], "updateCounts">;
   windows: Pick<
     AppServiceContainer["windows"],
-    "askSaveChanges" | "getFirstMainWindow" | "getMainWindowKey" | "saveFile" | "tellMainWindows"
+    | "askSaveChanges"
+    | "getFirstMainWindow"
+    | "getMainWindowKey"
+    | "saveFile"
+    | "showErrorMessage"
+    | "tellMainWindows"
   >;
 };
 
@@ -2171,6 +2177,18 @@ current contents from the editor somewhere else, and restart the application.`,
    *
    * @return {Promise<boolean>} True if it successfully opens the file
    */
+  /**
+   * Opens a path with the application of the desktop. The open of a
+   * document does not wait for that application; a refusal is a message
+   * of its own.
+   */
+  private _openExternally(filePath: string): void {
+    openPath(filePath).catch((refusal: Error) => {
+      this._app.log.error(refusal.message, refusal);
+      this._app.windows.showErrorMessage(trans("Could not open the file"), refusal.message);
+    });
+  }
+
   public async openFile(
     windowId: string | undefined,
     leafId: string | undefined,
@@ -2187,7 +2205,7 @@ current contents from the editor somewhere else, and restart the application.`,
       // folders, so we just quickly check for that, and open them (similar to
       // non-Markdown files a few lines below).
       if (isDir(filePath)) {
-        await shell.openPath(filePath);
+        this._openExternally(filePath);
         return false;
       }
 
@@ -2212,7 +2230,7 @@ current contents from the editor somewhere else, and restart the application.`,
       }
 
       if (shouldOpenExternally) {
-        await shell.openPath(filePath);
+        this._openExternally(filePath);
         return false;
       }
     }

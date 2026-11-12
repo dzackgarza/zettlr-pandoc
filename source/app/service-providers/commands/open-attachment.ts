@@ -25,10 +25,10 @@ import { showNativeNotification } from "@common/util/show-notification";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
-import { shell } from "electron";
 import ky from "ky";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { openPath } from "source/app/util/open-path";
 import ZettlrCommand from "./zettlr-command";
 
 /**
@@ -99,25 +99,15 @@ export default class OpenAttachment extends ZettlrCommand {
           `No attachment file that the library names for ${arg.citekey} is on disk. Asking Zotero.`,
         );
       } else {
-        const potentialError = await shell.openPath(attachments[0]);
-        if (potentialError !== "") {
-          this._app.log.error(
-            `Could not open the attachment ${attachments[0]} of ${arg.citekey}: ${potentialError}`,
-          );
-          showNativeNotification(
-            trans(
-              "Could not open attachment for key %s. Check the logs for more information.",
-              arg.citekey,
-            ),
-          );
-          return false;
-        }
+        // A refusal names the file; the dispatcher shows it.
+        await openPath(attachments[0]);
         return true;
       }
     }
 
     // Thanks to @retorquere, we can query the better bibtex JSON RPC
     // api to retrieve a full list of all attachments.
+    let attachment: string;
     try {
       // NOTE: We have replaced localhost with 127.0.0.1 since at some point
       // either got or Electron stopped resolving localhost there, resulting in
@@ -178,11 +168,7 @@ export default class OpenAttachment extends ZettlrCommand {
         );
       }
 
-      const potentialError = await shell.openPath(pdfAttachments[0]);
-      if (potentialError !== "") {
-        throw new Error(potentialError);
-      }
-      return true;
+      attachment = pdfAttachments[0];
     } catch (err: unknown) {
       if (appearsToHaveNoAttachments || err instanceof NoResultsError) {
         // Citekey appears not to have any attachments
@@ -212,5 +198,9 @@ export default class OpenAttachment extends ZettlrCommand {
       }
       return false;
     }
+
+    // A refusal names the file; the dispatcher shows it.
+    await openPath(attachment);
+    return true;
   }
 }
