@@ -1564,6 +1564,31 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.matchCount, 1);
   });
 
+  it("GET /v1/workspace/search names a folder that it could not list, and searches the other files (#210)", async function () {
+    const readablePath = path.join(scratch, "search-beside-locked.md");
+    const lockedFolder = path.join(scratch, "search-locked");
+    writeFileSync(readablePath, "The genus of a lattice.\n", "utf8");
+    mkdirSync(lockedFolder);
+    writeFileSync(path.join(lockedFolder, "form.md"), "The genus of a form.\n", "utf8");
+    chmodSync(lockedFolder, 0o000);
+
+    const found = await httpRequest("GET", "/v1/workspace/search?text=genus");
+    chmodSync(lockedFolder, 0o700);
+    assert.equal(found.status, 200, found.body);
+    const body = parseAs(found.body, "WorkspaceSearchResponse");
+    assert.deepEqual(
+      body.notSearched.map((entry) => ({ path: entry.path, name: entry.name })),
+      [{ path: lockedFolder, name: "search-locked" }],
+      "the answer names the folder whose files the search did not read",
+    );
+    assert.ok(body.notSearched[0].cause.length > 0, "the folder has the cause of the listing");
+    assert.deepEqual(
+      body.files.map((file) => file.path),
+      [readablePath],
+      "the file beside the folder is searched",
+    );
+  });
+
   it("GET /v1/documents/{id} returns document metadata", async function () {
     const filePath = path.join(scratch, "meta.md");
     const docId = await openFile(filePath, "content\n");
