@@ -21,7 +21,7 @@ the reported failure. That review is the next task after the merge.
 | Issues that #209 does not close | Fixed with a red proof, or found not reproducible with evidence on the issue | Open |
 
 Issues that #209 does not close: #115, #118, #123, #131, #132, #160, #181,
-#197, #198, #199, #202, #203, #204, #210 (four updater defects), #215, #216
+#197, #198, #199, #202, #203, #204, #210 (four updater defects), #216
 (not reproduced).
 
 ## Next work
@@ -31,9 +31,7 @@ Issues that #209 does not close: #115, #118, #123, #131, #132, #160, #181,
 2. Review the red tests of #209 against their issues (the first item
    above). Start with the fixes that #210 names as answers to constructed
    failures.
-3. Fix #215: the first-start e2e spec uses the Agent API port of a running
-   desktop app.
-4. Work the remaining issues by root cause: #197 and its children (#198,
+3. Work the remaining issues by root cause: #197 and its children (#198,
    #199, #202, #203, #204) are one family; #132 is the responsiveness
    backlog.
 
