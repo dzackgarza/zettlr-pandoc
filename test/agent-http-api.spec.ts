@@ -2567,6 +2567,30 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("answers PERSISTENCE_FAILED with the cause when the folder refuses a new entry (#210)", async function () {
+    const locked = path.join(scratch, "locked-folder");
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o555);
+    const refused = await Promise.all(
+      [
+        { kind: "file", path: "locked-folder/new.md", content: "# New\n" },
+        { kind: "folder", path: "locked-folder/sub" },
+      ].map((entry) =>
+        httpRequest("POST", "/v1/workspace/entries", {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ workspaceId: scratch, ...entry }),
+        }),
+      ),
+    );
+    chmodSync(locked, 0o755);
+    for (const response of refused) {
+      assert.equal(response.status, 500, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "PERSISTENCE_FAILED");
+    }
+    assert.equal(existsSync(path.join(locked, "new.md")), false);
+    assert.equal(existsSync(path.join(locked, "sub")), false);
+  });
+
   it("exposes the complete canonical macro inventory with source and MathJax metadata", async function () {
     const response = await httpRequest("GET", "/v1/macros");
     assert.equal(response.status, 200, response.body);
