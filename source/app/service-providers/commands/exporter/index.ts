@@ -27,6 +27,7 @@ import type AssetsProvider from "@providers/assets";
 import { type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type { ConfigOptions } from "@providers/config/get-config-template";
+import type FSAL from "@providers/fsal";
 import type LogProvider from "@providers/log";
 import { app } from "electron";
 import { promises as fs } from "fs";
@@ -146,8 +147,10 @@ type DefaultsWriterConfig = {
 /**
  * Runs the exporter.
  *
- * @param   {ExporterOptions}  options             The options needed to facilitate the export.
- * @param   {any}              [formatOptions={}]  These are options possibly required by a plugin.
+ * @param   {ExporterOptions}  options    The options needed to facilitate the export.
+ * @param   {WikilinkIndex}    wikilinks  The index that resolves the wikilinks.
+ * @param   fsal                          The folders of the documents, for the
+ *                                        bibliography of a PDF export.
  *
  * @return  {Promise<ExporterOutput>}              Resolves with an info object.
  */
@@ -157,6 +160,7 @@ export async function makeExport(
   config: ConfigProvider,
   assets: AssetsProvider,
   wikilinks: WikilinkIndex,
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">,
 ): Promise<ExporterOutput> {
   // The text of each document. Pandoc resolves relative resources against
   // its working directory, not against the folder of an input.
@@ -201,11 +205,12 @@ export async function makeExport(
     // A template of the export (the LaTeX template of a Project) goes before
     // the template of the setting, as it does for a Pandoc profile.
     const ownTemplate = options.defaultsOverride?.template;
-    return await runRecipeExport(
-      options,
-      ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
+    return await runRecipeExport(options, {
+      latexTemplate: ownTemplate !== undefined ? ownTemplate : config.get().export.latexTemplate,
       wikilinks,
-    );
+      fsal,
+      mainLibrary: config.get().export.cslLibrary,
+    });
   } else if (options.profile.writer === "script") {
     const script = config.get().export.scripts.find((s) => s.name === options.profile.name);
     if (script === undefined) {

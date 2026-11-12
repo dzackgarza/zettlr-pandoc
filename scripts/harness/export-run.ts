@@ -20,6 +20,7 @@ import os from 'os'
 import YAML from 'yaml'
 import { WikilinkIndex } from '../../source/common/util/wikilink-resolution'
 import { hasMarkdownExt } from '../../source/common/util/file-extention-checks'
+import { parse as parseDirectory } from '../../source/app/service-providers/fsal/fsal-directory'
 
 function stderr (message: string): void {
   process.stderr.write(`${message}\n`)
@@ -96,7 +97,9 @@ async function main (): Promise<void> {
     cwd: path.dirname(sourceFile)
   }
 
-  const out = await makeExport(options, log, config, assets, await workspaceIndex(sourceFile, appConfig))
+  // The folders of the document are read from disk, as the FSAL reads them.
+  const folders = { getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath) }
+  const out = await makeExport(options, log, config, assets, await workspaceIndex(sourceFile, appConfig), folders)
   console.log('EXIT', out.code, 'TARGET', out.targetFile)
   console.log('STDERR TAIL:', out.stderr.slice(-2).join(' | '))
 }

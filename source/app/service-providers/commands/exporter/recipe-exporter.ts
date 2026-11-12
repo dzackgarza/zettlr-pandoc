@@ -9,8 +9,10 @@
  *
  * Description:     Delegates PDF export to the authoritative ~/.pandoc
  *                  `compile-pandoc` just recipe (pandoc md->tex + latexmk -pdf,
- *                  with pandoc-config's own filters, flags, bibliography, and
- *                  engine). The app owns none of the pandoc/LaTeX pipeline:
+ *                  with pandoc-config's own filters, flags and engine). The
+ *                  app gives the recipe the inputs, the title, the template,
+ *                  the wikilink resolutions and the bibliography of the
+ *                  documents. It owns none of the pandoc/LaTeX pipeline:
  *                  ~/.pandoc/justfile is the single source of truth, so exports
  *                  match what `just pandoc::compile-pandoc` produces on the CLI.
  *
@@ -19,10 +21,12 @@
 
 import { wikilinkExportMap } from "@common/util/wikilink-export";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
+import type FSAL from "@providers/fsal";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import sanitize from "sanitize-filename";
+import { bibliographyFiles, documentBibliography } from "../../../util/document-bibliographies";
 import { runProcess } from "./run-shell-command";
 import { splitLines } from "./split-lines";
 import type { ExporterOptions, ExporterOutput, MinimalFile } from "./types";
@@ -46,22 +50,62 @@ function recipeInput(file: MinimalFile, runDir: string): string {
   return path.relative(runDir, file.path).split(path.sep).join("/");
 }
 
+/** What the app gives a recipe run beside its inputs. */
+export interface RecipeContext {
+  /**
+   * The LaTeX template of the export: that of the Project, else the setting
+   * export.latexTemplate. An empty string lets the recipe use its own default.
+   */
+  latexTemplate: string;
+  /** The workspace index that resolves the wikilinks. */
+  wikilinks: WikilinkIndex;
+  /** The folders of the documents, for their Projects. */
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">;
+  /** The main library: the setting export.cslLibrary. */
+  mainLibrary: string;
+}
+
+/**
+ * The value of PANDOC_BIB_SOURCE for the inputs: the files of the
+ * bibliography of each input, as the editor has it (#198), in the order of
+ * the inputs and without repeats, apart by ':'. An empty value is an export
+ * without a bibliography.
+ */
+async function recipeBibliography(
+  inputs: Array<{ path: string; markdown: string }>,
+  context: RecipeContext,
+): Promise<string> {
+  const files: string[] = [];
+  for (const input of inputs) {
+    const { database } = await documentBibliography(context.fsal, input.path, input.markdown);
+    for (const file of bibliographyFiles(database, context.mainLibrary)) {
+      if (!files.includes(file)) {
+        files.push(file);
+      }
+    }
+  }
+  const separated = files.find((file) => file.includes(":"));
+  if (separated !== undefined) {
+    throw new Error(
+      `Cannot give the bibliography ${separated} to the PDF recipe: its path holds ":", which separates the files of PANDOC_BIB_SOURCE`,
+    );
+  }
+  return files.join(":");
+}
+
 /**
  * Exports the source Markdown to PDF by delegating to the pandoc-config
  * `compile-pandoc` recipe (single file) or the companion
  * `compile-pandoc-project` recipe (ordered Project inputs, issue #1 Phase 7).
  *
- * @param   options        The exporter options (source files, target dir).
- * @param   latexTemplate  The LaTeX template of the export: that of the
- *                         Project, else the setting export.latexTemplate. An
- *                         empty string lets the recipe use its own default.
- * @param   wikilinks      The workspace index that resolves the wikilinks.
+ * @param   options  The exporter options (source files, target dir).
+ * @param   context  The template, the wikilinks and the bibliography sources.
  */
 export async function runRecipeExport(
   options: ExporterOptions,
-  latexTemplate: string,
-  wikilinks: WikilinkIndex,
+  context: RecipeContext,
 ): Promise<ExporterOutput> {
+  const { latexTemplate, wikilinks } = context;
   const source = options.sourceFiles[0];
   const isProjectExport = options.sourceFiles.length > 1;
   const title =
@@ -104,9 +148,9 @@ export async function runRecipeExport(
     ];
   } else {
     runDir = path.dirname(source.path);
-    // Override ONLY what the app owns: the input file, the output base name,
-    // and the template when one is configured. Bibliography, build dir,
-    // filters, flags, and pdf-engine all come from the recipe's own defaults.
+    // The app gives the input file, the output base name, the template when
+    // one is configured, and (below) the bibliography. Build dir, filters,
+    // flags and pdf-engine come from the recipe.
     argv = ["--justfile", JUSTFILE, "compile-pandoc", recipeInput(source, runDir), title];
     if (latexTemplate.trim() !== "") {
       argv.push(latexTemplate.trim());
@@ -121,12 +165,18 @@ export async function runRecipeExport(
       markdown: await fs.readFile(file.textFile, "utf8"),
     })),
   );
+  // The recipe cites from the bibliography that the editor shows (#198).
+  const bibliography = await recipeBibliography(inputs, context);
   const mapDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "zettlr-wikilinks-"));
   const mapFile = path.join(mapDirectory, "wikilinks.json");
   await fs.writeFile(mapFile, JSON.stringify(wikilinkExportMap(inputs, wikilinks)), "utf8");
   let result: { stdout: string; stderr: string; code: number };
   try {
-    result = await runProcess("just", argv, runDir, { ...process.env, PANDOC_WIKILINKS: mapFile });
+    result = await runProcess("just", argv, runDir, {
+      ...process.env,
+      PANDOC_WIKILINKS: mapFile,
+      PANDOC_BIB_SOURCE: bibliography,
+    });
   } finally {
     await fs.rm(mapDirectory, { recursive: true, force: true });
   }
@@ -159,8 +209,8 @@ export async function runRecipeExport(
   }
 
   // Deliver the PDF to the export target and remove the recipe's dated copy from
-  // the source directory (the recipe's own build dir / global.bib symlink are
-  // left in place, exactly as a direct `just compile-pandoc` run leaves them).
+  // the source directory (the build dir of the recipe is
+  // left in place, as a direct `just compile-pandoc` run leaves it).
   await fs.copyFile(produced, target);
   await fs.rm(produced, { force: true });
 

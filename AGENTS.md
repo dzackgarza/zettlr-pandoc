@@ -204,6 +204,13 @@ they must be threaded through **four** layers:
   PDF is a **custom profile** (`writer: compile-pandoc`) in `getCustomProfiles`
   (`exporter/index.ts`); dispatch is in `makeExport`. The dzg templates require
   **pdflatex** (xelatex/lualatex fail).
+- **The recipe gets the bibliography of the documents.** The run sets
+  `PANDOC_BIB_SOURCE` to the files of the bibliography of each input
+  (`documentBibliography`, §12), apart by `:`, without repeats; the main
+  library is `export.cslLibrary`. An empty value is an export without a
+  bibliography; the recipe reads `ZOTERO_GLOBAL_BIB` only when the variable
+  is not set. A file whose path holds `:` refuses the export. Proof:
+  `test/export-bibliography.spec.ts` (the real recipe, pdflatex and biber).
 - **The templates of a Project go before the settings.** `templateOf`
   (`commands/dir-project-export.ts`) gives an export profile the LaTeX
   template of the Project when its writer is the PDF recipe or a TeX writer
@@ -686,6 +693,21 @@ of an isolated instance are in the first comment of #132.
 
 ### 12. Citations and attachment files
 
+- **One owner gives the bibliography of a document.** `documentBibliography`
+  (`source/app/util/document-bibliographies.ts`) reads the front matter of
+  the text of the document (the buffer of an open document) and the Project
+  of its folder. The files of the front matter are the bibliography; else
+  the bibliographies of its Quarto book and the main library; else the main
+  library. A relative entry resolves from the folder of the document. A
+  window asks the command `get-document-bibliography` through
+  `documentCitationDatabase` (`common/util/document-citation-database.ts`);
+  the command waits until the libraries are loaded. The editor, the print
+  window, the outline, the hover previews, the Annotations view, the
+  References view, the attachment command, the lint, the documents provider
+  and the PDF export (§3) use it. A new view that renders citations of a
+  document asks it; it does not read the front matter or the Project
+  itself (#198). Proof: `e2e/document-bibliography.spec.ts`,
+  `test/export-bibliography.spec.ts`.
 - **Locales.** `CiteprocProvider` reads its CSL locales from the one directory
   that its owner gives: `BUNDLED_LOCALE_DIRECTORY` in the app, `static/csl-locales`
   in a spec. The working directory decides nothing. The `en-US` locale is

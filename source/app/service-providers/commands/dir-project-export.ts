@@ -346,9 +346,14 @@ async function exportUsingProfile(
   };
 
   app.log.info(`[Project] Exporting ${config.title} using profile ${profile.name}.`);
-  const result = await makeExport(opt, app.log, app.config, app.assets, app.links.index).catch(
-    stop,
-  );
+  const result = await makeExport(
+    opt,
+    app.log,
+    app.config,
+    app.assets,
+    app.links.index,
+    app.fsal,
+  ).catch(stop);
   if (result.code !== 0) {
     stop(
       new Error(

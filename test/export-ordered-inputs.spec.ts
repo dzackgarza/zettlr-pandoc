@@ -40,8 +40,14 @@ import os from "os";
 import path from "path";
 import { runRecipeExport } from "source/app/service-providers/commands/exporter/recipe-exporter";
 import type { ExporterOptions } from "source/app/service-providers/commands/exporter/types";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
+
+/** The folders of the inputs, read from disk as the FSAL reads them. */
+const FOLDERS = {
+  getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
+};
 
 const JUSTFILE = path.join(os.homedir(), ".pandoc", "justfile");
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
@@ -84,8 +90,7 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
         sourceFiles: [{ path: inputFile, name: "input.md", ext: ".md", textFile: inputFile }],
         targetDirectory: dir,
       } as ExporterOptions,
-      "",
-      new WikilinkIndex([]),
+      { latexTemplate: "", wikilinks: new WikilinkIndex([]), fsal: FOLDERS, mainLibrary: "" },
     );
 
     const { cwd, argv } = await just.onlyRun();
@@ -117,8 +122,12 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
         cwd: projectDir,
         defaultsOverride: { title: "Lattice Notes" },
       } as ExporterOptions,
-      "lattice-notes.latex",
-      new WikilinkIndex([]),
+      {
+        latexTemplate: "lattice-notes.latex",
+        wikilinks: new WikilinkIndex([]),
+        fsal: FOLDERS,
+        mainLibrary: "",
+      },
     );
 
     const { cwd, argv } = await just.onlyRun();
@@ -161,8 +170,12 @@ describe("Ordered Project export inputs (issue #1 Phase 7)", function () {
         cwd: projectDir,
         defaultsOverride: { title: "Spaced Title" },
       } as ExporterOptions,
-      "notes.latex",
-      new WikilinkIndex([]),
+      {
+        latexTemplate: "notes.latex",
+        wikilinks: new WikilinkIndex([]),
+        fsal: FOLDERS,
+        mainLibrary: "",
+      },
     );
 
     const { argv } = await just.onlyRun();

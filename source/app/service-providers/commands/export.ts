@@ -157,7 +157,7 @@ export default class Export extends ZettlrCommand {
 /** The services of the application that the export of one document uses. */
 export interface DocumentExportServices {
   documents: Pick<DocumentManager, "isModified" | "getDocument">;
-  fsal: Pick<FSAL, "getDescriptorForAnySupportedFile" | "isDir">;
+  fsal: Pick<FSAL, "getDescriptorForAnySupportedFile" | "isDir" | "getAnyDirectoryDescriptor">;
   windows: Pick<WindowProvider, "askDir" | "showErrorMessage">;
   lrt: LongRunningTaskProvider;
   config: ConfigProvider;
@@ -287,6 +287,7 @@ async function runDocumentExport(
       app.config,
       app.assets,
       app.links.index,
+      app.fsal,
     );
     if (output.code === 0) {
       app.log.info(`Successfully exported file to ${output.targetFile}`);
