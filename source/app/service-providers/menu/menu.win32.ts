@@ -54,6 +54,14 @@ export default function getMenu(
   _setCheckboxState: (id: string, val: boolean) => void,
 ): MenuItemConstructorOptions[] {
   const useGuiZoom = config.get("system.zoomBehavior") === "gui";
+  // A menu action that is no command shows its failure itself, once. The
+  // dispatcher shows the failure of a command (`commands.run`).
+  const showFailure =
+    (title: string) =>
+    (failure: Error): void => {
+      logger.error(failure.message, failure);
+      windows.showErrorMessage(title, failure.message);
+    };
   const updateMenuItem: MenuItemConstructorOptions = {
     id: "menu.update",
     label: trans("Check for updates"),
@@ -98,11 +106,9 @@ export default function getMenu(
           id: "menu.recent_docs." + item,
           label: path.basename(item),
           click: function (_menuitem, _focusedWindow) {
-            documents.openFile(undefined, undefined, item, true).catch((err: unknown) => {
-              if (err instanceof Error) {
-                logger.error(`[Menu] Could not open recent document ${item}`, err);
-              }
-            });
+            documents
+              .openFile(undefined, undefined, item, true)
+              .catch(showFailure(trans("Could not open the recent file")));
           },
         };
 
@@ -311,10 +317,9 @@ export default function getMenu(
           id: "menu.import_dict_file",
           label: trans("Import dictionary…"),
           click: function (_menuitem, _focusedWindow) {
-            const msg = "[Menu Provider] Could not open dictionary directory: ";
-            openPath(path.join(app.getPath("userData"), "/dict")).catch((err: Error) => {
-              logger.error(msg + err.message, err);
-            });
+            openPath(path.join(app.getPath("userData"), "/dict")).catch(
+              showFailure(trans("Could not open the dictionary folder")),
+            );
           },
         },
         {
@@ -755,9 +760,7 @@ export default function getMenu(
           label: trans("Support Zettlr ↗︎"),
           click: function (_menuitem, _focusedWindow) {
             const target = "https://patreon.com/zettlr";
-            shell.openExternal(target).catch((e: Error) => {
-              logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message);
-            });
+            shell.openExternal(target).catch(showFailure(trans("Could not open %s", target)));
           },
         },
         {
@@ -765,9 +768,7 @@ export default function getMenu(
           label: trans("Visit website ↗︎"),
           click: function (_menuitem, _focusedWindow) {
             const target = "https://www.zettlr.com/";
-            shell.openExternal(target).catch((e: Error) => {
-              logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message);
-            });
+            shell.openExternal(target).catch(showFailure(trans("Could not open %s", target)));
           },
         },
         {
@@ -776,9 +777,7 @@ export default function getMenu(
           accelerator: "F1",
           click: function (_menuitem, _focusedWindow) {
             const target = "https://docs.zettlr.com/";
-            shell.openExternal(target).catch((e: Error) => {
-              logger.error(`[Menu Provider] Cannot open target: ${target}`, e.message);
-            });
+            shell.openExternal(target).catch(showFailure(trans("Could not open %s", target)));
           },
         },
         {

@@ -10,7 +10,12 @@ export type MenuRecentDocuments = Pick<RecentDocumentsProvider, "get" | "clear">
 export type MenuCommands = Pick<CommandProvider, "run">;
 export type MenuWindows = Pick<
   WindowProvider,
-  "showAboutWindow" | "showDefaultsWindow" | "showLogWindow" | "showPreferences" | "showTagManager"
+  | "showAboutWindow"
+  | "showDefaultsWindow"
+  | "showErrorMessage"
+  | "showLogWindow"
+  | "showPreferences"
+  | "showTagManager"
 >;
 export type MenuDocuments = Pick<DocumentManager, "newWindow" | "openFile">;
 

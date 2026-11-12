@@ -118,6 +118,9 @@ function clickMenuItem(
   const windows: MenuWindows = {
     showAboutWindow: () => {},
     showDefaultsWindow: () => {},
+    showErrorMessage: (title: string, message: string) => {
+      throw new Error(`The menu item opened the error window "${title}": ${message}`);
+    },
     showLogWindow: () => {},
     showPreferences: () => {},
     showTagManager: () => {},
