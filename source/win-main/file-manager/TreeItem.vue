@@ -205,7 +205,6 @@ import { isAtOrInsideRoot, pathBasename } from "@common/util/renderer-path-polyf
 
 import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
 import type { AnyDescriptor } from "@dts/common/fsal";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import type { WritingTarget } from "source/app/service-providers/targets";
 import {
   hasDataExt,
@@ -223,7 +222,7 @@ import {
 } from "source/pinia";
 import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { eventsChangeChildren } from "./util/events-change-children";
+import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
@@ -579,17 +578,13 @@ onMounted(async () => {
 
   // The row follows the events before its first read, so a read that fails
   // leaves a row that a later event of its children still updates.
-  stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
-    // A batch that pertains to a direct child of this item needs handling.
-    // We'll make it easy and simply re-fetch the list of children, once.
-    if (eventsChangeChildren(events, props.item.path)) {
-      fetchChildren().catch((err) =>
-        reportError(
-          `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-          err,
-        ),
-      );
-    }
+  stopFsalListener = followChildren(props.item.path, () => {
+    fetchChildren().catch((err) =>
+      reportError(
+        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
+        err,
+      ),
+    );
   });
 
   // Initially scroll into view if this item is selected

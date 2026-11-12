@@ -181,7 +181,6 @@ import formatDate from "@common/util/format-date";
 import formatSize from "@common/util/format-size";
 import localiseNumber from "@common/util/localise-number";
 import { type AnyDescriptor, type MDFileDescriptor } from "@dts/common/fsal";
-import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import {
   useConfigStore,
   useIgnoreRulesStore,
@@ -191,7 +190,7 @@ import {
 } from "source/pinia";
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from "vue";
 import getDocumentTitle from "../util/get-document-title";
-import { eventsChangeChildren } from "./util/events-change-children";
+import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
@@ -262,17 +261,13 @@ async function fetchChildren(): Promise<void> {
 let stopFsalListener: (() => void) | undefined;
 
 onMounted(async () => {
-  stopFsalListener = ipcRenderer.on("fsal-events", (_, events: FSALEventPayload[]) => {
-    // A batch that pertains to a direct child of this item needs handling.
-    // We'll make it easy and simply re-fetch the list of children, once.
-    if (eventsChangeChildren(events, props.item.path)) {
-      fetchChildren().catch((err) =>
-        reportError(
-          `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
-          err,
-        ),
-      );
-    }
+  stopFsalListener = followChildren(props.item.path, () => {
+    fetchChildren().catch((err) =>
+      reportError(
+        `[TreeItem] Could not fetch children for item "${props.item.path}": ${err.message}`,
+        err,
+      ),
+    );
   });
 
   if (props.item.type === "directory") {

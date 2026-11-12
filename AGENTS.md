@@ -1394,9 +1394,15 @@ of an isolated instance are in the first comment of #132.
   listed path, so each window shows the workspace with its files and no path
   that a rule hides.
 - **A row follows the events before its first read.** `TreeItem.vue`
-  registers its `fsal-events` listener before it reads its children, so a
-  row whose first read gives nothing still shows the children that a later
+  follows its children (`followChildren`) before it reads them, so a row
+  whose first read gives nothing still shows the children that a later
   event adds.
+- **One listener for the rows of a window.** `followChildren`
+  (`file-manager/util/follow-children.ts`) has the one `fsal-events`
+  listener of the file manager; it calls the rows of the parent folder of
+  each event, once for each batch. A row adds no IPC listener of its own: the
+  cost of a batch follows its events, not the rows. Proof:
+  `e2e/file-tree-listeners.spec.ts`.
 - **Proof:** `e2e/missing-workspace.spec.ts`,
   `e2e/unreadable-workspace-rules.spec.ts`,
   `test/fsal-deleted-directory.spec.ts`.
