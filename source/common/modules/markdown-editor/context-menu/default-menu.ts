@@ -20,6 +20,7 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { showRefusal } from "@common/util/show-refusal";
 import { type SyntaxNode } from "@lezer/common";
 import { isProseCompletionPosition } from "../autocomplete/prose-dictionary";
 import {
@@ -73,7 +74,7 @@ export function proseCompletionMenuItem(view: EditorView, pos: number): AnyMenuI
           command: "add-prose-completion",
           payload: { entry: completionEntry },
         })
-        .catch((error) => reportError("Could not add prose completion entry", error));
+        .catch(showRefusal);
     },
   };
 }

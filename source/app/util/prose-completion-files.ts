@@ -6,7 +6,9 @@
  * a read-only base vocabulary source; only their explicit word column is
  * projected into completion entries.
  */
-import { appendFile, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { writeTextFile } from "../service-providers/fsal/util/write-text-file";
+import { refusedAs } from "./authored-file-error";
 
 /** Parse the explicit word column of a Hunspell `.dic` file. */
 export function proseWordsFromHunspellDic(contents: string): string[] {
@@ -55,8 +57,10 @@ export function normalizeProseCompletionEntry(entry: string): string {
 }
 
 /**
- * Append one entry without rewriting the file. Returns false for blank or
- * duplicate entries. The file is otherwise preserved byte-for-byte.
+ * Adds one entry as the last line of the file, through the one writer of
+ * authored text files. Returns false for blank or duplicate entries. The
+ * text before the entry stays byte for byte. A refused read or write
+ * rejects with an `AuthoredFileError` that names the file and the cause.
  */
 export async function appendPortableProseCompletion(
   filePath: string,
@@ -65,9 +69,11 @@ export async function appendPortableProseCompletion(
   const entry = normalizeProseCompletionEntry(rawEntry);
   if (entry === "") return false;
 
-  const contents = await readFile(filePath, "utf8");
+  const contents = await readFile(filePath, "utf8").catch(refusedAs("read", filePath));
   if (parsePortableProseCompletions(contents).includes(entry)) return false;
   const separator = contents === "" || contents.endsWith("\n") ? "" : "\n";
-  await appendFile(filePath, `${separator}${entry}\n`, "utf8");
+  await writeTextFile(filePath, `${contents}${separator}${entry}\n`).catch(
+    refusedAs("save", filePath),
+  );
   return true;
 }
