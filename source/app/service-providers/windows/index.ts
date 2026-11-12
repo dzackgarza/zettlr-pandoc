@@ -1019,31 +1019,30 @@ export default class WindowProvider extends ProviderContract {
   }
 
   /**
-   * Opens the print window with the given file
+   * Opens the print window with the given file. A print window of another
+   * file closes, and a new window opens for this one.
    *
    * @param   {string}  filePath  The file to load
    */
   showPrintWindow(filePath: string): void {
-    if (this._printWindow === null) {
-      const conf = this._retrieveWindowPosition("print", null);
-      this._printWindow = createPrintWindow(this._logger, this._config, filePath, conf);
-      this._hookWindowResize(this._printWindow, "print");
-      this._printWindowFile = filePath;
-
-      // Dereference the window as soon as it is closed
-      this._printWindow.on("closed", () => {
+    if (this._printWindow !== null && this._printWindowFile === filePath) {
+      this._makeVisible(this._printWindow);
+      return;
+    }
+    // `close()` is asynchronous: the old window emits `closed` after the new
+    // one exists, so its handler releases only its own window.
+    this._printWindow?.close();
+    const conf = this._retrieveWindowPosition("print", null);
+    const printWindow = createPrintWindow(this._logger, this._config, filePath, conf);
+    this._hookWindowResize(printWindow, "print");
+    this._printWindow = printWindow;
+    this._printWindowFile = filePath;
+    printWindow.on("closed", () => {
+      if (this._printWindow === printWindow) {
         this._printWindow = null;
         this._printWindowFile = undefined;
-      });
-    } else if (this._printWindowFile === filePath) {
-      this._makeVisible(this._printWindow);
-    } else {
-      // There is a print window, but a different file was requested.
-      // In this case, close the current print window and call this function
-      // again so that the first if is executed
-      this._printWindow.close();
-      this.showPrintWindow(filePath);
-    }
+      }
+    });
   }
 
   /**

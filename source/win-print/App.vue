@@ -36,6 +36,7 @@ import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { imageSourceUri } from "@common/util/image-source-uri";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { showRefusal } from "@common/util/show-refusal";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
 import { md2html } from "source/common/modules/markdown-utils";
@@ -74,16 +75,24 @@ const windowTitle = computed(() => {
 
 const printContainer = ref<HTMLDivElement | null>(null);
 
-onMounted(async () => {
+onMounted(() => {
   if (filePath === "" || printContainer.value === null) {
     return;
   }
 
-  const fileContents: string = await ipcRenderer.invoke("application", {
-    command: "get-file-contents",
-    payload: filePath,
-  });
+  ipcRenderer.invoke("application", { command: "get-file-contents", payload: filePath }).then(
+    (fileContents: string) => render(fileContents),
+    // The dispatcher showed the failure of the command in this window.
+    (failure: Error) => reportError(failure),
+  );
+});
 
+/**
+ * Shows the document in the window. A document that md2html cannot render
+ * (a citation while the citation style does not load) shows the cause and
+ * no part of the document.
+ */
+function render(fileContents: string): void {
   const base = pathDirname(filePath);
   const { frontmatter } = extractYamlFrontmatter(fileContents);
   const library =
@@ -105,12 +114,10 @@ onMounted(async () => {
     onImageSrc(src) {
       return imageSourceUri(src, base);
     },
-  })
-    .then((html) => {
-      printContainer.value!.innerHTML = html;
-    })
-    .catch((err) => reportError(err));
-});
+  }).then((html) => {
+    printContainer.value!.innerHTML = html;
+  }, showRefusal);
+}
 
 function handleClick(buttonID?: string): void {
   if (buttonID === "print") {
