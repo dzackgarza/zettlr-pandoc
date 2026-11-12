@@ -7,7 +7,7 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type EditorView } from "@codemirror/view";
@@ -26,6 +26,8 @@ const INDEX = "Let $sin x = 0$.\n";
 const OTHER = "Then $cos y + sin z = 1$.\n";
 const CLEAN = "# Clean\n\nNothing to fix.\n";
 
+const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
+const INFO_TOAST = "#zettlr-toast-container .zettlr-toast.info";
 const DIALOG = "[data-fix-all-dialog]";
 const SUMMARY = `${DIALOG} [data-fix-all-summary]`;
 
@@ -223,5 +225,61 @@ describe("assembled app: Fix All applies the machine-applicable fixes", function
     assert.equal(await plannedSummary(page), "No auto-fixable issues in 1 document.");
     assert.equal(await page.locator(`${DIALOG} [data-fix-all-confirm]`).count(), 0);
     await page.keyboard.press("Escape");
+  });
+
+  it("keeps the fixes of a document whose file refuses the save and offers a copy", async function () {
+    assert.ok(page !== undefined, "The editor window must be open");
+    const editorPage = page;
+    await writeFile(indexPath, INDEX, "utf8");
+    const deadline = Date.now() + 20_000;
+    while ((await editorText(editorPage)) !== INDEX) {
+      assert.ok(Date.now() < deadline, "the editor loads the text of the file");
+      await delay(150);
+    }
+    await chmod(indexPath, 0o400);
+    await editorPage.evaluate(() => {
+      for (const toast of document.querySelectorAll("#zettlr-toast-container .zettlr-toast")) {
+        toast.remove();
+      }
+    });
+
+    await clickMenuItem(editorPage, "menu.fix_all_document");
+    assert.equal(
+      await plannedSummary(editorPage),
+      "Apply 1 fix to 1 of 1 document? Every fix keeps the meaning of the text.",
+    );
+    await editorPage.locator(`${DIALOG} [data-fix-all-confirm]`).click();
+
+    const refusal = editorPage.locator(ERROR_TOAST);
+    await refusal.first().waitFor({ state: "visible", timeout: 30_000 });
+    // The other messages of the same commit arrive in the same task.
+    await delay(1_000);
+    screenshots.set("fix-all-save-refused.png", await editorPage.screenshot());
+    const refusals = await refusal.count();
+    const message = await refusal.first().locator("span:first-child").innerText();
+    const actions = await refusal.first().locator("[data-toast-action]").allInnerTexts();
+    const applied = await editorPage.locator(INFO_TOAST).allInnerTexts();
+    const shown = await editorText(editorPage);
+    const onDisk = await readFile(indexPath, "utf8");
+
+    // The file takes the save again, and the document with the fix saves,
+    // so the app quits without a prompt. This is the IPC call that the
+    // save-file shortcut makes: CDP key events do not reach the shortcut.
+    await chmod(indexPath, 0o600);
+    await editorPage.evaluate(
+      async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+      indexPath,
+    );
+    await waitForFile(indexPath, "Let $\\sin x = 0$.\n");
+
+    assert.equal(refusals, 1, "one refused save shows one message");
+    assert.ok(message.includes("index.md"), `the message names the file: ${message}`);
+    assert.deepEqual(actions, ["Save a copy…"], "the message offers a copy of the text");
+    assert.ok(
+      applied.some((text) => text.startsWith("Applied 1 fix to 1 document")),
+      `the window says that the fix is applied: ${applied.join(" | ")}`,
+    );
+    assert.equal(shown, "Let $\\sin x = 0$.\n", "the editor has the fix");
+    assert.equal(onDisk, INDEX, "the refused save leaves the text of the file");
   });
 });
