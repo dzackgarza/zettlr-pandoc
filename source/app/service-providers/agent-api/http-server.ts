@@ -1453,7 +1453,16 @@ export default class AgentHTTPProvider extends ProviderContract {
   }
 
   private async handleGetDocument(res: http.ServerResponse, documentId: string): Promise<void> {
-    const summary = await this._queries.getDocumentSummary(documentId);
+    const summary = await this._queries.describeDocument(documentId);
+    if (summary === "OUTSIDE_WORKSPACE") {
+      this.sendError(
+        res,
+        404,
+        "DOCUMENT_NOT_FOUND",
+        "Document is outside configured workspace scope",
+      );
+      return;
+    }
     if (summary === undefined) {
       this.sendError(res, 404, "DOCUMENT_NOT_FOUND", "Document not found");
       return;

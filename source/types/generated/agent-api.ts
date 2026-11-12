@@ -172,7 +172,7 @@ export interface paths {
     };
     /**
      * Document metadata and optional text content
-     * @description Returns document metadata by default. Set includeContent=true to read current or pre-review text with an ETag revision header.
+     * @description Returns the metadata of an open document or a closed workspace file by default; dirty says that the text is not the text of the file. Set includeContent=true to read current or pre-review text with an ETag revision header.
      */
     get: operations["getDocument"];
     put?: never;

@@ -412,6 +412,20 @@ function frozenState(
     : { invalidated: false };
 }
 
+/** The status of a review in memory or in the sidecar of a closed document. */
+export function reviewStatus(review: ActiveReviewState | PersistedReviewState): ReviewStatus {
+  const unresolvedChunks = review.suggestions.filter(
+    (suggestion) => suggestion.state === "proposed",
+  ).length;
+  return {
+    reviewId: review.reviewId,
+    state: classifyReviewState(review.invalidated, unresolvedChunks),
+    generation: review.generation,
+    unresolvedChunks,
+    packetCount: review.packets.length,
+  };
+}
+
 /** The text a review's suggestion anchors index. */
 export function suggestionText(
   review: ActiveReviewState | PersistedReviewState,
@@ -460,19 +474,7 @@ export class ReviewDiffStore {
 
   getStatus(documentId: string, _workingText: string): ReviewStatus | undefined {
     const review = this.reviews.get(documentId);
-    if (review === undefined) {
-      return undefined;
-    }
-    const unresolvedChunks = review.suggestions.filter(
-      (suggestion) => suggestion.state === "proposed",
-    ).length;
-    return {
-      reviewId: review.reviewId,
-      state: classifyReviewState(review.invalidated, unresolvedChunks),
-      generation: review.generation,
-      unresolvedChunks,
-      packetCount: review.packets.length,
-    };
+    return review === undefined ? undefined : reviewStatus(review);
   }
 
   /**

@@ -14,6 +14,7 @@
  */
 
 import { Text } from "@codemirror/state";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import isErrnoException, { hasErrnoCode } from "@common/util/is-errno-exception";
 import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
@@ -43,7 +44,12 @@ import type {
   CollaborationApplicationService,
   ReviewQueryPort,
 } from "@providers/documents/document-collaboration-application-service";
-import { normalizeText, reviewReferenceText } from "@providers/documents/review-diff-store";
+import {
+  normalizeText,
+  type ReviewStatus,
+  reviewReferenceText,
+  reviewStatus,
+} from "@providers/documents/review-diff-store";
 import type LogProvider from "@providers/log";
 import fs from "fs";
 import path from "path";
@@ -179,6 +185,9 @@ interface DocumentText {
   working: string;
   reference: string;
   reviewGeneration: number;
+  /** Where the working text is: a loaded buffer, the sidecar of a closed document, its file. */
+  origin: "buffer" | "sidecar" | "file";
+  review: ReviewStatus | undefined;
 }
 
 /**
@@ -680,6 +689,8 @@ export default class AgentDocumentQueries {
         reference:
           review === undefined ? working : reviewReferenceText(review.suggestions, working),
         reviewGeneration: review?.generation ?? 0,
+        origin: "buffer",
+        review: this.reviews.getStatus(documentId),
       };
     }
     const sidecar = await this.reviews.readSidecar(filePath);
@@ -693,19 +704,11 @@ export default class AgentDocumentQueries {
             ? working
             : reviewReferenceText(sidecar.review.suggestions, working),
         reviewGeneration: sidecar.review?.generation ?? 0,
+        origin: "sidecar",
+        review: sidecar.review === null ? undefined : reviewStatus(sidecar.review),
       };
     }
-    // A closed document whose file is gone has no text; a file that the
-    // filesystem refuses to read is a state of the author's file.
-    const disk = await this.documents.readSupportedFile(filePath).catch((error: unknown) => {
-      if (hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
-        return undefined;
-      }
-      if (isErrnoException(error)) {
-        throw new DocumentUnreadableError(filePath, error);
-      }
-      throw error;
-    });
+    const disk = await this.diskText(filePath);
     if (disk === undefined) {
       return undefined;
     }
@@ -715,6 +718,63 @@ export default class AgentDocumentQueries {
       working,
       reference: working,
       reviewGeneration: 0,
+      origin: "file",
+      review: undefined,
+    };
+  }
+
+  /**
+   * The text of a file. A file that is gone has no text; a file that the
+   * filesystem refuses to read is a state of the author's file.
+   */
+  private async diskText(filePath: string): Promise<string | undefined> {
+    return await this.documents.readSupportedFile(filePath).catch((error: unknown) => {
+      if (hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
+        return undefined;
+      }
+      if (isErrnoException(error)) {
+        throw new DocumentUnreadableError(filePath, error);
+      }
+      throw error;
+    });
+  }
+
+  /**
+   * The metadata of a document, open or closed: the summary of a loaded
+   * document, and for a closed workspace file the summary of the text that
+   * a read of the same id gives.
+   */
+  public async describeDocument(
+    documentId: string,
+  ): Promise<DocumentSummary | "OUTSIDE_WORKSPACE" | undefined> {
+    const loaded = await this.getDocumentSummary(documentId);
+    if (loaded !== undefined) {
+      return loaded;
+    }
+    const filePath = this.documents.getDocumentPath(documentId);
+    if (filePath === undefined) {
+      return undefined;
+    }
+    const resolved = await this.documentText(documentId);
+    if (resolved === undefined || resolved === "OUTSIDE_WORKSPACE") {
+      return resolved;
+    }
+    const { working, origin, review } = resolved;
+    // The sidecar of a closed document holds text that the file may not have.
+    const disk = origin === "sidecar" ? await this.diskText(filePath) : working;
+    const dirty = disk === undefined || normalizeText(disk) !== working;
+    return {
+      documentId,
+      uri: `safe-file://${filePath}`,
+      path: filePath,
+      name: path.basename(filePath),
+      type: hasMarkdownExt(filePath) ? "markdown" : "code",
+      dirty,
+      revision: { sha256: sha256Text(working) },
+      lineCount: working.split("\n").length,
+      byteLength: Buffer.byteLength(working, "utf8"),
+      views: [],
+      review,
     };
   }
 
