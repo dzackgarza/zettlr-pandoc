@@ -33,7 +33,7 @@ import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFsal } from "./fsal-seam";
-import { notifications, userData } from "./headless-electron-harness.cjs";
+import { messageBoxes, notifications, userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
@@ -122,6 +122,8 @@ describe("Project export", function () {
   let latex: string;
   let absentStyle: string;
   let styleIsNoFile: string;
+  let refusedFolder: string;
+  let refusedPart: string;
 
   before(async function () {
     root = await mkdtemp(path.join(tmpdir(), "zettlr-project-export-"));
@@ -186,6 +188,22 @@ describe("Project export", function () {
       cslStyle: absentStyle,
     });
 
+    // A Project whose second chapter is in a folder that refuses its content.
+    refusedFolder = await project("refused-folder", {
+      profiles: [listing],
+      chapters,
+      texTemplate: "",
+      cslStyle: "",
+    });
+    refusedPart = path.join(refusedFolder, "part");
+    await mkdir(refusedPart);
+    await writeFile(path.join(refusedPart, "two.md"), CHAPTER);
+    const settingsFile = path.join(refusedFolder, ".ztr-directory");
+    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
+    settings.project.files = ["chapter.md", "part/two.md"];
+    await writeFile(settingsFile, JSON.stringify(settings));
+    await chmod(refusedPart, 0o300);
+
     // An export with pandoc reads the macro projection of the home directory.
     macroHome = path.join(tmpdir(), ".pandoc");
     const projection = path.join(macroHome, "templates", "css");
@@ -236,9 +254,12 @@ describe("Project export", function () {
   beforeEach(function () {
     errorWindows.length = 0;
     notifications.shown.length = 0;
+    messageBoxes.shown.length = 0;
+    messageBoxes.answer = undefined;
   });
 
   after(async function () {
+    await chmod(refusedPart, 0o755);
     await fsal.shutdown();
     await assets.shutdown();
     await rm(root, { recursive: true });
@@ -296,6 +317,18 @@ describe("Project export", function () {
     const [shown] = errorWindows;
     assert.equal(`${shown.message}\n${shown.contents}`.includes(absentStyle), true);
     assert.equal(existsSync(path.join(styleIsNoFile, "style-is-no-file.tex")), false);
+  });
+
+  it("names a chapter folder that refuses its content in the message of missing files", async function () {
+    messageBoxes.answer = 0;
+    await exportProject(services, refusedFolder);
+
+    assert.equal(messageBoxes.shown.length, 1, "the export shows one message of missing files");
+    const [shown] = messageBoxes.shown;
+    const text = `${shown.message}\n${shown.detail}`;
+    assert.ok(text.includes("part/two.md"), `the message does not name the chapter: ${text}`);
+    assert.ok(text.includes(refusedPart), `the message does not name the folder: ${text}`);
+    assert.ok(text.includes("EACCES"), `the message does not give the cause: ${text}`);
   });
 
   describe("with a TeX template in the settings of the Project", function () {
