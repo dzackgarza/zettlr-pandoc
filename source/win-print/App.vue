@@ -80,7 +80,7 @@ onMounted(() => {
     return;
   }
 
-  ipcRenderer.invoke("application", { command: "get-file-contents", payload: filePath }).then(
+  ipcRenderer.invoke("application", { command: "get-document-text", payload: filePath }).then(
     (fileContents: string) => render(fileContents),
     // The dispatcher showed the failure of the command in this window.
     (failure: Error) => reportError(failure),

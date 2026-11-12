@@ -264,8 +264,8 @@ export type ApplicationIPCContract = {
     request: { payload?: undefined };
     response: string[];
   };
-  // Answered inline by run(): fsal.loadAnySupportedFile(), Promise<string>.
-  "get-file-contents": {
+  // Answered inline by run(): documents.readDocumentText(), Promise<string>.
+  "get-document-text": {
     request: { payload: string };
     response: string;
   };
@@ -540,9 +540,8 @@ export default class CommandProvider extends ProviderContract {
         clipboard.writeImage(img);
       }
       return true;
-    } else if (command === "get-file-contents" && typeof payload === "string") {
-      // Some renderer's editor has requested a file
-      return await this._app.fsal.loadAnySupportedFile(payload);
+    } else if (command === "get-document-text" && typeof payload === "string") {
+      return await this._app.documents.readDocumentText(payload);
     } else if (command === "edit-ignore-rules") {
       const mainWindow = this._app.windows.getFirstMainWindow();
       if (mainWindow === undefined) {

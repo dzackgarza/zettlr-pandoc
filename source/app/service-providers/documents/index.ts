@@ -4381,6 +4381,18 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * The text of a document: the buffer of a loaded document, which can hold
+   * text that is not on disk and outlives its file (§14), else the file.
+   */
+  public readDocumentText(filePath: string): Promise<string> {
+    const doc = this.documents.find((d) => path.resolve(d.filePath) === path.resolve(filePath));
+    if (doc !== undefined) {
+      return Promise.resolve(doc.document.toString());
+    }
+    return this.readSupportedFile(filePath);
+  }
+
+  /**
    * Assign a documentId for a newly loaded document.
    * Called internally during document loading.
    */

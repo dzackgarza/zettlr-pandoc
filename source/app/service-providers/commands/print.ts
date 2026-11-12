@@ -33,6 +33,12 @@ export default class Print extends ZettlrCommand {
       throw new Error("Cannot print: no document was given.");
     }
 
+    // A loaded document has its text without its file (§14).
+    if (this._app.documents.isDocumentOpen(filePath)) {
+      this._app.windows.showPrintWindow(filePath);
+      return;
+    }
+
     const fileDescriptor = await this._app.fsal.getDescriptorForAnySupportedFile(filePath);
 
     if (fileDescriptor === undefined) {
