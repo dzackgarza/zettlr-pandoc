@@ -1233,7 +1233,8 @@ of an isolated instance are in the first comment of #132.
   commands, a file that the app does not open itself). A command that is
   only the open waits, and its refusal is shown once: by the dispatcher
   (§15) or by `showRefusal` in the window that asked.
-- **Proof:** `e2e/export-open-refused.spec.ts`, `test/assets-authored-files.spec.ts`,
+- **Proof:** `e2e/export-open-refused.spec.ts`, `e2e/preferences-open-refused.spec.ts`,
+  `test/menu-file-navigation.spec.ts`, `test/assets-authored-files.spec.ts`,
   `e2e/assets-refused-save.spec.ts`.
 
 ## Debugging entry points

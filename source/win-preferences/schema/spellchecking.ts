@@ -15,6 +15,7 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { mapLangCodeToName, resolveLangCode } from "@common/util/map-lang-code";
+import { showRefusal } from "@common/util/show-refusal";
 import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
@@ -119,7 +120,7 @@ export function getSpellcheckingFields(config: ConfigOptions): PreferencesFields
               .invoke("dictionary-provider", {
                 command: "open-prose-completion-file",
               })
-              .catch((err) => reportError(err));
+              .catch(showRefusal);
           },
         },
       ],
