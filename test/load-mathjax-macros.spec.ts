@@ -1,5 +1,5 @@
 import { strict as assert } from "assert";
-import { mkdir, mkdtemp, readFile, writeFile } from "fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import {
@@ -57,6 +57,15 @@ describe("central ~/.pandoc MathJax projection", function () {
 });
 
 describe("central ~/.pandoc compiler macro vocabulary", function () {
+  // The paths that a case made unreadable; each is readable again after it.
+  const refused: string[] = [];
+
+  afterEach(async function () {
+    for (const refusedPath of refused.splice(0)) {
+      await chmod(refusedPath, 0o755);
+    }
+  });
+
   it("includes compiler-only declarations recursively from the canonical macro tree", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-tex-macros-"));
     const root = path.join(home, ".pandoc", "styles", "macros");
@@ -73,14 +82,40 @@ describe("central ~/.pandoc compiler macro vocabulary", function () {
     );
     await writeFile(path.join(root, "README.md"), "\\newcommand{\\NotTex}{x}\n", "utf8");
 
+    const vocabulary = await loadCanonicalTexMacroCommands(home);
     assert.deepStrictEqual(
-      new Set(await loadCanonicalTexMacroCommands(home)),
+      new Set(vocabulary.commands),
       new Set(["\\Alias", "\\CompilerOnly", "\\Spec", "\\ZZ", "\\qty", "\\xparseMacro"]),
+    );
+    assert.deepStrictEqual(vocabulary.notRead, []);
+  });
+
+  it("gives the declarations of the readable sources and names a folder and a file that it cannot read", async function () {
+    const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-tex-macros-refused-"));
+    const root = path.join(home, ".pandoc", "styles", "macros");
+    await mkdir(path.join(root, "private"), { recursive: true });
+    await writeFile(path.join(root, "numbers.sty"), "\\newcommand{\\ZZ}{\\mathbb{Z}}\n", "utf8");
+    await writeFile(path.join(root, "locked.sty"), "\\newcommand{\\QQ}{\\mathbb{Q}}\n", "utf8");
+    await writeFile(
+      path.join(root, "private", "draft.sty"),
+      "\\newcommand{\\RR}{\\mathbb{R}}\n",
+      "utf8",
+    );
+    refused.push(path.join(root, "locked.sty"), path.join(root, "private"));
+    for (const refusedPath of refused) {
+      await chmod(refusedPath, 0o000);
+    }
+
+    const vocabulary = await loadCanonicalTexMacroCommands(home);
+    assert.deepStrictEqual(vocabulary.commands, ["\\ZZ"]);
+    assert.deepStrictEqual(
+      vocabulary.notRead.map((source) => source.path),
+      ["locked.sty", "private"],
     );
   });
 
   it("reports the missing TeX macro directory", async function () {
     const home = await mkdtemp(path.join(os.tmpdir(), "zettlr-central-tex-macros-missing-"));
-    await assert.rejects(loadCanonicalTexMacroCommands(home), /Can't read the TeX macro directory/);
+    await assert.rejects(loadCanonicalTexMacroCommands(home), MacroSourcesUnavailableError);
   });
 });
