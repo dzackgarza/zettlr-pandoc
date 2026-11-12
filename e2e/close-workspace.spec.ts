@@ -12,7 +12,8 @@
  *                  also a document in a folder that the file filters hide.
  *                  A document with unsaved text asks first: the answer
  *                  Cancel leaves the workspace and the text, and the answer
- *                  No closes the workspace and writes nothing (#210).
+ *                  No closes the workspace and writes nothing. The status
+ *                  bar and the Outline then show no document (#210).
  *
  *                  The spec answers native message boxes, so it runs on the
  *                  display of the run only.
@@ -190,5 +191,17 @@ describe("assembled app: the close of a workspace", function () {
       "each document of the workspace to close",
     );
     assert.deepEqual(await nativeDialogs(PROMPT_TITLE, 2_000), [], "one close asks one time");
+    // The window shows no document, so the status bar and the Outline show
+    // the state of no document.
+    assert.equal(
+      await activePage.locator('[data-statusbar-item="words"]').count(),
+      0,
+      "the status bar counts no words of a closed document",
+    );
+    assert.equal(
+      await activePage.locator('[data-section="outline"] .chrome-section-count').count(),
+      0,
+      "the Outline counts no headings of a closed document",
+    );
   });
 });
