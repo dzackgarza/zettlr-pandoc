@@ -2693,6 +2693,39 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(parseAs(disabled.body, "AgentErrorResponse").error.code, "SKILLS_NOT_CONFIGURED");
   });
 
+  it("names a skill or a figure that the filesystem refuses to read (#210)", async function () {
+    const lockedFolder = path.join(skillsRoot, "proofs", "nested");
+    const lockedSkill = path.join(skillsRoot, "proofs", "proof-style.md");
+    const lockedFigure = path.join(figuresRoot, "diagrams", "main.tikz");
+    chmodSync(lockedFolder, 0o000);
+    chmodSync(lockedSkill, 0o000);
+    chmodSync(lockedFigure, 0o000);
+    const [listed, skillInFolder, skill, figure] = await Promise.all([
+      httpRequest("GET", "/help?resource=skills&action=list"),
+      httpRequest("GET", "/help?resource=skills&action=read&path=proofs%2Fnested%2Fnotes.md"),
+      httpRequest("GET", "/help?resource=skills&action=read&path=proofs%2Fproof-style.md"),
+      httpRequest("GET", "/v1/figures?action=read&path=diagrams%2Fmain.tikz"),
+    ]);
+    chmodSync(lockedFolder, 0o755);
+    chmodSync(lockedSkill, 0o644);
+    chmodSync(lockedFigure, 0o644);
+
+    assert.equal(listed.status, 200, listed.body);
+    const listPayload = parseAs(listed.body, "SkillsListResponse");
+    assert.deepEqual(
+      listPayload.entries.map((entry) => entry.path),
+      ["proofs", "SKILL.md", "proofs/nested", "proofs/proof-style.md"],
+    );
+    assert.deepEqual(
+      listPayload.notListed.map((entry) => entry.path),
+      ["proofs/nested"],
+    );
+    for (const response of [skillInFolder, skill, figure]) {
+      assert.equal(response.status, 409, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "FILE_UNREADABLE");
+    }
+  });
+
   it("lists and reads text and binary files from the configured centralized figures directory", async function () {
     const listed = await httpRequest("GET", "/v1/figures");
     assert.equal(listed.status, 200, listed.body);
