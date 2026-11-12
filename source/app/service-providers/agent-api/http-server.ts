@@ -104,6 +104,7 @@ import {
 import { documentCrossReferenceSystem } from "../../util/document-bibliographies";
 import { loadCanonicalMacroInventory } from "../../util/load-mathjax-macros";
 import AgentDocumentQueries, {
+  canonicalPath,
   SEARCH_DEADLINE_MS,
   SearchPatternError,
   SearchTimeoutError,
@@ -1643,7 +1644,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       );
       return;
     }
-    const filePath = await fs.promises.realpath(requestedPath);
+    const filePath = await canonicalPath(requestedPath);
     const documentId = this._documents.ensureDocumentId(filePath);
     const baseline = await this._queries.readDocumentContent(
       documentId,

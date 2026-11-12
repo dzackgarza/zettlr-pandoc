@@ -15,6 +15,7 @@
 
 import { Text } from "@codemirror/state";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
+import { isAtOrInsideRoot } from "@common/util/renderer-path-polyfill";
 import { sha256Text } from "@common/util/sha256";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import type {
@@ -683,7 +684,17 @@ export default class AgentDocumentQueries {
         reviewGeneration: sidecar.review?.generation ?? 0,
       };
     }
-    const working = normalizeText(await this.documents.readSupportedFile(filePath));
+    // A closed document whose file is gone has no text.
+    const disk = await this.documents.readSupportedFile(filePath).catch((error: unknown) => {
+      if (hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
+        return undefined;
+      }
+      throw error;
+    });
+    if (disk === undefined) {
+      return undefined;
+    }
+    const working = normalizeText(disk);
     return {
       attached: false,
       working,
@@ -908,9 +919,8 @@ export default class AgentDocumentQueries {
 
   /**
    * The configured workspace that contains `absPath`, or undefined. Both sides
-   * are realpath'd so a symlinked workspace root compares against a symlinked
-   * target; a destination that does not exist yet canonicalizes through its
-   * existing parent.
+   * are canonical (`canonicalPath`), so a symlinked workspace root compares
+   * against a symlinked target.
    */
   private async containingWorkspace(absPath: string): Promise<string | undefined> {
     for (const workspacePath of this.app.config.get().app.openWorkspaces) {
@@ -935,34 +945,40 @@ export default class AgentDocumentQueries {
   }
 
   private async isOpenableInWorkspace(filePath: string, workspacePath: string): Promise<boolean> {
-    let canonicalFilePath: string;
-    try {
-      canonicalFilePath = await fs.promises.realpath(filePath);
-    } catch {
-      return false;
-    }
-
+    const canonicalFilePath = await canonicalPath(filePath);
     let canonicalWorkspacePath: string;
     try {
       canonicalWorkspacePath = await fs.promises.realpath(workspacePath);
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") {
+      if (!hasErrnoCode(error, "ENOENT", "ENOTDIR")) {
         throw error;
       }
       this.log.warning(
         `[AgentHTTPProvider] Configured workspace ${workspacePath} could not be resolved ` +
-          `(${code}); treating it as not containing ${filePath}. The workspace is ` +
-          "probably deleted or unmounted.",
+          `(${(error as NodeJS.ErrnoException).code}); treating it as not containing ` +
+          `${filePath}. The workspace is probably deleted or unmounted.`,
       );
       return false;
     }
-    const relativePath = path.relative(canonicalWorkspacePath, canonicalFilePath);
-    return (
-      relativePath === "" ||
-      (!relativePath.startsWith(`..${path.sep}`) &&
-        relativePath !== ".." &&
-        !path.isAbsolute(relativePath))
-    );
+    return isAtOrInsideRoot(canonicalFilePath, canonicalWorkspacePath);
+  }
+}
+
+/**
+ * The path of `filePath` with each symbolic link resolved. A path that does
+ * not exist (a removed file that a document still holds, a new entry) is
+ * the real path of its nearest existing folder joined with the rest of the
+ * path. Each other failure of the filesystem rejects.
+ */
+export async function canonicalPath(filePath: string): Promise<string> {
+  const absolute = path.resolve(filePath);
+  try {
+    return await fs.promises.realpath(absolute);
+  } catch (error) {
+    const parent = path.dirname(absolute);
+    if (!hasErrnoCode(error, "ENOENT", "ENOTDIR") || parent === absolute) {
+      throw error;
+    }
+    return path.join(await canonicalPath(parent), path.basename(absolute));
   }
 }

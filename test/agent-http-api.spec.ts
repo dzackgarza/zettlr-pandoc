@@ -1543,6 +1543,18 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
   });
 
+  it("answers that a closed document whose file was removed is not found", async function () {
+    const filePath = path.join(scratch, "closed-removed.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    rmSync(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+
+    assert.equal(response.status, 404, response.body);
+    assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "DOCUMENT_NOT_FOUND");
+  });
+
   describe("the token of a caller (#72)", function () {
     /** The providers that a test of this group made itself. */
     const started: AgentHTTPProvider[] = [];
