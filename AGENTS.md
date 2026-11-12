@@ -984,6 +984,13 @@ of an isolated instance are in the first comment of #132.
   When no editor of the window holds it (the focus is on a message, in the
   file manager or in a sidebar), the save is for the active document of the
   pane that the author used last (`savesThisDocument` in `MainEditor.vue`).
+- **A refused action of the Annotations view is shown.** An action of the
+  view on one document ("Resolve all", "Clear resolved", "Accept all", the
+  recovery of a review) that the main process rejects shows the cause with
+  the name of the document. An action on each document of the workspace
+  goes on after a refused document and shows each refusal
+  (`WorkspaceBulkOutcome`, `pinia/document-collaboration-store.ts`). Proof:
+  `e2e/annotation-bulk-refused.spec.ts`.
 - **Proof:** `test/documents-move-identity.spec.ts`,
   `test/documents-removed-file.spec.ts`,
   `e2e/external-delete-unsaved.spec.ts`,

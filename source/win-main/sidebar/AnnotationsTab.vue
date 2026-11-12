@@ -271,7 +271,9 @@
 
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { showRefusal } from "@common/util/show-refusal";
 import showToast from "@common/util/show-toast";
 import type { SourceRange } from "@dts/common/references";
 import {
@@ -488,15 +490,43 @@ async function acceptAllDocument(documentPath: string): Promise<void> {
     return;
   }
   acceptingDocuments.add(documentPath);
-  try {
-    const result = await collaborationStore.acceptAllWorkspaceReviewChunks(documentPath);
-    if (!result.ok) {
-      reportAcceptFailures([{ path: documentPath, result }]);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not accept document review", err);
-  } finally {
-    acceptingDocuments.delete(documentPath);
+  await collaborationStore
+    .acceptAllWorkspaceReviewChunks(documentPath)
+    .then(
+      (result) => {
+        if (!result.ok) {
+          reportAcceptFailures([{ path: documentPath, result }]);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => acceptingDocuments.delete(documentPath));
+}
+
+/** Reapply the frozen review of one document, and say what it withdrew. */
+async function reapply(documentPath: string): Promise<void> {
+  const result = await collaborationStore.reapplyReview(documentPath);
+  if (!result.ok) {
+    showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
+  } else if (result.withdrawnChunkIds.length > 0) {
+    showToast(
+      trans(
+        "%s suggestions no longer match the text and were withdrawn.",
+        String(result.withdrawnChunkIds.length),
+      ),
+      "info",
+    );
+  }
+}
+
+/** Return or discard the frozen review of one document. */
+async function settle(documentPath: string, action: "return" | "discard"): Promise<void> {
+  const result =
+    action === "return"
+      ? await collaborationStore.returnReview(documentPath)
+      : await collaborationStore.discardReview(documentPath);
+  if (!result.ok) {
+    showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
   }
 }
 
@@ -509,34 +539,9 @@ async function recover(
     return;
   }
   recoveringDocuments.add(documentPath);
-  try {
-    if (action === "reapply") {
-      const result = await collaborationStore.reapplyReview(documentPath);
-      if (!result.ok) {
-        showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
-      } else if (result.withdrawnChunkIds.length > 0) {
-        showToast(
-          trans(
-            "%s suggestions no longer match the text and were withdrawn.",
-            String(result.withdrawnChunkIds.length),
-          ),
-          "info",
-        );
-      }
-      return;
-    }
-    const result =
-      action === "return"
-        ? await collaborationStore.returnReview(documentPath)
-        : await collaborationStore.discardReview(documentPath);
-    if (!result.ok) {
-      showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not recover the review", err);
-  } finally {
-    recoveringDocuments.delete(documentPath);
-  }
+  await (action === "reapply" ? reapply(documentPath) : settle(documentPath, action))
+    .catch((rejection: Error) => reportRefusal(documentPath, rejection))
+    .finally(() => recoveringDocuments.delete(documentPath));
 }
 
 async function acceptAllWorkspace(): Promise<void> {
@@ -544,22 +549,38 @@ async function acceptAllWorkspace(): Promise<void> {
     return;
   }
   globalAcceptBusy.value = true;
-  try {
-    const results = await collaborationStore.acceptAllWorkspaceReviews();
-    const failures = results.flatMap(({ path, result }) => (result.ok ? [] : [{ path, result }]));
-    if (failures.length > 0) {
-      reportAcceptFailures(failures);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not accept workspace reviews", err);
-  } finally {
-    globalAcceptBusy.value = false;
-  }
+  await collaborationStore
+    .acceptAllWorkspaceReviews()
+    .then((results) => {
+      const failures = results.flatMap((entry) =>
+        "result" in entry && !entry.result.ok ? [{ path: entry.path, result: entry.result }] : [],
+      );
+      if (failures.length > 0) {
+        reportAcceptFailures(failures);
+      }
+      for (const entry of results) {
+        if ("rejection" in entry) {
+          reportRefusal(entry.path, entry.rejection);
+        }
+      }
+    }, showRefusal)
+    .finally(() => {
+      globalAcceptBusy.value = false;
+    });
 }
 
 /** Toasts one document's bulk refusal with the reason nothing changed. */
 function reportBulkFailure(documentPath: string, result: AnnotationFailure): void {
   showToast(`${pathBasename(documentPath)}: ${result.message}`, "error");
+}
+
+/**
+ * Shows the author a request about one document that the main process
+ * rejected, with the name of the document, and records the rejection.
+ */
+function reportRefusal(documentPath: string, rejection: Error): void {
+  reportError(rejection);
+  showToast(`${pathBasename(documentPath)}: ${remoteErrorMessage(rejection)}`, "error", 12000);
 }
 
 /** Resolves every open annotation of one document, in one batch. */
@@ -568,16 +589,17 @@ async function resolveAllDocument(documentPath: string): Promise<void> {
     return;
   }
   bulkDocuments.add(documentPath);
-  try {
-    const result = await collaborationStore.resolveOpenAnnotations(documentPath);
-    if ("ok" in result) {
-      reportBulkFailure(documentPath, result);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not resolve the open annotations", err);
-  } finally {
-    bulkDocuments.delete(documentPath);
-  }
+  await collaborationStore
+    .resolveOpenAnnotations(documentPath)
+    .then(
+      (result) => {
+        if ("ok" in result) {
+          reportBulkFailure(documentPath, result);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => bulkDocuments.delete(documentPath));
 }
 
 /** Deletes every resolved annotation of one document, after the confirmation. */
@@ -587,16 +609,17 @@ async function clearResolvedDocument(documentPath: string | null): Promise<void>
   }
   bulkDocuments.add(documentPath);
   clearTarget.value = null;
-  try {
-    const result = await collaborationStore.deleteResolvedAnnotations(documentPath);
-    if ("ok" in result) {
-      reportBulkFailure(documentPath, result);
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not clear the resolved annotations", err);
-  } finally {
-    bulkDocuments.delete(documentPath);
-  }
+  await collaborationStore
+    .deleteResolvedAnnotations(documentPath)
+    .then(
+      (result) => {
+        if ("ok" in result) {
+          reportBulkFailure(documentPath, result);
+        }
+      },
+      (rejection: Error) => reportRefusal(documentPath, rejection),
+    )
+    .finally(() => bulkDocuments.delete(documentPath));
 }
 
 /** Workspace-wide: every open annotation of the projected documents. */
@@ -605,18 +628,20 @@ async function resolveAllWorkspace(): Promise<void> {
     return;
   }
   globalBulkBusy.value = true;
-  try {
-    const results = await collaborationStore.resolveOpenAnnotationsWorkspace();
-    for (const { path, result } of results) {
-      if ("ok" in result) {
-        reportBulkFailure(path, result);
+  await collaborationStore
+    .resolveOpenAnnotationsWorkspace()
+    .then((results) => {
+      for (const entry of results) {
+        if ("rejection" in entry) {
+          reportRefusal(entry.path, entry.rejection);
+        } else if ("ok" in entry.result) {
+          reportBulkFailure(entry.path, entry.result);
+        }
       }
-    }
-  } catch (err) {
-    reportError("[AnnotationsTab] Could not resolve the open annotations", err);
-  } finally {
-    globalBulkBusy.value = false;
-  }
+    }, showRefusal)
+    .finally(() => {
+      globalBulkBusy.value = false;
+    });
 }
 </script>
 

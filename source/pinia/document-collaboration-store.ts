@@ -84,6 +84,14 @@ import { computed, markRaw, ref, shallowReactive } from "vue";
 
 const ipcRenderer = window.ipc;
 
+/**
+ * The outcome of one document of a workspace-wide bulk action: the answer of
+ * the main process, or the rejection of its request.
+ */
+export type WorkspaceBulkOutcome<Result> =
+  | { path: string; result: Result }
+  | { path: string; rejection: Error };
+
 export const useDocumentCollaborationStore = defineStore("document-collaboration", () => {
   // A session is a snapshot of the main process: the store replaces it and
   // never changes it in place. The map is therefore shallow, and a reader
@@ -524,30 +532,8 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   /**
-   * Resolve every annotation an agent marked acted, in one document and one
-   * generation bump. The owner bulk counterpart of the per-thread Resolve;
-   * the refreshed projection comes back through refreshSession, because a
-   * closed document on the workspace panel gets no broadcast.
-   */
-  async function resolveActedAnnotations(
-    documentPath: string,
-  ): Promise<{ resolved: TextAnnotation[] } | AnnotationFailure> {
-    const result = await withFreshAnnotationRetry<{ resolved: TextAnnotation[] }>(
-      documentPath,
-      async () =>
-        ipcRenderer.invoke("documents:resolve-acted-annotations", {
-          ...bulkAnnotationFence(documentPath),
-          scope: "acted",
-        }),
-    );
-    await refreshSession(documentPath);
-    return result;
-  }
-
-  /**
    * Resolve EVERY open annotation of one document in one batch — acted or
-   * not. The bulk move the panel's Resolve all control sends; the acted
-   * variant above is the conservative subset the remediation workflow uses.
+   * not. The bulk move the panel's Resolve all control sends.
    */
   async function resolveOpenAnnotations(
     documentPath: string,
@@ -581,84 +567,32 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   /**
-   * The bulk annotation batches across the annotation panel's workspace
-   * projection, one document at a time. Documents with nothing of the wanted
-   * kind contribute nothing and are not sent a batch; each result carries its
-   * document path so the caller can surface which refusals happened.
-   */ async function resolveActedAnnotationsWorkspace(): Promise<
-    Array<{ path: string; result: { resolved: TextAnnotation[] } | AnnotationFailure }>
-  > {
-    const targets = workspaceSessions.value
-      .filter((session) =>
-        session.annotations.items.some(
-          (annotation) => annotation.state === "open" && annotation.agentStatus.state === "acted",
-        ),
-      )
-      .map((session) => session.documentPath);
-    const results: Array<{
-      path: string;
-      result: { resolved: TextAnnotation[] } | AnnotationFailure;
-    }> = [];
-    for (const path of targets) {
-      try {
-        results.push({ path, result: await resolveActedAnnotations(path) });
-      } catch (err) {
-        reportError("[documentCollaborationStore] Resolve acted failed", [{ path, err }]);
-      }
-    }
-    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
-    return results;
-  }
-
-  /** Workspace-wide Resolve all: every document that still has open threads. */
+   * Workspace-wide Resolve all: every document of the panel's projection
+   * that still has open threads, one batch each. A document whose batch the
+   * main process rejects does not stop the others; its entry carries the
+   * rejection, so the caller shows each refusal with its document.
+   */
   async function resolveOpenAnnotationsWorkspace(): Promise<
-    Array<{ path: string; result: { resolved: TextAnnotation[] } | AnnotationFailure }>
+    Array<WorkspaceBulkOutcome<{ resolved: TextAnnotation[] } | AnnotationFailure>>
   > {
     const targets = workspaceSessions.value
       .filter((session) =>
         session.annotations.items.some((annotation) => annotation.state === "open"),
       )
       .map((session) => session.documentPath);
-    const results: Array<{
-      path: string;
-      result: { resolved: TextAnnotation[] } | AnnotationFailure;
-    }> = [];
+    const outcomes: Array<
+      WorkspaceBulkOutcome<{ resolved: TextAnnotation[] } | AnnotationFailure>
+    > = [];
     for (const path of targets) {
-      try {
-        results.push({ path, result: await resolveOpenAnnotations(path) });
-      } catch (err) {
-        reportError("[documentCollaborationStore] Resolve all failed", [{ path, err }]);
-      }
+      outcomes.push(
+        await resolveOpenAnnotations(path).then(
+          (result) => ({ path, result }),
+          (rejection: Error) => ({ path, rejection }),
+        ),
+      );
     }
     await refreshWorkspaceSessions(workspaceDocumentPaths.value);
-    return results;
-  }
-
-  /**
-   * The bulk resolved-cleanup across the workspace projection itself: only
-   * documents whose cached snapshot resolves something are sent a batch.
-   */
-  async function deleteResolvedAnnotationsWorkspace(): Promise<
-    Array<{ path: string; result: { deleted: TextAnnotation[] } | AnnotationFailure }>
-  > {
-    const targets = workspaceSessions.value
-      .filter((session) =>
-        session.annotations.items.some((annotation) => annotation.state === "resolved"),
-      )
-      .map((session) => session.documentPath);
-    const results: Array<{
-      path: string;
-      result: { deleted: TextAnnotation[] } | AnnotationFailure;
-    }> = [];
-    for (const path of targets) {
-      try {
-        results.push({ path, result: await deleteResolvedAnnotations(path) });
-      } catch (err) {
-        reportError("[documentCollaborationStore] Clear resolved failed", [{ path, err }]);
-      }
-    }
-    await refreshWorkspaceSessions(workspaceDocumentPaths.value);
-    return results;
+    return outcomes;
   }
 
   /**
@@ -759,7 +693,7 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
   }
 
   async function acceptAllWorkspaceReviews(): Promise<
-    Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }>
+    Array<WorkspaceBulkOutcome<AcceptAllChunksResponse | ReviewFailure>>
   > {
     const targets = workspaceSessions.value
       .filter(
@@ -769,19 +703,23 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
           session.review.suggestions.length > 0,
       )
       .map((session) => session.documentPath);
-    const results: Array<{ path: string; result: AcceptAllChunksResponse | ReviewFailure }> = [];
+    const results: Array<WorkspaceBulkOutcome<AcceptAllChunksResponse | ReviewFailure>> = [];
     for (const path of targets) {
-      const result = await withFreshReviewRetry(
-        path,
-        async () =>
-          (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
-            path,
-            ...reviewFence(path),
-          })) as AcceptAllChunksResponse | ReviewFailure,
+      results.push(
+        await withFreshReviewRetry(
+          path,
+          async () =>
+            (await ipcRenderer.invoke("documents:accept-all-workspace-review-chunks", {
+              path,
+              ...reviewFence(path),
+            })) as AcceptAllChunksResponse | ReviewFailure,
+        ).then(
+          (result) => ({ path, result }),
+          (rejection: Error) => ({ path, rejection }),
+        ),
       );
-      results.push({ path, result });
     }
-    const failures = results.filter(({ result }) => !result.ok);
+    const failures = results.filter((entry) => "result" in entry && !entry.result.ok);
     if (failures.length > 0) {
       reportError("[documentCollaborationStore] Accept all failed", failures);
     }
@@ -879,12 +817,9 @@ export const useDocumentCollaborationStore = defineStore("document-collaboration
     reopenAnnotation,
     deleteAnnotation,
     reattachAnnotation,
-    resolveActedAnnotations,
     resolveOpenAnnotations,
     deleteResolvedAnnotations,
-    resolveActedAnnotationsWorkspace,
     resolveOpenAnnotationsWorkspace,
-    deleteResolvedAnnotationsWorkspace,
     decideReviewChunk,
     commentReviewChunk,
     acceptAllReviewChunks,
