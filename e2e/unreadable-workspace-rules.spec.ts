@@ -189,16 +189,23 @@ describe("a workspace whose file filters cannot be read", function () {
         payload: "menu.edit_ignore_rules",
       });
     });
-    const cause = activePage.locator(`[data-ignore-rules-missing=${JSON.stringify(notes)}]`);
-    await cause.waitFor({ state: "visible", timeout: 10_000 });
+    await activePage
+      .locator("[data-ignore-rules-save]")
+      .waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("rules-dialog.png", await activePage.screenshot());
-    assert.ok((await cause.textContent())?.includes(rulesFile), "the window names the rules file");
+    // A field with the rules of the workspace is text that a save writes to
+    // the file; the window does not know the text of the file.
     assert.equal(
       await activePage.locator(`[data-ignore-rules-workspace=${JSON.stringify(notes)}]`).count(),
       0,
       "the window offers no rules of the workspace to edit",
     );
-    await activePage.keyboard.press("Escape");
+    const cause = activePage.locator(`[data-ignore-rules-missing=${JSON.stringify(notes)}]`);
+    assert.ok((await cause.textContent())?.includes(rulesFile), "the window names the rules file");
+    await activePage.locator("[data-ignore-rules-save]").click();
+    await activePage
+      .locator("[data-ignore-rules-dialog]")
+      .waitFor({ state: "detached", timeout: 10_000 });
 
     const refused = await activePage.evaluate(
       async (root) =>
