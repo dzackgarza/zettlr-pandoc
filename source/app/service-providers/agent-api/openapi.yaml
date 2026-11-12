@@ -3001,7 +3001,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "500":
-          description: Persistence failed
+          description: The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause
           content:
             application/json:
               schema:

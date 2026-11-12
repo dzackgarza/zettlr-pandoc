@@ -994,6 +994,15 @@ export default class AgentDocumentQueries {
           message: `An entry already exists at ${targetPath}`,
         };
       }
+      // The filesystem refused the creation: a folder without write
+      // permission, a full disk, a read-only mount.
+      if (isErrnoException(error)) {
+        return {
+          ok: false,
+          code: "PERSISTENCE_FAILED",
+          message: `The ${request.kind} ${targetPath} was not created: ${error.message}`,
+        };
+      }
       throw error;
     }
 

@@ -1934,7 +1934,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Persistence failed */
+      /** @description The filesystem refused the creation (PERSISTENCE_FAILED); the message names the path and the cause */
       500: {
         headers: {
           [name: string]: unknown;

@@ -65,7 +65,7 @@ import {
   visibilityChanges,
 } from "./util/read-directory";
 import { safeDelete } from "./util/safe-delete";
-import { writeTextFile } from "./util/write-text-file";
+import { createTextFile, writeTextFile } from "./util/write-text-file";
 
 /**
  * The time in which the FSAL collects events for one publication. A burst of
@@ -1128,15 +1128,12 @@ export default class FSAL extends ProviderContract {
   }
 
   /**
-   * Creates a new file in the given directory
-   *
-   * @param  {DirDescriptor}                                           src      The source directory
-   * @param  {{ name: string, content: string, type: 'code'|'file' }}  options  Options
-   * @deprecated  Use `writeTextFile` instead
+   * Creates the file at `filePath` with `content`. The creation replaces no
+   * file (`createTextFile`): a path that has one rejects with `EEXIST`.
    */
   public async createFile(filePath: string, content: string): Promise<void> {
     await this._cache.del(filePath);
-    await fs.writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
+    await createTextFile(filePath, content);
   }
 
   /**
