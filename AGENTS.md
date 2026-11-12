@@ -1037,7 +1037,8 @@ of an isolated instance are in the first comment of #132.
   `save-copy`, a tag rename, a duplicate; the closed files of a workspace edit,
   its rollback and its startup recovery in `workspace-edit-transaction.ts`), a
   Quarto manifest, `.zettlrignore`, `.ztr-directory`, the custom CSS, a
-  defaults file, a Lua filter, the snippets and the user dictionary. A new
+  defaults file, a Lua filter, the snippets, the user dictionary and a figure
+  of the central figures directory (its bytes, through the Agent API). A new
   path that writes such a file calls it, and does not call `fs.writeFile` or
   `write-file-atomic`.
 - **A creation replaces no file.** `createTextFile` (the same module) makes a
@@ -1061,7 +1062,7 @@ of an isolated instance are in the first comment of #132.
   file and never as `unlink`; the documents provider closes the tabs of a
   removed file whose document has no unsaved text (§14). The temporary file `<name>.<number>` gets `add` and `unlink`
   events. It is of no known type, so the file filters hide it (§10).
-- **Proof:** `test/fsal-write-text-file.spec.ts`,
+- **Proof:** `test/fsal-write-text-file.spec.ts`, `test/central-figures-store.spec.ts`,
   `test/fsal-watcher-events.spec.ts`, `e2e/save-after-typing.spec.ts`,
   `e2e/refused-save.spec.ts`.
 

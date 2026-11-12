@@ -363,6 +363,7 @@ components:
             - CITATION_NOT_FOUND
             - CITATION_STYLE_NOT_LOADED
             - FIGURE_NOT_FOUND
+            - FIGURES_DIRECTORY_NOT_FOUND
             - FIGURE_ALREADY_EXISTS
             - SKILLS_NOT_CONFIGURED
             - SKILL_NOT_FOUND
@@ -1995,6 +1996,19 @@ components:
           minimum: 0
         modifiedAt:
           type: string
+    FigureNotRead:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - cause
+      properties:
+        path:
+          type: string
+          description: Path relative to the configured figures directory.
+        cause:
+          type: string
+          description: The error of the filesystem.
     FigureListResponse:
       type: object
       additionalProperties: false
@@ -2002,6 +2016,7 @@ components:
         - root
         - count
         - entries
+        - notListed
       properties:
         root:
           type: string
@@ -2013,6 +2028,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FigureEntry"
+        notListed:
+          type: array
+          description: >-
+            The folders whose entries, and the entries whose metadata, could not
+            be read. A folder of this list is an entry; its content is not.
+          items:
+            $ref: "#/components/schemas/FigureNotRead"
     FigureFileResponse:
       type: object
       additionalProperties: false
@@ -2130,6 +2152,7 @@ components:
         - query
         - hits
         - truncated
+        - notSearched
       properties:
         root:
           type: string
@@ -2141,6 +2164,13 @@ components:
             $ref: "#/components/schemas/FigureSearchHit"
         truncated:
           type: boolean
+        notSearched:
+          type: array
+          description: >-
+            The figures that the search could not read and the folders that it
+            could not list; their content was not searched.
+          items:
+            $ref: "#/components/schemas/FigureNotRead"
     LintSeverityCounts:
       type: object
       additionalProperties: false
@@ -3782,7 +3812,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "404":
-          description: Figure file not found
+          description: >-
+            The figure file does not exist (FIGURE_NOT_FOUND), or the configured
+            figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND).
           content:
             application/json:
               schema:

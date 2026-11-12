@@ -728,6 +728,7 @@ export interface components {
         | "CITATION_NOT_FOUND"
         | "CITATION_STYLE_NOT_LOADED"
         | "FIGURE_NOT_FOUND"
+        | "FIGURES_DIRECTORY_NOT_FOUND"
         | "FIGURE_ALREADY_EXISTS"
         | "SKILLS_NOT_CONFIGURED"
         | "SKILL_NOT_FOUND"
@@ -1372,11 +1373,19 @@ export interface components {
       size: number;
       modifiedAt: string;
     };
+    FigureNotRead: {
+      /** @description Path relative to the configured figures directory. */
+      path: string;
+      /** @description The error of the filesystem. */
+      cause: string;
+    };
     FigureListResponse: {
       /** @description Absolute figures directory. */
       root: string;
       count: number;
       entries: components["schemas"]["FigureEntry"][];
+      /** @description The folders whose entries, and the entries whose metadata, could not be read. A folder of this list is an entry; its content is not. */
+      notListed: components["schemas"]["FigureNotRead"][];
     };
     FigureFileResponse: {
       path: string;
@@ -1430,6 +1439,8 @@ export interface components {
       query: string;
       hits: components["schemas"]["FigureSearchHit"][];
       truncated: boolean;
+      /** @description The figures that the search could not read and the folders that it could not list; their content was not searched. */
+      notSearched: components["schemas"]["FigureNotRead"][];
     };
     LintSeverityCounts: {
       error: number;
@@ -2780,7 +2791,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Figure file not found */
+      /** @description The figure file does not exist (FIGURE_NOT_FOUND), or the configured figures directory does not exist (FIGURES_DIRECTORY_NOT_FOUND). */
       404: {
         headers: {
           [name: string]: unknown;

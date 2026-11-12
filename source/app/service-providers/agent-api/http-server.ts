@@ -93,6 +93,7 @@ import {
   CentralFigureAlreadyExistsError,
   CentralFigureInputError,
   CentralFigureNotFoundError,
+  CentralFiguresDirectoryNotFoundError,
   createCentralTikzFigure,
   listCentralFigures,
   readCentralFigure,
@@ -190,6 +191,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   CITATION_NOT_FOUND: 404,
   CITATION_STYLE_NOT_LOADED: 503,
   FIGURE_NOT_FOUND: 404,
+  FIGURES_DIRECTORY_NOT_FOUND: 404,
   FIGURE_ALREADY_EXISTS: 409,
   SKILLS_NOT_CONFIGURED: 503,
   SKILL_NOT_FOUND: 404,
@@ -2533,9 +2535,13 @@ export default class AgentHTTPProvider extends ProviderContract {
   private async handleListFigures(res: http.ServerResponse): Promise<void> {
     const root = this.centralFiguresDirectory();
     try {
-      const entries = await listCentralFigures(root);
-      this.sendJson(res, 200, { root, count: entries.length, entries });
+      const { entries, notListed } = await listCentralFigures(root);
+      this.sendJson(res, 200, { root, count: entries.length, entries, notListed });
     } catch (error) {
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2580,6 +2586,10 @@ export default class AgentHTTPProvider extends ProviderContract {
       const result = await searchCentralFigures(root, query);
       this.sendJson(res, 200, { root, query, ...result });
     } catch (error) {
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
+        return;
+      }
       this.sendError(
         res,
         500,
@@ -2599,6 +2609,10 @@ export default class AgentHTTPProvider extends ProviderContract {
     } catch (error) {
       if (error instanceof CentralFigureNotFoundError) {
         this.sendError(res, 404, "FIGURE_NOT_FOUND", error.message);
+        return;
+      }
+      if (error instanceof CentralFiguresDirectoryNotFoundError) {
+        this.sendError(res, 404, "FIGURES_DIRECTORY_NOT_FOUND", error.message);
         return;
       }
       if (error instanceof CentralFigureInputError) {

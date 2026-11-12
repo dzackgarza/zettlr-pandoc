@@ -65,9 +65,10 @@ async function replacedByRename(filePath: string): Promise<boolean> {
 
 /**
  * Writes `contents` to the file at `filePath`, and creates the file when it
- * does not exist.
+ * does not exist. Bytes are for an authored file that is not text: a figure
+ * of the central figures directory.
  */
-export async function writeTextFile(filePath: string, contents: string): Promise<void> {
+export async function writeTextFile(filePath: string, contents: string | Buffer): Promise<void> {
   if (await replacedByRename(filePath)) {
     await writeFileAtomic(filePath, contents, "utf-8");
   } else {
