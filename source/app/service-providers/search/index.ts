@@ -22,6 +22,7 @@
  */
 
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import type { UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { ipcMain } from "electron";
 import path from "path";
@@ -108,7 +109,13 @@ export type WorkspaceSearchOutcome =
   | { status: "timeout"; documentPath: string };
 
 export type ReplaceOutcome =
-  | { status: "applied"; documentsChanged: string[]; matchesReplaced: number }
+  | {
+      status: "applied";
+      documentsChanged: string[];
+      matchesReplaced: number;
+      /** The open documents that hold the replace but whose save was refused. */
+      unsaved: UnsavedDocument[];
+    }
   | { status: "conflict"; documentPath: string };
 
 export type UndoReplaceOutcome = ReplaceOutcome | { status: "nothing-to-undo" };
@@ -623,7 +630,7 @@ export class SearchProvider implements ProviderContract {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await this._documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -632,6 +639,7 @@ export class SearchProvider implements ProviderContract {
       status: "applied",
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
       matchesReplaced: edits.length,
+      unsaved,
     };
   }
 
@@ -649,7 +657,7 @@ export class SearchProvider implements ProviderContract {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await this._documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -658,6 +666,7 @@ export class SearchProvider implements ProviderContract {
       status: "applied",
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
       matchesReplaced: pending.edits.length,
+      unsaved,
     };
   }
 }

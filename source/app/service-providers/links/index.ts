@@ -12,6 +12,7 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-main";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import {
@@ -259,13 +260,28 @@ export default class LinkProvider extends ProviderContract {
         `[LinkProvider] ${result.documentPath} changed while its wikilinks were retargeted after ${move.from} moved to ${move.to}`,
       );
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (filePath) => await documents.saveFile(filePath),
       result.openBuffersUpdated,
     );
     for (const filePath of [...result.openBuffersUpdated, ...result.closedFilesWritten]) {
       this._logger.info(
         `[LinkProvider] Retargeted the wikilinks in ${filePath} after ${move.from} moved to ${move.to}`,
+      );
+    }
+    if (unsaved.length > 0) {
+      // The documents hold the new links; the author saves them when the
+      // files take a save again. The dispatcher shows this message.
+      throw new Error(
+        unsaved
+          .map(({ documentPath, refusal }) =>
+            trans(
+              "The links in %s follow the move, but the document is not saved: %s",
+              documentPath,
+              refusal.message,
+            ),
+          )
+          .join("\n"),
       );
     }
   }

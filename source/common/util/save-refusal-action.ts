@@ -21,7 +21,7 @@ import { trans } from "@common/i18n-renderer";
 import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import showToast, { type ToastAction } from "@common/util/show-toast";
-import type { SaveRefusal } from "@dts/common/documents";
+import type { SaveRefusal, UnsavedDocument } from "@dts/common/documents";
 
 /**
  * The action that writes the text that the application holds of the
@@ -99,5 +99,25 @@ export function saveRefusalActions(filePath: string, refusal: SaveRefusal): Toas
     case "saved-not-refreshed":
     case "discard-failed":
       return [];
+  }
+}
+
+/**
+ * One message for each open document that a workspace edit (Fix All, a
+ * replace) changed and whose save was refused: the document holds the
+ * change, and the message offers the actions of its refusal.
+ */
+export function showUnsavedDocuments(unsaved: UnsavedDocument[]): void {
+  for (const { documentPath, refusal } of unsaved) {
+    showToast(
+      trans(
+        "%s has the changes, but is not saved: %s",
+        pathBasename(documentPath),
+        refusal.message,
+      ),
+      "error",
+      12000,
+      ...saveRefusalActions(documentPath, refusal),
+    );
   }
 }

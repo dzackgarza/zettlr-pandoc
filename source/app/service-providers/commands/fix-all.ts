@@ -168,7 +168,7 @@ export default class FixAll extends ZettlrCommand {
     if (result.status === "conflict") {
       return { status: "conflict", documentPath: result.documentPath };
     }
-    await saveUpdatedBuffers(
+    const unsaved = await saveUpdatedBuffers(
       async (documentPath) => await documents.saveFile(documentPath),
       result.openBuffersUpdated,
     );
@@ -176,6 +176,7 @@ export default class FixAll extends ZettlrCommand {
       status: "applied",
       fixesApplied: edits.length,
       documentsChanged: [...result.openBuffersUpdated, ...result.closedFilesWritten],
+      unsaved,
     };
   }
 }

@@ -358,6 +358,7 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { showUnsavedDocuments } from "@common/util/save-refusal-action";
 import {
   AlertDialogAction,
   AlertDialogCancel,
@@ -743,6 +744,7 @@ function runReplace(targets: ReplaceTarget[]): void {
         return;
       }
       undoAvailable.value = true;
+      showUnsavedDocuments(outcome.unsaved);
       runSearch();
     })
     .catch((err) => {
@@ -787,6 +789,9 @@ function undoReplace(): void {
         return;
       }
       undoAvailable.value = false;
+      if (outcome.status === "applied") {
+        showUnsavedDocuments(outcome.unsaved);
+      }
       runSearch();
     })
     .catch((err) => {

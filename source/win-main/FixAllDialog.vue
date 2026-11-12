@@ -67,6 +67,7 @@
 import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
+import { showUnsavedDocuments } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import type { FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import {
@@ -176,6 +177,7 @@ function commit(): void {
           documentsPhrase(outcome.documentsChanged.length),
         ),
       );
+      showUnsavedDocuments(outcome.unsaved);
     })
     .catch((error) => {
       reportError(error);

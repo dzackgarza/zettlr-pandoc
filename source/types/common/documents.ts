@@ -155,6 +155,15 @@ export interface SaveRefusal {
 export type SaveFileResult = { ok: true } | { ok: false; refusal: SaveRefusal };
 
 /**
+ * An open document that a workspace edit changed and whose save was
+ * refused. The document holds the edit; its file does not.
+ */
+export interface UnsavedDocument {
+  documentPath: string;
+  refusal: SaveRefusal;
+}
+
+/**
  * The action of the author that a refusal stopped: the close of a document
  * or of a window, a reload of a document from disk, or a quit.
  */

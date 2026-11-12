@@ -3,6 +3,8 @@
  * shows its summary, and commits the same plan.
  */
 
+import type { UnsavedDocument } from "./documents";
+
 export type FixAllRequest =
   | { scope: "document"; documentPath: string }
   | { scope: "open" }
@@ -36,5 +38,11 @@ export interface FixAllPlan {
 }
 
 export type FixAllOutcome =
-  | { status: "applied"; fixesApplied: number; documentsChanged: string[] }
+  | {
+      status: "applied";
+      fixesApplied: number;
+      documentsChanged: string[];
+      /** The open documents that hold their fixes but whose save was refused. */
+      unsaved: UnsavedDocument[];
+    }
   | { status: "conflict"; documentPath: string };

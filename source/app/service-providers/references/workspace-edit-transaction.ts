@@ -34,7 +34,7 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import isErrnoException from "@common/util/is-errno-exception";
-import type { SaveFileResult } from "@dts/common/documents";
+import type { SaveFileResult, UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
 import { diffChars } from "diff";
@@ -350,23 +350,26 @@ async function rollback(
  * Saves the open buffers a transaction updated, so that a workspace edit
  * ends on disk for every document it touched: the transaction writes the
  * closed files itself (VS Code's Replace All saves the edited files the same
- * way).
+ * way). Each buffer is saved: a refused save leaves its document with the
+ * edit and does not stop the saves of the others.
  *
  * @param   {Function}  saveFile       The document authority's save
  * @param   {string[]}  documentPaths  The open buffers the transaction updated
+ *
+ * @return  {Promise<UnsavedDocument[]>}  Each document whose save was refused
  */
 export async function saveUpdatedBuffers(
   saveFile: (filePath: string) => Promise<SaveFileResult>,
   documentPaths: string[],
-): Promise<void> {
+): Promise<UnsavedDocument[]> {
+  const unsaved: UnsavedDocument[] = [];
   for (const documentPath of documentPaths) {
     const saved = await saveFile(documentPath);
     if (!saved.ok) {
-      throw new Error(
-        `[Workspace Edit] Could not save ${documentPath} after the edit: ${saved.refusal.message}`,
-      );
+      unsaved.push({ documentPath, refusal: saved.refusal });
     }
   }
+  return unsaved;
 }
 
 /**
