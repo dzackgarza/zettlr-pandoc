@@ -21,6 +21,7 @@ import type { AppServiceContainer } from "source/app/app-service-container";
 import { openPath } from "source/app/util/open-path";
 import { isHtmlWriter, isTexWriter, PANDOC_WRITERS } from "source/common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
+import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { DirDescriptor, ProjectSettings } from "source/types/common/fsal";
 import type AssetsProvider from "../assets";
 import type { PandocProfileMetadata, ValidPandocProfile } from "../assets";
@@ -94,23 +95,29 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     throw new Error(`Could not export the project: ${dir.name} is not a project.`);
   }
 
-  // Now, we have to retrieve the files. We have a directory descriptor that
-  // contains a list of existing files on disk, and we have a project config
-  // that specifies files and a sorting for export. We need to check that all
-  // files specified in the config still exist. If a file is missing, display
-  // a warning but export anyway.
-  const availableFiles = (await app.fsal.readDirectoryRecursively(dir.path)).paths;
+  // The export takes each chapter of the settings that the listing of the
+  // Project folder holds. The author gets a message that names each other
+  // chapter, and the cause when its folder refused its content.
+  const listing = await app.fsal.readDirectoryRecursively(dir.path);
+  const availableFiles = new Set(listing.paths);
+  const notListed = new Map(listing.notListed.map((folder) => [folder.path, folder.cause]));
 
-  // Since the config.files array already includes relative paths, we
-  // basically just have to make them absolute relative to the directory and
-  // ensure those paths exist in availableFiles.
-  const existingFilesWithSorting = config.files
-    // Since we default to always using Unix paths, to make the magic work on
-    // Windows, we here have to map the relative paths in the project config
-    // (back) to the Windows conventions by replacing / with \\.
-    .map((file) => (process.platform === "win32" ? pathToWin(file) : file))
-    .map((file) => path.join(dir.path, file))
-    .filter((file) => availableFiles.includes(file));
+  // The settings hold Unix paths relative to the Project folder.
+  const chapters = config.files.map((file) => ({
+    file,
+    absPath: path.join(dir.path, process.platform === "win32" ? pathToWin(file) : file),
+  }));
+  const existingFilesWithSorting = chapters
+    .filter((chapter) => availableFiles.has(chapter.absPath))
+    .map((chapter) => chapter.absPath);
+  const missingChapters = chapters
+    .filter((chapter) => !availableFiles.has(chapter.absPath))
+    .map((chapter) => {
+      const refused = innermostRoot(chapter.absPath, notListed.keys());
+      return refused === undefined
+        ? chapter.file
+        : `${chapter.file}: ${refused} cannot be read (${notListed.get(refused)})`;
+    });
 
   if (existingFilesWithSorting.length === 0) {
     app.log.warning("[Project] Aborting project export: No files to export");
@@ -121,12 +128,13 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
       ),
     );
     return false; // Cannot export
-  } else if (existingFilesWithSorting.length !== config.files.length) {
+  } else if (missingChapters.length > 0) {
     await dialog.showMessageBox({
       title: trans("Project File Mismatch"),
       message: trans(
         "One or more files specified in the project settings have not been found. They may have moved or been deleted. Please verify that all files that you would like to export are included.",
       ),
+      detail: missingChapters.join("\n"),
       buttons: [trans("Ok")],
     }); // Don't return, because we still can export
   }
