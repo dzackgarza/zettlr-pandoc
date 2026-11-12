@@ -61,8 +61,9 @@ export function closeFile(path: string): void {
 }
 
 /**
- * Close a workspace root path at `path`, including all open files
- * within the workspace
+ * Close the workspace root at `path` with each document inside it. The
+ * command asks about unsaved text and keeps the workspace when a document
+ * stays open.
  *
  * @param {string}  path    The workspace path to close
  */
@@ -73,25 +74,6 @@ export function closeWorkspace(path: string): void {
   if (!workspaceStore.rootDescriptors.find((r) => r.path === path)) {
     return;
   }
-
-  ipcRenderer
-    .invoke("documents-provider", {
-      command: "get-open-workspace-files",
-      payload: {
-        path: path,
-      },
-    })
-    .then((openFiles) => {
-      for (const file of openFiles) {
-        ipcRenderer
-          .invoke("documents-provider", {
-            command: "close-file-everywhere",
-            payload: { path: file },
-          })
-          .catch((e) => reportError(e));
-      }
-    })
-    .catch((e) => reportError(e));
 
   ipcRenderer
     .invoke("application", {

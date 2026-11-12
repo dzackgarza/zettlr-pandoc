@@ -895,6 +895,12 @@ of an isolated instance are in the first comment of #132.
   detaches before it closes a tab, so a refused close leaves the tabs and
   the buffer. A caller that removes the file afterwards (`file-delete`, the
   overwrite of `file-new`) stops on `false`.
+- **The close of a workspace is a close of its documents.** The command
+  `root-close` calls `closeDocumentsInside` before it removes the root. It
+  asks one time about the unsaved text of the documents at or inside the
+  root, as the close of a window does, and closes each such document and
+  tab, also of a path that the file filters hide. A refused or cancelled
+  close keeps the workspace. Proof: `e2e/close-workspace.spec.ts`.
 - **A sidecar that cannot be read is kept.** `CollaborationSidecarStore`
   replaces or removes a file only after its last read of that file gave a
   sidecar or no file (`examined`). A file that this version cannot read (a

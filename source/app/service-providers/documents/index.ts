@@ -87,7 +87,11 @@ import {
   hasPDFExt,
 } from "source/common/util/file-extention-checks";
 import isDir from "source/common/util/is-dir";
-import { innermostRoot, isInsideRoot } from "source/common/util/renderer-path-polyfill";
+import {
+  innermostRoot,
+  isAtOrInsideRoot,
+  isInsideRoot,
+} from "source/common/util/renderer-path-polyfill";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
 import {
@@ -462,10 +466,6 @@ export type DocumentManagerIPCContract = {
   "save-copy": {
     request: { payload: { path: string } };
     response: string | undefined;
-  };
-  "get-open-workspace-files": {
-    request: { payload: { path: string } };
-    response: string[];
   };
   "sort-open-files": {
     request: { payload: LeafLoc & { newOrder: string[] } };
@@ -1182,10 +1182,6 @@ export default class DocumentManager
         }
         case "save-copy": {
           return await this.saveCopy(payload.path);
-        }
-        case "get-open-workspace-files": {
-          const { path } = payload;
-          return (await this.getFilesForWorkspace(path)).files;
         }
         case "sort-open-files": {
           const { windowId, leafId, newOrder } = payload;
@@ -2591,6 +2587,57 @@ current contents from the editor somewhere else, and restart the application.`,
     }
 
     this.syncWatchedFilePaths();
+    return true;
+  }
+
+  /**
+   * Closes each document at or inside `rootPath`: each loaded document and
+   * each tab, also of a path that the file filters hide. Unsaved text is
+   * asked about one time, as at the close of a window; a document with an
+   * undecided proposal is not asked about, its close puts the review in the
+   * sidecar. Resolves false when a document stays open: the author
+   * cancelled, a save was refused, or a close was refused with an action
+   * that runs `closeAgain`.
+   */
+  public async closeDocumentsInside(
+    rootPath: string,
+    closeAgain: () => Promise<void>,
+  ): Promise<boolean> {
+    const inside = (filePath: string): boolean => isAtOrInsideRoot(filePath, rootPath);
+    const loaded = this.documents.filter((document) => inside(document.filePath));
+    const asked = this._documentsToAskAbout(loaded);
+    if (asked.length > 0) {
+      const detail = asked
+        .map((document) => trans("File: %s", document.descriptor.name))
+        .join("\n");
+      const result = await this._app.windows.askSaveChanges(detail);
+      // 0 = Save, 1 = Don't save, 2 = Cancel
+      if (result.response === 2) {
+        return false;
+      }
+      for (const document of asked) {
+        if (result.response === 1) {
+          if (!(await this._discardForClose(document, closeAgain, "close"))) {
+            return false;
+          }
+          continue;
+        }
+        const saved = await this.saveFile(document.filePath);
+        if (!saved.ok) {
+          this._announceSaveRefusal(document.filePath, saved);
+          return false;
+        }
+      }
+    }
+    const paths = new Set([
+      ...loaded.map((document) => document.filePath),
+      ...[...this._pathsShownInPanes()].filter(inside),
+    ]);
+    for (const filePath of paths) {
+      if (!(await this.closeFileEverywhere(filePath))) {
+        return false;
+      }
+    }
     return true;
   }
 

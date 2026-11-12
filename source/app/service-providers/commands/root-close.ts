@@ -21,12 +21,20 @@ export default class RootClose extends ZettlrCommand {
   }
 
   /**
-   * Closes (not removes) either a directory or a file.
-   * @param {String} evt The event name
-   * @param  {Object} arg The hash of a root directory or file.
+   * Closes (not removes) a root directory or a root file, with each document
+   * at or inside it. Resolves false and keeps the root when a document stays
+   * open (DocumentManager.closeDocumentsInside).
+   *
+   * @param   {string}  evt   The event name
+   * @param   {string}  arg   The path of the root
    */
   async run(evt: string, arg: string): Promise<boolean> {
-    // We got a root, so now we need to unload it and remove it from config
+    const closed = await this._app.documents.closeDocumentsInside(arg, async () => {
+      await this.run(evt, arg);
+    });
+    if (!closed) {
+      return false;
+    }
     this._app.config.removePath(arg);
     return true;
   }
