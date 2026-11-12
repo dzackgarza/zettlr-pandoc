@@ -442,6 +442,56 @@ describe("the Ctrl+P command launcher", function () {
     await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
   });
 
+  it("names the repository whose justfile Just cannot read, with the cause", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(fixtureRoot, "The fixture must be initialized");
+    const justfile = path.join(root, "workspace", "justfile");
+    const readable = await readFile(justfile, "utf8");
+    await writeFile(justfile, `${readable}\nfixture-broken:\n  @echo {{ unclosed\n`);
+
+    await focusOutsideEditor(activePage);
+    await openLauncherFromMenu(activePage);
+    await activePage.locator(LAUNCHER_INPUT).fill("justfile");
+    await waitUntil(
+      async () =>
+        (await activePage
+          .locator(`${LAUNCHER} [data-launcher-row]`, { hasText: "Justfile commands" })
+          .count()) > 0,
+      "the Justfile commands group while the justfile does not parse",
+      10_000,
+    );
+    await typeAndWaitForHighlight(activePage, "justfile", "Justfile commands");
+    await activePage.keyboard.press("Enter");
+
+    const unlisted = activePage.locator(`${LAUNCHER} [data-row-kind="just-unlisted"]`);
+    await unlisted.waitFor({ timeout: 10_000 });
+    screenshots.set("launcher-justfile-unlisted.png", await activePage.screenshot());
+    const workspaceRoot = (
+      await execFileAsync("git", [
+        "-C",
+        path.join(root, "workspace"),
+        "rev-parse",
+        "--show-toplevel",
+      ])
+    ).stdout.trim();
+    assert.equal(await unlisted.getAttribute("data-just-repository"), workspaceRoot);
+    assert.match(await unlisted.innerText(), /workspace/);
+    assert.equal(
+      await unlisted.getAttribute("data-disabled"),
+      "",
+      "a repository without recipes is no command to run",
+    );
+    assert.equal(
+      await activePage.locator(`${LAUNCHER} [data-row-kind="just-recipe"]`).count(),
+      0,
+      "a justfile that does not parse lists no recipe",
+    );
+
+    await activePage.keyboard.press("Escape");
+    await activePage.locator(LAUNCHER).waitFor({ state: "detached", timeout: 10_000 });
+    await writeFile(justfile, readable);
+  });
+
   it("toggles the sidebar off and on through a typed command", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await focusOutsideEditor(activePage);
