@@ -966,6 +966,16 @@ of an isolated instance are in the first comment of #132.
   listings reject while an unreadable file exists; the lookup of an
   annotation of a loaded document and the read of another closed document
   do not read that file (`test/annotation-agent-api.spec.ts`).
+- **A sidecar that a load cannot write is not an unreadable sidecar.** A
+  load attaches the sidecar to the text of the file, and that attach can
+  write it (a new fence, orphaned annotations). When the write fails, the
+  document opens without the sidecar and its window gets
+  `COLLABORATION_FILE_UNWRITABLE_CHANNEL`: a message that names the write,
+  with no "Move the file aside" (the move is a write too). The next load
+  attaches the sidecar again. Only `CollaborationSidecarUnreadableError`
+  is an unreadable file (`_reattachCollaborationSidecar`); any other
+  rejection propagates. Proof: `e2e/review-persistence-failure.spec.ts`
+  (#218).
 - **A prompt for many documents does not decide a review.** A quit and a
   window close ask the author to save or discard only the documents of
   `_documentsToAskAbout`. A document whose review has an undecided proposal

@@ -22,6 +22,7 @@ import PersistentDataContainer from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { countAll } from "@common/util/counter";
 import errorToString from "@common/util/error-to-string";
+import isErrnoException from "@common/util/is-errno-exception";
 import isFile from "@common/util/is-file";
 import serializeChangeSet from "@common/util/serialize-change-set";
 import { sha256Text } from "@common/util/sha256";
@@ -38,7 +39,9 @@ import type {
 } from "@dts/common/annotation-domain";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  COLLABORATION_FILE_UNWRITABLE_CHANNEL,
   type CollaborationFileUnreadableBroadcast,
+  type CollaborationFileUnwritableBroadcast,
   type DocumentCollaborationSession,
   type OwnerlessCollaborationFile,
   type UnreadableCollaborationFile,
@@ -95,6 +98,7 @@ import {
 } from "source/common/util/renderer-path-polyfill";
 import { v4 as uuid4 } from "uuid";
 import { type AppServiceContainer } from "../../app-service-container";
+import { CollaborationSidecarUnreadableError } from "./collaboration-sidecar-store";
 import {
   type AgentEventPayload,
   type AnnotationFailure,
@@ -203,7 +207,8 @@ type DocumentMessage =
   | SaveRefusedBroadcast
   | FileRemovedKeptBroadcast
   | RemoteChangeKeptBroadcast
-  | CollaborationFileUnreadableBroadcast;
+  | CollaborationFileUnreadableBroadcast
+  | CollaborationFileUnwritableBroadcast;
 
 // Keep no more than this many updates.
 const MAX_VERSION_HISTORY = 100;
@@ -4394,16 +4399,31 @@ current contents from the editor somewhere else, and restart the application.`,
       // that session. The session goes out after the buffer has its text.
       this.broadcastCollaborationState(doc.documentId);
     } catch (err) {
-      // The document itself is fine — open it; the broken sidecar stays on
-      // disk as evidence and keeps failing loudly until it is dealt with.
-      this._surfaceReviewSidecarError(doc.documentId, "read", err);
-      // The window says so and offers to move the file aside.
-      const payload: CollaborationFileUnreadableBroadcast = {
+      // The document itself is fine — open it; the sidecar stays on disk as
+      // it is and keeps failing loudly until it is dealt with.
+      if (err instanceof CollaborationSidecarUnreadableError) {
+        this._surfaceReviewSidecarError(doc.documentId, "read", err);
+        // The window says so and offers to move the file aside.
+        const payload: CollaborationFileUnreadableBroadcast = {
+          filePath: doc.filePath,
+          file: this._reviewApplication.sidecarFileOf(doc.filePath),
+          cause: err.message,
+        };
+        this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
+        return;
+      }
+      if (!isErrnoException(err)) {
+        throw err;
+      }
+      // The file was read; the attach to the text of the file could not
+      // write it. Nothing of it is in memory, and the next load attaches it
+      // again. A move aside is a write too, so the window offers none.
+      this._surfaceReviewSidecarError(doc.documentId, "write", err);
+      const payload: CollaborationFileUnwritableBroadcast = {
         filePath: doc.filePath,
-        file: this._reviewApplication.sidecarFileOf(doc.filePath),
-        cause: err instanceof Error ? err.message : String(err),
+        cause: err.message,
       };
-      this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNREADABLE_CHANNEL, payload);
+      this._tellAbout(doc.filePath, undefined, COLLABORATION_FILE_UNWRITABLE_CHANNEL, payload);
     }
   }
 

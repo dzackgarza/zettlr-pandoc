@@ -88,3 +88,16 @@ export type CollaborationFileUnreadableBroadcast = {
 };
 
 export const COLLABORATION_FILE_UNREADABLE_CHANNEL = "collaboration-sidecar-unreadable";
+
+/**
+ * Broadcast on COLLABORATION_FILE_UNWRITABLE_CHANNEL when a document opened
+ * without its annotations and its review, because the attach of their file
+ * to the text of the document could not write the file. The file keeps its
+ * bytes, and the next load of the document attaches it again.
+ */
+export type CollaborationFileUnwritableBroadcast = {
+  filePath: string;
+  cause: string;
+};
+
+export const COLLABORATION_FILE_UNWRITABLE_CHANNEL = "collaboration-sidecar-unwritable";

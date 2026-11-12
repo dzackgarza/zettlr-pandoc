@@ -222,7 +222,9 @@ import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
+  COLLABORATION_FILE_UNWRITABLE_CHANNEL,
   type CollaborationFileUnreadableBroadcast,
+  type CollaborationFileUnwritableBroadcast,
 } from "@dts/common/document-collaboration";
 import {
   DocumentType,
@@ -1113,6 +1115,24 @@ onMounted(() => {
             );
           },
         },
+      );
+    },
+  );
+
+  // A document opened without its annotations and its review: their file
+  // was read, and the attach to the text of the file could not write it.
+  // The next load of the document attaches the file again.
+  ipcRenderer.on(
+    COLLABORATION_FILE_UNWRITABLE_CHANNEL,
+    (event, payload: CollaborationFileUnwritableBroadcast) => {
+      showToast(
+        trans(
+          "%s opened without its annotations and its review. Their file cannot be written: %s",
+          pathBasename(payload.filePath),
+          payload.cause,
+        ),
+        "error",
+        12000,
       );
     },
   );
