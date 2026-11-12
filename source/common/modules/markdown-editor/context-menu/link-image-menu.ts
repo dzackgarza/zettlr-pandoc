@@ -146,6 +146,12 @@ export function linkImageMenu(
       id: "copy-img-to-clipboard",
       enabled: isFileLink,
       type: "normal",
+      action() {
+        // The dispatcher shows a refusal in this window.
+        ipcRenderer
+          .invoke("application", { command: "copy-img-to-clipboard", payload: validAbsoluteURI })
+          .catch((err: Error) => reportError(err));
+      },
     },
     {
       label: trans("Open image"),

@@ -18,6 +18,7 @@ import { trans } from "@common/i18n-main";
 import { reportError } from "@common/util/error-reporting";
 import { app, type WebContents } from "electron";
 import type LogProvider from "../service-providers/log";
+import { filePathOfUri } from "./file-uri-path";
 import { openExternal, openPath } from "./open-path";
 import { showRefusalInWindow } from "./show-refusal-in-window";
 import { systemErrorCause } from "./system-error-cause";
@@ -33,9 +34,9 @@ import { systemErrorCause } from "./system-error-cause";
  */
 function openOutside(url: string, window: WebContents): void {
   if (url.startsWith("safe-file://")) {
+    const filePath = filePathOfUri(url);
     const page = new URL(url).hash.match(/^#page=([1-9]\d*)$/);
     if (page !== null) {
-      const filePath = decodeURIComponent(new URL(url).pathname);
       const viewer = spawn("okular", ["--page", page[1], filePath], {
         detached: true,
         stdio: "ignore",
@@ -48,15 +49,8 @@ function openOutside(url: string, window: WebContents): void {
       viewer.unref();
       return;
     }
-    // will-navigate assumes an URL and will pass an encoded URI, so we have to
-    // make sure to decode the url so that %28 becomes ( again.
-    const unencoded = decodeURIComponent(url).substring(12);
-    // On Windows, it likes to add a third slash at the beginning (because
-    // unlike UNIX, absolute paths start with a letter, not a slash)
-    const leadingSlash = unencoded.startsWith("/") && process.platform === "win32";
-    const realPath = leadingSlash ? unencoded.substring(1) : unencoded;
-    // The path without the protocol goes to the desktop.
-    openPath(realPath).catch((err: Error) => {
+    // The path of the file goes to the desktop.
+    openPath(filePath).catch((err: Error) => {
       reportError(`[Window Manager] ${err.message}`);
       showRefusalInWindow(window, "open-link", err);
     });

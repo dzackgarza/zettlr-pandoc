@@ -19,6 +19,7 @@ import type {
   ExternalLinterRunRequest,
   ExternalLinterRunResponse,
 } from "@common/diagnostics/external-linter";
+import { trans } from "@common/i18n-main";
 import type { FormatResult } from "@common/modules/markdown-editor/commands/format-document";
 import type {
   CommitRenameOutcome,
@@ -44,6 +45,7 @@ import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tik
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
+import { filePathOfUri } from "source/app/util/file-uri-path";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
 import { openPath } from "source/app/util/open-path";
@@ -272,6 +274,12 @@ export type ApplicationIPCContract = {
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
     response: unknown;
+  };
+  // Answered inline by run(): the clipboard takes the image of the file that
+  // the URI names. A file that is no image rejects.
+  "copy-img-to-clipboard": {
+    request: { payload: string };
+    response: void;
   };
   // Answered inline by run(): the desktop opens the path with the
   // application of its type (`openPath`). A refusal rejects.
@@ -513,33 +521,16 @@ export default class CommandProvider extends ProviderContract {
   private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     // FIRST: Try to run a minimal command for which its own custom function
     // wouldn't make sense.
-    if (command === "copy-img-to-clipboard") {
-      // We should copy the contents of an image file to clipboard. Payload
-      // contains the image path. We can rely on the Electron framework here.
-      if (typeof payload !== "string") {
-        return false;
+    if (command === "copy-img-to-clipboard" && typeof payload === "string") {
+      // The payload is the URI of the image file.
+      const imagePath = filePathOfUri(payload);
+      const image = nativeImage.createFromPath(imagePath);
+      // Electron gives an empty image for a file that it cannot read or decode.
+      if (image.isEmpty()) {
+        throw new Error(trans("%s is not an image that can be copied.", imagePath));
       }
-
-      let imgPath = payload;
-      if (imgPath.startsWith("safe-file://")) {
-        imgPath = imgPath.replace("safe-file://", "");
-      } else if (imgPath.startsWith("file://")) {
-        imgPath = imgPath.replace("file://", "");
-      }
-
-      // Due to the colons in the drive letters on Windows, the pathname will
-      // look like this: /C:/Users/Documents/test.jpg
-      // See: https://github.com/Zettlr/Zettlr/issues/5489
-      if (/^\/[A-Z]:/i.test(imgPath)) {
-        imgPath = imgPath.slice(1);
-      }
-
-      const img = nativeImage.createFromPath(imgPath);
-
-      if (!img.isEmpty()) {
-        clipboard.writeImage(img);
-      }
-      return true;
+      clipboard.writeImage(image);
+      return;
     } else if (command === "get-document-text" && typeof payload === "string") {
       return await this._app.documents.readDocumentText(payload);
     } else if (command === "edit-ignore-rules") {

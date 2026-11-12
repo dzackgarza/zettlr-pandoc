@@ -30,6 +30,7 @@ import { app, BrowserWindow, type FileFilter, ipcMain, screen, shell } from "ele
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { filePathOfUri } from "source/app/util/file-uri-path";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
@@ -236,21 +237,7 @@ export default class WindowProvider extends ProviderContract {
             );
           break;
         case "show-item-in-folder":
-          let { itemPath } = payload;
-          if (itemPath.startsWith("safe-file://")) {
-            itemPath = itemPath.replace("safe-file://", "");
-          } else if (itemPath.startsWith("file://")) {
-            itemPath = itemPath.replace("file://", "");
-          }
-
-          // Due to the colons in the drive letters on Windows, the pathname will
-          // look like this: /C:/Users/Documents/test.jpg
-          // See: https://github.com/Zettlr/Zettlr/issues/5489
-          if (/^\/[A-Z]:/i.test(itemPath)) {
-            itemPath = itemPath.slice(1);
-          }
-
-          shell.showItemInFolder(decodeURIComponent(itemPath));
+          shell.showItemInFolder(filePathOfUri(payload.itemPath));
           break;
       }
     });
