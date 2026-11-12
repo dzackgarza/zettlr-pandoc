@@ -7,8 +7,8 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Opens a file or a folder with the application that the
- *                  desktop has for it.
+ * Description:     Opens a file, a folder or an address with the
+ *                  application that the desktop has for it.
  *
  * END HEADER
  */
@@ -42,23 +42,29 @@ function xdgOpenCause(code: number): string {
 }
 
 /**
- * Opens a path with `xdg-open`, as Electron's `shell.openPath` does on Linux:
- * in the folder of the path, in a process group of its own, with
+ * Opens a target with `xdg-open`, as Electron's `shell.openPath` and
+ * `shell.openExternal` do on Linux: in a process group of its own, with
  * `MM_NOTTTY=1` (`XDGOpen` in `shell/common/platform_util_linux.cc`). Since
  * electron/electron#48079 (Electron 37) Electron drops the result of
- * `xdg-open`, and its promise never settles; this function waits for the
- * exit of `xdg-open` itself.
+ * `xdg-open`: the promise of `shell.openPath` never settles, and the promise
+ * of `shell.openExternal` resolves for a refused open. This function waits
+ * for the exit of `xdg-open` itself, and rejects with the error that
+ * `refusal` makes of the cause.
  */
-async function xdgOpen(target: string): Promise<void> {
+async function xdgOpen(
+  target: string,
+  cwd: string | undefined,
+  refusal: (cause: string) => Error,
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const opener = spawn("xdg-open", [target], {
-      cwd: path.dirname(target),
+      cwd,
       detached: true,
       stdio: "ignore",
       env: { ...process.env, MM_NOTTTY: "1" },
     });
     opener.on("error", (failure) => {
-      reject(new AuthoredFileError("open", target, systemErrorCause(failure)));
+      reject(refusal(systemErrorCause(failure)));
     });
     opener.on("exit", (code, signal) => {
       if (code === 0) {
@@ -67,7 +73,7 @@ async function xdgOpen(target: string): Promise<void> {
       }
       const cause =
         code === null ? trans("xdg-open ended with the signal %s", signal) : xdgOpenCause(code);
-      reject(new AuthoredFileError("open", target, cause));
+      reject(refusal(cause));
     });
   });
 }
@@ -90,11 +96,33 @@ async function xdgOpen(target: string): Promise<void> {
  */
 export async function openPath(target: string): Promise<void> {
   if (process.platform === "linux") {
-    await xdgOpen(target);
+    // The opener runs in the folder of the path, as Electron's does.
+    await xdgOpen(target, path.dirname(target), (cause) => {
+      return new AuthoredFileError("open", target, cause);
+    });
     return;
   }
   const refusal = await shell.openPath(target);
   if (refusal !== "") {
     throw new AuthoredFileError("open", target, refusal);
   }
+}
+
+/**
+ * Opens an address (a web page, a mail address) with the application of the
+ * desktop, and resolves when the opener ended. A refusal rejects with an
+ * error that names the address and the cause. On Linux the opener is
+ * `xdg-open`, and the promise settles as the one of `openPath` does. On
+ * another platform `shell.openExternal` rejects for a refused open
+ * (https://www.electronjs.org/docs/latest/api/shell#shellopenexternalurl-options).
+ */
+export async function openExternal(url: string): Promise<void> {
+  const refusal = (cause: string): Error => new Error(trans("Could not open %s: %s.", url, cause));
+  if (process.platform === "linux") {
+    await xdgOpen(url, undefined, refusal);
+    return;
+  }
+  await shell.openExternal(url).catch((failure: Error) => {
+    throw refusal(failure.message);
+  });
 }
