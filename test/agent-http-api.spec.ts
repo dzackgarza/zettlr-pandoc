@@ -2618,6 +2618,45 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
   });
 
+  it("names the macro sources that it cannot read, and a projection that it cannot use (#210)", async function () {
+    const macroRoot = path.join(authoringHome, ".pandoc", "styles", "macros");
+    const lockedFolder = path.join(macroRoot, "nested");
+    const lockedFile = path.join(macroRoot, "tier2.tex");
+    writeFileSync(lockedFile, "\\newcommand{\\QQ}{\\mathbb{Q}}\n");
+    chmodSync(lockedFolder, 0o000);
+    chmodSync(lockedFile, 0o000);
+    const partial = await httpRequest("GET", "/v1/macros");
+    chmodSync(lockedFolder, 0o755);
+    chmodSync(lockedFile, 0o644);
+    assert.equal(partial.status, 200, partial.body);
+    const payload = parseAs(partial.body, "MacroInventoryResponse");
+    assert.deepEqual(
+      payload.macros.map((macro) => macro.name),
+      ["\\Spec", "\\ZZ"],
+    );
+    assert.deepEqual(
+      payload.notRead.map((entry) => entry.path),
+      ["tier2.tex", "nested"],
+    );
+
+    chmodSync(macroRoot, 0o000);
+    const unreadableRoot = await httpRequest("GET", "/v1/macros");
+    chmodSync(macroRoot, 0o755);
+    assert.equal(unreadableRoot.status, 503, unreadableRoot.body);
+    assert.equal(
+      parseAs(unreadableRoot.body, "AgentErrorResponse").error.code,
+      "MACROS_UNAVAILABLE",
+    );
+
+    writeFileSync(
+      path.join(authoringHome, ".pandoc", "templates", "css", "mathjax-macros.json"),
+      '{"ZZ": ',
+    );
+    const malformed = await httpRequest("GET", "/v1/macros");
+    assert.equal(malformed.status, 503, malformed.body);
+    assert.equal(parseAs(malformed.body, "AgentErrorResponse").error.code, "MACROS_UNAVAILABLE");
+  });
+
   it("lists only the configured skills subtree and reads any Markdown file through getHelp", async function () {
     const listed = await httpRequest("GET", "/help?resource=skills&action=list");
     assert.equal(listed.status, 200, listed.body);
