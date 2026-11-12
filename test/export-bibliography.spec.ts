@@ -7,10 +7,10 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     A PDF export cites from the bibliography of the document:
- *                  the main library of the settings and each file that its
- *                  front matter or the manifest of its Quarto book names, as
- *                  the editor does (#198). These tests run the real export
+ * Description:     A PDF export cites from the bibliography of the document,
+ *                  as the editor does (#198): the files that its front
+ *                  matter names, else the bibliography of its Quarto book
+ *                  and the main library. These tests run the real export
  *                  through the real ~/.pandoc recipe, pdflatex and biber, and
  *                  read the text of the PDF.
  *
@@ -98,9 +98,9 @@ const MANIFEST = [
 const CHAPTER =
   "# Packings\n\nThe densest packing in dimension eight is known [@conway1988]. Each even form has a signature that 8 divides [@milnor1973].\n";
 
-/** A note that cites from its own bibliography and from the main library. */
+/** A note whose front matter names its bibliography. */
 const NOTE =
-  "---\nbibliography: refs/local.bib\n---\n\n# Forms\n\nThe Hasse invariant is in [@serre1973] and [@milnor1973].\n";
+  "---\nbibliography: refs/local.bib\n---\n\n# Forms\n\nThe Hasse invariant is in [@serre1973].\n";
 
 /** An error window that the export opened. */
 interface ErrorWindow {
@@ -237,10 +237,6 @@ describe("Bibliography of a PDF export", function () {
     assert.ok(
       text.includes("Serre. A Course in Arithmetic"),
       `the references of the PDF do not hold the entry of the note: ${text}`,
-    );
-    assert.ok(
-      text.includes("Milnor and Dale Husemoller. Symmetric Bilinear Forms"),
-      `the references of the PDF do not hold the entry of the main library: ${text}`,
     );
   });
 });
