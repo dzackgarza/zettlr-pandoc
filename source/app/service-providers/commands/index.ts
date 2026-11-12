@@ -64,7 +64,6 @@ import DirRename from "./dir-rename";
 import DirRescan from "./dir-rescan";
 import type { DirSettingsCommandAPI } from "./dir-settings";
 import DirSettings from "./dir-settings";
-import DirSort from "./dir-sort";
 import type { CustomExportIPCAPI, ExportIPCAPI } from "./export";
 import Export from "./export";
 import FetchLinkPreview from "./fetch-link-preview";
@@ -115,7 +114,6 @@ export const commands = [
   DirRename,
   DirRescan,
   DirSettings,
-  DirSort,
   Export,
   FetchLinkPreview,
   FileDelete,
@@ -214,10 +212,6 @@ export type ApplicationIPCContract = {
   };
   "dir-rename": {
     request: { payload: { path: string; name: string } };
-    response: unknown;
-  };
-  "dir-sort": {
-    request: { payload: { path: string; sorting: string } };
     response: unknown;
   };
   export: {

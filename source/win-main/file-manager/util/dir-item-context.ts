@@ -20,6 +20,7 @@ import { reportError } from "@common/util/error-reporting";
 import type { DirDescriptor } from "@dts/common/fsal";
 import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
+import { explorerViewItems, handleExplorerMenuChoice } from "./explorer-view-menu";
 import { ignoreMenuItems } from "./ignore-menu";
 
 const ipcRenderer = window.ipc;
@@ -41,6 +42,10 @@ export function displayDirContext(
       type: "normal",
     },
     ...ignoreMenuItems(dirObject),
+    {
+      type: "separator",
+    },
+    ...explorerViewItems(dirObject),
     {
       type: "separator",
     },
@@ -130,6 +135,7 @@ export function displayDirContext(
   const point = { x: event.clientX, y: event.clientY };
   showPopupMenu(point, template, (clickedID) => {
     callback(clickedID); // TODO
+    handleExplorerMenuChoice(dirObject, clickedID, el);
     switch (clickedID) {
       case "menu.copy_path":
         navigator.clipboard.writeText(dirObject.path).catch((err) => reportError(err));

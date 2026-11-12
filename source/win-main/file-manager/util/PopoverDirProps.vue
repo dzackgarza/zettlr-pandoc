@@ -36,10 +36,7 @@
         <SelectControl
           v-model="sortingType"
           v-bind:inline="true"
-          v-bind:options="{
-            name: sortByNameLabel,
-            time: sortByTimeLabel
-          }"
+          v-bind:options="sortOptions"
         ></SelectControl>
         <SelectControl
           v-model="sortingDirection"
@@ -50,6 +47,20 @@
           }"
         ></SelectControl>
       </div>
+      <TextControl
+        v-if="sortingType === 'metadata'"
+        v-model="metadataKey"
+        name="dir-props-metadata-key"
+        v-bind:label="metadataFieldLabel"
+        placeholder="date"
+        v-on:confirm="commitMetadataKey"
+      ></TextControl>
+      <ButtonControl
+        v-if="sortingType === 'metadata'"
+        id="dir-props-metadata-apply"
+        v-bind:label="applyLabel"
+        v-on:click="commitMetadataKey"
+      ></ButtonControl>
       <hr>
       <div id="dir-props-project">
         <!-- Project options -->
@@ -168,7 +179,17 @@ import type {
 import type { DirSettingsCommandAPI } from "source/app/service-providers/commands/dir-settings";
 import type { RequestFilesIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
-import { computed, onBeforeMount, ref, toRef, watch } from "vue";
+import { computed, ref, toRef, watch } from "vue";
+import {
+  choiceForDirectory,
+  type Direction,
+  directionForDirectory,
+  type SortChoice,
+  setDirection,
+  setMetadataKey,
+  setSort,
+  sortChoiceLabels,
+} from "./explorer-view-menu";
 import { metadataProblemSentence, metadataProblemsOf } from "./read-error";
 
 /** Where Quarto looks for a book's manifest when nothing says otherwise. */
@@ -210,8 +231,8 @@ const quartoProjectLabel = trans("Quarto book");
 const bindManifestLabel = trans("Quarto book file");
 const selectManifestLabel = trans("Select book file…");
 const unbindManifestLabel = trans("Unbind");
-const sortByNameLabel = trans("Sort by name");
-const sortByTimeLabel = trans("Sort by time");
+const metadataFieldLabel = trans("Metadata field");
+const applyLabel = trans("Apply");
 const ascendingLabel = trans("ascending");
 const descendingLabel = trans("descending");
 
@@ -298,16 +319,10 @@ const props = defineProps<{
 
 const emit = defineEmits<(e: "close") => void>();
 
-const sortingType = ref<"name" | "time">("name");
-const sortingDirection = ref<"up" | "down">("up");
-/**
- * The sorting that the controls showed when the folder last agreed with them.
- * A change that the application refuses puts the controls back to it.
- */
-let confirmedSorting: { type: "name" | "time"; direction: "up" | "down" } = {
-  type: sortingType.value,
-  direction: sortingDirection.value,
-};
+const sortingType = ref<SortChoice>(choiceForDirectory(props.directory));
+const sortingDirection = ref<Direction>(directionForDirectory(props.directory));
+const sortOptions = computed(() => Object.fromEntries(sortChoiceLabels(props.directory)));
+const metadataKey = ref<string>(metadataKeyOf(props.directory));
 const isProject = ref<boolean>(props.directory.settings.project !== null);
 const isQuartoProject = computed(
   () => props.directory.settings.project?.manifest.kind === "quarto",
@@ -346,35 +361,33 @@ const formattedWordCount = computed(() => {
   return trans("%s words", localiseNumber(totalWords));
 });
 
-watch(sortingType, updateSorting);
-watch(sortingDirection, updateSorting);
+watch(sortingType, updateSort);
+watch(sortingDirection, updateDirection);
 watch(isProject, updateProject);
 watch(toRef(props, "directory"), () => {
-  setSorting();
+  showSavedSorting();
+  metadataKey.value = metadataKeyOf(props.directory);
   isProject.value = props.directory.settings.project !== null;
   manifestBinding.value = props.directory.settings.quartoManifest ?? "";
 });
 
-onBeforeMount(setSorting);
-
 /**
- * Presets the sorting value with the sorting of the directory descriptor prop.
+ * The front matter field that orders the folder, or the field that the editor
+ * suggests when the folder has none.
  */
-function setSorting(): void {
-  const [type, direction] = props.directory.settings.sorting.split("-");
-  // This legacy popover exposes only the historical name/time pair. Extended
-  // Explorer orderings are managed by the visible Explorer controls; opening
-  // Properties must not coerce one of those methods back to a legacy value.
-  if (type !== "name" && type !== "time") {
-    return;
-  }
-  confirmedSorting = { type, direction: direction === "down" ? "down" : "up" };
-  showConfirmedSorting();
+function metadataKeyOf(directory: DirDescriptor): string {
+  return choiceForDirectory(directory) === "metadata"
+    ? directory.settings.explorer.sortMetadataKey
+    : "date";
 }
 
-function showConfirmedSorting(): void {
-  sortingType.value = confirmedSorting.type;
-  sortingDirection.value = confirmedSorting.direction;
+/**
+ * Shows the sorting that the folder has. A change that the application
+ * refused leaves the folder as it was, and the controls show that.
+ */
+function showSavedSorting(): void {
+  sortingType.value = choiceForDirectory(props.directory);
+  sortingDirection.value = directionForDirectory(props.directory);
 }
 
 function openProjectPreferences(): void {
@@ -412,33 +425,33 @@ function updateColor(color: string | null): void {
 }
 
 /**
- * Asks the application for the sorting that the controls show. The controls
- * of a folder that already has that sorting ask for nothing: they show a
- * state, and only a choice of the author is a change.
+ * Sorts the folder by the choice of the control. The controls of a folder
+ * that already has that sorting ask for nothing: they show a state, and only
+ * a choice of the author is a change. The metadata choice waits for its
+ * field.
  */
-function updateSorting(): void {
-  const wanted = { type: sortingType.value, direction: sortingDirection.value };
-  if (wanted.type === confirmedSorting.type && wanted.direction === confirmedSorting.direction) {
+function updateSort(choice: SortChoice): void {
+  if (choice === choiceForDirectory(props.directory) || choice === "metadata") {
     return;
   }
-  ipcRenderer
-    .invoke("application", {
-      command: "dir-sort",
-      payload: {
-        path: props.directory.path,
-        sorting: `${wanted.type}-${wanted.direction}`,
-      },
-    })
-    .then(
-      () => {
-        confirmedSorting = wanted;
-      },
-      (e) => {
-        // The dispatcher shows the refusal. The controls show what is saved.
-        reportError(e);
-        showConfirmedSorting();
-      },
-    );
+  setSort(props.directory, choice).then(showSavedSorting);
+}
+
+/** Reverses the folder. Its sort and its metadata field stay. */
+function updateDirection(direction: Direction): void {
+  if (direction === directionForDirectory(props.directory)) {
+    return;
+  }
+  setDirection(props.directory, direction).then(showSavedSorting);
+}
+
+/** Sorts the folder by the front matter field of the editor. */
+function commitMetadataKey(): void {
+  const key = metadataKey.value.trim();
+  if (key === "") {
+    return;
+  }
+  setMetadataKey(props.directory, key).then(showSavedSorting);
 }
 
 /**

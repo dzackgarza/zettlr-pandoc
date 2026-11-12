@@ -224,7 +224,7 @@ describe("folders whose metadata cannot be used", function () {
       "no error is shown before the change",
     );
 
-    await editorPage.locator(`${POPOVER} select`).first().selectOption("time");
+    await editorPage.locator(`${POPOVER} select`).first().selectOption("modified");
 
     const toast = editorPage.locator(ERROR_TOAST);
     await toast.first().waitFor({ state: "visible", timeout: 20_000 });
@@ -249,7 +249,7 @@ describe("folders whose metadata cannot be used", function () {
     await toast.locator('button[aria-label="Dismiss"]').first().click();
     await toast.first().waitFor({ state: "hidden", timeout: 10_000 });
     await editorPage.locator(POPOVER).waitFor({ state: "hidden", timeout: 10_000 });
-    assert.equal(shownSorting, "name", "the control shows the sorting that the folder has");
+    assert.equal(shownSorting, "display", "the control shows the sorting that the folder has");
   });
 
   it("shows no Project after a refused change to a Project", async function () {
