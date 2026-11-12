@@ -1,21 +1,15 @@
-// Proof that a global search which never starts says so in the pane the user
-// started it from.
+// Proof that a global search over a workspace that went away ends, and says in
+// the pane which folder it did not search.
 //
 // Starting a search puts the pane into its running presentation — progress bar
-// up, previous results cleared — and then dispatches over IPC.
-// Only the search provider ends that state, by broadcasting 'search-end'. So a
-// dispatch that rejects ends nothing: the pane keeps showing a run that is not
-// happening, and a failure handler that writes to the developer console leaves
-// the user no reachable signal at all.
-//
-// The failure here is a real one, not an injected one. A workspace that goes
-// away while the app is running stays in `app.openWorkspaces`: the dead-path
-// sweep runs once, when the config is read at boot, and FSAL deliberately keeps
-// such roots afterwards ("Workspaces can be marked as 'dead' so that users
-// don't lose them"). The search provider consults neither — its very first act
-// is to read every open workspace recursively, which throws on the vanished one
-// and rejects the renderer's invoke. A user whose workspace lives on a drive
-// that unmounts, or a synced folder that disappears, hits exactly this.
+// up, previous results cleared — and then dispatches over IPC. Only the search
+// provider ends that state. A workspace that goes away while the app is
+// running stays in `app.openWorkspaces`: the dead-path sweep runs once, when
+// the config is read at boot, and FSAL keeps such roots afterwards. A user
+// whose workspace lives on a drive that unmounts, or a synced folder that
+// disappears, searches with such a root open. The search reads the other
+// workspaces, names the root that it could not list (`search-unread`), and
+// ends.
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -42,6 +36,7 @@ const QUERY_INPUT = `${PANE} input[name="search-input"]`;
 const RUNNING_INDICATOR = `${PANE} .search-progress`;
 const ERROR_MESSAGE = `${PANE} p.search-message-error`;
 const REPLACEMENT_RESULT = `${PANE} .file-match .file-match-name`;
+const NOT_SEARCHED = `${PANE} [data-search-not-searched]`;
 
 const PROJECT_SETTINGS = {
   sorting: "name-up",
@@ -361,7 +356,7 @@ describe("global-search and project-properties failure recovery", function () {
     }
   });
 
-  it("names the failure in the pane and stops showing the search as running", async function () {
+  it("names a workspace that went away as not searched, and shows the matches of the others", async function () {
     const vanishingWorkspace = requireInitialized(
       running.vanishingWorkspace,
       "The vanishing workspace path must be initialized",
@@ -377,39 +372,30 @@ describe("global-search and project-properties failure recovery", function () {
     await page.locator(QUERY_INPUT).fill("haystack");
     await page.locator(QUERY_INPUT).press("Enter");
 
-    // The pane owns the running presentation, so the pane is where the failure
-    // has to land. Waiting on it is the whole test: before this fix nothing
-    // ever appeared here and the wait ran out with the progress bar still up.
-    const errorMessage = page.locator(ERROR_MESSAGE);
-    await errorMessage.waitFor({ state: "visible", timeout: 30_000 });
-    screenshots.set("search-dispatch-failed.png", await page.screenshot());
+    // The pane names the root that the search could not list, and the search
+    // ends: no progress bar stays up for it.
+    const unsearched = page.locator(`${NOT_SEARCHED} li[data-path="${vanishingWorkspace}"]`);
+    await unsearched.waitFor({ state: "visible", timeout: 30_000 });
+    await page.locator(RUNNING_INDICATOR).waitFor({ state: "detached", timeout: 30_000 });
+    screenshots.set("search-vanished-workspace.png", await page.screenshot());
 
-    const reported = await errorMessage.innerText();
-    assert.match(
-      reported,
-      /^Search failed: /,
-      `The pane must name the operation that failed. It read: ${JSON.stringify(reported)}`,
-    );
-    assert.ok(
-      reported.includes(vanishingWorkspace),
-      "The pane must carry the provider's own reason, not a generic failure. " +
-        `It read: ${JSON.stringify(reported)}`,
-    );
-
-    // A search that never started must not go on looking like one that is
-    // merely slow, and the user must be able to try again.
     assert.equal(
-      await page.locator(RUNNING_INDICATOR).count(),
-      0,
-      "The pane still shows a progress bar for a search that never started.",
+      await page.locator(`${NOT_SEARCHED} li`).count(),
+      1,
+      "The pane names the one folder that the search could not list.",
     );
+    assert.equal(
+      await page.locator(ERROR_MESSAGE).count(),
+      0,
+      "A workspace that the search could not list is no failure of the search.",
+    );
+    // The match of the workspace that is still there.
+    assert.deepEqual(await page.locator(REPLACEMENT_RESULT).allInnerTexts(), [
+      "searched-document.md",
+    ]);
 
-    // The report belongs to one attempt, not to the pane: clearing the search
-    // takes it away. Asserted here, after the message has been seen, so that
-    // its disappearance cannot be satisfied by never having appeared. (Editing
-    // the query starts the next search, which fails the same way while the
-    // workspace is still gone, and says so again.)
+    // The list belongs to one search: clearing the search takes it away.
     await page.locator(`${PANE} [data-search-action="clear"]`).click();
-    await errorMessage.waitFor({ state: "detached", timeout: 10_000 });
+    await unsearched.waitFor({ state: "detached", timeout: 10_000 });
   });
 });
