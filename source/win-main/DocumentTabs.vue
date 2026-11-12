@@ -98,7 +98,7 @@ import { useDocumentTreeStore } from "source/pinia";
 import { useWorkspaceStore } from "source/pinia/workspace-store";
 import tippy from "tippy.js";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { closeFile } from "./file-manager/util/item-composable";
+import { closeRoots } from "./file-manager/util/item-composable";
 import { displayTabbarContext } from "./tabs-context";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 
@@ -540,7 +540,7 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
       type: "normal",
       enabled: workspaceStore.rootDescriptors.includes(descriptor),
       action() {
-        closeFile(descriptor.path);
+        closeRoots([descriptor.path]);
       },
     },
   ];

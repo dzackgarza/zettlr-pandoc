@@ -77,7 +77,7 @@ describe("Documents-provider close of a workspace inside a workspace", function 
 
   /** Closes the workspace `workspace`; a refused close would run the close again. */
   async function closeWorkspace(workspace: string): Promise<boolean> {
-    return await provider.closeDocumentsInside(workspace, async () => {
+    return await provider.closeDocumentsInside([workspace], async () => {
       assert.fail("no close is refused with an action");
     });
   }

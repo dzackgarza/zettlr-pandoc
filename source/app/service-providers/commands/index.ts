@@ -363,8 +363,8 @@ export type ApplicationIPCContract = {
     response: undefined;
   };
   "root-close": {
-    request: { payload: string };
-    response: unknown;
+    request: { payload: string[] };
+    response: boolean;
   };
   "root-open-workspaces": {
     request: { payload?: undefined };

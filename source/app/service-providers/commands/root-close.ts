@@ -7,7 +7,7 @@
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     This command closes a root file or directory.
+ * Description:     This command closes root files and directories.
  *
  * END HEADER
  */
@@ -21,21 +21,23 @@ export default class RootClose extends ZettlrCommand {
   }
 
   /**
-   * Closes (not removes) a root directory or a root file, with each document
-   * at or inside it. Resolves false and keeps the root when a document stays
-   * open (DocumentManager.closeDocumentsInside).
+   * Closes (not removes) root directories and root files, with each document
+   * at or inside them, in one close. Resolves false and keeps each root when
+   * a document stays open (DocumentManager.closeDocumentsInside).
    *
-   * @param   {string}  evt   The event name
-   * @param   {string}  arg   The path of the root
+   * @param   {string}    evt    The event name
+   * @param   {string[]}  roots  The paths of the roots
    */
-  async run(evt: string, arg: string): Promise<boolean> {
-    const closed = await this._app.documents.closeDocumentsInside(arg, async () => {
-      await this.run(evt, arg);
+  async run(evt: string, roots: string[]): Promise<boolean> {
+    const closed = await this._app.documents.closeDocumentsInside(roots, async () => {
+      await this.run(evt, roots);
     });
     if (!closed) {
       return false;
     }
-    this._app.config.removePath(arg);
+    for (const root of roots) {
+      this._app.config.removePath(root);
+    }
     return true;
   }
 }

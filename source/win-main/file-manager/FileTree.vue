@@ -215,7 +215,7 @@ import {
   metadataKeyRequest,
   setMetadataKey,
 } from "./util/explorer-view-menu";
-import { closeFile, closeWorkspace } from "./util/item-composable";
+import { closeRoots } from "./util/item-composable";
 import matchQuery from "./util/match-query";
 import { retrieveChildrenAndSort } from "./util/retrieve-children-and-sort";
 
@@ -452,9 +452,7 @@ function closeAllFiles(): void {
         return;
       }
 
-      for (const rootFile of getFiles.value) {
-        closeFile(rootFile.path);
-      }
+      closeRoots(getFiles.value.map((rootFile) => rootFile.path));
     })
     .catch((err) => reportError(err));
 }
@@ -486,9 +484,7 @@ function closeAllWorkspaces(): void {
         return;
       }
 
-      for (const dir of getDirectories.value) {
-        closeWorkspace(dir.path);
-      }
+      closeRoots(getDirectories.value.map((dir) => dir.path));
     })
     .catch((err) => reportError(err));
 }

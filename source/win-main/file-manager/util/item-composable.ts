@@ -32,53 +32,23 @@ import { displayFileContext } from "./file-item-context";
 const ipcRenderer = window.ipc;
 
 /**
- * Close a file root path at `path`, including all open
- * instances of the file.
+ * Close the root files and workspaces at `paths` with each document inside
+ * them, in one close. The command asks one time about unsaved text and keeps
+ * each root when a document stays open.
  *
- * @param {string}  path    The filepath to close
+ * @param {string[]}  paths  The root paths to close
  */
-export function closeFile(path: string): void {
+export function closeRoots(paths: string[]): void {
   const workspaceStore = useWorkspaceStore();
-
-  // First check if the path is actually a root path
-  if (!workspaceStore.rootDescriptors.find((r) => r.path === path)) {
-    return;
-  }
-
-  ipcRenderer
-    .invoke("documents-provider", {
-      command: "close-file-everywhere",
-      payload: { path },
-    } as DocumentManagerIPCAPI)
-    .catch((e) => reportError(e));
-
-  ipcRenderer
-    .invoke("application", {
-      command: "root-close",
-      payload: path,
-    })
-    .catch((err) => reportError(err));
-}
-
-/**
- * Close the workspace root at `path` with each document inside it. The
- * command asks about unsaved text and keeps the workspace when a document
- * stays open.
- *
- * @param {string}  path    The workspace path to close
- */
-export function closeWorkspace(path: string): void {
-  const workspaceStore = useWorkspaceStore();
-
-  // First check if the path is actually a root path
-  if (!workspaceStore.rootDescriptors.find((r) => r.path === path)) {
+  const roots = paths.filter((path) => workspaceStore.rootDescriptors.some((r) => r.path === path));
+  if (roots.length === 0) {
     return;
   }
 
   ipcRenderer
     .invoke("application", {
       command: "root-close",
-      payload: path,
+      payload: roots,
     })
     .catch((err) => reportError(err));
 }
@@ -237,7 +207,7 @@ export function useItemComposable(
             })
             .catch((err) => reportError(err));
         } else if (clickedID === "menu.close_workspace") {
-          closeWorkspace(obj.value.path);
+          closeRoots([obj.value.path]);
         } else if (clickedID === "menu.project_build") {
           // We should trigger an export of this project.
           ipcRenderer
@@ -287,7 +257,7 @@ export function useItemComposable(
         } else if (clickedID === "properties") {
           showPopover.value = true;
         } else if (clickedID === "menu.close_file") {
-          closeFile(obj.value.path);
+          closeRoots([obj.value.path]);
         }
       });
     }
