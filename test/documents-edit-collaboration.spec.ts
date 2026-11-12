@@ -205,39 +205,41 @@ describe("Documents-provider edits of a document with annotations", function () 
     const editor = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
     assert.ok(editor !== undefined, "the provider answers its editors");
 
-    // The author types at the end of the document after the transaction
-    // changed the buffer and before it writes the closed file.
-    let authorTyped = false;
-    const authority = {
-      readMarkdownBufferContent: (file: string) => provider.readMarkdownBufferContent(file),
-      applyWorkspaceTextEdits: async (
-        edits: Parameters<DocumentManager["applyWorkspaceTextEdits"]>[0],
-      ) => {
-        const updated = await provider.applyWorkspaceTextEdits(edits);
-        const current = provider.readMarkdownBufferContent(filePath);
-        if (!authorTyped && current !== undefined) {
-          authorTyped = true;
-          const { startVersion } = await provider.getDocument(filePath);
-          const accepted = await editor(undefined, {
-            command: "push-updates",
-            payload: {
-              filePath,
-              version: startVersion,
-              updates: [
-                {
-                  clientID: "editor-under-test",
-                  changes: ChangeSet.of(
-                    { from: current.length, insert: typed },
-                    current.length,
-                  ).toJSON(),
-                },
-              ],
+    // The editor sends the typed text when the transaction has checked the
+    // buffer and writes the closed file: the update arrives during that
+    // write, as an update of the editor arrives between two steps of the
+    // main process.
+    let typing: Promise<unknown> | undefined;
+    async function type(current: string): Promise<void> {
+      const { startVersion } = await provider.getDocument(filePath);
+      const accepted = await editor?.(undefined, {
+        command: "push-updates",
+        payload: {
+          filePath,
+          version: startVersion,
+          updates: [
+            {
+              clientID: "editor-under-test",
+              changes: ChangeSet.of(
+                { from: current.length, insert: typed },
+                current.length,
+              ).toJSON(),
             },
-          });
-          assert.equal(accepted, true, "the provider takes the update of the editor");
+          ],
+        },
+      });
+      assert.equal(accepted, true, "the provider takes the update of the editor");
+    }
+    const authority = {
+      readMarkdownBufferContent: (file: string) => {
+        const current = provider.readMarkdownBufferContent(file);
+        if (typing === undefined && file === filePath && current?.startsWith(PREFIX) === true) {
+          typing = type(current);
         }
-        return updated;
+        return current;
       },
+      applyWorkspaceTextEdits: (edits: Parameters<DocumentManager["applyWorkspaceTextEdits"]>[0]) =>
+        provider.applyWorkspaceTextEdits(edits),
     };
 
     await assert.rejects(
@@ -253,6 +255,7 @@ describe("Documents-provider edits of a document with annotations", function () 
       }),
     );
 
+    await typing;
     assert.equal(
       provider.readMarkdownBufferContent(filePath),
       `${SOURCE}${typed}`,
