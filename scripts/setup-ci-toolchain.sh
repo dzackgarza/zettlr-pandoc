@@ -16,8 +16,8 @@ readonly crossref_sha256='afaa8867ab8d908b7e5ad1b96f62eedea6a5d3e89ee14e152cd72e
 # Flowmark reads Markdown through `pandoc-flowmark`, the source-position Pandoc
 # fork (dzackgarza/pandoc, branch flowmark-sourcepos), published as a static
 # Linux executable by its `flowmark-*` release workflow.
-readonly pandoc_flowmark_release='flowmark-3.10.2-4'
-readonly pandoc_flowmark_sha256='49df5719dd44f23e9d36250ee3b98265bca91908ad488e5cd2e9dbd16b0b02e7'
+readonly pandoc_flowmark_release='flowmark-3.10.2-7'
+readonly pandoc_flowmark_sha256='7a88f04c8cb6f7476454cd7fe191a0a9d71e4d5eb66ba46b4c5b1f82b4b49355'
 readonly pandoc_config_dir="${HOME}/.pandoc"
 # The LanguageTool CLI backend of the editor's grammar checker runs
 # `languagetool --json`; the release is the one the workstation uses.
@@ -162,6 +162,10 @@ test "${actual_pandoc_reference_version}" = "${pandoc_reference_version}"
 test "${actual_crossref_version}" = "${pandoc_version}"
 pandoc-flowmark --version | grep -q '+server +lua'
 printf '$x$\n' | pandoc-flowmark -f markdown+sourcepos -t json | grep -q '"data-pos"'
+# Flowmark reads the source range of each pipe table cell. A reader before
+# flowmark-3.10.2-7 gives the cells no `data-pos`, and the lint stops.
+printf '| a |\n| - |\n| b |\n' | pandoc-flowmark -f markdown+sourcepos -t json \
+  | jq --exit-status '[.. | objects | select(.t == "Table")][0].c[3][1][0][1][0][0][2] | any(.[0] == "data-pos")' >/dev/null
 command -v just >/dev/null
 command -v latexmk >/dev/null
 command -v pdflatex >/dev/null
