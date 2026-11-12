@@ -13,7 +13,11 @@
  *                  author hid. The file manager lists the other workspace
  *                  with its files and this one with the cause and no files.
  *                  "Check for directory …" loads the workspace with its rules
- *                  when the file can be read again.
+ *                  when the file can be read again. A rules file that
+ *                  becomes unreadable while the application runs makes the
+ *                  workspace missing too; the rules of the other workspace
+ *                  still change, and no window or command replaces the
+ *                  unreadable file.
  *
  * END HEADER
  */
@@ -185,10 +189,15 @@ describe("a workspace whose file filters cannot be read", function () {
         payload: "menu.edit_ignore_rules",
       });
     });
-    const field = activePage.locator(`[data-ignore-rules-workspace=${JSON.stringify(notes)}]`);
-    await field.waitFor({ state: "visible", timeout: 10_000 });
+    const cause = activePage.locator(`[data-ignore-rules-missing=${JSON.stringify(notes)}]`);
+    await cause.waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("rules-dialog.png", await activePage.screenshot());
-    assert.ok(await field.isDisabled(), "the rules of the workspace cannot be edited");
+    assert.ok((await cause.textContent())?.includes(rulesFile), "the window names the rules file");
+    assert.equal(
+      await activePage.locator(`[data-ignore-rules-workspace=${JSON.stringify(notes)}]`).count(),
+      0,
+      "the window offers no rules of the workspace to edit",
+    );
     await activePage.keyboard.press("Escape");
 
     const refused = await activePage.evaluate(

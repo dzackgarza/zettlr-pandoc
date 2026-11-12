@@ -67,7 +67,13 @@
                 {{ pathBasename(root) }}
                 <span class="ignore-rules-file">{{ WORKSPACE_RULES_FILE }}</span>
               </span>
+              <span
+                v-if="missingCauses[root] !== undefined"
+                class="ignore-rules-missing"
+                v-bind:data-ignore-rules-missing="root"
+              >{{ missingCauses[root] }}</span>
               <textarea
+                v-else
                 v-model="workspaceDrafts[root]"
                 class="ignore-rules-input"
                 rows="5"
@@ -164,6 +170,7 @@ import { rulesTextOf, WORKSPACE_RULES_FILE } from "source/common/util/ignore-rul
 import { useConfigStore, useIgnoreRulesStore, useWorkspaceStore } from "source/pinia";
 import type { DirDescriptor, ProjectFileFilter } from "source/types/common/fsal";
 import { computed, ref, watch } from "vue";
+import { metadataProblemSentence } from "./file-manager/util/read-error";
 import { updateExplorerDirectory } from "./file-manager/util/update-explorer-directory";
 
 const ipcRenderer = window.ipc;
@@ -196,6 +203,23 @@ const workspaceStore = useWorkspaceStore();
 const { sources, editing } = storeToRefs(useIgnoreRulesStore());
 
 const roots = computed(() => [...sources.value.workspaceRules.keys()]);
+/**
+ * The cause for each workspace that is listed as missing. The application
+ * does not know the rules of such a workspace, so the window offers none to
+ * edit.
+ */
+const missingCauses = computed<Record<string, string>>(() =>
+  Object.fromEntries(
+    roots.value.flatMap((root) => {
+      const descriptor = workspaceStore.descriptorMap.get(root);
+      if (descriptor?.type !== "directory" || descriptor.dirNotFoundFlag !== true) {
+        return [];
+      }
+      const causes = descriptor.metadataProblems.map(metadataProblemSentence);
+      return [[root, causes.length > 0 ? causes.join("\n") : trans("This workspace is missing.")]];
+    }),
+  ),
+);
 const projects = computed<DirDescriptor[]>(() =>
   [...workspaceStore.descriptorMap.values()]
     .filter((descriptor): descriptor is DirDescriptor => descriptor.type === "directory")
@@ -385,6 +409,12 @@ function save(): void {
 
   .ignore-rules-builtin {
     font-family: monospace;
+    word-break: break-word;
+  }
+
+  .ignore-rules-missing {
+    color: var(--chrome-text-muted);
+    white-space: pre-line;
     word-break: break-word;
   }
 

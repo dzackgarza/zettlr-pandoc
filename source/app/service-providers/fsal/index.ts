@@ -468,7 +468,9 @@ export default class FSAL extends ProviderContract {
 
   /**
    * Reads the ignore rules from their sources: the configuration and the rules
-   * file of each open workspace.
+   * file of each open workspace. A workspace whose rules file cannot be read
+   * is listed as missing (`loseWorkspace`), so the other workspaces keep
+   * their rules.
    */
   private async readIgnoreSources(): Promise<IgnoreRuleSources> {
     const {
@@ -479,7 +481,21 @@ export default class FSAL extends ProviderContract {
     } = this._config.get();
     const workspaceRules = new Map<string, string>();
     for (const root of openWorkspaces) {
-      workspaceRules.set(root, this.deadWorkspaces.has(root) ? "" : await readRulesFile(root));
+      if (this.deadWorkspaces.has(root)) {
+        workspaceRules.set(root, "");
+        continue;
+      }
+      const rules = await readRulesFile(root).catch((cause: Error) => cause);
+      if (rules instanceof Error) {
+        await this.loseWorkspace(root, {
+          source: "rules",
+          path: path.join(root, WORKSPACE_RULES_FILE),
+          message: rules.message,
+        });
+        workspaceRules.set(root, "");
+        continue;
+      }
+      workspaceRules.set(root, rules);
     }
     return {
       globalRules: [...fileManager.ignoreRules],
@@ -587,6 +603,16 @@ export default class FSAL extends ProviderContract {
       for (const [root, text] of edit(sources)) {
         if (!sources.workspaceRules.has(root)) {
           throw new Error(`[FSAL] Cannot write ignore rules for ${root}: Not an open workspace`);
+        }
+        // The text of a rules file that cannot be read is not known, and a
+        // write would replace it.
+        if (this.deadWorkspaces.has(root)) {
+          throw new Error(
+            trans(
+              'The file filters of the workspace "%s" cannot be changed while it is missing.',
+              root,
+            ),
+          );
         }
         await writeRulesFile(root, text);
       }
@@ -747,6 +773,32 @@ export default class FSAL extends ProviderContract {
       `[FSAL] The workspace ${rootPath} is listed as missing: ${problems.map((problem) => `${problem.path}: ${problem.message}`).join("; ")}`,
     );
     this.deadWorkspaces.set(rootPath, problems);
+  }
+
+  /**
+   * Lists a loaded workspace as missing: each window removes its paths and
+   * shows its root with the cause.
+   */
+  private async loseWorkspace(rootPath: string, problem: DirectoryMetadataProblem): Promise<void> {
+    const listed = (await this.readDirectoryRecursively(rootPath)).filter(
+      (listedPath) => listedPath !== rootPath,
+    );
+    const removals: FSALEventPayloadUnlink[] = [];
+    for (const listedPath of listed.reverse()) {
+      const descriptor = await this.getDescriptorFor(listedPath);
+      removals.push({
+        event: descriptor.type === "directory" ? "unlinkDir" : "unlink",
+        path: listedPath,
+      });
+    }
+
+    await this.watchers.get(rootPath)?.shutdown();
+    this.watchers.delete(rootPath);
+    this.markMissing(rootPath, [problem]);
+    for (const removal of removals) {
+      this.publishEvent(removal);
+    }
+    this.publishEvent({ event: "change", descriptor: this.loadDummyDirectoryDescriptor(rootPath) });
   }
 
   /** Starts the watcher of a root. A watched root is not missing. */

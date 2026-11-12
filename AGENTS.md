@@ -1310,7 +1310,14 @@ of an isolated instance are in the first comment of #132.
   `.zettlrignore` the FSAL does not know which paths the author hid (§10), so
   it lists none of them. Each missing workspace keeps its causes in
   `deadWorkspaces`; its root descriptor has them in `metadataProblems`
-  (source `directory` or `rules`), and the row shows them (§19).
+  (source `directory` or `rules`), and the row shows them (§19). A rules file
+  that becomes unreadable while the app runs does the same at the next read
+  of the rules (`readIgnoreSources` → `loseWorkspace`: `unlink` for each
+  listed path, `change` for the root), so a rule change of another workspace
+  still applies.
+- **The rules file of a missing workspace is not written.** Its text is not
+  known, so `editRulesFiles` refuses a change for it, and the File filters
+  window shows the cause in place of its field.
 - **"Check for directory …" loads it.** The context menu item
   (`menu.rescan_dir`) runs the command `rescan-dir`, which calls
   `FSAL.loadMissingWorkspace`. While the folder cannot be read, the command
