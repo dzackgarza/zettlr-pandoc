@@ -1452,8 +1452,13 @@ of an isolated instance are in the first comment of #132.
   (`file-manager/util/follow-children.ts`) has the one `fsal-events`
   listener of the file manager; it calls the rows of the parent folder of
   each event, once for each batch. A row adds no IPC listener of its own: the
-  cost of a batch follows its events, not the rows. Proof:
-  `e2e/file-tree-listeners.spec.ts`.
+  cost of a batch follows its events, not the rows. A shortcut for a row
+  goes through the `shortcut` listener of `FileManager.vue`: "New
+  directory…" sets `newDirectoryRequest`
+  (`file-manager/util/new-directory-request.ts`) to the selected folder, and
+  only the row of that folder opens its name field. Proof:
+  `e2e/file-tree-listeners.spec.ts` (the listener count of each channel,
+  read from the `ipcRenderer` of the preload through CDP).
 - **Proof:** `e2e/missing-workspace.spec.ts`,
   `e2e/unreadable-workspace-rules.spec.ts`,
   `test/fsal-deleted-directory.spec.ts`.

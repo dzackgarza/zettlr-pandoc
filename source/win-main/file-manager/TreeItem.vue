@@ -224,6 +224,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, toRef, watch } from "v
 import getDocumentTitle from "../util/get-document-title";
 import { followChildren } from "./util/follow-children";
 import { useItemComposable } from "./util/item-composable";
+import { newDirectoryRequest } from "./util/new-directory-request";
 import PopoverDirProps from "./util/PopoverDirProps.vue";
 import PopoverFileProps from "./util/PopoverFileProps.vue";
 import {
@@ -564,18 +565,20 @@ watch(toRef(props, "item"), function (value) {
   updateObject(value);
 });
 
-let stopShortcutListener: (() => void) | undefined;
+// "New directory…" opens the name field of the selected folder only.
+watch(
+  newDirectoryRequest,
+  (directoryPath) => {
+    if (directoryPath === props.item.path && props.item.type === "directory") {
+      operationType.value = "createDir";
+    }
+  },
+  { flush: "sync" },
+);
+
 let stopFsalListener: (() => void) | undefined;
 
 onMounted(async () => {
-  if (props.item.type === "directory") {
-    stopShortcutListener = ipcRenderer.on("shortcut", (_, message) => {
-      if (message === "new-dir") {
-        operationType.value = "createDir";
-      }
-    });
-  }
-
   // The row follows the events before its first read, so a read that fails
   // leaves a row that a later event of its children still updates.
   stopFsalListener = followChildren(props.item.path, () => {
@@ -598,7 +601,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  stopShortcutListener?.();
   stopFsalListener?.();
   if (uncollapseTimeout.value !== undefined) {
     clearTimeout(uncollapseTimeout.value);

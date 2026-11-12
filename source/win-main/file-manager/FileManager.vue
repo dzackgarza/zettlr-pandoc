@@ -113,6 +113,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import FileList from "./FileList.vue";
 import FileTree from "./FileTree.vue";
 import { buildFilePickerCache, type FilePickerCache } from "./util/match-query";
+import { requestNewDirectory } from "./util/new-directory-request";
 
 const ipcRenderer = window.ipc;
 
@@ -216,7 +217,9 @@ let stopShortcutListener: (() => void) | undefined;
 
 onMounted(() => {
   stopShortcutListener = ipcRenderer.on("shortcut", (event, message) => {
-    if (message === "filter-files") {
+    if (message === "new-dir" && selectedDirectory.value !== null) {
+      requestNewDirectory(selectedDirectory.value);
+    } else if (message === "filter-files") {
       filePickerActive.value = true;
       // Focus the filter on the next tick. Why? Because it might be that
       // the file manager is hidden, or the global search is visible. In both
