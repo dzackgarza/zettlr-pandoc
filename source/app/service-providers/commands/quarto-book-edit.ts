@@ -25,6 +25,17 @@ export default class QuartoBookEditCommand extends ZettlrCommand {
       throw new Error(`${arg.rootPath} is not a Quarto book project`);
     }
 
+    // The edit reads the manifest from disk. Unsaved text of the manifest in
+    // an editor is text of the author that the edit would not hold, and a
+    // later save of that text would undo the edit.
+    if (this._app.documents.isModified(project.manifest.path)) {
+      throw new Error(
+        trans(
+          "The Quarto book file %s has unsaved changes in an editor. Save or discard them, then change the book again.",
+          project.manifest.path,
+        ),
+      );
+    }
     await editQuartoBookManifest(dir.path, project.manifest.path, arg.edit);
     await this._app.fsal.refreshQuartoProject(dir);
 

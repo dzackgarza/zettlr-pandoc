@@ -267,6 +267,11 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   shows it when the Project of the active file is a Quarto book), the Explorer
   membership marks, inherited bibliographies
   (`get-bibliography-for-descriptor.ts`), and project export.
+- **A Book edit changes the manifest on disk.** The command `quarto-book-edit`
+  reads the manifest, edits it and writes it (§16). While an editor holds
+  unsaved text of the manifest, the command refuses the edit: the edit would
+  not hold that text, and a save of the tab would undo the edit. Proof:
+  `e2e/quarto-bound-book.spec.ts`.
 
 ### 5. Startup preflight
 

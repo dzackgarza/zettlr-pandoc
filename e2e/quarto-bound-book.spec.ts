@@ -558,11 +558,14 @@ describe("a workspace bound to the manifest in its assembly directory", function
     );
 
     // The author saves the manifest; the same edit then applies to that text.
-    await activePage.locator(MANIFEST_EDITOR).click();
-    await activePage.keyboard.press("Control+s");
-    await waitUntil(
-      async () => (await readFile(manifestPath, "utf8")).startsWith("# A note of the author"),
-      "the save of the manifest",
+    // The save is the IPC call of the save shortcut: CDP key events do not
+    // run the main-process menu accelerators.
+    assert.deepEqual(
+      await activePage.evaluate(
+        async (pathInPage) => await window.ipc.invoke("documents:save-file", { path: pathInPage }),
+        manifestPath,
+      ),
+      { ok: true },
     );
     await activePage
       .locator(CHAPTER)
@@ -574,8 +577,19 @@ describe("a workspace bound to the manifest in its assembly directory", function
     );
     assert.match(await readFile(manifestPath, "utf8"), /^# A note of the author/);
 
-    await activePage.locator(MANIFEST_EDITOR).click();
-    await activePage.keyboard.press("Control+w");
+    await activePage.evaluate(
+      async ([leafInPage, pathInPage]) => {
+        const windowId = new URLSearchParams(location.search).get("window_id");
+        if (windowId === null) {
+          throw new Error("The main window carries no window_id");
+        }
+        await window.ipc.invoke("documents-provider", {
+          command: "close-file",
+          payload: { windowId, leafId: leafInPage, path: pathInPage },
+        });
+      },
+      [requireInitialized(leaf, "the pane of the window"), manifestPath],
+    );
     await activePage
       .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(manifestPath)}]`)
       .waitFor({ state: "detached", timeout: 10_000 });
