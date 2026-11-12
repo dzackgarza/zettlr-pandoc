@@ -30,13 +30,14 @@
          one needs its text spelled out, since nothing marks it any more. -->
     <blockquote
       v-if="actionRow.canReattach"
-      v-annotation-markdown="card.quotedText"
+      v-annotation-markdown="{ text: card.quotedText, documentPath }"
       class="annotation-selected-quote"
     />
 
     <AnnotationThread
       v-bind:messages="card.annotation.messages"
       v-bind:now="now"
+      v-bind:document-path="documentPath"
       :acted-message-id="card.annotation.agentStatus.state === 'acted' ? card.annotation.agentStatus.messageId : undefined"
     ></AnnotationThread>
 
@@ -171,6 +172,8 @@ const props = defineProps<{
   now: DateTime;
   /** The document's review is frozen, so its chunks are not in the editor. */
   reviewFrozen: boolean;
+  /** The document of the annotation; its citations use its bibliography. */
+  documentPath: string;
 }>();
 
 const emit = defineEmits<{

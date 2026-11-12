@@ -40,8 +40,8 @@ import { showRefusal } from "@common/util/show-refusal";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type ToolbarControl } from "@common/vue/window/WindowToolbar.vue";
 import { md2html } from "source/common/modules/markdown-utils";
-import extractYamlFrontmatter from "source/common/util/extract-yaml-frontmatter";
-import { CITEPROC_MAIN_DB } from "source/types/common/citeproc";
+import { documentCitationDatabase } from "source/common/util/document-citation-database";
+import type { CitationDatabase } from "source/types/common/citeproc";
 import { computed, onMounted, ref } from "vue";
 
 const ipcRenderer = window.ipc;
@@ -80,8 +80,11 @@ onMounted(() => {
     return;
   }
 
-  ipcRenderer.invoke("application", { command: "get-document-text", payload: filePath }).then(
-    (fileContents: string) => render(fileContents),
+  Promise.all([
+    ipcRenderer.invoke("application", { command: "get-document-text", payload: filePath }),
+    documentCitationDatabase(filePath),
+  ]).then(
+    ([fileContents, library]) => render(fileContents, library),
     // The dispatcher showed the failure of the command in this window.
     (failure: Error) => reportError(failure),
   );
@@ -92,15 +95,8 @@ onMounted(() => {
  * (a citation while the citation style does not load) shows the cause and
  * no part of the document.
  */
-function render(fileContents: string): void {
+function render(fileContents: string, library: CitationDatabase): void {
   const base = pathDirname(filePath);
-  const { frontmatter } = extractYamlFrontmatter(fileContents);
-  const library =
-    frontmatter !== null &&
-    "bibliography" in frontmatter &&
-    typeof frontmatter.bibliography === "string"
-      ? frontmatter.bibliography
-      : CITEPROC_MAIN_DB;
   md2html(fileContents, {
     referenceSectionTitle: trans("References"),
     onCitation: window.getCitationCallback(library),

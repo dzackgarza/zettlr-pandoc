@@ -60,6 +60,7 @@ import AgentHTTPProvider, {
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import { readDirectoryRecursivelyFromDisk } from "source/app/service-providers/fsal/util/read-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
@@ -349,6 +350,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           writeFileSync(filePath, content, "utf8");
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+        // The folders of the documents, as the FSAL reads them from disk.
+        getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
         readDirectoryRecursively: walkWorkspace,
       },

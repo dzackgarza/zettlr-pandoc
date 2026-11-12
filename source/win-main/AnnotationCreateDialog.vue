@@ -135,10 +135,10 @@ import { EditorView } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
 import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import type { AnnotationAnchor, TextAnnotation } from "@dts/common/annotation-domain";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
@@ -255,10 +255,15 @@ onMounted(() => {
     ),
   });
 
-  md2html(props.quotedText, {
-    zknLinkFormat: "link|title",
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-  })
+  // The excerpt cites from the bibliography of its document (#198).
+  documentCitationDatabase(props.documentPath)
+    .then(
+      async (library) =>
+        await md2html(props.quotedText, {
+          zknLinkFormat: "link|title",
+          onCitation: window.getCitationCallback(library),
+        }),
+    )
     .then((html) => {
       excerptHtml.value = html;
     })

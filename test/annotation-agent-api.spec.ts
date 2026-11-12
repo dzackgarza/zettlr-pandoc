@@ -44,6 +44,7 @@ import AgentHTTPProvider from "source/app/service-providers/agent-api/http-serve
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
 import { parse as parseYaml } from "yaml";
@@ -160,6 +161,8 @@ describe("Annotation Agent API (/v1/annotations)", function () {
           writeFileSync(filePath, content, "utf8");
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+        // The folders of the documents, as the FSAL reads them from disk.
+        getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
         readDirectoryRecursively: async (workspacePath: string) => ({
           paths: readdirSync(workspacePath, { recursive: true, withFileTypes: true })

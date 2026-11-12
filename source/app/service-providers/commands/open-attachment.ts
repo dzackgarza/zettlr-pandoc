@@ -16,34 +16,11 @@
  */
 
 import { trans } from "@common/i18n-main";
-import {
-  getBibliographyForDescriptor as getBibliography,
-  resolveProjectForDescriptor,
-} from "@common/util/get-bibliography-for-descriptor";
-import type { CitationDatabase } from "@dts/common/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import type { MDFileDescriptor, ProjectSettings } from "@dts/common/fsal";
 import ky from "ky";
-import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import { documentBibliography } from "source/app/util/document-bibliographies";
 import { openPath } from "source/app/util/open-path";
 import ZettlrCommand from "./zettlr-command";
-
-// This function overwrites the getBibliographyForDescriptor function to ensure
-// the library is always absolute. We have to do it this ridiculously since the
-// function is called in both main and renderer processes, and we still have the
-// issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor(
-  descriptor: MDFileDescriptor,
-  project: ProjectSettings | null,
-): CitationDatabase {
-  const library = getBibliography(descriptor, project);
-  const resolveLibrary = (filename: string): string =>
-    filename !== CITEPROC_MAIN_DB && !path.isAbsolute(filename)
-      ? path.resolve(descriptor.dir, filename)
-      : filename;
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
-}
 
 export default class OpenAttachment extends ZettlrCommand {
   constructor(app: AppServiceContainer) {
@@ -61,16 +38,11 @@ export default class OpenAttachment extends ZettlrCommand {
       return false;
     }
 
-    const descriptor = await this._app.fsal.getDescriptorFor(arg.filePath);
-    if (descriptor === undefined || descriptor.type !== "file") {
-      return false;
-    }
-    const project = await resolveProjectForDescriptor(
-      descriptor,
-      new Map(),
-      async (dirPath) => await this._app.fsal.getAnyDirectoryDescriptor(dirPath),
-    );
-    const library = getBibliographyForDescriptor(descriptor, project);
+    // The libraries of the document, as the editor that shows the citation
+    // has them (#198).
+    const text = await this._app.documents.readDocumentText(arg.filePath);
+    const { database: library } = await documentBibliography(this._app.fsal, arg.filePath, text);
+    await this._app.citeproc.loadDatabases(library);
 
     let libraryNamesNoFile = false;
 

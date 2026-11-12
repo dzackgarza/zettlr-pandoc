@@ -26,42 +26,20 @@
 <script setup lang="ts">
 import { trans } from "@common/i18n-renderer";
 import { citationProblemMessage, followCitationProblems } from "@common/util/citation-problems";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
-import {
-  getBibliographyForDescriptor as getBibliography,
-  resolveProjectForDescriptorSync,
-} from "@common/util/get-bibliography-for-descriptor";
-import { isAbsolutePath, resolvePath } from "@common/util/renderer-path-polyfill";
-import type { CitationDatabase, CitationResourceProblem } from "@dts/common/citeproc";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
+import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { DP_EVENTS } from "@dts/common/documents";
-import { type AnyDescriptor, type MDFileDescriptor } from "@dts/common/fsal";
+import { type AnyDescriptor } from "@dts/common/fsal";
 import type { CiteprocProviderIPCAPI } from "source/app/service-providers/citeproc";
 import { type DocumentsUpdateContext } from "source/app/service-providers/documents";
 import { hasMarkdownExt } from "source/common/util/file-extention-checks";
 import localiseNumber from "source/common/util/localise-number";
-import { useDocumentTreeStore, useWorkspaceStore } from "source/pinia";
+import { useDocumentTreeStore } from "source/pinia";
 import { computed, onMounted, ref, watch } from "vue";
 
 const ipcRenderer = window.ipc;
 const documentTreeStore = useDocumentTreeStore();
-const workspaceStore = useWorkspaceStore();
-
-// This function overwrites the getBibliographyForDescriptor function to ensure
-// the library is always absolute. We have to do it this ridiculously since the
-// function is called in both main and renderer processes, and we still have the
-// issue that path-browserify is entirely unusable.
-function getBibliographyForDescriptor(descriptor: MDFileDescriptor): CitationDatabase {
-  const library = getBibliography(
-    descriptor,
-    resolveProjectForDescriptorSync(descriptor, workspaceStore.descriptorMap),
-  );
-  const resolveLibrary = (filename: string): string =>
-    filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
-      ? resolvePath(descriptor.dir, filename)
-      : filename;
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
-}
 
 const bibliography = ref<[BibliographyOptions, string[]] | undefined>(undefined);
 // Why the provider gave no bibliography for the active file
@@ -206,7 +184,7 @@ async function updateBibliography(): Promise<void> {
   bibliography.value = await ipcRenderer.invoke("citeproc-provider", {
     command: "get-bibliography",
     payload: {
-      database: getBibliographyForDescriptor(descriptor),
+      database: await documentCitationDatabase(descriptor.path),
       citations: [...new Set(keys)],
     },
   } as Extract<CiteprocProviderIPCAPI, { command: "get-bibliography" }>);

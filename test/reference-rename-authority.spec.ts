@@ -26,6 +26,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import DocumentManager from "source/app/service-providers/documents";
+import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
 import LogProvider from "source/app/service-providers/log";
 import ReferenceProvider from "source/app/service-providers/references";
 import type { ReferenceRenamePreview } from "source/common/pandoc-util/compute-reference-edits";
@@ -130,6 +131,8 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
       getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
       loadAnySupportedFile: async (filePath: string) => readFileSync(filePath, "utf-8"),
       getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
+      // The folders of the documents, as the FSAL reads them from disk.
+      getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
       getFilesystemMetadata: async (filePath: string) => ({ modtime: statSync(filePath).mtimeMs }),
       readDirectoryRecursively: async (_workspacePath: string) => ({
         paths: [definitionPath, occurrencePath],

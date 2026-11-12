@@ -135,19 +135,11 @@ import {
   type UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
 import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
-import {
-  getBibliographyForDescriptor as getBibliography,
-  resolveProjectForDescriptor,
-} from "@common/util/get-bibliography-for-descriptor";
 import makeValidUri from "@common/util/make-valid-uri";
-import {
-  isAbsolutePath,
-  pathBasename,
-  pathDirname,
-  resolvePath,
-} from "@common/util/renderer-path-polyfill";
+import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
 import {
@@ -161,12 +153,7 @@ import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import { DocumentType, DP_EVENTS, type OpenDocument } from "@dts/common/documents";
-import type {
-  AnyDescriptor,
-  CodeFileDescriptor,
-  DirDescriptor,
-  MDFileDescriptor,
-} from "@dts/common/fsal";
+import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type {
   DocumentLocation,
   ProjectRootSpec,
@@ -220,38 +207,6 @@ const ipcRenderer = window.ipc;
 // authority already streams every edit in through collab push-updates, and
 // the references provider derives the live overlay from that authority
 // text. This window reports nothing and keeps no per-document counters.
-
-// This function overwrites the getBibliographyForDescriptor function to ensure
-// the library is always absolute. We have to do it this ridiculously since the
-// function is called in both main and renderer processes, and we still have the
-// issue that path-browserify is entirely unusable.
-async function fsalDirectoryLookup(dirPath: string): Promise<AnyDescriptor | undefined> {
-  const descriptor = await ipcRenderer.invoke("fsal", {
-    command: "get-descriptor",
-    payload: dirPath,
-  });
-  return Array.isArray(descriptor) ? undefined : descriptor;
-}
-
-async function getBibliographyForDescriptor(
-  descriptor: MDFileDescriptor,
-): Promise<CitationDatabase> {
-  // The workspace descriptor map is still empty while the workspace walk runs,
-  // so fall back to the FSAL for any parent directory it does not know yet.
-  // Without that fallback, files in a Quarto project opened at boot resolve to
-  // the main database and their citations do not render.
-  const project = await resolveProjectForDescriptor(
-    descriptor,
-    workspaceStore.descriptorMap,
-    fsalDirectoryLookup,
-  );
-  const library = getBibliography(descriptor, project);
-  const resolveLibrary = (filename: string): string =>
-    filename !== CITEPROC_MAIN_DB && !isAbsolutePath(filename)
-      ? resolvePath(descriptor.dir, filename)
-      : filename;
-  return Array.isArray(library) ? library.map(resolveLibrary) : resolveLibrary(library);
-}
 
 const props = defineProps<{
   leafId: string;
@@ -590,7 +545,7 @@ const stopCiteprocUpdates = ipcRenderer.on(
       return; // Nothing to do
     }
 
-    getBibliographyForDescriptor(descriptor)
+    documentCitationDatabase(descriptor.path)
       .then(async (library) => {
         await updateCitationKeys(library);
         if (activeFileDescriptor.value?.path !== descriptor.path) {
@@ -762,7 +717,9 @@ const stopDocumentUpdates = ipcRenderer.on(
 
           activeFileDescriptor.value = descriptor;
           const library =
-            descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
+            descriptor.type === "file"
+              ? await documentCitationDatabase(descriptor.path)
+              : undefined;
           if (library !== undefined) {
             updateCitationKeys(library).catch((e) =>
               reportError("Could not update citation keys", e),
@@ -1539,7 +1496,7 @@ async function loadDocument(): Promise<void> {
   activeFileDescriptor.value = descriptor;
 
   const library =
-    descriptor.type === "file" ? await getBibliographyForDescriptor(descriptor) : undefined;
+    descriptor.type === "file" ? await documentCitationDatabase(descriptor.path) : undefined;
   if (library !== undefined) {
     updateCitationKeys(library).catch((e) => reportError("Could not update citation keys", e));
   }
@@ -1604,7 +1561,7 @@ function refreshActiveEditorAuxiliaryState(): void {
 
   const descriptor = activeFileDescriptor.value;
   if (descriptor?.type === "file") {
-    getBibliographyForDescriptor(descriptor)
+    documentCitationDatabase(descriptor.path)
       .then(updateCitationKeys)
       .catch((err) => reportError("Could not update citation keys", err));
   }

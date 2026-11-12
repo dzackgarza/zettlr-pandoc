@@ -50,13 +50,12 @@
  */
 
 import { md2html } from "@common/modules/markdown-utils";
+import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import { type AnyDescriptor } from "@dts/common/fsal";
+import { CITEPROC_MAIN_DB, type CitationDatabase } from "@dts/common/citeproc";
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
-import { computed, onMounted, ref, toRef, watch } from "vue";
+import { computed, onMounted, ref, shallowRef, toRef, watch } from "vue";
 
-const ipcRenderer = window.ipc;
 const windowStateStore = useWindowStateStore();
 const documentTreeStore = useDocumentTreeStore();
 const configStore = useConfigStore();
@@ -66,10 +65,9 @@ const emit = defineEmits<{
   (e: "jump-to-line", line: number): void;
 }>();
 
-// The active document's descriptor feeds the citation library the heading
-// text is rendered with; nothing else of it is shown here.
-const activeFileDescriptor = ref<AnyDescriptor | null>(null);
-const library = ref<string>(CITEPROC_MAIN_DB);
+// The heading text renders with the citation database of the active
+// document (#198). A shallow ref: IPC cannot clone the proxy of a deep one.
+const library = shallowRef<CitationDatabase>(CITEPROC_MAIN_DB);
 
 const tableOfContents = computed(() => windowStateStore.tableOfContents);
 const tocEntryHTML = ref<string[]>([]);
@@ -79,34 +77,30 @@ onMounted(updateToCHTML);
 
 const activeFile = computed(() => documentTreeStore.lastLeafActiveFile);
 
-watch(activeFile, async (newValue) => {
-  if (newValue === undefined) {
-    activeFileDescriptor.value = null;
-  } else {
-    const descriptor: AnyDescriptor | undefined = await ipcRenderer.invoke("fsal", {
-      command: "get-descriptor",
-      payload: newValue.path,
-    });
-
-    activeFileDescriptor.value = descriptor ?? null;
-  }
-});
-
-watch(activeFileDescriptor, (newValue) => {
-  if (newValue === null || newValue.type !== "file") {
-    library.value = CITEPROC_MAIN_DB;
-  } else {
-    const fm = newValue.frontmatter;
-    if (
-      fm != null &&
-      "bibliography" in fm &&
-      typeof fm.bibliography === "string" &&
-      fm.bibliography.length > 0
-    ) {
-      library.value = fm.bibliography;
+watch(
+  activeFile,
+  (newValue) => {
+    const documentPath = newValue?.path;
+    if (documentPath === undefined) {
+      library.value = CITEPROC_MAIN_DB;
+      updateToCHTML();
+      return;
     }
-  }
-});
+    documentCitationDatabase(documentPath).then(
+      (database) => {
+        // A later document may be active by now.
+        if (activeFile.value?.path !== documentPath) {
+          return;
+        }
+        library.value = database;
+        updateToCHTML();
+      },
+      // The dispatcher showed the failure of the command.
+      (err: Error) => reportError(err),
+    );
+  },
+  { immediate: true },
+);
 
 /**
  * Whether the cursor is within the corresponding document section

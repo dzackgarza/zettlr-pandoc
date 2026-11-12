@@ -29,6 +29,7 @@ import type {
 import enumDictFiles from "@common/util/enum-dict-files";
 import enumLangFiles from "@common/util/enum-lang-files";
 import type { LinkPreviewResult } from "@common/util/fetch-link-preview";
+import type { CitationDatabase } from "@dts/common/citeproc";
 import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import type { DocumentType } from "@dts/common/documents";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
@@ -45,6 +46,7 @@ import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tik
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
 import { type AppServiceContainer } from "source/app/app-service-container";
+import { documentBibliography } from "source/app/util/document-bibliographies";
 import { filePathOfUri } from "source/app/util/file-uri-path";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
@@ -270,6 +272,13 @@ export type ApplicationIPCContract = {
   "get-document-text": {
     request: { payload: string };
     response: string;
+  };
+  // Answered inline by run(): the citation database of the document at the
+  // path, from its buffer text or its file (`documentBibliography`), after
+  // the reads of its libraries ended.
+  "get-document-bibliography": {
+    request: { payload: string };
+    response: CitationDatabase;
   };
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
@@ -533,6 +542,13 @@ export default class CommandProvider extends ProviderContract {
       return;
     } else if (command === "get-document-text" && typeof payload === "string") {
       return await this._app.documents.readDocumentText(payload);
+    } else if (command === "get-document-bibliography" && typeof payload === "string") {
+      const text = await this._app.documents.readDocumentText(payload);
+      const { database } = await documentBibliography(this._app.fsal, payload, text);
+      // The answer comes after the reads of its libraries, so a window that
+      // renders the citations once renders them from the loaded libraries.
+      await this._app.citeproc.loadDatabases(database);
+      return database;
     } else if (command === "edit-ignore-rules") {
       const mainWindow = this._app.windows.getFirstMainWindow();
       if (mainWindow === undefined) {

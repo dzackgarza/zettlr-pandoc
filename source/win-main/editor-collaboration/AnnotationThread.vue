@@ -26,7 +26,7 @@
         >{{ trans("Acted") }}</span>
       </div>
       <div
-        v-annotation-markdown="message.text"
+        v-annotation-markdown="{ text: message.text, documentPath }"
         class="annotation-message-text"
       />
     </div>
@@ -65,6 +65,8 @@ const props = defineProps<{
   messages: AnnotationMessage[];
   now: DateTime;
   actedMessageId?: string;
+  /** The document of the annotation; its citations use its bibliography. */
+  documentPath: string;
 }>();
 
 const labels = { owner: trans("You"), agent: trans("AI"), justNow: trans("Just now") };

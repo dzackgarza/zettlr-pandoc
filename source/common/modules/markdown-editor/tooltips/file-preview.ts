@@ -21,9 +21,9 @@ import { reportError } from "@common/util/error-reporting";
 import formatDate from "@common/util/format-date";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
-import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
 import type { ForceOpenAPI } from "source/app/service-providers/commands/force-open";
+import { documentCitationDatabase } from "source/common/util/document-citation-database";
 import { imageSourceUri } from "source/common/util/image-source-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
@@ -114,14 +114,19 @@ function getPreviewElement(
   const basePath = pathDirname(metadata.filePath);
   content.textContent = trans("Generating preview…");
 
-  // Start the MD->HTML conversion ...
-  md2html(metadata.previewMarkdown, {
-    zknLinkFormat,
-    onCitation: window.getCitationCallback(CITEPROC_MAIN_DB),
-    onImageSrc(src) {
-      return imageSourceUri(src, basePath);
-    },
-  })
+  // Start the MD->HTML conversion with the bibliography of the linked
+  // document ...
+  documentCitationDatabase(metadata.filePath)
+    .then(
+      async (library) =>
+        await md2html(metadata.previewMarkdown, {
+          zknLinkFormat,
+          onCitation: window.getCitationCallback(library),
+          onImageSrc(src) {
+            return imageSourceUri(src, basePath);
+          },
+        }),
+    )
     .then((html) => {
       // ... and then apply it to the content element.
       setSanitizedHTML(content, html, "document");

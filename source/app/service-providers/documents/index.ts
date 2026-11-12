@@ -76,6 +76,7 @@ import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
+import { bibliographyFiles, documentBibliography } from "source/app/util/document-bibliographies";
 import { openPath } from "source/app/util/open-path";
 import { throwFailures } from "source/app/util/run-each-step";
 import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
@@ -164,6 +165,7 @@ type DocumentManagerApp = {
     getAllLoadedDescriptors?(): Promise<AnyDescriptor[]>;
   } & Pick<
     AppServiceContainer["fsal"],
+    | "getAnyDirectoryDescriptor"
     | "getDescriptorFor"
     | "getDescriptorForAnySupportedFile"
     | "loadAnySupportedFile"
@@ -2146,24 +2148,17 @@ current contents from the editor somewhere else, and restart the application.`,
       }
     }
 
-    for (const doc of this.documents) {
-      if (doc.descriptor.type !== "file") {
-        continue;
-      }
-
-      const frontmatter: unknown = doc.descriptor.frontmatter;
-      if (
-        frontmatter === null ||
-        typeof frontmatter !== "object" ||
-        !("bibliography" in frontmatter)
-      ) {
-        continue;
-      }
-      const bib = frontmatter.bibliography;
-      for (const item of Array.isArray(bib) ? bib : [bib]) {
-        if (typeof item === "string" && path.isAbsolute(item)) {
-          libraries.add(item);
-        }
+    // The main library is the provider's own; '' leaves it out of the list.
+    const ofDocuments = await Promise.all(
+      [...this.documents].map(
+        async (doc) =>
+          (await documentBibliography(this._app.fsal, doc.filePath, doc.document.toString()))
+            .database,
+      ),
+    );
+    for (const database of ofDocuments) {
+      for (const file of bibliographyFiles(database, "")) {
+        libraries.add(file);
       }
     }
 

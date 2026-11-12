@@ -665,6 +665,16 @@ export default class CiteprocProvider extends ProviderContract {
   }
 
   /**
+   * Ends when the provider has each database of a citation database or its
+   * problem, and drops no other database. A window that renders the
+   * citations of a document once (the print window) waits for it, since a
+   * synchronous citation does not wait for a read.
+   */
+  public async loadDatabases(database: CitationDatabase): Promise<void> {
+    await this.databasesAvailable(database);
+  }
+
+  /**
    * Whether the provider has each database of a request, after the reads
    * that run for them ended. A database that the provider did not read gets
    * its first read. The main library is not required: the request of a

@@ -16,9 +16,65 @@ import {
   getBibliographyForDescriptor,
   resolveProjectContextForDirectory,
 } from "@common/util/get-bibliography-for-descriptor";
+import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type FSAL from "@providers/fsal";
 import path from "path";
+
+export interface DocumentBibliography {
+  /**
+   * The citation database of the document for citeproc: absolute paths, and
+   * `CITEPROC_MAIN_DB` for the main library.
+   */
+  database: CitationDatabase;
+  /** The root of the Project of the document, or null. */
+  projectRoot: string | null;
+}
+
+/**
+ * The one answer to "which bibliography does this document cite from" (#198).
+ * The editor, the print window, the outline, the previews, the Annotations
+ * view, the References view, the lint and the PDF export all ask it. A
+ * relative entry of the front matter resolves from the folder of the
+ * document.
+ *
+ * @param   text  The text of the document: the buffer of an open document.
+ */
+export async function documentBibliography(
+  fsal: Pick<FSAL, "getAnyDirectoryDescriptor">,
+  documentPath: string,
+  text: string,
+): Promise<DocumentBibliography> {
+  if (!hasMarkdownExt(documentPath)) {
+    return { database: CITEPROC_MAIN_DB, projectRoot: null };
+  }
+  const folder = path.dirname(documentPath);
+  const project = await resolveProjectContextForDirectory(
+    folder,
+    new Map(),
+    async (dirPath) => await fsal.getAnyDirectoryDescriptor(dirPath),
+  );
+  const library = getBibliographyForDescriptor(
+    { frontmatter: documentFrontmatter(markdownToAST(text)) },
+    project === null ? null : project.project,
+  );
+  const resolve = (entry: string): string =>
+    entry === CITEPROC_MAIN_DB ? entry : path.resolve(folder, entry);
+  return {
+    database: Array.isArray(library) ? library.map(resolve) : resolve(library),
+    projectRoot: project === null ? null : project.rootPath,
+  };
+}
+
+/**
+ * The files of a citation database: `CITEPROC_MAIN_DB` is the main library
+ * (`export.cslLibrary`), and a main library of '' is no file.
+ */
+export function bibliographyFiles(database: CitationDatabase, mainLibrary: string): string[] {
+  return (Array.isArray(database) ? database : [database])
+    .map((entry) => (entry === CITEPROC_MAIN_DB ? mainLibrary : entry))
+    .filter((entry) => entry !== "");
+}
 
 export interface DocumentLintAuthority {
   /** Absolute paths of the document's bibliography files. */
@@ -37,27 +93,10 @@ export async function documentLintAuthority(
   documentPath: string,
   text: string,
 ): Promise<DocumentLintAuthority> {
-  if (!hasMarkdownExt(documentPath)) {
-    return { bibliographies: mainLibrary === "" ? [] : [mainLibrary], projectRoots: [] };
-  }
-  const folder = path.dirname(documentPath);
-  const project = await resolveProjectContextForDirectory(
-    folder,
-    new Map(),
-    async (dirPath) => await fsal.getAnyDirectoryDescriptor(dirPath),
-  );
-  const library = getBibliographyForDescriptor(
-    { frontmatter: documentFrontmatter(markdownToAST(text)) },
-    project === null ? null : project.project,
-  );
-  // Relative entries resolve from the document's directory, as MainEditor
-  // resolves them for citeproc.
-  const bibliographies = (Array.isArray(library) ? library : [library])
-    .map((entry) => (entry === CITEPROC_MAIN_DB ? mainLibrary : path.resolve(folder, entry)))
-    .filter((entry) => entry !== "");
+  const { database, projectRoot } = await documentBibliography(fsal, documentPath, text);
   return {
-    bibliographies,
-    projectRoots: project === null ? [] : [project.rootPath],
+    bibliographies: bibliographyFiles(database, mainLibrary),
+    projectRoots: projectRoot === null ? [] : [projectRoot],
   };
 }
 

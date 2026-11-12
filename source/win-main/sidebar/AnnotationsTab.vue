@@ -180,12 +180,12 @@
           <span class="annotation-ordinal">{{ card.ordinal }}</span>
           <span class="annotation-workspace-copy">
             <div
-              v-annotation-markdown="card.instructionText"
+              v-annotation-markdown="{ text: card.instructionText, documentPath: group.documentPath }"
               class="annotation-workspace-summary"
             />
             <div
               v-if="card.quotedText.length > 0"
-              v-annotation-markdown="card.quotedText"
+              v-annotation-markdown="{ text: card.quotedText, documentPath: group.documentPath }"
               class="annotation-workspace-context"
             />
           </span>
