@@ -308,6 +308,10 @@ export const useDocumentTreeStore = defineStore("document-tree", () => {
                 maybeUncollapseDirectories(leaf.activeFile.path);
               } else {
                 lastLeafActiveFile.value = undefined;
+                // The editor that published these values closed: no
+                // document is active, so the window shows none.
+                windowStateStore.activeDocumentInfo = undefined;
+                windowStateStore.tableOfContents = undefined;
               }
             }
           })
