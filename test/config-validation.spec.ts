@@ -59,6 +59,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "display.imageHeight": 101,
   "watchdog.stabilityThreshold": 100001,
   "ui.recentFilesLimit": 0,
+  "zotero.localServer": 23119,
 };
 
 function templateValue(template: ConfigOptions, option: string): ConfigJsonValue {
