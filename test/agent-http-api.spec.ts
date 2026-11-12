@@ -1526,6 +1526,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(etag.includes("sha256:"));
   });
 
+  it("reads an open document whose file was removed outside the app", async function () {
+    // The document has unsaved text, so it stays open after the removal
+    // of its file (§14); the caller reads the text that the author has.
+    const filePath = path.join(scratch, "removed.md");
+    const docId = await openInPane(filePath, "alpha\n");
+    await provider.applyWorkspaceTextEdits([
+      { documentPath: filePath, range: { from: 6, to: 6 }, insert: "beta\n" },
+    ]);
+    rmSync(filePath);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+
+    assert.equal(response.status, 200, response.body);
+    const body = parseAs(response.body, "ReadDocumentResponse");
+    assert.equal(body.revision.sha256, sha256Text("alpha\nbeta\n"));
+  });
+
   describe("the token of a caller (#72)", function () {
     /** The providers that a test of this group made itself. */
     const started: AgentHTTPProvider[] = [];
