@@ -40,7 +40,6 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -61,8 +60,10 @@ import AgentHTTPProvider, {
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import { readDirectoryRecursivelyFromDisk } from "source/app/service-providers/fsal/util/read-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
+import { createIgnoreFilter, EVERY_FILE_TYPE } from "source/common/util/ignore-rules";
 import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
@@ -122,6 +123,24 @@ const API_TOKEN = randomUUID();
 const TOKEN_ENVIRONMENT = { ZETTLR_AGENT_API_TOKEN: API_TOKEN };
 /** The header of a caller that holds the token. */
 const AUTHORIZED = { authorization: `Bearer ${API_TOKEN}` };
+
+/** The filter of a workspace without rules: every path that the FSAL can list. */
+const EVERY_PATH = createIgnoreFilter({
+  globalRules: [],
+  workspaceRules: new Map(),
+  showIgnored: true,
+  fileTypes: EVERY_FILE_TYPE,
+});
+
+/**
+ * The walk of the FSAL over a workspace of the scratch directory. The
+ * closed-file routes answer for exactly the ids this listing hands out, so a
+ * seam that reported one fixed name would let those tests pass against files
+ * that are not there and miss files that are.
+ */
+async function walkWorkspace(workspacePath: string) {
+  return await readDirectoryRecursivelyFromDisk(workspacePath, EVERY_PATH, new LogProvider());
+}
 
 /**
  * OpenAI publishes these constraints as prose, but it does not publish an
@@ -331,14 +350,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         },
         getDescriptorFor: async (filePath: string) => descriptorFor(filePath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        // A real walk of the scratch workspace. Closed-file routes answer for
-        // exactly the ids this listing hands out, so a seam that reported one
-        // fixed name would let those tests pass against files that are not
-        // there and miss files that are.
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
-            .filter((entry) => entry.isFile())
-            .map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: walkWorkspace,
       },
       citeproc: {
         synchronizeDatabases: async (_libraries: string[]) => {},
@@ -394,10 +406,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return new SearchProvider(
       new LogProvider(),
       {
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, { recursive: true, withFileTypes: true })
-            .filter((entry) => entry.isFile())
-            .map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: walkWorkspace,
         isFile: async (filePath: string) => statSync(filePath).isFile(),
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
@@ -637,11 +646,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           const stats = lstatSync(absPath, { throwIfNoEntry: false });
           return stats !== undefined && stats.isDirectory();
         },
-        readDirectoryRecursively: async (workspacePath: string) =>
-          readdirSync(workspacePath, {
-            recursive: true,
-            withFileTypes: true,
-          }).map((entry) => path.join(entry.parentPath, entry.name)),
+        readDirectoryRecursively: walkWorkspace,
       };
     })();
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
@@ -1236,30 +1241,81 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.ok(body.instanceId.length > 0);
   });
 
-  it("preserves workspace walk failures in the HTTP error detail", async function () {
+  it("names each folder whose content a workspace listing does not hold (#210)", async function () {
+    mkdirSync(path.join(scratch, "notes"));
+    writeFileSync(path.join(scratch, "notes", "genus.md"), "# Genus\n", "utf8");
+    const locked = path.join(scratch, "locked");
+    mkdirSync(locked);
+    writeFileSync(path.join(locked, "lattice.md"), "# Lattice\n", "utf8");
+    chmodSync(locked, 0o000);
+    const notListedOf = (body: string): string[] =>
+      (JSON.parse(body) as { notListed: Array<{ path: string; cause: string }> }).notListed.map(
+        (folder) => folder.path,
+      );
+    try {
+      const files = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=files`,
+      );
+      assert.equal(files.status, 200, files.body);
+      assert.deepEqual(
+        parseAs(files.body, "WorkspaceFilesResponse").files.map((file) =>
+          path.relative(scratch, file.path),
+        ),
+        ["notes/genus.md"],
+      );
+      assert.deepEqual(notListedOf(files.body), [locked]);
+
+      const documents = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=documents`,
+      );
+      assert.equal(documents.status, 200, documents.body);
+      assert.deepEqual(notListedOf(documents.body), [locked]);
+
+      const directories = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(scratch)}&include=directories`,
+      );
+      assert.equal(directories.status, 200, directories.body);
+      assert.deepEqual(
+        parseAs(directories.body, "WorkspaceDirectoriesResponse")
+          .directories.map((directory) => path.relative(scratch, directory.path))
+          .sort(),
+        ["locked", "notes"],
+      );
+      assert.deepEqual(notListedOf(directories.body), [locked]);
+
+      const everyWorkspace = await httpRequest("GET", "/v1/workspaces?include=files");
+      assert.equal(everyWorkspace.status, 200, everyWorkspace.body);
+      assert.deepEqual(notListedOf(everyWorkspace.body), [locked]);
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+
+  it("names a workspace whose folder it cannot list (#210)", async function () {
     const invalidWorkspace = path.join(scratch, "not-a-directory");
     writeFileSync(invalidWorkspace, "workspace path is a file\n", "utf8");
     openWorkspaces = [invalidWorkspace];
 
-    const response = await httpRequest(
-      "GET",
-      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=files`,
-    );
-    assert.equal(response.status, 500);
-    const body = parseAs(response.body, "AgentErrorResponse");
-    assert.equal(body.error.code, "INTERNAL_ERROR");
-    assert.match(body.error.message, /ENOTDIR|not a directory/i);
-    assert.ok(body.error.message.includes(invalidWorkspace));
-
-    const documents = await httpRequest(
-      "GET",
-      `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=documents`,
-    );
-    assert.equal(documents.status, 500);
-    const documentsBody = parseAs(documents.body, "AgentErrorResponse");
-    assert.equal(documentsBody.error.code, "INTERNAL_ERROR");
-    assert.match(documentsBody.error.message, /ENOTDIR|not a directory/i);
-    assert.ok(documentsBody.error.message.includes(invalidWorkspace));
+    for (const include of ["files", "documents"]) {
+      const response = await httpRequest(
+        "GET",
+        `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=${include}`,
+      );
+      assert.equal(response.status, 200, response.body);
+      const body = JSON.parse(response.body) as {
+        files?: unknown[];
+        documents?: unknown[];
+        notListed: Array<{ path: string; cause: string }>;
+      };
+      assert.deepEqual(body.files ?? body.documents, []);
+      assert.deepEqual(
+        body.notListed.map((folder) => folder.path),
+        [invalidWorkspace],
+      );
+    }
   });
 
   it("GET /v1/capabilities reports supported features", async function () {

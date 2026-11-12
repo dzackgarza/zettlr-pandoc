@@ -172,11 +172,17 @@ describe("FSAL: directory metadata that cannot be used", function () {
   });
 
   it("lists every folder among the paths of the workspace", async function () {
-    const listed = new Set(await fsal.readDirectoryRecursively(root));
+    const listing = await fsal.readDirectoryRecursively(root);
+    const listed = new Set(listing.paths);
     assert.deepEqual(
       folders.filter((folderPath) => !listed.has(folderPath)),
       [],
       "each folder is a path of the workspace",
+    );
+    assert.deepEqual(
+      listing.notListed.map((folder) => folder.path),
+      [locked],
+      "the listing names the folder whose content it does not hold",
     );
   });
 
@@ -289,5 +295,54 @@ describe("FSAL: directory metadata that cannot be used", function () {
     assert.ok(descriptor !== undefined, "the FSAL must publish the folder with its book");
     assert.deepEqual(problemsOf(descriptor), []);
     assert.deepEqual(descriptor.settings.project?.files, ["genus.md"]);
+  });
+});
+
+describe("FSAL: the listing of a missing workspace", function () {
+  let parent: string;
+  let fsal: FSAL | undefined;
+
+  beforeEach(async function () {
+    parent = await mkdtemp(path.join(tmpdir(), "zettlr-fsal-missing-workspace-"));
+  });
+
+  afterEach(async function () {
+    await fsal?.shutdown();
+    fsal = undefined;
+    await chmod(parent, 0o700);
+    await rm(parent, { recursive: true, force: true });
+  });
+
+  it("lists no path of a workspace whose rules file it cannot read", async function () {
+    const root = path.join(parent, "notes");
+    await mkdir(root);
+    await writeFile(path.join(root, "genus.md"), "# Genus\n");
+    await writeFile(path.join(root, ".zettlrignore"), "drafts/\n");
+    await chmod(path.join(root, ".zettlrignore"), 0o000);
+    fsal = await bootFsal(root);
+
+    const listing = await fsal.readDirectoryRecursively(root);
+    assert.deepEqual(listing.paths, [root], "the rules that hide paths are not known");
+    assert.deepEqual(
+      listing.notListed.map((folder) => folder.path),
+      [root],
+    );
+    await chmod(path.join(root, ".zettlrignore"), 0o600);
+  });
+
+  it("names a workspace whose folder the filesystem does not let it examine", async function () {
+    const root = path.join(parent, "notes");
+    await mkdir(root);
+    await writeFile(path.join(root, "genus.md"), "# Genus\n");
+    // Without search permission on the parent the root cannot be examined.
+    await chmod(parent, 0o600);
+    fsal = await bootFsal(root);
+
+    const listing = await fsal.readDirectoryRecursively(root);
+    assert.deepEqual(listing.paths, [root]);
+    assert.deepEqual(
+      listing.notListed.map((folder) => folder.path),
+      [root],
+    );
   });
 });
