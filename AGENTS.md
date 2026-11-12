@@ -997,7 +997,7 @@ of an isolated instance are in the first comment of #132.
   `open-file` request of the documents provider sends its refusal on
   `command-failed` to the window that sent it (`_showOpenRefusal`); each
   caller in the window logs the rejection and stops. Proof:
-  `e2e/open-missing-file.spec.ts`.
+  `e2e/follow-link-refused.spec.ts`.
 - **A command that prompts answers its contract.** A command that showed the
   cause itself in a native dialog or in the error window (`dir-rename`, the
   Project export) returns its value and does not throw as well.
