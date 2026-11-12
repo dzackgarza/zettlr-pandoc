@@ -1577,8 +1577,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(found.status, 200, found.body);
     const body = parseAs(found.body, "WorkspaceSearchResponse");
     assert.deepEqual(
-      body.notSearched.map((entry) => ({ path: entry.path, name: entry.name })),
-      [{ path: lockedFolder, name: "search-locked" }],
+      body.notSearched.map((entry) => ({ path: entry.path, name: entry.name, kind: entry.kind })),
+      [{ path: lockedFolder, name: "search-locked", kind: "folder" }],
       "the answer names the folder whose files the search did not read",
     );
     assert.ok(body.notSearched[0].cause.length > 0, "the folder has the cause of the listing");

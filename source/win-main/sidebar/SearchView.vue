@@ -496,17 +496,37 @@ const message = computed<string>(() => {
   return resultsPhrase(matchCount.value, visibleFiles.value.length);
 });
 
-const notSearchedPhrase = computed(() =>
-  notSearched.value.length === 1
-    ? trans("1 file was not searched:")
-    : trans("%s files were not searched:", String(notSearched.value.length)),
+const notSearchedFolders = computed(
+  () => notSearched.value.filter((entry) => entry.kind === "folder").length,
 );
 
-const notSearchedKeepText = computed(() =>
-  notSearched.value.length === 1
-    ? trans("1 file was not searched. It keeps its text.")
-    : trans("%s files were not searched. They keep their text.", String(notSearched.value.length)),
-);
+const notSearchedPhrase = computed(() => {
+  const count = notSearched.value.length;
+  if (notSearchedFolders.value === 0) {
+    return count === 1
+      ? trans("1 file was not searched:")
+      : trans("%s files were not searched:", String(count));
+  }
+  if (notSearchedFolders.value === count) {
+    return count === 1
+      ? trans("1 folder was not searched:")
+      : trans("%s folders were not searched:", String(count));
+  }
+  return trans("%s files and folders were not searched:", String(count));
+});
+
+const notSearchedKeepText = computed(() => {
+  const count = notSearched.value.length;
+  if (notSearchedFolders.value === 0) {
+    return count === 1
+      ? trans("1 file was not searched. It keeps its text.")
+      : trans("%s files were not searched. They keep their text.", String(count));
+  }
+  return trans(
+    "%s files and folders were not searched. Their files keep their text.",
+    String(count),
+  );
+});
 
 const replaceAllQuestion = computed(() => {
   const matches = replaceableFiles.value.reduce((sum, file) => sum + file.matches.length, 0);

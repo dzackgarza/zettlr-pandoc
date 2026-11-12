@@ -485,4 +485,41 @@ describe("the Search view", function () {
     await search(activePage, IN_BOTH_FILES, /2 results in 2 files/);
     assert.equal(await notSearched.count(), 0, "each file was searched");
   });
+
+  it("searches the other files and names the folder that it cannot list (#210)", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const folder = path.dirname(closedFile());
+    await chmod(folder, 0o000);
+    try {
+      await assert.rejects(
+        readFile(closedFile(), "utf-8"),
+        "the fixture folder must really refuse its content for this to prove anything",
+      );
+      await activePage.locator(QUERY).fill("");
+      await activePage.locator(QUERY).fill(IN_BOTH_FILES);
+      await waitUntil(
+        async () =>
+          (await activePage.locator(MESSAGE, { hasText: /^1 result in 1 file/ }).count()) > 0,
+        "the search to end with its count",
+      );
+      screenshots.set("search-unlistable-folder.png", await activePage.screenshot());
+      assert.deepEqual(
+        await activePage.locator(`${FILE_ROW}:visible .file-match-name`).allTextContents(),
+        ["categories.md"],
+        "the file beside the folder is searched",
+      );
+      const notSearched = activePage.locator(NOT_SEARCHED);
+      assert.equal(await notSearched.count(), 1, "the view says that a folder was not searched");
+      assert.match(
+        await notSearched.innerText(),
+        /^1 folder was not searched:\s+computation/,
+        "the view names the folder as a folder",
+      );
+    } finally {
+      await chmod(folder, 0o755);
+    }
+    await activePage.locator(QUERY).fill("");
+    await search(activePage, IN_BOTH_FILES, /2 results in 2 files/);
+    assert.equal(await activePage.locator(NOT_SEARCHED).count(), 0, "each file was searched");
+  });
 });

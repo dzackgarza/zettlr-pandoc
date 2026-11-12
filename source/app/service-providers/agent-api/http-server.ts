@@ -1445,10 +1445,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       })),
       matchCount: outcome.matchCount,
       truncated: outcome.truncated,
-      notSearched: outcome.notSearched.map((file) => ({
-        path: file.documentPath,
-        name: path.basename(file.documentPath),
-        cause: file.cause,
+      notSearched: outcome.notSearched.map((entry) => ({
+        path: entry.documentPath,
+        name: path.basename(entry.documentPath),
+        kind: entry.kind,
+        cause: entry.cause,
       })),
     });
   }

@@ -892,12 +892,18 @@ components:
       required:
         - path
         - name
+        - kind
         - cause
       properties:
         path:
           type: string
         name:
           type: string
+        kind:
+          type: string
+          enum: [file, folder]
+          description: A file that the search could not read, or a folder that it could
+            not list; the search read no file of such a folder.
         cause:
           type: string
           description: The error of the read.
@@ -915,9 +921,10 @@ components:
             $ref: "#/components/schemas/WorkspaceSearchFile"
         notSearched:
           type: array
-          description: The files that the search could not read. The search read each
-            other file; a file in this list has no entry in files, and the answer says
-            nothing about its text.
+          description: The files that the search could not read and the folders that it
+            could not list. The search read each other file; a file in this list, or in
+            a folder of this list, has no entry in files, and the answer says nothing
+            about its text.
           items:
             $ref: "#/components/schemas/WorkspaceSearchUnreadFile"
         matchCount:

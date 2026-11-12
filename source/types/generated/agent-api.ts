@@ -956,12 +956,17 @@ export interface components {
     WorkspaceSearchUnreadFile: {
       path: string;
       name: string;
+      /**
+       * @description A file that the search could not read, or a folder that it could not list; the search read no file of such a folder.
+       * @enum {string}
+       */
+      kind: "file" | "folder";
       /** @description The error of the read. */
       cause: string;
     };
     WorkspaceSearchResponse: {
       files: components["schemas"]["WorkspaceSearchFile"][];
-      /** @description The files that the search could not read. The search read each other file; a file in this list has no entry in files, and the answer says nothing about its text. */
+      /** @description The files that the search could not read and the folders that it could not list. The search read each other file; a file in this list, or in a folder of this list, has no entry in files, and the answer says nothing about its text. */
       notSearched: components["schemas"]["WorkspaceSearchUnreadFile"][];
       matchCount: number;
       /** @description True when the search stopped at maxMatches; narrow the query or the globs. */

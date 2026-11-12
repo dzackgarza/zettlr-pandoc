@@ -1166,10 +1166,11 @@ of an isolated instance are in the first comment of #132.
   that could not load its document has the action "Try again"
   (`surface-document-load-error.ts`, `loadAgain` in `MainEditor.vue`).
 - **A search reads the other files.** The workspace search
-  (`service-providers/search`) does not stop at a file that it cannot read.
-  It names each such file with the cause: the broadcast `search-unread` for
-  the Search view, which lists the files above the results, and the list
-  `notSearched` of `GET /v1/workspace/search`. The Replace All confirmation
+  (`service-providers/search`) does not stop at a file that it cannot read
+  or at a folder that it cannot list. It names each such file and folder
+  (`kind`) with the cause: the broadcast `search-unread` for the Search
+  view, which lists them above the results, and the list `notSearched` of
+  `GET /v1/workspace/search`. The Replace All confirmation
   says that those files keep their text. An error that is no filesystem
   error ends the search with the failure `stopped`, which names the file.
 - **A walk names the folders that it could not read.**

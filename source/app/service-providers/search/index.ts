@@ -72,9 +72,13 @@ export interface ReplaceTarget {
   ranges: Array<{ from: number; to: number }>;
 }
 
-/** A file of a search that the search did not read, with the cause. */
+/**
+ * A file that the search did not read, or a folder whose files it did not
+ * read because the filesystem refused its content, with the cause.
+ */
 export interface UnsearchedFile {
   documentPath: string;
+  kind: "file" | "folder";
   cause: string;
 }
 
@@ -97,7 +101,7 @@ export type WorkspaceSearchOutcome =
       results: FileSearchResult[];
       matchCount: number;
       truncated: boolean;
-      /** The files that the search did not read. */
+      /** The files and the folders that the search did not read. */
       notSearched: UnsearchedFile[];
     }
   | { status: "invalid-query"; message: string }
@@ -310,11 +314,19 @@ export class SearchProvider implements ProviderContract {
       return 0;
     }
 
-    const queue = await this.filesToSearch(query, () => generation === this.searchGeneration);
-    if (queue === undefined) {
+    const files = await this.filesToSearch(query, () => generation === this.searchGeneration);
+    if (files === undefined) {
       return 0; // A newer request took ownership while this one enumerated the workspaces.
     }
-    this.fileSearchQueue = queue;
+    for (const folder of files.notListed) {
+      broadcastIPCMessage("search-provider", {
+        type: "search-unread",
+        generation,
+        file: folder,
+        progress: 0,
+      } satisfies SearchProviderBroadcast);
+    }
+    this.fileSearchQueue = files.queue;
     this.currentSearch = { pattern: compiled.pattern, generation };
     this.lastPattern = compiled.pattern;
     this.sumFilesToSearch = this.fileSearchQueue.length;
@@ -330,7 +342,8 @@ export class SearchProvider implements ProviderContract {
    * one file runs under a deadline, because the pattern comes from outside
    * the app and a catastrophic regular expression would otherwise stall the
    * main process. The search stops at maxMatches matches and says so. A
-   * file that the filesystem refuses to read is in `notSearched`.
+   * file that the filesystem refuses to read, and a folder that it refuses
+   * to list, is in `notSearched`.
    */
   public async searchWorkspace(
     query: SearchQuery,
@@ -345,20 +358,20 @@ export class SearchProvider implements ProviderContract {
       return { status: "invalid-query", message: compiled.message };
     }
 
-    const queue = await this.filesToSearch(query, () => true);
-    if (queue === undefined) {
+    const files = await this.filesToSearch(query, () => true);
+    if (files === undefined) {
       throw new Error("[Search Provider] A workspace search without a generation was superseded");
     }
     const results: FileSearchResult[] = [];
-    const notSearched: UnsearchedFile[] = [];
+    const notSearched: UnsearchedFile[] = [...files.notListed];
     let matchCount = 0;
-    for (const absPath of queue) {
+    for (const absPath of files.queue) {
       const read = await this.searchSource(absPath);
       if (read.kind === "no-text") {
         continue;
       }
       if (read.kind === "not-searched") {
-        notSearched.push({ documentPath: absPath, cause: read.cause });
+        notSearched.push({ documentPath: absPath, kind: "file", cause: read.cause });
         continue;
       }
       const { source, replaceable } = read;
@@ -399,23 +412,32 @@ export class SearchProvider implements ProviderContract {
   /**
    * The files a query admits, in workspace order and without duplicates:
    * every file under the open workspaces, then the open files, filtered by
-   * the query's globs. Undefined when isCurrent reports that a newer search
+   * the query's globs; and each folder of the workspaces whose content the
+   * filesystem refused. Undefined when isCurrent reports that a newer search
    * took over while the workspaces were walked.
    */
   private async filesToSearch(
     query: SearchQuery,
     isCurrent: () => boolean,
-  ): Promise<string[] | undefined> {
+  ): Promise<{ queue: string[]; notListed: UnsearchedFile[] } | undefined> {
     const { openWorkspaces, openFiles } = this._config.get().app;
     const roots = [...openWorkspaces];
-    const candidates = (
-      await Promise.all(
-        roots.map(async (root) => (await this._fsal.readDirectoryRecursively(root)).paths),
-      )
-    ).flat();
+    const listings = await Promise.all(
+      roots.map(async (root) => await this._fsal.readDirectoryRecursively(root)),
+    );
     if (!isCurrent()) {
       return undefined;
     }
+    const candidates = listings.flatMap((listing) => listing.paths);
+    const notListed = listings.flatMap((listing) =>
+      listing.notListed.map(
+        (folder): UnsearchedFile => ({
+          documentPath: folder.path,
+          kind: "folder",
+          cause: folder.cause,
+        }),
+      ),
+    );
     const includesPath = compilePathFilter(query.include, query.exclude);
     const queue: string[] = [];
 
@@ -431,7 +453,7 @@ export class SearchProvider implements ProviderContract {
         queue.push(candidate);
       }
     }
-    return queue;
+    return { queue, notListed };
   }
 
   /**
@@ -524,7 +546,10 @@ export class SearchProvider implements ProviderContract {
       return { kind: "no-matches" };
     }
     if (read.kind === "not-searched") {
-      return { kind: "not-searched", file: { documentPath: absPath, cause: read.cause } };
+      return {
+        kind: "not-searched",
+        file: { documentPath: absPath, kind: "file", cause: read.cause },
+      };
     }
     const matches = matchDocument(read.source, pattern);
     if (matches.length === 0) {
