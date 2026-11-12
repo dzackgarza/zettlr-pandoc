@@ -60,8 +60,12 @@ import AgentHTTPProvider, {
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
+import type FSAL from "source/app/service-providers/fsal";
 import { parse as parseDirectory } from "source/app/service-providers/fsal/fsal-directory";
-import { readDirectoryRecursivelyFromDisk } from "source/app/service-providers/fsal/util/read-directory";
+import {
+  type DirectoryListing,
+  readDirectoryRecursivelyFromDisk,
+} from "source/app/service-providers/fsal/util/read-directory";
 import LogProvider from "source/app/service-providers/log";
 import { SearchProvider } from "source/app/service-providers/search";
 import { createIgnoreFilter, EVERY_FILE_TYPE } from "source/common/util/ignore-rules";
@@ -69,6 +73,7 @@ import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
+import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
@@ -276,6 +281,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   const links = { index: new WikilinkIndex([]) };
   /** The host of the provider of a test. */
   let agentHost: AgentApiHost;
+  /** The walk of the workspace routes: the disk walker, or the real FSAL that a case boots. */
+  let walk: (directoryPath: string) => Promise<DirectoryListing> = walkWorkspace;
+  let fsal: FSAL | undefined;
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -353,7 +361,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         // The folders of the documents, as the FSAL reads them from disk.
         getAnyDirectoryDescriptor: async (dirPath: string) => await parseDirectory(dirPath),
         getFilesystemMetadata: async (_filePath: string) => ({ modtime: 0 }),
-        readDirectoryRecursively: walkWorkspace,
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
       },
       citeproc: {
         synchronizeDatabases: async (_libraries: string[]) => {},
@@ -409,7 +417,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     return new SearchProvider(
       new LogProvider(),
       {
-        readDirectoryRecursively: walkWorkspace,
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
         isFile: async (filePath: string) => statSync(filePath).isFile(),
         getDescriptorForAnySupportedFile: async (filePath: string) => descriptorFor(filePath),
         loadAnySupportedFile: async (filePath: string) => normalizedRead(filePath),
@@ -650,7 +658,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
           const stats = lstatSync(absPath, { throwIfNoEntry: false });
           return stats !== undefined && stats.isDirectory();
         },
-        readDirectoryRecursively: walkWorkspace,
+        readDirectoryRecursively: async (directoryPath: string) => await walk(directoryPath),
       };
     })();
     httpProvider = new AgentHTTPProvider(new LogProvider(), provider, agentHost, {
@@ -680,6 +688,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
     peerServers = [];
     saveDialogResponse = 2;
+    await fsal?.shutdown();
+    fsal = undefined;
+    walk = walkWorkspace;
     await httpProvider.shutdown();
     await documentLint.shutdown();
     await provider.shutdown();
@@ -1299,27 +1310,88 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     }
   });
 
-  it("names a workspace whose folder it cannot list (#210)", async function () {
-    const invalidWorkspace = path.join(scratch, "not-a-directory");
-    writeFileSync(invalidWorkspace, "workspace path is a file\n", "utf8");
-    openWorkspaces = [invalidWorkspace];
-
+  /**
+   * The workspace listings of a workspace that the real FSAL holds, for each
+   * `include` that lists the paths of a workspace.
+   */
+  async function listingsOfFsalWorkspace(root: string): Promise<
+    Array<{
+      status: number;
+      body: string;
+    }>
+  > {
+    const booted = await bootFsal(root);
+    fsal = booted;
+    walk = async (directoryPath: string) => await booted.readDirectoryRecursively(directoryPath);
+    openWorkspaces = [root];
+    const responses = [];
     for (const include of ["files", "documents"]) {
-      const response = await httpRequest(
-        "GET",
-        `/v1/workspaces?workspaceId=${encodeURIComponent(invalidWorkspace)}&include=${include}`,
+      responses.push(
+        await httpRequest(
+          "GET",
+          `/v1/workspaces?workspaceId=${encodeURIComponent(root)}&include=${include}`,
+        ),
       );
-      assert.equal(response.status, 200, response.body);
-      const body = JSON.parse(response.body) as {
-        files?: unknown[];
-        documents?: unknown[];
-        notListed: Array<{ path: string; cause: string }>;
-      };
-      assert.deepEqual(body.files ?? body.documents, []);
-      assert.deepEqual(
-        body.notListed.map((folder) => folder.path),
-        [invalidWorkspace],
-      );
+    }
+    return responses;
+  }
+
+  it("names a workspace whose folder the filesystem does not let it examine (#210)", async function () {
+    // The parent has no search permission: a failed mount looks the same.
+    // The workspace stays open, and the FSAL holds it as missing (§24).
+    const parent = path.join(scratch, "mount");
+    const root = path.join(parent, "notes");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(path.join(root, "genus.md"), "# Genus\n", "utf8");
+    chmodSync(parent, 0o600);
+    try {
+      for (const response of await listingsOfFsalWorkspace(root)) {
+        assert.equal(response.status, 200, response.body);
+        const body = JSON.parse(response.body) as {
+          files?: unknown[];
+          documents?: unknown[];
+          notListed: Array<{ path: string; cause: string }>;
+        };
+        assert.deepEqual(body.files ?? body.documents, []);
+        assert.deepEqual(
+          body.notListed.map((folder) => folder.path),
+          [root],
+        );
+      }
+    } finally {
+      chmodSync(parent, 0o700);
+    }
+  });
+
+  it("lists no file of a workspace whose rules file it cannot read (#210)", async function () {
+    // The unknown rules may hide any path: the listing gives none of them.
+    const root = path.join(scratch, "notes");
+    mkdirSync(path.join(root, "drafts"), { recursive: true });
+    writeFileSync(path.join(root, "genus.md"), "# Genus\n", "utf8");
+    writeFileSync(path.join(root, "drafts", "lattice.md"), "# Lattice\n", "utf8");
+    const rules = path.join(root, ".zettlrignore");
+    writeFileSync(rules, "drafts/\n", "utf8");
+    chmodSync(rules, 0o000);
+    try {
+      for (const response of await listingsOfFsalWorkspace(root)) {
+        assert.equal(response.status, 200, response.body);
+        const body = JSON.parse(response.body) as {
+          files?: Array<{ path: string }>;
+          documents?: Array<{ path: string }>;
+          notListed?: Array<{ path: string; cause: string }>;
+        };
+        assert.deepEqual(
+          (body.files ?? body.documents ?? []).map((file) => path.relative(root, file.path)),
+          [],
+          "a file that the rules may hide is not listed",
+        );
+        assert.deepEqual(
+          body.notListed?.map((folder) => folder.path),
+          [root],
+        );
+      }
+    } finally {
+      chmodSync(rules, 0o600);
     }
   });
 
