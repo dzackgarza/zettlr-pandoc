@@ -2171,7 +2171,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Revision mismatch or document closed */
+      /** @description Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE) */
       409: {
         headers: {
           [name: string]: unknown;

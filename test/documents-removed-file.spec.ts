@@ -181,12 +181,14 @@ describe("Documents-provider removed file", function () {
     if ("ok" in created) {
       assert.fail(`the annotation is refused: ${created.message}`);
     }
-    assert.equal(created.instruction, "Say which group.");
+    assert.equal(created.messages[0].text, "Say which group.");
 
     assert.deepEqual(await provider.saveFile(filePath), { ok: true });
     assert.equal(readFileSync(filePath, "utf-8"), `${PREFIX}${SOURCE}`);
     assert.deepEqual(
-      provider.annotationQueries.getAnnotations(documentId).items.map((item) => item.instruction),
+      provider.annotationQueries
+        .getAnnotations(documentId)
+        .items.map((item) => item.messages[0].text),
       ["Say which group."],
       "the annotation stays with the saved file",
     );

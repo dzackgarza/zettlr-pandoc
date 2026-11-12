@@ -1372,11 +1372,13 @@ export class CollaborationApplicationService {
     try {
       diskText = await this.deps.authority.readDiskText(documentPath);
     } catch (err) {
+      // A review compares each proposal with the file, so a document whose
+      // file is gone or refused takes no proposal until a save writes it.
       return {
         ok: false,
-        code: "INTERNAL_ERROR",
+        code: "DOCUMENT_UNREADABLE",
         message:
-          "Couldn't read the document from disk: " +
+          `A review needs the file of the document, which cannot be read: ` +
           (err instanceof Error ? err.message : String(err)),
       };
     }
@@ -2151,10 +2153,16 @@ export class CollaborationApplicationService {
     }
 
     const review = this.reviews.getReview(documentId);
+    // The working text of an open document comes from the bytes that the
+    // editor last loaded or saved, and a save moves the fence. The file
+    // itself is not read: it can be gone while the document stays open.
     const diskFenceSha256 =
       state?.diskFenceSha256 ??
       review?.diskFenceSha256 ??
-      sha256Text(normalizeText(await this.deps.authority.readDiskText(documentPath)));
+      this.deps.authority.readSavedDiskSha256(documentId);
+    if (diskFenceSha256 === undefined) {
+      throw new Error(`The open document ${documentPath} has no saved text`);
+    }
 
     try {
       await this.sidecars.write(

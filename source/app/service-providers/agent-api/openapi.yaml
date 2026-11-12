@@ -3296,7 +3296,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "409":
-          description: Revision mismatch or document closed
+          description: Revision mismatch, document closed, or a file of the document that cannot be read (DOCUMENT_UNREADABLE)
           content:
             application/json:
               schema:
