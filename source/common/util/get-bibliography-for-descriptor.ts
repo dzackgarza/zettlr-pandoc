@@ -71,9 +71,22 @@ export async function resolveProjectContextForDescriptor(
   descriptorMap: Map<string, AnyDescriptor>,
   lookup: DirectoryLookup,
 ): Promise<ResolvedProjectContext | null> {
-  let directoryPath = descriptor.dir;
+  return await resolveProjectContextForDirectory(descriptor.dir, descriptorMap, lookup);
+}
+
+/**
+ * The closest Project that holds the directory `directoryPath`, the directory
+ * itself included. A file has the Project of its folder, so this also
+ * answers for a document whose file is gone.
+ */
+export async function resolveProjectContextForDirectory(
+  directoryPath: string,
+  descriptorMap: Map<string, AnyDescriptor>,
+  lookup: DirectoryLookup,
+): Promise<ResolvedProjectContext | null> {
+  let current = directoryPath;
   while (true) {
-    const directory = descriptorMap.get(directoryPath) ?? (await lookup(directoryPath));
+    const directory = descriptorMap.get(current) ?? (await lookup(current));
     if (directory?.type !== "directory") {
       return null;
     }
@@ -83,7 +96,7 @@ export async function resolveProjectContextForDescriptor(
     if (directory.dir === directory.path) {
       return null;
     }
-    directoryPath = directory.dir;
+    current = directory.dir;
   }
 }
 
@@ -101,12 +114,13 @@ export async function resolveProjectForDescriptor(
  * You still have to check whether there is a library loaded, this simply returns
  * a path (or the CITEPROC_MAIN_DB constant).
  *
- * @param   {MDFileDescriptor}  descriptor  The descriptor
+ * @param   {MDFileDescriptor}  descriptor  The descriptor, or the front
+ *                                          matter of a document
  *
  * @return  {string}                        The appropriate library
  */
 export function getBibliographyForDescriptor(
-  descriptor: MDFileDescriptor,
+  descriptor: Pick<MDFileDescriptor, "frontmatter">,
   project: ProjectSettings | null = null,
 ): CitationDatabase {
   const frontmatter: unknown = descriptor.frontmatter;

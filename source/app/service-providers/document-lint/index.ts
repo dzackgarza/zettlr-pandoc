@@ -162,10 +162,7 @@ export interface DocumentLintDependencies {
   references?: { getSnapshot: () => WorkspaceReferenceState };
   /** The workspace's wikilink index, which resolves the document's wikilinks. */
   links?: { index: WikilinkIndex };
-  fsal?: Pick<
-    FSAL,
-    "getDescriptorFor" | "getAnyDirectoryDescriptor" | "getAllLoadedDescriptors" | "on" | "off"
-  >;
+  fsal?: Pick<FSAL, "getAnyDirectoryDescriptor" | "getAllLoadedDescriptors" | "on" | "off">;
   /** Shows the background queue in the status bar. */
   lrt?: Pick<LongRunningTaskProvider, "registerTask" | "settleTask">;
   homeDirectory: string;
@@ -233,7 +230,7 @@ function isRecord(value: unknown): value is DocumentLintRecord {
   );
 }
 
-type DirectoryReader = Pick<FSAL, "getDescriptorFor" | "getAnyDirectoryDescriptor">;
+type DirectoryReader = Pick<FSAL, "getAnyDirectoryDescriptor">;
 
 /** The inputs of a Flowmark run that belong to one document. */
 interface DocumentInputs {
@@ -282,8 +279,6 @@ class LintPass {
   /** The file system layer, with one read of each directory descriptor. */
   directoryReader(fsal: DirectoryReader): DirectoryReader {
     return {
-      getDescriptorFor: async (absPath, avoidDiskAccess) =>
-        await fsal.getDescriptorFor(absPath, avoidDiskAccess),
       getAnyDirectoryDescriptor: async (absPath) => {
         let pending = this.directories.get(absPath);
         if (pending === undefined) {
@@ -627,11 +622,12 @@ export default class DocumentLintProvider extends ProviderContract {
             text,
             pass.workspaceDefinitions(this.deps.references),
           );
-    return { ...(await this.authority(documentPath, pass)), references };
+    return { ...(await this.authority(documentPath, text, pass)), references };
   }
 
   private async authority(
     documentPath: string,
+    text: string,
     pass: LintPass,
   ): Promise<{ bibliographies?: string[]; projectRoots?: string[] }> {
     const mainLibrary = this.deps.config.get().export.cslLibrary;
@@ -648,6 +644,7 @@ export default class DocumentLintProvider extends ProviderContract {
       pass.directoryReader(this.deps.fsal),
       mainLibrary,
       documentPath,
+      text,
     );
   }
 

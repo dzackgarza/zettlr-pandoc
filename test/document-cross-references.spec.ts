@@ -11,8 +11,9 @@
  *                  removed outside the app (§14). Its cross-reference system
  *                  and the Project roots of its lint come from the folder of
  *                  the document, which is still there: a chapter of a Quarto
- *                  book stays a chapter of that book. Drives the real FSAL
- *                  after its watcher reported the removal.
+ *                  book stays a chapter of that book. Its bibliography comes
+ *                  from the text that is linted. Drives the real FSAL after
+ *                  its watcher reported the removal.
  *
  * END HEADER
  */
@@ -73,8 +74,12 @@ describe("The Project facts of a document whose file was removed", function () {
     assert.equal(await documentCrossReferenceSystem(fsal, chapter), "quarto");
   });
 
-  it("keeps the Project root of its lint", async function () {
-    const authority = await documentLintAuthority(fsal, "", chapter);
-    assert.deepEqual(authority.projectRoots, [root]);
+  it("keeps the Project root of its lint and the bibliography that its text names", async function () {
+    const text = "---\nbibliography: surfaces.bib\n---\n\n# Enriques surfaces {#sec-enriques}\n";
+    const authority = await documentLintAuthority(fsal, "", chapter, text);
+    assert.deepEqual(authority, {
+      bibliographies: [path.join(root, "surfaces.bib")],
+      projectRoots: [root],
+    });
   });
 });
