@@ -186,7 +186,7 @@ const STATUS_BY_CODE: Record<AgentErrorCode, number> = {
   METHOD_NOT_FOUND: 404,
   INVALID_PARAMS: 400,
   PERSISTENCE_FAILED: 500,
-  CITATION_DATABASE_NOT_LOADED: 404,
+  CITATION_DATABASE_NOT_LOADED: 503,
   CITATION_NOT_FOUND: 404,
   CITATION_STYLE_NOT_LOADED: 503,
   FIGURE_NOT_FOUND: 404,
@@ -2215,16 +2215,13 @@ export default class AgentHTTPProvider extends ProviderContract {
    */
   private async zoteroLibrary(res: http.ServerResponse): Promise<ZoteroLibrary | undefined> {
     await this.citationDatabasesRead();
-    if (this._zotero === undefined || !this._zotero.citeproc.hasMainLibrary()) {
-      this.sendError(
-        res,
-        503,
-        "CITATION_DATABASE_NOT_LOADED",
-        "The Zotero operations need the main citation database (export.cslLibrary)",
-      );
+    if (this._zotero === undefined) {
+      this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return undefined;
     }
-    return this._zotero;
+    return this.citationDatabaseAvailable(res, this._zotero.citeproc, CITEPROC_MAIN_DB)
+      ? this._zotero
+      : undefined;
   }
 
   private sendZoteroResult<Body extends AgentApiResponseBody>(
@@ -2248,12 +2245,83 @@ export default class AgentHTTPProvider extends ProviderContract {
   // Citation handlers
   // ==========================================================================
 
+  /**
+   * Whether the provider has the items of a database. A database that it
+   * does not have answers 503 with the file and the cause, which the windows
+   * show too (`citeproc-problems`).
+   */
+  private citationDatabaseAvailable(
+    res: http.ServerResponse,
+    citeproc: CiteprocProvider,
+    database: string,
+  ): boolean {
+    const availability = citeproc.databaseAvailability(database);
+    if (availability.state === "loaded") {
+      return true;
+    }
+    if (availability.state === "not-configured") {
+      this.sendError(
+        res,
+        503,
+        "CITATION_DATABASE_NOT_LOADED",
+        "The settings name no main citation library (export.cslLibrary).",
+      );
+      return false;
+    }
+    const { path: databasePath, cause } = availability;
+    this.sendError(
+      res,
+      503,
+      "CITATION_DATABASE_NOT_LOADED",
+      `The citation library ${databasePath} is not loaded: ${cause}`,
+      { database: { path: databasePath, cause } },
+    );
+    return false;
+  }
+
+  /** Answers 404 when the database does not hold each cite key of a request. */
+  private citekeysHeld(
+    res: http.ServerResponse,
+    citeproc: CiteprocProvider,
+    database: string,
+    citekeys: string[],
+  ): boolean {
+    const missingCitekeys = citeproc.missingCitekeys(database, citekeys);
+    if (missingCitekeys.length === 0) {
+      return true;
+    }
+    this.sendError(
+      res,
+      404,
+      "CITATION_NOT_FOUND",
+      `Database ${database} does not hold these citation keys: ${missingCitekeys.join(", ")}`,
+      { missingCitekeys },
+    );
+    return false;
+  }
+
+  /** Answers a render failure that the provider names; another error goes to the dispatcher. */
+  private sendRenderFailure(res: http.ServerResponse, err: unknown): void {
+    if (err instanceof CiteprocRenderInvariantError) {
+      this.sendError(res, 500, "INTERNAL_ERROR", err.message);
+      return;
+    }
+    if (err instanceof CitationStyleError) {
+      this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
+      return;
+    }
+    throw err;
+  }
+
   private handleListCitationDatabases(res: http.ServerResponse): void {
     if (this._citeproc === undefined) {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    this.sendJson(res, 200, { databases: this._citeproc.listDatabases() });
+    this.sendJson(res, 200, {
+      databases: this._citeproc.listDatabases(),
+      notLoaded: this._citeproc.databasesNotLoaded(),
+    });
   }
 
   private handleListCitationItems(res: http.ServerResponse, database: string): void {
@@ -2261,18 +2329,11 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database;
-    try {
-      const items = this._citeproc.getItems(db);
-      this.sendJson(res, 200, { items, count: items.length });
-    } catch (err) {
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+    if (!this.citationDatabaseAvailable(res, this._citeproc, database)) {
+      return;
     }
+    const items = this._citeproc.getItems(database);
+    this.sendJson(res, 200, { items, count: items.length });
   }
 
   private handleGetCitationItem(res: http.ServerResponse, citeKey: string, database: string): void {
@@ -2280,22 +2341,14 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 503, "APP_NOT_RUNNING", "Citations are unavailable");
       return;
     }
-    const db = database;
-    try {
-      const item = this._citeproc.getItem(db, citeKey);
-      if (item === undefined) {
-        this.sendError(res, 404, "CITATION_NOT_FOUND", `Citation key not found: ${citeKey}`);
-        return;
-      }
-      this.sendJson(res, 200, item as AgentApiResponseBody);
-    } catch (err) {
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, database) ||
+      !this.citekeysHeld(res, this._citeproc, database, [citeKey])
+    ) {
+      return;
     }
+    const item = this._citeproc.getItem(database, citeKey);
+    this.sendJson(res, 200, item as AgentApiResponseBody);
   }
 
   private handleRenderCitation(res: http.ServerResponse, body: RenderCitationRequest): void {
@@ -2308,52 +2361,35 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 400, "INVALID_PARAMS", "citations must name at least one item to render");
       return;
     }
-    if (db === CITEPROC_MAIN_DB && !this._citeproc.hasMainLibrary()) {
-      this.sendError(
+    const citeItems: CiteItem[] = body.citations.map((c) => ({
+      id: c.id,
+      locator: c.locator,
+      label: c.label,
+      prefix: c.prefix,
+      suffix: c.suffix,
+    }));
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, db) ||
+      !this.citekeysHeld(
         res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        "No main citation library is configured.",
-      );
+        this._citeproc,
+        db,
+        citeItems.map((item) => item.id),
+      )
+    ) {
       return;
     }
+    let rendered: string | undefined;
     try {
-      const citeItems: CiteItem[] = body.citations.map((c) => ({
-        id: c.id,
-        locator: c.locator,
-        label: c.label,
-        prefix: c.prefix,
-        suffix: c.suffix,
-      }));
-      const rendered = this._citeproc.getCitation(db, citeItems, body.composite);
-      // With items and a loaded database, the engine declines only when a
-      // citekey is missing from that database.
-      if (rendered === undefined) {
-        this.sendError(
-          res,
-          404,
-          "CITATION_NOT_FOUND",
-          `At least one citation key is not in database ${db}: ${citeItems.map((item) => item.id).join(", ")}`,
-        );
-        return;
-      }
-      this.sendJson(res, 200, { rendered });
+      rendered = this._citeproc.getCitation(db, citeItems, body.composite);
     } catch (err) {
-      if (err instanceof CiteprocRenderInvariantError) {
-        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
-        return;
-      }
-      if (err instanceof CitationStyleError) {
-        this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
-        return;
-      }
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
-      );
+      this.sendRenderFailure(res, err);
+      return;
     }
+    if (rendered === undefined) {
+      throw new Error(`The citation provider rendered no citation of ${db} for loaded cite keys.`);
+    }
+    this.sendJson(res, 200, { rendered });
   }
 
   private handleRenderBibliography(
@@ -2365,30 +2401,30 @@ export default class AgentHTTPProvider extends ProviderContract {
       return;
     }
     const db = body.database;
+    if (body.citekeys.length === 0) {
+      this.sendError(res, 400, "INVALID_PARAMS", "citekeys must name at least one item to render");
+      return;
+    }
+    if (
+      !this.citationDatabaseAvailable(res, this._citeproc, db) ||
+      !this.citekeysHeld(res, this._citeproc, db, body.citekeys)
+    ) {
+      return;
+    }
+    let result: ReturnType<CiteprocProvider["makeBibliography"]>;
     try {
-      const result = this._citeproc.makeBibliography(db, body.citekeys);
-      if (result === undefined) {
-        this.sendJson(res, 200, { entries: [] });
-        return;
-      }
-      const [options, entries] = result;
-      this.sendJson(res, 200, { options: { ...options }, entries });
+      result = this._citeproc.makeBibliography(db, body.citekeys);
     } catch (err) {
-      if (err instanceof CiteprocRenderInvariantError) {
-        this.sendError(res, 500, "INTERNAL_ERROR", err.message);
-        return;
-      }
-      if (err instanceof CitationStyleError) {
-        this.sendError(res, 503, "CITATION_STYLE_NOT_LOADED", err.message);
-        return;
-      }
-      this.sendError(
-        res,
-        404,
-        "CITATION_DATABASE_NOT_LOADED",
-        err instanceof Error ? err.message : `Database not loaded: ${db}`,
+      this.sendRenderFailure(res, err);
+      return;
+    }
+    if (result === undefined) {
+      throw new Error(
+        `The citation provider rendered no bibliography of ${db} for loaded cite keys.`,
       );
     }
+    const [options, entries] = result;
+    this.sendJson(res, 200, { options: { ...options }, entries });
   }
 
   private authoringHomeDirectory(): string {

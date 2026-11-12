@@ -749,6 +749,9 @@ export interface components {
       /** @description DUPLICATE_CLAIM: zero-based indices of the first pair of claims that have one description and change the same text. */
       conflictingClaimIndices?: number[];
       remediation?: components["schemas"]["ZoteroSourceRemediation"];
+      database?: components["schemas"]["CitationDatabaseNotLoaded"];
+      /** @description CITATION_NOT_FOUND: each cite key of the request that the database does not hold. */
+      missingCitekeys?: string[];
     };
     AgentErrorResponse: {
       error: components["schemas"]["AgentError"];
@@ -1286,8 +1289,14 @@ export interface components {
       composite: boolean;
       citekeys?: string[];
     };
+    /** @description A citation library that the app reads and that did not load: an absent or unreadable file, or a file that is not a library. */
+    CitationDatabaseNotLoaded: {
+      path: string;
+      cause: string;
+    };
     CitationDatabasesResponse: {
       databases: components["schemas"]["CitationDatabaseSummary"][];
+      notLoaded: components["schemas"]["CitationDatabaseNotLoaded"][];
     };
     CitationItemsResponse: {
       items: components["schemas"]["CitationItem"][];
@@ -2631,8 +2640,17 @@ export interface operations {
             | components["schemas"]["CitationItem"];
         };
       };
-      /** @description Database or cite key not found */
+      /** @description The database does not hold the cite key. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentErrorResponse"];
+        };
+      };
+      /** @description The database is not loaded. error.database names the file and the cause; without it, the settings name no main library. */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -2675,7 +2693,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Database not loaded, or a citation key not in it */
+      /** @description The database does not hold a cite key of the request. error.missingCitekeys names each one. */
       404: {
         headers: {
           [name: string]: unknown;
@@ -2684,7 +2702,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description The citation style of the application settings did not load. The message names the file and the cause. No citation is rendered in another style. */
+      /** @description The database is not loaded (CITATION_DATABASE_NOT_LOADED, error.database names the file and the cause), or the citation style of the settings did not load (CITATION_STYLE_NOT_LOADED). No citation is rendered in another style. */
       503: {
         headers: {
           [name: string]: unknown;

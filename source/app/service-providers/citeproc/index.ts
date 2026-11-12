@@ -125,6 +125,21 @@ export class CitationStyleError extends Error {
   }
 }
 
+/** A database file that the provider does not have, and why. */
+export interface DatabaseNotLoaded {
+  path: string;
+  cause: string;
+}
+
+/**
+ * Whether the provider has the items of one database. `not-configured`: the
+ * request names the main library and the settings name none.
+ */
+export type DatabaseAvailability =
+  | { state: "loaded" }
+  | { state: "not-configured" }
+  | ({ state: "not-loaded" } & DatabaseNotLoaded);
+
 /** A read of a database file that runs on a thread. */
 interface RunningLoad {
   /**
@@ -371,6 +386,52 @@ export default class CiteprocProvider extends ProviderContract {
       path: db.path,
       type: db.type,
     }));
+  }
+
+  /** Each database file that the provider keeps and whose last read failed, with the cause. */
+  public databasesNotLoaded(): DatabaseNotLoaded[] {
+    return Array.from(this.databaseProblems, ([databasePath, cause]) => ({
+      path: databasePath,
+      cause,
+    }));
+  }
+
+  /**
+   * Whether the provider has the items of a database. The provider reads the
+   * library of the settings and the bibliographies of the open documents and
+   * Projects; this call reads no other file.
+   */
+  public databaseAvailability(database: string): DatabaseAvailability {
+    const databasePath = database === CITEPROC_MAIN_DB ? this.mainLibrary : database;
+    if (databasePath === "") {
+      return { state: "not-configured" };
+    }
+    if (this.databases.has(databasePath)) {
+      return { state: "loaded" };
+    }
+    const problem = this.databaseProblems.get(databasePath);
+    if (problem !== undefined) {
+      return { state: "not-loaded", path: databasePath, cause: problem };
+    }
+    if (this.loading.has(databasePath)) {
+      return {
+        state: "not-loaded",
+        path: databasePath,
+        cause: "The read of the file has not ended.",
+      };
+    }
+    return {
+      state: "not-loaded",
+      path: databasePath,
+      cause:
+        "The app does not read this file: it reads the library of the settings and the bibliographies of the open documents and Projects.",
+    };
+  }
+
+  /** The cite keys of a request that the databases do not hold, in the order of the request. */
+  public missingCitekeys(database: CitationDatabase, citekeys: string[]): string[] {
+    this.selectDatabase(database);
+    return citekeys.filter((key) => !(key in this._items));
   }
 
   /**

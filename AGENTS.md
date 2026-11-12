@@ -740,7 +740,18 @@ of an isolated instance are in the first comment of #132.
   are not used. The Agent API answers 503 `CITATION_STYLE_NOT_LOADED`. The
   cite keys of the libraries stay available. Each load of a style broadcasts
   `citeproc-database-updated`, so the windows draw their citations again.
-- **Proof:** `test/citeproc-unreadable-style.spec.ts`,
+- **The Agent API names a library that did not load.** A citation route
+  whose database the provider does not have answers 503
+  `CITATION_DATABASE_NOT_LOADED` with `error.database`, the file and the
+  cause; without it, the settings name no main library. The API reads no
+  file that a caller names: a path that is not a library of the settings, of
+  an open document or of a Project is not loaded. The listing
+  (`target=databases`) gives the libraries that did not load in
+  `notLoaded`. A render answers 404 `CITATION_NOT_FOUND` with
+  `error.missingCitekeys` for each cite key that the database does not
+  hold; a bibliography does not leave a key out.
+- **Proof:** `test/citeproc-unreadable-style.spec.ts`, `test/agent-http-api.spec.ts`
+  ("citation libraries that did not load"),
   `e2e/unreadable-citation-style.spec.ts`,
   `test/citeproc-library-parse-thread.spec.ts` (the event loop during a
   parse, the calls that do not wait), and `e2e/citation-library-thread.spec.ts`
