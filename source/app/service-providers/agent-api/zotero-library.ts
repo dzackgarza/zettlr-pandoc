@@ -281,7 +281,8 @@ export default class ZoteroLibrary {
   /**
    * One request to Zotero. An add-on error keeps its status, except that a
    * Zotero-side failure (5xx) is a 502 of this API; the 422 of a source that
-   * no method identifies carries the add-on's remediation.
+   * no method identifies carries the add-on's remediation. Zotero without the
+   * add-on is ZOTERO_UNAVAILABLE, as Zotero that does not answer is.
    */
   private async request<Body>(
     url: URL,
@@ -316,6 +317,16 @@ export default class ZoteroLibrary {
         status: 502,
         code: "ZOTERO_REQUEST_FAILED",
         message: `Zotero ${response.status}: ${text}`,
+      };
+    }
+    // The add-on answers each request with JSON. A route that no endpoint
+    // serves gets Zotero's own text/plain 404: the add-on is not installed.
+    if (response.headers.get("content-type") !== "application/json") {
+      return {
+        ok: false,
+        status: 503,
+        code: "ZOTERO_UNAVAILABLE",
+        message: `Zotero answers at ${this.origin} without the local-write-api add-on: HTTP ${response.status} ${text}`,
       };
     }
     const error = JSON.parse(text) as AddonError;

@@ -321,7 +321,9 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   item tagged `metadata:unresolved`. An import returns the Better BibTeX key and
   waits until the main citation library (the Better BibTeX auto-export) has it
   (`citable`). `just test-zotero-integration` proves this against the running
-  Zotero.
+  Zotero. An operation that needs the add-on answers 503 `ZOTERO_UNAVAILABLE`
+  when Zotero does not answer and when Zotero answers without the add-on: its
+  own text/plain 404 for `/write` (`test/zotero-without-write-addon.spec.ts`).
 - ChatGPT reaches `/mcp` only through the OpenAI Secure MCP Tunnel
   `tunnel_6aba3fe9f56081919348c7060b52188f`. The user unit
   `scripts/systemd/openai-tunnel-zettlr-pandoc.service` runs

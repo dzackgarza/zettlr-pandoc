@@ -2983,7 +2983,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Zotero or the citation database is unavailable. */
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
       503: {
         headers: {
           [name: string]: unknown;
@@ -3043,7 +3043,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Zotero or the citation database is not available */
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
       503: {
         headers: {
           [name: string]: unknown;
@@ -3112,7 +3112,7 @@ export interface operations {
           "application/json": components["schemas"]["AgentErrorResponse"];
         };
       };
-      /** @description Zotero or the citation database is not available */
+      /** @description Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available */
       503: {
         headers: {
           [name: string]: unknown;

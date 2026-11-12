@@ -3973,7 +3973,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero or the citation database is unavailable.
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
@@ -4021,7 +4021,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
@@ -4080,7 +4080,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentErrorResponse"
         "503":
-          description: Zotero or the citation database is not available
+          description: Zotero does not answer, Zotero answers without the local-write-api add-on, or the citation database is not available
           content:
             application/json:
               schema:
