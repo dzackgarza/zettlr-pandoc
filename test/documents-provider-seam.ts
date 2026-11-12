@@ -199,8 +199,9 @@ export function fileDeleteCommand(provider: DocumentManager): FileDelete {
  * The real dir-delete command over `provider`. Its delete removes the
  * folder from the disk, with no trash.
  */
-export function dirDeleteCommand(_provider: DocumentManager): DirDelete {
+export function dirDeleteCommand(provider: DocumentManager): DirDelete {
   return new DirDelete({
+    documents: provider,
     fsal: {
       removeDir: async (dirPath: string) => {
         rmSync(dirPath, { recursive: true });

@@ -2591,6 +2591,52 @@ current contents from the editor somewhere else, and restart the application.`,
   }
 
   /**
+   * Closes each document at or inside `targetPath` before a delete in the
+   * application removes its file: each loaded document and each tab. Unsaved
+   * text is asked about for each document. Resolves false at the first
+   * document that stays open: the author cancelled, or its close was refused.
+   */
+  public async closeDocumentsForDelete(targetPath: string): Promise<boolean> {
+    const paths = new Set([
+      ...this.documents.map((document) => document.filePath),
+      ...this._pathsShownInPanes(),
+    ]);
+    for (const filePath of paths) {
+      if (isAtOrInsideRoot(filePath, targetPath) && !(await this.closeFileEverywhere(filePath))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Moves aside the collaboration state of each document at or inside
+   * `deletedPath`, after the author deleted that path in the application. A
+   * new file at the path of a deleted document does not get its annotations
+   * or its review; the bytes stay in the sidecar directory. A document that
+   * is loaded keeps its state. A sidecar that cannot be read is moved aside
+   * when it is the one of `deletedPath`; the name of the file of another
+   * document is a hash that names no path.
+   */
+  public async setAsideStateOfDeleted(deletedPath: string): Promise<void> {
+    const loaded = new Set(this.documents.map((document) => document.filePath));
+    const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
+    const files = sidecars
+      .filter(
+        (sidecar) =>
+          isAtOrInsideRoot(sidecar.documentPath, deletedPath) && !loaded.has(sidecar.documentPath),
+      )
+      .map((sidecar) => this._reviewApplication.sidecarFileOf(sidecar.documentPath));
+    const ownFile = this._reviewApplication.sidecarFileOf(deletedPath);
+    if (unreadable.some((entry) => entry.file === ownFile)) {
+      files.push(ownFile);
+    }
+    for (const file of files) {
+      await this._reviewApplication.setAsideCollaborationSidecar(file);
+    }
+  }
+
+  /**
    * Closes each document at or inside one of `rootPaths` that no other open
    * root holds: each loaded document and each tab, also of a path that the
    * file filters hide. A document of a workspace that stays open stays open

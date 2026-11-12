@@ -931,9 +931,19 @@ of an isolated instance are in the first comment of #132.
   The sidecar of such a document is the state of another time (the author
   closed the document without it, or this version cannot read the file),
   and the discard leaves the file as it is.
-- **A sidecar whose document has no file is named.** A deleted document
-  keeps its sidecar, and a move that cannot write the sidecar at the new
-  key leaves it at the old one. `_sidecarsOfNoDocument` gives each such
+- **A delete in the application moves the review state aside.**
+  `file-delete` and `dir-delete` close each document at or inside the path
+  (`closeDocumentsForDelete`; a refused close keeps the file), remove the
+  path, and then move the sidecar of each such document aside
+  (`setAsideStateOfDeleted`): a new file at the path of a deleted document
+  opens without its annotations and its review, and the bytes stay in the
+  sidecar directory. A new command that deletes authored files does the
+  same. Proof: `test/collaboration-sidecar-of-no-document.spec.ts`.
+- **A sidecar whose document has no file is named.** A document that
+  another program removed keeps its sidecar: a file that comes back at the
+  path can be the same document (a checkout). A move that cannot write the
+  sidecar at the new key leaves it at the old one. `_sidecarsOfNoDocument`
+  gives each such
   file in `WorkspaceCollaborationListing.ownerless`: a readable sidecar of a
   path inside an open workspace that is there, where the application
   reaches no file and no loaded document has the path. The Annotations

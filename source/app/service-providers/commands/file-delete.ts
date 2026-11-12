@@ -23,7 +23,7 @@ import ZettlrCommand from "./zettlr-command";
 /** The services that the command uses. */
 export interface FileDeleteServices {
   log: Pick<LogProvider, "info">;
-  documents: Pick<DocumentManager, "closeFileEverywhere">;
+  documents: Pick<DocumentManager, "closeDocumentsForDelete" | "setAsideStateOfDeleted">;
   fsal: Pick<FSAL, "removeFile">;
 }
 
@@ -56,14 +56,16 @@ export default class FileDelete extends ZettlrCommand<FileDeleteServices> {
 
     // The file is closed before it is removed. A refused close keeps the
     // file: its buffer and its review are in the open document.
-    if (!(await this._app.documents.closeFileEverywhere(arg.path))) {
+    if (!(await this._app.documents.closeDocumentsForDelete(arg.path))) {
       throw new Error(
         trans("%s was not deleted: the open document could not be closed.", fileName),
       );
     }
 
-    // Now, remove the file
     await this._app.fsal.removeFile(arg.path);
+    // The review state of the deleted document goes aside: a new file at
+    // the path does not get it.
+    await this._app.documents.setAsideStateOfDeleted(arg.path);
 
     this._app.log.info(`Removed file ${fileName}.`);
     return true;
