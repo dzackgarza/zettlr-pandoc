@@ -43,18 +43,6 @@ function maskTexComments(source: string): string {
   return chars.join("");
 }
 
-/** Enumerate control words declared in one TeX source buffer. */
-export function texCommandDeclarations(source: string): string[] {
-  const commands = new Set<string>();
-  for (const match of maskTexComments(source).matchAll(TEX_COMMAND_DECLARATION_RE)) {
-    const name = match[1] ?? match[2] ?? match[3];
-    if (name !== undefined) {
-      commands.add(`\\${name}`);
-    }
-  }
-  return [...commands].sort((a, b) => a.localeCompare(b));
-}
-
 /**
  * Locate each authored macro declaration with enough surrounding source to
  * inspect multiline definitions without pretending to parse TeX expansion.

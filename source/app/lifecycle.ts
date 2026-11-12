@@ -121,7 +121,13 @@ export async function bootApplication(): Promise<AppServiceContainer> {
     return await loadCanonicalMathJaxMacros(app.getPath("home"));
   });
   ipcMain.handle("tex-macro-commands", async (): Promise<TexMacroCommandsIPCResponse> => {
-    return await loadCanonicalTexMacroCommands(app.getPath("home"));
+    const vocabulary = await loadCanonicalTexMacroCommands(app.getPath("home"));
+    // The completion list has the commands of the readable sources; the log
+    // names each source whose commands it does not have.
+    for (const source of vocabulary.notRead) {
+      log.warning(`[Macros] The completion list has no command of ${source.path}: ${source.cause}`);
+    }
+    return vocabulary;
   });
   ipcMain.handle("tikz-completion-commands", (): TikzCompletionIPCResponse => {
     return tikzTemplateCompletions(resolveTikzTemplatePath(app.getPath("home")));

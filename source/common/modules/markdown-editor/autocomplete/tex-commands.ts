@@ -94,7 +94,9 @@ async function userMathJaxCommands(): Promise<readonly UserMathJaxCommand[]> {
 
 async function compilerTexCommands(): Promise<readonly string[]> {
   if (compilerTexCommandPromise === null) {
-    compilerTexCommandPromise = window.ipc.invoke("tex-macro-commands");
+    compilerTexCommandPromise = window.ipc
+      .invoke("tex-macro-commands")
+      .then((vocabulary) => vocabulary.commands);
   }
   return await compilerTexCommandPromise;
 }

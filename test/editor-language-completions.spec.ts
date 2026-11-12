@@ -90,7 +90,7 @@ describe("LaTeX/TikZ completion sources", function () {
         };
       }
       if (channel === "tex-macro-commands") {
-        return ["\\CompilerOnly"];
+        return { commands: ["\\CompilerOnly"], notRead: [] };
       }
       throw new Error(`unexpected IPC ${channel}`);
     });
