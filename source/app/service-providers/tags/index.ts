@@ -18,7 +18,9 @@
  * END HEADER
  */
 
-import PersistentDataContainer from "@common/modules/persistent-data-container";
+import PersistentDataContainer, {
+  type StoreWriteFailureHandler,
+} from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import { DP_EVENTS } from "@dts/common/documents";
 import { app, ipcMain } from "electron";
@@ -74,11 +76,12 @@ export default class TagProvider extends ProviderContract {
     private readonly _docs: DocumentManager,
     private readonly _config: ConfigProvider,
     private readonly _fsal: FSAL,
+    onWriteFailure: StoreWriteFailureHandler,
   ) {
     super();
     this._file = path.join(app.getPath("userData"), "tags.json");
     this._coloredTags = [];
-    this.container = new PersistentDataContainer(this._file, "json");
+    this.container = new PersistentDataContainer(this._file, "json", onWriteFailure);
 
     ipcMain.handle("tag-provider", async (event, message) => {
       const { command } = message;

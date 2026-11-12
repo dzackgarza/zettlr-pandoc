@@ -14,7 +14,9 @@
  */
 
 import { loadData, trans } from "@common/i18n-main";
-import PersistentDataContainer from "@common/modules/persistent-data-container";
+import PersistentDataContainer, {
+  type StoreWriteFailureHandler,
+} from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles from "@common/util/enum-dict-files";
 import { reportError } from "@common/util/error-reporting";
@@ -160,10 +162,12 @@ export default class ConfigProvider extends ProviderContract {
   /**
    * Preset sane defaults, then load the config and perform a system check.
    * @param {string[]} translationDirectories The directories of the translations; the interface language of the template is one of them.
+   * @param {StoreWriteFailureHandler} onWriteFailure What happens when a write of config.json fails.
    */
   constructor(
     private readonly _logger: LogProvider,
     translationDirectories: string[],
+    onWriteFailure: StoreWriteFailureHandler,
   ) {
     super();
     this.configFile = path.join(app.getPath("userData"), "config.json");
@@ -175,7 +179,7 @@ export default class ConfigProvider extends ProviderContract {
     this._firstStart = false; // Only true if a config file has been created
     this._newVersion = false; // True if the last read config had a different version
 
-    this._container = new PersistentDataContainer(this.configFile, "json");
+    this._container = new PersistentDataContainer(this.configFile, "json", onWriteFailure);
 
     // Listen for renderer events. These must be synchronous.
     ipcMain.on("config-provider", (event, message) => {

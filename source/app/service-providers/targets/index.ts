@@ -12,7 +12,9 @@
  * END HEADER
  */
 
-import PersistentDataContainer from "@common/modules/persistent-data-container";
+import PersistentDataContainer, {
+  type StoreWriteFailureHandler,
+} from "@common/modules/persistent-data-container";
 import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
 import { app, ipcMain } from "electron";
 import EventEmitter from "events";
@@ -42,11 +44,12 @@ export default class TargetProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _fsal: FSAL,
+    onWriteFailure: StoreWriteFailureHandler,
   ) {
     super();
 
     this._file = path.join(app.getPath("userData"), "targets.json");
-    this.container = new PersistentDataContainer(this._file, "json");
+    this.container = new PersistentDataContainer(this._file, "json", onWriteFailure);
     this._targets = [];
 
     this._emitter = new EventEmitter();

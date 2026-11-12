@@ -30,6 +30,7 @@ import LogProvider from "source/app/service-providers/log";
 import type { DirDescriptor } from "source/types/common/fsal";
 import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 /** The text of a note that the author wrote in the import folder. */
 const AUTHORED = "# Genus\n\nTwo forms of one genus.\n";
@@ -87,7 +88,10 @@ describe("File import", function () {
     }
 
     const log = new LogProvider();
-    assets = new AssetsProvider(log, new ConfigProvider(log, [path.resolve("static", "lang")]));
+    assets = new AssetsProvider(
+      log,
+      new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure),
+    );
     fsal = await bootFsal(root);
   });
 

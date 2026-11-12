@@ -49,6 +49,7 @@ import { bootDocumentManager } from "./documents-provider-seam";
 import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const DOCUMENT = [
   "# Lattices",
@@ -163,7 +164,7 @@ describe("Export of one document", function () {
     await chmod(script, 0o755);
 
     const log = new LogProvider();
-    config = new ConfigProvider(log, [path.resolve("static", "lang")]);
+    config = new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure);
     // The open of an exported file is proved in the assembled app.
     config.set("export.autoOpenExportedFiles", false);
     config.set("export.scripts", [

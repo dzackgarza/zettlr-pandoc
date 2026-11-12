@@ -19,6 +19,7 @@ import ConfigProvider from "source/app/service-providers/config";
 import FSAL from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 /**
  * A booted FSAL whose only workspace is `root`. The file filters are off, so
@@ -30,7 +31,11 @@ export async function bootFsal(root: string): Promise<FSAL> {
   // The real provider with the values of the configuration template. It is
   // not booted: a boot reads the configuration file and opens the onboarding
   // window.
-  const config = new ConfigProvider(log, [path.resolve("static", "lang")]);
+  const config = new ConfigProvider(
+    log,
+    [path.resolve("static", "lang")],
+    unexpectedStoreWriteFailure,
+  );
   config.set("app.openWorkspaces", [root]);
   config.set("fileManager.showIgnored", true);
 

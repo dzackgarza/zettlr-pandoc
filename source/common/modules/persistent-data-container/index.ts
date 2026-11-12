@@ -14,11 +14,16 @@
  * END HEADER
  */
 
-import { reportError } from "@common/util/error-reporting";
 import { hasErrnoCode } from "@common/util/is-errno-exception";
 import { constants as FSConstants, promises as fs } from "fs";
 import writeFileAtomic from "write-file-atomic";
 import { parse as parseYAML, stringify as stringifyYAML } from "yaml";
+
+/**
+ * What the owner of a container does when a delayed write fails: the data
+ * stays in memory, and the file keeps its last contents.
+ */
+export type StoreWriteFailureHandler = (filePath: string, failure: NodeJS.ErrnoException) => void;
 
 export default class PersistentDataContainer<T = any> {
   /**
@@ -66,18 +71,28 @@ export default class PersistentDataContainer<T = any> {
    */
   private _delay: number;
 
+  /** The owner's answer to a delayed write that failed. */
+  private readonly _onWriteFailure: StoreWriteFailureHandler;
+
   /**
    * Creates a new persistent data container.
    *
    * @param   {string}         filePath  The absolute path to the data file
-   * @param   {'yaml'|'json'}  type      The file format to use, defaults to JSON
+   * @param   {'yaml'|'json'}  type      The file format to use
+   * @param   {StoreWriteFailureHandler}  onWriteFailure  What the owner does when a delayed write fails
    * @param   {number}         delay     The time to wait before writing, defaults to 1000ms
    *
    * @return  {PersistentDataContainer}  The file container
    */
-  constructor(filePath: string, type: "yaml" | "json" = "json", delay: number = 1000) {
+  constructor(
+    filePath: string,
+    type: "yaml" | "json",
+    onWriteFailure: StoreWriteFailureHandler,
+    delay: number = 1000,
+  ) {
     this._filePath = filePath;
     this._dataType = type;
+    this._onWriteFailure = onWriteFailure;
     this._delay = delay;
   }
 
@@ -137,8 +152,8 @@ export default class PersistentDataContainer<T = any> {
     }
 
     this._timeout = setTimeout(() => {
-      this.flushToDisk().catch((err) => {
-        reportError(`[PersistentDataContainer] Could not write ${this._filePath}`, err);
+      this.flushToDisk().catch((failure: NodeJS.ErrnoException) => {
+        this._onWriteFailure(this._filePath, failure);
       });
     }, this._delay);
   }

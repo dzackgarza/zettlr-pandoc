@@ -30,6 +30,7 @@ import { app, BrowserWindow, type FileFilter, ipcMain, screen, shell } from "ele
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
 import createAssetsWindow from "./create-assets-window";
@@ -134,7 +135,13 @@ export default class WindowProvider extends ProviderContract {
     this._projectProperties = new Map();
     this._windowState = new Map();
     this._configFile = path.join(app.getPath("userData"), "window_state.yml");
-    this._stateContainer = new PersistentDataContainer(this._configFile, "yaml", 1000);
+    this._stateContainer = new PersistentDataContainer(
+      this._configFile,
+      "yaml",
+      (filePath, failure) => {
+        showStoreWriteFailure(this._logger, this, filePath, failure);
+      },
+    );
     this._lastMainWindow = { windowId: undefined };
 
     // If the corresponding CLI flag is passed, we should suppress opening of

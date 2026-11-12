@@ -13,7 +13,9 @@
  * END HEADER
  */
 
-import PersistentDataContainer from "@common/modules/persistent-data-container";
+import PersistentDataContainer, {
+  type StoreWriteFailureHandler,
+} from "@common/modules/persistent-data-container";
 import broadcastIPCMessage from "@common/util/broadcast-ipc-message";
 import { isDateInTheFuture, today } from "@common/util/stats";
 import { app, ipcMain } from "electron";
@@ -62,10 +64,13 @@ export default class StatsProvider extends ProviderContract {
    * Preset sane defaults and load an existing stats file if present
    * @param {Zettlr} parent The main zettlr object.
    */
-  constructor(private readonly _logger: LogProvider) {
+  constructor(
+    private readonly _logger: LogProvider,
+    onWriteFailure: StoreWriteFailureHandler,
+  ) {
     super();
     this.statsFile = path.join(app.getPath("userData"), "stats.json");
-    this.container = new PersistentDataContainer<Stats>(this.statsFile, "json");
+    this.container = new PersistentDataContainer<Stats>(this.statsFile, "json", onWriteFailure);
     this.stats = {
       wordCount: {},
       charCount: {},

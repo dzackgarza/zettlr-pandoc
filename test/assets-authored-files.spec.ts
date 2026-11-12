@@ -27,6 +27,7 @@ import CssProvider from "source/app/service-providers/css";
 import LogProvider from "source/app/service-providers/log";
 import { AuthoredFileError, type AuthoredFileOperation } from "source/app/util/authored-file-error";
 import { userData } from "./headless-electron-harness.cjs";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const FILTER = "-- Leaves each element as it is.\nreturn {}\n";
 const OTHER_FILTER = "-- Numbers each section.\nreturn {}\n";
@@ -59,7 +60,10 @@ describe("The files of the Assets window", function () {
 
   before(async function () {
     const log = new LogProvider();
-    assets = new AssetsProvider(log, new ConfigProvider(log, [path.resolve("static", "lang")]));
+    assets = new AssetsProvider(
+      log,
+      new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure),
+    );
     css = new CssProvider(log);
   });
 

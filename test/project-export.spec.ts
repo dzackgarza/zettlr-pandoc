@@ -35,6 +35,7 @@ import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFsal } from "./fsal-seam";
 import { notifications, userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const CHAPTER = "# Genus\n\nTwo forms of one genus.\n";
 
@@ -203,7 +204,11 @@ describe("Project export", function () {
     );
 
     const log = new LogProvider();
-    const config = new ConfigProvider(log, [path.resolve("static", "lang")]);
+    const config = new ConfigProvider(
+      log,
+      [path.resolve("static", "lang")],
+      unexpectedStoreWriteFailure,
+    );
     config.set("export.customCommands", [
       { displayName: "First command", command: noEngine },
       { displayName: "Second command", command: noTemplate },

@@ -36,6 +36,7 @@ import saveFileDialog from "source/app/service-providers/windows/dialog/save-dia
 import tellMainWindows from "source/app/service-providers/windows/tell-main-windows";
 import type { AnyDescriptor } from "source/types/common/fsal";
 import type { IpcValue } from "source/types/common/ipc";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 type WatchdogListener = (event: string, filePath: string) => void;
 let watchdogListener: WatchdogListener | undefined;
@@ -111,7 +112,11 @@ export async function bootDocumentManager(
   // The real provider with the values of the configuration template, for the
   // real file dialog. It is not booted: a boot reads the configuration file
   // and opens the onboarding window.
-  const dialogConfig = new ConfigProvider(log, [path.resolve("static", "lang")]);
+  const dialogConfig = new ConfigProvider(
+    log,
+    [path.resolve("static", "lang")],
+    unexpectedStoreWriteFailure,
+  );
   dialogConfig.set("dialogPaths.askFileDialog", root);
   // The descriptor of a Markdown file, read from the disk at each request.
   const parseDocument = getMarkdownFileParser(dialogConfig.get().zkn.idRE);

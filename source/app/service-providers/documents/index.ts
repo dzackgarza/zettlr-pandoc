@@ -77,6 +77,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { openPath } from "source/app/util/open-path";
 import { throwFailures } from "source/app/util/run-each-step";
+import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import {
   getDocumentTypeForExtension,
   hasImageExt,
@@ -842,7 +843,9 @@ export default class DocumentManager
     this._windows = {};
     this._closedTabs = new Map();
     this._emitter = new EventEmitter();
-    this._config = new PersistentDataContainer(containerPath, "yaml");
+    this._config = new PersistentDataContainer(containerPath, "yaml", (filePath, failure) => {
+      showStoreWriteFailure(this._app.log, this._app.windows, filePath, failure);
+    });
     this._ignoreChanges = [];
     this._announcedRemoteModtime = new Map();
     this._remoteChangeErrorShownFor = [];

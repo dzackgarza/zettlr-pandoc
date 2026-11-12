@@ -1237,6 +1237,22 @@ of an isolated instance are in the first comment of #132.
   `test/menu-file-navigation.spec.ts`, `test/assets-authored-files.spec.ts`,
   `e2e/assets-refused-save.spec.ts`.
 
+### 22. Data files of the application
+
+- **What they are.** The application keeps its state in files of `userData`:
+  `config.json`, `tags.json`, `targets.json`, `stats.json`, `documents.yaml`
+  and `window_state.yml`. A `PersistentDataContainer`
+  (`common/modules/persistent-data-container`) holds each one in memory and
+  writes it one second after its last change.
+- **A write that fails is shown.** The constructor of a container requires a
+  `StoreWriteFailureHandler`. In the app it is `showStoreWriteFailure`
+  (`app/util/show-store-write-failure.ts`): it logs the failure and opens one
+  error window that names the file and the cause. The data stays in memory,
+  so the change holds until the application closes. A new container gets the
+  same handler; a spec gives `unexpectedStoreWriteFailure`
+  (`test/store-write-failure.ts`), which stops the spec.
+- **Proof:** `e2e/settings-write-refused.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal

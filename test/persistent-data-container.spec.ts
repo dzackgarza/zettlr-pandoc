@@ -18,6 +18,7 @@ import assert from "assert";
 import "mocha";
 import { promises as fs } from "fs";
 import path from "path";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const thisdir = __dirname;
 
@@ -49,7 +50,12 @@ describe("Modules#PersistentDataContainer", function () {
   });
 
   it("should properly handle initialization", async function () {
-    const container = new PersistentDataContainer(filePath, "json", delay);
+    const container = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
     await assert.rejects(
       async () => await container.get(),
       "The container did not complain about calling get()",
@@ -65,7 +71,12 @@ describe("Modules#PersistentDataContainer", function () {
   });
 
   it("should return the same data as was provided", async function () {
-    const container1 = new PersistentDataContainer(filePath, "json", delay);
+    const container1 = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
     await container1.init(testData);
     let retData = await container1.get();
     assert.deepStrictEqual(
@@ -75,7 +86,12 @@ describe("Modules#PersistentDataContainer", function () {
     );
     await container1.shutdown();
 
-    const container2 = new PersistentDataContainer(filePath, "yaml", delay);
+    const container2 = new PersistentDataContainer(
+      filePath,
+      "yaml",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
     await container2.init(testData);
     retData = await container2.get();
     assert.deepStrictEqual(
@@ -87,7 +103,12 @@ describe("Modules#PersistentDataContainer", function () {
   });
 
   it("should correctly update stored data", async function () {
-    const container = new PersistentDataContainer(filePath, "json", delay);
+    const container = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
     await container.init(testData);
     const originalData = await container.get();
     assert.deepStrictEqual(originalData, testData, "The container did not return the correct data");
@@ -100,14 +121,24 @@ describe("Modules#PersistentDataContainer", function () {
     await container.shutdown();
 
     // Then check that the correct data has been written by creating a new container
-    const newContainer = new PersistentDataContainer(filePath, "json", delay);
+    const newContainer = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
     const newData = await newContainer.get();
     assert.deepStrictEqual(newData, updatedData);
     await newContainer.shutdown();
   });
 
   it("should not accept null or undefined as data", async function () {
-    const container = new PersistentDataContainer(filePath, "json", delay);
+    const container = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
 
     await assert.rejects(
       async () => await container.init(undefined),
@@ -126,7 +157,12 @@ describe("Modules#PersistentDataContainer", function () {
   });
 
   it("should throw an error for non-serializable data", async function () {
-    const container = new PersistentDataContainer(filePath, "json", delay);
+    const container = new PersistentDataContainer(
+      filePath,
+      "json",
+      unexpectedStoreWriteFailure,
+      delay,
+    );
 
     await container.init(testData);
 
