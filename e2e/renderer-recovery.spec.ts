@@ -50,8 +50,6 @@ const SENTENCE = "The orbit of a point has the index of its stabilizer as its si
 const STOPPED_TITLE = "Window stopped";
 const NOT_RESPONDING_TITLE = "Window not responding";
 const QUIT_PROMPT_TITLE = "Unsaved changes";
-const HUNG_RENDERER_END =
-  /^.*FATAL:content\/child\/child_thread_impl\.cc.*Crashing because hung$/gm;
 
 describe("assembled app: a main window whose renderer exits or hangs", function () {
   let appProcess: ChildProcess | undefined;
@@ -79,11 +77,14 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     return editorPage;
   }
 
-  /** Waits until the output of the app has a line of a renderer after the first match of `event`. */
-  async function rendererRunsAfter(event: RegExp, timeoutMs: number): Promise<void> {
+  /**
+   * Waits until the output of the app, from the offset `from` on, has a line
+   * of a renderer after the first match of `event`.
+   */
+  async function rendererRunsAfter(event: RegExp, from: number, timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const output = getOutput();
+      const output = getOutput().slice(from);
       const found = event.exec(output);
       if (found !== null && output.indexOf("[R] [Main Window", found.index) !== -1) {
         return;
@@ -250,12 +251,13 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     );
     screenshots.set("not-responding-prompt.png", await captureWindow(prompts[0]));
     // The default button keeps the window: the mnemonic chooses the load.
+    const answered = getOutput().length;
     await pressKey(prompts[0], "alt+l");
 
-    // The app ends the renderer that hangs, and the log has the reason. A
+    // The app kills the renderer that hangs, and the log has the reason. A
     // connection that Playwright made at the moment of that end gave no
     // answer in two runs: the spec connects when the new renderer runs.
-    await rendererRunsAfter(/Renderer process gone: reason=crashed exitCode=\d+/, 30_000);
+    await rendererRunsAfter(/Renderer process gone: reason=killed exitCode=9/, answered, 30_000);
     const loaded = await connectAgain();
     await assertWindowHasUnsavedText(
       loaded,
@@ -295,9 +297,7 @@ describe("assembled app: a main window whose renderer exits or hangs", function 
     await pressKey(saving[0], "Return");
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     assert.deepEqual(outcome, [0, null], "the answer Save changes ends the app");
-    // Chromium writes one FATAL line for the renderer that the app ended in
-    // the case above. Each other fatal line is a failure of the app.
-    assertCleanExit(getOutput().replace(HUNG_RENDERER_END, ""));
+    assertCleanExit(getOutput());
     assert.equal(await readFile(documentPath, "utf8"), `${DRAFT}${SENTENCE}`, "the text is saved");
   });
 });

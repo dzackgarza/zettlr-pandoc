@@ -34,7 +34,8 @@ const KEEP_WAITING = 2;
  *
  * The procedure is the one that Electron documents for
  * `webContents.forcefullyCrashRenderer()` and that VS Code has in
- * `CodeWindow.onWindowError` (src/vs/platform/windows/electron-main/windowImpl.ts).
+ * `CodeWindow.onWindowError` (src/vs/platform/windows/electron-main/windowImpl.ts):
+ * end the hung renderer, then load the window in a new one.
  */
 export default function recoverRenderer(logger: LogProvider, window: BrowserWindow): void {
   // True from the exit of the renderer until a new one starts.
@@ -82,11 +83,16 @@ export default function recoverRenderer(logger: LogProvider, window: BrowserWind
       return;
     }
     // The renderer runs and does not respond: only its end lets the window
-    // load in a new process.
+    // load in a new process. The main process ends it with SIGKILL, as
+    // Electron's forcefullyCrashRenderer does on macOS and Windows
+    // (RenderProcessHost::Shutdown in shell/browser/api/electron_api_web_contents.cc).
+    // On Linux that method only asks the renderer to crash itself, and the
+    // renderer exits when the crash dump is written: a dump that does not
+    // end leaves the window without a renderer and without a prompt.
     afterKill = () => {
       startRenderer(response);
     };
-    window.webContents.forcefullyCrashRenderer();
+    process.kill(window.webContents.getOSProcessId(), "SIGKILL");
   }
 
   function reportFailedPrompt(error: unknown): void {

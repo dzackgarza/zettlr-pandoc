@@ -1147,10 +1147,13 @@ of an isolated instance are in the first comment of #132.
   window" loads the window and then closes it on the usual path
   (`closeWindow`, §14), so the unsaved-changes prompt runs and a cancel leaves
   a window that works.
-- **A hung renderer is ended before the load.**
-  `webContents.forcefullyCrashRenderer()` ends it, and the load starts when
-  Electron reports that exit: a load that starts before the exit does not
-  happen.
+- **A hung renderer is ended before the load.** The main process ends it
+  with SIGKILL (`webContents.getOSProcessId()`), as Electron's
+  `forcefullyCrashRenderer()` does on macOS and Windows. On Linux that method
+  only asks the renderer to crash itself, and the renderer exits when its
+  crash dump is written; a dump that does not end left the window without a
+  renderer and without a prompt. The load starts when Electron reports the
+  exit: a load that starts before the exit does not happen.
 - **No message goes to a window without a renderer.** `broadcastIPCMessage`
   leaves out a window whose `webContents.isCrashed()`. Main-process code that
   tells every window something calls `broadcastIPCMessage`; it does not loop
