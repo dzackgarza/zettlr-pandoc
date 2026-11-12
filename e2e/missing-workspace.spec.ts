@@ -2,24 +2,27 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Assembled-app test of a workspace whose folder is missing
+ * Contains:        Assembled-app test of a workspace that cannot be examined
  * CVM-Role:        TESTING
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The author has a workspace on a drive that is not mounted
- *                  when the application starts. The file manager lists the
- *                  workspace as missing. "Check for directory …" in its
+ * Description:     The author has two workspaces. When the application
+ *                  starts, the filesystem cannot examine the folder of one of
+ *                  them (a mount that failed, a parent folder without search
+ *                  permission), so the workspace stays in the configuration.
+ *                  The file manager lists the other workspace with its files
+ *                  and this one as missing. "Check for directory …" in its
  *                  context menu names the folder and the cause while the
- *                  folder is absent, and loads the workspace with its files
- *                  when the folder is back.
+ *                  filesystem refuses it, and loads the workspace with its
+ *                  files when the folder can be read again.
  *
  * END HEADER
  */
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
@@ -37,12 +40,15 @@ import {
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-missing-workspace-e2e-latest");
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 
-describe("a workspace whose folder is missing", function () {
+describe("a workspace that the filesystem cannot examine", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
   let fixtureRoot: string | undefined;
+  let mount = "";
   let drive = "";
+  let note = "";
+  let genus = "";
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
@@ -58,7 +64,14 @@ describe("a workspace whose folder is missing", function () {
       },
     });
     fixtureRoot = fixture.root;
-    drive = path.join(fixture.root, "drive");
+    genus = fixture.documentPath;
+    mount = path.join(fixture.root, "mount");
+    drive = path.join(mount, "drive");
+    note = path.join(drive, "lattice.md");
+    await mkdir(drive, { recursive: true });
+    await writeFile(note, "# Lattice\n\nAn even unimodular lattice.\n", "utf8");
+    // No search permission on the parent: a stat of the workspace is EACCES.
+    await chmod(mount, 0o000);
 
     const configPath = path.join(fixture.configDirectory, "config.json");
     const config: { app: { openWorkspaces: string[] } } = JSON.parse(
@@ -85,6 +98,7 @@ describe("a workspace whose folder is missing", function () {
       screenshots,
     );
     if (fixtureRoot !== undefined) {
+      await chmod(mount, 0o755);
       await rm(fixtureRoot, { recursive: true, force: true });
     }
     console.log(`E2E artifacts: ${ARTIFACT_DIRECTORY}`);
@@ -104,13 +118,16 @@ describe("a workspace whose folder is missing", function () {
     await item.click();
   }
 
-  it("lists the workspace as missing", async function () {
+  it("lists the other workspace with its files and this one as missing", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await workspaceRow(activePage).waitFor({ state: "visible", timeout: 30_000 });
+    await activePage
+      .locator(`.tree-item.file[data-path=${JSON.stringify(genus)}]`)
+      .waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("missing-workspace.png", await activePage.screenshot());
   });
 
-  it("names the folder when it is still missing", async function () {
+  it("names the folder while the filesystem refuses it", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await checkForDirectory(activePage);
     const toast = activePage.locator(ERROR_TOAST).last();
@@ -122,11 +139,9 @@ describe("a workspace whose folder is missing", function () {
     );
   });
 
-  it("loads the workspace with its files when the folder is back", async function () {
+  it("loads the workspace with its files when the folder can be read", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
-    await mkdir(drive);
-    const note = path.join(drive, "lattice.md");
-    await writeFile(note, "# Lattice\n\nAn even unimodular lattice.\n", "utf8");
+    await chmod(mount, 0o755);
 
     await checkForDirectory(activePage);
     await workspaceRow(activePage).locator(".item-icon cds-icon").click();
