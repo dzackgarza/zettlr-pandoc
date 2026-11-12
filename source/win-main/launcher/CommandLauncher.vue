@@ -94,7 +94,7 @@ import { reportError } from "@common/util/error-reporting";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { cmShortcutToElectron } from "@common/util/shortcuts";
 import showToast from "@common/util/show-toast";
-import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
+import type { JustfileListing, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type {
   ProjectRootSpec,
   ReferenceDefinition,
@@ -130,6 +130,7 @@ import {
   fileBreadcrumb,
   type HeadingRow,
   type JustRecipeRow,
+  type JustUnlistedRow,
   justRecipeLabel,
   type LauncherRow,
   menuGroupRows,
@@ -239,11 +240,14 @@ const BASE_DYNAMIC_GROUPS: readonly DynamicGroupRow[] = [
   { kind: "dynamic-group", id: "export", label: trans("Export as…") },
 ];
 
-const justRepositories = ref<JustRepositoryCommands[]>([]);
+const justListing = ref<JustfileListing>({ repositories: [], notListed: [] });
 
-/** The base groups, with the Justfile group before Export when a workspace has recipes. */
+/**
+ * The base groups, with the Justfile group before Export when a workspace
+ * has recipes or a repository whose recipes Just could not list.
+ */
 const dynamicGroups = computed<readonly DynamicGroupRow[]>(() => {
-  if (justRepositories.value.length === 0) {
+  if (justListing.value.repositories.length === 0 && justListing.value.notListed.length === 0) {
     return BASE_DYNAMIC_GROUPS;
   }
   const exportAt = BASE_DYNAMIC_GROUPS.findIndex((row) => row.id === "export");
@@ -272,12 +276,12 @@ async function loadRecentFiles(): Promise<boolean> {
 /** Git-root Just recipes visible from the currently open workspace roots. */
 async function loadJustfileCommands(): Promise<boolean> {
   try {
-    justRepositories.value = await ipcRenderer.invoke("application", {
+    justListing.value = await ipcRenderer.invoke("application", {
       command: "list-justfile-commands",
       payload: [...configStore.config.app.openWorkspaces],
     });
   } catch (err: unknown) {
-    justRepositories.value = [];
+    justListing.value = { repositories: [], notListed: [] };
     reportError("[CommandLauncher] Could not discover Justfile commands", err);
   }
   return true;
@@ -408,25 +412,46 @@ const headingRows = computed<HeadingRow[]>(() => {
   }));
 });
 
-/** Public root recipes, with repository/group breadcrumbs when applicable. */
-const justRecipeRows = computed<JustRecipeRow[]>(() => {
-  const multipleRepositories = justRepositories.value.length > 1;
-  return justRepositories.value.flatMap((repository) =>
-    repository.recipes.map((recipe) => ({
-      kind: "just-recipe",
+/**
+ * Public root recipes, with repository/group breadcrumbs when applicable,
+ * then a row for each repository whose recipes Just could not list.
+ */
+const justRecipeRows = computed<Array<JustRecipeRow | JustUnlistedRow>>(() => {
+  const { repositories, notListed } = justListing.value;
+  const multipleRepositories = repositories.length + notListed.length > 1;
+  const recipeRows = repositories.flatMap((repository) =>
+    repository.recipes.map(
+      (recipe): JustRecipeRow => ({
+        kind: "just-recipe",
+        repoRoot: repository.repoRoot,
+        repoLabel: repository.repoLabel,
+        name: recipe.name,
+        doc: recipe.doc,
+        group: recipe.group,
+        parameters: recipe.parameters,
+        label: justRecipeLabel(recipe),
+        breadcrumb: [
+          ...(multipleRepositories ? [repository.repoLabel] : []),
+          ...(recipe.group === null ? [] : [recipe.group]),
+        ],
+      }),
+    ),
+  );
+  const unlistedRows = notListed.map(
+    (repository): JustUnlistedRow => ({
+      kind: "just-unlisted",
       repoRoot: repository.repoRoot,
       repoLabel: repository.repoLabel,
-      name: recipe.name,
-      doc: recipe.doc,
-      group: recipe.group,
-      parameters: recipe.parameters,
-      label: justRecipeLabel(recipe),
-      breadcrumb: [
-        ...(multipleRepositories ? [repository.repoLabel] : []),
-        ...(recipe.group === null ? [] : [recipe.group]),
-      ],
-    })),
+      cause: repository.cause,
+      // The first line of the cause; the whole cause is the title of the row.
+      label: trans(
+        "%s: Just did not list the recipes: %s",
+        repository.repoLabel,
+        repository.cause.split("\n")[0],
+      ),
+    }),
   );
+  return [...recipeRows, ...unlistedRows];
 });
 
 /** Every Preferences card and labeled control, derived from the real schemas. */
@@ -645,6 +670,8 @@ async function run(row: LauncherRow): Promise<void> {
         command: row.command,
       });
       return;
+    case "just-unlisted":
+      return; // The row names a cause; it is disabled.
     case "just-recipe":
       if (row.parameters.length === 0) {
         await runJustRecipe(row, []);

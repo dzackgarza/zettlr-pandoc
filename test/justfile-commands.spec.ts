@@ -75,7 +75,8 @@ describe("Justfile command discovery", function () {
       runner,
     );
 
-    assert.deepEqual(discovered, [
+    assert.deepEqual(discovered.notListed, []);
+    assert.deepEqual(discovered.repositories, [
       {
         repoRoot: "/repo",
         repoLabel: "repo",
@@ -112,17 +113,34 @@ describe("Justfile command discovery", function () {
     );
   });
 
-  it("rejects a Justfile discovered below the repository root", async function () {
-    const diagnostics: string[] = [];
+  it("names a repository whose justfile is below its root", async function () {
     const runner: CommandRunner = async (command) =>
       command === "git"
         ? result("/repo\n")
         : result(JSON.stringify({ source: "/repo/sub/justfile", recipes: {} }));
+    const listing = await discoverJustfileCommands(["/repo/sub"], runner);
+    assert.deepEqual(listing.repositories, []);
     assert.deepEqual(
-      await discoverJustfileCommands(["/repo/sub"], runner, (message) => diagnostics.push(message)),
-      [],
+      listing.notListed.map(({ repoRoot, repoLabel }) => ({ repoRoot, repoLabel })),
+      [{ repoRoot: "/repo", repoLabel: "repo" }],
     );
-    assert.ok(diagnostics.some((message) => message.includes("non-top-level Justfile")));
+  });
+
+  it("names a repository whose justfile Just refuses, and not one without a justfile", async function () {
+    const runner: CommandRunner = async (command, args) => {
+      if (command === "git") {
+        return result(`${args[1]}\n`);
+      }
+      return args[1] === "/broken"
+        ? result("", "error: unterminated interpolation\n ——▶ justfile:5:9\n", 1)
+        : result("", "error: no justfile found\n", 1);
+    };
+    const listing = await discoverJustfileCommands(["/plain", "/broken"], runner);
+    assert.deepEqual(listing.repositories, []);
+    assert.deepEqual(
+      listing.notListed.map(({ repoRoot }) => repoRoot),
+      ["/broken"],
+    );
   });
 });
 

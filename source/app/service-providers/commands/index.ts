@@ -33,7 +33,7 @@ import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common
 import type { DocumentType } from "@dts/common/documents";
 import type { FixAllOutcome, FixAllPlan, FixAllRequest } from "@dts/common/fix-all";
 import type { ProjectSettings } from "@dts/common/fsal";
-import type { JustRepositoryCommands, RunJustRecipeRequest } from "@dts/common/justfile-commands";
+import type { JustfileListing, RunJustRecipeRequest } from "@dts/common/justfile-commands";
 import type { PreferenceNavigationTarget } from "@dts/common/preferences";
 import type {
   ApplyProblemFixRequest,
@@ -293,7 +293,7 @@ export type ApplicationIPCContract = {
   };
   "list-justfile-commands": {
     request: { payload: string[] };
-    response: JustRepositoryCommands[];
+    response: JustfileListing;
   };
   // Answered inline by run(): the recently opened and recently edited files.
   "list-recent-files": {
@@ -554,9 +554,11 @@ export default class CommandProvider extends ProviderContract {
       Array.isArray(payload) &&
       payload.every((root) => typeof root === "string")
     ) {
-      return await discoverJustfileCommands(payload, undefined, (message) => {
-        this._app.log.warning(`[Justfile commands] ${message}`);
-      });
+      const listing = await discoverJustfileCommands(payload);
+      for (const { repoRoot, cause } of listing.notListed) {
+        this._app.log.warning(`[Justfile commands] No recipes of ${repoRoot}: ${cause}`);
+      }
+      return listing;
     } else if (command === "list-recent-files") {
       return {
         opened: this._app.recentDocs.get(),

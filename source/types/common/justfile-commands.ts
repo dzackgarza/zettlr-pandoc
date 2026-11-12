@@ -48,3 +48,21 @@ export interface RunJustRecipeRequest {
   recipe: string;
   args: string[];
 }
+
+/** A Git repository of an open workspace whose recipes Just did not list. */
+export interface JustRepositoryNotListed {
+  repoRoot: string;
+  repoLabel: string;
+  /** What `git` or `just` answered. */
+  cause: string;
+}
+
+/**
+ * The public recipes of the repositories of the open workspaces, and each
+ * repository whose recipes could not be listed. A repository without a
+ * justfile is in neither list.
+ */
+export interface JustfileListing {
+  repositories: JustRepositoryCommands[];
+  notListed: JustRepositoryNotListed[];
+}
