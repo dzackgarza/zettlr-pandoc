@@ -136,6 +136,7 @@ import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
 import { reportError } from "@common/util/error-reporting";
+import { remoteErrorMessage } from "@common/util/ipc-rejection";
 import type { AnnotationAnchor, TextAnnotation } from "@dts/common/annotation-domain";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
 import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
@@ -194,6 +195,8 @@ async function save(): Promise<void> {
   const anchor = draftAnchor.value;
   saving.value = true;
   refusalMessage.value = null;
+  // A rejection of the request is shown in the dialog like a refusal: the
+  // author keeps the instruction and sees why nothing was saved.
   const result = await window.ipc
     .invoke("documents:create-annotation", {
       path: props.documentPath,
@@ -202,22 +205,32 @@ async function save(): Promise<void> {
       instruction: instruction.value.trim(),
       expectedAnnotationGeneration: props.annotationGeneration,
     })
+    .then(
+      (answer: TextAnnotation | AnnotationFailure) => answer,
+      (rejection: Error) => {
+        reportError(rejection);
+        refusalMessage.value = remoteErrorMessage(rejection);
+        return undefined;
+      },
+    )
     .finally(() => {
       saving.value = false;
     });
 
-  const failure = result as TextAnnotation | AnnotationFailure;
-  if ("ok" in failure && failure.ok === false) {
-    refusalMessage.value = failure.message;
+  if (result === undefined) {
     return;
   }
-  emit("saved", failure as TextAnnotation);
+  if ("ok" in result && result.ok === false) {
+    refusalMessage.value = result.message;
+    return;
+  }
+  emit("saved", result as TextAnnotation);
 }
 
 function handleInstructionKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
-    save().catch((err) => reportError("Could not save the annotation", err));
+    void save();
   }
 }
 

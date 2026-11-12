@@ -7,7 +7,9 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     The Annotations view lists a closed document with an open
+ * Description:     The author annotates a selection through the dialog of
+ *                  the editor, and closes the document. The Annotations view
+ *                  lists the closed document with its open
  *                  annotation. Its sidecar then becomes a file that the
  *                  application cannot read. "Resolve all" of the document is
  *                  refused, and the window shows the author the cause of the
@@ -38,6 +40,7 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-annotation-bulk-refused-e
 const DOCUMENT =
   "# Orbits\n\nThe orbit of a point is the set of its images.\n\nThe stabilizer of a point is a subgroup.\n";
 const ANNOTATED = { from: 14, to: 19 };
+const CREATE_DIALOG = ".annotation-create-dialog";
 
 /** Closes the document in the one pane of the window, as a click on its tab does. */
 async function closeFileInPane(page: Page, filePath: string): Promise<void> {
@@ -119,19 +122,20 @@ describe("assembled app: a refused bulk action of the Annotations view", functio
 
   it("shows the cause when Resolve all of a document is refused", async function () {
     const shown = requireInitialized(page, "The editor page must be initialized");
-    const created: unknown = await shown.evaluate(
-      async (input) => await window.ipc.invoke("documents:create-annotation", input),
-      {
-        path: documentPath,
-        ...ANNOTATED,
-        instruction: "Say which group acts.",
-        expectedAnnotationGeneration: 0,
-      },
-    );
-    assert.ok(
-      typeof created === "object" && created !== null && "annotationId" in created,
-      `the annotation was created: ${JSON.stringify(created)}`,
-    );
+    // The author annotates the selection: the event that the command
+    // "Annotate for AI…" sends, the instruction, and Save.
+    await shown.evaluate((range) => {
+      const editor = document.querySelector(".main-editor-wrapper .cm-editor");
+      if (editor === null) {
+        throw new Error("The window shows no editor");
+      }
+      editor.dispatchEvent(
+        new CustomEvent("zettlr-annotate-selection", { bubbles: true, detail: range }),
+      );
+    }, ANNOTATED);
+    await shown.locator(`${CREATE_DIALOG} textarea`).fill("Say which group acts.");
+    await shown.locator(`${CREATE_DIALOG} [data-save]`).click();
+    await shown.locator(CREATE_DIALOG).waitFor({ state: "detached", timeout: 10_000 });
     await closeFileInPane(shown, documentPath);
     await shown
       .locator(`[role="tab"][data-path=${JSON.stringify(documentPath)}]`)
