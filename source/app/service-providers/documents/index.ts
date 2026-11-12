@@ -36,6 +36,7 @@ import type {
   AnnotationMessage,
   TextAnnotation,
 } from "@dts/common/annotation-domain";
+import { COMMAND_FAILED_CHANNEL, type CommandFailedBroadcast } from "@dts/common/command-failure";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,
   type CollaborationFileUnreadableBroadcast,
@@ -70,7 +71,14 @@ import { type TabManager } from "@providers/documents/document-tree/tab-manager"
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { strict as assert } from "assert";
 import { randomUUID } from "crypto";
-import { app, type BrowserWindow, dialog, ipcMain, type MessageBoxOptions } from "electron";
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  ipcMain,
+  type MessageBoxOptions,
+  type WebContents,
+} from "electron";
 import EventEmitter from "events";
 import { constants as FSConstants } from "fs";
 import { readFile } from "fs/promises";
@@ -1143,6 +1151,9 @@ export default class DocumentManager
           return await this.openFile(windowId, leafId, path, newTab, {
             targetRange,
             sourceLocation,
+          }).catch((error: unknown) => {
+            this._showOpenRefusal(event.sender, error);
+            throw error;
           });
         }
         case "close-file": {
@@ -2190,6 +2201,21 @@ current contents from the editor somewhere else, and restart the application.`,
       this._app.log.error(refusal.message, refusal);
       this._app.windows.showErrorMessage(trans("Could not open the file"), refusal.message);
     });
+  }
+
+  /**
+   * Shows the refusal of an open request in the window that sent it, one
+   * time. The caller in the window logs the rejection and stops; the open
+   * requests of the main process go through the command dispatcher, which
+   * shows them itself (AGENTS.md §15).
+   */
+  private _showOpenRefusal(sender: WebContents, error: unknown): void {
+    if (sender.isDestroyed() || sender.isCrashed()) {
+      return;
+    }
+    const message = error instanceof Error ? error.message : errorToString(error);
+    const failure: CommandFailedBroadcast = { command: "open-file", message };
+    sender.send(COMMAND_FAILED_CHANNEL, failure);
   }
 
   public async openFile(

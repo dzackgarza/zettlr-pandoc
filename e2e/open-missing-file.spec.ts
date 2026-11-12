@@ -93,6 +93,7 @@ describe("an open request for a file that does not exist", function () {
     const messages = await error.allInnerTexts();
     assert.equal(messages.length, 1, "the window shows one message");
     assert.ok(messages[0].includes(missing), `the message names the path: ${messages[0]}`);
+    assert.equal(messages[0].split("\n").length, 1, `the message holds no stack: ${messages[0]}`);
     assert.equal(
       await activePage.locator(".cm-line", { hasText: "The proof is in" }).count(),
       1,

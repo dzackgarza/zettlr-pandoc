@@ -30,6 +30,7 @@ import { getSyncedVersion } from "@codemirror/collab";
 import { foldedRanges, syntaxTree } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
+import { reportError } from "@common/util/error-reporting";
 import { runRecoverably } from "@common/util/run-recoverably";
 import {
   type DocumentLocation,
@@ -345,26 +346,25 @@ export function followReferenceNavigationIntent(
   }
 
   // Cross-file: hand over to the documents provider, which owns tab
-  // reuse/opening and the widened per-pane history (TabManager). A failed
-  // handover surfaces through the recoverable boundary (review B8): one
-  // closable error toast, never a silent console-only line.
+  // reuse/opening and the widened per-pane history (TabManager). The
+  // provider shows a refused open in this window; this caller logs it.
   const { windowId, leafId } = view.state.facet(editorMetadataFacet);
-  void runRecoverably(
-    async () =>
-      await window.ipc.invoke("documents-provider", {
-        command: "open-file",
-        payload: {
-          path: intent.target.documentPath,
-          windowId,
-          leafId,
-          // A reference jump must keep the origin tab open for Back.
-          newTab: true,
-          targetRange: intent.target.range,
-          sourceLocation: intent.source,
-        },
-      } as DocumentManagerIPCAPI),
-    trans("Following the reference"),
-  );
+  window.ipc
+    .invoke("documents-provider", {
+      command: "open-file",
+      payload: {
+        path: intent.target.documentPath,
+        windowId,
+        leafId,
+        // A reference jump must keep the origin tab open for Back.
+        newTab: true,
+        targetRange: intent.target.range,
+        sourceLocation: intent.source,
+      },
+    } as DocumentManagerIPCAPI)
+    .catch((error: unknown) => {
+      reportError("Following the reference failed", error);
+    });
   return true;
 }
 
