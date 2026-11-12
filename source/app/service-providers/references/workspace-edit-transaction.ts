@@ -36,6 +36,7 @@ import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import type { SaveFileResult } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
+import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
@@ -118,31 +119,51 @@ function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
 }
 
 /**
- * The edits that take a live buffer from the target of `edits` back to
- * `original`. Each one changes only the text that its forward edit changed,
- * so the review and the annotations of the document keep their places
- * through a rollback.
+ * The changes that take `before` to `after`, from a character diff (jsdiff's
+ * `diffChars`, the Myers algorithm).
  */
-function inverseEdits(
-  documentPath: string,
-  original: string,
-  edits: WorkspaceTextEdit[],
-): WorkspaceTextEdit[] {
-  const inverse = changeSetOf(original, edits).invert(Text.of(original.split("\n")));
-  const restoring: WorkspaceTextEdit[] = [];
-  inverse.iterChanges((from, to, _fromOriginal, _toOriginal, inserted) => {
-    restoring.push({ documentPath, range: { from, to }, insert: inserted.toString() });
-  });
-  return restoring;
+function changesBetween(before: string, after: string): ChangeSet {
+  const changes: Array<{ from: number; to?: number; insert?: string }> = [];
+  let position = 0;
+  for (const part of diffChars(before, after)) {
+    if (part.added) {
+      changes.push({ from: position, insert: part.value });
+    } else if (part.removed) {
+      changes.push({ from: position, to: position + part.value.length });
+      position += part.value.length;
+    } else {
+      position += part.value.length;
+    }
+  }
+  return ChangeSet.of(changes, before.length);
 }
 
-/** The edit that replaces a live buffer's entire text with `text`. */
-function wholeDocumentEdit(
-  documentPath: string,
-  currentLength: number,
-  text: string,
-): WorkspaceTextEdit {
-  return { documentPath, range: { from: 0, to: currentLength }, insert: text };
+/**
+ * The edits that take a live buffer from `current` back to `original`
+ * without the text that the author typed after the transaction. The buffer
+ * held the target of `edits`, and then the changes of its author: the
+ * inverse of `edits` is mapped over those changes, as an editor rebases a
+ * change over a concurrent one. Each edit changes only the text that the
+ * transaction changed, so the typed text, the review and the annotations of
+ * the document keep their places through a rollback.
+ */
+function restoringEdits(
+  entry: JournaledDocument,
+  current: string,
+  edits: WorkspaceTextEdit[],
+): WorkspaceTextEdit[] {
+  const inverse = changeSetOf(entry.original, edits).invert(Text.of(entry.original.split("\n")));
+  const restoring: WorkspaceTextEdit[] = [];
+  inverse
+    .map(changesBetween(entry.target, current))
+    .iterChanges((from, to, _fromCurrent, _toCurrent, inserted) => {
+      restoring.push({
+        documentPath: entry.documentPath,
+        range: { from, to },
+        insert: inserted.toString(),
+      });
+    });
+  return restoring;
 }
 
 /**
@@ -211,6 +232,9 @@ export async function runWorkspaceEditTransaction(
   await writeFileAtomic(journalFile, JSON.stringify(journal), "utf-8");
 
   const installed: string[] = [];
+  // The open buffers that held the target of the transaction when it
+  // checked them; later text in such a buffer is text of its author.
+  const verified = new Set<string>();
   let openBuffersUpdated: string[] = [];
   try {
     // The authority prepares every ChangeSet before it mutates any buffer and
@@ -236,6 +260,7 @@ export async function runWorkspaceEditTransaction(
             `workspace-edit: the document authority holds different content for ${documentPath}`,
           );
         }
+        verified.add(documentPath);
       }
     }
 
@@ -244,7 +269,7 @@ export async function runWorkspaceEditTransaction(
       installed.push(documentPath);
     }
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed, input.edits);
+    await rollback(authority, journalFile, journal, installed, verified, input.edits);
     throw err;
   }
 
@@ -268,6 +293,7 @@ export async function runWorkspaceEditTransaction(
  * @param   {string}                  journalFile  The journal's path
  * @param   {WorkspaceEditJournal}    journal      The journal
  * @param   {string[]}                installed    Files already installed
+ * @param   {Set<string>}             verified     Open buffers that held the target
  * @param   {WorkspaceTextEdit[]}     edits        The edits of the transaction
  */
 async function rollback(
@@ -275,6 +301,7 @@ async function rollback(
   journalFile: string,
   journal: WorkspaceEditJournal,
   installed: string[],
+  verified: Set<string>,
   edits: WorkspaceTextEdit[],
 ): Promise<void> {
   await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
@@ -285,20 +312,23 @@ async function rollback(
     if (current === undefined || current === entry.original) {
       continue;
     }
-    // A buffer that holds the target goes back through the inverse of its
-    // edits. A buffer with another text was changed by its author after
-    // the transaction changed it; only the whole original restores it.
-    if (current === entry.target) {
-      restoreBuffers.push(
-        ...inverseEdits(
-          entry.documentPath,
-          entry.original,
-          edits.filter((edit) => edit.documentPath === entry.documentPath),
-        ),
-      );
-    } else {
-      restoreBuffers.push(wholeDocumentEdit(entry.documentPath, current.length, entry.original));
+    // A buffer that the authority did not take to the target holds no text
+    // of its author: only the whole original restores it.
+    if (!verified.has(entry.documentPath)) {
+      restoreBuffers.push({
+        documentPath: entry.documentPath,
+        range: { from: 0, to: current.length },
+        insert: entry.original,
+      });
+      continue;
     }
+    restoreBuffers.push(
+      ...restoringEdits(
+        entry,
+        current,
+        edits.filter((edit) => edit.documentPath === entry.documentPath),
+      ),
+    );
   }
   if (restoreBuffers.length > 0) {
     await authority.applyWorkspaceTextEdits(restoreBuffers);
