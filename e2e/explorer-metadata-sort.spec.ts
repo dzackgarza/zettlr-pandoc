@@ -8,8 +8,8 @@
  * License:         GNU GPL v3
  *
  * Description:     The author has two workspaces open and a document of one of
- *                  them in the editor. The other workspace sorts its notes by
- *                  the front matter field `date`. Each control that changes
+ *                  them in the editor. A subfolder of the other workspace sorts
+ *                  its notes by the front matter field `date`. Each control that changes
  *                  the order of a folder changes the folder that the author
  *                  names: the context menu of the folder, the Properties of
  *                  the folder, and the Workspaces menu, which names the folder
@@ -79,6 +79,7 @@ describe("the metadata-field sort of a folder", function () {
   let page: Page | undefined;
   let fixtureRoot: string | undefined;
   let notesWorkspace = "";
+  let archive = "";
   let conversations = "";
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
@@ -99,8 +100,9 @@ describe("the metadata-field sort of a folder", function () {
     });
     fixtureRoot = fixture.root;
     notesWorkspace = path.dirname(fixture.documentPath);
-    conversations = path.join(fixture.root, "conversations");
-    await mkdir(conversations);
+    archive = path.join(fixture.root, "archive");
+    conversations = path.join(archive, "conversations");
+    await mkdir(conversations, { recursive: true });
     for (const entry of NOTES) {
       await writeFile(
         path.join(conversations, entry.name),
@@ -115,12 +117,12 @@ describe("the metadata-field sort of a folder", function () {
     );
 
     // Two workspaces; the document in the editor and the selected folder are
-    // those of the notes workspace.
+    // those of the notes workspace. The notes are in a subfolder of the other.
     const configPath = path.join(fixture.configDirectory, "config.json");
     const config: { app: { openWorkspaces: string[] }; openDirectory: string | null } = JSON.parse(
       await readFile(configPath, "utf8"),
     );
-    config.app.openWorkspaces = [notesWorkspace, conversations];
+    config.app.openWorkspaces = [notesWorkspace, archive];
     config.openDirectory = notesWorkspace;
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
@@ -185,6 +187,21 @@ describe("the metadata-field sort of a folder", function () {
     return JSON.parse(await readFile(path.join(folder, ".ztr-directory"), "utf8"));
   }
 
+  /**
+   * Waits until the settings file of a folder holds a sort. The window shows
+   * a new order before the main process has written the file.
+   */
+  async function waitForStoredSorting(folder: string, sorting: string): Promise<StoredSettings> {
+    const deadline = Date.now() + 10_000;
+    let stored = await storedSettings(folder);
+    while (stored.sorting !== sorting && Date.now() < deadline) {
+      await delay(100);
+      stored = await storedSettings(folder);
+    }
+    assert.equal(stored.sorting, sorting);
+    return stored;
+  }
+
   /** Chooses an item of a submenu of the menu that is open. */
   async function chooseMenuItem(
     activePage: Page,
@@ -205,9 +222,11 @@ describe("the metadata-field sort of a folder", function () {
 
   it("shows the notes of the folder in the order of their dates", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
-    const arrow = folderRow(activePage, conversations).locator(".item-icon cds-icon");
-    await arrow.waitFor({ state: "visible", timeout: 30_000 });
-    await arrow.click();
+    for (const folder of [archive, conversations]) {
+      const arrow = folderRow(activePage, folder).locator(".item-icon cds-icon").first();
+      await arrow.waitFor({ state: "visible", timeout: 30_000 });
+      await arrow.click();
+    }
     await waitForOrder(activePage, OLDEST_FIRST);
   });
 
@@ -218,8 +237,7 @@ describe("the metadata-field sort of a folder", function () {
     await waitForOrder(activePage, NEWEST_FIRST);
     screenshots.set("context-menu-descending.png", await activePage.screenshot());
 
-    const stored = await storedSettings(conversations);
-    assert.equal(stored.sorting, "frontmatter-down");
+    const stored = await waitForStoredSorting(conversations, "frontmatter-down");
     assert.equal(stored.explorer.sortMetadataKey, "date");
     await assert.rejects(
       access(path.join(notesWorkspace, ".ztr-directory")),
@@ -247,26 +265,39 @@ describe("the metadata-field sort of a folder", function () {
 
     await directionControl.selectOption("up");
     await waitForOrder(activePage, OLDEST_FIRST);
-    const stored = await storedSettings(conversations);
-    assert.equal(stored.sorting, "frontmatter-up");
+    const stored = await waitForStoredSorting(conversations, "frontmatter-up");
     assert.equal(stored.explorer.sortMetadataKey, "date");
     await activePage.keyboard.press("Escape");
   });
 
-  it("names the folder that the Workspaces menu changes", async function () {
+  it("reverses the selected folder from the Workspaces menu and names it", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
+    // The document in the editor belongs to the other workspace, and the
+    // selected folder is a subfolder of a workspace.
     await folderRow(activePage, conversations).locator(".display-text").click();
     await activePage.locator("#directories-dirs-header .root-settings").click();
     const target = activePage
       .locator('.application-menu .menu-item[data-id="explorer-target"] .label')
       .last();
     await target.waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("workspaces-menu-choice.png", await activePage.screenshot());
+    await chooseMenuItem(activePage, "explorer-direction", "explorer-direction-down");
+    await waitForOrder(activePage, NEWEST_FIRST);
+    await waitForStoredSorting(conversations, "frontmatter-down");
+    for (const folder of [notesWorkspace, archive]) {
+      await assert.rejects(
+        access(path.join(folder, ".ztr-directory")),
+        "a folder that the author did not select keeps its settings",
+      );
+    }
+
+    await activePage.locator("#directories-dirs-header .root-settings").click();
+    await target.waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("workspaces-menu.png", await activePage.screenshot());
     assert.ok(
       (await target.textContent())?.includes(path.basename(conversations)),
       "the menu names the selected folder",
     );
-    await chooseMenuItem(activePage, "explorer-direction", "explorer-direction-down");
-    await waitForOrder(activePage, NEWEST_FIRST);
+    await activePage.keyboard.press("Escape");
   });
 });

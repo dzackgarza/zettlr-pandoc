@@ -16,7 +16,7 @@
 
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
-import { mkdtemp, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -24,7 +24,7 @@ import type FSAL from "source/app/service-providers/fsal";
 import type { FSALEventPayload } from "source/app/service-providers/fsal";
 import { LogLevel, type LogMessage } from "source/app/service-providers/log";
 import writeFileAtomic from "write-file-atomic";
-import { bootFsal } from "./fsal-seam";
+import { bootFilteredFsal, bootFsal } from "./fsal-seam";
 import { ipcMainHandlers } from "./headless-electron-harness.cjs";
 
 type LogChunkHandler = (
@@ -169,5 +169,55 @@ describe("FSAL watcher events", function () {
     await watchdog.shutdown();
 
     assert.deepEqual(removals(), [source], "the source is reported as removed, the target is not");
+  });
+});
+
+describe("FSAL watcher events with the file filters on", function () {
+  let chapter: string;
+  let fsal: FSAL;
+  const published: FSALEventPayload[] = [];
+
+  before(async function () {
+    const root = await mkdtemp(path.join(tmpdir(), "zettlr-fsal-watcher-filtered-"));
+    chapter = path.join(root, "chapter");
+    await mkdir(chapter);
+    await writeFile(path.join(chapter, "draft.md"), "# Draft\n");
+
+    fsal = await bootFilteredFsal(root);
+    fsal.on("fsal-events", (events) => published.push(...events));
+  });
+
+  after(async function () {
+    await fsal.shutdown();
+  });
+
+  it("publishes a change of a subfolder with the settings that were written", async function () {
+    // The watcher reports a change of `.ztr-directory` as a change of its
+    // folder. A window sorts the rows of a folder with the settings of the
+    // descriptor that this event carries. The folder has no file type: the
+    // file filters must judge it as a folder.
+    const publishedSorting = (): string[] =>
+      published.flatMap((payload) =>
+        payload.event === "change" &&
+        payload.descriptor.path === chapter &&
+        payload.descriptor.type === "directory"
+          ? [payload.descriptor.settings.sorting]
+          : [],
+      );
+
+    // The watcher reports nothing before its first scan ends, so the write
+    // repeats until the FSAL publishes the change of the folder.
+    const deadline = Date.now() + 20_000;
+    let writes = 0;
+    while (!publishedSorting().includes("name-down") && Date.now() < deadline) {
+      writes += 1;
+      const sorting = writes % 2 === 0 ? "name-up" : "name-down";
+      await fsal.setDirectorySetting(await fsal.getAnyDirectoryDescriptor(chapter), { sorting });
+      await sleep(250);
+    }
+    assert.ok(
+      publishedSorting().includes("name-down"),
+      "the FSAL publishes the folder with the sort that was written",
+    );
   });
 });
