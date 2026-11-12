@@ -39,6 +39,7 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { leafIds, openInLeaf } from "./support/panes";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-quarto-bound-book-e2e-latest");
 
@@ -50,6 +51,8 @@ const PART_FILE = `${SECTION("book")} .quarto-book-outline button.part-file`;
 const POPOVER = "#dir-props";
 const MANIFEST_FIELD = `${POPOVER} #field-input-quarto-manifest`;
 const BINDING = path.join(".book", "_quarto.yml");
+const MANIFEST_EDITOR = '.cm-content[data-language="yaml"]';
+const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 
 async function waitUntil(
   probe: () => Promise<boolean>,
@@ -515,6 +518,67 @@ describe("a workspace bound to the manifest in its assembly directory", function
     assert.match(manifest, /part: Surface appendix/);
     assert.match(manifest, /category-theory\/framework\/New-Section\.md/);
     screenshots.set("book-authoring.png", await activePage.screenshot());
+  });
+
+  it("refuses a Book edit while the manifest has unsaved text in a tab, and keeps both", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const root = requireInitialized(workspace, "workspace");
+    const manifestPath = path.join(root, BINDING);
+    const [leaf] = await leafIds(activePage);
+    await openInLeaf(activePage, requireInitialized(leaf, "the pane of the window"), manifestPath);
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(manifestPath)}].active`)
+      .waitFor({ timeout: 20_000 });
+    await activePage.locator(MANIFEST_EDITOR).click();
+    await activePage.keyboard.press("Control+Home");
+    await activePage.keyboard.type("# A note of the author\n");
+    const onDisk = await readFile(manifestPath, "utf8");
+    const order = async (): Promise<string[]> =>
+      activePage
+        .locator(`${SECTION("book")} .quarto-book-outline .chrome-row-label`)
+        .allTextContents();
+    const before = await order();
+
+    await activePage
+      .locator(CHAPTER)
+      .filter({ hasText: "Discriminant forms" })
+      .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
+
+    const toast = activePage.locator(ERROR_TOAST);
+    await toast.first().waitFor({ state: "visible", timeout: 10_000 });
+    screenshots.set("book-edit-unsaved-manifest.png", await activePage.screenshot());
+    assert.equal(await toast.count(), 1, "one message for one refused edit");
+    assert.match(await toast.first().innerText(), /_quarto\.yml/);
+    assert.equal(await readFile(manifestPath, "utf8"), onDisk, "the manifest on disk is unchanged");
+    assert.deepEqual(await order(), before, "the book keeps its order");
+    assert.match(
+      await activePage.locator(MANIFEST_EDITOR).innerText(),
+      /^# A note of the author/,
+      "the tab keeps the text of the author",
+    );
+
+    // The author saves the manifest; the same edit then applies to that text.
+    await activePage.locator(MANIFEST_EDITOR).click();
+    await activePage.keyboard.press("Control+s");
+    await waitUntil(
+      async () => (await readFile(manifestPath, "utf8")).startsWith("# A note of the author"),
+      "the save of the manifest",
+    );
+    await activePage
+      .locator(CHAPTER)
+      .filter({ hasText: "Discriminant forms" })
+      .dragTo(activePage.locator(CHAPTER).filter({ hasText: "Category theory" }));
+    await waitUntil(
+      async () => (await order())[0] === "Discriminant forms",
+      "the edit after the save",
+    );
+    assert.match(await readFile(manifestPath, "utf8"), /^# A note of the author/);
+
+    await activePage.locator(MANIFEST_EDITOR).click();
+    await activePage.keyboard.press("Control+w");
+    await activePage
+      .locator(`.document-tablist-wrapper [data-path=${JSON.stringify(manifestPath)}]`)
+      .waitFor({ state: "detached", timeout: 10_000 });
   });
 
   it("opens the file that names a part from the row of that part", async function () {
