@@ -50,6 +50,7 @@ import {
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import _ from "underscore";
 import type LongRunningTaskProvider from "../long-running-tasks";
+import type { LongRunningTask } from "../long-running-tasks/task";
 import * as FSALAttachment from "./fsal-attachment";
 import FSALCache from "./fsal-cache";
 import * as FSALCodeFile from "./fsal-code-file";
@@ -850,18 +851,35 @@ export default class FSAL extends ProviderContract {
    * properly indexed in the cache for fast access.
    */
   public async reindexFiles(onFile?: (absPath: string, percent: number) => void): Promise<void> {
+    // The lifecycle passes `onFile` when it indexes at startup and shows the
+    // progress itself; each other index is a task of the status bar. The
+    // task ends with the index: a success leaves the list, a failure stays
+    // with its cause.
+    if (onFile !== undefined) {
+      await this.indexLoadedPaths(undefined, onFile);
+      return;
+    }
+    const task = this._lrt.registerTask(
+      trans("Indexing files"),
+      trans("Discovering paths to index…"),
+    );
+    await this.indexLoadedPaths(task, undefined).then(
+      () => this._lrt.settleTask(task),
+      (error: Error) => {
+        this._lrt.settleTask(task, error);
+        throw error;
+      },
+    );
+  }
+
+  private async indexLoadedPaths(
+    task: LongRunningTask | undefined,
+    onFile: ((absPath: string, percent: number) => void) | undefined,
+  ): Promise<void> {
     let currentPercent = 0;
 
     // Start a timer to measure how long the roots take to load.
     let start = performance.now();
-
-    // Register a LRT. NOTE: We only do that if "onFile" is not defined, because
-    // this function is called also from within the lifecycle when the FSAL
-    // cache is cleared on startup.
-    const task =
-      onFile === undefined
-        ? this._lrt.registerTask(trans("Indexing files"), trans("Discovering paths to index…"))
-        : undefined;
 
     const { openFiles, openWorkspaces } = this._config.get().app;
     const pathsToIndex: string[] = [];
@@ -920,12 +938,17 @@ export default class FSAL extends ProviderContract {
       }
 
       // Requesting the descriptor will, behind the scenes, check for cache hits
-      // and automatically recache if necessary.
-      await this.getDescriptorFor(absPath);
+      // and automatically recache if necessary. A path that went away after
+      // the list is not indexed: the watcher reports its removal.
+      await this.getDescriptorFor(absPath).catch((cause: Error) => {
+        const examination = examinePath(absPath, true);
+        if (!examination.examined || examination.stats !== undefined) {
+          throw cause;
+        }
+      });
     }
 
     task?.update({ info: trans("Indexing complete.") });
-    task?.endTask("success");
 
     const reindexDuration = performance.now() - start;
     if (reindexDuration < 1000) {

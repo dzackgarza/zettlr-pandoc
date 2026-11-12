@@ -1475,11 +1475,15 @@ of an isolated instance are in the first comment of #132.
   machine `fix` uses `apply-lint-fix`, which checks the cached finding and
   applies its edit through the guarded Fix All transaction.
 - **Background work is visible:** a Flowmark format, the background lint
-  queue and the startup Flowmark update each register a long-running task
+  queue, the startup Flowmark update and the index of the workspaces after a
+  change of the open paths each register a long-running task
   (`LongRunningTaskProvider`). The status bar names the newest running task
   with its elapsed time; its indicator opens the task list. A routine task
   ends through `settleTask`: a success leaves the list, a failure stays
-  listed with its error. New background work registers a task the same way.
+  listed with its error. Each path out of the work, a rejection too, ends
+  its task. New background work registers a task the same way. A file that
+  goes away between the list of the index and its read is not a failure
+  (`test/fsal-reindex.spec.ts`).
 - **Fix All:** a Flowmark diagnostic carries a `fix` (a machine-applicable
   edit that keeps the meaning of the text) beside its `suggestions` (edits
   that need the author's choice). Only a `fix` is ever applied without the
