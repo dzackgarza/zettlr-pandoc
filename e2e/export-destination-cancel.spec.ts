@@ -54,6 +54,19 @@ async function errorLines(fixtureRoot: string): Promise<string[]> {
   return (await readAppLog(fixtureRoot)).split("\n").filter((line) => line.includes("[Error]"));
 }
 
+/**
+ * Waits until the start-up update of Flowmark has ended. The run has no
+ * network, so the update fails and writes error lines of its own; they are
+ * no part of the export.
+ */
+async function flowmarkUpdateEnded(fixtureRoot: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!/\[Flowmark\] (Up to date|Could not update)/.test(await readAppLog(fixtureRoot))) {
+    assert.ok(Date.now() < deadline, "the start-up update of Flowmark ended");
+    await delay(250);
+  }
+}
+
 describe("an export whose folder dialog the author cancels", function () {
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
@@ -79,6 +92,7 @@ describe("an export whose folder dialog the author cancels", function () {
     page = await findEditorPage(app.browser, this.timeout());
     await hideDevServerOverlay(page);
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: this.timeout() });
+    await flowmarkUpdateEnded(fixture.root, 120_000);
   });
 
   after(async function () {
