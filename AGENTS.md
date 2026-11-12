@@ -1016,10 +1016,12 @@ of an isolated instance are in the first comment of #132.
 
 - **One writer.** `writeTextFile` (`fsal/util/write-text-file.ts`) writes each
   text file that the author owns: a document (`FSAL.writeTextFile`: a save,
-  `save-copy`, a tag rename, a duplicate), a Quarto manifest, `.zettlrignore`,
-  `.ztr-directory`, the custom CSS, a defaults file, a Lua filter, the snippets
-  and the user dictionary. A new path that writes such a file calls it, and
-  does not call `fs.writeFile`.
+  `save-copy`, a tag rename, a duplicate; the closed files of a workspace edit,
+  its rollback and its startup recovery in `workspace-edit-transaction.ts`), a
+  Quarto manifest, `.zettlrignore`, `.ztr-directory`, the custom CSS, a
+  defaults file, a Lua filter, the snippets and the user dictionary. A new
+  path that writes such a file calls it, and does not call `fs.writeFile` or
+  `write-file-atomic`.
 - **A creation replaces no file.** `createTextFile` (the same module) makes a
   file only at a path that no file has, in one step of the filesystem. A new
   path that makes a file under a name of the author calls it.

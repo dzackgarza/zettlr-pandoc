@@ -33,6 +33,7 @@
 
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
+import isErrnoException from "@common/util/is-errno-exception";
 import type { SaveFileResult } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
@@ -40,6 +41,7 @@ import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
+import { writeTextFile } from "../fsal/util/write-text-file";
 
 /** The one journal file; a workspace transaction is never concurrent. */
 const JOURNAL_FILE = "workspace-edit-journal.json";
@@ -265,7 +267,7 @@ export async function runWorkspaceEditTransaction(
     }
 
     for (const { documentPath, target } of closedFiles) {
-      await writeFileAtomic(documentPath, target, "utf-8");
+      await writeTextFile(documentPath, target);
       installed.push(documentPath);
     }
   } catch (err) {
@@ -337,7 +339,7 @@ async function rollback(
   for (const documentPath of installed) {
     const entry = journal.closedFiles.find((candidate) => candidate.documentPath === documentPath);
     if (entry !== undefined) {
-      await writeFileAtomic(documentPath, entry.original, "utf-8");
+      await writeTextFile(documentPath, entry.original);
     }
   }
 
@@ -391,9 +393,16 @@ export async function recoverWorkspaceEditJournal(journalDirectory: string): Pro
 
   const restored: string[] = [];
   for (const entry of journal.closedFiles) {
-    const current = await readFile(entry.documentPath, "utf-8").catch(() => undefined);
+    const current = await readFile(entry.documentPath, "utf-8").catch((error: unknown) => {
+      // A file that is gone holds no text of the author: the original
+      // restores it. Each other failure stops the recovery.
+      if (isErrnoException(error) && error.code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    });
     if (current !== entry.original) {
-      await writeFileAtomic(entry.documentPath, entry.original, "utf-8");
+      await writeTextFile(entry.documentPath, entry.original);
       restored.push(entry.documentPath);
     }
   }

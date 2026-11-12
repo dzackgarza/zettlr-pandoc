@@ -74,7 +74,6 @@ describe("Documents-provider edits of a document with annotations", function () 
     root = await mkdtemp(path.join(tmpdir(), "zettlr-edit-collaboration-"));
     filePath = path.join(root, "Lattice.md");
     writeFileSync(filePath, SOURCE, "utf-8");
-    mkdirSync(path.join(root, "locked"));
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(SIDECARS, { recursive: true, force: true });
@@ -86,7 +85,6 @@ describe("Documents-provider edits of a document with annotations", function () 
   });
 
   afterEach(async function () {
-    chmodSync(path.join(root, "locked"), 0o700);
     await provider.shutdown();
     await rm(root, { recursive: true, force: true });
   });
@@ -173,10 +171,10 @@ describe("Documents-provider edits of a document with annotations", function () 
     const { from, to } = await annotate();
     const insideTarget = from + "bilinear".length;
     // The transaction cannot install its edit of this closed file.
-    const closedPath = path.join(root, "locked", "Closed.md");
+    const closedPath = path.join(root, "Closed.md");
     const closedSource = "A closed document.\n";
     writeFileSync(closedPath, closedSource, "utf-8");
-    chmodSync(path.join(root, "locked"), 0o500);
+    chmodSync(closedPath, 0o444);
 
     await assert.rejects(
       runWorkspaceEditTransaction(provider, root, {
@@ -198,10 +196,10 @@ describe("Documents-provider edits of a document with annotations", function () 
 
   it("keeps the text that the author types while a workspace edit is rolled back", async function () {
     const typed = "Compare the genus.\n";
-    const closedPath = path.join(root, "locked", "Closed.md");
+    const closedPath = path.join(root, "Closed.md");
     const closedSource = "A closed document.\n";
     writeFileSync(closedPath, closedSource, "utf-8");
-    chmodSync(path.join(root, "locked"), 0o500);
+    chmodSync(closedPath, 0o444);
     const editor = ipcMainHandlers.get("documents-authority") as AuthorityHandler | undefined;
     assert.ok(editor !== undefined, "the provider answers its editors");
 
