@@ -48,6 +48,12 @@ export function metadataProblemSentence(problem: DirectoryMetadataProblem): stri
       return trans("The Quarto book file %s could not be used: %s", problem.path, problem.message);
     case "directory":
       return trans("This folder could not be read: %s", problem.message);
+    case "rules":
+      return trans(
+        "The file filters of this workspace could not be read (%s): %s",
+        problem.path,
+        problem.message,
+      );
   }
 }
 

@@ -20,6 +20,7 @@ import type {
   AnyDescriptor,
   CodeFileDescriptor,
   DirDescriptor,
+  DirectoryMetadataProblem,
   MDFileDescriptor,
   OtherFileDescriptor,
   ProjectSettings,
@@ -130,7 +131,11 @@ export default class FSAL extends ProviderContract {
   private readonly _cache: FSALCache;
   private readonly _emitter: EventEmitter;
   private readonly watchers: Map<string, FSALWatchdog>;
-  private readonly deadWorkspaces: Set<string>;
+  /**
+   * Each workspace that is listed as missing, with the causes that its row
+   * shows. A missing workspace has no children, no watcher and no rules.
+   */
+  private readonly deadWorkspaces: Map<string, DirectoryMetadataProblem[]>;
   /** The files whose last read of the text failed. */
   private readonly unreadableFiles = new Set<string>();
   /**
@@ -176,7 +181,7 @@ export default class FSAL extends ProviderContract {
     this._cache = new FSALCache(this._logger, path.join(cachedir, "fsal/cache"));
     this._emitter = new EventEmitter();
     this.watchers = new Map();
-    this.deadWorkspaces = new Set();
+    this.deadWorkspaces = new Map();
 
     ipcMain.handle("fsal", async (event, { command, payload }) => {
       if (command === "read-path-recursively" && typeof payload === "string") {
@@ -688,20 +693,39 @@ export default class FSAL extends ProviderContract {
       try {
         const descriptor = await this.getDescriptorFor(rootPath, false);
         if (descriptor.type === "directory" && descriptor.dirNotFoundFlag === true) {
-          this._logger.error(
-            `[FSAL] The filesystem cannot examine the workspace ${rootPath}. It is listed as missing.`,
-          );
-          this.deadWorkspaces.add(rootPath);
-        } else {
-          this.watchRoot(rootPath);
+          const examination = examinePath(rootPath, true);
+          const problems: DirectoryMetadataProblem[] = examination.examined
+            ? []
+            : [{ source: "directory", path: rootPath, message: examination.error.message }];
+          this.markMissing(rootPath, problems);
+          continue;
         }
+        if (descriptor.type === "directory") {
+          // Without its rules the application does not know which paths of
+          // the workspace the author hid, so it lists none of them.
+          const rulesFile = path.join(rootPath, WORKSPACE_RULES_FILE);
+          const rules = await readRulesFile(rootPath).catch((cause: Error) => cause);
+          if (rules instanceof Error) {
+            this.markMissing(rootPath, [
+              { source: "rules", path: rulesFile, message: rules.message },
+            ]);
+            continue;
+          }
+        }
+        this.watchRoot(rootPath);
       } catch (err: unknown) {
         this._logger.error(`Could not load root ${rootPath}.`, err);
-        this.deadWorkspaces.add(rootPath);
+        this.markMissing(rootPath, [
+          {
+            source: "directory",
+            path: rootPath,
+            message: err instanceof Error ? err.message : String(err),
+          },
+        ]);
       }
     }
 
-    for (const rootPath of this.deadWorkspaces) {
+    for (const rootPath of this.deadWorkspaces.keys()) {
       if (!allRoots.includes(rootPath)) {
         this.deadWorkspaces.delete(rootPath);
       }
@@ -715,6 +739,14 @@ export default class FSAL extends ProviderContract {
         this.watchers.delete(rootPath);
       }
     }
+  }
+
+  /** Lists a workspace as missing, with the causes that its row shows. */
+  private markMissing(rootPath: string, problems: DirectoryMetadataProblem[]): void {
+    this._logger.error(
+      `[FSAL] The workspace ${rootPath} is listed as missing: ${problems.map((problem) => `${problem.path}: ${problem.message}`).join("; ")}`,
+    );
+    this.deadWorkspaces.set(rootPath, problems);
   }
 
   /** Starts the watcher of a root. A watched root is not missing. */
@@ -733,8 +765,8 @@ export default class FSAL extends ProviderContract {
    * The root and each path below it reach the consumers as `addDir` and `add`
    * events, as a folder that appears does.
    *
-   * @throws when the path is not a missing workspace, or its folder is still
-   *         not there
+   * @throws when the path is not a missing workspace, its folder is still
+   *         not there, or its rules file cannot be read
    */
   public async loadMissingWorkspace(rootPath: string): Promise<void> {
     if (!this.deadWorkspaces.has(rootPath)) {
@@ -743,8 +775,14 @@ export default class FSAL extends ProviderContract {
     if (!(await this.isDir(rootPath))) {
       throw new Error(trans('The folder "%s" of the workspace is still missing.', rootPath));
     }
+    await readRulesFile(rootPath);
 
     this.watchRoot(rootPath);
+    // The rules of the workspace apply before its paths are listed, so a
+    // path that a rule hides reaches no consumer.
+    await this.queueIgnoreUpdate(async () => {
+      await this.applyIgnoreSources(await this.readIgnoreSources());
+    });
     for (const childPath of await this.readDirectoryRecursively(rootPath)) {
       const descriptor = await this.getDescriptorFor(childPath, false);
       this.publishEvent({
@@ -752,7 +790,6 @@ export default class FSAL extends ProviderContract {
         descriptor,
       });
     }
-    this.refreshIgnoreRules();
   }
 
   /**
@@ -951,7 +988,10 @@ export default class FSAL extends ProviderContract {
    * @return  {DirDescriptor}           The descriptor
    */
   public loadDummyDirectoryDescriptor(dirPath: string): DirDescriptor {
-    return FSALDir.getDirNotFoundDescriptor(dirPath);
+    return {
+      ...FSALDir.getDirNotFoundDescriptor(dirPath),
+      metadataProblems: [...(this.deadWorkspaces.get(dirPath) ?? [])],
+    };
   }
 
   /**

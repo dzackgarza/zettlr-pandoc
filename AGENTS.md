@@ -1306,17 +1306,25 @@ of an isolated instance are in the first comment of #132.
   (`deadWorkspaces`): a root descriptor with `dirNotFoundFlag`, no children,
   no watcher, no ignore rules. The other workspaces load. An open file that
   cannot be examined stays in the configuration and is not loaded.
+- **A workspace whose rules file cannot be read is missing too.** Without its
+  `.zettlrignore` the FSAL does not know which paths the author hid (§10), so
+  it lists none of them. Each missing workspace keeps its causes in
+  `deadWorkspaces`; its root descriptor has them in `metadataProblems`
+  (source `directory` or `rules`), and the row shows them (§19).
 - **"Check for directory …" loads it.** The context menu item
   (`menu.rescan_dir`) runs the command `rescan-dir`, which calls
   `FSAL.loadMissingWorkspace`. While the folder cannot be read, the command
-  throws with the cause, and the dispatcher shows it (§15). When it can be
-  read, the FSAL watches it and publishes `addDir` and `add` for each listed
-  path, so each window shows the workspace with its files.
+  throws with the cause, and the dispatcher shows it (§15); so does a rules
+  file that still cannot be read. When both can be read, the FSAL watches the
+  folder, applies its rules, and then publishes `addDir` and `add` for each
+  listed path, so each window shows the workspace with its files and no path
+  that a rule hides.
 - **A row follows the events before its first read.** `TreeItem.vue`
   registers its `fsal-events` listener before it reads its children, so a
   row whose first read gives nothing still shows the children that a later
   event adds.
 - **Proof:** `e2e/missing-workspace.spec.ts`,
+  `e2e/unreadable-workspace-rules.spec.ts`,
   `test/fsal-deleted-directory.spec.ts`.
 
 ## Debugging entry points

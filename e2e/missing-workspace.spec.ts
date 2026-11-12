@@ -125,6 +125,7 @@ describe("a workspace that the filesystem cannot examine", function () {
       .locator(`.tree-item.file[data-path=${JSON.stringify(genus)}]`)
       .waitFor({ state: "visible", timeout: 10_000 });
     screenshots.set("missing-workspace.png", await activePage.screenshot());
+    assert.equal(await workspaceRow(activePage).getAttribute("data-metadata-problem"), "directory");
   });
 
   it("names the folder while the filesystem refuses it", async function () {

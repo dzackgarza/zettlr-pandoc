@@ -144,14 +144,16 @@ export interface DirectorySettings {
  * A part of the metadata of a directory that the application could not use.
  * The directory is listed without that part: with the default settings for
  * `settings`, without a Project for `manifest`, without children for
- * `directory`.
+ * `directory`. A workspace whose rules file cannot be read (`rules`) is
+ * listed as missing, without children.
  */
 export interface DirectoryMetadataProblem {
   /**
    * What could not be used: the settings file `.ztr-directory`, the Quarto
-   * manifest, or the content of the directory itself.
+   * manifest, the content of the directory itself, or the rules file
+   * `.zettlrignore` of a workspace.
    */
-  source: "settings" | "manifest" | "directory";
+  source: "settings" | "manifest" | "directory" | "rules";
   /** The file or the directory that the problem is in. */
   path: string;
   /** The cause. */
