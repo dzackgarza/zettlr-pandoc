@@ -36,6 +36,7 @@ import { createPatch } from "diff";
 import {
   chmodSync,
   existsSync,
+  constants as fsConstants,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -46,6 +47,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "fs";
+import { access } from "fs/promises";
 import http from "http";
 import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
@@ -53,8 +55,10 @@ import os from "os";
 import path from "path";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import AgentHTTPProvider, {
+  type AgentApiHost,
   AgentApiTokenRequiredError,
 } from "source/app/service-providers/agent-api/http-server";
+import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
 import LogProvider from "source/app/service-providers/log";
@@ -62,6 +66,7 @@ import { SearchProvider } from "source/app/service-providers/search";
 import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
+import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { userData } from "./headless-electron-harness.cjs";
 
 // ============================================================================
@@ -249,6 +254,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
   // exercise the no-workspace-open profile the app ships with.
   let openWorkspaces: string[] = [];
   const links = { index: new WikilinkIndex([]) };
+  /** The host of the provider of a test. */
+  let agentHost: AgentApiHost;
 
   function descriptorFor(filePath: string): CodeFileDescriptor {
     const stat = statSync(filePath);
@@ -605,7 +612,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       },
     });
     await documentLint.boot();
-    const agentHost = new (class {
+    agentHost = new (class {
       public get config() {
         return config;
       }
@@ -1601,6 +1608,180 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const refusal = parseAs(response.body, "AgentErrorResponse").error;
     assert.equal(refusal.code, "DOCUMENT_UNREADABLE");
     assert.ok(refusal.message.includes(filePath), refusal.message);
+  });
+
+  describe("citation libraries that did not load (#210)", function () {
+    const LIBRARY = `@article{AW71,
+  title = {Degenerate {{Fibers}} and {{Stable Reduction}} of {{Curves}}},
+  author = {Artin, M. and Winters, G.},
+  year = 1971,
+  journal = {Topology},
+  volume = {10},
+  pages = {373--383},
+}
+`;
+    let citeproc: CiteprocProvider | undefined;
+    let libraryPath: string;
+    let absentLibrary: string;
+
+    beforeEach(function () {
+      libraryPath = path.join(authoringHome, "references.bib");
+      writeFileSync(libraryPath, LIBRARY);
+      absentLibrary = path.join(authoringHome, "unmounted", "references.bib");
+    });
+
+    afterEach(async function () {
+      await citeproc?.shutdown();
+      citeproc = undefined;
+    });
+
+    /** Starts the API again, with a citation provider whose main library is `mainLibrary`. */
+    async function startWithMainLibrary(mainLibrary: string): Promise<CiteprocProvider> {
+      const started = new CiteprocProvider(
+        new LogProvider(),
+        {
+          on: () => {},
+          get: () => ({
+            appLang: "en-US",
+            export: {
+              cslLibrary: mainLibrary,
+              cslStyle: path.resolve("static", "csl-styles", "chicago-author-date.csl"),
+            },
+          }),
+        },
+        path.resolve("static", "csl-locales"),
+        DATABASE_LOADER_THREAD,
+      );
+      citeproc = started;
+      await started.boot();
+      await httpProvider.shutdown();
+      httpProvider = new AgentHTTPProvider(
+        new LogProvider(),
+        provider,
+        agentHost,
+        { homeDirectory: authoringHome, env: TOKEN_ENVIRONMENT },
+        started,
+      );
+      await httpProvider.boot();
+      httpPort = Number.parseInt(
+        readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
+        10,
+      );
+      return started;
+    }
+
+    /** The error of the system for a read of a file that is not there. */
+    async function readFailure(file: string): Promise<string> {
+      const error: Error = await access(file, fsConstants.R_OK).then(
+        () => new Error(`${file} is readable`),
+        (cause: Error) => cause,
+      );
+      return error.message;
+    }
+
+    function postJson(pathname: string, body: JsonValue) {
+      return httpRequest("POST", pathname, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    it("names the main library and its cause on each route that needs it", async function () {
+      await startWithMainLibrary(absentLibrary);
+      const expected = { path: absentLibrary, cause: await readFailure(absentLibrary) };
+      const responses = {
+        items: await httpRequest("GET", "/v1/citations"),
+        item: await httpRequest("GET", "/v1/citations?citeKey=AW71"),
+        citation: await postJson("/v1/citations/render", {
+          mode: "citation",
+          citations: [{ id: "AW71" }],
+        }),
+        bibliography: await postJson("/v1/citations/render", {
+          mode: "bibliography",
+          citekeys: ["AW71"],
+        }),
+        zotero: await httpRequest("GET", "/v1/zotero/items?q=Artin"),
+      };
+      for (const [route, response] of Object.entries(responses)) {
+        assert.equal(response.status, 503, `${route}: ${response.body}`);
+        const { error } = parseAs(response.body, "AgentErrorResponse");
+        assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED", route);
+        assert.deepEqual(error.database, expected, route);
+      }
+    });
+
+    it("refuses the main library when the settings name none", async function () {
+      await startWithMainLibrary("");
+      const response = await httpRequest("GET", "/v1/citations");
+      assert.equal(response.status, 503, response.body);
+      const { error } = parseAs(response.body, "AgentErrorResponse");
+      assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED");
+      assert.equal(error.database, undefined);
+    });
+
+    it("lists each library that did not load beside the libraries that loaded", async function () {
+      const started = await startWithMainLibrary(libraryPath);
+      await started.synchronizeDatabases([absentLibrary]);
+      const cause = await readFailure(absentLibrary);
+
+      const listing = await httpRequest("GET", "/v1/citations?target=databases");
+      assert.equal(listing.status, 200, listing.body);
+      assert.deepEqual(parseAs(listing.body, "CitationDatabasesResponse"), {
+        databases: [{ path: libraryPath, type: "biblatex" }],
+        notLoaded: [{ path: absentLibrary, cause }],
+      });
+
+      const items = await httpRequest(
+        "GET",
+        `/v1/citations?database=${encodeURIComponent(absentLibrary)}`,
+      );
+      assert.equal(items.status, 503, items.body);
+      assert.deepEqual(parseAs(items.body, "AgentErrorResponse").error.database, {
+        path: absentLibrary,
+        cause,
+      });
+
+      const neverRead = path.join(authoringHome, "never-read.bib");
+      writeFileSync(neverRead, LIBRARY);
+      const unknown = await httpRequest(
+        "GET",
+        `/v1/citations?database=${encodeURIComponent(neverRead)}`,
+      );
+      assert.equal(unknown.status, 503, unknown.body);
+      const { error } = parseAs(unknown.body, "AgentErrorResponse");
+      assert.equal(error.code, "CITATION_DATABASE_NOT_LOADED");
+      assert.equal(error.database?.path, neverRead);
+    });
+
+    it("names the cite keys that a library does not hold", async function () {
+      await startWithMainLibrary(libraryPath);
+
+      const bibliography = await postJson("/v1/citations/render", {
+        mode: "bibliography",
+        citekeys: ["AW71"],
+      });
+      assert.equal(bibliography.status, 200, bibliography.body);
+      assert.equal(parseAs(bibliography.body, "RenderBibliographyResponse").entries.length, 1);
+
+      const withAMissingKey: Array<{ mode: string; [field: string]: JsonValue }> = [
+        { mode: "bibliography", citekeys: ["AW71", "Nobody99"] },
+        { mode: "citation", citations: [{ id: "AW71" }, { id: "Nobody99" }] },
+      ];
+      for (const body of withAMissingKey) {
+        const response = await postJson("/v1/citations/render", body);
+        assert.equal(response.status, 404, `${body.mode}: ${response.body}`);
+        const { error } = parseAs(response.body, "AgentErrorResponse");
+        assert.equal(error.code, "CITATION_NOT_FOUND", body.mode);
+        assert.deepEqual(error.missingCitekeys, ["Nobody99"], body.mode);
+      }
+
+      const empty = await postJson("/v1/citations/render", {
+        mode: "bibliography",
+        citekeys: [],
+      });
+      assert.equal(empty.status, 400, empty.body);
+      assert.equal(parseAs(empty.body, "AgentErrorResponse").error.code, "INVALID_PARAMS");
+    });
   });
 
   describe("the token of a caller (#72)", function () {
