@@ -13,12 +13,12 @@
  * END HEADER
  */
 
+import type { StoreWriteFailureHandler } from "@common/modules/persistent-data-container";
 import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import enumDictFiles, { type DictFileMetadata } from "@common/util/enum-dict-files";
 import findLangCandidates, { type Candidate } from "@common/util/find-lang-candidates";
 import type ConfigProvider from "@providers/config";
 import { FSWatcher } from "chokidar";
-
 import { app, ipcMain, shell } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
@@ -68,6 +68,7 @@ export default class DictionaryProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
+    private readonly _onWriteFailure: StoreWriteFailureHandler,
   ) {
     super();
     // Array containing all loaded Hunspell dictionaries
@@ -320,11 +321,8 @@ export default class DictionaryProvider extends ProviderContract {
     this._userDictionary = dict;
     this._userDictionary = [...new Set(this._userDictionary)];
     this._userDictionary = this._userDictionary.filter((word) => word.trim() !== "");
-    this.persistUserDictionary().catch((err) => {
-      this._logger.error(
-        `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
-        err,
-      );
+    this.persistUserDictionary().catch((failure: NodeJS.ErrnoException) => {
+      this._onWriteFailure(this._userDictionaryPath, failure);
     });
 
     // Send an invalidation message to the renderer
@@ -500,8 +498,13 @@ export default class DictionaryProvider extends ProviderContract {
     const data = this._userDictionary.join("\n");
     this._fileLock = true;
     this._unwrittenChanges = false; // NOTE that this has to come before the writing
-    await writeTextFile(this._userDictionaryPath, data);
-    this._fileLock = false;
+    try {
+      await writeTextFile(this._userDictionaryPath, data);
+    } finally {
+      // A failed write releases the lock too, so the next change writes the
+      // whole dictionary again.
+      this._fileLock = false;
+    }
 
     // After we're done, check if someone tried to call the function in the
     // meantime. If so, the flag will be true by now: immediately call it again.
@@ -589,11 +592,8 @@ export default class DictionaryProvider extends ProviderContract {
     // Adds the given term to the user dictionary
     if (!this._userDictionary.includes(term)) {
       this._userDictionary.push(term);
-      this.persistUserDictionary().catch((err) => {
-        this._logger.error(
-          `[Dictionary Provider] Could not persist user dictionary: ${String(err.message)}`,
-          err,
-        );
+      this.persistUserDictionary().catch((failure: NodeJS.ErrnoException) => {
+        this._onWriteFailure(this._userDictionaryPath, failure);
       });
       // Send an invalidation message to the renderer so that it reloads all words
       broadcastIpcMessage("dictionary-provider", { command: "invalidate-dict" });

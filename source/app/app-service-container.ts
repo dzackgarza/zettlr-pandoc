@@ -140,7 +140,11 @@ export class AppServiceContainer {
     this._statsProvider = new StatsProvider(this._logProvider, onStoreWriteFailure);
 
     this._appearanceProvider = new AppearanceProvider(this._logProvider, this._configProvider);
-    this._dictionaryProvider = new DictionaryProvider(this._logProvider, this._configProvider);
+    this._dictionaryProvider = new DictionaryProvider(
+      this._logProvider,
+      this._configProvider,
+      onStoreWriteFailure,
+    );
 
     this._targetProvider = new TargetProvider(this._logProvider, this._fsal, onStoreWriteFailure);
     this._linkProvider = new LinkProvider(this._logProvider, this._configProvider, this._fsal);

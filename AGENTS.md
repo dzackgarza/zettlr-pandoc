@@ -1259,6 +1259,10 @@ of an isolated instance are in the first comment of #132.
   so the change holds until the application closes. A new container gets the
   same handler; a spec gives `unexpectedStoreWriteFailure`
   (`test/store-write-failure.ts`), which stops the spec.
+- **The user dictionary has the same handler.** `DictionaryProvider` writes
+  `user.dic` through `writeTextFile` at each added word. A failed write
+  releases the file lock, goes to `showStoreWriteFailure`, and the next word
+  writes the whole dictionary again.
 - **A refused setting is shown at its field.** The config provider checks
   each value against the rule of its setting (`config-validation.ts`) and
   keeps the old value for a refused one. The Preferences window writes a
@@ -1267,7 +1271,8 @@ of an isolated instance are in the first comment of #132.
   field gives a value that the rule accepts. Code that writes a setting it
   built itself calls `setConfigValue` or `setConfigFromForm`, which throw.
 - **Proof:** `e2e/settings-write-refused.spec.ts`,
-  `e2e/preferences-refused-value.spec.ts`.
+  `e2e/preferences-refused-value.spec.ts`,
+  `e2e/user-dictionary-write-refused.spec.ts`.
 
 ## Debugging entry points
 
