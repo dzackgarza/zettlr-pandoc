@@ -218,3 +218,47 @@ describe("Edit ▸ authoring source files", function () {
     });
   }
 });
+
+describe("File ▸ Recent files", function () {
+  it("win32/linux: a recent file that is gone gives one error window that names it", async function () {
+    const gone = "/tmp/zettlr-menu-spec/a-removed-recent-document.md";
+    const shown: Array<{ title: string; message: string }> = [];
+    const windows: MenuWindows = {
+      showAboutWindow: () => {},
+      showDefaultsWindow: () => {},
+      showLogWindow: () => {},
+      showPreferences: () => {},
+      showTagManager: () => {},
+      showErrorMessage: (title: string, message: string) => {
+        shown.push({ title, message });
+      },
+    };
+    // The refusal of `DocumentManager.openFile` for a path that is no file.
+    const documents: MenuDocuments = {
+      newWindow: () => {},
+      openFile: async (_windowId, _leafId, filePath) => {
+        throw new Error(`Could not open file ${filePath}: Not an existing file.`);
+      },
+    };
+    const template = getWin32Menu(
+      { error: () => {} },
+      new TestMenuConfig(),
+      { get: () => [gone], clear: () => {} },
+      { run: async () => undefined },
+      windows,
+      documents,
+      () => false,
+      () => {},
+    );
+    const item = findItem(template, `menu.recent_docs.${gone}`);
+    assert.ok(item?.click !== undefined, "the menu lists the recent file");
+
+    const focusedWindow = new BrowserWindow();
+    item.click(new MenuItem(item), focusedWindow, { triggeredByAccelerator: false });
+    focusedWindow.close();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(shown.length, 1, "one refused open opens one error window");
+    assert.ok(shown[0].message.includes(gone), `the message does not name ${gone}`);
+  });
+});
