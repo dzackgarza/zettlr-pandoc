@@ -1555,6 +1555,21 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "DOCUMENT_NOT_FOUND");
   });
 
+  it("answers that a closed document whose file cannot be read is unreadable, and names the file", async function () {
+    const filePath = path.join(scratch, "closed-unreadable.md");
+    writeFileSync(filePath, "alpha\n", "utf8");
+    const docId = provider.ensureDocumentId(filePath);
+    chmodSync(filePath, 0o000);
+
+    const response = await httpRequest("GET", `/v1/documents/${docId}?includeContent=true`);
+    chmodSync(filePath, 0o600);
+
+    assert.equal(response.status, 409, response.body);
+    const refusal = parseAs(response.body, "AgentErrorResponse").error;
+    assert.equal(refusal.code, "DOCUMENT_UNREADABLE");
+    assert.ok(refusal.message.includes(filePath), refusal.message);
+  });
+
   describe("the token of a caller (#72)", function () {
     /** The providers that a test of this group made itself. */
     const started: AgentHTTPProvider[] = [];
