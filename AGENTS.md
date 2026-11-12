@@ -627,6 +627,14 @@ of an isolated instance are in the first comment of #132.
   index and backlinks, the lint queue and the Agent API therefore never see a
   hidden path. A new consumer lists through the FSAL; it must not walk the
   disk or filter on its own.
+- **A `change` names a file or a folder.** The watchdog reports a change of
+  `.ztr-directory` as a `change` of its folder, so a new sort, display or
+  Project of a subfolder reaches the windows as a `change` with the folder
+  descriptor. `emitChokidarEvent` drops a `change` only for a path that the
+  filter hides as a file and as a folder; the descriptor then decides. A
+  check that judges a `change` as a file drops each folder whose name has no
+  known extension (#220). Proof: `test/fsal-watcher-events.spec.ts`,
+  `e2e/explorer-metadata-sort.spec.ts`.
 - **A rule change is ordinary events.** `applyIgnoreSources` compares the
   old and the new filter over each workspace (`visibilityChanges`) and
   publishes `unlink`/`unlinkDir` for each path that the rules now hide and

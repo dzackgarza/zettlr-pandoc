@@ -369,8 +369,15 @@ export default class FSAL extends ProviderContract {
     }
 
     // A path that the ignore rules hide is not listed, so its events stay
-    // here. The event name says whether an unlinked path was a directory.
-    if (!this.isListed(absPath, event === "addDir" || event === "unlinkDir")) {
+    // here. The other event names say whether the path is a directory; a
+    // `change` names a file or a directory (the watchdog reports a change of
+    // `.ztr-directory` as a change of its folder), so it stays here only
+    // when it is hidden as both, and its descriptor decides below.
+    const listed =
+      event === "change"
+        ? this.isListed(absPath, false) || this.isListed(absPath, true)
+        : this.isListed(absPath, event === "addDir" || event === "unlinkDir");
+    if (!listed) {
       return;
     }
 
