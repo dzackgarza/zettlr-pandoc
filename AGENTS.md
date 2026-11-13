@@ -937,7 +937,8 @@ of an isolated instance are in the first comment of #132.
   `e2e/citation-library-thread.spec.ts` start the packaged binary itself,
   which writes its log to a file; such a spec reads the shutdown line through
   `readAppLog`. Each path refuses a build whose source fingerprint is not
-  that of the tree. The reporter (`e2e/support/timed-spec-reporter.ts`)
+  that of the tree at the first start of the run; a source edit during the
+  run does not stop its later starts. The reporter (`e2e/support/timed-spec-reporter.ts`)
   prints the seconds of each spec file and a table of the files, the slowest
   first.
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole

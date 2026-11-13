@@ -54,6 +54,25 @@ export function electronBinary(): string {
   return path.join(packageDirectory, "dist", name);
 }
 
+/**
+ * The source fingerprint of this run, read at its first start. A run tests
+ * the source that it started on: a source edit during the run does not stop
+ * its later starts, and a build that replaces the package during the run (a
+ * start from the desktop launcher) has another stamp and is refused.
+ */
+let runFingerprint: string | undefined;
+
+function sourceFingerprintOfRun(): string {
+  if (runFingerprint === undefined) {
+    runFingerprint = execFileSync(
+      path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
+      [REPO_ROOT],
+      { encoding: "utf8" },
+    ).trim();
+  }
+  return runFingerprint;
+}
+
 function currentPackagedDirectory(): string {
   const packagedDirectory = path.join(REPO_ROOT, "out", "Zettlr-Pandoc-linux-x64");
   const binary = path.join(packagedDirectory, "zettlr-pandoc");
@@ -62,14 +81,9 @@ function currentPackagedDirectory(): string {
     existsSync(binary) && existsSync(stamp),
     `No packaged build at ${packagedDirectory}. Run \`just package\` first.`,
   );
-  const fingerprint = execFileSync(
-    path.join(REPO_ROOT, "scripts", "desktop", "zettlr-pandoc-source-fingerprint"),
-    [REPO_ROOT],
-    { encoding: "utf8" },
-  ).trim();
   assert.equal(
     readFileSync(stamp, "utf8").trim(),
-    fingerprint,
+    sourceFingerprintOfRun(),
     `The packaged build at ${packagedDirectory} is older than the source. Run \`just package\` first.`,
   );
   return packagedDirectory;
