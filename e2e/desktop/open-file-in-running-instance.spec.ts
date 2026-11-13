@@ -149,13 +149,16 @@ describe("opening a file while the app is already running", function () {
     );
 
     // The tab is the affordance; being the active document with the bytes from
-    // disk in it is what "opens that document" means.
-    const editor = editorPage.locator(".cm-content");
+    // disk in it is what "opens that document" means. Each tab keeps its
+    // editor; the editor of the active tab is the visible one.
+    const editor = editorPage.locator(".cm-content:visible");
     const deliveredContents = await readFile(deliveredPath, "utf8");
     await editorPage.waitForFunction(
       (expected) => {
-        const content = document.querySelector(".cm-content");
-        if (content === null) {
+        const content = Array.from(document.querySelectorAll(".cm-content")).find((element) =>
+          element.checkVisibility(),
+        );
+        if (content === undefined) {
           return false;
         }
         const tile = (
