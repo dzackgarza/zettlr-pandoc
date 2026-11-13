@@ -33,7 +33,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
-import { TEX_COMMAND_DECLARATION_RE } from "./tex-command-declarations";
+import { maskTexComments, texCommandDeclarationEntries } from "./tex-command-declarations";
 
 const REQUIRED_TIKZ_DATA_FILES = ["filters/tikzcd.lua", "filters/utilities.lua"] as const;
 
@@ -201,12 +201,14 @@ function tikzTemplateSources(templatePath: string): TikzTemplateSource[] {
     const source = readFileSync(resolvedFile, "utf8");
     sources.push({ filePath: resolvedFile, source });
 
-    for (const match of source.matchAll(TEX_INPUT_RE)) {
+    // TeX loads no file that a comment names.
+    const visible = maskTexComments(source);
+    for (const match of visible.matchAll(TEX_INPUT_RE)) {
       queue.push(
         ...resolveLocalTexReference(match[1], ".tex", path.dirname(resolvedFile), roots, index),
       );
     }
-    for (const match of source.matchAll(TEX_PACKAGE_RE)) {
+    for (const match of visible.matchAll(TEX_PACKAGE_RE)) {
       for (const packageName of match[1]
         .split(",")
         .map((name) => name.trim())
@@ -266,11 +268,8 @@ export function tikzTemplateDependencyHash(templatePath: string): string {
 export function tikzTemplateCommands(templatePath: string): string[] {
   const commands = new Set<string>();
   for (const { source } of tikzTemplateSources(templatePath)) {
-    for (const match of source.matchAll(TEX_COMMAND_DECLARATION_RE)) {
-      const name = match[1] ?? match[2] ?? match[3];
-      if (name !== undefined) {
-        commands.add(`\\${name}`);
-      }
+    for (const declaration of texCommandDeclarationEntries(source)) {
+      commands.add(declaration.name);
     }
   }
 
@@ -279,7 +278,7 @@ export function tikzTemplateCommands(templatePath: string): string[] {
 
 export interface TikzTemplateCompletion {
   label: string;
-  /** Recoverable invocation arity; absent when the TeX declaration is too rich to infer safely. */
+  /** The arity of the declaration; absent for an xparse declaration, whose argument specification is not read. */
   argumentCount?: number;
   /** The authored declaration line, for completion documentation only. */
   declaration?: string;
@@ -287,58 +286,20 @@ export interface TikzTemplateCompletion {
   sourceFile?: string;
 }
 
-function declarationArgumentCount(line: string, label: string): number | undefined {
-  if (/\\DeclareMathOperator\*?/u.test(line) || /\\let\s*/u.test(line)) {
-    return 0;
-  }
-
-  const newCommand =
-    /\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?[^\n]*?\[(\d+)\]/u.exec(
-      line,
-    );
-  if (newCommand !== null) {
-    return Number(newCommand[1]);
-  }
-
-  if (/\\(?:newcommand|renewcommand|providecommand|DeclareRobustCommand)\*?/u.test(line)) {
-    return 0;
-  }
-
-  if (/\\(?:def|gdef|edef|xdef)\s*/u.test(line)) {
-    const commandAt = line.indexOf(label);
-    const afterName = commandAt === -1 ? line : line.slice(commandAt + label.length);
-    const parameterPrefix = afterName.split("{", 1)[0];
-    const params = [...parameterPrefix.matchAll(/#([1-9])/gu)].map((match) => Number(match[1]));
-    return params.length === 0 ? 0 : Math.max(...params);
-  }
-
-  return undefined;
-}
-
 /**
- * Completion metadata for the same user-owned template/include graph. This is
- * deliberately descriptive rather than a second TeX parser: when arity cannot
- * be recovered from the declaration line, the command remains searchable but
- * no argument scaffold is fabricated.
+ * Completion metadata for the same user-owned template/include graph, read
+ * by the one reader of TeX declarations (`texCommandDeclarationEntries`).
+ * When the arity is not known, the command remains searchable but no
+ * argument scaffold is fabricated.
  */
 export function tikzTemplateCompletions(templatePath: string): TikzTemplateCompletion[] {
   const completions = new Map<string, TikzTemplateCompletion>();
   for (const { filePath, source } of tikzTemplateSources(templatePath)) {
-    for (const match of source.matchAll(TEX_COMMAND_DECLARATION_RE)) {
-      const name = match[1] ?? match[2] ?? match[3];
-      if (name === undefined) {
-        continue;
-      }
-      const label = `\\${name}`;
-      const index = match.index;
-      const lineStart = source.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
-      const nextNewline = source.indexOf("\n", index);
-      const lineEnd = nextNewline === -1 ? source.length : nextNewline;
-      const declaration = source.slice(lineStart, lineEnd).trim();
-      completions.set(label, {
-        label,
-        argumentCount: declarationArgumentCount(declaration, label),
-        declaration: declaration === "" ? undefined : declaration,
+    for (const entry of texCommandDeclarationEntries(source)) {
+      completions.set(entry.name, {
+        label: entry.name,
+        argumentCount: entry.argumentCount,
+        declaration: entry.declaration === "" ? undefined : entry.declaration,
         sourceFile: filePath,
       });
     }
