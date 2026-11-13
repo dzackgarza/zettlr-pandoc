@@ -1613,6 +1613,51 @@ of an isolated instance are in the first comment of #132.
   `test/start-tool-probes.spec.ts`, `test/preflight.spec.ts`,
   `test/run-shell-command.spec.ts`.
 
+### 26. Commands, keys and menu items
+
+- **The command registry owns each key.** `common/commands/command-registry.ts`
+  gives each command its default key; `config.shortcuts` changes it. The
+  application menu (`withRegisteredAccelerators`,
+  `menu/registered-accelerators.ts`), the editor keymaps, the context menus
+  (`context-menu/menu-accelerator.ts`), the launcher rows and the Shortcuts
+  table of the Preferences read the configured key
+  (`getConfiguredShortcut`). A menu template that states a key that no
+  command owns is refused. A new item that runs a command takes its key
+  from the registry; no surface types a key.
+- **No two commands share a key.** `getCommandConflicts` compares keys in
+  the normal form of CodeMirror (`Mod-C` and `Mod-Shift-c` are one key)
+  across the scopes.
+- **One action, one handler, from each entry point.**
+  - The Insert, Format and Edit items of the context menus of the editor
+    and of a table cell are the items of the application menu
+    (`common/commands/editing-menu-items.ts`): the same id, label, command
+    and table size. Copy during a review gives the CriticMarkup of Edit →
+    Copy.
+  - "Close all tabs" and "Close other tabs" are main-process commands
+    (`close-all-tabs`, `close-other-tabs`). They close one tab after the
+    other through `closeFile`, so the author answers about one document at
+    a time and a cancel stops the rest. `closeFile` refuses a pinned tab
+    before it asks or unloads. "Close other tabs" keeps the pinned tabs;
+    "Close all tabs" closes them too.
+  - New file and New directory ask for the name in the name field of the
+    row, in the list and in the tree. A name field is keyed by the path of
+    its row (`file-manager/util/name-fields.ts`), so it stays with its row
+    while the rows change. The key of "Rename file" opens the field of the
+    row of the active document (`openRowRenameField`).
+  - Reveal in the file browser goes through the command `reveal-path`
+    (`revealPath`, `app/util/open-path.ts`): it opens the folder with the
+    application of the desktop and rejects with the cause.
+  - "Rescan directory" runs `rescan-dir` (§24); Window → New directory…
+    opens the name field of the selected folder only
+    (`newDirectoryRequest`).
+- **A context menu has the width of its labels.** `.application-menu` has
+  `width: max-content`; `positionMenu` reads that width to put the menu
+  where it fits, also at the right edge of the window.
+- **Proof:** `e2e/window-shortcut-keys.spec.ts`,
+  `e2e/editor-context-menu.spec.ts`, `e2e/tab-close-all.spec.ts`,
+  `e2e/tab-close-others.spec.ts`, `e2e/file-list-create.spec.ts`,
+  `e2e/rename-one-field.spec.ts`, `e2e/reveal-in-file-browser.spec.ts`.
+
 ## Debugging entry points
 
 - **Export not working?** `just export-headless PDF.yaml <file>.md` runs the literal
