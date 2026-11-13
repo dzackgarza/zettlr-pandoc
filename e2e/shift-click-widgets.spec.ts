@@ -36,6 +36,9 @@ import {
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-shift-click-widgets-e2e-latest");
 
+/** The time between the mousedown and the mouseup of a human click. */
+const HUMAN_BUTTON_HOLD_MS = 120;
+
 const EQUATION = "$x^2 + y^2$";
 const LINK = "[[curves]]";
 const TASK = "[ ]";
@@ -157,7 +160,9 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     assert.deepEqual(placed, { anchor, head: anchor }, "the first click places the caret");
     const target = await widgetCentre(editor, widgetFrom);
     await editor.keyboard.down("Shift");
-    await editor.mouse.click(target.x, target.y);
+    // A human holds the button for some time: the editor handles the
+    // mousedown before the mouseup and the click arrive (#131).
+    await editor.mouse.click(target.x, target.y, { delay: HUMAN_BUTTON_HOLD_MS });
     await editor.keyboard.up("Shift");
     await delay(300);
     return await selection(editor);
