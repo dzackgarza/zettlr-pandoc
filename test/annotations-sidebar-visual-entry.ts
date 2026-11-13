@@ -354,6 +354,12 @@ function trimmedText(element: Element): string {
   return text.trim();
 }
 
+/** The text of the element that `selector` names in `root`; null when the scene shows none. */
+function textIfPresent(root: Element | null, selector: string): string | null {
+  const element = root === null ? null : root.querySelector(selector);
+  return element === null ? null : trimmedText(element);
+}
+
 function requireAttribute(element: Element, name: string): string {
   const value = element.getAttribute(name);
   if (value === null) {
@@ -922,8 +928,7 @@ async function mount(): Promise<void> {
       showProposalLabel:
         thread?.querySelector(".annotation-action-show-proposal")?.textContent?.trim() ?? "",
       proposalCardText: thread?.querySelector(".proposal-action-card")?.textContent ?? null,
-      proposalCountText:
-        thread?.querySelector(".proposal-action-card .proposal-count")?.textContent?.trim() ?? null,
+      proposalCountText: textIfPresent(thread, ".proposal-action-card .proposal-count"),
       messageTimes: [...paneHost.querySelectorAll(".annotation-message-time")].map(trimmedText),
       messageTexts: [...paneHost.querySelectorAll(".annotation-message-text")].map(trimmedText),
       annotationRowSummaries: [
