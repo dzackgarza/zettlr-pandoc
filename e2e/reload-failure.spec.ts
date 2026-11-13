@@ -18,7 +18,7 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { chmod, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright";
@@ -29,6 +29,7 @@ import {
   delay,
   findEditorPage,
   hideDevServerOverlay,
+  makeUnreadableAndNewer,
   preserveArtifacts,
   requireInitialized,
   shutdown,
@@ -61,9 +62,7 @@ describe("a loaded document that changed on disk and cannot be read", function (
   /** Makes the file of the note unreadable and newer than the loaded text. */
   async function changeToUnreadable(): Promise<void> {
     changes += 1;
-    await chmod(notePath, 0o000);
-    const changedAt = new Date(Date.now() + changes * 60_000);
-    await utimes(notePath, changedAt, changedAt);
+    await makeUnreadableAndNewer(notePath, new Date(Date.now() + changes * 60_000));
   }
 
   /** Makes the file readable again and removes the messages of the window. */

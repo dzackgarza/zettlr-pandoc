@@ -5,7 +5,17 @@ import { strict as assert } from "node:assert";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -43,6 +53,20 @@ export function currentPackagedBinary(): string {
 
 export function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Makes a watched file unreadable and gives it the modification time
+ * `changedAt`, so the app reads a change it cannot load. The watcher of the
+ * app (chokidar, `handler.js`) drops each event of a file that comes within
+ * 5 ms of the one before it, and it reports a change only when the
+ * modification time moved: the change of the mode alone is no change, and a
+ * time change 5 ms after it is lost. The two changes are therefore apart.
+ */
+export async function makeUnreadableAndNewer(filePath: string, changedAt: Date): Promise<void> {
+  await chmod(filePath, 0o000);
+  await delay(100);
+  await utimes(filePath, changedAt, changedAt);
 }
 
 export function requireInitialized<T>(value: T | undefined, message: string): T {
