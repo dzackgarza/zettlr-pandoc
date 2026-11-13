@@ -30,6 +30,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import type DocumentManager from "source/app/service-providers/documents";
+import { collaborationSidecarFilePath } from "source/app/service-providers/documents/collaboration-sidecar-store";
 import LogProvider from "source/app/service-providers/log";
 import ReferenceProvider from "source/app/service-providers/references";
 import { runWorkspaceEditTransaction } from "source/app/service-providers/references/workspace-edit-transaction";
@@ -165,6 +166,54 @@ describe("Documents-provider edits of a document with annotations", function () 
       "the sidecar holds the edit and the proposal",
     );
     assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 1);
+  });
+
+  it("has each editor update that it took after a review decision in the sidecar file (#57)", async function () {
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text(SOURCE),
+      [
+        {
+          description: "Name the symmetry",
+          patch: createPatch("document", SOURCE, PROPOSED, "", "", { context: 0 }),
+        },
+      ],
+      "edit-after-decision-proposal",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The review proposal was refused: ${submitted.code}`);
+    }
+    const decided = await provider.acceptAllReviewChunks(submitted.reviewId, {
+      expectedReviewGeneration: submitted.reviewGeneration,
+      expectedWorkingSha256: sha256Text(PROPOSED),
+    });
+    assert.ok(decided.ok, "the author accepts the proposal");
+    const sidecarFile = collaborationSidecarFilePath(SIDECARS, filePath);
+    const onDisk = (): string => JSON.parse(readFileSync(sidecarFile, "utf-8")).workingText;
+
+    let { startVersion: version } = await provider.getDocument(filePath);
+    let text = PROPOSED;
+    for (const insert of ["Definition. ", "(Bourbaki) "]) {
+      const accepted = await invokeMain("documents-authority", {
+        command: "push-updates",
+        payload: {
+          filePath,
+          version,
+          updates: [
+            {
+              clientID: "editor-under-test",
+              changes: ChangeSet.of({ from: 0, insert }, text.length).toJSON(),
+            },
+          ],
+        },
+      });
+      assert.equal(accepted, true, "the provider takes the update of the editor");
+      text = `${insert}${text}`;
+      version += 1;
+      // The file is what a start after a crash reads: no quit wrote it.
+      assert.equal(onDisk(), text, "the sidecar file has the update when the provider takes it");
+    }
   });
 
   it("restores the sidecar of a reviewed document when the app stopped during a workspace edit (#210)", async function () {

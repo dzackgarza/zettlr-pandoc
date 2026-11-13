@@ -302,6 +302,37 @@ describe("Documents-provider quit with an open review", function () {
     });
   });
 
+  describe("a saved review at the close of its tab (#57)", function () {
+    it("stays when the author discards a later edit", async function () {
+      await show(reviewedPath);
+      const { reviewId } = await propose();
+      const saved = await provider.saveFile(reviewedPath);
+      assert.equal(saved.ok, true, "the author saves the document while the review is open");
+      assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_TARGET);
+      await provider.applyWorkspaceTextEdits([
+        { documentPath: reviewedPath, range: { from: 0, to: 0 }, insert: AUTHOR_PREFIX },
+      ]);
+      assert.equal(provider.isModified(reviewedPath), true);
+
+      messageBoxes.answer = DISCARD;
+      assert.equal(
+        await provider.closeFile(windowId, leafId, reviewedPath),
+        true,
+        "the tab closes",
+      );
+      assert.equal(readFileSync(reviewedPath, "utf-8"), REVIEWED_TARGET, "the edit is discarded");
+
+      await restart();
+      const status = await loadedReviewStatus();
+      assert.deepEqual(
+        [status?.reviewId, status?.unresolvedChunks],
+        [reviewId, 1],
+        "the discard of the later edit leaves the saved review",
+      );
+      assert.equal(provider.readMarkdownBufferContent(reviewedPath), REVIEWED_TARGET);
+    });
+  });
+
   describe("a review that returns from its sidecar when the document loads", function () {
     it("reaches the window with the text that the editor loads", async function () {
       await propose();
