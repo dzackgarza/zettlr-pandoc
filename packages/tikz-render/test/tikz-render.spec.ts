@@ -156,6 +156,46 @@ describe("TikZ TeX typography metadata", function () {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("offers the macros that TeX reads, with the arguments that TeX reads", async function () {
+    // The user's macro tree has a declaration in a comment
+    // (styles/macros/tier4-preamble.tex) and a paired delimiter
+    // (styles/macros/tier3-tex-complex.tex). TeX skips a comment, and
+    // mathtools gives a paired delimiter one argument.
+    const root = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-macros-"));
+    try {
+      const templates = path.join(root, "templates");
+      const styles = path.join(root, "styles");
+      await mkdir(templates, { recursive: true });
+      await mkdir(styles, { recursive: true });
+      const template = path.join(templates, "standalone-tikz.tex");
+      await writeFile(
+        template,
+        "\\documentclass{standalone}\n\\usepackage{owned}\n\\begin{document}\n<>\n\\end{document}\n",
+      );
+      await writeFile(
+        path.join(styles, "owned.sty"),
+        [
+          "%\\renewcommand{\\labelitemiii}{$\\diamondsuit$}",
+          "\\DeclarePairedDelimiter\\qty{(}{)}",
+          "\\newcommand{\\dqty}[1]{\\left( \\left( {#1} \\right) \\right)}",
+          "",
+        ].join("\n"),
+      );
+
+      const completions = tikzTemplateCompletions(template);
+      assert.deepEqual(
+        completions.map((entry) => [entry.label, entry.argumentCount]),
+        [
+          ["\\dqty", 1],
+          ["\\qty", 1],
+        ],
+      );
+      assert.deepEqual(tikzTemplateCommands(template), ["\\dqty", "\\qty"]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 function toolPresent(tool: string): boolean {
