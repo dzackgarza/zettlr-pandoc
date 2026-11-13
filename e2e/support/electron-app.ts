@@ -832,20 +832,26 @@ export async function requestWindowClose(page: Page): Promise<void> {
 }
 
 /**
- * Clicks a control whose action closes its page, and waits for the close.
- * Playwright stops each action of a page that closes before the action ends,
- * so a click whose handler closes the page races that close. The page clicks
- * the control in a later task, after the evaluation has answered.
+ * Clicks a control whose action can close its page. Playwright stops each
+ * action of a page that closes before the action ends, so a click whose
+ * handler closes the page races that close. The page clicks the control in a
+ * later task, after the evaluation has answered. The caller waits for what it
+ * expects.
  */
-export async function clickToClose(page: Page, control: Locator): Promise<void> {
+export async function clickBeforeClose(control: Locator): Promise<void> {
   await control.waitFor({ state: "visible", timeout: 10_000 });
   assert.ok(await control.isEnabled(), "the control that closes the page is enabled");
-  const closed = page.waitForEvent("close", { timeout: 10_000 });
   await control.evaluate((element: HTMLElement) => {
     setTimeout(() => {
       element.click();
     }, 100);
   });
+}
+
+/** Clicks a control whose action closes its page, and waits for the close. */
+export async function clickToClose(page: Page, control: Locator): Promise<void> {
+  const closed = page.waitForEvent("close", { timeout: 10_000 });
+  await clickBeforeClose(control);
   await closed;
 }
 

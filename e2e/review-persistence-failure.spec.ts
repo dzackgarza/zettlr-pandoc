@@ -48,6 +48,7 @@ import {
   type AgentClient,
   agentClient,
   attach,
+  clickBeforeClose,
   createFixture,
   delay,
   findEditorPage,
@@ -901,7 +902,7 @@ describe("a review that cannot be persisted", function () {
     assert.equal(running.exitCode, null, "the refused quit leaves the app running");
     screenshots.set("quit-refused.png", await activePage.screenshot());
 
-    await action.click();
+    await clickBeforeClose(action);
     const outcome = await Promise.race([exited, delay(30_000).then(() => "still running")]);
     assert.deepEqual(outcome, [0, null], "the action ends the app");
     assert.equal(

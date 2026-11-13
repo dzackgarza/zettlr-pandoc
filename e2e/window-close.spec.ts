@@ -36,6 +36,7 @@ import {
   agentClient,
   assertCleanExit,
   attach,
+  clickBeforeClose,
   createFixture,
   delay,
   findEditorPage,
@@ -232,7 +233,7 @@ describe("assembled app: the close of a main window", function () {
       "the window that the author did not close shows no message",
     );
 
-    await toast.first().locator("[data-toast-action]").click();
+    await clickBeforeClose(toast.first().locator("[data-toast-action]"));
     const prompts = await nativeDialogs(PROMPT_TITLE, 5_000);
     if (prompts.length > 0) {
       screenshots.set("prompt-after-close-anyway.png", await captureWindow(prompts[0]));

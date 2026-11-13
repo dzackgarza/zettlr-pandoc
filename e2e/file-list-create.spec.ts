@@ -105,6 +105,18 @@ describe("New file and new folder from the file list (#202)", function () {
   }
 
   /**
+   * The list once it shows the new empty folder `folder`: the command
+   * selects a new folder (`dir-new`) after it makes it, and the list of an
+   * empty folder holds the row of the folder and "Empty directory".
+   */
+  function listOfNewFolder(folder: string): Locator {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    return activePage.locator(
+      `#file-list:has(.empty-directory) .list-item[data-path=${JSON.stringify(folder)}]`,
+    );
+  }
+
+  /**
    * Create `name` in `lattices` and wait for the end of the command: the
    * command selects a new folder (`dir-new`) and opens a new file in an active
    * tab (`file-new`) after it writes to the disk. A test that starts before
@@ -117,9 +129,11 @@ describe("New file and new folder from the file list (#202)", function () {
     await field.press("Enter");
     const end =
       itemId === "menu.new_dir"
-        ? `#file-tree .tree-item.selected[data-path=${JSON.stringify(path.join(lattices, name))}]`
-        : `[role="tab"].active[data-path=${JSON.stringify(path.join(lattices, `${name}.md`))}]`;
-    await activePage.locator(end).waitFor({ state: "attached" });
+        ? listOfNewFolder(path.join(lattices, name))
+        : activePage.locator(
+            `[role="tab"].active[data-path=${JSON.stringify(path.join(lattices, `${name}.md`))}]`,
+          );
+    await end.waitFor({ state: "attached" });
   }
 
   it("New directory asks for the name of the folder", async function () {
@@ -149,10 +163,7 @@ describe("New file and new folder from the file list (#202)", function () {
     assert.equal(await field.count(), 1, "the field is open");
     await field.pressSequentially("us");
     await field.press("Enter");
-    const genus = path.join(lattices, "Genus");
-    await activePage
-      .locator(`#file-tree .tree-item.selected[data-path=${JSON.stringify(genus)}]`)
-      .waitFor({ state: "attached" });
+    await listOfNewFolder(path.join(lattices, "Genus")).waitFor({ state: "attached" });
     assert.deepEqual(await namesOnceHolding(lattices, "Genus"), [
       "Genera",
       "Genus",
