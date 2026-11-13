@@ -428,18 +428,12 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
       label: trans("Close other tabs"),
       type: "normal",
       action() {
-        for (const openFile of openFiles.value) {
-          if (openFile.path === descriptor.path) {
-            continue;
-          }
-
-          ipcRenderer
-            .invoke("documents-provider", {
-              command: "close-file",
-              payload: { path: openFile.path, leafId: props.leafId, windowId: props.windowId },
-            } satisfies DocumentManagerIPCAPI)
-            .catch((e) => reportError(e));
-        }
+        ipcRenderer
+          .invoke("documents-provider", {
+            command: "close-other-tabs",
+            payload: { path: descriptor.path, leafId: props.leafId, windowId: props.windowId },
+          } satisfies DocumentManagerIPCAPI)
+          .catch((e) => reportError(e));
       },
     },
     {

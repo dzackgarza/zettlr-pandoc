@@ -445,6 +445,11 @@ export type DocumentManagerIPCContract = {
     request: { payload: { windowId: string } };
     response: boolean;
   };
+  "close-other-tabs": {
+    /** Each tab of the pane but the tab of `path` and the pinned tabs. */
+    request: { payload: LeafLoc & { path: string } };
+    response: boolean;
+  };
   "close-all-tabs": {
     /** Without `leafId` each pane of the window; with it that pane only. */
     request: { payload: { windowId: string; leafId?: string } };
@@ -1164,6 +1169,10 @@ export default class DocumentManager
         }
         case "reopen-closed-tab": {
           return await this.reopenClosedTab(payload.windowId);
+        }
+        case "close-other-tabs": {
+          const { windowId, leafId, path } = payload;
+          return await this.closeOtherTabs(windowId, leafId, path);
         }
         case "close-all-tabs": {
           return await this.closeAllTabs(payload.windowId, payload.leafId);
@@ -2369,6 +2378,13 @@ current contents from the editor somewhere else, and restart the application.`,
       );
       return false;
     }
+    // The tab manager keeps a pinned tab open. Refuse before the question
+    // about unsaved text and before the document unloads, or the tab stays
+    // without its document.
+    if (leaf.tabMan.openFiles.some((file) => file.path === filePath && file.pinned)) {
+      this._app.log.info(`[Document Manager] Not closing ${filePath}: its tab is pinned.`);
+      return false;
+    }
 
     let numOpenInstances = 0;
     await this.forEachLeaf(async (tabMan) => {
@@ -2479,6 +2495,31 @@ current contents from the editor somewhere else, and restart the application.`,
       history.pop();
     }
     return reopened;
+  }
+
+  /**
+   * Close each tab of one pane but the tab of `keptPath` and the pinned tabs,
+   * one after the other through `closeFile`: one question about unsaved text
+   * at a time, and a cancelled or refused close stops the rest (#202).
+   */
+  public async closeOtherTabs(
+    windowId: string,
+    leafId: string,
+    keptPath: string,
+  ): Promise<boolean> {
+    const leaf = this._windows[windowId]?.findLeaf(leafId);
+    if (leaf === undefined) {
+      return false;
+    }
+    const paths = leaf.tabMan.openFiles
+      .filter((file) => file.path !== keptPath && !file.pinned)
+      .map((file) => file.path);
+    for (const filePath of paths) {
+      if (!(await this.closeFile(windowId, leafId, filePath))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
