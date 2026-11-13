@@ -61,30 +61,36 @@ describe("document title metadata", function () {
     assert.equal(getSemanticDescriptorTitle(file), "Lattice Folding");
   });
 
-  it("does not treat display-math Setext artifacts as authored headings", function () {
-    const file = descriptor();
-    const metadata = documentTitleMetadata(
-      [
-        "A prose sentence before the calculation.",
-        "",
-        "$$",
-        "G_A =",
-        "\\begin{pmatrix}",
-        "4 & -2 \\\\",
-        "-2 & 4",
-        "\\end{pmatrix}",
-        "=",
-        "G_B",
-        "$$",
-      ].join("\n"),
-    );
-    file.firstHeading = metadata.firstHeading;
-    file.firstSentence = metadata.firstSentence;
+  // A line `=` in display math is no Setext underline (#203)
+  for (const [open, close] of [
+    ["$$", "$$"],
+    ["\\[", "\\]"],
+  ]) {
+    it(`does not take a display equation in ${open} ${close} for a heading`, function () {
+      const file = descriptor();
+      const metadata = documentTitleMetadata(
+        [
+          "A prose sentence before the calculation.",
+          "",
+          open,
+          "G_A =",
+          "\\begin{pmatrix}",
+          "4 & -2 \\\\",
+          "-2 & 4",
+          "\\end{pmatrix}",
+          "=",
+          "G_B",
+          close,
+        ].join("\n"),
+      );
+      file.firstHeading = metadata.firstHeading;
+      file.firstSentence = metadata.firstSentence;
 
-    assert.equal(file.firstHeading, null);
-    assert.equal(file.firstSentence, "A prose sentence before the calculation.");
-    assert.equal(getSemanticDescriptorTitle(file), "A prose sentence before the calculation.");
-  });
+      assert.equal(file.firstHeading, null);
+      assert.equal(file.firstSentence, "A prose sentence before the calculation.");
+      assert.equal(getSemanticDescriptorTitle(file), "A prose sentence before the calculation.");
+    });
+  }
 
   it("prefers YAML title over the first heading", function () {
     const file = descriptor();
