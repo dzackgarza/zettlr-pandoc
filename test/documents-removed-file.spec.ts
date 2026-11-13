@@ -23,7 +23,7 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
 import { BrowserWindow } from "electron";
-import { mkdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, utimesSync, writeFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -230,5 +230,38 @@ describe("Documents-provider removed file", function () {
     );
     assert.deepEqual(removedBroadcasts(), [], "no text is kept, so there is no message");
     assert.equal(provider.readMarkdownBufferContent(filePath), undefined);
+  });
+
+  it("keeps the renamed document when the unlink of the file that the rename replaced is late (#210)", async function () {
+    // The document whose file the rename replaces has an annotation, so its
+    // close writes the sidecar before the tabs close.
+    const replacedId = provider.ensureDocumentId(filePath);
+    const created = await provider.createAnnotation(replacedId, "owner", 2, 9, "Which lattice?", 0);
+    if ("ok" in created) {
+      assert.fail(`the annotation is refused: ${created.message}`);
+    }
+    const renamedPath = path.join(root, "Groups.md");
+    const RENAMED = "A group is a set with an associative operation.\n";
+    writeFileSync(renamedPath, RENAMED, "utf-8");
+    await provider.getDocument(renamedPath);
+    assert.equal(await provider.openFile(windowId, leafId, renamedPath), true);
+
+    // A rename over an existing file (file-rename.ts) moves that file to the
+    // trash and then renames. When more than 100 ms pass between the two,
+    // chokidar reports `unlink` for the replaced path before the rename;
+    // the provider is still closing that document when the rename and
+    // `hasMovedFile` run.
+    unlinkSync(filePath);
+    emitWatchdogEvent("unlink", filePath);
+    renameSync(renamedPath, filePath);
+    await provider.hasMovedFile(renamedPath, filePath);
+    await settle();
+
+    assert.equal(
+      provider.readMarkdownBufferContent(filePath),
+      RENAMED,
+      "the renamed document is loaded at its new path",
+    );
+    assert.equal(provider.getActiveFile(leafId), filePath, "its tab stays open");
   });
 });
