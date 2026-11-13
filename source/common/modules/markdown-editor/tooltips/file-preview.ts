@@ -20,6 +20,7 @@ import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import { reportError } from "@common/util/error-reporting";
 import formatDate from "@common/util/format-date";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import { splitWikilinkTarget } from "@common/util/wikilink-target";
 import type { FindFileAndReturnMetadataResult } from "source/app/service-providers/commands/file-find-and-return-meta-data";
 import type { ForceOpenAPI } from "source/app/service-providers/commands/force-open";
@@ -127,11 +128,18 @@ function getPreviewElement(
           },
         }),
     )
-    .then((html) => {
+    .then(
       // ... and then apply it to the content element.
-      setSanitizedHTML(content, html, "document");
-    })
-    .catch((err) => reportError(err));
+      (html) => setSanitizedHTML(content, html, "document"),
+      (failure: Error) => {
+        reportError("Could not render the preview of the linked document", failure);
+        setSanitizedHTML(
+          content,
+          unrenderedPreviewHtml(metadata.previewMarkdown, failure),
+          "document",
+        );
+      },
+    );
 
   const meta = document.createElement("div");
   meta.classList.add("metadata");

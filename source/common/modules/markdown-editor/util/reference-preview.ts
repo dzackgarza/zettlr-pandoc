@@ -4,6 +4,7 @@ import { reportError } from "@common/util/error-reporting";
 import { imageSourceUri } from "@common/util/image-source-uri";
 import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import type { ReferenceDefinition } from "@dts/common/references";
 
 type PreviewSource = Pick<
@@ -59,6 +60,11 @@ export function renderReferencePreview(
           onImageSrc: (src) => imageSourceUri(src, pathDirname(definition.documentPath)),
         }),
     )
-    .then((html) => setSanitizedHTML(target, html, "document"))
-    .catch((error) => reportError("Could not render the reference excerpt", error));
+    .then(
+      (html) => setSanitizedHTML(target, html, "document"),
+      (failure: Error) => {
+        reportError("Could not render the reference excerpt", failure);
+        setSanitizedHTML(target, unrenderedPreviewHtml(source, failure), "document");
+      },
+    );
 }

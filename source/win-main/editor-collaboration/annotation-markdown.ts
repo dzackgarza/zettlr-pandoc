@@ -2,6 +2,7 @@ import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import type { Directive } from "vue";
 
 /** Annotation Markdown and the document whose citations it uses (#198). */
@@ -10,21 +11,24 @@ export interface AnnotationMarkdown {
   documentPath: string;
 }
 
-async function renderAnnotationMarkdown(
-  element: HTMLElement,
-  { text, documentPath }: AnnotationMarkdown,
-): Promise<void> {
+async function renderAnnotationMarkdown({
+  text,
+  documentPath,
+}: AnnotationMarkdown): Promise<string> {
   const library = await documentCitationDatabase(documentPath);
-  const html = await md2html(text, {
+  return await md2html(text, {
     zknLinkFormat: "link|title",
     onCitation: window.getCitationCallback(library),
   });
-  setSanitizedHTML(element, html, "document");
 }
 
 function render(element: HTMLElement, value: AnnotationMarkdown): void {
-  renderAnnotationMarkdown(element, value).catch((error) =>
-    reportError("Could not render annotation Markdown", error),
+  renderAnnotationMarkdown(value).then(
+    (html) => setSanitizedHTML(element, html, "document"),
+    (failure: Error) => {
+      reportError("Could not render annotation Markdown", failure);
+      setSanitizedHTML(element, unrenderedPreviewHtml(value.text, failure), "document");
+    },
   );
 }
 

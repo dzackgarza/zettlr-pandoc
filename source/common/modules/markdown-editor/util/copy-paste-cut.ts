@@ -15,8 +15,10 @@
  */
 
 import { type EditorView } from "@codemirror/view";
+import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
+import showToast from "@common/util/show-toast";
 import { configField } from "./configuration";
 
 /**
@@ -37,17 +39,20 @@ export function copyAsHTML(view: EditorView): void {
 
   const plainText = selections.join("\n");
   md2html(plainText, { onCitation: window.getCitationCallback(library), zknLinkFormat })
-    .then((html) => {
-      navigator.clipboard
-        .write([
+    .then(
+      async (html) =>
+        await navigator.clipboard.write([
           new ClipboardItem({
             "text/plain": new Blob([plainText], { type: "text/plain" }),
             "text/html": new Blob([html], { type: "text/html" }),
           }),
-        ])
-        .catch((err) => reportError(err));
-    })
-    .catch((err) => reportError(err));
+        ]),
+    )
+    .then(undefined, (failure: Error) => {
+      // The author pressed the key and the clipboard holds nothing new: say why.
+      reportError("Copy as HTML failed", failure);
+      showToast(trans("Copy as HTML failed: %s", failure.message), "error", 12000);
+    });
 }
 
 /**

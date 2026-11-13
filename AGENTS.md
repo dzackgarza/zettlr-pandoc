@@ -875,6 +875,14 @@ of an isolated instance are in the first comment of #132.
   are not used. The Agent API answers 503 `CITATION_STYLE_NOT_LOADED`. The
   cite keys of the libraries stay available. Each load of a style broadcasts
   `citeproc-database-updated`, so the windows draw their citations again.
+- **A preview that cannot render shows its source and the cause.** A
+  preview of Markdown through `md2html` (a cross-reference, a footnote, a
+  wikilink, an outline entry, an annotation, the excerpt of a new
+  annotation) that rejects shows `unrenderedPreviewHtml`
+  (`common/util/unrendered-preview.ts`): the source text and the cause. A
+  new preview does the same; it does not only log the rejection. Copy as
+  HTML shows the cause in a message. Proof:
+  `e2e/preview-citation-failure.spec.ts`.
 - **The Agent API names a library that did not load.** A citation route
   whose database the provider does not have answers 503
   `CITATION_DATABASE_NOT_LOADED` with `error.database`, the file and the

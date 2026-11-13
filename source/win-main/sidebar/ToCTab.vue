@@ -52,6 +52,7 @@
 import { md2html } from "@common/modules/markdown-utils";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import { CITEPROC_MAIN_DB, type CitationDatabase } from "@dts/common/citeproc";
 import { useConfigStore, useDocumentTreeStore, useWindowStateStore } from "source/pinia";
 import { computed, onMounted, ref, shallowRef, toRef, watch } from "vue";
@@ -136,22 +137,25 @@ function updateToCHTML() {
     return;
   }
 
-  const promises: Promise<string>[] = [];
-
-  for (const entry of tableOfContents.value) {
-    promises.push(
-      md2html(entry.text, {
+  // Each entry renders on its own: a heading that cannot render shows its
+  // source and the cause, and the other entries render.
+  const promises = tableOfContents.value.map(
+    async (entry) =>
+      await md2html(entry.text, {
         onCitation: window.getCitationCallback(library.value),
         zknLinkFormat: configStore.config.zkn.linkFormat,
-      }),
-    );
-  }
+      }).then(
+        (html) => html,
+        (failure: Error) => {
+          reportError("Could not render the heading of the outline", failure);
+          return unrenderedPreviewHtml(entry.text, failure);
+        },
+      ),
+  );
 
-  Promise.all(promises)
-    .then((values) => {
-      tocEntryHTML.value = values;
-    })
-    .catch((err) => reportError(err));
+  void Promise.all(promises).then((values) => {
+    tocEntryHTML.value = values;
+  });
 }
 
 function startDragging(event: DragEvent): void {

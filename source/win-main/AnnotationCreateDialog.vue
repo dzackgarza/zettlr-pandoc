@@ -138,6 +138,7 @@ import { mapAnnotationThroughChanges } from "@common/util/annotation-anchors";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
 import { remoteErrorMessage } from "@common/util/ipc-rejection";
+import { unrenderedPreviewHtml } from "@common/util/unrendered-preview";
 import type { AnnotationAnchor, TextAnnotation } from "@dts/common/annotation-domain";
 import type { AnnotationFailure } from "source/app/service-providers/documents/document-collaboration-application-service";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
@@ -264,10 +265,15 @@ onMounted(() => {
           onCitation: window.getCitationCallback(library),
         }),
     )
-    .then((html) => {
-      excerptHtml.value = html;
-    })
-    .catch((err) => reportError("Could not render the annotation excerpt", err));
+    .then(
+      (html) => {
+        excerptHtml.value = html;
+      },
+      (failure: Error) => {
+        reportError("Could not render the annotation excerpt", failure);
+        excerptHtml.value = unrenderedPreviewHtml(props.quotedText, failure);
+      },
+    );
 
   instructionInput.value?.focus();
 });

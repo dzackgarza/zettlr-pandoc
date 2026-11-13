@@ -39,6 +39,22 @@ body {
     }
   }
 
+  /* A preview that md2html could not render (unrendered-preview.ts) */
+  .preview-source {
+    white-space: pre-wrap;
+    margin: 0;
+  }
+
+  .preview-failure {
+    margin: 0.5em 0 0;
+    font-size: 0.9em;
+    color: rgb(200, 60, 50);
+  }
+
+  &.dark .preview-failure {
+    color: rgb(240, 120, 110);
+  }
+
   /* Shows an input and a button side by side */
   .input-button-group {
     display: flex;
