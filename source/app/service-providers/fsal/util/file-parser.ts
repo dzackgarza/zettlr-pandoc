@@ -37,7 +37,7 @@ import { extractLinefeed } from "./extract-linefeed";
  * The version of what the parser extracts. A change to what it extracts must
  * move it, so that cached descriptors of another version are parsed again.
  */
-const PARSER_VERSION = 5;
+const PARSER_VERSION = 6;
 
 /**
  * A parser of Markdown files with the settings that decide what it extracts.

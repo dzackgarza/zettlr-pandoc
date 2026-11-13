@@ -4,6 +4,43 @@ var common = require('@lezer/common');
 var highlight = require('@lezer/highlight');
 var entities = require('entities');
 
+/**
+ * Line lookahead over the block input.
+ *
+ * A Lezer BlockParser cannot roll BlockContext back after `nextLine()`, so a
+ * Pandoc rule that needs lookahead reads the input ahead of the context. The
+ * input is read in growing windows: a lookahead that stops after a few lines
+ * reads a few lines, not the rest of the document.
+ */
+const FIRST_WINDOW = 2048;
+/**
+ * The physical lines of `input` that start at or after `from`. The sequence
+ * is the one `input.read(from, input.length).split("\n")` gives.
+ */
+function* linesFrom(input, from) {
+    let text = "";
+    let textFrom = from;
+    let lineFrom = from;
+    let window = FIRST_WINDOW;
+    for (;;) {
+        let newline = text.indexOf("\n", lineFrom - textFrom);
+        while (newline < 0 && textFrom + text.length < input.length) {
+            const readFrom = textFrom + text.length;
+            const readTo = Math.min(input.length, readFrom + window);
+            text = text.slice(lineFrom - textFrom) + input.read(readFrom, readTo);
+            textFrom = lineFrom;
+            window *= 2;
+            newline = text.indexOf("\n");
+        }
+        if (newline < 0) {
+            yield { from: lineFrom, text: text.slice(lineFrom - textFrom) };
+            return;
+        }
+        yield { from: lineFrom, text: text.slice(lineFrom - textFrom, newline) };
+        lineFrom = textFrom + newline + 1;
+    }
+}
+
 class CompositeBlock {
     static create(type, value, from, parentHash, end) {
         let hash = (parentHash + (parentHash << 8) + type + (value << 4)) | 0;
@@ -745,6 +782,21 @@ function lineEnd$1(text, pos) {
     }
     return pos;
 }
+// Pandoc's `setextHeader` parses the inlines of the heading line and then
+// requires a newline and the underline. An inline that the line opens and a
+// later line of the paragraph closes (inline math over the `=` line) consumes
+// that newline, so the line is no heading. The inlines are parsed over the
+// paragraph text up to its first blank line, the reach of an inline.
+function inlineRunsPastLine(cx, leaf) {
+    let lineEnd = leaf.start + leaf.content.length;
+    let text = leaf.content;
+    for (let next of linesFrom(cx.input, lineEnd + 1)) {
+        if (next.text.trim() == "")
+            break;
+        text += "\n" + next.text;
+    }
+    return cx.parser.parseInline(text, leaf.start).some(element => element.from < lineEnd && element.to > lineEnd);
+}
 class SetextHeadingParser {
     nextLine(cx, line, leaf) {
         // Pandoc's Markdown reader only admits a Setext heading when the heading
@@ -757,6 +809,8 @@ class SetextHeadingParser {
         let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line);
         let next = line.next;
         if (underline < 0)
+            return false;
+        if (cx.parser.pandocParagraphContinuation && inlineRunsPastLine(cx, leaf))
             return false;
         let underlineMark = elt(Type.HeaderMark, cx.lineStart + line.pos, cx.lineStart + underline);
         cx.nextLine();
@@ -4034,43 +4088,6 @@ function footnoteComposite(ctx, line, _value) {
         return true;
     }
     return false;
-}
-
-/**
- * Line lookahead over the block input.
- *
- * A Lezer BlockParser cannot roll BlockContext back after `nextLine()`, so a
- * Pandoc rule that needs lookahead reads the input ahead of the context. The
- * input is read in growing windows: a lookahead that stops after a few lines
- * reads a few lines, not the rest of the document.
- */
-const FIRST_WINDOW = 2048;
-/**
- * The physical lines of `input` that start at or after `from`. The sequence
- * is the one `input.read(from, input.length).split("\n")` gives.
- */
-function* linesFrom(input, from) {
-    let text = "";
-    let textFrom = from;
-    let lineFrom = from;
-    let window = FIRST_WINDOW;
-    for (;;) {
-        let newline = text.indexOf("\n", lineFrom - textFrom);
-        while (newline < 0 && textFrom + text.length < input.length) {
-            const readFrom = textFrom + text.length;
-            const readTo = Math.min(input.length, readFrom + window);
-            text = text.slice(lineFrom - textFrom) + input.read(readFrom, readTo);
-            textFrom = lineFrom;
-            window *= 2;
-            newline = text.indexOf("\n");
-        }
-        if (newline < 0) {
-            yield { from: lineFrom, text: text.slice(lineFrom - textFrom) };
-            return;
-        }
-        yield { from: lineFrom, text: text.slice(lineFrom - textFrom, newline) };
-        lineFrom = textFrom + newline + 1;
-    }
 }
 
 /**

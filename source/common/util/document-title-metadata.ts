@@ -54,24 +54,9 @@ export function documentTitleMetadataFromAST(ast: ASTNode): DocumentTitleMetadat
   if (ast.type !== "Document") {
     return { firstHeading: null, firstSentence: null };
   }
-  const headings = extractASTNodes(ast, "Heading") as Heading[];
-  const firstHeadingNode = headings.find((heading) => {
-    if (!heading.name.startsWith("SetextHeading")) {
-      return true;
-    }
-
-    // A standalone '=' inside display math can make Lezer manufacture a
-    // Setext H1 spanning the surrounding equation. Legitimate Setext headings
-    // may contain inline math, but never a display-math child.
-    const hasDisplayMathChild = heading.children.some((child) => {
-      return child.type === "InlineCode" && child.info === "$$";
-    });
-    const extracted = extractTextnodes(heading)
-      .map((node) => node.whitespaceBefore + node.value)
-      .join("");
-
-    return !hasDisplayMathChild && !/(^|\s)\$\$(\s|$)/u.test(extracted);
-  });
+  // The grammar reads a Setext heading as Pandoc does: math over the `=`
+  // line makes no heading (#203)
+  const [firstHeadingNode] = extractASTNodes(ast, "Heading") as Heading[];
   const firstHeading =
     firstHeadingNode === undefined
       ? null
