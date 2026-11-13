@@ -18,8 +18,13 @@ async function nextTurn(): Promise<void> {
 }
 
 describe("async citation widget rendering", function () {
-  const originalIpc = window.ipc;
+  // Read the seam when the suite runs: at file load no spec may have provided it yet
+  let originalIpc: typeof window.ipc;
   let view: EditorView | undefined;
+
+  before(function () {
+    originalIpc = window.ipc;
+  });
 
   afterEach(function () {
     view?.destroy();
