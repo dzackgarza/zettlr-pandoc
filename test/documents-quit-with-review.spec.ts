@@ -331,6 +331,37 @@ describe("Documents-provider quit with an open review", function () {
       );
       assert.equal(provider.readMarkdownBufferContent(reviewedPath), REVIEWED_TARGET);
     });
+
+    it("keeps the chunk on the text that it proposed", async function () {
+      await show(reviewedPath);
+      const { reviewId } = await propose();
+      assert.equal((await provider.saveFile(reviewedPath)).ok, true);
+      await provider.applyWorkspaceTextEdits([
+        { documentPath: reviewedPath, range: { from: 0, to: 0 }, insert: AUTHOR_PREFIX },
+      ]);
+      messageBoxes.answer = DISCARD;
+      assert.equal(await provider.closeFile(windowId, leafId, reviewedPath), true);
+
+      await restart();
+      const documentId = provider.ensureDocumentId(reviewedPath);
+      const status = await loadedReviewStatus();
+      const [sidecar] = await provider.annotationQueries.listCollaborationSidecars();
+      const chunk = sidecar?.review?.suggestions[0];
+      if (status === undefined || chunk === undefined) {
+        assert.fail("the saved review returns with its chunk");
+      }
+      const rejected = await provider.decideReviewChunk(reviewId, chunk.suggestionId, "reject", {
+        expectedReviewGeneration: status.generation,
+        expectedWorkingSha256: sha256Text(REVIEWED_TARGET),
+      });
+      assert.ok(rejected.ok, "the author rejects the chunk");
+      assert.equal(
+        provider.readMarkdownBufferContent(reviewedPath),
+        REVIEWED_SOURCE,
+        "the reject removes the proposed text and nothing else",
+      );
+      assert.equal(provider.reviewStatus(documentId), undefined);
+    });
   });
 
   describe("a review that returns from its sidecar when the document loads", function () {
