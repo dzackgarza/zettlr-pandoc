@@ -11,6 +11,11 @@
  * END HEADER
  */
 
+// The stub of `electron` goes in before the first spec. A module that reads
+// `electron` keeps what it read in the module cache; under plain Node that is
+// the path of the Electron binary, so a spec that loaded a main-process module
+// first gave each later spec a module without `app`.
+import "./headless-electron-harness.cjs";
 import { readFileSync } from "fs";
 import { JSDOM } from "jsdom";
 import Module from "module";
