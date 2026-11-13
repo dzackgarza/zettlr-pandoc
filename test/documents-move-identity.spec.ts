@@ -23,13 +23,24 @@
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
 import { createPatch } from "diff";
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
+import { canonicalPath } from "source/app/service-providers/agent-api/document-queries";
 import type DocumentManager from "source/app/service-providers/documents";
+import { DocumentTree } from "source/app/service-providers/documents/document-tree";
 import { ReviewStateNotMovedError } from "source/app/service-providers/documents/review-state-not-moved-error";
 import { sha256Text } from "source/common/util/sha256";
+import { stringify as stringifyYAML } from "yaml";
 import { bootDocumentManager, emitWatchdogEvent } from "./documents-provider-seam";
 import { appListeners, appQuitRequests, userData } from "./headless-electron-harness.cjs";
 
@@ -59,7 +70,8 @@ describe("Documents-provider identity of a moved document", function () {
   let windowId: string;
 
   beforeEach(async function () {
-    root = await mkdtemp(path.join(tmpdir(), "zettlr-move-identity-"));
+    // The real path: the application names a file with each symbolic link resolved.
+    root = realpathSync(await mkdtemp(path.join(tmpdir(), "zettlr-move-identity-")));
     mkdirSync(path.join(userData, "logs"), { recursive: true });
     await rm(path.join(userData, "documents.yaml"), { force: true });
     await rm(path.join(userData, "review-sidecars"), { recursive: true, force: true });
@@ -356,5 +368,97 @@ describe("Documents-provider identity of a moved document", function () {
       await sidecarStates(provider),
       new Map([[filePath, { annotations: [annotation], review: null }]]),
     );
+  });
+
+  /** Opens `filePath` in the pane as a window does: the editor loads the document of the tab. */
+  async function openInPane(filePath: string): Promise<string> {
+    assert.equal(await provider.openFile(windowId, pane(), filePath), true);
+    const tabPath = provider.getActiveFile(pane());
+    assert.ok(tabPath !== undefined, "the pane shows a tab");
+    await provider.getDocument(tabPath);
+    return tabPath;
+  }
+
+  /** A folder of the workspace and a symbolic link to it: each file in it has two names. */
+  function linkedFolder(): { real: string; alias: string } {
+    const real = write("chapters", "genus.md");
+    symlinkSync(path.join(root, "chapters"), path.join(root, "book"));
+    return { real, alias: path.join(root, "book", "genus.md") };
+  }
+
+  it("reattaches the annotations of a file that opens under its other name (#57)", async function () {
+    const { real, alias } = linkedFolder();
+    const aliasTab = await openInPane(alias);
+    const [annotated] = provider.loadedDocuments;
+    const from = SOURCE.indexOf(ANNOTATED);
+    const created = await provider.createAnnotation(
+      annotated.documentId,
+      "owner",
+      from,
+      from + ANNOTATED.length,
+      "State the indefinite case.",
+      provider.annotationQueries.getAnnotations(annotated.documentId).generation,
+    );
+    if ("ok" in created) {
+      assert.fail(`The annotation was refused: ${created.code}`);
+    }
+    assert.equal(await provider.closeFile(windowId, pane(), aliasTab), true);
+    assert.deepEqual(provider.loadedDocuments, []);
+
+    await openInPane(real);
+
+    assert.deepEqual(
+      provider.loadedDocuments.map((document) => [
+        document.filePath,
+        provider.annotationQueries
+          .getAnnotations(document.documentId)
+          .items.map((item) => [item.annotationId, item.anchor.state]),
+      ]),
+      [[real, [[created.annotationId, "range"]]]],
+      "the document of the file has the annotation that was made under its other name",
+    );
+  });
+
+  it("shows the proposal of an agent in the tab of the file under its other name (#57)", async function () {
+    const { real, alias } = linkedFolder();
+    await openInPane(alias);
+
+    // The Agent API names the document of a submission with each symbolic
+    // link resolved (`handleReviewSubmission`).
+    const reviewId = await proposeWithoutPane(await canonicalPath(alias), SOURCE);
+
+    assert.deepEqual(
+      provider.loadedDocuments.map((document) => [
+        document.filePath,
+        provider.reviewQueries.getReview(document.documentId)?.reviewId,
+      ]),
+      [[real, reviewId]],
+      "one document holds the file: the document of the tab, with the review",
+    );
+    assert.deepEqual(
+      (await provider.reviewQueries.listReviewQueries()).map((query) =>
+        query.attached ? [true, query.documentPath] : [false, query.sidecar.documentPath],
+      ),
+      [[true, real]],
+      "the review is attached, and it is not also listed as the review of a closed document",
+    );
+  });
+
+  it("restores a stored tab under the name of its file (#57)", async function () {
+    const { real, alias } = linkedFolder();
+    await provider.shutdown();
+    // A tab that an earlier version stored under the other name of its file.
+    const stored = new DocumentTree();
+    stored.getAllLeafs()[0].tabMan.openFile(alias);
+    writeFileSync(
+      path.join(userData, "documents.yaml"),
+      stringifyYAML({ stored: stored.toJSON() }),
+      "utf-8",
+    );
+
+    provider = await bootDocumentManager([root]);
+    windowId = provider.windowKeys()[0];
+
+    assert.equal(provider.getActiveFile(pane()), real, "the tab names the file by its real path");
   });
 });

@@ -14,7 +14,7 @@
  * END HEADER
  */
 
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { strict as assert } from "assert";
@@ -66,7 +66,8 @@ describe("root paths of the configuration on disk", function () {
   let unreachableWorkspace: string;
 
   before(async function () {
-    scratch = await mkdtemp(path.join(tmpdir(), "zettlr-root-paths-"));
+    // The real path: a root is named with each symbolic link resolved.
+    scratch = await realpath(await mkdtemp(path.join(tmpdir(), "zettlr-root-paths-")));
     file = path.join(scratch, "note.md");
     workspace = path.join(scratch, "workspace");
     // A symbolic link to itself: a look at a path below it fails with ELOOP,
@@ -97,6 +98,24 @@ describe("root paths of the configuration on disk", function () {
       { openFiles: [file], openWorkspaces: [workspace] },
     );
     assert.deepEqual(reported, []);
+  });
+
+  it("names each root by its path with each symbolic link resolved (#57)", async function () {
+    // A workspace that the author opened through a link to its folder, and a
+    // file through a link to the folder that holds it.
+    const linkedWorkspace = path.join(scratch, "linked-workspace");
+    const linkedFolder = path.join(scratch, "linked-folder");
+    await symlink(workspace, linkedWorkspace);
+    await symlink(scratch, linkedFolder);
+
+    assert.deepEqual(
+      rootPathsOnDisk(
+        { openFiles: [path.join(linkedFolder, "note.md")], openWorkspaces: [linkedWorkspace] },
+        (rootPath) => assert.fail(`${rootPath} can be examined`),
+      ),
+      { openFiles: [file], openWorkspaces: [workspace] },
+      "a file under two names is one root, and the documents of a workspace have one name each",
+    );
   });
 
   it("keeps and reports a root path that the filesystem cannot examine", function () {
