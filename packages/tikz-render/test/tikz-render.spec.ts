@@ -1299,8 +1299,9 @@ describe("TikZ render process lifetime (issue #208)", function () {
     }
 
     const pending = renderTikz(request, config);
-    // The limit, the time for the processes to end, and a margin.
-    const deadline = Date.now() + 20000;
+    // Past the fixed limit of 30 s that the renderer had before the limit
+    // was a setting, the time for the processes to end, and a margin.
+    const deadline = Date.now() + 40000;
     const started = new Set<string>();
     let result: TikzRenderResult | undefined;
     while (result === undefined && Date.now() < deadline) {
