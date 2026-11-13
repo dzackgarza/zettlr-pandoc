@@ -38,6 +38,12 @@ interface MathJaxWindow {
   };
 }
 
+/** A list that a script made in its own context, as an array of this realm. */
+function inThisRealm(list: string[] | undefined): string[] {
+  assert.ok(list !== undefined, "The configuration holds the list");
+  return Array.from(list);
+}
+
 const execFileAsync = promisify(execFile);
 
 async function runPandoc(defaultsFile: string, outputFile: string): Promise<string> {
@@ -85,7 +91,7 @@ describe("Pandoc math export headers", function () {
     }
 
     assert.strictEqual(window.MathJax?.tex?.macros?.RR, "\\mathbb{R}");
-    assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [
+    assert.deepStrictEqual(inThisRealm(window.MathJax?.loader?.load), [
       "[tex]/boldsymbol",
       "[tex]/mhchem",
     ]);
@@ -94,7 +100,7 @@ describe("Pandoc math export headers", function () {
       `${pathToFileURL(path.join(mathJax, "tex-extensions")).href}/`,
     );
     assert.strictEqual(window.MathJax?.loader?.paths?.fonts, `${pathToFileURL(mathJax).href}/`);
-    assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.["[+]"] ?? []), [
+    assert.deepStrictEqual(inThisRealm(window.MathJax?.tex?.packages?.["[+]"]), [
       "ams",
       "boldsymbol",
       "configmacros",
@@ -102,7 +108,7 @@ describe("Pandoc math export headers", function () {
       "newcommand",
       "noundefined",
     ]);
-    assert.match(window.MathJax?.chtml?.fontURL ?? "", /^file:\/\//);
+    assert.match(String(window.MathJax?.chtml?.fontURL), /^file:\/\//);
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/);
     assert.match(config, /"mhchem"/);
     assert.match(config, /"fontURL": "file:\/\//);
@@ -163,8 +169,10 @@ describe("Pandoc math export headers", function () {
     );
     const html = await readFile(renderedDocument, { encoding: "utf8" });
 
-    assert.strictEqual((html.match(/<mjx-container/g) ?? []).length, 3);
-    const mathJaxConfig = html.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? "";
+    assert.strictEqual(html.split("<mjx-container").length - 1, 3);
+    const configScript = html.match(/window\.MathJax = ([\s\S]*?)<\/script>/);
+    assert.ok(configScript !== null, "The page holds the MathJax configuration");
+    const mathJaxConfig = configScript[1];
     assert.ok(!mathJaxConfig.includes("https://"));
     assert.ok(!mathJaxConfig.includes("http://"));
     assert.ok(html.includes('data-latex="\\mathbb{R}"'));

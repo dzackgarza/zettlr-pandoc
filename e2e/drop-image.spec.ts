@@ -100,14 +100,22 @@ describe("assembled app: drop of an image file on the editor", function () {
     await session.detach();
     const pathsInPage = await editorPage.evaluate(() => {
       const input = document.getElementById("drop-source") as HTMLInputElement;
-      return Array.from(input.files ?? []).map((file) => window.getPathForFile(file) ?? "");
+      const files = input.files;
+      if (files === null) {
+        throw new Error("The drop source holds no files");
+      }
+      return Array.from(files).map((file) => window.getPathForFile(file));
     });
     assert.deepEqual(pathsInPage, dropped, "the page has the dropped files as files on disk");
 
     await editorPage.evaluate(() => {
       const input = document.getElementById("drop-source") as HTMLInputElement;
       const transfer = new DataTransfer();
-      for (const file of Array.from(input.files ?? [])) {
+      const files = input.files;
+      if (files === null) {
+        throw new Error("The drop source holds no files");
+      }
+      for (const file of Array.from(files)) {
         transfer.items.add(file);
       }
       const content = document.querySelector(".cm-content") as HTMLElement;

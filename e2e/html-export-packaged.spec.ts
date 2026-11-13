@@ -154,7 +154,7 @@ describe("packaged app: an HTML export typesets its math", function () {
     screenshots.set("exported-html.png", await scene.page.screenshot());
     const typeset = await scene.page.evaluate(() =>
       [...document.querySelectorAll("mjx-container")].map((math) => ({
-        latex: math.querySelector("[data-latex]")?.getAttribute("data-latex") ?? "",
+        latex: math.querySelector("[data-latex]")?.getAttribute("data-latex"),
         errors: math.querySelectorAll("mjx-merror").length,
       })),
     );
