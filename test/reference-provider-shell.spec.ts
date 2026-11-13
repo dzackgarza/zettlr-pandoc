@@ -25,6 +25,7 @@ import { BrowserWindow } from "electron";
 import EventEmitter from "events";
 import { readFileSync } from "fs";
 import path from "path";
+import ConfigProvider from "source/app/service-providers/config";
 import LogProvider from "source/app/service-providers/log";
 import ReferenceProvider from "source/app/service-providers/references";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
@@ -32,6 +33,7 @@ import { extractReferences } from "source/common/pandoc-util/extract-references"
 import type { MDFileDescriptor, OtherFileDescriptor } from "source/types/common/fsal";
 import { sentMessagesFor, userData } from "./headless-electron-harness.cjs";
 import { invokeMain } from "./main-ipc";
+import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const FIXTURE_ROOT = path.join("test", "fixtures", "reference-workspace");
 const THEOREMS_PATH = path.join(FIXTURE_ROOT, "ProjectA", "Theorems.md");
@@ -417,5 +419,43 @@ describe("References provider behavior", function () {
 
     provider.dropAuthorityBuffer(STANDALONE_PATH);
     authorityBuffers.delete(STANDALONE_PATH);
+  });
+});
+
+describe("References provider settings (#57)", function () {
+  it("debounces an authority report by the delay that the author set", async function () {
+    // The application container makes the providers before the configuration
+    // provider reads config.json (AppServiceContainer: the constructors, then
+    // ConfigProvider.boot). The value of the author arrives after the
+    // reference provider exists.
+    const log = new LogProvider();
+    const config = new ConfigProvider(
+      log,
+      [path.resolve("static", "lang")],
+      unexpectedStoreWriteFailure,
+    );
+    const scheduler = makeScheduler();
+    const provider = new ReferenceProvider(
+      log,
+      new EventEmitter(),
+      {
+        readMarkdownBufferContent: () => "",
+        applyWorkspaceTextEdits: async () => [],
+        restoreStoredWorkingText: async () => false,
+      },
+      config.get().references.authorityReportDebounceMs,
+      userData,
+      { schedule: scheduler.schedule },
+    );
+    config.set("references.authorityReportDebounceMs", 2000);
+    await provider.boot();
+
+    provider.reportAuthorityBuffer(THEOREMS_PATH);
+
+    assert.deepStrictEqual(
+      scheduler.tasks.map((task) => task.delayMs),
+      [2000],
+    );
+    await provider.shutdown();
   });
 });
