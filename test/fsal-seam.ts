@@ -14,9 +14,12 @@
  * END HEADER
  */
 
+import { strict as assert } from "node:assert";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import ConfigProvider from "source/app/service-providers/config";
-import FSAL from "source/app/service-providers/fsal";
+import FSAL, { type FSALEventPayload } from "source/app/service-providers/fsal";
 import LogProvider from "source/app/service-providers/log";
 import LongRunningTaskProvider from "source/app/service-providers/long-running-tasks";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
@@ -62,4 +65,31 @@ async function boot(
   const fsal = new FSAL(log, config, new LongRunningTaskProvider(log));
   await fsal.boot();
   return fsal;
+}
+
+/**
+ * Resolves when the watcher of `fsal` reports a file in `root`. The watcher
+ * reports nothing before its first scan ends, and `FSAL.boot` does not wait
+ * for that scan, so a spec that changes a file one time (a removal) waits
+ * for this first. The probe file is removed again.
+ */
+export async function untilWatching(fsal: FSAL, root: string): Promise<void> {
+  const probe = path.join(root, "watcher-probe.md");
+  let reported = false;
+  const listener = (events: FSALEventPayload[]): void => {
+    if (events.some((event) => "descriptor" in event && event.descriptor.path === probe)) {
+      reported = true;
+    }
+  };
+  fsal.on("fsal-events", listener);
+  const deadline = Date.now() + 20_000;
+  let writes = 0;
+  while (!reported && Date.now() < deadline) {
+    writes += 1;
+    await writeFile(probe, `# Probe ${writes}\n`);
+    await sleep(250);
+  }
+  fsal.off("fsal-events", listener);
+  await rm(probe);
+  assert.ok(reported, `the watcher of the FSAL must report ${probe}`);
 }

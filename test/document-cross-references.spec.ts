@@ -30,7 +30,7 @@ import {
   documentCrossReferenceSystem,
   documentLintAuthority,
 } from "source/app/util/document-bibliographies";
-import { bootFsal } from "./fsal-seam";
+import { bootFsal, untilWatching } from "./fsal-seam";
 
 const MANIFEST = `project:
   type: book
@@ -53,6 +53,7 @@ describe("The Project facts of a document whose file was removed", function () {
     await writeFile(path.join(root, "index.md"), "# Surfaces\n");
     await writeFile(chapter, "# Enriques surfaces {#sec-enriques}\n");
     fsal = await bootFsal(root);
+    await untilWatching(fsal, root);
 
     const removed = new Promise<void>((resolve) => {
       fsal.on("fsal-events", (events: FSALEventPayload[]) => {
