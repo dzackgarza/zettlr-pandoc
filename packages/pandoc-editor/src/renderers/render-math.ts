@@ -28,7 +28,16 @@ import { previewConfiguration } from "../util/configuration";
 
 export interface MathHost {
   render(equation: string, element: HTMLElement, mode: "display" | "inline"): void;
-  contextMenu?(view: EditorView, equation: string, coordinates: { x: number; y: number }): void;
+  /**
+   * The context menu of a drawn equation. The position is the start of the
+   * source of the equation.
+   */
+  contextMenu?(
+    view: EditorView,
+    equation: string,
+    coordinates: { x: number; y: number },
+    position: number,
+  ): void;
 }
 
 export const mathHost = Facet.define<MathHost>();
@@ -64,7 +73,12 @@ class MathWidget extends WidgetType implements RowJoinedWidget {
     elem.addEventListener("click", clickAndSelect(view));
     if (host.contextMenu)
       elem.addEventListener("contextmenu", (event) => {
-        host.contextMenu!(view, this.equation, { x: event.clientX, y: event.clientY });
+        host.contextMenu!(
+          view,
+          this.equation,
+          { x: event.clientX, y: event.clientY },
+          view.posAtDOM(elem),
+        );
       });
     return elem;
   }

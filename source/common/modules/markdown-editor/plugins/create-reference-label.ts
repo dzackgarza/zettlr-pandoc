@@ -131,6 +131,21 @@ function labelTargetAt(view: EditorView, pos: number, side: -1 | 0 | 1): SyntaxN
   return null;
 }
 
+/**
+ * The label target of a position that the author points at: the target that
+ * holds it, else one that starts at it (the start of a drawn figure or
+ * equation), else one that ends at it (a click right of a heading).
+ */
+function labelTargetAround(view: EditorView, pos: number): SyntaxNode | null {
+  for (const side of [0, 1, -1] as const) {
+    const node = labelTargetAt(view, pos, side);
+    if (node !== null) {
+      return node;
+    }
+  }
+  return null;
+}
+
 /** Maps a referenceable fenced-div class back to its label family. */
 const CLASS_TO_FAMILY = new Map<string, ReferenceFamily>(
   THEOREM_FAMILY_METADATA.map((metadata) => [metadata.divClass, metadata.prefix]),
@@ -175,7 +190,7 @@ export function resolveCreateReferenceLabelRequest(
   view: EditorView,
   pos: number,
 ): CreateReferenceLabelRequest | null {
-  const node = labelTargetAt(view, pos, 0);
+  const node = labelTargetAround(view, pos);
   if (node === null) {
     return null;
   }

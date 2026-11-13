@@ -27,6 +27,7 @@ import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
 import { findReferenceForLinkLabel, removeMarkdownLink } from "../util/links";
 import openMarkdownLink from "../util/open-markdown-link";
+import { referenceLabelItems } from "./reference-label-item";
 
 const ipcRenderer = window.ipc;
 
@@ -175,5 +176,13 @@ export function linkImageMenu(
     },
   ];
 
-  showPopupMenu(coords, isLink ? linkTpl : imgTpl);
+  if (isLink) {
+    showPopupMenu(coords, linkTpl);
+    return;
+  }
+
+  // An image is a figure: a position inside its source offers a label.
+  const labelItems = referenceLabelItems(view, node.from + 1);
+  const separator: AnyMenuItem[] = labelItems.length > 0 ? [{ type: "separator" }] : [];
+  showPopupMenu(coords, [...labelItems, ...separator, ...imgTpl]);
 }

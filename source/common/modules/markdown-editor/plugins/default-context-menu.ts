@@ -16,19 +16,15 @@
 
 import { syntaxTree } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { trans } from "@common/i18n-renderer";
 import { type AnyMenuItem } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
 import { NODES } from "@dzack/pandoc-editor/parser/citation-parser";
 import { citationMenu } from "../context-menu/citation-menu";
 import { defaultMenu } from "../context-menu/default-menu";
 import { linkImageMenu } from "../context-menu/link-image-menu";
+import { referenceLabelItems } from "../context-menu/reference-label-item";
 import { nodeAtPos } from "../util/node-in-selection";
 import { resolveAnnotateSelectionMenuItem } from "./annotate-selection";
-import {
-  requestCreateReferenceLabel,
-  resolveCreateReferenceLabelRequest,
-} from "./create-reference-label";
 
 export const defaultContextMenu = EditorView.domEventHandlers({
   contextmenu(event, view) {
@@ -66,19 +62,10 @@ export const defaultContextMenu = EditorView.domEventHandlers({
       extraItems.unshift(annotateItem);
     }
 
-    // Node-routed create-label entry (issue #1 Phase 6): a supported,
-    // still-unlabeled reference target (theorem-like div, heading, figure
-    // image, listing, display math) offers "Create reference label…" on top
-    // of the default menu.
-    if (resolveCreateReferenceLabelRequest(view, pos) !== null) {
-      extraItems.push({
-        label: trans("Create reference label…"),
-        type: "normal",
-        action() {
-          requestCreateReferenceLabel(view, pos);
-        },
-      });
-    }
+    // A supported, still-unlabeled reference target (theorem-like div,
+    // heading, figure image, listing, display math) offers "Create
+    // reference label…" on top of the default menu.
+    extraItems.push(...referenceLabelItems(view, pos));
 
     // If there is nothing selected, select the word at the coords
     const nothingSelected = view.state.selection.ranges.every((x) => x.empty);
