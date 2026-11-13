@@ -206,6 +206,42 @@ describe("assembled app: the close of root files and of all workspaces", functio
     );
   });
 
+  it("keeps the tab of a document that the outer workspace holds when the inner workspace closes", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const [leaf] = await leafIds(activePage);
+    await openInLeaf(activePage, leaf, lemmaPath);
+    await activePage
+      .locator(`[role="tab"][data-path=${JSON.stringify(lemmaPath)}].active`)
+      .waitFor({ state: "visible", timeout: 30_000 });
+
+    await row(activePage, inner).first().click({ button: "right" });
+    const item = activePage
+      .locator('.application-menu .menu-item[data-id="menu.close_workspace"]')
+      .last();
+    await item.waitFor({ state: "visible", timeout: 10_000 });
+    await item.click();
+    await waitUntil(
+      async () => (await row(activePage, inner).count()) === 0,
+      "the inner workspace to close",
+    );
+    // A close that removed the tab does so after the row is gone.
+    await delay(1_000);
+    screenshots.set("inner-closed.png", await activePage.screenshot());
+    assert.equal(await row(activePage, workspace).count(), 1, "the outer workspace stays open");
+    assert.ok(
+      (await openTabs(activePage)).includes(lemmaPath),
+      "the document of the outer workspace keeps its tab",
+    );
+
+    // The next case closes both workspaces.
+    await activePage.evaluate(
+      async (roots) =>
+        await window.ipc.invoke("application", { command: "roots-add", payload: roots }),
+      [inner],
+    );
+    await row(activePage, inner).first().waitFor({ state: "visible", timeout: 20_000 });
+  });
+
   it("asks one time about the documents of all workspaces, also of a workspace inside another", async function () {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     await typeUnsaved(activePage, genusPath);
