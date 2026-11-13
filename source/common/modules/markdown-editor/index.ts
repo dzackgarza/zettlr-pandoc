@@ -331,6 +331,12 @@ export default class MarkdownEditor extends EventEmitter {
   public readonly ready: Promise<void>;
 
   /**
+   * Whether the editor holds its document. Before the first load ends, the
+   * view holds an empty state without a language and without a syntax tree.
+   */
+  private _documentLoaded = false;
+
+  /**
    * The database cache for the various autocompletes.
    *
    * @var {any}
@@ -721,6 +727,7 @@ export default class MarkdownEditor extends EventEmitter {
 
     this._instance.focus();
 
+    this._documentLoaded = true;
     this.emit("loaded");
   }
 
@@ -1466,6 +1473,11 @@ export default class MarkdownEditor extends EventEmitter {
    */
   get value(): string {
     return [...this._instance.state.doc.iterLines()].join("\n");
+  }
+
+  /** Whether the editor holds its document (the event `loaded` was sent). */
+  get documentLoaded(): boolean {
+    return this._documentLoaded;
   }
 
   /**

@@ -343,7 +343,9 @@ async function updateTexMacroSources(
   editor: MarkdownEditor | null = currentEditor,
   force = false,
 ): Promise<void> {
-  if (editor === null) return;
+  // An editor without its document declares no sources yet; its `loaded`
+  // event reads them.
+  if (editor === null || !editor.documentLoaded) return;
   const kind = texDocumentKindForPath(editor.documentPath);
   if (kind === undefined) return;
 
