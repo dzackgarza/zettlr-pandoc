@@ -2154,6 +2154,8 @@ function maybeHighlightSearchResults(): void {
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    // The size container of the side padding of the scroller.
+    container-type: inline-size;
 
     > .cm-editor { width: 100%; }
   }
@@ -2182,7 +2184,9 @@ function maybeHighlightSearchResults(): void {
   }
 
   .cm-editor {
-    .cm-scroller { padding: 50px 50px; }
+    // 50 px on each side from a pane of 600 px, 8 px up to a pane of 300 px:
+    // a narrow pane gives its width to the text column.
+    .cm-scroller { padding: 50px ~"clamp(8px, 14cqi - 34px, 50px)"; }
     .cm-content { min-width: 0; }
   }
 

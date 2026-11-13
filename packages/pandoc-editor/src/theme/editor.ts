@@ -165,10 +165,14 @@ const accentColorDark = "var(--grey-2)";
 const accentBackground = "var(--grey-2)";
 const accentBackgroundDark = "var(--grey-4)";
 
-const headerSize1 = "2em";
-const headerSize2 = "1.8em";
-const headerSize3 = "1.5em";
-const headerSize4 = "1.3em";
+// A heading follows the width of the scroller, the size container of the
+// editor (`editorTheme`): each size is whole from a scroller of about 550 px
+// and goes down to its minimum in a narrow pane, where a word of a heading
+// of the whole size is wider than the text column.
+const headerSize1 = "clamp(1.25em, 0.75em + 4cqi, 2em)";
+const headerSize2 = "clamp(1.2em, 0.7em + 3.6cqi, 1.8em)";
+const headerSize3 = "clamp(1.15em, 0.65em + 3cqi, 1.5em)";
+const headerSize4 = "clamp(1.1em, 0.6em + 2.6cqi, 1.3em)";
 const headerSize5 = "1em";
 const headerSize6 = "1em";
 
@@ -383,6 +387,9 @@ export const defaultDark = EditorView.theme(
 
 export const editorTheme = EditorView.baseTheme({
   ".cm-scroller": {
+    // The size container of the heading sizes. Its width comes from the
+    // editor, never from the content.
+    containerType: "inline-size",
     font: "var(--zettlr-editor-font-size) var(--zettlr-editor-font)",
     lineHeight: "var(--zettlr-editor-line-height)",
     color: "var(--zettlr-editor-scroller-color)",

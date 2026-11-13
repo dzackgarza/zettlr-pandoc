@@ -55,7 +55,9 @@
  *                  of a definition in the viewport, gives the anchor the
  *                  size of the badge groups of that line and puts the
  *                  groups on it. An anchor that has no room after the text
- *                  goes to a row of its own, so no badge covers text. A
+ *                  goes to a row of its own, so no badge covers text. The groups of
+ *                  a line take at most its width: a group that does not fit
+ *                  after another starts a row of its own on the anchor. A
  *                  renderer that draws the line of a definition itself (the
  *                  header of a fenced div) puts a referenceBadgeAnchor in
  *                  its DOM, and the layer uses that anchor. A line whose
@@ -99,10 +101,14 @@ interface BadgeRoom {
   height: number;
 }
 
-/** The measured place of one badge group; null when its line has no layout. */
+/**
+ * The measured place of one badge group; null when its line has no layout.
+ * `maxWidth` is the width that the group may take: the groups of a narrow
+ * line wrap their badges.
+ */
 interface BadgePlacement {
   group: BadgeGroup;
-  position: { left: number; top: number } | null;
+  position: { left: number; top: number; maxWidth: number } | null;
 }
 
 /** The room that the badge groups of one line need on the anchor of the line. */
@@ -176,6 +182,20 @@ function startsRow(anchor: HTMLElement, place: DOMRect): boolean {
     Number.parseFloat(style.paddingLeft) +
     Number.parseFloat(style.borderLeftWidth);
   return place.left - contentLeft < 1;
+}
+
+/** The width of the content box of the parent of an anchor: the room of its rows. */
+function rowRoom(anchor: HTMLElement): number {
+  const parent = anchor.parentElement;
+  if (parent === null) {
+    return 0;
+  }
+  const style = getComputedStyle(parent);
+  return (
+    parent.clientWidth -
+    Number.parseFloat(style.paddingLeft) -
+    Number.parseFloat(style.paddingRight)
+  );
 }
 
 /**
@@ -410,9 +430,20 @@ class ReferenceDefinitionBadges {
 
     // The anchors that renderers drew, by the start of the line they are on.
     // Each anchor starts with no group on it; a group adds its key and its size.
+    // The groups of an anchor are in rows of the width of the line: a group
+    // that does not fit after the groups before it starts a new row.
     const anchors = new Map<
       number,
-      { element: HTMLElement; keys: string[]; width: number; height: number }
+      {
+        element: HTMLElement;
+        keys: string[];
+        width: number;
+        height: number;
+        room: number;
+        rowWidth: number;
+        rowTop: number;
+        rowHeight: number;
+      }
     >();
     for (const element of this.view.contentDOM.querySelectorAll<HTMLElement>(`.${ANCHOR_CLASS}`)) {
       anchors.set(doc.lineAt(this.view.posAtDOM(element)).from, {
@@ -420,6 +451,10 @@ class ReferenceDefinitionBadges {
         keys: [],
         width: 0,
         height: 0,
+        room: rowRoom(element),
+        rowWidth: 0,
+        rowTop: 0,
+        rowHeight: 0,
       });
     }
 
@@ -433,20 +468,25 @@ class ReferenceDefinitionBadges {
       const anchor = anchors.get(line.from);
       if (anchor !== undefined) {
         const place = anchor.element.getBoundingClientRect();
-        // The width of the groups before this one on the same anchor.
-        const widthBefore = anchor.width;
-        anchor.keys.push(group.key);
-        anchor.width = widthBefore + Math.ceil(size.width) + BADGE_GAP;
-        anchor.height = Math.max(anchor.height, Math.ceil(size.height));
+        const width = Math.ceil(size.width) + BADGE_GAP;
+        if (anchor.rowWidth > 0 && anchor.rowWidth + width > anchor.room) {
+          anchor.rowTop += anchor.rowHeight;
+          anchor.rowWidth = 0;
+          anchor.rowHeight = 0;
+        }
         // Text before the anchor gets a space; the edge of a row does not.
         const gap = startsRow(anchor.element, place) ? 0 : BADGE_GAP;
-        return {
-          group,
-          position: {
-            left: place.left - base.left + widthBefore + gap,
-            top: place.top - base.top,
-          },
+        const position = {
+          left: place.left - base.left + anchor.rowWidth + gap,
+          top: place.top - base.top + anchor.rowTop,
+          maxWidth: Math.max(0, anchor.room - BADGE_GAP),
         };
+        anchor.keys.push(group.key);
+        anchor.rowWidth += width;
+        anchor.rowHeight = Math.max(anchor.rowHeight, Math.ceil(size.height));
+        anchor.width = Math.max(anchor.width, anchor.rowWidth);
+        anchor.height = anchor.rowTop + anchor.rowHeight;
+        return { group, position };
       }
 
       const coords = this.view.coordsAtPos(line.to, -1);
@@ -457,7 +497,10 @@ class ReferenceDefinitionBadges {
       // The group stays inside the layer: a group past the right edge would
       // make the editor scroll horizontally.
       const left = Math.min(coords.right - base.left + BADGE_GAP, base.width - size.width);
-      return { group, position: { left: Math.max(0, left), top: coords.top - base.top } };
+      return {
+        group,
+        position: { left: Math.max(0, left), top: coords.top - base.top, maxWidth: base.width },
+      };
     });
     // The anchors that hold a group, with the room of their groups.
     const rooms = new Map<HTMLElement, AnchorRoom>();
@@ -476,6 +519,8 @@ class ReferenceDefinitionBadges {
    * again after it.
    */
   private applyPositions({ placements, rooms }: BadgeMeasure): void {
+    // A new room of an anchor or a new width of a group moves text or
+    // badges; the places are measured again after it.
     let anchorChanged = false;
     for (const [anchor, room] of rooms) {
       this.rooms.set(room.keys, { width: room.width, height: room.height });
@@ -497,6 +542,11 @@ class ReferenceDefinitionBadges {
       group.dom.classList.add("positioned");
       group.dom.style.left = `${position.left}px`;
       group.dom.style.top = `${position.top}px`;
+      const maxWidth = `${position.maxWidth}px`;
+      if (group.dom.style.maxWidth !== maxWidth) {
+        group.dom.style.maxWidth = maxWidth;
+        anchorChanged = true;
+      }
     }
 
     if (anchorChanged) {
@@ -528,9 +578,11 @@ const badgeTheme = EditorView.baseTheme({
     left: "0",
     top: "0",
     display: "inline-flex",
+    // A group narrower than its badges (`maxWidth`, a narrow line) puts the
+    // count under the key, and a key longer than the line breaks in its badge.
+    flexWrap: "wrap",
     gap: "0.35em",
     visibility: "hidden",
-    whiteSpace: "nowrap",
   },
   ".reference-badge-group.positioned": {
     visibility: "visible",
@@ -545,7 +597,12 @@ const badgeTheme = EditorView.baseTheme({
     borderRadius: "3px",
     fontSize: "75%",
   },
+  ".reference-definition-badge": {
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
+  },
   ".reference-count-badge": {
+    whiteSpace: "nowrap",
     cursor: "pointer",
     pointerEvents: "auto",
   },

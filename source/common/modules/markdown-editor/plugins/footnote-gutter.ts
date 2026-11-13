@@ -45,6 +45,8 @@ const fnBodyRE = /^(\[\^.+?\]):/;
 export const footnoteGutter: Extension[] = [
   gutter({
     class: "cm-footnote-gutter",
+    // A document without a footnote body has no marker: the gutter then takes
+    // no width, which a narrow pane gives to the text.
     renderEmptyElements: false,
     // For each line that contains a footnote reference body, add an icon to the gutter
     lineMarker(
@@ -55,8 +57,6 @@ export const footnoteGutter: Extension[] = [
       const lineText = view.state.sliceDoc(line.from, line.to);
       return fnBodyRE.test(lineText) ? new FootnoteGutterMarker() : null;
     },
-    // This ensures the gutter never collapses
-    initialSpacer: () => new FootnoteGutterMarker(),
     // When the user clicks on the gutter (specifically, on one of the icons),
     // go to the corresponding footnote reference (if applicable)
     domEventHandlers: {

@@ -229,6 +229,9 @@ export function initializeMathJax(macros: Record<string, MathJaxMacro>): Promise
       // Emit the complete stylesheet: widgets render incrementally, so
       // adaptive CSS would miss constructs first used after initialization.
       adaptiveCSS: false,
+      // A display equation wider than its pane scrolls inside its own box;
+      // it does not widen the pane.
+      displayOverflow: "scroll",
     });
     browserRenderer = new HTMLDocument(documentElement, browserAdaptorInstance, {
       InputJax: tex,
