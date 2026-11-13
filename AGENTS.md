@@ -641,7 +641,9 @@ of an isolated instance are in the first comment of #132.
   (empty: every type), when the `files.<type>.showInFilemanager` of its
   group is off, or when it is of no known type and its extension is not in
   `attachmentExtensions`. Markdown and code files are always of a known
-  type. A path with a segment that starts with `.` is a dot path, hidden
+  type. The type of a file is read by `file-extention-checks.ts` only, and
+  the case of an extension does not count (`Notes.MD`, `Paper.PDF`).
+  A path with a segment that starts with `.` is a dot path, hidden
   while dot files are off; a folder is hidden by type only as a dot path.
   `IgnoreFilter.matches` judges both, `ruleMatches` the rules only (Hide
   and Unhide edit rules, so they read `ruleMatches`).

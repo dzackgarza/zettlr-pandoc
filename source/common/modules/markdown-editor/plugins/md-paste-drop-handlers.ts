@@ -16,7 +16,7 @@
 
 import { type DOMEventHandlers } from "@codemirror/view";
 import { reportError } from "@common/util/error-reporting";
-import { hasMdOrCodeExt } from "@common/util/file-extention-checks";
+import { hasImageExt, hasMdOrCodeExt } from "@common/util/file-extention-checks";
 import html2md from "@common/util/html-to-md";
 import {
   pathBasename,
@@ -29,8 +29,6 @@ import { configField } from "../util/configuration";
 import { normalizePathForInsertion, saveClipboardImage } from "../util/save-clipboard-image";
 
 const ipcRenderer = window.ipc;
-
-const imageRE = /\.(?:png|jpe?g|gif|bmp|svg|tiff?)$/i;
 
 /**
  * These handlers hook into the editor and attempt to intercept events that need
@@ -94,7 +92,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
     } else {
       // The user intends to paste an image or a series of files
       for (const file of data.files) {
-        if (imageRE.test(file.name)) {
+        if (hasImageExt(file.name)) {
           const filePath = window.getPathForFile(file);
           if (filePath === undefined) {
             // This image resides only within the clipboard, so prompt the user
@@ -168,7 +166,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
       // We have a list of files being dropped onto the editor --> handle them
       for (const file of dataTransfer.files) {
         const filePath = window.getPathForFile(file);
-        const isImage = imageRE.test(file.name);
+        const isImage = hasImageExt(file.name);
 
         if (isImage && filePath !== undefined) {
           // The image resides somewhere on disk -> directly insert
@@ -229,7 +227,7 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
         // Insert as Md link
         view.dispatch({ changes: { from: pos, insert: `[${name}](${pathToInsert})` } });
       } else if (data.type === "other") {
-        if (imageRE.test(data.path)) {
+        if (hasImageExt(data.path)) {
           view.dispatch({ changes: { from: pos, insert: `![${name}](${pathToInsert})` } });
         } else {
           view.dispatch({ changes: { from: pos, insert: `[${name}](${pathToInsert})` } });

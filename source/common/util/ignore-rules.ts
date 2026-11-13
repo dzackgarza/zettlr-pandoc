@@ -106,12 +106,6 @@ export function rulesTextOf(texts: ReadonlyMap<string, string>, root: string): s
   return text;
 }
 
-function hasExtension(filePath: string, extension: string): boolean {
-  const trimmed = extension.trim().toLowerCase();
-  const normalized = trimmed === "" || trimmed.startsWith(".") ? trimmed : `.${trimmed}`;
-  return normalized !== "" && filePath.toLowerCase().endsWith(normalized);
-}
-
 /**
  * Whether the file type settings leave a path out. A path below a dot folder
  * is a dot path, and a folder is left out only as a dot path. A file must have an included extension; then the setting
@@ -128,7 +122,7 @@ function typeLeavesOut(
   if (isDirectory) {
     return isDot && !types.dotFiles;
   }
-  if (types.include.length > 0 && !types.include.some((ext) => hasExtension(absPath, ext))) {
+  if (types.include.length > 0 && !hasExt(absPath, [...types.include])) {
     return true;
   }
   if (isDot) {

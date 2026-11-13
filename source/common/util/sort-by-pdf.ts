@@ -11,7 +11,7 @@
  * END HEADER
  */
 
-const pdfRE = /\.pdf$/i;
+import { hasPDFExt } from "./file-extention-checks";
 
 /**
  * Sorting function that sorts PDF files to be at the top
@@ -22,8 +22,8 @@ const pdfRE = /\.pdf$/i;
  * @return {number}   A number for consumption by Array.sort()
  */
 export default function sortByPDF(a: string, b: string): number {
-  let isAPDF = pdfRE.test(a);
-  let isBPDF = pdfRE.test(b);
+  let isAPDF = hasPDFExt(a);
+  let isBPDF = hasPDFExt(b);
 
   if (isAPDF && isBPDF) {
     return 0;

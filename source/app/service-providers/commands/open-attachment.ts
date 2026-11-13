@@ -16,6 +16,7 @@
  */
 
 import { trans } from "@common/i18n-main";
+import { hasPDFExt } from "@common/util/file-extention-checks";
 import type CiteprocProvider from "@providers/citeproc";
 import type DocumentManager from "@providers/documents";
 import type FSAL from "@providers/fsal";
@@ -151,7 +152,7 @@ export default class OpenAttachment extends ZettlrCommand<OpenAttachmentServices
 
     const result = res.result as Array<{ path: string }>;
     const pdfAttachments = result
-      .filter((elem) => elem.path.toLowerCase().endsWith(".pdf"))
+      .filter((elem) => hasPDFExt(elem.path))
       .map((elem) => elem.path);
     if (pdfAttachments.length === 0) {
       throw new Error(trans("Zotero has no PDF for it"));

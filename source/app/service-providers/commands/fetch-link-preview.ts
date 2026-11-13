@@ -86,8 +86,8 @@ export default class FetchLinkPreview extends ZettlrCommand {
               i++;
             }
           }
-        } else if (/\.(png|jpe?g)$/.test(descriptor.name)) {
-          // Image file
+        } else if (/\.(png|jpe?g)$/i.test(descriptor.name)) {
+          // An image that nativeImage decodes: PNG and JPEG only
           const img = nativeImage.createFromPath(descriptor.path);
           if (!img.isEmpty()) {
             const { width, height } = img.getSize();
