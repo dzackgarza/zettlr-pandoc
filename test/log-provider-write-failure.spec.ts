@@ -19,6 +19,11 @@
  *                  occupied by a directory, so the real fs.writeFile against it
  *                  rejects with EISDIR. Nothing about the provider is stubbed.
  *
+ *                  A detail of any value is written: a value that JSON cannot
+ *                  write (a cycle, a bigint) and a value that IPC cannot
+ *                  clone (a function, a symbol) neither stop the log file nor
+ *                  the log viewer (#57).
+ *
  * END HEADER
  */
 
@@ -130,5 +135,57 @@ describe("LogProvider (failing file writes)", function () {
     const written = await readFile(logfile, "utf8");
     assert.match(written, /Opening QuickTeX definitions failed/);
     assert.match(written, /kitty: executable not found/);
+  });
+});
+
+describe("LogProvider (details of any value, #57)", function () {
+  this.timeout(20000);
+
+  const logDir = path.join(app.getPath("userData"), "logs");
+  let provider: IsolatedLogProvider;
+  let logfile: string;
+
+  beforeEach(async function () {
+    await mkdir(logDir, { recursive: true });
+    provider = new IsolatedLogProvider();
+    logfile = path.join(logDir, provider.filename);
+  });
+
+  afterEach(async function () {
+    await rm(logfile, { recursive: true, force: true });
+  });
+
+  it("writes each entry whose detail JSON cannot write, and each entry after it", async function () {
+    const cycle: { name: string; self?: object } = { name: "a cycle" };
+    cycle.self = cycle;
+    provider.error("an entry with a cycle", cycle);
+    provider.error("an entry with a bigint", { count: 12n });
+    provider.error("an entry after them");
+
+    await provider.shutdown();
+
+    const lines = (await readFile(logfile, "utf8")).split("\n");
+    const lineOf = (message: string): string | undefined =>
+      lines.find((line) => line.includes(message));
+    assert.match(lineOf("an entry with a cycle") ?? "", /a cycle.*Circular/);
+    assert.match(lineOf("an entry with a bigint") ?? "", /count: 12n/);
+    assert.ok(lineOf("an entry after them") !== undefined, "the entry after them is written");
+  });
+
+  it("gives the log viewer each entry as a value that IPC can clone", async function () {
+    provider.error("an entry with a function", function namedCallback() {});
+    provider.error("an entry with a symbol", Symbol("a symbol"));
+
+    const chunk = await invokeMain("log-provider", {
+      command: "retrieve-log-chunk",
+      nextIndex: 0,
+    });
+    // Electron sends the answer of a handler as a structured clone.
+    const sent = structuredClone(chunk);
+    const detailOf = (message: string): string | null | undefined =>
+      sent.find((entry) => entry.message === message)?.details;
+    assert.match(detailOf("an entry with a function") ?? "", /namedCallback/);
+    assert.match(detailOf("an entry with a symbol") ?? "", /a symbol/);
+    await provider.shutdown();
   });
 });
