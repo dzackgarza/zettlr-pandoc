@@ -60,6 +60,7 @@ import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-conte
 import AgentHTTPProvider, {
   type AgentApiHost,
   AgentApiTokenRequiredError,
+  MAX_SEARCH_HITS,
 } from "source/app/service-providers/agent-api/http-server";
 import CiteprocProvider from "source/app/service-providers/citeproc";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
@@ -1562,6 +1563,46 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("POST /v1/documents/{id}/search gives each hit up to the limit and says when it stopped (#57)", async function () {
+    const search = async (docId: string) =>
+      parseAs(
+        (
+          await httpRequest("POST", `/v1/documents/${docId}/search`, {
+            body: JSON.stringify({ literal: "alpha", context: 0 }),
+          })
+        ).body,
+        "SearchDocumentResponse",
+      );
+
+    // Two hits on one line: the search goes on after the first.
+    const repeated = await search(
+      await openFile(path.join(scratch, "repeated-hits.md"), "alpha beta alpha gamma\n"),
+    );
+    assert.deepEqual(
+      repeated.hits.map((hit) => [hit.line, hit.column, hit.length]),
+      [
+        [1, 1, 5],
+        [1, 12, 5],
+      ],
+    );
+    assert.equal(repeated.truncated, false);
+
+    // Exactly the limit is every hit; one more is a truncated answer.
+    const lines = (count: number) => Array.from({ length: count }, () => "alpha").join("\n");
+    const full = await search(
+      await openFile(path.join(scratch, "full-hits.md"), lines(MAX_SEARCH_HITS)),
+    );
+    assert.equal(full.hits.length, MAX_SEARCH_HITS);
+    assert.equal(full.truncated, false);
+    const over = await search(
+      await openFile(path.join(scratch, "truncated-hits.md"), lines(MAX_SEARCH_HITS + 1)),
+    );
+    assert.deepEqual(
+      [over.hits.length, over.hits.at(-1)?.line, over.truncated],
+      [MAX_SEARCH_HITS, MAX_SEARCH_HITS, true],
+    );
   });
 
   it("GET /v1/workspace/search finds text across closed files and live buffers", async function () {
