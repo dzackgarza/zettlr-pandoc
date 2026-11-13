@@ -39,8 +39,6 @@
             :active-file="activeDescriptor"
             :index="0"
             :window-id="windowId"
-            @create-file="handleOperation('file-new', item.id)"
-            @create-dir="handleOperation('dir-new', item.id)"
             @begin-dragging="emit('lock-file-tree')"
           />
         </RecycleScroller>
@@ -58,8 +56,6 @@
         :item="item.props"
         :window-id="windowId"
         :active-file="activeDescriptor"
-        @create-file="handleOperation('file-new', item.id)"
-        @create-dir="handleOperation('dir-new', item.id)"
       />
       <div
         v-if="getDirectoryContents[0].props.type === 'directory'"
@@ -426,19 +422,6 @@ function updateDynamics(): void {
       });
     }
   }
-}
-
-async function handleOperation(type: "dir-new" | "file-new", idx: number): Promise<void> {
-  // Creates files and directories, or duplicates a file.
-  const source = getDirectoryContents.value.find((item) => item.id === idx)?.props;
-  if (source === undefined) {
-    throw new Error("Could not handle file list operation: Source was undefined");
-  }
-
-  await ipcRenderer.invoke("application", {
-    command: type,
-    payload: { path: source.path },
-  });
 }
 
 defineExpose({ navigate, stopNavigate, getRootElement });

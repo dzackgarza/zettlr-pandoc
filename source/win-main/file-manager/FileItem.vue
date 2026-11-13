@@ -55,6 +55,20 @@
           v-on:blur="nameEditing = false"
           v-on:click.stop=""
         >
+        <!-- A row of the list has a fixed height, so the name field of a
+        new file or folder takes the place of the name of its folder. -->
+        <input
+          v-else-if="operationType !== undefined"
+          ref="newObjectInput"
+          class="filename-input"
+          type="text"
+          v-bind:placeholder="filenameInputPlaceholder"
+          v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
+          v-on:keyup.esc="operationType = undefined"
+          v-on:keydown.stop=""
+          v-on:blur="operationType = undefined"
+          v-on:click.stop=""
+        >
         <span v-else>
           {{ basename }}
         </span>
@@ -209,11 +223,7 @@ const props = defineProps<{
   windowId: string;
 }>();
 
-const emit = defineEmits<{
-  (e: "begin-dragging"): void;
-  (e: "create-file"): void;
-  (e: "create-dir"): void;
-}>();
+const emit = defineEmits<(e: "begin-dragging") => void>();
 
 const ipcRenderer = window.ipc;
 
@@ -248,6 +258,8 @@ const writingTargets = computed(() => windowStateStore.writingTargets);
 
 const displayText = ref<HTMLDivElement | null>(null);
 const nameEditingInput = ref<HTMLInputElement | null>(null);
+const newObjectInput = ref<HTMLInputElement | null>(null);
+const filenameInputPlaceholder = trans("Enter a name");
 
 const children = ref<AnyDescriptor[]>([]);
 
@@ -287,10 +299,11 @@ const {
   handleContextMenu,
   requestSelection,
   finishNameEditing,
+  finishOperation,
   isDirectory,
   selectedFile,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput);
+} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput, newObjectInput);
 
 // We have to explicitly transform ALL properties to computed ones for
 // the reactivity in conjunction with the recycle-scroller.
@@ -471,16 +484,6 @@ const tagsWithColor = computed<Array<{ name: string; color: string | undefined }
       color: tagStore.coloredTags.find((t) => t.name === tag)?.color,
     };
   });
-});
-
-watch(operationType, () => {
-  if (operationType.value === "createFile") {
-    emit("create-file");
-    operationType.value = undefined;
-  } else if (operationType.value === "createDir") {
-    emit("create-dir");
-    operationType.value = undefined;
-  }
 });
 
 // I have no idea why passing this as a Ref to the composable doesn't work, but

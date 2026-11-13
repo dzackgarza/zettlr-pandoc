@@ -14,7 +14,9 @@
  * END HEADER
  */
 
+import { trans } from "@common/i18n-renderer";
 import { reportError } from "@common/util/error-reporting";
+import generateFilename from "@common/util/generate-filename";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
 import { hasImageExt, hasPDFExt } from "source/common/util/file-extention-checks";
 import makeValidUri from "source/common/util/make-valid-uri";
@@ -58,6 +60,7 @@ export function useItemComposable(
   rootElement: Ref<HTMLElement | null>,
   windowId: string,
   nameEditingInput: Ref<HTMLInputElement | null>,
+  newObjectInput: Ref<HTMLInputElement | null>,
 ) {
   const obj = ref(object);
   const nameEditing = ref<boolean>(false);
@@ -318,6 +321,44 @@ export function useItemComposable(
       });
   }
 
+  // The name field of a new file or folder in this folder: the tree and
+  // the file list show it under the folder, and Enter makes the object
+  // with that name (#202).
+  watch(operationType, (newVal) => {
+    if (newVal === undefined) {
+      return;
+    }
+    nextTick()
+      .then(() => {
+        const input = newObjectInput.value;
+        if (input === null) {
+          return;
+        }
+        input.value =
+          newVal === "createFile"
+            ? generateFilename(configStore.config.newFileNamePattern, configStore.config.zkn.idGen)
+            : trans("Untitled");
+        input.focus();
+        // Select from the beginning until the last dot
+        input.setSelectionRange(0, input.value.lastIndexOf("."));
+      })
+      .catch((err) => reportError(err));
+  });
+
+  function finishOperation(newName: string): void {
+    const operation = operationType.value;
+    operationType.value = undefined;
+    if (operation === undefined || newName.trim() === "") {
+      return;
+    }
+    ipcRenderer
+      .invoke("application", {
+        command: operation === "createFile" ? "file-new" : "dir-new",
+        payload: { path: obj.value.path, name: newName.trim() },
+      })
+      .catch((e) => reportError(e));
+  }
+
   function updateObject(newObject: AnyDescriptor): void {
     obj.value = newObject;
   }
@@ -330,6 +371,7 @@ export function useItemComposable(
     handleContextMenu,
     requestSelection,
     finishNameEditing,
+    finishOperation,
     isDirectory,
     selectedFile,
     selectedDir,

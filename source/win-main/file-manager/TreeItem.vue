@@ -139,7 +139,7 @@
         class="filename-input"
         type="text"
         v-bind:placeholder="filenameInputPlaceholder"
-        v-on:keyup.enter="handleOperationFinish(($event.target as HTMLInputElement).value)"
+        v-on:keyup.enter="finishOperation(($event.target as HTMLInputElement).value)"
         v-on:keyup.esc="operationType = undefined"
         v-on:keydown.stop=""
         v-on:blur="operationType = undefined"
@@ -200,7 +200,6 @@ import {
   projectMembershipForPath,
   sortExplorerChildren,
 } from "@common/util/explorer-ordering";
-import generateFilename from "@common/util/generate-filename";
 import { isAtOrInsideRoot, pathBasename } from "@common/util/renderer-path-polyfill";
 
 import RingProgress from "@common/vue/window/toolbar-controls/RingProgress.vue";
@@ -275,11 +274,12 @@ const {
   handleContextMenu,
   requestSelection,
   finishNameEditing,
+  finishOperation,
   isDirectory,
   selectedFile,
   selectedDir,
   updateObject,
-} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput);
+} = useItemComposable(props.item, displayText, props.windowId, nameEditingInput, newObjectInput);
 
 const filenameInputPlaceholder = trans("Enter a name");
 
@@ -535,31 +535,6 @@ watch(nameEditing, (isEditing) => {
   }
 });
 
-watch(operationType, (newVal) => {
-  if (newVal !== undefined) {
-    nextTick()
-      .then(() => {
-        if (newObjectInput.value === null) {
-          return;
-        }
-
-        if (operationType.value === "createFile") {
-          // If we're generating a file, generate a filename
-          const filenamePattern = configStore.config.newFileNamePattern;
-          const idGenPattern = configStore.config.zkn.idGen;
-          newObjectInput.value.value = generateFilename(filenamePattern, idGenPattern);
-        } else if (operationType.value === "createDir") {
-          // Else standard val for new dirs.
-          newObjectInput.value.value = trans("Untitled");
-        }
-        newObjectInput.value.focus();
-        // Select from the beginning until the last dot
-        newObjectInput.value.setSelectionRange(0, newObjectInput.value.value.lastIndexOf("."));
-      })
-      .catch((err) => reportError(err));
-  }
-});
-
 // I have no idea why passing this as a Ref to the composable doesn't work, but
 // this way it does.
 watch(toRef(props, "item"), function (value) {
@@ -772,32 +747,6 @@ function acceptDrags(event: DragEvent): void {
   // that, e.g., a Python or other script file doesn't
   // override the location.href to display.
   event.preventDefault();
-}
-
-function handleOperationFinish(newName: string): void {
-  if (operationType.value === "createFile" && newName.trim() !== "") {
-    ipcRenderer
-      .invoke("application", {
-        command: "file-new",
-        payload: {
-          path: props.item.path,
-          name: newName.trim(),
-        },
-      })
-      .catch((e) => reportError(e));
-  } else if (operationType.value === "createDir" && newName.trim() !== "") {
-    ipcRenderer
-      .invoke("application", {
-        command: "dir-new",
-        payload: {
-          path: props.item.path,
-          name: newName.trim(),
-        },
-      })
-      .catch((e) => reportError(e));
-  }
-
-  operationType.value = undefined;
 }
 
 /**
