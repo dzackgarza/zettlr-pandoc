@@ -10,9 +10,9 @@ on:
 permissions:
   contents: read
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 concurrency:
-  group: 'audit'
+  group: "audit"
   cancel-in-progress: true
 jobs:
   audit:

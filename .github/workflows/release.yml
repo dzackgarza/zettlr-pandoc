@@ -4,11 +4,11 @@ name: Release
 # release the in-app updater reads.
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 permissions:
   contents: write
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 jobs:
   release:
     name: Build and publish the AppImage

@@ -151,9 +151,7 @@ export default class OpenAttachment extends ZettlrCommand<OpenAttachmentServices
     }
 
     const result = res.result as Array<{ path: string }>;
-    const pdfAttachments = result
-      .filter((elem) => hasPDFExt(elem.path))
-      .map((elem) => elem.path);
+    const pdfAttachments = result.filter((elem) => hasPDFExt(elem.path)).map((elem) => elem.path);
     if (pdfAttachments.length === 0) {
       throw new Error(trans("Zotero has no PDF for it"));
     }

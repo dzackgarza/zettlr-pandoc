@@ -11,15 +11,15 @@ include-after-body: []
 include-in-header: []
 bibliography: []
 filters:
-- type: citeproc
+  - type: citeproc
 wrap: none
 columns: 78
 dpi: 72
 toc: false
 toc-depth: 2
 number-sections: false
-identifier-prefix: ''
-title-prefix: ''
+identifier-prefix: ""
+title-prefix: ""
 eol: lf
 strip-comments: false
 indented-code-classes: []

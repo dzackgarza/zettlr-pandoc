@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: "22"
 # One run of this workflow for each event and branch: a new head cancels the run of
 # the head before it. A pull_request run has github.ref refs/pull/<n>/merge, so
 # the group names github.head_ref, the branch of the pull request.

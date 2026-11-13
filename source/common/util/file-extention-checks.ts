@@ -21,17 +21,7 @@ export const LATEX_EXT = [".tex", ".latex", ".sty", ".cls"];
 export const YAML_EXT = [".yaml", ".yml"];
 export const JSON_EXT = [".json"];
 export const CODE_EXT = [...LATEX_EXT, ...YAML_EXT, ...JSON_EXT, ".dic"];
-export const IMG_EXT = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".svg",
-  ".webp",
-  ".bmp",
-  ".tiff",
-  ".tif",
-];
+export const IMG_EXT = [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".tiff", ".tif"];
 export const PDF_EXT = [".pdf"];
 export const MS_OFFICE_EXT = [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"];
 export const OPEN_OFFICE_EXT = [".odt", ".ods", ".odp"];

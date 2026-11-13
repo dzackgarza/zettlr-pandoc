@@ -9,7 +9,7 @@ variables: {}
 metadata-files: []
 bibliography: []
 filters:
-- type: citeproc
+  - type: citeproc
 dpi: 72
 toc: false
 toc-depth: 2

@@ -7,24 +7,24 @@ productName: Zettlr-Pandoc
 npmRebuild: false
 copyright: Zettlr is licensed under GNU GPL v3.
 fileAssociations:
-- ext: md
-  name: Markdown
-  description: Markdown document
-  mimeType: text/markdown
-  role: Editor
-  isPackage: false
-- ext: markdown
-  name: Markdown
-  description: Markdown document
-  mimeType: text/markdown
-  role: Editor
-  isPackage: false
-- ext: rmd
-  name: RMarkdown
-  description: RMarkdown document
-  mimeType: text/markdown
-  role: Editor
-  isPackage: false
+  - ext: md
+    name: Markdown
+    description: Markdown document
+    mimeType: text/markdown
+    role: Editor
+    isPackage: false
+  - ext: markdown
+    name: Markdown
+    description: Markdown document
+    mimeType: text/markdown
+    role: Editor
+    isPackage: false
+  - ext: rmd
+    name: RMarkdown
+    description: RMarkdown document
+    mimeType: text/markdown
+    role: Editor
+    isPackage: false
 directories:
   output: release
 #
@@ -33,7 +33,7 @@ directories:
 mac:
   category: "public.app-category.productivity"
   target:
-  - dmg
+    - dmg
   artifactName: "Zettlr-${version}-${arch}.${ext}"
   icon: "./resources/icons/icon.icns"
   darkModeSupport: true
@@ -46,7 +46,7 @@ mac:
 #
 win:
   target:
-  - nsis
+    - nsis
   artifactName: "Zettlr-${version}-${arch}.${ext}"
   icon: "./resources/icons/icon.ico"
   # New signing options for use with Azure Trusted Signing
@@ -60,7 +60,7 @@ win:
 #
 linux:
   target:
-  - AppImage
+    - AppImage
   artifactName: "Zettlr-Pandoc-${version}-${arch}.${ext}"
   executableName: zettlr-pandoc
   synopsis: Markdown editor
@@ -76,12 +76,12 @@ dmg:
   background: "./resources/icons/dmg/dmg_back.tiff"
   icon: "./resources/icons/icon.icns"
   contents:
-  - x: 130
-    y: 220
-  - x: 410
-    y: 220
-    type: link
-    path: "/Applications"
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: "/Applications"
   window:
     width: 540
     height: 400
