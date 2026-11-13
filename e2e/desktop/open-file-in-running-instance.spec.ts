@@ -213,6 +213,6 @@ describe("opening a file while the app is already running", function () {
       deliveredPath,
     ]);
     assert.notEqual(handoff.code, 0, `An undelivered file must fail loudly.\n${handoff.output}`);
-    assert.match(handoff.output, /No running Zettlr instance accepted the arguments/);
+    assert.match(handoff.output, /No running Zettlr instance accepted the request/);
   });
 });
