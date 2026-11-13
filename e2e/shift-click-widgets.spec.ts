@@ -38,12 +38,15 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-shift-click-widgets-e2e-l
 
 const EQUATION = "$x^2 + y^2$";
 const LINK = "[[curves]]";
+const TASK = "[ ]";
 const DOCUMENT = [
   "# Shift",
   "",
   `Start here with the equation ${EQUATION} and the link ${LINK} to the end.`,
   "",
   "Outside probe.",
+  "",
+  `- ${TASK} Check the fibers.`,
   "",
 ].join("\n");
 
@@ -173,5 +176,19 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     const extended = await extendToWidget(anchor, from);
     screenshots.set("backward-equation.png", await requireInitialized(page, "page").screenshot());
     assert.deepEqual(extended, { anchor, head: from });
+  });
+
+  it("extends over a task checkbox and leaves the task unchecked", async function () {
+    const anchor = DOCUMENT.indexOf("here");
+    const from = DOCUMENT.indexOf(TASK);
+    const extended = await extendToWidget(anchor, from);
+    screenshots.set("forward-task.png", await requireInitialized(page, "page").screenshot());
+    const text = await requireInitialized(page, "page").evaluate(() => {
+      const view = document.querySelector<EditorContentElement>(".cm-content")?.cmTile?.root.view;
+      if (view === undefined) throw new Error("No CodeMirror view is mounted");
+      return view.state.doc.toString();
+    });
+    assert.equal(text, DOCUMENT, "a Shift-click on the checkbox does not toggle the task");
+    assert.deepEqual(extended, { anchor, head: from + TASK.length });
   });
 });
