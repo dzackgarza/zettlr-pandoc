@@ -15,7 +15,7 @@
           hidden: !showDetails
         }"
       >
-        {{ parsedDetails }}
+        {{ message.details }}
       </div>
     </div>
     <div class="expand-details">
@@ -59,79 +59,8 @@ const showDetails = ref(false);
  */
 const iconDirection = computed(() => (showDetails.value ? "up" : "down"));
 
-/**
- * Determines if this log message has additional details
- *
- * @return  {boolean}  True or false depending on the existence of details
- */
-const hasDetails = computed(() => {
-  // null and undefined both mean "nothing attached". null needs naming
-  // explicitly because `typeof null === 'object'` would otherwise send it into
-  // the object branch below and throw in Object.keys.
-  if (props.message.details == null) {
-    return false;
-  }
-
-  if (props.message.details instanceof Error) {
-    return true;
-  }
-
-  if (Array.isArray(props.message.details)) {
-    return props.message.details.length > 0;
-  }
-
-  if (typeof props.message.details === "object") {
-    return Object.keys(props.message.details).length > 0;
-  }
-
-  if (Array.isArray(props.message.details) || typeof props.message.details === "string") {
-    return props.message.details.length > 0;
-  }
-
-  return true;
-});
-
-/**
- * Parses the details attached to this log message depending on its type
- * into a plain text string
- *
- * @return  {string}  The parsed message
- */
-const parsedDetails = computed(() => {
-  const detail = props.message.details;
-  let ret = "";
-  if (detail instanceof Error) {
-    const stack = detail.stack?.replace(/\n/g, "<br>") ?? "";
-    return [`Name: ${detail.name}`, `Message: ${detail.message}`, stack].join("\n");
-  } else if (Array.isArray(detail)) {
-    for (let i = 0; i < detail.length; i++) {
-      let val = typeof detail[i] === "object" ? JSON.stringify(detail[i]) : String(detail[i]) + "";
-      if (val.length > 1000) {
-        val =
-          val.substring(0, 1000) +
-          '… <span class="more">(' +
-          (val.length - 1000) +
-          " more characters)</span>";
-      }
-      ret += `[${i}]: ${val}`;
-    }
-  } else if (detail !== null && typeof detail === "object") {
-    for (const [param, value] of Object.entries(detail)) {
-      let val = typeof value === "object" ? JSON.stringify(value) : String(value) + "";
-      if (val.length > 1000) {
-        val =
-          val.substring(0, 1000) +
-          '… <span class="more">(' +
-          (val.length - 1000) +
-          " more characters)</span>";
-      }
-      ret += `${param}: ${val}\n`;
-    }
-  } else {
-    ret += `${String(detail)}\n`;
-  }
-  return ret;
-});
+/** The main process gives the details as text; null means none */
+const hasDetails = computed(() => props.message.details !== null);
 
 /**
  * Determines the message class and maps the message levels into CSS classes
@@ -200,7 +129,6 @@ function toggleDetails(): void {
       margin-top: 15px;
     }
 
-    .message .details .more { color: #000; }
 
     &.verbose {
       background-color: #d8d8d8;
