@@ -1636,6 +1636,26 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     );
     assert.equal(capped.matchCount, 2);
     assert.equal(capped.truncated, true);
+    // The limit can end at the last match of one file, before a file that
+    // holds more matches. Each listed file holds a match, whichever file
+    // comes first (#57).
+    for (const limit of [1, 2]) {
+      const limited = parseAs(
+        (await httpRequest("GET", `/v1/workspace/search?text=lattice&maxMatches=${limit}`)).body,
+        "WorkspaceSearchResponse",
+      );
+      assert.deepEqual(
+        limited.files.filter((file) => file.matches.length === 0).map((file) => file.path),
+        [],
+        `maxMatches=${limit} lists a file without a match`,
+      );
+      assert.equal(
+        limited.files.reduce((sum, file) => sum + file.matches.length, 0),
+        limit,
+      );
+      assert.equal(limited.truncated, true);
+    }
+
 
     // A workspace inside another workspace: its files belong to it, so an
     // include pattern is relative to it and it is the workspace of each hit.
