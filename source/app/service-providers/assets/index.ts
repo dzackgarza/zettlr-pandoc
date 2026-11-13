@@ -24,13 +24,12 @@ import broadcastIpcMessage from "@common/util/broadcast-ipc-message";
 import type { PhraseDictionaryEntry } from "@common/util/phrase-dictionary";
 import type { QuickTexCatalogue } from "@dts/common/quicktex";
 import type { SnippetCatalogue, SnippetFileDiagnostic, UserSnippet } from "@dts/common/snippets";
-import { getCustomProfiles } from "@providers/commands/exporter";
+import { exportProfiles } from "@providers/commands/exporter";
 import { FSWatcher } from "chokidar";
 import { app, ipcMain } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
-import { getAppServiceContainer, isAppServiceContainerReady } from "../../app-service-container";
 import { nameTaken, refusedAs } from "../../util/authored-file-error";
 import { loadPhraseDictionaries } from "../../util/load-phrase-dictionaries";
 import { loadQuickTex } from "../../util/load-quicktex";
@@ -442,18 +441,7 @@ export default class AssetsProvider extends ProviderContract {
       } else if (command === "list-defaults") {
         return await this.listDefaults();
       } else if (command === "list-export-profiles") {
-        const profiles = await this.listDefaults();
-        const scripts = isAppServiceContainerReady()
-          ? getAppServiceContainer().config.get().export.scripts
-          : [];
-        const custom = getCustomProfiles(scripts);
-        // Custom profiles (e.g. the compile-pandoc PDF) override any same-named
-        // defaults file. userData/defaults is copied once and never pruned, so a
-        // stale shipped default (e.g. an old xelatex PDF.yaml renamed/removed in
-        // a later version) can linger there; it must not shadow the custom
-        // profile of the same name in the export menu.
-        const customNames = new Set(custom.map((p) => p.name));
-        return profiles.filter((p) => !customNames.has(p.name)).concat(custom);
+        return await this.listExportProfiles();
       } else if (command === "list-available-filters") {
         return await this.listAvailableFilters();
       } else if (command === "open-defaults-directory") {
@@ -858,6 +846,17 @@ export default class AssetsProvider extends ProviderContract {
     const source = path.join(__dirname, "./assets/defaults", filename);
     const target = path.join(this._defaultsPath, filename);
     await fs.copyFile(source, target).catch(refusedAs("restore", target));
+  }
+
+  /**
+   * The export profiles of the application, one for each name
+   * (`exportProfiles`). Every surface that offers or runs an export profile
+   * reads this list.
+   *
+   * @return  {Promise<PandocProfileMetadata[]>}  The profiles
+   */
+  async listExportProfiles(): Promise<PandocProfileMetadata[]> {
+    return exportProfiles(await this.listDefaults(), this._config.get().export.scripts);
   }
 
   /**

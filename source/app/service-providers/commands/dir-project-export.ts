@@ -31,7 +31,7 @@ import type FSAL from "../fsal";
 import type LinkProvider from "../links";
 import type LongRunningTaskProvider from "../long-running-tasks";
 import type WindowProvider from "../windows";
-import { getCustomProfiles, makeExport } from "./exporter";
+import { makeExport } from "./exporter";
 import { runShellCommand } from "./exporter/run-shell-command";
 import type { ExporterOptions } from "./exporter/types";
 import ZettlrCommand from "./zettlr-command";
@@ -137,10 +137,7 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     }); // Don't return, because we still can export
   }
 
-  // We have to fetch both the regular as well as the custom defaults profiles.
-  const regularDefaults = await app.assets.listDefaults();
-  const customDefaults = getCustomProfiles(app.config.get().export.scripts);
-  const profiles = regularDefaults.concat(customDefaults);
+  const profiles = await app.assets.listExportProfiles();
   const commands = app.config.get().export.customCommands;
 
   // One exporter that stops does not stop the other ones. The author gets

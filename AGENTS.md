@@ -231,9 +231,14 @@ they must be threaded through **four** layers:
   (`writeDefaults`). Proof: `test/export-document.spec.ts`,
   `test/project-export.spec.ts`.
 - The Chromium "Simple PDF" export was removed; every export now goes through pandoc.
-- Export profile list: `list-export-profiles` in
-  `source/app/service-providers/assets/index.ts` = `listDefaults()` (userData/defaults)
-  - `getCustomProfiles()`, with custom profiles overriding same-named defaults.
+- **One list of export profiles.** `exportProfiles`
+  (`commands/exporter/index.ts`) joins the defaults files of
+  `userData/defaults` and the custom profiles (`getCustomProfiles`); a custom
+  profile replaces a defaults file of the same name, so an old `PDF.yaml`
+  there does not replace the PDF recipe. The export menu and the launcher
+  (`list-export-profiles`), the Project export
+  (`AssetsProvider.listExportProfiles`) and `just export-headless` read it.
+  Proof: `test/project-export.spec.ts`.
 
 ### 4. Quarto books
 
@@ -1602,8 +1607,9 @@ of an isolated instance are in the first comment of #132.
 
 - The raw production command can report success without a fresh asar. Use `just
   package` or `just verify-build` so the verifier checks the current fingerprint.
-- `userData/defaults` is copied once and never pruned; a **stale shipped profile** can
-  shadow a custom one in the export menu.
+- `userData/defaults` is copied once and never pruned. A surface that offers or
+  runs an export profile reads `exportProfiles`; a list of its own lets a
+  **stale shipped profile** replace a custom one.
 - `packages/pandoc-editor/src/util/math-delimiters.ts` must stay CodeMirror-free (main-process
   bundle).
 - The launcher's focus-if-running is **intentional** — quit fully to load a new build.

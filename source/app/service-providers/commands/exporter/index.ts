@@ -24,7 +24,7 @@ import isFile from "@common/util/is-file";
 import type { WikilinkIndex } from "@common/util/wikilink-resolution";
 import { type MathJaxMacro } from "@dzack/tikz-render/mathjax-config";
 import type AssetsProvider from "@providers/assets";
-import { type ValidPandocProfile } from "@providers/assets";
+import { type PandocProfileMetadata, type ValidPandocProfile } from "@providers/assets";
 import type ConfigProvider from "@providers/config";
 import type { ConfigOptions } from "@providers/config/get-config-template";
 import type FSAL from "@providers/fsal";
@@ -87,6 +87,28 @@ export function getCustomProfiles(
       }),
     ),
   ];
+}
+
+/**
+ * The export profiles of the application: the defaults files of the author
+ * and the custom profiles. A custom profile replaces a defaults file of the
+ * same name. userData/defaults is copied once and never pruned, so it can
+ * hold a PDF.yaml of a version before the PDF recipe; that file must not
+ * replace the recipe profile.
+ *
+ * @param   {Profile[]}  defaults  The defaults files of the author: all of them
+ *                                (the menu), or the valid ones (the harness)
+ * @param   {ConfigOptions["export"]["scripts"]}  scripts  The export scripts of the settings
+ *
+ * @return  {Array<Profile | ValidPandocProfile>}  The profiles, one for each name
+ */
+export function exportProfiles<Profile extends PandocProfileMetadata>(
+  defaults: Profile[],
+  scripts: ConfigOptions["export"]["scripts"],
+): Array<Profile | ValidPandocProfile> {
+  const custom = getCustomProfiles(scripts);
+  const customNames = new Set(custom.map((profile) => profile.name));
+  return [...defaults.filter((profile) => !customNames.has(profile.name)), ...custom];
 }
 
 const PLUGINS = {

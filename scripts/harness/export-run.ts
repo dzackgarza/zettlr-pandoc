@@ -2,10 +2,10 @@
  * Headless app-level export harness.
  *
  * Runs the LITERAL command the GUI runs on export — the real makeExport — with
- * no window, so exports can be exercised from the terminal. Crucially it builds
- * the export-profile list EXACTLY like the `list-export-profiles` IPC does
- * (userData/defaults + getCustomProfiles), so it sees the same profiles (and the
- * same stale/duplicate ones) the running app sees — not a hand-picked subset.
+ * no window, so exports can be exercised from the terminal. It builds the
+ * export-profile list with `exportProfiles`, the function of the
+ * `list-export-profiles` IPC and of the Project export, so it sees the profiles
+ * that the running app sees.
  *
  * Usage (via the electron shim preload):
  *   node --require ./scripts/harness/electron-stub.cjs --import tsx \
@@ -13,7 +13,7 @@
  *
  * Or `just export-headless <ProfileName.yaml> <source.md>`.
  */
-import { makeExport, getCustomProfiles } from '../../source/app/service-providers/commands/exporter/index'
+import { makeExport, exportProfiles } from '../../source/app/service-providers/commands/exporter/index'
 import { promises as fs, readFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
@@ -53,21 +53,16 @@ async function main (): Promise<void> {
   const appConfig = JSON.parse(readFileSync(path.join(userData, 'config.json'), 'utf8'))
   const defaultsDir = path.join(userData, 'defaults')
 
-  // Reproduce `list-export-profiles`: defaults from userData + custom profiles.
+  // The defaults files of userData, as `listDefaults` reads them.
   const files = (await fs.readdir(defaultsDir)).filter(f => f.endsWith('.yaml'))
   const defaultsProfiles = files.map(f => {
     const parsed = YAML.parse(readFileSync(path.join(defaultsDir, f), 'utf8'))
-    return { name: f, reader: parsed.reader, writer: parsed.writer, isInvalid: false }
+    return { name: f, reader: parsed.reader, writer: parsed.writer, isInvalid: false as const }
   })
-  const allProfiles = [ ...defaultsProfiles, ...getCustomProfiles(appConfig.export.scripts) ]
+  const allProfiles = exportProfiles(defaultsProfiles, appConfig.export.scripts)
 
-  const byName: Record<string, string[]> = {}
-  for (const p of allProfiles) { (byName[p.name] ??= []).push(p.writer) }
   console.log('=== profiles the GUI lists (name -> writer) ===')
-  for (const [ name, writers ] of Object.entries(byName)) {
-    const dup = writers.length > 1 ? '   <<< DUPLICATE NAME' : ''
-    console.log(`  ${name}: ${writers.join(', ')}${dup}`)
-  }
+  for (const p of allProfiles) { console.log(`  ${p.name}: ${p.writer}`) }
 
   const profile = allProfiles.find(p => p.name === profileName)
   if (profile === undefined) {
