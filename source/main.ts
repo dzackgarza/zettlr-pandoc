@@ -164,7 +164,7 @@ const lifecycle = new ApplicationLifecycle({
     const services = getAppServiceContainer();
     if (!(await services.commands.run("roots-add", files)))
       throw new Error("Could not open the requested documents");
-    services.windows.showAnyWindow();
+    services.windows.activate();
   },
   shutdown: shutdownApplication,
   release: () => app.releaseSingleInstanceLock(),
@@ -209,17 +209,15 @@ app.on("open-file", (e, filePath) => {
 });
 
 /**
- * Quit as soon as all windows are closed. Except if
- * `system.leaveAppRunning` is true or on macOS.
+ * Quit as soon as all windows are closed, except on macOS and for a session
+ * that stays in the notification area (`keepsSessionRunning`).
  */
 app.on("window-all-closed", function () {
   if (!isAppServiceContainerReady()) {
     return;
   }
 
-  const { config } = getAppServiceContainer();
-  const { leaveAppRunning } = config.get().system;
-  if (!leaveAppRunning && process.platform !== "darwin") {
+  if (!getAppServiceContainer().windows.keepsSessionRunning() && process.platform !== "darwin") {
     // On OS X it is common for applications and their menu bar
     // to stay active until the user quits explicitly with Cmd + Q
     app.quit();

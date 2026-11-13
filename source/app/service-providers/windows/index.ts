@@ -111,6 +111,7 @@ export default class WindowProvider extends ProviderContract {
   private readonly _stateContainer: PersistentDataContainer<Record<string, WindowPosition>>;
   private readonly _hasRTLLocale: boolean;
   private suppressWindowOpening: boolean;
+  private readonly _launchedMinimized: boolean;
   private readonly _emitter: EventEmitter;
   private readonly _lastMainWindow: { windowId: string | undefined };
 
@@ -145,10 +146,10 @@ export default class WindowProvider extends ProviderContract {
     );
     this._lastMainWindow = { windowId: undefined };
 
-    // If the corresponding CLI flag is passed, we should suppress opening of
-    // any windows until the user has manually activated the app by utilizing
-    // the tray menu.
-    this.suppressWindowOpening = getCLIArgument("launch-minimized");
+    // A start with `--launch-minimized` opens no window until the author asks
+    // for one (`activate`).
+    this._launchedMinimized = getCLIArgument("launch-minimized");
+    this.suppressWindowOpening = this._launchedMinimized;
 
     // Detect whether we have an RTL locale for correct traffic light positions.
     const schema = bcp47.parse(app.getLocale());
@@ -394,7 +395,7 @@ export default class WindowProvider extends ProviderContract {
       }
 
       const nWindows = Object.values(this._mainWindows).length; // BrowserWindow.getAllWindows().length
-      const leaveAppRunning = this._config.get().system.leaveAppRunning;
+      const leaveAppRunning = this.keepsSessionRunning();
 
       // If this is the last window open on Windows or Linux, the user intention
       // is to quit the app. To prevent the document manager from removing the
@@ -647,11 +648,24 @@ export default class WindowProvider extends ProviderContract {
   }
 
   /**
-   * This function gets called from the tray provider to signal to the window
-   * provider that the user is ready to "activate" the app. Only gets called
-   * once per program run.
+   * Whether the session stays in the notification area when its last window
+   * closes: the setting `system.leaveAppRunning` of the author, or a start
+   * with `--launch-minimized`. The option holds for its own start and is not
+   * a setting. A desktop without a notification area keeps no session.
    */
-  public activateFromTray(): void {
+  public keepsSessionRunning(): boolean {
+    return (
+      checkedEnvironment().tray.supported &&
+      (this._config.get("system.leaveAppRunning") || this._launchedMinimized)
+    );
+  }
+
+  /**
+   * The author asks for the window of the session: a click on the tray icon
+   * or a second start of the application. After a start in the notification
+   * area this opens the windows of the session.
+   */
+  public activate(): void {
     this.suppressWindowOpening = false;
     this.syncMainWindows(); // Ensure all main windows are there
     this.showAnyWindow(); // Ensure at least one window is actually visible

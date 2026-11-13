@@ -1477,10 +1477,19 @@ of an isolated instance are in the first comment of #132.
   on and the window is not in the mode (`navigationSidebarShown`,
   `annotationPanelShown`). Code that shows or hides a pane calls
   `setPaneVisible`; a shown pane ends the mode.
+- **An option of one start writes no setting.** A start with
+  `--launch-minimized` opens no window, and its session stays in the
+  notification area when its last window closes; `system.leaveAppRunning`
+  stays as the author set it. `WindowProvider.keepsSessionRunning` decides
+  for the close of the last window, `window-all-closed` and the tray icon,
+  and a desktop without a notification area keeps no session. A click on
+  the tray icon and a second start call `WindowProvider.activate`, which
+  opens the windows of the session.
 - **Proof:** `e2e/settings-write-refused.spec.ts`,
   `e2e/preferences-refused-value.spec.ts`,
   `e2e/user-dictionary-write-refused.spec.ts`,
-  `e2e/distraction-free-restart.spec.ts`, `test/save-refusal-toast.spec.ts`.
+  `e2e/distraction-free-restart.spec.ts`, `test/save-refusal-toast.spec.ts`,
+  `e2e/launch-minimized.spec.ts`.
 
 ### 23. The order of a folder
 
