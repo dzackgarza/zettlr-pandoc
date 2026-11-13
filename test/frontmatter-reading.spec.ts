@@ -11,7 +11,8 @@
  *                  hover preview, the link preview and the LanguageTool
  *                  language (`extractYamlFrontmatter`) read the metadata
  *                  block of a document as Pandoc reads it (#203). Pandoc's
- *                  `yamlMetaBlock` takes a closer with trailing spaces,
+ *                  `yamlMetaBlock` takes an opener and a closer with
+ *                  trailing spaces,
  *                  refuses an opener that a blank line follows, reads CRLF
  *                  text as LF text and takes a block after a paragraph. The
  *                  expected values are the output of `pandoc -f markdown -t
@@ -26,6 +27,12 @@ import extractYamlFrontmatter from "@common/util/extract-yaml-frontmatter";
 import { strict as assert } from "assert";
 
 const DOCUMENTS = [
+  {
+    name: "an opener with a trailing space",
+    text: "--- \ntitle: A\n---\n\nBody\n",
+    title: "A",
+    body: "Body",
+  },
   {
     name: "a closer with a trailing space",
     text: "---\ntitle: A\n--- \n\nBody\n",
