@@ -90,6 +90,7 @@ interface ScratchBoundary {
   occurrencePath: string;
   documents: DocumentManager;
   references: ReferenceProvider;
+  fsalEvents: EventEmitter;
 }
 
 async function createScratchBoundary(): Promise<ScratchBoundary> {
@@ -195,7 +196,7 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
   await documents.getDocument(definitionPath);
   await documents.getDocument(occurrencePath);
 
-  return { root, definitionPath, occurrencePath, documents, references };
+  return { root, definitionPath, occurrencePath, documents, references, fsalEvents };
 }
 
 function acceptedEdit(
@@ -308,16 +309,26 @@ describe("Workspace reference rename authority application", function () {
   });
 
   it("serves the renamed keys when the commit and the undo announce them (#57)", async function () {
+    // A closed document: the FSAL gave its saved snapshot, and the commit
+    // writes its file. The watcher of this spec reports no write.
+    const closedPath = path.join(scratch.root, "Closed.md");
+    writeFileSync(closedPath, OCCURRENCE_SOURCE, "utf-8");
+    scratch.fsalEvents.emit("fsal-events", [
+      { event: "change", descriptor: descriptorFor(closedPath) },
+    ]);
     const edit = acceptedEdit(await scratch.references.previewRename(OLD_KEY, NEW_KEY));
 
     assert.equal((await scratch.references.commitRename(edit)).status, "applied");
+    assert.equal(readFileSync(closedPath, "utf-8"), RENAMED_OCCURRENCE_SOURCE);
     assert.deepEqual(servedKeys(scratch.references), {
+      [closedPath]: { definitions: [], occurrences: [NEW_KEY] },
       [scratch.definitionPath]: { definitions: [NEW_KEY], occurrences: [] },
       [scratch.occurrencePath]: { definitions: [], occurrences: [NEW_KEY] },
     });
 
     assert.equal((await scratch.references.undoRename()).status, "applied");
     assert.deepEqual(servedKeys(scratch.references), {
+      [closedPath]: { definitions: [], occurrences: [OLD_KEY] },
       [scratch.definitionPath]: { definitions: [OLD_KEY], occurrences: [] },
       [scratch.occurrencePath]: { definitions: [], occurrences: [OLD_KEY] },
     });
