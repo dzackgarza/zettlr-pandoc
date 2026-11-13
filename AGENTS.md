@@ -687,6 +687,14 @@ of an isolated instance are in the first comment of #132.
   while dot files are off; a folder is hidden by type only as a dot path.
   `IgnoreFilter.matches` judges both, `ruleMatches` the rules only (Hide
   and Unhide edit rules, so they read `ruleMatches`).
+- **An extension of `attachmentExtensions` is a known extension.** It has
+  three more roles than the listing: a new file whose name has it keeps
+  its name (`file-new.ts`; another name gets the extension of the
+  document type), a rename to it is a change of extension that the author
+  confirms (`file-rename.ts`; another extension is kept as part of the
+  name), and the row of such a file has the attachment icon
+  (`file-group`, `TreeItem.vue`). `hasAnyRecognizedFileExtension` decides
+  the first two.
 - **Rules:** gitignore syntax, matched by the `ignore` package. The sources
   are `fileManager.ignoreRules` in the configuration (all workspaces) and the
   file `.zettlrignore` at the root of each open workspace. A path below
