@@ -52,6 +52,10 @@ import net from "net";
 import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
+import {
+  AGENT_API_PORT_FILE,
+  parseAgentApiDiscovery,
+} from "source/app/service-providers/agent-api/discovery-file";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
 import AgentHTTPProvider, {
   type AgentApiHost,
@@ -118,6 +122,7 @@ const openApiDocument = parseYaml(
     "utf8",
   ),
 ) as {
+  info: { version: string };
   components: { schemas: Record<string, unknown> };
   paths: Record<string, Record<string, PublishedOperation>>;
 };
@@ -668,10 +673,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       env: TOKEN_ENVIRONMENT,
     });
     await httpProvider.boot();
-    httpPort = Number.parseInt(
-      readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
-      10,
-    );
+    httpPort = parseAgentApiDiscovery(
+      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+    ).port;
     assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });
 
@@ -985,11 +989,12 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // kernel chooses, so the file is the only place a client can learn the
     // endpoint. It must name the port that actually answers, and a clean
     // shutdown must not leave a stale endpoint behind.
-    const portFile = path.join(userData, "agent-api.port");
-    const published = Number.parseInt(readFileSync(portFile, "utf8").trim(), 10);
-    assert.equal(published, httpPort);
+    const portFile = path.join(userData, AGENT_API_PORT_FILE);
+    const published = parseAgentApiDiscovery(readFileSync(portFile, "utf8"));
+    assert.equal(published.port, httpPort);
     const response = await httpRequest("GET", "/v1/ping");
     assert.equal(response.status, 200);
+    assert.equal(parseAs(response.body, "PingResponse").instanceId, published.instanceId);
 
     await httpProvider.shutdown();
     assert.equal(existsSync(portFile), false, "shutdown must remove the port file");
@@ -1003,8 +1008,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const killedProfile = path.join(scratch, "killed-profile");
     mkdirSync(killedProfile);
     writeFileSync(
-      path.join(killedProfile, "agent-api.port"),
-      readFileSync(path.join(userData, "agent-api.port"), "utf8"),
+      path.join(killedProfile, AGENT_API_PORT_FILE),
+      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
     );
     await httpProvider.shutdown();
 
@@ -1872,10 +1877,9 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
         started,
       );
       await httpProvider.boot();
-      httpPort = Number.parseInt(
-        readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
-        10,
-      );
+      httpPort = parseAgentApiDiscovery(
+        readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+      ).port;
       return started;
     }
 
@@ -2259,6 +2263,93 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(refusal.ok, false);
     assert.equal(refusal.error.code, "PROTOCOL_VERSION_UNSUPPORTED");
     assert.deepEqual(requestPaths, ["/v1/ping"]);
+  });
+
+  it("names each transport failure of the external CLI once, with its own code (#57)", async function () {
+    // A script reads the code of the one refusal line on stderr. A lost
+    // connection, a body that stops, and a body that is no JSON are three
+    // different failures, at any request of the CLI.
+    const servedVersion = openApiDocument.info.version;
+    const filePath = path.join(scratch, "transport.md");
+    const patchPath = path.join(scratch, "transport.diff");
+    writeFileSync(filePath, "before\n", "utf8");
+    writeFileSync(patchPath, "a non-empty proposition\n", "utf8");
+
+    async function listen(handler: http.RequestListener): Promise<number> {
+      const peer = http.createServer(handler);
+      peerServers.push(peer);
+      await new Promise<void>((resolve) => {
+        peer.listen(0, "127.0.0.1", resolve);
+      });
+      const address = peer.address();
+      assert.ok(address !== null && typeof address !== "string");
+      return address.port;
+    }
+    async function closedPort(): Promise<number> {
+      const probe = net.createServer();
+      await new Promise<void>((resolve) => {
+        probe.listen(0, "127.0.0.1", resolve);
+      });
+      const address = probe.address() as net.AddressInfo;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+      return address.port;
+    }
+    function answerPing(response: http.ServerResponse): void {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ protocolVersion: servedVersion }));
+    }
+
+    const ports = {
+      "no listener": await closedPort(),
+      "connection lost after the ping": await listen((request, response) => {
+        if (request.url === "/v1/ping") {
+          answerPing(response);
+          return;
+        }
+        request.socket.destroy();
+      }),
+      "body stops after its headers": await listen((_request, response) => {
+        response.writeHead(200, { "Content-Type": "application/json", "Content-Length": "200" });
+        response.write('{"protocolVersion":');
+        setTimeout(() => response.socket?.destroy(), 50);
+      }),
+      "body is no JSON": await listen((_request, response) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end("<html>proxy error</html>");
+      }),
+    };
+
+    const outcomes: Record<string, { exit: number | null; refusals: string[] }> = {};
+    for (const [failure, port] of Object.entries(ports)) {
+      const result = await runReviewDiffCli([
+        "--document",
+        filePath,
+        "--patch",
+        patchPath,
+        "--description",
+        failure,
+        "--port",
+        String(port),
+      ]);
+      assert.equal(result.stdout, "", failure);
+      outcomes[failure] = {
+        exit: result.code,
+        refusals: result.stderr
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) =>
+            line.startsWith('{"ok":false')
+              ? (JSON.parse(line) as { error: { code: string } }).error.code
+              : `no refusal: ${line}`,
+          ),
+      };
+    }
+    assert.deepEqual(outcomes, {
+      "no listener": { exit: 1, refusals: ["INSTANCE_UNREACHABLE"] },
+      "connection lost after the ping": { exit: 1, refusals: ["INSTANCE_UNREACHABLE"] },
+      "body stops after its headers": { exit: 1, refusals: ["RESPONSE_INCOMPLETE"] },
+      "body is no JSON": { exit: 1, refusals: ["PROTOCOL_ERROR"] },
+    });
   });
 
   it("detaches a saved pending review before closing its final pane", async function () {
