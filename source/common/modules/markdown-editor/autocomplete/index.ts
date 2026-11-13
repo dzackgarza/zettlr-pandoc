@@ -40,7 +40,7 @@ import { phraseCompletionSource, phraseCompletionsField, phraseCompletionsUpdate
 import { proseDictionarySource } from "./prose-dictionary";
 import { snippets } from "./snippets";
 import { tags } from "./tags";
-import { texCommandCompletionSource, texMacroSourcesUpdate } from "./tex";
+import { texCommandCompletionSource, texVocabularyUpdate } from "./tex";
 import { texCommandSource } from "./tex-commands";
 import { texConstructionSource } from "./tex-constructions";
 
@@ -206,4 +206,4 @@ export { citekeyUpdate } from "./citations";
 export { filesUpdate } from "./files";
 export { snippetsUpdate } from "./snippets";
 export { tagsUpdate } from "./tags";
-export { phraseCompletionsUpdate, texMacroSourcesUpdate };
+export { phraseCompletionsUpdate, texVocabularyUpdate };

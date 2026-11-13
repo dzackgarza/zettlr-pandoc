@@ -42,6 +42,7 @@ import type {
   WorkspaceProblems,
 } from "@dts/common/problems";
 import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
@@ -288,6 +289,12 @@ export type ApplicationIPCContract = {
   "get-cross-reference-system": {
     request: { payload: string };
     response: CrossReferenceSystem;
+  };
+  // Answered inline by run(): Flowmark's TeXstudio command index and the
+  // packages that the `tex` lint context loads (`readTexCommandVocabulary`).
+  "tex-command-vocabulary": {
+    request: { payload?: undefined };
+    response: TexCommandVocabulary;
   };
   "open-attachment": {
     request: { payload: { citekey: string; filePath: string } };
@@ -566,6 +573,8 @@ export default class CommandProvider extends ProviderContract {
       return database;
     } else if (command === "get-cross-reference-system" && typeof payload === "string") {
       return await documentCrossReferenceSystem(this._app.fsal, payload);
+    } else if (command === "tex-command-vocabulary") {
+      return await this._app.documentLint.texCommandVocabulary();
     } else if (command === "edit-ignore-rules") {
       const mainWindow = this._app.windows.getFirstMainWindow();
       if (mainWindow === undefined) {

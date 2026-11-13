@@ -140,23 +140,16 @@ import { annotateCompletionEntries } from "@common/pandoc-util/project-reference
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { documentTitle } from "@common/util/document-title";
 import { reportError } from "@common/util/error-reporting";
-import { getDocumentTypeForExtension, hasMarkdownExt } from "@common/util/file-extention-checks";
+import { hasMarkdownExt } from "@common/util/file-extention-checks";
 import makeValidUri from "@common/util/make-valid-uri";
 import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-path-polyfill";
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
-import {
-  declaredTexMacroSources,
-  type TexDocumentKind,
-  type TexMacroSource,
-  texDocument,
-} from "@common/util/tex-context";
-import { resolveTexMacroSourcePaths } from "@common/util/tex-macro-source-resolution";
 import { wikilinkTargetsIn } from "@common/util/wikilink-target";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
-import { DocumentType, DP_EVENTS, type OpenDocument } from "@dts/common/documents";
+import { DP_EVENTS, type OpenDocument } from "@dts/common/documents";
 import type { CodeFileDescriptor, DirDescriptor, MDFileDescriptor } from "@dts/common/fsal";
 import type {
   DocumentLocation,
@@ -167,6 +160,7 @@ import type {
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
+import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import type { TikzPreviewHost } from "@dzack/tikz-render/host";
 import type { TikzLivePreviewTarget } from "@dzack/tikz-render/live-preview";
 import {
@@ -320,74 +314,21 @@ function stepReviewChunk(direction: 1 | -1): void {
 
 // UNREFFED STUFF
 let currentEditor: MarkdownEditor | null = null;
-let texMacroSourceCacheKey = "";
-let texMacroSourceRequestId = 0;
-let activeTexMacroSourcePaths = new Set<string>();
 
-function texDocumentKindForPath(filePath: string): TexDocumentKind | undefined {
-  switch (getDocumentTypeForExtension(filePath)) {
-    case DocumentType.Markdown:
-      return "markdown";
-    case DocumentType.LaTeX:
-      return "latex";
-    case DocumentType.YAML:
-      return "yaml";
-    case DocumentType.JSON:
-    case undefined:
-      return undefined;
-  }
-}
+/**
+ * Flowmark's TeX vocabulary (#118): the index and the packages of the lint
+ * context. One request for the window; a rejected request stays, and the
+ * dispatcher showed its failure one time.
+ */
+let texVocabularyRequest: Promise<TexCommandVocabulary> | null = null;
 
-async function updateTexMacroSources(
-  editor: MarkdownEditor | null = currentEditor,
-  force = false,
-): Promise<void> {
-  // An editor without its document declares no sources yet; its `loaded`
-  // event reads them.
-  if (editor === null || !editor.documentLoaded) return;
-  const kind = texDocumentKindForPath(editor.documentPath);
-  if (kind === undefined) return;
-
-  // The metadata block of the whole syntax tree: a block after the first
-  // screen declares sources too.
-  const state = editor.instance.state;
-  const tree = ensureSyntaxTree(state, state.doc.length, Number.POSITIVE_INFINITY);
-  if (tree === null) {
-    throw new Error(`The editor of ${editor.documentPath} has no syntax tree`);
-  }
-  const patterns = declaredTexMacroSources(texDocument(state.doc.toString(), kind, tree));
-  const descriptors = workspaceStore.descriptorMap;
-  const workspacePaths =
-    patterns.length === 0
-      ? []
-      : [...descriptors.values()]
-          .filter((descriptor) => descriptor.type === "file" || descriptor.type === "code")
-          .map((descriptor) => descriptor.path);
-  const paths = resolveTexMacroSourcePaths(editor.documentPath, patterns, workspacePaths);
-  // The modification time of a source is part of the key: a source that
-  // changed on disk is read again.
-  const cacheKey = JSON.stringify([
-    editor.documentPath,
-    patterns,
-    paths.map((filePath) => [filePath, descriptors.get(filePath)?.modtime]),
-  ]);
-  if (!force && cacheKey === texMacroSourceCacheKey) return;
-
-  texMacroSourceCacheKey = cacheKey;
-  activeTexMacroSourcePaths = new Set(paths);
-  const requestId = ++texMacroSourceRequestId;
-  const sources: TexMacroSource[] = [];
-  for (const filePath of paths) {
-    try {
-      const sourceDocument = await documentAuthorityIPCAPI.fetchDoc(filePath);
-      sources.push({ path: filePath, content: sourceDocument.content });
-    } catch (error) {
-      console.error("[MainEditor] Could not load TeX macro source " + filePath, error);
-    }
-  }
-
-  if (requestId !== texMacroSourceRequestId || currentEditor !== editor) return;
-  editor.setCompletionDatabase("tex-macro-sources", sources);
+function giveTexVocabulary(editor: MarkdownEditor): void {
+  texVocabularyRequest ??= ipcRenderer.invoke("application", {
+    command: "tex-command-vocabulary",
+  });
+  texVocabularyRequest
+    .then((vocabulary) => editor.setTexVocabulary(vocabulary))
+    .catch((error) => reportError("Could not read the TeX vocabulary of Flowmark", error));
 }
 let editorLoadPromise: Promise<void> | null = null;
 const activeTikzSource = shallowRef<TikzSourceBlock | null>(null);
@@ -746,17 +687,6 @@ const stopDocumentUpdates = ipcRenderer.on(
           });
         })
         .catch((err) => reportError(err));
-    }
-    if (
-      context.filePath !== undefined &&
-      activeTexMacroSourcePaths.has(context.filePath) &&
-      (event === DP_EVENTS.CHANGE_FILE_STATUS ||
-        event === DP_EVENTS.FILE_REMOTELY_CHANGED ||
-        event === DP_EVENTS.FILE_SAVED)
-    ) {
-      updateTexMacroSources(currentEditor, true).catch((error) =>
-        reportError("Could not refresh TeX macro sources", error),
-      );
     }
     // Collaboration state (annotations, review) is not handled here: it
     // reaches this pane through the document-collaboration store and the
@@ -1316,9 +1246,6 @@ async function getEditorFor(doc: string): Promise<MarkdownEditor> {
       // A pane navigation may have arrived before this editor finished
       // loading its document (issue #1 Phase 5); restore it now.
       applyPendingNavigation();
-      updateTexMacroSources(editor).catch((error) =>
-        reportError("Could not refresh TeX macro sources", error),
-      );
     }
   });
 
@@ -1483,7 +1410,7 @@ async function loadDocument(): Promise<void> {
   currentEditor.setCompletionDatabase("snippets", snippets.value);
   currentEditor.setCompletionDatabase("phrases", phraseCompletions.value);
   currentEditor.setQuickTexCatalogue(quickTex.value);
-  await updateTexMacroSources(currentEditor);
+  giveTexVocabulary(currentEditor);
 
   maybeHighlightSearchResults();
 
@@ -1554,9 +1481,6 @@ function refreshWorkspaceState(): void {
     currentEditor.projectInfo = updateProjectInfo();
   }
   updateFileDatabase().catch((err) => reportError("Could not update file database", err));
-  updateTexMacroSources().catch((error) =>
-    reportError("Could not refresh TeX macro sources", error),
-  );
 }
 
 function refreshActiveEditorAuxiliaryState(): void {
@@ -2073,11 +1997,6 @@ const refreshDocumentRequests = _.debounce(() => {
   updateWikilinkResolutions(false).catch((error) =>
     reportError("Could not resolve the wikilinks", error),
   );
-  if (ownsWindowActiveState()) {
-    updateTexMacroSources().catch((error) =>
-      reportError("Could not refresh TeX macro sources", error),
-    );
-  }
 }, 200);
 
 // The targets whose resolutions the editor last asked for

@@ -205,6 +205,26 @@ export const FLOWMARK_HOST_VOCABULARY = {
   },
 };
 
+/**
+ * The `tex` section of the Flowmark context: the TeX environment that the
+ * app compiles in. The TeX vocabulary of the editor's completion reads the
+ * same section (`flowmark-tex-vocabulary.ts`).
+ */
+export function flowmarkTexContext(
+  source: Pick<FlowmarkLintContextSource, "homeDirectory" | "env" | "macroSources">,
+  projectRoots: string[] | undefined,
+): Record<string, unknown> {
+  return {
+    home_directory: source.homeDirectory,
+    // Absent keys mean "not set": an unset TEXINPUTS leaves TeX's own
+    // search path, and a document outside any project has no project root.
+    ...(source.env.TEXINPUTS === undefined ? {} : { texinputs: source.env.TEXINPUTS }),
+    ...(projectRoots === undefined ? {} : { project_roots: projectRoots }),
+    macro_sources: [...source.macroSources],
+    packages: [...FLOWMARK_HOST_VOCABULARY.packages],
+  };
+}
+
 export async function buildFlowmarkLintContext(
   text: string,
   documentPath: string,
@@ -218,15 +238,7 @@ export async function buildFlowmarkLintContext(
   );
 
   return {
-    tex: {
-      home_directory: source.homeDirectory,
-      // Absent keys mean "not set": an unset TEXINPUTS leaves TeX's own
-      // search path, and a document outside any project has no project root.
-      ...(source.env.TEXINPUTS === undefined ? {} : { texinputs: source.env.TEXINPUTS }),
-      ...(options.projectRoots === undefined ? {} : { project_roots: options.projectRoots }),
-      macro_sources: [...source.macroSources],
-      packages: [...FLOWMARK_HOST_VOCABULARY.packages],
-    },
+    tex: flowmarkTexContext(source, options.projectRoots),
     references: {
       ...FLOWMARK_HOST_VOCABULARY.references,
       ...(options.bibliographies === undefined ? {} : { bibliographies: options.bibliographies }),

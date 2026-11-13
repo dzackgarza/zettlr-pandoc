@@ -1790,6 +1790,18 @@ of an isolated instance are in the first comment of #132.
   through `runWorkspaceEditTransaction`, which refuses the whole plan when a
   document changed after its hash was taken. One pass applies one round of
   fixes; a fix that exposes another needs a second run.
+- **TeX command completion offers what `tex/unknown-command` accepts.** The
+  command `tex-command-vocabulary` (`DocumentLintProvider.texCommandVocabulary`,
+  `util/flowmark-tex-vocabulary.ts`) runs `flowmark-lint --tex-vocabulary`
+  with the `tex` context of the lint. It answers Flowmark's TeXstudio index
+  and the packages that the context loads (the host packages and the packages
+  of the central macro tree). The completion (`autocomplete/tex.ts`) adds the
+  packages that the TeX of the document loads, by Flowmark's rule
+  (`collectTexContext`), and offers the commands of their closure. The app
+  holds no copy of the index. A window asks one time: a Flowmark update or a
+  change of the packages of the macro tree reaches the next window. Proof:
+  `test/texstudio-command-index.spec.ts` (the lint and the completion agree),
+  `e2e/autocomplete-language-sources.spec.ts` (the window asks the command).
 - The project's own source code is checked by the global ai-review-ci bun
   profile (`just test-commit`, `just test-ci`), not by a repo-local linter.
 
