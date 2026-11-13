@@ -7,9 +7,10 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     A chapter of a Quarto book has a figure and a theorem.
- *                  The author opens the context menu of each and chooses
- *                  "Create reference label…". Quarto numbers a figure whose
+ * Description:     A chapter of a Quarto book has sections, a figure and a
+ *                  theorem. The author opens the context menu of each (on
+ *                  the text of a heading and right of it, on the drawn
+ *                  figure) and chooses "Create reference label…". Quarto numbers a figure whose
  *                  id has a hyphen (`#fig-key`); the theorem filters of the
  *                  book (custom-numbered-blocks, the amsthm filters of
  *                  ~/.pandoc) number a theorem whose id has a colon
@@ -21,7 +22,7 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
+import { copyFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Locator, type Page } from "playwright";
@@ -42,11 +43,19 @@ const DOCUMENT = [
   "",
   "The orbit of a point.",
   "",
+  "![The orbit of a point](orbit.png)",
+  "",
+  "## Fixed points",
+  "",
+  "A point is fixed.",
+  "",
   '::: {.theorem title="Closed orbits"}',
   "Each orbit is closed.",
   ":::",
   "",
 ].join("\n");
+/** An image of 32 by 32 pixels: the application icon of that size. */
+const IMAGE_SOURCE = path.resolve(__dirname, "../resources/icons/png/32x32.png");
 const MANIFEST = "project:\n  type: book\nbook:\n  title: Orbits\n  chapters:\n    - orbits.md\n";
 
 /** The text of the document at the path, as the documents provider holds it. */
@@ -71,12 +80,23 @@ async function saveDocument(page: Page, documentPath: string): Promise<void> {
 }
 
 /**
- * Opens the context menu on the target, chooses "Create reference label…"
- * and confirms the proposed slug. Answers the key prefix that the dialog
- * showed and the slug it proposed.
+ * Opens the context menu on the target (at the position in it, else at its
+ * centre), chooses "Create reference label…" and confirms the proposed slug.
+ * Answers the key prefix that the dialog showed and the slug it proposed.
  */
-async function createLabel(page: Page, target: Locator): Promise<{ prefix: string; slug: string }> {
-  await target.click({ button: "right" });
+async function createLabel(
+  page: Page,
+  target: Locator,
+  position?: { x: number; y: number },
+): Promise<{ prefix: string; slug: string }> {
+  await target.click({ button: "right", position });
+  const menu = page.locator(".application-menu");
+  await menu.waitFor({ state: "visible", timeout: 10_000 });
+  const offered = await menu.locator(".menu-item .label").allInnerTexts();
+  assert.ok(
+    offered.includes("Create reference label…"),
+    `the context menu offers a label; it offers ${JSON.stringify(offered)}`,
+  );
   await page
     .locator(".application-menu .menu-item")
     .filter({ has: page.locator(".label", { hasText: /^Create reference label…$/ }) })
@@ -110,6 +130,7 @@ describe("assembled app: reference labels in a Quarto book", function () {
     documentPath = fixture.documentPath;
     const workspace = path.dirname(fixture.documentPath);
     await writeFile(path.join(workspace, "_quarto.yml"), MANIFEST, "utf8");
+    await copyFile(IMAGE_SOURCE, path.join(workspace, "orbit.png"));
     const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
     appProcess = app.appProcess;
     browser = app.browser;
@@ -152,6 +173,49 @@ describe("assembled app: reference labels in a Quarto book", function () {
 
     assert.equal(prefix, "sec-", "the dialog shows the Quarto section prefix");
     assert.ok(text.startsWith(`# Orbits {#sec-${slug}}\n`), "the heading carries the Quarto id");
+  });
+
+  it("labels a section from the space right of its heading", async function () {
+    const shown = requireInitialized(page, "The editor page must be initialized");
+    const target = requireInitialized(documentPath, "The document path must be initialized");
+    const line = shown.locator(".cm-line", { hasText: /Fixed points$/ }).first();
+    await line.waitFor({ state: "visible", timeout: 20_000 });
+    const box = await line.boundingBox();
+    if (box === null) {
+      throw new Error("The heading line has no box.");
+    }
+
+    const { prefix, slug } = await createLabel(shown, line, {
+      x: box.width - 20,
+      y: box.height / 2,
+    });
+    screenshots.set("line-end-labelled.png", await shown.screenshot());
+    const text = await documentText(shown, target);
+    await saveDocument(shown, target);
+
+    assert.equal(prefix, "sec-", "the dialog shows the Quarto section prefix");
+    assert.ok(
+      text.includes(`\n## Fixed points {#sec-${slug}}\n`),
+      "the heading carries the Quarto id",
+    );
+  });
+
+  it("labels a drawn figure with the id that Quarto numbers", async function () {
+    const shown = requireInitialized(page, "The editor page must be initialized");
+    const target = requireInitialized(documentPath, "The document path must be initialized");
+    const figure = shown.locator("figure.image-preview");
+    await figure.waitFor({ state: "visible", timeout: 20_000 });
+
+    const { prefix, slug } = await createLabel(shown, figure);
+    screenshots.set("figure-labelled.png", await shown.screenshot());
+    const text = await documentText(shown, target);
+    await saveDocument(shown, target);
+
+    assert.equal(prefix, "fig-", "the dialog shows the Quarto figure prefix");
+    assert.ok(
+      text.includes(`![The orbit of a point](orbit.png){#fig-${slug}}`),
+      "the figure carries the Quarto id",
+    );
   });
 
   it("labels a theorem with the id that the theorem filters number", async function () {
