@@ -363,6 +363,14 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 - The agent API listens on `127.0.0.1:27412` only. It serves the OpenAPI
   routes and, at `/mcp`, the same operations as an MCP server
   (`source/app/service-providers/agent-api/mcp-endpoint.ts`).
+- **A client finds its instance through the discovery file.** When the
+  listener is bound, the app writes `agent-api.port` into `userData`: the
+  bound port and the id of the instance that `/v1/ping` answers
+  (`agent-api/discovery-file.ts`). A killed instance leaves its file, and
+  another instance can bind its port, so a client takes the listener on that
+  port only when its ping names the same id (`readAgentApiPort` in
+  `e2e/support/electron-app.ts`). Proof: `test/agent-http-api.spec.ts`
+  ("a stale discovery file").
 - **Each request carries the token.** A caller sends
   `Authorization: Bearer <token>`, where the token is the value of
   `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`

@@ -90,6 +90,7 @@ import path from "path";
 import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { fileURLToPath } from "url";
+import writeFileAtomic from "write-file-atomic";
 import { type Document, parseDocument } from "yaml";
 import {
   CentralFigureAlreadyExistsError,
@@ -110,6 +111,7 @@ import {
   MacroSourcesUnavailableError,
 } from "../../util/load-mathjax-macros";
 import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
+import { AGENT_API_PORT_FILE, formatAgentApiDiscovery } from "./discovery-file";
 import AgentDocumentQueries, {
   canonicalPath,
   DocumentUnreadableError,
@@ -394,14 +396,6 @@ export class AgentApiTokenRequiredError extends Error {
   }
 }
 
-/**
- * The endpoint-discovery file, written into userData next to config.json once
- * the listener is bound (the same pattern as Chromium's DevToolsActivePort).
- * It holds the actual bound port, which is the only way a client can learn
- * the endpoint when the config requests a kernel-assigned port (`port: 0`).
- */
-export const AGENT_API_PORT_FILE = "agent-api.port";
-
 export default class AgentHTTPProvider extends ProviderContract {
   private _server: http.Server | undefined;
   /** Set once the port file exists; shutdown removes exactly what boot wrote. */
@@ -605,7 +599,9 @@ export default class AgentHTTPProvider extends ProviderContract {
 
     // The bind owner is the only process that knows the port when the config
     // requests a kernel-assigned one (`port: 0`), so publish the actual bound
-    // port where clients of this instance can read it. A discovery file that
+    // port and the id of this instance where its clients can read them
+    // (`discovery-file.ts`). The write is atomic, so a client that polls the
+    // file reads the whole text or no file. A discovery file that
     // cannot be written is a broken endpoint contract, exactly like a refused
     // bind: fail the boot rather than run an instance nobody can find.
     const address = this._server.address();
@@ -615,7 +611,11 @@ export default class AgentHTTPProvider extends ProviderContract {
     const boundPort = address.port;
     this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
     try {
-      await fs.promises.writeFile(this._portFilePath, `${boundPort}\n`, "utf8");
+      await writeFileAtomic(
+        this._portFilePath,
+        formatAgentApiDiscovery({ port: boundPort, instanceId: this._instanceId }),
+        "utf8",
+      );
     } catch (error) {
       await this.shutdown();
       throw new Error(`Agent API could not publish its endpoint to ${this._portFilePath}`, {

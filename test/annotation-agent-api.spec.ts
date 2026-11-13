@@ -40,6 +40,10 @@ import {
 import http from "http";
 import os from "os";
 import path from "path";
+import {
+  AGENT_API_PORT_FILE,
+  parseAgentApiDiscovery,
+} from "source/app/service-providers/agent-api/discovery-file";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
 import DocumentLintProvider from "source/app/service-providers/document-lint";
 import DocumentManager from "source/app/service-providers/documents";
@@ -365,10 +369,9 @@ describe("Annotation Agent API (/v1/annotations)", function () {
       env: { ZETTLR_AGENT_API_TOKEN: API_TOKEN },
     });
     await httpProvider.boot();
-    httpPort = Number.parseInt(
-      readFileSync(path.join(userData, "agent-api.port"), "utf8").trim(),
-      10,
-    );
+    httpPort = parseAgentApiDiscovery(
+      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+    ).port;
     assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });
 

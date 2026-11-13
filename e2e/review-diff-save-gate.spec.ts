@@ -77,23 +77,6 @@ function agentClient(port: number): AgentClient {
   };
 }
 
-async function waitForAgentApi(client: AgentClient, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError = "never attempted";
-  while (Date.now() < deadline) {
-    try {
-      await client.get("/v1/ping");
-      return;
-    } catch (error) {
-      lastError = String(error);
-      await delay(250);
-    }
-  }
-  throw new Error(
-    `The Agent API did not answer /v1/ping within ${timeoutMs}ms. Last error: ${lastError}`,
-  );
-}
-
 /**
  * Narrow the one read field this spec needs. The server is contract-typed and
  * conformance-tested elsewhere; this is the test's own boundary check so a shape
@@ -319,7 +302,6 @@ async function boot(fixture: RunningFixture, timeoutMs: number): Promise<void> {
   fixture.browser = app.browser;
   fixture.getOutput = app.getOutput;
   fixture.client = agentClient(await readAgentApiPort(created.configDirectory, 60_000));
-  await waitForAgentApi(fixture.client, 60_000);
 }
 
 async function teardown(fixture: RunningFixture): Promise<void> {

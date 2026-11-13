@@ -15,6 +15,10 @@
  *                  the box is on the screen, the app log names EADDRINUSE
  *                  and the port.
  *
+ *                  An app in that state does not finish its start. An attach
+ *                  to it fails at its time limit and stops each process of
+ *                  the app, so a failed start leaves no app behind (#57).
+ *
  *                  The box is a native message box, not a page: the spec
  *                  finds and answers it with xdotool on the X display of the
  *                  run.
@@ -25,17 +29,19 @@
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { rm } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  attach,
   createFixture,
   type Fixture,
   launchElectron,
   preserveArtifacts,
   readAppLog,
   requireInitialized,
+  startDeadline,
   stopProcess,
 } from "./support/electron-app";
 import { captureWindow, nativeDialog, pressKey } from "./support/native-dialog";
@@ -45,9 +51,31 @@ const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-agent-api-port-in-use-e2e
 // "Error"; the title argument of the call is the heading inside the box.
 const ERROR_BOX_TITLE = "Error";
 
+/** The ids of the processes whose command line names `text`. */
+async function processesNaming(text: string): Promise<number[]> {
+  const pids = (await readdir("/proc")).filter((entry) => /^\d+$/.test(entry));
+  const named: number[] = [];
+  for (const pid of pids) {
+    // A process can end between the listing and the read of its command line.
+    const commandLine = await readFile(`/proc/${pid}/cmdline`, "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT" || error.code === "ESRCH") {
+          return "";
+        }
+        throw error;
+      },
+    );
+    if (commandLine.includes(text)) {
+      named.push(Number(pid));
+    }
+  }
+  return named;
+}
+
 describe("assembled app: an Agent API port that another process holds (#215)", function () {
   let holder: Server | undefined;
   let fixture: Fixture | undefined;
+  let attachFixture: Fixture | undefined;
   let appProcess: ChildProcess | undefined;
   let output = "";
   const screenshots = new Map<string, Buffer>();
@@ -61,8 +89,10 @@ describe("assembled app: an Agent API port that another process holds (#215)", f
   after(async function () {
     await stopProcess(appProcess);
     await preserveArtifacts(ARTIFACT_DIRECTORY, fixture?.root, output, [], screenshots);
-    if (fixture !== undefined) {
-      await rm(fixture.root, { recursive: true, force: true });
+    for (const created of [fixture, attachFixture]) {
+      if (created !== undefined) {
+        await rm(created.root, { recursive: true, force: true });
+      }
     }
     if (holder !== undefined) {
       holder.close();
@@ -100,5 +130,25 @@ describe("assembled app: an Agent API port that another process holds (#215)", f
     );
 
     await pressKey(box, "Return");
+  });
+
+  it("stops each process of the app when an attach fails (#57)", async function () {
+    // The attach waits its whole time limit for a start that does not end,
+    // and then stops the process group of the app.
+    this.timeout(startDeadline({}) + 60_000);
+    const address = requireInitialized(holder, "the holder listens").address();
+    assert.ok(address !== null && typeof address === "object", "the holder has a port");
+
+    attachFixture = await createFixture("zettlr-agent-api-attach-failure-e2e-", {
+      documentName: "note.md",
+      documentContents: "# Note\n",
+      config: { agentApi: { enabled: true, port: address.port } },
+    });
+    await assert.rejects(attach(attachFixture.configDirectory, []), Error);
+    assert.deepEqual(
+      await processesNaming(attachFixture.configDirectory),
+      [],
+      "no process of the app is left after the failed attach",
+    );
   });
 });

@@ -20,7 +20,14 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
+import {
+  AGENT_API_PORT_FILE,
+  parseAgentApiDiscovery,
+} from "source/app/service-providers/agent-api/discovery-file";
+import type { components } from "source/types/generated/agent-api";
 import { stringify } from "yaml";
+
+type AgentApiSchemas = components["schemas"];
 
 export const REPO_ROOT = path.resolve(process.cwd());
 
@@ -435,17 +442,17 @@ function transientConnectionFailure(error: unknown): undefined {
 
 /**
  * Reads the port the running instance actually bound, from the discovery
- * file the Agent API publishes into its user-data directory. The bind owner
- * chose the port, so no other process can have taken it. The port must also answer
- * `/v1/ping` before it is handed out — a killed process leaves its file
- * behind, and a stale port must read as "not published yet", not as the
- * endpoint of the instance currently booting.
+ * file the Agent API publishes into its user-data directory. The port is
+ * handed out only when its `/v1/ping` names the instance of the file: a
+ * killed process leaves its file behind, and another instance can bind its
+ * port. A stale file reads as "not published yet", not as the endpoint of
+ * the instance currently booting.
  */
 export async function readAgentApiPort(
   configDirectory: string,
   timeoutMs: number,
 ): Promise<number> {
-  const portFile = path.join(configDirectory, "agent-api.port");
+  const portFile = path.join(configDirectory, AGENT_API_PORT_FILE);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // ENOENT is the one legal read failure: the instance has not published
@@ -458,16 +465,15 @@ export async function readAgentApiPort(
       throw error;
     });
     if (contents !== undefined) {
-      const port = Number.parseInt(contents.trim(), 10);
-      assert.ok(
-        Number.isInteger(port) && port > 0,
-        `The Agent API port file holds no port: ${JSON.stringify(contents)}`,
-      );
-      const response = await fetch(`http://127.0.0.1:${port}/v1/ping`, {
+      const discovery = parseAgentApiDiscovery(contents);
+      const response = await fetch(`http://127.0.0.1:${discovery.port}/v1/ping`, {
         headers: AGENT_API_AUTHORIZATION,
       }).catch(transientConnectionFailure);
       if (response?.ok === true) {
-        return port;
+        const ping = (await response.json()) as AgentApiSchemas["PingResponse"];
+        if (ping.instanceId === discovery.instanceId) {
+          return discovery.port;
+        }
       }
     }
     await delay(250);
