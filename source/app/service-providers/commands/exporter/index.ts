@@ -42,6 +42,7 @@ import { runScriptExport } from "./script-exporter";
 import { plugin as TextbundleExporter } from "./textbundle-exporter";
 // Exporters
 import type { DefaultsOverride, ExporterAPI, ExporterOptions, ExporterOutput } from "./types";
+import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
 
 /**
  * This function returns faux metadata for the custom export formats the
@@ -194,10 +195,25 @@ export async function makeExport(
     pandocDirectory: path.join(app.getPath("home"), ".pandoc"),
   };
 
+  // Zettlr resolves the wikilinks of a Pandoc export as it does for the PDF
+  // recipe: pandoc-config's filters/wikilinks.lua reads the resolutions from
+  // the file that PANDOC_WIKILINKS names, and it runs before each other
+  // filter, which can add headings.
+  const inputs = await exportInputs(options.sourceFiles);
+  const filters = [
+    path.join(math.pandocDirectory, "filters", "wikilinks.lua"),
+    ...config.get().export.filters,
+  ];
+
   // This is basically the "plugin API"
   const ctx: ExporterAPI = {
     runPandoc: async (defaults: string) => {
-      const output = await runPandoc(defaults, options.cwd);
+      const output = await withWikilinkMap(
+        inputs,
+        wikilinks,
+        async (mapFile) =>
+          await runPandoc(defaults, options.cwd, { ...process.env, PANDOC_WIKILINKS: mapFile }),
+      );
       if (output.stdout.length > 0) {
         logger.info("This Pandoc run produced additional output.", output.stdout);
       }
@@ -210,7 +226,7 @@ export async function makeExport(
         defaults,
         overrides,
         config.get(),
-        config.get().export.filters,
+        filters,
         app.getPath("temp"),
         math,
         options.defaultsOverride,

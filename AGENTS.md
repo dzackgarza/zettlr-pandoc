@@ -496,12 +496,16 @@ Zettlr starts it on one diagram.
 - **YAML `aliases`** is parsed by `fsal/util/file-parser.ts`. A change to what the
   parser extracts must bump `PARSER_VERSION` in `fsal-file.ts`; cached descriptors
   of another version are parsed again.
-- **PDF export:** `recipe-exporter.ts` writes `wikilinkExportMap`
-  (`common/util/wikilink-export.ts`): the heading count of each input and, per
+- **Exports:** each export that runs Pandoc writes `wikilinkExportMap`
+  (`common/util/wikilink-export.ts`) through `withWikilinkMap`
+  (`exporter/wikilink-map-file.ts`): the heading count of each input and, per
   raw target, the input and heading it resolves to. `PANDOC_WIKILINKS` names
-  that file for the recipe, whose `filters/wikilinks.lua` in pandoc-config
+  that file. The PDF recipe runs `filters/wikilinks.lua` of pandoc-config
+  itself; a Pandoc profile (`makeExport`: LaTeX, Word, HTML, a script) runs
+  `~/.pandoc/filters/wikilinks.lua` before each other filter. The filter
   turns each resolved link into a link to that heading and any other link into
-  its label. The filter resolves nothing itself.
+  its label; it resolves nothing itself. A link to a document outside the
+  export is its label. Proof: `test/export-document.spec.ts`.
 - **Renderer imports:** `wikilink-resolution.ts` imports Node `path`, which
   the renderer bundle maps to an empty module. Editor and window code import
   `splitWikilinkTarget` from `common/util/wikilink-target.ts`, which imports

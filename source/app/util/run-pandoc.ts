@@ -36,13 +36,18 @@ function textLines(chunks: string[]): string[] {
  *
  * @param   {string}  defaultsFile  The defaults file, already on disk
  * @param   {string}  cwd           The working directory of the process
+ * @param   env                     The environment of the process
  */
-export async function runPandoc(defaultsFile: string, cwd?: string): Promise<PandocRunnerOutput> {
+export async function runPandoc(
+  defaultsFile: string,
+  cwd?: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<PandocRunnerOutput> {
   const stdout: string[] = [];
   const stderr: string[] = [];
 
   const code = await new Promise<number>((resolve, reject) => {
-    const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile], { cwd });
+    const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile], { cwd, env });
 
     pandocProcess.stdout.on("data", (data) => {
       stdout.push(String(data));

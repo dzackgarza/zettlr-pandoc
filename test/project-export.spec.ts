@@ -209,6 +209,11 @@ describe("Project export", function () {
     // from the home directory.
     macroHome = path.join(tmpdir(), ".pandoc");
     await cp(path.resolve("test", "fixtures", "pandoc-macros"), macroHome, { recursive: true });
+    // A Pandoc export runs the wikilink filter of pandoc-config.
+    await cp(
+      path.join(homedir(), ".pandoc", "filters", "wikilinks.lua"),
+      path.join(macroHome, "filters", "wikilinks.lua"),
+    );
 
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
