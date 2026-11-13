@@ -111,6 +111,11 @@ export interface Footnote extends MDNode {
    * The label of the footnote (sans the formatting, i.e. [^1] -> 1)
    */
   label: string;
+  /**
+   * The inlines of an inline note `^[…]`, as Pandoc reads them; empty for a
+   * reference `[^id]`.
+   */
+  children: ASTNode[];
 }
 
 /**
@@ -827,16 +832,36 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       return astNode;
     }
     case "Footnote": {
-      const contents = markdown.substring(node.from + 2, node.to - 1); // [^1] --> 1
+      // [^1] --> 1, ^[text] --> text
+      const contents = markdown.substring(node.from + 2, node.to - 1);
+      // Pandoc reads the text of an inline note as inlines (`Markdown.hs`:
+      // `inlineNote`); the grammar parses them as the children of the node.
+      const inline = markdown.charAt(node.from) === "^";
+      const children = inline
+        ? parseChildren<GenericNode>(
+            {
+              type: "Generic",
+              name: node.name,
+              attributes: {},
+              from: node.from,
+              to: node.to,
+              whitespaceBefore: "",
+              children: [],
+            },
+            node,
+            markdown,
+          ).children.filter((child) => child.from >= node.from + 2 && child.to <= node.to - 1)
+        : [];
       const astNode: Footnote = {
         type: "Footnote",
         name: "Footnote",
         attributes: {},
         from: node.from,
-        inline: contents.endsWith("^"),
+        inline,
         to: node.to,
         whitespaceBefore: getWhitespaceBeforeNode(node, markdown),
-        label: contents.endsWith("^") ? contents.substring(0, contents.length - 1) : contents,
+        label: contents,
+        children,
       };
       return astNode;
     }
