@@ -523,8 +523,10 @@ of an isolated instance are in the first comment of #132.
   layer puts an anchor, a widget without text, at the end of each line of a
   definition in the viewport. It gives the anchor the size of the badge
   groups of that line and puts the groups on it. An anchor without room after
-  the text goes to a row of its own, so no badge covers text. A widget that
-  replaces the line of a definition (the header of a fenced div) puts
+  the text goes to a row of its own, so no badge covers text. A badge group
+  takes at most the width of its line: a group that does not fit after
+  another starts a new row on the anchor, and a long key breaks in its
+  badge. A widget that replaces the line of a definition (the header of a fenced div) puts
   `referenceBadgeAnchor(view)` in its DOM and calls
   `referenceBadgeAnchorsRemoved(dom)` in its `destroy`; the layer uses that
   anchor. A line whose end another renderer replaced has no anchor: its
