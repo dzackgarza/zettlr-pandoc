@@ -39,7 +39,7 @@ import http from "http";
 import os from "os";
 import path from "path";
 import {
-  AGENT_API_PORT_FILE,
+  AGENT_API_DISCOVERY_FILE,
   parseAgentApiDiscovery,
 } from "source/app/service-providers/agent-api/discovery-file";
 import AgentHTTPProvider from "source/app/service-providers/agent-api/http-server";
@@ -350,7 +350,7 @@ describe("Annotation Agent API (/v1/annotations)", function () {
     });
     await httpProvider.boot();
     httpPort = parseAgentApiDiscovery(
-      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+      readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
     ).port;
     assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });

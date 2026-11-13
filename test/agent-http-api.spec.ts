@@ -49,7 +49,7 @@ import type { Document as OpenApiDefinition } from "openapi-backend";
 import os from "os";
 import path from "path";
 import {
-  AGENT_API_PORT_FILE,
+  AGENT_API_DISCOVERY_FILE,
   parseAgentApiDiscovery,
 } from "source/app/service-providers/agent-api/discovery-file";
 import { HELP_DOCUMENT } from "source/app/service-providers/agent-api/help-content";
@@ -616,7 +616,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     });
     await httpProvider.boot();
     httpPort = parseAgentApiDiscovery(
-      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+      readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
     ).port;
     assert.ok(Number.isInteger(httpPort) && httpPort > 0);
   });
@@ -931,7 +931,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     // kernel chooses, so the file is the only place a client can learn the
     // endpoint. It must name the port that actually answers, and a clean
     // shutdown must not leave a stale endpoint behind.
-    const portFile = path.join(userData, AGENT_API_PORT_FILE);
+    const portFile = path.join(userData, AGENT_API_DISCOVERY_FILE);
     const published = parseAgentApiDiscovery(readFileSync(portFile, "utf8"));
     assert.equal(published.port, httpPort);
     const response = await httpRequest("GET", "/v1/ping");
@@ -950,8 +950,8 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     const killedProfile = path.join(scratch, "killed-profile");
     mkdirSync(killedProfile);
     writeFileSync(
-      path.join(killedProfile, AGENT_API_PORT_FILE),
-      readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+      path.join(killedProfile, AGENT_API_DISCOVERY_FILE),
+      readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
     );
     await httpProvider.shutdown();
 
@@ -1914,7 +1914,7 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
       );
       await httpProvider.boot();
       httpPort = parseAgentApiDiscovery(
-        readFileSync(path.join(userData, AGENT_API_PORT_FILE), "utf8"),
+        readFileSync(path.join(userData, AGENT_API_DISCOVERY_FILE), "utf8"),
       ).port;
       return started;
     }

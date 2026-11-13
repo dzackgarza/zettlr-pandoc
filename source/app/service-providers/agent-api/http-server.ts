@@ -113,7 +113,7 @@ import {
 } from "../../util/load-mathjax-macros";
 import { canonicalPath } from "../../util/real-path";
 import { CollaborationSidecarUnreadableError } from "../documents/collaboration-sidecar-store";
-import { AGENT_API_PORT_FILE, formatAgentApiDiscovery } from "./discovery-file";
+import { AGENT_API_DISCOVERY_FILE, formatAgentApiDiscovery } from "./discovery-file";
 import AgentDocumentQueries, {
   DocumentUnreadableError,
   SEARCH_DEADLINE_MS,
@@ -643,7 +643,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       throw new Error("Agent API listener reports no TCP address");
     }
     const boundPort = address.port;
-    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_PORT_FILE);
+    this._portFilePath = path.join(app.getPath("userData"), AGENT_API_DISCOVERY_FILE);
     try {
       await writeFileAtomic(
         this._portFilePath,

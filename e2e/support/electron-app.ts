@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
 import {
-  AGENT_API_PORT_FILE,
+  AGENT_API_DISCOVERY_FILE,
   parseAgentApiDiscovery,
 } from "source/app/service-providers/agent-api/discovery-file";
 import type { components } from "source/types/generated/agent-api";
@@ -454,7 +454,7 @@ export async function readAgentApiPort(
   configDirectory: string,
   timeoutMs: number,
 ): Promise<number> {
-  const portFile = path.join(configDirectory, AGENT_API_PORT_FILE);
+  const portFile = path.join(configDirectory, AGENT_API_DISCOVERY_FILE);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // ENOENT is the one legal read failure: the instance has not published

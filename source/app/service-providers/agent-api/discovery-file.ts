@@ -20,7 +20,7 @@
  */
 
 /** The name of the file in the user-data directory. */
-export const AGENT_API_PORT_FILE = "agent-api.port";
+export const AGENT_API_DISCOVERY_FILE = "agent-api.port";
 
 /** What the file names: the listener and the instance behind it. */
 export interface AgentApiDiscovery {
