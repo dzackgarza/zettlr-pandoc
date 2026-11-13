@@ -5,9 +5,9 @@
 // both themes. Screenshots land in the artifact directory for inspection.
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { stringify } from "yaml";
 import {
   assertCleanExit,
@@ -23,6 +23,16 @@ import {
 // directory would leave only whichever theme tore down last.
 const ARTIFACTS_ROOT = "/tmp/zettlr-dirty-buffer-indicator-e2e-latest";
 const SIBLINGS = ["second-note.md", "third-note.md", "fourth-note.md"];
+// A second file with the name of a sibling, in a folder of its own: two tabs
+// with one title.
+const NAMESAKE_FOLDER = "drafts";
+const NAMESAKE = path.join(NAMESAKE_FOLDER, SIBLINGS[0]);
+
+async function attributeOf(element: Locator, name: string): Promise<string> {
+  const value = await element.getAttribute(name);
+  assert.ok(value !== null, `the element has no ${name}`);
+  return value;
+}
 
 interface RunningFixture {
   fixtureRoot: string | undefined;
@@ -55,6 +65,10 @@ async function bootWithTabRow(fixture: RunningFixture, darkMode: boolean): Promi
     await writeFile(siblingPath, `# ${sibling}\n\nUntouched.\n`, "utf8");
     openFiles.push({ path: siblingPath, pinned: false });
   }
+  await mkdir(path.join(workspace, NAMESAKE_FOLDER));
+  const namesakePath = path.join(workspace, NAMESAKE);
+  await writeFile(namesakePath, `# ${SIBLINGS[0]}\n\nUntouched.\n`, "utf8");
+  openFiles.push({ path: namesakePath, pinned: false });
   await writeFile(
     path.join(created.configDirectory, "documents.yaml"),
     stringify({
@@ -77,8 +91,6 @@ async function bootWithTabRow(fixture: RunningFixture, darkMode: boolean): Promi
 
 for (const theme of ["light", "dark"] as const) {
   describe(`unsaved-changes indicator (${theme})`, function () {
-    this.timeout(300_000);
-
     const fixture: RunningFixture = {
       fixtureRoot: undefined,
       appProcess: undefined,
@@ -128,7 +140,7 @@ for (const theme of ["light", "dark"] as const) {
     it("marks only the dirty tab, and yields the slot back on hover", async function () {
       const tabs = page.locator('div[role="tab"]');
       await tabs.first().waitFor({ state: "visible", timeout: 60_000 });
-      assert.equal(await tabs.count(), 1 + SIBLINGS.length);
+      assert.equal(await tabs.count(), 2 + SIBLINGS.length);
 
       const indicators = page.locator("span.modification-indicator");
       assert.equal(await indicators.count(), 0, "no clean tab may carry an indicator");
@@ -225,6 +237,65 @@ for (const theme of ["light", "dark"] as const) {
         "The dirty fixture document must save before teardown",
       );
       await dirtyIndicator.waitFor({ state: "detached", timeout: 30_000 });
+    });
+
+    it("names the folder of each of two tabs with one title", async function () {
+      const workspace = path.dirname(
+        await attributeOf(page.locator('div[role="tab"]').first(), "data-path"),
+      );
+      const namesakes = [path.join(workspace, SIBLINGS[0]), path.join(workspace, NAMESAKE)];
+      const names: string[] = [];
+      for (const namesake of namesakes) {
+        const tab = page.locator(`div[role="tab"][data-path="${namesake}"]`);
+        const name = await attributeOf(tab, "aria-label");
+        assert.ok(
+          name.includes(path.basename(path.dirname(namesake))),
+          `the accessible name "${name}" of ${namesake} must name its folder`,
+        );
+        names.push(name);
+      }
+      assert.notEqual(names[0], names[1], "a screen reader must tell the two tabs apart");
+    });
+
+    it("puts the unsaved dot in the slot of the close control on macOS", async function () {
+      // The tab bar of macOS puts the close control at the left edge of the
+      // tab. The style sheet of a platform follows the class of the body.
+      await page.evaluate(() => document.body.classList.replace("linux", "darwin"));
+      const tab = page.locator('div[role="tab"]').first();
+      await tab.click();
+      await page.locator(".cm-content:visible").first().click();
+      await page.keyboard.type("dirty");
+      const indicator = tab.locator("span.modification-indicator");
+      await indicator.waitFor({ state: "visible", timeout: 30_000 });
+      await shootTab("darwin-dirty");
+      // A function that runs in the page declares no name (AGENTS.md §13).
+      const [dotX, dotY] = await indicator.evaluate((element): [number, number] => {
+        const box = element.getBoundingClientRect();
+        return [box.left + box.width / 2, box.top + box.height / 2];
+      });
+      const [closeX, closeY] = await tab
+        .locator("span.close")
+        .evaluate((element): [number, number] => {
+          const box = element.getBoundingClientRect();
+          return [box.left + box.width / 2, box.top + box.height / 2];
+        });
+      assert.ok(
+        Math.abs(dotX - closeX) <= 1 && Math.abs(dotY - closeY) <= 1,
+        `the dot (${dotX}, ${dotY}) must sit where the close control (${closeX}, ${closeY}) appears`,
+      );
+
+      await page.evaluate(() => document.body.classList.replace("darwin", "linux"));
+      const dirtyPath = await attributeOf(tab, "data-path");
+      assert.deepEqual(
+        await page.evaluate(
+          async ([documentPath]) =>
+            await window.ipc.invoke("documents:save-file", { path: documentPath }),
+          [dirtyPath],
+        ),
+        { ok: true },
+        "The dirty fixture document must save before teardown",
+      );
+      await indicator.waitFor({ state: "detached", timeout: 30_000 });
     });
   });
 }
