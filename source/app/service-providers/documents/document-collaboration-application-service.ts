@@ -909,20 +909,50 @@ export class CollaborationApplicationService {
       persisted.review.suggestions.some((suggestion) => suggestion.state === "proposed");
 
     if (preserveSavedReview) {
-      // The held review's sidecar is left exactly as it is — that is what
-      // this branch exists for — but the buffer still reverts underneath the
-      // annotations, so their anchors go with it. The persisted object is
-      // written back with only its annotation half replaced.
-      const plan = prepareAnnotationOrphaning(
+      // The review stays, and the buffer goes back to the file. Each edit
+      // after the save mapped the review through itself, so the review
+      // follows the change back to the file as it follows an edit: its
+      // anchors then index the text that the buffer is about to hold. The
+      // annotations are orphaned, as for each discard.
+      const revert = this.deps.authority.prepareWorkingTextReplacement(documentId, normalizedDisk);
+      const reviewPlan =
+        revert.change === undefined
+          ? undefined
+          : prepareWorkingTextEdit({
+              review,
+              workingText: normalizedDisk,
+              changes: revert.change.changes,
+            });
+      const annotationPlan = prepareAnnotationOrphaning(
         this.getAnnotations(documentId),
         "unmapped-document-change",
       );
-      if (plan !== undefined) {
-        await this.sidecars.write({ ...persisted!, annotations: plan.nextAnnotations });
+      if (reviewPlan === undefined && annotationPlan === undefined) {
+        return;
+      }
+      await this.sidecars.write(
+        this.sidecarFor(documentId, {
+          documentPath,
+          workingText: normalizedDisk,
+          review: reviewPlan?.nextReview ?? review,
+          annotations: annotationPlan?.nextAnnotations,
+          diskFenceSha256: persisted.diskFenceSha256,
+          pendingSave: persisted.pendingSave,
+        }),
+      );
+      if (reviewPlan !== undefined) {
+        this.reviews.replaceReview(documentId, reviewPlan.nextReview!);
+      }
+      if (annotationPlan !== undefined) {
         this.commitAnnotations(documentId, {
           ...this.annotationStates.get(documentId)!,
-          annotations: plan.nextAnnotations,
+          annotations: annotationPlan.nextAnnotations,
         });
+      }
+      for (const plan of [reviewPlan, annotationPlan]) {
+        if (plan === undefined) {
+          continue;
+        }
         for (const draft of plan.events) {
           this.deps.emit(draft.event, draft.payload);
         }

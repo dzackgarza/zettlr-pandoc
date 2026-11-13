@@ -360,7 +360,7 @@ describe("Documents-provider quit with an open review", function () {
         REVIEWED_SOURCE,
         "the reject removes the proposed text and nothing else",
       );
-      assert.equal(provider.reviewStatus(documentId), undefined);
+      assert.equal(provider.reviewStatus(documentId)?.unresolvedChunks, 0);
     });
   });
 
