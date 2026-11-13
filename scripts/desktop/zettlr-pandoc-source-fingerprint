@@ -20,12 +20,16 @@ for required_command in cut git sha256sum xargs; do
 done
 
 # Trees with no path into the packaged app. static/ and resources/ are NOT
-# here — webpack copies them into the bundle.
+# here — webpack copies them into the bundle — and neither is HELP.md, which
+# the agent API imports.
 excludes=(
   ':(exclude)test'
   ':(exclude)e2e'
   ':(exclude)scripts/desktop'
+  ':(exclude)scripts/harness'
   ':(exclude).github'
+  ':(exclude)AGENTS.md'
+  ':(exclude)HANDOFF.md'
 )
 
 {
