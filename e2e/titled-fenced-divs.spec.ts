@@ -22,7 +22,7 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type Browser, type Page } from "playwright";
@@ -34,6 +34,7 @@ import {
   findEditorPage,
   hideDevServerOverlay,
   preserveArtifacts,
+  REPO_ROOT,
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
@@ -261,6 +262,50 @@ function readHeadings(page: Page, keys: string[]): Promise<HeadingLayout[]> {
   }, keys);
 }
 
+/**
+ * The words of the lines in the viewport that the layout puts on more than
+ * one row, each with the row count. A word is a run of letters of one text
+ * node of a line or of a div title.
+ */
+function readSplitWords(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const scroller = document.querySelector(".cm-scroller");
+    if (scroller === null) {
+      throw new Error("The editor has no scroller");
+    }
+    const visible = scroller.getBoundingClientRect();
+    const split: string[] = [];
+    for (const line of scroller.querySelectorAll(".cm-line")) {
+      const box = line.getBoundingClientRect();
+      if (box.bottom < visible.top || box.top > visible.bottom) {
+        continue;
+      }
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode() !== null) {
+        const node = walker.currentNode;
+        const text = node.textContent;
+        if (text === null) {
+          throw new Error("A text node of the editor has no text");
+        }
+        for (const match of text.matchAll(/\p{L}+/gu)) {
+          const range = document.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + match[0].length);
+          const rows = new Set(
+            [...range.getClientRects()]
+              .filter((rect) => rect.width > 0)
+              .map((rect) => Math.round(rect.top)),
+          );
+          if (rows.size > 1) {
+            split.push(`${match[0]} (${String(rows.size)} rows)`);
+          }
+        }
+      }
+    }
+    return split;
+  });
+}
+
 function overlap(a: Box, b: Box): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
@@ -444,6 +489,146 @@ describe("assembled app: fenced divs with a title", function () {
       // assertions above do not prove the rule.
       assert.ok(beside > 0, "a heading of the series has its badges beside its text");
       assert.ok(below > 0, "a heading of the series has its badges on a row of their own");
+    });
+  }
+});
+
+// The document of the report of #177 and a main library with one of its
+// two cite keys, as in the library of the author.
+const REPORT_FIXTURE = path.join(REPO_ROOT, "test", "fixtures", "titled-fenced-divs-report");
+
+interface RenderedDocument {
+  headers: Array<[string, string]>;
+  displayMath: number;
+  mathErrors: string[];
+  citations: Array<[string, boolean]>;
+}
+
+function readRendering(page: Page): Promise<RenderedDocument> {
+  return page.evaluate(() => {
+    const content = document.querySelector(".cm-content");
+    if (content === null) {
+      throw new Error("The editor has no content");
+    }
+    return {
+      headers: [...content.querySelectorAll(".pandoc-div-header")].map(
+        (header): [string, string] => {
+          const label = header.querySelector(".pandoc-div-header-label")?.textContent;
+          const title = header.querySelector(".pandoc-div-header-title")?.textContent;
+          if (typeof label !== "string" || typeof title !== "string") {
+            throw new Error("A div header has no label or no title");
+          }
+          return [label, title];
+        },
+      ),
+      displayMath: content.querySelectorAll('.preview-math[data-math-mode="display"]').length,
+      mathErrors: [...content.querySelectorAll<HTMLElement>(".preview-math")]
+        .filter(
+          (math) => math.querySelector("mjx-merror") !== null || math.classList.contains("error"),
+        )
+        .map((math) => math.textContent),
+      citations: [...content.querySelectorAll(".citeproc-citation")].map((citation) => [
+        citation.textContent,
+        citation.classList.contains("error"),
+      ]),
+    };
+  });
+}
+
+describe("assembled app: the document of the report of titled fenced divs", function () {
+  this.timeout(300_000);
+
+  let appProcess: ChildProcess | undefined;
+  let browser: Browser | undefined;
+  let page: Page | undefined;
+  let fixtureRoot: string | undefined;
+  let getOutput: () => string = () => "";
+  const rendererEvents: string[] = [];
+  const screenshots = new Map<string, Buffer>();
+
+  before(async function () {
+    const fixture = await createFixture("zettlr-titled-div-report-e2e-", {
+      documentName: "minima.md",
+      documentContents: await readFile(path.join(REPORT_FIXTURE, "minima.md"), "utf8"),
+      config: {
+        export: { cslLibrary: path.join(REPORT_FIXTURE, "references.bib"), cslStyle: "" },
+        darkMode: true,
+        editor: { fontSize: 18, showMarkdownLineNumbers: true },
+      },
+    });
+    fixtureRoot = fixture.root;
+    const app = await attach(fixture.configDirectory, rendererEvents, this.timeout());
+    appProcess = app.appProcess;
+    browser = app.browser;
+    getOutput = app.getOutput;
+    page = await findEditorPage(app.browser, this.timeout());
+    await hideDevServerOverlay(page);
+    await page.locator(".pandoc-div-header").first().waitFor({
+      state: "visible",
+      timeout: this.timeout(),
+    });
+  });
+
+  after(async function () {
+    await shutdown(browser, appProcess);
+    await preserveArtifacts(
+      path.join(tmpdir(), "zettlr-titled-div-report-e2e-latest"),
+      fixtureRoot,
+      getOutput(),
+      rendererEvents,
+      screenshots,
+    );
+    if (fixtureRoot !== undefined) {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+    assertCleanExit(getOutput());
+  });
+
+  // With the file manager open, a window of 620 px leaves the editor about
+  // 250 px. The words of the heading and of each title stay whole, and the
+  // editor does not scroll to the side.
+  it("keeps each word whole and the editor without horizontal scroll at a window of 620 px", async function () {
+    const editorPage = requireInitialized(page, "The editor window must be open");
+    await editorPage.setViewportSize({ width: 620, height: 1400 });
+    await delay(1000);
+    screenshots.set("report-620.png", await editorPage.screenshot());
+
+    const layout = await readLayout(editorPage);
+    const splitWords = await readSplitWords(editorPage);
+    assert.deepEqual(splitWords, [], "no word of a shown line is split across rows");
+    assert.equal(layout.scrollWidth, layout.clientWidth, "the editor has no horizontal scroll");
+    for (const badge of layout.badges) {
+      assert.ok(
+        badge.box.right <= layout.visible.right + 1,
+        `the badges of ${badge.key} end in the editor: ${String(badge.box.right)} > ${String(layout.visible.right)}`,
+      );
+    }
+  });
+
+  for (const width of [1400, 1000]) {
+    it(`renders each div with its title, its math and its citations at a window of ${String(width)} px`, async function () {
+      const editorPage = requireInitialized(page, "The editor window must be open");
+      await editorPage.setViewportSize({ width, height: 1400 });
+      await editorPage
+        .locator(".citeproc-citation:not(.citeproc-pending)")
+        .nth(2)
+        .waitFor({ state: "attached", timeout: 30_000 });
+      await delay(1000);
+      screenshots.set(`report-${String(width)}.png`, await editorPage.screenshot());
+
+      const rendering = await readRendering(editorPage);
+      assert.deepEqual(rendering.headers, [
+        ["Definition", "Minimum, minimal vectors, and kissing number"],
+        ["Remark", "Standard terminology and the database convention"],
+        ["Definition", "Voronoi-perfect lattices"],
+      ]);
+      assert.equal(rendering.displayMath, 4, "each display equation is rendered");
+      assert.deepEqual(rendering.mathErrors, [], "no equation has a MathJax error");
+      assert.deepEqual(
+        rendering.citations.map(([, error]) => error),
+        [false, true, true],
+        `the citation of CS10 is rendered; Mar03 is not in the library: ${JSON.stringify(rendering.citations)}`,
+      );
     });
   }
 });
