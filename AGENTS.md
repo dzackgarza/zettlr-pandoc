@@ -379,7 +379,7 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
   field of an answer raises the major version, and the constant of the CLI
   follows. Version 2.0.0 made `clientRequestId` of a proposal required.
   `bun run check:agent-api-types` proves that the generated types are those
-  of the document.
+  of the document; the hosted `check.yml` runs it.
 - **Each request carries the token.** A caller sends
   `Authorization: Bearer <token>`, where the token is the value of
   `ZETTLR_AGENT_API_TOKEN` in the environment of the app. `dispatch`

@@ -66,6 +66,12 @@ jobs:
         run: bun ci
       - name: Verify pinned Pandoc parser reference data
         run: bun run check:pandoc-reference-data
+      # The types of the Agent API are generated from openapi.yaml and
+      # formatted with the global biome configuration of ai-review-ci.
+      - name: Verify generated Agent API types
+        run: |
+          git clone --depth 1 https://github.com/dzackgarza/ai-review-ci "$HOME/ai-review-ci"
+          bun run check:agent-api-types
       # The electron package downloads its distribution at the first require.
       - name: Configure Electron SUID sandbox
         run: |
