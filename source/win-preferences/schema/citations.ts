@@ -76,7 +76,9 @@ export function getCitationFields(
         },
         {
           type: "file",
-          label: trans("CSL style (optional)"),
+          label: trans(
+            "CSL style of the editor and of the Pandoc exports (optional; not the PDF recipe)",
+          ),
           model: "export.cslStyle",
           placeholder: trans("Path to file"),
           reset: "",

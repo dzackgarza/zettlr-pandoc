@@ -215,7 +215,9 @@ const conversionLabel = trans("Conversion");
 const exportFilesLabel = trans("Files to be included in the export");
 const projectBuildWarning = trans("Please select at least one profile to build this project.");
 const projectTitleLabel = trans("Project Title");
-const cslStyleLabel = trans("CSL Stylesheet");
+const cslStyleLabel = trans(
+  "CSL style of the Pandoc exports of this Project (not the editor, not the PDF recipe)",
+);
 const texTemplateLabel = trans("LaTeX Template");
 const htmlTemplateLabel = trans("HTML Template");
 const removeButtonTitle = trans("Remove file from export");
