@@ -1138,6 +1138,14 @@ of an isolated instance are in the first comment of #132.
   applies the working text of the sidecar and then broadcasts the state. The
   window keeps the session that it gets for a document, and an editor shows a
   review only while its text is the working text of that session.
+- **A late removal closes no other document.** A rename over a file moves
+  that file to the trash and then renames; when more than 100 ms pass
+  between the two, the watcher reports `unlink` for the replaced path
+  before the rename, and `hasMovedFile` can put the renamed document at the
+  path while the close of the replaced one writes its sidecar.
+  `closeFileEverywhere` closes the tabs and the buffer under the lock of the
+  document that it closes, and only while the path still names that
+  document. Proof: `test/documents-removed-file.spec.ts`.
 - **A removed file closes only a document whose text is on disk.** The
   watcher reports the removal of the file of a tab (`unlink`). A document
   without unsaved text closes with its tabs. A document with unsaved text

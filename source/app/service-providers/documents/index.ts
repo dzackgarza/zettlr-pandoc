@@ -2624,14 +2624,31 @@ current contents from the editor somewhere else, and restart the application.`,
     ) {
       return false;
     }
+    if (documentId === undefined) {
+      await this._closeDocumentAt(filePath);
+      return true;
+    }
+    // A rename can put another document at the path while the sidecar is
+    // written (`hasMovedFile` after a late `unlink` of the file that the
+    // rename replaced). The move waits for the lock of this document, so
+    // under the lock the path names this document or the move is done; a
+    // finished move closed this document already (#210).
+    await this._reviewApplication.withDocumentLock(documentId, async () => {
+      if (this.getDocumentId(filePath) === documentId) {
+        await this._closeDocumentAt(filePath);
+      }
+    });
+    return true;
+  }
+
+  /** Closes the tabs of a path and unloads its document. */
+  private async _closeDocumentAt(filePath: string): Promise<void> {
     await this._closeTabsEverywhere(filePath);
     const document = this.documents.find((doc) => doc.filePath === filePath);
     if (document !== undefined) {
       this._unload(document);
     }
-
     this.syncWatchedFilePaths();
-    return true;
   }
 
   /**
