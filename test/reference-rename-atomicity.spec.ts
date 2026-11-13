@@ -1060,7 +1060,6 @@ describe("Workspace edit transaction rollback and recovery", function () {
         path.join(userData, "workspace-edit-journal.json"),
         JSON.stringify({
           transactionId: "crashed-transaction",
-          phase: "installing",
           closedFiles: [
             { documentPath: interrupted, original: "original\n", target: "installed target\n" },
             { documentPath: untouched, original: "original\n", target: "never installed\n" },

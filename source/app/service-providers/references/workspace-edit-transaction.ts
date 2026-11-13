@@ -15,12 +15,14 @@
  *                  ownership, read every source, verify EVERY hash before
  *                  mutating anything, compute every target, write the
  *                  journal, apply the open buffers, install the closed
- *                  files, and delete the journal only after full success.
- *                  Any failure after the journal exists rolls every mutated
- *                  buffer and every installed file back to its recorded
- *                  original, and the journal survives a rollback that itself
- *                  fails so recoverWorkspaceEditJournal() can finish the job
- *                  at the next startup.
+ *                  files, and remove the journal. The removal of the journal
+ *                  is the commit: a transaction that cannot remove its
+ *                  journal did not happen, and rolls every mutated buffer
+ *                  and every installed file back to its recorded original.
+ *                  A journal that stays (a rollback that failed, a stop of
+ *                  the app) is finished by recoverWorkspaceEditJournal() at
+ *                  the next startup, which restores only a file that holds
+ *                  the text that the transaction wrote.
  *
  *                  write-file-atomic owns the file-write mechanics (temp
  *                  file, fsync, rename) for both the journal and the
@@ -107,14 +109,12 @@ interface JournaledDocument {
 }
 
 /**
- * The on-disk journal. `phase` records how far the transaction got, so a
- * journal found at startup is unambiguous: 'installing' means files may hold
- * either text, 'rollback' means a rollback was interrupted. Recovery restores
- * the originals in both cases.
+ * The on-disk journal. It exists only while a transaction has not committed:
+ * each file it names holds its original, the target of the transaction, or
+ * text that the author wrote after a rollback.
  */
 interface WorkspaceEditJournal {
   transactionId: string;
-  phase: "installing" | "rollback";
   closedFiles: JournaledDocument[];
   openBuffers: JournaledDocument[];
 }
@@ -251,7 +251,6 @@ export async function runWorkspaceEditTransaction(
   const journalFile = path.join(journalDirectory, JOURNAL_FILE);
   const journal: WorkspaceEditJournal = {
     transactionId: randomUUID(),
-    phase: "installing",
     closedFiles,
     openBuffers: journaled.filter((document) => openPaths.includes(document.documentPath)),
   };
@@ -298,12 +297,24 @@ export async function runWorkspaceEditTransaction(
       });
       installed.push(documentPath);
     }
+
+    await unlink(journalFile).catch((failure: NodeJS.ErrnoException) => {
+      throw new Error(
+        `Could not remove the workspace edit journal ${journalFile}: ${systemErrorCause(failure)}.`,
+        { cause: failure },
+      );
+    });
   } catch (err) {
-    await rollback(authority, journalFile, journal, installed, verified);
+    await rollback(authority, journalFile, journal, installed, verified).catch(
+      (rollbackFailure: Error) => {
+        throw new AggregateError(
+          [err, rollbackFailure],
+          `${String(err)} The rollback did not finish: ${rollbackFailure.message} The next start restores the documents.`,
+        );
+      },
+    );
     throw err;
   }
-
-  await unlink(journalFile);
 
   return {
     status: "applied",
@@ -318,9 +329,9 @@ export async function runWorkspaceEditTransaction(
 
 /**
  * Restores every mutated buffer and every installed file to its journaled
- * original. The journal is marked 'rollback' first and deleted only once the
- * restoration completed: a rollback that itself fails leaves the journal for
- * startup recovery.
+ * original, and then removes the journal. A rollback that fails leaves the
+ * journal for the recovery at the next start; a restored file holds its
+ * original, which that recovery does not change.
  *
  * @param   {WorkspaceEditAuthority}  authority    The document authority
  * @param   {string}                  journalFile  The journal's path
@@ -335,8 +346,6 @@ async function rollback(
   installed: string[],
   verified: Set<string>,
 ): Promise<void> {
-  await writeFileAtomic(journalFile, JSON.stringify({ ...journal, phase: "rollback" }), "utf-8");
-
   const restoreBuffers: WorkspaceTextEdit[] = [];
   for (const entry of journal.openBuffers) {
     const current = authority.readMarkdownBufferContent(entry.documentPath);
@@ -366,7 +375,14 @@ async function rollback(
     }
   }
 
-  await unlink(journalFile);
+  await unlink(journalFile).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "ENOENT") {
+      throw new Error(
+        `Could not remove the workspace edit journal ${journalFile}: ${systemErrorCause(err)}.`,
+        { cause: err },
+      );
+    }
+  });
 }
 
 /**
@@ -397,8 +413,11 @@ export async function saveUpdatedBuffers(
 
 /**
  * Finishes an interrupted transaction at startup, before a document loads:
- * every closed file the journal names is restored to its pre-transaction
- * content, and the journal is removed. A stop discards the open buffers, and
+ * each closed file that holds the target of the transaction gets its
+ * original again, and the journal is removed. A file with other text (its
+ * original, or text that the author wrote after a rollback that could not
+ * remove the journal) and a file that is gone stay as they are: the
+ * transaction writes a file in one rename, so it never removes one. A stop discards the open buffers, and
  * the transaction never wrote their files; but the collaboration service
  * wrote the edit of each buffer with a review or annotations to its sidecar,
  * and the next load restores that working text. The recovery therefore
@@ -428,14 +447,13 @@ export async function recoverWorkspaceEditJournal(
   const restored: string[] = [];
   for (const entry of journal.closedFiles) {
     const current = await readFile(entry.documentPath, "utf-8").catch((error: unknown) => {
-      // A file that is gone holds no text of the author: the original
-      // restores it. Each other failure stops the recovery.
+      // Each failure but a removed file stops the recovery.
       if (isErrnoException(error) && error.code === "ENOENT") {
         return undefined;
       }
       throw error;
     });
-    if (current !== entry.original) {
+    if (current === entry.target && current !== entry.original) {
       await writeTextFile(entry.documentPath, entry.original);
       restored.push(entry.documentPath);
     }

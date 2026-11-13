@@ -603,9 +603,6 @@ describe("CollaborationSidecarStore", function () {
   });
 
   it("leaves the previous complete sidecar behind when a write fails", async function () {
-    if (process.getuid?.() === 0) {
-      this.skip(); // root ignores the directory permission this injection needs
-    }
     const first = sidecar(documentPath);
     await store.write(first);
 
