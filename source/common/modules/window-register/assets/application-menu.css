@@ -23,6 +23,9 @@ body {
     font-size: 14px;
     box-shadow: 5px 5px 15px 0px rgba(0, 0, 0, 0.3);
     min-width: 150px;
+    /* The width of the labels, not the room that the window leaves on the
+     * right: positionMenu reads this width to put the menu where it fits. */
+    width: max-content;
 
     div.menu-item {
       height: 25px;
