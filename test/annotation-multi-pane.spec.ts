@@ -285,7 +285,10 @@ describe("useDocumentCollaborationStore", function () {
 
   // The main process sends a session on two channels: the broadcast of a
   // change and the answer to a read. The answer to a read that the store
-  // sent before a broadcast can arrive after that broadcast.
+  // sent before a broadcast can arrive after that broadcast (#221: a hosted
+  // e2e run showed an empty note field while the main process held the
+  // note). The order of the two messages in the app follows a disk listing
+  // of the main process; the bridge double sets it here.
   it("keeps the session of a broadcast when the answer to an earlier workspace read arrives after it", async function () {
     const { authority, service } = harness();
     const created = await annotate(service);
