@@ -30,6 +30,7 @@ import { app, BrowserWindow, type FileFilter, ipcMain, screen } from "electron";
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
+import { showRefusalInWindow } from "source/app/util/show-refusal-in-window";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
@@ -425,6 +426,18 @@ export default class WindowProvider extends ProviderContract {
       const closeAgain = async (): Promise<void> => {
         window.close();
       };
+      // A close that fails keeps the window: its documents are in an unknown
+      // state, and a close without them can lose text. The window shows the
+      // cause, so the author knows why it stays (#57).
+      const showCloseFailure = (err: unknown): void => {
+        this._logger.error("[WindowManager] Could not close the window", err);
+        const cause = err instanceof Error ? err.message : String(err);
+        showRefusalInWindow(
+          window.webContents,
+          "close-window",
+          new Error(trans("The window was not closed: %s", cause)),
+        );
+      };
       if (!this._documents.isClean(key)) {
         event.preventDefault();
         this._documents
@@ -435,9 +448,7 @@ export default class WindowProvider extends ProviderContract {
               window.close();
             }
           })
-          .catch((err) => {
-            this._logger.error("[WindowManager] Could not ask user to close window", err);
-          });
+          .catch(showCloseFailure);
       } else {
         event.preventDefault();
         this._documents
@@ -448,9 +459,7 @@ export default class WindowProvider extends ProviderContract {
               window.close();
             }
           })
-          .catch((err) => {
-            this._logger.error("[WindowManager] Could not close clean window", err);
-          });
+          .catch(showCloseFailure);
       }
     });
 
