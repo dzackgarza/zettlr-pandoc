@@ -1,6 +1,8 @@
 import { md2html } from "@common/modules/markdown-utils/markdown-to-html";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
 import { reportError } from "@common/util/error-reporting";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
 import type { ReferenceDefinition } from "@dts/common/references";
 
@@ -39,7 +41,7 @@ export function referencePreviewMarkdown(definition: PreviewSource): string {
 /**
  * Render the same bounded Markdown excerpt used by reference hovers. Its
  * citations use the bibliography of the document that defines the target
- * (#198).
+ * (#198), and its images resolve from the folder of that document.
  */
 export function renderReferencePreview(
   target: HTMLElement,
@@ -51,7 +53,11 @@ export function renderReferencePreview(
   documentCitationDatabase(definition.documentPath)
     .then(
       async (library) =>
-        await md2html(source, { zknLinkFormat, onCitation: window.getCitationCallback(library) }),
+        await md2html(source, {
+          zknLinkFormat,
+          onCitation: window.getCitationCallback(library),
+          onImageSrc: (src) => imageSourceUri(src, pathDirname(definition.documentPath)),
+        }),
     )
     .then((html) => setSanitizedHTML(target, html, "document"))
     .catch((error) => reportError("Could not render the reference excerpt", error));

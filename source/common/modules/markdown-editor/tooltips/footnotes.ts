@@ -18,6 +18,8 @@ import { EditorView, hoverTooltip, type Tooltip } from "@codemirror/view";
 import { trans } from "@common/i18n-renderer";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
+import { imageSourceUri } from "@common/util/image-source-uri";
+import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { setSanitizedHTML } from "@common/util/sanitize-html";
 import { configField } from "../util/configuration";
 
@@ -84,7 +86,9 @@ function footnotesTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip 
   const fnBody = findRefForFootnote(view.state, fn);
   const { zknLinkFormat } = view.state.field(configField);
 
-  const { library } = view.state.field(configField).metadata;
+  const { library, path } = view.state.field(configField).metadata;
+  // An image of the footnote has a path relative to the folder of the document.
+  const basePath = pathDirname(path);
 
   return {
     pos: nodeAt.from,
@@ -101,6 +105,7 @@ function footnotesTooltip(view: EditorView, pos: number, side: 1 | -1): Tooltip 
         {
           onCitation: window.getCitationCallback(library),
           zknLinkFormat,
+          onImageSrc: (src) => imageSourceUri(src, basePath),
         },
       )
         .then((tooltipContent) => {
