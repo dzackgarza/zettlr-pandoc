@@ -76,6 +76,7 @@ import type LogProvider from "@providers/log";
 import ProviderContract from "@providers/provider-contract";
 import type { WorkspaceReferenceState } from "@providers/references/reference-index";
 import type { SearchProvider } from "@providers/search";
+import { isUtf8 } from "buffer";
 import crypto from "crypto";
 import { app } from "electron";
 import fs from "fs";
@@ -86,6 +87,7 @@ import OpenAPIBackend, {
   type Operation,
 } from "openapi-backend";
 import path from "path";
+import { unescapeBuffer } from "querystring";
 import { workspaceLintRows } from "source/app/util/workspace-lint-results";
 import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import { fileURLToPath } from "url";
@@ -226,6 +228,31 @@ class RequestBodyTimeoutError extends Error {
   constructor() {
     super("Request body was not received within the deadline");
   }
+}
+
+/**
+ * The request target is no URL, or its path has a percent-encoding that is
+ * not UTF-8. The fault is in the request: the caller gets 400.
+ */
+class MalformedRequestTargetError extends Error {}
+
+/**
+ * The URL of a request target, with a path that decodes. The router decodes
+ * each path parameter with decodeURIComponent, which throws for a `%` that
+ * two hex digits do not follow and for bytes that are not UTF-8 (ECMA-262,
+ * Decode); this check refuses the same paths before the router sees them.
+ */
+function requestTargetUrl(requestUrl: string): URL {
+  if (!URL.canParse(requestUrl, "http://127.0.0.1")) {
+    throw new MalformedRequestTargetError(`The request target ${requestUrl} is no URL`);
+  }
+  const url = new URL(requestUrl, "http://127.0.0.1");
+  if (/%(?![0-9A-Fa-f]{2})/.test(url.pathname) || !isUtf8(unescapeBuffer(url.pathname))) {
+    throw new MalformedRequestTargetError(
+      `The path ${url.pathname} has a percent-encoding that is not UTF-8`,
+    );
+  }
+  return url;
 }
 
 /**
@@ -697,6 +724,11 @@ export default class AgentHTTPProvider extends ProviderContract {
         );
         return;
       }
+      if (err instanceof MalformedRequestTargetError) {
+        this._log.warning(`[AgentHTTPProvider] Refused ${method}: ${err.message}`);
+        this.sendError(res, 400, "INVALID_PARAMS", err.message);
+        return;
+      }
       if (err instanceof DocumentUnreadableError) {
         // The author's file refuses its read: a state of that file, not a
         // defect of this provider.
@@ -774,7 +806,7 @@ export default class AgentHTTPProvider extends ProviderContract {
       this.sendError(res, 401, "UNAUTHORIZED", "Authentication required.");
       return;
     }
-    const url = new URL(requestUrl, "http://127.0.0.1");
+    const url = requestTargetUrl(requestUrl);
     const rawBody = await this.readBody(req);
     let body: unknown;
     if (rawBody.trim().length > 0) {
