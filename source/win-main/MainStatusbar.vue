@@ -26,7 +26,8 @@
         type="button"
         class="main-statusbar-item"
         data-statusbar-item="magic-quotes"
-        title="MagicQuotes"
+        v-bind:data-autocorrect="autoCorrectActive ? 'on' : 'off'"
+        v-bind:title="magicQuotesTitle"
         v-on:click="openMagicQuotesMenu($event)"
       >
         <span class="main-statusbar-chip">{{ magicQuotes.primary }}</span>
@@ -273,6 +274,10 @@ const isMarkdown = computed(
 const countChars = computed(() => configStore.config.editor.countChars);
 const inputMode = computed(() => configStore.config.editor.inputMode);
 const magicQuotes = computed(() => configStore.config.editor.autoCorrect.magicQuotes);
+const autoCorrectActive = computed(() => configStore.config.editor.autoCorrect.active);
+const magicQuotesTitle = computed(() =>
+  autoCorrectActive.value ? "MagicQuotes" : trans("MagicQuotes require Autocorrect, which is off"),
+);
 const renderingMode = computed(() => configStore.config.display.renderingMode);
 
 const projectTitle = computed(() =>
@@ -372,7 +377,7 @@ function openMagicQuotesMenu(event: MouseEvent): void {
   event.stopPropagation();
   showPopupMenu(
     { x: event.clientX, y: event.clientY },
-    magicQuotesMenuItems(magicQuotes.value),
+    magicQuotesMenuItems(magicQuotes.value, autoCorrectActive.value),
     (clickedId) => {
       const pair = magicQuotesPairFor(clickedId);
       configStore.setConfigValue("editor.autoCorrect.magicQuotes.primary", pair.primary);
@@ -456,6 +461,12 @@ body .main-statusbar {
     border: 1px solid currentColor;
     border-radius: 4px;
     padding: 0 4px;
+  }
+
+  // A pair that typing does not use while autocorrect is off.
+  [data-autocorrect="off"] .main-statusbar-chip {
+    border-style: dashed;
+    opacity: 0.55;
   }
 
   button.main-statusbar-item {
