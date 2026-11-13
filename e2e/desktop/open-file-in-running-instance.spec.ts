@@ -196,6 +196,24 @@ describe("opening a file while the app is already running", function () {
     screenshots.set("delivered-tab.png", await editorPage.screenshot());
   });
 
+  it("refuses a hand-off that names no file to open (#57)", async function () {
+    const editorPage = requireInitialized(page, "The editor page must exist");
+    const dataDirectory = requireInitialized(configDirectory, "The config directory must exist");
+    const tabs = editorPage.locator('div[role="tab"]');
+    const tabsBefore = await tabs.count();
+    // The running instance holds the lock of this data directory, so a request
+    // reaches it. It names no file: the caller would read a success for an
+    // open that did not happen.
+    const handoff = await runHandoff([`--data-dir=${dataDirectory}`]);
+    assert.notEqual(
+      handoff.code,
+      0,
+      `A hand-off without a file must fail.\nsignal=${String(handoff.signal)}\n${handoff.output}`,
+    );
+    assert.match(handoff.output, /The request names no file to open/);
+    assert.equal(await tabs.count(), tabsBefore, "The running app opened no document.");
+  });
+
   it("reports a failure rather than opening a second app when no instance holds the lock", async function () {
     const deliveredPath = requireInitialized(
       deliveredDocumentPath,
