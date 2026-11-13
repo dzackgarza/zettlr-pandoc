@@ -110,7 +110,8 @@ recipe exists. Key recipes (see the `justfile` for the exact commands):
   (browser/renderer), assembled by `forge.config.js`. The wrapper fails if the build
   does not create a fresh `app.asar` from the current source fingerprint.
 - **Build observability** — `scripts/verify-build.py` (`just verify-build`). Proves the
-  asar was built from the current commit via the `__GIT_COMMIT_HASH__` string that
+  asar was built from the commit at the start of the build (a commit during the
+  build moves `HEAD`, not the bundle) via the `__GIT_COMMIT_HASH__` string that
   `DefinePlugin` bakes into the bundle (`webpack.{main,renderer}.config.js`, sourced
   from `scripts/get-git-hash.js`, referenced by `source/win-about/Debug-Tab.vue`).
   Run `just verify-build-only` to instantly answer "is my installed app actually
