@@ -1,13 +1,17 @@
 import { type EditorView } from "@codemirror/view";
-import { platformAccelerator } from "@common/commands/command-registry";
+import { editMenuItems, editorCommandMenuItems } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
 import showPopupMenu, { type AnyMenuItem } from "../../window-register/application-menu-helper";
-import { applyBold, applyItalic, insertLink } from "../commands/markdown";
-import { editorMenuAccelerator } from "../context-menu/menu-accelerator";
+import {
+  editorCommandItem,
+  editorMenuAccelerator,
+  roleItem,
+  viewItem,
+} from "../context-menu/menu-accelerator";
 import { getTransformSubmenu } from "../context-menu/transform-items";
 import { type EditorShortcutName } from "../keymaps/shortcuts";
 import { selectAllCommand } from "../keymaps/table-editor";
-import { copyAsHTML, copyAsPlain, cut, paste, pasteAsPlain } from "../util/copy-paste-cut";
+import { copyAsHTML, pasteAsPlain } from "../util/copy-paste-cut";
 import {
   addColAfter,
   addColBefore,
@@ -32,92 +36,23 @@ export function displayTableContextMenu(
   subviewOrView: EditorView,
 ): void {
   const sc = (name: EditorShortcutName) => editorMenuAccelerator(mainView, name);
+  const items = editorCommandMenuItems(trans);
+  const edit = editMenuItems(trans);
 
   const template: AnyMenuItem[] = [
-    {
-      label: trans("Bold"),
-      accelerator: sc("md-bold"),
-      type: "normal",
-      action() {
-        applyBold(subviewOrView);
-      },
-    },
-    {
-      label: trans("Italic"),
-      accelerator: sc("md-italic"),
-      type: "normal",
-      action() {
-        applyItalic(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Insert link"),
-      accelerator: sc("md-insert-link"),
-      type: "normal",
-      action() {
-        insertLink(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Cut"),
-      accelerator: platformAccelerator("cut"),
-      type: "normal",
-      action() {
-        cut(subviewOrView);
-      },
-    },
-    {
-      label: trans("Copy"),
-      accelerator: platformAccelerator("copy"),
-      type: "normal",
-      action() {
-        copyAsPlain(subviewOrView);
-      },
-    },
-    {
-      label: trans("Copy as HTML"),
-      accelerator: sc("edit-copy-as-html"),
-      type: "normal",
-      action() {
-        copyAsHTML(subviewOrView);
-      },
-    },
-    {
-      label: trans("Paste"),
-      accelerator: platformAccelerator("paste"),
-      type: "normal",
-      action() {
-        paste(subviewOrView);
-      },
-    },
-    {
-      label: trans("Paste without style"),
-      accelerator: sc("edit-paste-as-plain"),
-      type: "normal",
-      action() {
-        pasteAsPlain(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
-    {
-      label: trans("Select all"),
-      accelerator: platformAccelerator("select-all"),
-      type: "normal",
-      action() {
-        selectAllCommand(subviewOrView);
-      },
-    },
-    {
-      type: "separator",
-    },
+    editorCommandItem(subviewOrView, items.bold),
+    editorCommandItem(subviewOrView, items.italic),
+    { type: "separator" },
+    editorCommandItem(subviewOrView, items.link),
+    { type: "separator" },
+    roleItem(subviewOrView, edit.cut),
+    roleItem(subviewOrView, edit.copy),
+    viewItem(subviewOrView, edit.copyAsHtml, copyAsHTML),
+    roleItem(subviewOrView, edit.paste),
+    viewItem(subviewOrView, edit.pasteAsPlain, pasteAsPlain),
+    { type: "separator" },
+    viewItem(subviewOrView, edit.selectAll, selectAllCommand),
+    { type: "separator" },
     getTransformSubmenu(subviewOrView),
     {
       type: "separator",

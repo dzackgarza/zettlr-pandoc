@@ -67,33 +67,14 @@ import {
   tagsUpdate,
   texMacroSourcesUpdate,
 } from "./autocomplete";
-import { addNewFootnote } from "./commands/footnotes";
+// Custom commands
+import { runEditorCommand } from "./commands/editor-commands";
 import {
   type FormatResult,
   formatDocument,
   type MarkdownFormatter,
 } from "./commands/format-document";
-// Custom commands
-import {
-  applyBlockquote,
-  applyBold,
-  applyBulletList,
-  applyCode,
-  applyComment,
-  applyH1,
-  applyH2,
-  applyH3,
-  applyH4,
-  applyH5,
-  applyH6,
-  applyItalic,
-  applyOrderedList,
-  applyPandocDivOrSpan,
-  applyStrikethrough,
-  applyTaskList,
-  insertImage,
-  insertLink,
-} from "./commands/markdown";
+import { applyPandocDivOrSpan } from "./commands/markdown";
 import { moveSection } from "./commands/move-section";
 import { externalLintAgain } from "./diagnostics/external-linter-adapter";
 import { languageToolState, updateLTState } from "./diagnostics/language-tool-state";
@@ -112,10 +93,7 @@ import {
   collaborationControls,
   type MountCollaborationControl,
 } from "./plugins/collaboration-controls";
-import {
-  createReferenceLabel,
-  openCreateReferenceLabelEffect,
-} from "./plugins/create-reference-label";
+import { openCreateReferenceLabelEffect } from "./plugins/create-reference-label";
 import { editorMetadataFacet } from "./plugins/editor-metadata";
 import { formatDocumentEffect } from "./plugins/format-document-effect";
 import { highlightRangesEffect } from "./plugins/highlight-ranges";
@@ -154,9 +132,8 @@ import {
   workspaceReferencesUpdate,
 } from "./plugins/workspace-references-field";
 import { EMPTY_QUICKTEX, quickTexUpdate } from "./quicktex";
-import { toggleReadability } from "./renderers/readability";
 import { syncCitationData } from "./renderers/render-citations";
-import { countDiagnostics, type DiagnosticCounts, toggleLintPanel } from "./statusbar/diagnostics";
+import { countDiagnostics, type DiagnosticCounts } from "./statusbar/diagnostics";
 import {
   cloneEditorConfiguration,
   configField,
@@ -267,34 +244,6 @@ export interface EditorViewPersistentState {
    */
   foldedRanges: DecorationSet;
 }
-
-/**
- * The editor commands by their typed name: one table, consumed by
- * runCommand, keyed by the same names the Insert and Format menus send.
- */
-const EDITOR_COMMANDS: Record<EditorCommandName, (view: EditorView) => boolean> = {
-  markdownComment: applyComment,
-  markdownLink: insertLink,
-  markdownImage: insertImage,
-  insertFootnote: addNewFootnote,
-  markdownMakeTaskList: applyTaskList,
-  createReferenceLabel,
-  markdownBold: applyBold,
-  markdownItalic: applyItalic,
-  markdownCode: applyCode,
-  markdownStrikethrough: applyStrikethrough,
-  markdownHeading1: applyH1,
-  markdownHeading2: applyH2,
-  markdownHeading3: applyH3,
-  markdownHeading4: applyH4,
-  markdownHeading5: applyH5,
-  markdownHeading6: applyH6,
-  markdownBlockquote: applyBlockquote,
-  markdownBulletList: applyBulletList,
-  markdownOrderedList: applyOrderedList,
-  toggleReadabilityMode: toggleReadability,
-  toggleLintPanel,
-};
 
 export default class MarkdownEditor extends EventEmitter {
   /**
@@ -982,7 +931,7 @@ export default class MarkdownEditor extends EventEmitter {
    * @param   {EditorCommandName}  cmd  The command to run
    */
   runCommand(cmd: EditorCommandName): void {
-    EDITOR_COMMANDS[cmd](this._instance);
+    runEditorCommand(this._instance, cmd);
   }
 
   /**

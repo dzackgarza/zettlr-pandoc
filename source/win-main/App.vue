@@ -203,13 +203,13 @@
  */
 
 import type { CommandId } from "@common/commands/command-registry";
+import { emptyPipeTable } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-renderer";
 import type {
   ConfirmReferenceLabelOutcome,
   CreateReferenceLabelIntent,
 } from "@common/modules/markdown-editor/plugins/create-reference-label";
 import type { ReferenceSearchRequest } from "@common/modules/markdown-editor/plugins/reference-search-effect";
-import { buildPipeMarkdownTable } from "@common/util/build-pipe-markdown-table";
 import { reportError } from "@common/util/error-reporting";
 import generateId from "@common/util/generate-id";
 import { loadFromDiskAction } from "@common/util/load-document-from-disk";
@@ -1291,12 +1291,7 @@ onMounted(() => {
 });
 
 function insertTable(spec: { rows: number; cols: number }): void {
-  // Generate a simple table based on the info, and insert it.
-  const align = new Array<"center" | "left" | "right" | null>(spec.cols).fill(null);
-  const row = (): string[] => new Array<string>(spec.cols).fill("");
-  const ast: string[][] = Array.from({ length: spec.rows }, row);
-
-  editorCommands.value.data = buildPipeMarkdownTable(ast, align);
+  editorCommands.value.data = emptyPipeTable(spec.rows, spec.cols);
   editorCommands.value.replaceSelection = !editorCommands.value.replaceSelection;
 }
 

@@ -2,68 +2,22 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Copy, Paste, and Cut actions
+ * Contains:        Copy as HTML and Paste without style
  * CVM-Role:        Utility Functions
  * Maintainer:      Hendrik Erz
  * License:         GNU GPL v3
  *
- * Description:     Contains a set of utility functions that can be utilitzed
- *                  for copying, cutting, and pasting Markdown and HTML
+ * Description:     Copy as HTML and Paste without style of the editor. Cut,
+ *                  Copy and Paste are the clipboard events of the editor
+ *                  (the Edit menu roles, the keys of the platform).
  *
  * END HEADER
  */
 
-import { type ChangeSpec } from "@codemirror/state";
 import { type EditorView } from "@codemirror/view";
 import { md2html } from "@common/modules/markdown-utils";
 import { reportError } from "@common/util/error-reporting";
-import html2md from "@common/util/html-to-md";
-import { pathDirname } from "@common/util/renderer-path-polyfill";
 import { configField } from "./configuration";
-import { saveClipboardImage } from "./save-clipboard-image";
-
-/**
- * Handles a paste event (both images and text/HTML)
- *
- * @param  {EditorView}  view  The editor view
- */
-async function handlePaste(view: EditorView): Promise<void> {
-  const basePath = pathDirname(view.state.field(configField).metadata.path);
-
-  // First step: Check for images and, if so, insert them.
-  const clipboardItems = await navigator.clipboard.read();
-  for (const item of clipboardItems) {
-    const hasPlain = item.types.includes("text/plain");
-    const hasHTML = item.types.includes("text/html");
-
-    if (item.types.includes("image/png")) {
-      // The clipboard API gives an image no file name.
-      const tag = await saveClipboardImage(basePath, await item.getType("image/png"), undefined);
-      if (tag !== undefined) {
-        view.dispatch(view.state.replaceSelection(tag), { scrollIntoView: true });
-      }
-      return; // NOTE: We are ignoring additional images here, because (a) this
-      // should normally not happen, and (b) it could be an avenue to block the
-      // app if a rogue app adds many items with single images.
-    } else if (hasPlain && hasHTML) {
-      // ... I understand *why* they have implemented this ... but ...
-      const plain = await (await item.getType("text/plain")).text();
-      const html = await (await item.getType("text/html")).text();
-      if (html === plain) {
-        view.dispatch(view.state.replaceSelection(plain), { scrollIntoView: true });
-      } else {
-        const { boldFormatting, italicFormatting } = view.state.field(configField);
-        const emphasis = italicFormatting;
-        const strong = boldFormatting.includes("*") ? "*" : "_";
-        const converted = await html2md(html, false, { strong, emphasis });
-        view.dispatch(view.state.replaceSelection(converted), { scrollIntoView: true });
-      }
-    } else if (hasPlain) {
-      const plain = await (await item.getType("text/plain")).text();
-      view.dispatch(view.state.replaceSelection(plain), { scrollIntoView: true });
-    }
-  }
-}
 
 /**
  * Copies whatever is currently selected into the clipboard as HTML (with plain
@@ -94,60 +48,6 @@ export function copyAsHTML(view: EditorView): void {
         .catch((err) => reportError(err));
     })
     .catch((err) => reportError(err));
-}
-
-/**
- * Copies whatever is currently selected into the clipboard as-is.
- *
- * @param   {EditorView}  view  The view
- */
-export function copyAsPlain(view: EditorView): void {
-  const selections: string[] = [];
-
-  for (const { from, to } of view.state.selection.ranges) {
-    selections.push(view.state.sliceDoc(from, to));
-  }
-
-  navigator.clipboard
-    .write([
-      new ClipboardItem({
-        "text/plain": new Blob([selections.join("\n")], { type: "text/plain" }),
-      }),
-    ])
-    .catch((err) => reportError(err));
-}
-
-/**
- * Cuts the text which is currently selected. Can write the text to clipboard as
- * either plain text or HTML
- *
- * @param   {EditorView}  view    The view
- * @param   {boolean}     asHTML  Optional, if set to true copies as HTML
- */
-export function cut(view: EditorView, asHTML?: boolean): void {
-  // Cut is basically just copy + delete
-  if (asHTML === true) {
-    copyAsHTML(view);
-  } else {
-    copyAsPlain(view);
-  }
-
-  const changes: ChangeSpec[] = [];
-  for (const { from, to } of view.state.selection.ranges) {
-    changes.push({ from, to, insert: "" });
-  }
-
-  view.dispatch({ changes });
-}
-
-/**
- * Pastes whatever is in the clipboard as plain text, converting potential HTML
- * to Markdown if applicable
- *
- * @param   {EditorView}  view  The view
- */
-export function paste(view: EditorView): void {
-  handlePaste(view).catch((err) => reportError(err));
 }
 
 /**

@@ -14,6 +14,7 @@
  * END HEADER
  */
 
+import { editMenuItems } from "@common/commands/editing-menu-items";
 import { trans } from "@common/i18n-main";
 import { DocumentType } from "@dts/common/documents";
 import { app, BrowserWindow, dialog, type MenuItemConstructorOptions, shell } from "electron";
@@ -115,6 +116,7 @@ export default function getMenu(
     ],
   };
 
+  const edit = editMenuItems(trans);
   const menu: MenuItemConstructorOptions[] = [
     // FILE MENU
     {
@@ -357,18 +359,15 @@ export default function getMenu(
           type: "separator",
         },
         {
-          id: "menu.cut",
-          label: trans("Cut"),
+          ...edit.cut,
           role: "cut",
         },
         {
-          id: "menu.copy",
-          label: trans("Copy"),
+          ...edit.copy,
           role: "copy",
         },
         {
-          id: "menu.copy_html",
-          label: trans("Copy as HTML"),
+          ...edit.copyAsHtml,
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -377,13 +376,11 @@ export default function getMenu(
           },
         },
         {
-          id: "menu.paste",
-          label: trans("Paste"),
+          ...edit.paste,
           role: "paste",
         },
         {
-          id: "menu.paste_plain",
-          label: trans("Paste without style"),
+          ...edit.pasteAsPlain,
           click: function (_menuitem, focusedWindow) {
             (focusedWindow as BrowserWindow | undefined)?.webContents.send(
               "shortcut",
@@ -392,8 +389,7 @@ export default function getMenu(
           },
         },
         {
-          id: "menu.select_all",
-          label: trans("Select all"),
+          ...edit.selectAll,
           role: "selectAll",
         },
         {
