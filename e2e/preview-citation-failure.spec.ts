@@ -9,9 +9,10 @@
  *
  * Description:     Starts the assembled app with `export.cslStyle` at a file
  *                  that is absent, so each render of a citation fails (§12).
- *                  The preview of a cross-reference, of a footnote and of a
- *                  wikilink holds a citation. Each preview shows its source
- *                  text and the cause of the failure (#92).
+ *                  The preview of a cross-reference, of a footnote, of a
+ *                  wikilink and the outline entry of a heading hold a
+ *                  citation. Each shows its source text and the cause of the
+ *                  failure. Copy as HTML of that text shows the cause (#92).
  *
  * END HEADER
  */
@@ -48,7 +49,7 @@ const LIBRARY = `@article{AW71,
 `;
 
 const DOCUMENT = [
-  "# Fibers",
+  "# Fibers [@AW71]",
   "",
   "::: {#thm-reduction}",
   "A curve has stable reduction after a base change [@AW71].",
@@ -177,5 +178,32 @@ describe("assembled app: a preview whose citation cannot be rendered", function 
       `the preview shows the source: ${text}`,
     );
     assert.ok(text.includes(failure), `the preview names the cause: ${text}`);
+  });
+
+  it("the outline entry of a heading shows its source and the cause", async function () {
+    const editor = requireInitialized(page, "editor page");
+    const outline = '#navigation-sidebar [data-section="outline"]';
+    if ((await editor.locator(`${outline}[data-state="open"]`).count()) === 0) {
+      await editor.locator(`${outline} .chrome-section-trigger`).click();
+      await editor.locator(`${outline}[data-state="open"]`).waitFor({ timeout: 10_000 });
+    }
+    const text = await previewText(editor, `${outline} .toc-entry`, failure);
+    screenshots.set("outline-entry.png", await editor.screenshot());
+    assert.ok(text.includes("Fibers [@AW71]"), `the entry shows the source: ${text}`);
+    assert.ok(text.includes(failure), `the entry names the cause: ${text}`);
+  });
+
+  it("Copy as HTML of a citation shows the cause", async function () {
+    const editor = requireInitialized(page, "editor page");
+    await editor.locator(".cm-content").click();
+    await editor.keyboard.press("Control+a");
+    await editor.keyboard.press("Control+Alt+c");
+    const text = await previewText(
+      editor,
+      "#zettlr-toast-container .zettlr-toast.error span:first-child",
+      failure,
+    );
+    screenshots.set("copy-as-html.png", await editor.screenshot());
+    assert.ok(text.includes(failure), `the message names the cause: ${text}`);
   });
 });
