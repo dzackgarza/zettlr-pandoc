@@ -1,5 +1,11 @@
 # Launch the MathJax-rendering fork spike.
 bun := "bun"
+
+# The package manager that package.json declares. bun 1.4 installs a second
+# copy of the vendored @lezer/markdown under @codemirror/lang-markdown from
+# the same lockfile, and CodeMirror then rejects the parser of the app
+# (test/pandoc-lezer-fork-integration.spec.ts).
+package_manager := `jq -r .packageManager package.json`
 zettlr_agent_tunnel_service := "openai-tunnel-zettlr-pandoc.service"
 
 # ai-review-ci contract consumed by doctor and the shared workflow triggers.
@@ -17,7 +23,7 @@ default:
 
 [private]
 sync-dependencies:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
 
 # Install the repo-owned Hyprland desktop launcher into ~/.local.
 install-desktop-launcher:
@@ -206,7 +212,7 @@ test: sync-dependencies
 # Run the assembled Electron app against its isolated document workspace.
 # Portable: runs on hosted CI and locally alike.
 test-e2e:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     @just _e2e-run {{bun}} run test:e2e
 
@@ -215,7 +221,7 @@ test-e2e:
 # the packaged binary from `just package`; they assert those preconditions
 # loudly instead of skipping, so they run in the local push gate, not CI.
 test-e2e-desktop:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 
@@ -237,7 +243,7 @@ test-push:
 
 [private]
 test-ci:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     node -e "require('electron')"
     bash "{{justfile_directory()}}/scripts/configure-electron-sandbox-ci.sh" "{{justfile_directory()}}/node_modules/electron/dist"
     @just -f ~/ai-review-ci/justfiles/bun.just -d . test-ci
@@ -245,7 +251,7 @@ test-ci:
 # The scheduled QC run dispatches this tier: the whole-tree debt audit.
 [private]
 ambient:
-    {{bun}} install --frozen-lockfile
+    {{bun}} x {{package_manager}} install --frozen-lockfile
     @just -f ~/ai-review-ci/justfiles/bun.just -d . ambient
 
 [private]
