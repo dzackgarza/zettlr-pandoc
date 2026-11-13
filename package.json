@@ -155,7 +155,8 @@
     "yaml": "^2.9.1",
     "zod": "^4.6.5",
     "@dzack/pandoc-editor": "workspace:*",
-    "@dzack/tikz-render": "workspace:*"
+    "@dzack/tikz-render": "workspace:*",
+    "entities": "^8.0.0"
   },
   "optionalDependencies": {
     "fsevents": "^2.3.3"

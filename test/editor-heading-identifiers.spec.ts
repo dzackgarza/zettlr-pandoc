@@ -65,6 +65,15 @@ describe("heading identifiers", function () {
     ["a Setext heading", "Setext *heading*\n================\n"],
     ["an escape and an entity", "# Lattices \\& forms &amp; more\n"],
     ["a raw HTML anchor", '# A <a name="anchor">named</a> heading\n'],
+    ["dashes and an ellipsis", "# Wait... rank 1--2 --- signature\n"],
+    [
+      "raw TeX, raw code and code attributes",
+      "# A \\ref{x} `y`{=latex} `z`{.haskell} &eacute;t&eacute;\n",
+    ],
+    [
+      "a reference link and a link title",
+      '# A [ref][x] and [t](u "Title") b\n\n[x]: https://example.org\n',
+    ],
   ];
 
   for (const [name, source] of cases) {
