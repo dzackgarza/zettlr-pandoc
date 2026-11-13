@@ -296,12 +296,16 @@ type RecoverableReview =
  * What a document got back when it opened. `workingText` is present only
  * when a review was restored: only a review gives the persisted text a claim
  * on the buffer, and an annotation-bearing document without one opens on
- * its file.
+ * its file. `keptOverDisk` is true when that text is text that the author
+ * accepted and did not save, and another program changed the file after the
+ * sidecar was written: the buffer keeps the text, and the file is not the
+ * text of the document.
  */
 export interface ReattachedCollaboration {
   review: ActiveReviewState | undefined;
   annotations: AnnotationSet;
   workingText: string | undefined;
+  keptOverDisk: boolean;
 }
 
 export type AgentEventPayload = Partial<Omit<AgentEvent, "event" | "timestamp">> & {
@@ -980,15 +984,27 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    return { review, annotations, workingText: review === undefined ? undefined : workingText };
+    return {
+      review,
+      annotations,
+      workingText: review === undefined ? undefined : workingText,
+      keptOverDisk: false,
+    };
   }
 
   /**
    * The file moved under a sidecar that was not open to see it. The review
    * is frozen against the working text its anchors index and announced
    * invalidated; it waits for the owner or the agent to reapply or discard
-   * it. The annotations are orphaned, the sidecar is re-fenced to the bytes
-   * that are actually there, and the document opens on those bytes.
+   * it. The sidecar is re-fenced to the bytes that are actually there.
+   *
+   * A review with a proposal opens on those bytes, and the annotations are
+   * orphaned. A review whose working text is text that the author accepted
+   * and did not save keeps that text in the buffer, as an open document
+   * keeps its text when its file changes (`invalidateOnDiskDrift`): the
+   * anchors of the annotations index that text and stay, and the frozen
+   * review refuses a save over the file until the author loads the file or
+   * reapplies or discards the review.
    */
   private async driftedCollaboration(
     documentId: string,
@@ -997,19 +1013,26 @@ export class CollaborationApplicationService {
     diskText: string,
   ): Promise<ReattachedCollaboration | undefined> {
     const diskSha256 = sha256Text(diskText);
-    const annotations =
-      prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
-      sidecar.annotations;
-    // A review with nothing proposed has no suggestion to reapply to the
-    // new text of the file, and ends here.
+    const proposes =
+      sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true;
+    const keptOverDisk =
+      sidecar.review !== null &&
+      !proposes &&
+      sha256Text(sidecar.workingText) !== sidecar.diskFenceSha256;
+    const annotations = keptOverDisk
+      ? sidecar.annotations
+      : (prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
+        sidecar.annotations);
+    // A review with nothing proposed and no accepted text has no text that
+    // is in no file, and ends here.
     const review =
-      sidecar.review?.suggestions.some((suggestion) => suggestion.state === "proposed") === true
+      proposes || keptOverDisk
         ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
         : undefined;
     await this.sidecars.write(
       collaborationSidecar({
         documentPath,
-        workingText: diskText,
+        workingText: keptOverDisk ? sidecar.workingText : diskText,
         diskFenceSha256: diskSha256,
         review,
         annotations,
@@ -1031,7 +1054,12 @@ export class CollaborationApplicationService {
     if (review === undefined && annotations.items.length === 0) {
       return undefined;
     }
-    return { review, annotations, workingText: undefined };
+    return {
+      review,
+      annotations,
+      workingText: keptOverDisk ? sidecar.workingText : undefined,
+      keptOverDisk,
+    };
   }
 
   public readSidecar(documentPath: string): Promise<CollaborationSidecarData | undefined> {

@@ -4468,7 +4468,10 @@ current contents from the editor somewhere else, and restart the application.`,
    * across a gap in time instead of within a process: the review is frozen
    * and announced invalidated, and the file opens with the disk content.
    * The document's annotations survive that; their anchors become
-   * `orphaned` and wait for the owner to reattach them.
+   * `orphaned` and wait for the owner to reattach them. Text that the
+   * author accepted from the review and did not save stays the text of the
+   * document: the window is told that the file changed on disk, as for an
+   * open document whose file changed (`REMOTE_CHANGE_KEPT_CHANNEL`).
    */
   private async _reattachCollaborationSidecar(doc: Document): Promise<void> {
     try {
@@ -4484,6 +4487,10 @@ current contents from the editor somewhere else, and restart the application.`,
       // claim on the buffer.
       if (restored.workingText !== undefined) {
         this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
+      }
+      if (restored.keptOverDisk) {
+        const payload: RemoteChangeKeptBroadcast = { filePath: doc.filePath, unsavedChanges: true };
+        this._tellAbout(doc.filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
       }
       // The window keeps the session that it gets for the document, and an
       // editor shows a review only while its text is the working text of

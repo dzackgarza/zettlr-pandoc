@@ -1137,6 +1137,16 @@ of an isolated instance are in the first comment of #132.
   "Save a copy…". The watcher follows the path through the removal: a
   file that is written again arrives as `add`, which the provider handles
   as a change (the `add` of its own save is not a change).
+- **Accepted text of a closed document stays when its file changes.** The
+  sidecar of a closed document holds the text that the author accepted from
+  a review and did not save. When another program changed the file before
+  the next load (`driftedCollaboration`), the document loads with that text,
+  as an open document keeps its text (`REMOTE_CHANGE_KEPT_CHANNEL`):
+  the review is frozen, the annotations keep their anchors, the window gets
+  the message of a kept change, and a save is refused with `disk-changed`
+  until the author loads the file or reapplies or discards the review. A
+  review with a proposal opens on the file. Proof:
+  `test/documents-quit-with-review.spec.ts`.
 - **"Close anyway" at a window close offers no proposal for a save.** The
   buffer of a document with an undecided proposal takes the text of the
   file; the review and its working text stay in the sidecar. `pullUpdates`

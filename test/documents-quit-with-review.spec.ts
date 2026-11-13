@@ -411,7 +411,7 @@ describe("Documents-provider quit with an open review", function () {
       );
       const saved = await provider.saveFile(reviewedPath);
       assert.equal(
-        !saved.ok && saved.reason,
+        saved.ok ? undefined : saved.refusal.reason,
         "disk-changed",
         "a save does not write over the text of the other program",
       );
