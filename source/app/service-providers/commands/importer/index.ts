@@ -24,7 +24,6 @@ import { promises as fs } from "fs";
 import path from "path";
 import YAML from "yaml";
 import { runPandoc } from "../../../util/run-pandoc";
-import { systemErrorCause } from "../../../util/system-error-cause";
 import { isTaken } from "../../fsal/util/fs";
 import { importTextbundle, importTextpack } from "./import-textbundle";
 import { destinationExists, filesystemFailure, type ImportStep, placeFile } from "./place-file";
@@ -183,7 +182,7 @@ async function convertIn(
     { encoding: "utf8" },
   );
 
-  const refusal = await runPandoc(defaultsFile).then(
+  const refusal = await runPandoc(defaultsFile, undefined, process.env).then(
     (output): ImportStep | undefined => {
       if (output.code === 0) {
         return undefined;
@@ -193,11 +192,8 @@ async function convertIn(
         cause: trans("pandoc ended with code %s: %s", output.code, output.stderr.join(" ")),
       };
     },
-    (failure: NodeJS.ErrnoException): ImportStep => {
-      return {
-        result: "conversion-failed",
-        cause: trans("pandoc did not start: %s", systemErrorCause(failure)),
-      };
+    (failure: Error): ImportStep => {
+      return { result: "conversion-failed", cause: failure.message };
     },
   );
 

@@ -156,7 +156,8 @@
     "zod": "^4.6.5",
     "@dzack/pandoc-editor": "workspace:*",
     "@dzack/tikz-render": "workspace:*",
-    "entities": "^8.0.0"
+    "entities": "^8.0.0",
+    "@dzack/external-process": "workspace:*"
   },
   "optionalDependencies": {
     "fsevents": "^2.3.3"

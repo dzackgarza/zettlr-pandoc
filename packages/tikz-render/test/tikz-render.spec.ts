@@ -375,9 +375,8 @@ describe("TikZ render service (issue #14)", function () {
   it("distinguishes a toolchain probe that failed from a tool that is absent", async function () {
     this.timeout(60000);
     // A pandoc that is present on the requested PATH and cannot be executed.
-    // execvp fails with EACCES, which says nothing about whether pandoc is
-    // installed — telling this user to install it sends them after a problem
-    // they do not have, and the permission bit they do have stays invisible.
+    // Telling this user to install it sends them after a problem they do not
+    // have, and the permission bit they do have stays invisible.
     const binDir = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-noexec-"));
     try {
       await writeFile(path.join(binDir, "pandoc"), "#!/bin/sh\nexit 0\n", { mode: 0o644 });
@@ -403,10 +402,10 @@ describe("TikZ render service (issue #14)", function () {
       );
       if (result.kind === "toolchain-probe-failed") {
         assert.strictEqual(result.tool, "pandoc", "the tool whose probe failed is named");
-        assert.strictEqual(
-          result.code,
-          "EACCES",
-          "the errno that distinguishes this failure from absence is carried",
+        assert.match(
+          result.cause,
+          /^pandoc is on the PATH but not executable$/,
+          "the cause that distinguishes this failure from absence is carried",
         );
       }
     } finally {

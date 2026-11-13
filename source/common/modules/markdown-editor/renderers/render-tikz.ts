@@ -152,10 +152,10 @@ function populate(
       break;
     case "toolchain-probe-failed":
       // Deliberately not "install this tool": the tool may well be installed.
-      // The errno is the whole diagnosis — EACCES is a permission bit, EAGAIN
-      // is resource exhaustion — and telling the user to install something
-      // instead would send them after the wrong problem.
-      summary = `TikZ could not check whether ${result.tool} is usable: the check failed with ${result.code}`;
+      // The cause is the whole diagnosis (a permission bit, a tool that does
+      // not answer), and telling the user to install something instead would
+      // send them after the wrong problem.
+      summary = `TikZ cannot use ${result.tool}: ${result.cause}`;
       break;
     case "compile-error": {
       summary = "TikZ compilation failed";

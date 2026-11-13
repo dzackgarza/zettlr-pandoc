@@ -14,14 +14,19 @@
 
 import { reportError } from "@common/util/error-reporting";
 import type { TraySupport } from "@dts/common/environment";
+import {
+  describeProbe,
+  PROBE_TIME_LIMIT_MS,
+  probeTool,
+  type ToolProbe,
+} from "@dzack/external-process/probe-tool";
+import { describeOutcome, runProcess } from "@dzack/external-process/run-process";
 import { app, dialog } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import tls from "tls";
-import { getProgramVersion } from "./get-program-version";
 import isTraySupported from "./is-tray-supported";
 import { preflight } from "./preflight";
-import { runCommand } from "./run-command";
 
 /** What environmentCheck() found. The check runs once, before the app boots. */
 export interface CheckedEnvironment {
@@ -32,6 +37,47 @@ export interface CheckedEnvironment {
 }
 
 let checkedEnvironmentResult: CheckedEnvironment | undefined;
+
+/** The version number on the first line of a `--version` output. */
+function versionOf(probe: Extract<ToolProbe, { status: "available" }>): string | undefined {
+  return /\d[\d.]+/.exec(probe.versionOutput.split("\n")[0])?.[0];
+}
+
+/**
+ * The version of git, or undefined when git is not installed.
+ *
+ * On macOS, the `git` command always exists. If the user has installed the
+ * XCode command line tools, it will resolve to the actual git binary.
+ * However, on Macs without XCode command line tools, it will instead
+ * trigger a popup asking to install the command line tools. To figure out if
+ * git is installed on macOS, we check the return code of `xcode-select -p`.
+ * If it's 0, the command line tools are installed. NOTE that we cannot use the
+ * tool recommended by Apple, `xcrun`, because that will *also* trigger the
+ * setup dialog.
+ */
+async function findGitVersion(): Promise<string | undefined> {
+  if (process.platform === "darwin") {
+    const xcodeResult = await runProcess({
+      command: "xcode-select",
+      args: ["-p"],
+      env: process.env,
+      timeLimitMs: PROBE_TIME_LIMIT_MS,
+      waitForGroup: false,
+    });
+    if (!(xcodeResult.ended === "exit" && xcodeResult.code === 0)) {
+      console.log(
+        `[Application] git is not checked: ${describeOutcome("xcode-select -p", xcodeResult)}`,
+      );
+      return undefined;
+    }
+  }
+  const git = await probeTool("git", process.env);
+  if (git.status !== "available") {
+    console.log(`[Application] ${describeProbe("git", git)}.`);
+    return undefined;
+  }
+  return versionOf(git);
+}
 
 /**
  * Returns what the environment check found.
@@ -70,6 +116,7 @@ export default async function environmentCheck(): Promise<void> {
       dialog.showErrorBox(title, message);
     },
     (code) => app.exit(code),
+    process.env,
   );
   if (!passed) {
     return; // app.exit(1) was called; do not continue booting.
@@ -109,53 +156,32 @@ export default async function environmentCheck(): Promise<void> {
     );
   }
 
-  // The preflight has found pandoc on the launch PATH, so it must report a version.
-  const pandocVersion = await getProgramVersion("pandoc");
+  // The preflight probed pandoc on the launch PATH; this is the same probe.
+  const pandoc = await probeTool("pandoc", process.env);
+  if (pandoc.status !== "available") {
+    throw new Error(describeProbe("pandoc", pandoc));
+  }
+  const pandocVersion = versionOf(pandoc);
   if (pandocVersion === undefined) {
-    throw new Error("pandoc is on PATH but did not report a version.");
+    throw new Error(`pandoc --version names no version: ${pandoc.versionOutput}`);
   }
 
   // Now, let's see if there's a quarto package installed
   let quartoVersion: string | undefined;
-  try {
-    quartoVersion = await getProgramVersion("quarto");
+  const quarto = await probeTool("quarto", process.env);
+  if (quarto.status === "available") {
+    quartoVersion = versionOf(quarto);
     console.log(
       `[Application] Found a system-wide Quarto install! Version ${String(quartoVersion)}`,
     );
-  } catch (err) {
-    // No system wide install
+  } else {
     console.log(
-      "[Application] Quarto not found on system. *.qmd-files will be exported with Pandoc.",
+      `[Application] ${describeProbe("quarto", quarto)}. *.qmd-files will be exported with Pandoc.`,
     );
   }
 
   // Finally, determine if git is installed on this machine.
-  let gitVersion: string | undefined;
-  try {
-    // On macOS, the `git` command always exists. If the user has installed the
-    // XCode command line tools, it will resolve to the actual git binary.
-    // However, on Macs without XCode command line tools, it will instead
-    // trigger an annoying popup asking to install the command line tools. To
-    // figure out if git is installed on macOS, we have to go another route and
-    // check the return code of `xcode-select -p`. If it's 0, we are good to go
-    // to check for git availability (because the command line tools are
-    // intalled). NOTE that we cannot use the recommended tool by apple, `xcrun`
-    // because that will *also* trigger the setup dialog.
-    let XCodeCLIToolsInstalled = false;
-    if (process.platform === "darwin") {
-      const xcodeResult = await runCommand("xcode-select", ["-p"]);
-      XCodeCLIToolsInstalled = xcodeResult.code === 0;
-    }
-
-    if (process.platform !== "darwin" || XCodeCLIToolsInstalled) {
-      gitVersion = await getProgramVersion("git");
-    }
-  } catch (err) {
-    // git is absent or did not report a version; gitVersion stays undefined.
-    console.log(
-      `[Application] git not found on system: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  const gitVersion = await findGitVersion();
 
   // Then ensure all required directories exist
   for (const directory of REQUIRED_DIRECTORIES) {

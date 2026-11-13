@@ -169,7 +169,7 @@ function summarizeFailure(failure: TikzRenderFailure): string {
     case "missing-tools":
       return `TikZ tools not found: ${failure.missing.join(", ")}`;
     case "toolchain-probe-failed":
-      return `Could not check ${failure.tool}: ${failure.code}`;
+      return `TikZ cannot use ${failure.tool}: ${failure.cause}`;
     case "pandoc-error": {
       const headline = tikzCompilerLogHeadline(failure.log);
       return headline === null ? "Pandoc returned no diagnostic." : headline;

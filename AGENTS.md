@@ -322,8 +322,14 @@ manifest, render and numbering authority; Zettlr reads the authoring fields.
 
 - `source/app/util/preflight.ts`, called from `source/app/util/environment-check.ts`.
   Fails loud (native dialog + `app.exit(1)`) if `pandoc`, `just`, `latexmk`,
-  `pdflatex`, `biber`, or `~/.pandoc/justfile` are missing in the app's runtime
-  environment.
+  `pdflatex`, `biber`, `pandoc-crossref`, `latexpand` or `~/.pandoc/justfile`
+  are missing in the app's runtime environment.
+- **One probe of each tool.** The preflight, the pandoc-crossref gate and the
+  pandoc version of the environment check read the same `probeTool` answer
+  (§25), so each tool starts one time. A tool that does not answer
+  `--version` within 10 s stops the start with "did not answer"; a tool
+  without the execute bit is "on the PATH but not executable", not absent.
+  Proof: `test/start-tool-probes.spec.ts`.
 - **The app uses the `PATH` it was started with.** The launcher owns the
   environment; a wrong `PATH` is a preflight failure, not something the app
   repairs. Upstream Zettlr runs the user's login shell at startup (`fix-path`)
@@ -649,7 +655,7 @@ of an isolated instance are in the first comment of #132.
 - **Pandoc reads one citation candidate once.**
   `references/pandoc-citations.ts` keeps the reading of each candidate source;
   an edit that changes no citation starts no Pandoc process.
-- **One probe of an external tool in a session** (`tikz-render.ts`,
+- **One probe of an external tool in a session** (`probeTool`, §25;
   `flowmarkToolPython`).
 - **Background processes wait for a pause in the editor.** The lint queue
   (`DocumentLintProvider.work`) starts no Flowmark run until the document
@@ -1569,6 +1575,35 @@ of an isolated instance are in the first comment of #132.
 - **Proof:** `e2e/missing-workspace.spec.ts`,
   `e2e/unreadable-workspace-rules.spec.ts`,
   `test/fsal-deleted-directory.spec.ts`.
+
+### 25. Runs of external tools
+
+- **One owner.** `packages/external-process` (`@dzack/external-process`)
+  runs each external tool of the main process: `runProcess`
+  (`src/run-process.ts`) and `probeTool` (`src/probe-tool.ts`). It imports
+  nothing from `source/`. See `packages/external-process/README.md`.
+- **Each run has the same rules.** A run leads a process group of its own. A
+  time limit stops the group with SIGTERM and then SIGKILL; a run that a
+  signal ends leaves no process of its group; the exit of the app stops each
+  run. The answer is an outcome (`exit`, `signal`, `timeout`, `not-started`),
+  never a rejection for the program's end. A failed start names its cause:
+  the program is absent, is not executable, or its working folder cannot be
+  used. `describeOutcome` gives the sentence; `requireExit` and
+  `requireSuccess` throw it for a caller whose work stops there.
+- **The callers.** The TikZ render, Flowmark, Pandoc of the export, the
+  import and the citation reader (`runPandoc`, `pandoc-citations.ts`),
+  `latexpand`, the PDF recipe, the shell commands of the author
+  (`runShellCommand`: the command is shell text, each path an argument),
+  the justfile listing, the QuickTeX loader, the tray check and
+  `notify-send`. A new run of a tool goes through `runProcess`; a new check
+  that a tool is installed goes through `probeTool`.
+- **A start of an application is not a run.** `openPath`, the kitty
+  launcher, the PDF viewer of a link and the Visual TikZ Editor start a
+  program that goes on after the app has its answer; they keep their own
+  `spawn`.
+- **Proof:** `packages/external-process/test/run-process.spec.ts`,
+  `test/start-tool-probes.spec.ts`, `test/preflight.spec.ts`,
+  `test/run-shell-command.spec.ts`.
 
 ## Debugging entry points
 

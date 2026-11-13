@@ -77,6 +77,7 @@ describe("resolvesToFile() vs isFile() symlink semantics (issue #5, B12)", funct
     const missing = await findMissingRequirements(
       [],
       [{ target: fileLink, purpose: "symlinked recipe file" }],
+      process.env,
     );
     assert.deepEqual(missing, []);
   });

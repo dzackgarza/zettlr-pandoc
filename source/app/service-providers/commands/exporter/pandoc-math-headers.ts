@@ -1,14 +1,11 @@
 import { isHtmlWriter, isTexWriter } from "@common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "@common/pandoc-util/parse-reader-writer";
+import { requireSuccess, runProcess } from "@dzack/external-process/run-process";
 import { type MathJaxMacro, mathJaxPackages } from "@dzack/tikz-render/mathjax-config";
-import { execFile } from "child_process";
 import { existsSync, promises as fs } from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { promisify } from "util";
 import { MacroSourcesUnavailableError } from "../../../util/load-mathjax-macros";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * The package of the macro tree that holds the macros of the MathJax
@@ -46,9 +43,16 @@ async function texMacroHeader(
   await fs.writeFile(source, `\\usepackage{${MACRO_PACKAGE}}\n`, "utf8");
   // latexpand puts a package into the text only when TEXINPUTS finds it, and
   // --fatal stops it at a file of an \input that it cannot find.
-  const { stdout } = await execFileAsync("latexpand", ["--fatal", "--expand-usepackage", source], {
-    env: { ...process.env, TEXINPUTS: `${styles}//` },
-  });
+  const stdout = requireSuccess(
+    "latexpand",
+    await runProcess({
+      command: "latexpand",
+      args: ["--fatal", "--expand-usepackage", source],
+      env: { ...process.env, TEXINPUTS: `${styles}//` },
+      timeLimitMs: "none",
+      waitForGroup: false,
+    }),
+  );
   // A package can name commands with @.
   return `\\makeatletter\n${stdout}\n\\makeatother\n`;
 }

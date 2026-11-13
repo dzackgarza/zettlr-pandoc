@@ -12,7 +12,7 @@
  * END HEADER
  */
 
-import { spawnSync } from "child_process";
+import { runProcess } from "@dzack/external-process/run-process";
 import { app, Notification, nativeImage } from "electron";
 import path from "path";
 
@@ -31,13 +31,16 @@ const defaultIcon = nativeImage.createFromPath(path.join(__dirname, "../img/imag
  *                               is headed by the application's name
  * @param   {void}     callback  Optional callback, invoked when user clicks the notification
  *
- * @return  {boolean}            False if the platform doesn't support notifications.
+ * @return  {Promise<boolean>}   False if the platform doesn't support notifications.
+ *                               A caller that does not read the answer need
+ *                               not wait: the app logs a rejection that no
+ *                               caller handles (main.ts).
  */
-export function showNativeNotification(
+export async function showNativeNotification(
   message: string,
   title?: string,
   callback?: () => void,
-): boolean {
+): Promise<boolean> {
   // Electron resolves the application's name from package.json `productName`.
   const appName = app.getName();
   const heading = title === undefined ? appName : title;
@@ -46,12 +49,16 @@ export function showNativeNotification(
     // `notify-send` is the standard freedesktop/libnotify client and gives us
     // the same dismissible notification surface without owning another UI.
     if (process.platform === "linux") {
-      const result = spawnSync(
-        "notify-send",
-        [`--app-name=${appName}`, "--urgency=normal", heading, message],
-        { stdio: "ignore" },
-      );
-      return result.error === undefined && result.status === 0;
+      // notify-send runs apart from the event loop of the main process, so
+      // a session bus that is slow to answer stops no other work.
+      const outcome = await runProcess({
+        command: "notify-send",
+        args: [`--app-name=${appName}`, "--urgency=normal", heading, message],
+        env: process.env,
+        timeLimitMs: "none",
+        waitForGroup: false,
+      });
+      return outcome.ended === "exit" && outcome.code === 0;
     }
     return false;
   }

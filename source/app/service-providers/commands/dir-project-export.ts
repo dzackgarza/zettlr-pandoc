@@ -170,7 +170,7 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     return false;
   }
 
-  const notificationShown = showNativeNotification(
+  const notificationShown = await showNativeNotification(
     trans('Project "%s" successfully exported. Click to show.', config.title),
     trans("Project Export"),
     () => {

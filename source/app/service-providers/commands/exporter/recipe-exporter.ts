@@ -20,13 +20,13 @@
  */
 
 import type { WikilinkReading } from "@common/util/wikilink-resolution";
+import { requireExit, runProcess } from "@dzack/external-process/run-process";
 import type FSAL from "@providers/fsal";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import sanitize from "sanitize-filename";
 import { bibliographyFiles, documentBibliography } from "../../../util/document-bibliographies";
-import { runProcess } from "./run-shell-command";
 import { splitLines } from "./split-lines";
 import type { ExporterOptions, ExporterOutput, MinimalFile } from "./types";
 import { exportInputs, withWikilinkMap } from "./wikilink-map-file";
@@ -162,15 +162,18 @@ export async function runRecipeExport(
   const inputs = await exportInputs(options.sourceFiles);
   // The recipe cites from the bibliography that the editor shows (#198).
   const bibliography = await recipeBibliography(inputs, context);
-  const result = await withWikilinkMap(
-    inputs,
-    wikilinks,
-    async (mapFile) =>
-      await runProcess("just", argv, runDir, {
-        ...process.env,
-        PANDOC_WIKILINKS: mapFile,
-        PANDOC_BIB_SOURCE: bibliography,
+  const result = await withWikilinkMap(inputs, wikilinks, async (mapFile) =>
+    requireExit(
+      "just",
+      await runProcess({
+        command: "just",
+        args: argv,
+        cwd: runDir,
+        env: { ...process.env, PANDOC_WIKILINKS: mapFile, PANDOC_BIB_SOURCE: bibliography },
+        timeLimitMs: "none",
+        waitForGroup: false,
       }),
+    ),
   );
 
   // The recipe writes `<title>-<DD-MM-YY>.pdf` into its ROOT (runDir).

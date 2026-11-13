@@ -13,7 +13,7 @@
  * END HEADER
  */
 
-import { spawn } from "child_process";
+import { requireExit, runProcess } from "@dzack/external-process/run-process";
 
 export interface PandocRunnerOutput {
   code: number;
@@ -22,17 +22,14 @@ export interface PandocRunnerOutput {
 }
 
 /** The lines of a stream that hold text. */
-function textLines(chunks: string[]): string[] {
-  return chunks
-    .join("")
-    .split("\n")
-    .filter((line) => line.trim() !== "");
+function textLines(text: string): string[] {
+  return text.split("\n").filter((line) => line.trim() !== "");
 }
 
 /**
  * Runs `pandoc --defaults <defaultsFile>`. The promise rejects when the
- * process does not start. An exit code other than 0 is a result: the caller
- * reads `code` and `stderr`.
+ * process does not start or a signal ends it, with the cause in the message.
+ * An exit code other than 0 is a result: the caller reads `code` and `stderr`.
  *
  * @param   {string}  defaultsFile  The defaults file, already on disk
  * @param   {string}  cwd           The working directory of the process
@@ -40,31 +37,17 @@ function textLines(chunks: string[]): string[] {
  */
 export async function runPandoc(
   defaultsFile: string,
-  cwd?: string,
-  env?: NodeJS.ProcessEnv,
+  cwd: string | undefined,
+  env: NodeJS.ProcessEnv,
 ): Promise<PandocRunnerOutput> {
-  const stdout: string[] = [];
-  const stderr: string[] = [];
-
-  const code = await new Promise<number>((resolve, reject) => {
-    const pandocProcess = spawn("pandoc", ["--defaults", defaultsFile], { cwd, env });
-
-    pandocProcess.stdout.on("data", (data) => {
-      stdout.push(String(data));
-    });
-
-    pandocProcess.stderr.on("data", (data) => {
-      stderr.push(String(data));
-    });
-
-    pandocProcess.on("close", (exitCode: number, _signal) => {
-      resolve(exitCode);
-    });
-
-    pandocProcess.on("error", (err) => {
-      reject(err);
-    });
+  const outcome = await runProcess({
+    command: "pandoc",
+    args: ["--defaults", defaultsFile],
+    env,
+    cwd,
+    timeLimitMs: "none",
+    waitForGroup: false,
   });
-
+  const { code, stdout, stderr } = requireExit("pandoc", outcome);
   return { code, stdout: textLines(stdout), stderr: textLines(stderr) };
 }

@@ -656,12 +656,16 @@ describe("TikZ editor widgets (issue #14)", function () {
     );
   });
 
-  it("names the tool and the errno when the toolchain check itself failed, instead of reporting absence", async function () {
-    // EACCES, EPERM and EAGAIN are not "not installed". Presenting them as the
-    // missing-tools case sends the user to install software they already have
-    // and hides the permission or resource problem that actually stopped the
-    // render.
-    respond = { ok: false, kind: "toolchain-probe-failed", tool: "pdflatex", code: "EACCES" };
+  it("names the tool and the cause when the toolchain check itself failed, instead of reporting absence", async function () {
+    // A file without the execute bit is not "not installed". Presenting it as
+    // the missing-tools case sends the user to install software they already
+    // have and hides the permission problem that actually stopped the render.
+    respond = {
+      ok: false,
+      kind: "toolchain-probe-failed",
+      tool: "pdflatex",
+      cause: "pdflatex is on the PATH but not executable",
+    };
     const view = createEditor();
     await waitFor(() => view.dom.querySelector(".tikz-error") !== null, "the failed-probe box");
     const text = view.dom.querySelector<HTMLElement>(".tikz-error")?.textContent;
@@ -669,7 +673,7 @@ describe("TikZ editor widgets (issue #14)", function () {
       assert.fail("the failed-probe box has text");
     }
     assert.ok(text.includes("pdflatex"), `the tool whose check failed is named: ${text}`);
-    assert.ok(text.includes("EACCES"), `the errno that ended the check is shown: ${text}`);
+    assert.ok(text.includes("not executable"), `the cause that ended the check is shown: ${text}`);
     assert.ok(
       !/not found|install/i.test(text),
       `a check that failed is not presented as an absent tool: ${text}`,

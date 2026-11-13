@@ -36,6 +36,7 @@
         "@codemirror/lint": "^6.9.7",
         "@codemirror/search": "^6.7.2",
         "@codemirror/state": "^6.7.6",
+        "@dzack/external-process": "workspace:*",
         "@dzack/pandoc-editor": "workspace:*",
         "@dzack/tikz-render": "workspace:*",
         "@electron-toolkit/preload": "^3.0.2",
@@ -160,6 +161,10 @@
         "fsevents": "^2.3.3",
       },
     },
+    "packages/external-process": {
+      "name": "@dzack/external-process",
+      "version": "0.1.0",
+    },
     "packages/pandoc-editor": {
       "name": "@dzack/pandoc-editor",
       "version": "0.1.0",
@@ -206,6 +211,7 @@
       "name": "@dzack/tikz-render",
       "version": "0.1.0",
       "dependencies": {
+        "@dzack/external-process": "workspace:*",
         "async-mutex": "^0.5.0",
         "viewerjs": "1.14.0",
         "vue": "^3.5.43",
@@ -361,6 +367,8 @@
     "@csstools/css-syntax-patches-for-csstree": ["@csstools/css-syntax-patches-for-csstree@1.1.15", "", { "peerDependencies": { "css-tree": "^3.2.1" }, "optionalPeers": ["css-tree"] }, "sha512-J0u7HkVl2nzSlhsiTOp4AmwcUQ3D+mGEEKfBy/7To5/y7F2OHwyLrXfrhR0SMgr4p5Lo+eaMVSeai24zUcBIxA=="],
 
     "@csstools/css-tokenizer": ["@csstools/css-tokenizer@4.0.2", "", {}, "sha512-OoKoR0f76dCY666JlcbhmVTs2drYj1GUXZTYTcbUgJjh9Nv41aFfZ21bPQTERm5+L5cBDo466NltB2lplS5GBw=="],
+
+    "@dzack/external-process": ["@dzack/external-process@workspace:packages/external-process"],
 
     "@dzack/pandoc-editor": ["@dzack/pandoc-editor@workspace:packages/pandoc-editor"],
 

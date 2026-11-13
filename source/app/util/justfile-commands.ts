@@ -22,7 +22,7 @@ import type {
   JustRepositoryCommands,
   JustRepositoryNotListed,
 } from "@dts/common/justfile-commands";
-import { spawn } from "child_process";
+import { requireExit, runProcess } from "@dzack/external-process/run-process";
 import path from "path";
 import { z } from "zod";
 
@@ -105,30 +105,17 @@ async function captureCommand(
   args: readonly string[],
   cwd?: string,
 ): Promise<CapturedCommand> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
+  return requireExit(
+    command,
+    await runProcess({
+      command,
+      args,
+      env: process.env,
       cwd,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.once("error", reject);
-    child.once("close", (code, signal) => {
-      // Node reports a null exit code exactly when a signal ended the process.
-      if (code === null) {
-        reject(new Error(`${command} was terminated by signal ${String(signal)}`));
-        return;
-      }
-      resolve({ code, stdout, stderr });
-    });
-  });
+      timeLimitMs: "none",
+      waitForGroup: false,
+    }),
+  );
 }
 
 /** The answer of a command, or the error that kept it from running. */

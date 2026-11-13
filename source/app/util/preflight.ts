@@ -8,11 +8,10 @@
  *
  * Description:     Startup preflight. Verifies that every external tool and file
  *                  the app hard-requires actually resolves in the app's runtime
- *                  environment (with the PATH of the user's shell), and fails
- *                  loud and fast if any
- *                  is missing -- instead of surfacing a cryptic failure deep
- *                  inside an export. No fallbacks: a missing requirement stops
- *                  the app at boot.
+ *                  environment (the PATH the app was started with), and fails
+ *                  loud and fast if any is missing -- instead of surfacing a
+ *                  cryptic failure deep inside an export. No fallbacks: a
+ *                  missing requirement stops the app at boot.
  *
  * END HEADER
  */
@@ -20,8 +19,8 @@
 // The FOLLOW-SYMLINKS variant (not @common/util/is-file, which lstats): a
 // symlinked ~/.pandoc/justfile is perfectly usable and must pass preflight.
 import resolvesToFile from "@common/util/resolves-to-file";
+import { describeProbe, probeTool } from "@dzack/external-process/probe-tool";
 import { TIKZ_RENDER_PROTOCOL, tikzRenderProtocolVersion } from "@dzack/tikz-render/tikz-render";
-import { spawn } from "child_process";
 import os from "os";
 import path from "path";
 
@@ -76,34 +75,28 @@ export function requiredPaths(): PathRequirement[] {
 }
 
 /**
- * Resolves true iff `command` can be spawned (i.e. exists on PATH). Runs
- * `--version` with shell:false; an ENOENT 'error' event means it is not
- * installed. Any exit code counts as "present" — we only care that it resolves.
- */
-export async function commandResolves(command: string): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const proc = spawn(command, ["--version"], { shell: false });
-    proc.on("error", () => resolve(false));
-    proc.on("close", () => resolve(true));
-  });
-}
-
-/**
  * Returns a human-readable list of every missing requirement (empty = all
- * present). Electron-free so it can be exercised directly in tests. The
- * command checks run at the same time: the slowest of them, not their sum, is
- * the time of the check.
+ * present). Electron-free so it can be exercised directly in tests. Each
+ * command is probed one time (`probeTool`, with its time limit); the probes
+ * run at the same time, so the slowest of them, not their sum, is the time
+ * of the check. A probe names its cause: a tool that is not on the PATH, one
+ * that is not executable, one that does not answer.
  */
 export async function findMissingRequirements(
   commands: CommandRequirement[],
   paths: PathRequirement[],
+  env: NodeJS.ProcessEnv,
 ): Promise<string[]> {
-  const resolved = await Promise.all(
-    commands.map(async ({ command }) => await commandResolves(command)),
+  const probes = await Promise.all(
+    commands.map(async ({ command }) => await probeTool(command, env)),
   );
-  const missing = commands
-    .filter((_, index) => !resolved[index])
-    .map(({ command, purpose }) => `${command} — not found on PATH (needed for ${purpose})`);
+  const missing: string[] = [];
+  commands.forEach(({ command, purpose }, index) => {
+    const probe = probes[index];
+    if (probe.status !== "available") {
+      missing.push(`${describeProbe(command, probe)} (needed for ${purpose})`);
+    }
+  });
   for (const { target, purpose } of paths) {
     if (!resolvesToFile(target)) {
       missing.push(`${target} — missing (${purpose})`);
@@ -133,17 +126,6 @@ export type CrossrefCompatibility =
       pandocVersion: string;
     }
   | { status: "unparseable"; crossrefBuiltWithPandoc?: string; pandocVersion?: string };
-
-/**
- * Runs a command and captures its stdout — the injectable seam of the
- * compatibility check, following this module's existing injection style
- * (preflight() injects showError/exit the same way). The exit code is
- * deliberately NOT part of the contract (review B14): compatibility is
- * assessed purely from the version outputs, and a command that cannot run
- * yields an empty stdout, which assessCrossrefCompatibility already reports
- * loudly as 'unparseable'.
- */
-export type VersionOutputRunner = (command: string, args: string[]) => Promise<{ stdout: string }>;
 
 /**
  * The pure comparison at the heart of the compatibility check: given the two
@@ -187,58 +169,31 @@ export function assessCrossrefCompatibility(
 }
 
 /**
- * The default VersionOutputRunner: spawns the real command (shell:false) and
- * captures its stdout. A command that cannot be spawned yields an empty
- * output, which assessCrossrefCompatibility reports as 'unparseable' — the
- * plain missing-command case is separately owned by REQUIRED_COMMANDS.
- */
-const runVersionCommand: VersionOutputRunner = async (command, args) => {
-  return await new Promise((resolve) => {
-    const proc = spawn(command, args, { shell: false });
-    let stdout = "";
-    proc.stdout.on("data", (data) => {
-      stdout += String(data);
-    });
-    proc.on("error", () => resolve({ stdout: "" }));
-    proc.on("close", () => resolve({ stdout }));
-  });
-};
-
-/**
- * Executes `pandoc-crossref --version` and `pandoc --version` through the
- * given runner and assesses their compatibility. The default runner spawns
- * the real tools; tests inject a runner serving captured outputs.
- *
- * @param   {VersionOutputRunner}  run  The command runner (defaults to real execution)
- *
- * @return  {Promise<CrossrefCompatibility>}  The typed compatibility outcome
+ * Reads the `--version` outputs of pandoc-crossref and pandoc from their
+ * probes (`probeTool`: one start of each tool for a PATH) and assesses their
+ * compatibility. Undefined when a tool did not answer its probe: the presence
+ * check of REQUIRED_COMMANDS names that cause.
  */
 export async function checkCrossrefCompatibility(
-  run: VersionOutputRunner = runVersionCommand,
-): Promise<CrossrefCompatibility> {
+  env: NodeJS.ProcessEnv,
+): Promise<CrossrefCompatibility | undefined> {
   const [crossref, pandoc] = await Promise.all([
-    run("pandoc-crossref", ["--version"]),
-    run("pandoc", ["--version"]),
+    probeTool("pandoc-crossref", env),
+    probeTool("pandoc", env),
   ]);
-  return assessCrossrefCompatibility(crossref.stdout, pandoc.stdout);
+  if (crossref.status !== "available" || pandoc.status !== "available") {
+    return undefined;
+  }
+  return assessCrossrefCompatibility(crossref.versionOutput, pandoc.versionOutput);
 }
 
 /**
- * The preflight-facing compatibility gate: resolves null when
- * pandoc-crossref executes and names the installed pandoc version, and
- * otherwise a human-readable failure message that names BOTH versions (the
- * one pandoc-crossref was built with and the installed pandoc). preflight()
- * treats a non-null result exactly like a missing requirement.
- *
- * @param   {VersionOutputRunner}  run  The command runner (defaults to real execution)
- *
- * @return  {Promise<string|null>}      The failure message, or null
+ * The failure message of a compatibility outcome: null when pandoc-crossref
+ * names the installed pandoc version, and otherwise a message that names
+ * BOTH versions (the one pandoc-crossref was built with and the installed
+ * pandoc). preflight() treats a message exactly like a missing requirement.
  */
-export async function crossrefCompatibilityFailure(
-  run?: VersionOutputRunner,
-): Promise<string | null> {
-  const result = await checkCrossrefCompatibility(run);
-
+export function crossrefCompatibilityFailure(result: CrossrefCompatibility): string | null {
   if (result.status === "compatible") {
     return null;
   }
@@ -284,30 +239,30 @@ export async function tikzFilterCompatibilityFailure(): Promise<string | null> {
  * calls `exit(1)`, and resolves false. Otherwise resolves true. The failure
  * side effects are injected so the whole path is testable without Electron.
  * The pandoc-crossref <-> pandoc compatibility gate (issue #1 Phase 7) is
- * part of the preflight: a non-null crossrefCompatibilityFailure() is
- * reported exactly like a missing requirement. The three gates run at the
- * same time.
+ * part of the preflight: an incompatibility is reported exactly like a
+ * missing requirement. The gates run at the same time, and each tool starts
+ * one time: the gate reads the version outputs of the probes.
  *
  * @param   showError       Presents a fatal message to the user (e.g. dialog box).
  * @param   exit            Terminates the process with the given code.
+ * @param   env             The environment of the app, whose PATH finds the tools.
  * @param   commands        The required external commands.
  * @param   paths           The required on-disk files.
- * @param   crossrefFailure The pandoc-crossref compatibility gate.
- * @param   tikzFailure     The shared TikZ-filter protocol gate.
  */
 export async function preflight(
   showError: (title: string, message: string) => void,
   exit: (code: number) => void,
+  env: NodeJS.ProcessEnv,
   commands: CommandRequirement[] = REQUIRED_COMMANDS,
   paths: PathRequirement[] = requiredPaths(),
-  crossrefFailure: () => Promise<string | null> = crossrefCompatibilityFailure,
-  tikzFailure: () => Promise<string | null> = tikzFilterCompatibilityFailure,
 ): Promise<boolean> {
-  const [missing, incompatibility, tikzIncompatibility] = await Promise.all([
-    findMissingRequirements(commands, paths),
-    crossrefFailure(),
-    tikzFailure(),
+  const [missing, compatibility, tikzIncompatibility] = await Promise.all([
+    findMissingRequirements(commands, paths, env),
+    checkCrossrefCompatibility(env),
+    tikzFilterCompatibilityFailure(),
   ]);
+  const incompatibility =
+    compatibility === undefined ? null : crossrefCompatibilityFailure(compatibility);
   if (incompatibility !== null) {
     missing.push(incompatibility);
   }

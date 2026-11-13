@@ -14,8 +14,9 @@
  *                  filter compiles via pdflatex and
  *                  pdf2svg with a content-addressed cache, namespaces SVG ids,
  *                  and emits one machine-parseable marker line per
- *                  figure-compile error; this module owns the process
- *                  plumbing and translates every outcome into a typed result —
+ *                  figure-compile error; this module runs the filter through
+ *                  @dzack/external-process and translates every outcome
+ *                  into a typed result —
  *                  missing tools, a toolchain probe that failed for a reason
  *                  other than absence, compile failures, a render killed by
  *                  a signal and a render that passed its time limit are loud
@@ -27,8 +28,9 @@
  * END HEADER
  */
 
+import { describeProbe, probeTool } from "@dzack/external-process/probe-tool";
+import { describeOutcome, runProcess } from "@dzack/external-process/run-process";
 import { Semaphore } from "async-mutex";
-import { type ChildProcess, spawn } from "child_process";
 import { createHash } from "crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
@@ -423,15 +425,14 @@ export type TikzRenderResult =
     }
   | { ok: false; kind: "missing-tools"; missing: string[] }
   /**
-   * The toolchain probe itself failed. A tool that is not installed makes
-   * spawn fail with ENOENT and is reported as 'missing-tools'; every other
-   * spawn failure — EACCES for a file that is present but not executable,
-   * EPERM, EAGAIN under resource exhaustion — means the tool's presence was
-   * never established. Telling that user to install a tool they already have
-   * is a wrong diagnosis, so the errno that ended the probe is carried and
-   * the toolchain status stays unknown.
+   * A tool did not answer its probe. A tool that is not on the PATH is
+   * reported as 'missing-tools'; each other cause — a file without the
+   * execute bit, a tool that did not answer `--version` within the time limit
+   * of the probe, a failed start — says that the tool may be installed.
+   * Telling that user to install a tool they already have is a wrong
+   * diagnosis, so the cause (`describeProbe`) is carried.
    */
-  | { ok: false; kind: "toolchain-probe-failed"; tool: string; code: string }
+  | { ok: false; kind: "toolchain-probe-failed"; tool: string; cause: string }
   | { ok: false; kind: "compile-error"; errors: TikzCompileError[]; log: string }
   | { ok: false; kind: "pandoc-error"; log: string }
   /**
@@ -448,244 +449,24 @@ export type TikzRenderResult =
    */
   | { ok: false; kind: "render-timeout"; timeoutMs: number; log: string };
 
-/**
- * How the pandoc child process ended. Node's 'close' event carries exactly one
- * of (code, signal): a process either exits with a status or is terminated by
- * a signal. Both are real outcomes, so both are carried as their own case. A
- * process that this module stopped at the time limit is the third case.
- */
-type PandocProcessOutcome =
-  | { ended: "exit"; code: number; stdout: string; stderr: string }
-  | { ended: "signal"; signal: NodeJS.Signals; stdout: string; stderr: string }
-  | { ended: "timeout"; stderr: string };
-
 /** The tools the filter shells out to, checked before any render. */
 const REQUIRED_TOOLS = ["pandoc", "pdflatex", "pdf2svg"];
 
 /** One marker line per figure-compile error: body-line|message|source. */
 const ERROR_MARKER_RE = /^\[tikzcd-figure-error\] (\d+)\|([^|]*)\|(.*)$/;
 
-/**
- * What probing one executable established. 'absent' is the single errno that
- * means the tool is not installed; any other spawn failure establishes
- * nothing about the tool and is its own outcome.
- */
-type ToolProbe =
-  | { status: "available" }
-  | { status: "absent" }
-  | { status: "probe-failed"; code: string };
+// The scratch directories of the renders that have not ended. The exit of the
+// app removes them. `runProcess` stops the processes of each run at the exit
+// of the app; its module registers its exit listener when it is imported,
+// before this module registers its own, so the processes stop first.
+const activeScratchDirs = new Set<string>();
 
-/**
- * Probes whether an executable is reachable in the given environment's PATH.
- * spawn's ENOENT is what "not installed" means; EACCES, EPERM, EAGAIN and the
- * rest are different facts and are reported as such rather than collapsed into
- * absence.
- */
-async function probeTool(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
-  return await new Promise<ToolProbe>((resolve, reject) => {
-    const probe = spawn(tool, ["--version"], { env, stdio: "ignore" });
-    probe.once("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === undefined) {
-        reject(
-          new Error(
-            `tikz-render: probing ${tool} emitted a child-process error carrying no errno code ` +
-              `(message=${error.message}). Node reports a failure to spawn as a SystemError whose code ` +
-              'names the cause; the probe classifies ENOENT as "not installed" and every other code as a ' +
-              "failed probe, and cannot classify an error with no code at all.",
-          ),
-        );
-        return;
-      }
-      resolve(
-        error.code === "ENOENT"
-          ? { status: "absent" }
-          : { status: "probe-failed", code: error.code },
-      );
-    });
-    probe.once("spawn", () => {
-      // --version variants that wait on stdin must not hang the probe.
-      probe.kill();
-      resolve({ status: "available" });
-    });
-  });
-}
-
-/**
- * The probes that found their tool, by PATH and tool name. A tool that was
- * found stays installed while the host runs, so one render in a session pays
- * for the probe. A tool that was not found is probed again at the next render:
- * the author may install it while the app stays open.
- */
-const availableTools = new Map<string, Promise<ToolProbe>>();
-
-async function probeToolOnce(tool: string, env: NodeJS.ProcessEnv): Promise<ToolProbe> {
-  if (env.PATH === undefined) {
-    throw new Error(
-      `tikz-render: the render environment has no PATH, so ${tool} cannot be found in it.`,
-    );
-  }
-  const key = `${env.PATH}\0${tool}`;
-  const known = availableTools.get(key);
-  if (known !== undefined) {
-    return await known;
-  }
-  const probe = probeTool(tool, env);
-  availableTools.set(key, probe);
-  try {
-    const result = await probe;
-    if (result.status !== "available") {
-      availableTools.delete(key);
-    }
-    return result;
-  } catch (error) {
-    availableTools.delete(key);
-    throw error;
-  }
-}
-
-/**
- * States Node's documented child-process contract: on 'close' exactly one of
- * (code, signal) is non-null. The signal case is dispatched before this call,
- * so reaching it with a null code means the runtime broke that contract and
- * the outcome below cannot be formed at all.
- */
-function assertExitedWithCode(
-  code: number | null,
-  signal: NodeJS.Signals | null,
-): asserts code is number {
-  if (code === null) {
-    throw new Error(
-      "tikz-render: the pandoc child process closed carrying neither an exit code nor a signal " +
-        `(code=${String(code)}, signal=${String(signal)}). Node's child_process 'close' event ` +
-        "guarantees exactly one of the two is non-null; the outcome handling in " +
-        "packages/tikz-render/src/tikz-render.ts is written against that guarantee.",
-    );
-  }
-}
-
-/** The time between SIGTERM and SIGKILL for a render that passed its limit. */
-const KILL_GRACE_MS = 2_000;
-
-/** A render that has not ended: its pandoc process and its scratch files. */
-interface ActiveRender {
-  pandoc: ChildProcess;
-  scratchDir: string;
-}
-
-// The renders that have not ended. The pandoc process of a render leads a
-// process group of its own (`detached`), because a signal to one process does
-// not reach the processes that it started: the shell and the TeX of the filter
-// (https://nodejs.org/api/child_process.html#subprocesskillsignal). A signal
-// to the group reaches all of them, as `kill -- -PGID` does.
-const activeRenders = new Set<ActiveRender>();
-
-/**
- * Signals each process of a render. A group in which no process is left has
- * nothing to stop: kill(2) answers ESRCH for it, and that answer is no error
- * (https://man7.org/linux/man-pages/man2/kill.2.html).
- */
-function signalRender(pandoc: ChildProcess, signal: NodeJS.Signals): void {
-  if (pandoc.pid === undefined) {
-    // The process did not start.
-    return;
-  }
-  try {
-    process.kill(-pandoc.pid, signal);
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) {
-      throw error;
-    }
-  }
-}
-
-// A render is apart from the process group of the app, so a signal to the app
-// does not reach it. The exit of the app stops the renders that have not
-// ended and removes their scratch files.
 process.on("exit", () => {
-  for (const render of activeRenders) {
-    signalRender(render.pandoc, "SIGKILL");
+  for (const scratchDir of activeScratchDirs) {
     // A stopped process can write one more file while its directory is read.
-    rmSync(render.scratchDir, { recursive: true, maxRetries: 5, retryDelay: 20 });
+    rmSync(scratchDir, { recursive: true, maxRetries: 5, retryDelay: 20 });
   }
 });
-
-/**
- * Runs pandoc with the filter on one figure and says how the process ended.
- * The promise settles when no process of the render is left: the fourth pipe
- * has no reader and no writer, each process of the render inherits it, and
- * Node gives 'close' only after the process has ended and each of its pipes
- * is closed (https://nodejs.org/api/child_process.html#event-close).
- */
-async function runFilter(
-  markdown: string,
-  filterPath: string,
-  env: NodeJS.ProcessEnv,
-  scratchDir: string,
-  timeoutMs: number,
-): Promise<PandocProcessOutcome> {
-  return await new Promise<PandocProcessOutcome>((resolve, reject) => {
-    const pandoc = spawn("pandoc", ["-f", "markdown", "-t", "html", "--lua-filter", filterPath], {
-      env,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
-    });
-    const { stdin, stdout, stderr } = pandoc;
-    if (stdin === null || stdout === null || stderr === null) {
-      throw new Error("tikz-render: Node gave no pipe for a stream of pandoc that was asked for.");
-    }
-    const render: ActiveRender = { pandoc, scratchDir };
-    activeRenders.add(render);
-
-    let out = "";
-    let err = "";
-    let timedOut = false;
-    let graceTimer: NodeJS.Timeout | undefined;
-    const limitTimer = setTimeout(() => {
-      timedOut = true;
-      signalRender(pandoc, "SIGTERM");
-      graceTimer = setTimeout(() => {
-        signalRender(pandoc, "SIGKILL");
-      }, KILL_GRACE_MS);
-    }, timeoutMs);
-    const ended = (): void => {
-      activeRenders.delete(render);
-      clearTimeout(limitTimer);
-      clearTimeout(graceTimer);
-    };
-
-    stdout.on("data", (chunk) => {
-      out += String(chunk);
-    });
-    stderr.on("data", (chunk) => {
-      err += String(chunk);
-    });
-    pandoc.once("error", (spawnError: Error) => {
-      ended();
-      reject(spawnError);
-    });
-    pandoc.once("exit", (_exitCode, signal) => {
-      // A pandoc that was stopped did not wait for the shell and the TeX
-      // that its filter started. Their work has no reader.
-      if (signal !== null || timedOut) {
-        signalRender(pandoc, "SIGKILL");
-      }
-    });
-    pandoc.once("close", (exitCode, signal) => {
-      ended();
-      if (timedOut) {
-        resolve({ ended: "timeout", stderr: err });
-        return;
-      }
-      if (signal !== null) {
-        resolve({ ended: "signal", signal, stdout: out, stderr: err });
-        return;
-      }
-      assertExitedWithCode(exitCode, signal);
-      resolve({ ended: "exit", code: exitCode, stdout: out, stderr: err });
-    });
-    stdin.end(markdown);
-  });
-}
 
 // One render at a time in the process: each caller of `renderTikz` (the
 // preview of the editor, the lint) waits here. Two renders therefore never
@@ -724,16 +505,18 @@ async function renderOneFigure(
 
   const missing: string[] = [];
   for (const tool of REQUIRED_TOOLS) {
-    const probe = await probeToolOnce(tool, env);
-    if (probe.status === "probe-failed") {
-      // The remaining tools are deliberately not probed: with one probe broken
-      // the toolchain status is unknown, and a partial "missing" list would
-      // read as a complete diagnosis.
-      return { ok: false, kind: "toolchain-probe-failed", tool, code: probe.code };
+    const probe = await probeTool(tool, env);
+    if (probe.status === "available") {
+      continue;
     }
-    if (probe.status === "absent") {
+    if (probe.status === "not-started" && probe.reason === "absent") {
       missing.push(tool);
+      continue;
     }
+    // The remaining tools are deliberately not probed: with one probe broken
+    // the toolchain status is unknown, and a partial "missing" list would
+    // read as a complete diagnosis.
+    return { ok: false, kind: "toolchain-probe-failed", tool, cause: describeProbe(tool, probe) };
   }
   if (missing.length > 0) {
     return { ok: false, kind: "missing-tools", missing };
@@ -757,6 +540,7 @@ async function renderOneFigure(
   // nothing, so each render has a temporary directory of its own, which this
   // function removes.
   const scratchDir = await mkdtemp(path.join(tmpdir(), "tikz-render-"));
+  activeScratchDirs.add(scratchDir);
   const renderEnv: NodeJS.ProcessEnv = {
     ...env,
     TMPDIR: scratchDir,
@@ -778,15 +562,24 @@ async function renderOneFigure(
     TIKZ_FORCE_REBUILD: request.cachePolicy === "refresh" ? "1" : "0",
   };
 
-  const outcome = await runFilter(
-    markdown,
-    filterPath,
-    renderEnv,
-    scratchDir,
-    config.timeoutMs,
-  ).finally(async () => {
+  // The run ends when no process of the render is left: the shell and the
+  // TeX that the filter starts are in its group (`waitForGroup`).
+  const outcome = await runProcess({
+    command: "pandoc",
+    args: ["-f", "markdown", "-t", "html", "--lua-filter", filterPath],
+    env: renderEnv,
+    input: markdown,
+    timeLimitMs: config.timeoutMs,
+    waitForGroup: true,
+  }).finally(async () => {
+    activeScratchDirs.delete(scratchDir);
     await rm(scratchDir, { recursive: true });
   });
+
+  if (outcome.ended === "not-started") {
+    // The probe of this render started pandoc on the same PATH.
+    throw new Error(`tikz-render: ${describeOutcome("pandoc", outcome)}`);
+  }
 
   if (outcome.ended === "timeout") {
     return {
