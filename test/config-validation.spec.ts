@@ -51,6 +51,7 @@ const INVALID: Record<string, ConfigJsonValue> = {
   "zkn.idGen": "a",
   attachmentExtensions: ".pdf",
   debug: "no",
+  "editor.fontSize": 5,
   "editor.indentUnit": 25,
   "editor.boldFormatting": "*",
   "editor.italicFormatting": "__",
