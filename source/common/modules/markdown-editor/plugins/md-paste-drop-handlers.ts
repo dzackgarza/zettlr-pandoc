@@ -221,8 +221,17 @@ export const mdPasteDropHandlers: DOMEventHandlers<void> = {
       const name = pathBasename(data.path, pathExtname(data.path));
       const pathToInsert = normalizePathForInsertion(data.path, cwd);
       if (data.type === "file") {
-        // Insert as Zkn link
-        view.dispatch({ changes: { from: pos, insert: `[[${name}]]` } });
+        // A workspace document gets the wikilink of the link index, the
+        // shortest path suffix that names it alone. A document outside every
+        // workspace has no wikilink name, so it gets a Markdown link.
+        ipcRenderer
+          .invoke("link-provider", { command: "get-link-targets" })
+          .then((targets: Record<string, string>) => {
+            const target = targets[data.path];
+            const insert = target === undefined ? `[${name}](${pathToInsert})` : `[[${target}]]`;
+            view.dispatch({ changes: { from: pos, insert } });
+          })
+          .catch((err) => reportError(err));
       } else if (data.type === "code") {
         // Insert as Md link
         view.dispatch({ changes: { from: pos, insert: `[${name}](${pathToInsert})` } });
