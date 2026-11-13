@@ -2864,7 +2864,12 @@ current contents from the editor somewhere else, and restart the application.`,
         filePath,
         status: "modification",
       });
-      const payload: RemoteChangeKeptBroadcast = { filePath, unsavedChanges: isModified };
+      const payload: RemoteChangeKeptBroadcast = {
+        filePath,
+        unsavedChanges: isModified,
+        frozenReview:
+          _docId !== undefined && this._reviewApplication.getReview(_docId) !== undefined,
+      };
       this._tellAbout(filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
     } else {
       // The user has activated the setting to alwaysReloadFiles.
@@ -4489,7 +4494,11 @@ current contents from the editor somewhere else, and restart the application.`,
         this._applyWorkingTextToDocument(doc.filePath, restored.workingText);
       }
       if (restored.keptOverDisk) {
-        const payload: RemoteChangeKeptBroadcast = { filePath: doc.filePath, unsavedChanges: true };
+        const payload: RemoteChangeKeptBroadcast = {
+          filePath: doc.filePath,
+          unsavedChanges: true,
+          frozenReview: true,
+        };
         this._tellAbout(doc.filePath, undefined, REMOTE_CHANGE_KEPT_CHANNEL, payload);
       }
       // The window keeps the session that it gets for the document, and an
@@ -5063,6 +5072,7 @@ current contents from the editor somewhere else, and restart the application.`,
     // workspace. This avoids one failed filesystem lookup per ordinary file.
     const { sidecars, unreadable } = await this._reviewApplication.collaborationSidecarInventory();
     const unlisted: string[] = [];
+    const unsaved: string[] = [];
     for (const sidecar of sidecars) {
       if (livePaths.has(sidecar.documentPath)) {
         continue;
@@ -5081,11 +5091,17 @@ current contents from the editor somewhere else, and restart the application.`,
           annotations: sidecar.annotations,
         }),
       );
+      // The fence of a sidecar is the hash of the file when the sidecar
+      // was written; a working text with another hash is in no file.
+      if (sidecar.review !== null && sha256Text(sidecar.workingText) !== sidecar.diskFenceSha256) {
+        unsaved.push(sidecar.documentPath);
+      }
     }
     return {
       sessions,
       unreadable: this._documentsOfUnreadableFiles(unreadable, wanted),
       ownerless: await this._sidecarsOfNoDocument(unlisted),
+      unsaved,
     };
   }
 

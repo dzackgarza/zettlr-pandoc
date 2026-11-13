@@ -137,6 +137,22 @@
       </header>
 
       <div
+        v-if="group.unsaved"
+        class="annotation-unsaved-text"
+      >
+        <p class="annotation-unsaved-reason">
+          {{ trans('This document has accepted text that is in no file. Open the document to save the text or to load the file.') }}
+        </p>
+        <div class="annotation-unsaved-actions">
+          <button
+            type="button"
+            class="annotation-button annotation-unsaved-open"
+            v-on:click="navigate(group.documentPath)"
+          >{{ trans('Open') }}</button>
+        </div>
+      </div>
+
+      <div
         v-if="group.frozen"
         class="annotation-frozen-review"
       >
@@ -290,7 +306,8 @@ import type {
   AnnotationFailure,
   ReviewFailure,
 } from "source/app/service-providers/documents/document-collaboration-application-service";
-import { useDocumentCollaborationStore } from "source/pinia";
+import { useDocumentCollaborationStore, useDocumentTreeStore } from "source/pinia";
+import type { DocumentCollaborationSession } from "source/types/common/document-collaboration";
 import { computed, reactive, ref, watch } from "vue";
 import { vAnnotationMarkdown } from "../editor-collaboration/annotation-markdown";
 import AnnotationHeader from "./annotations/AnnotationHeader.vue";
@@ -310,6 +327,11 @@ interface WorkspaceAnnotationGroup {
   suggestions: SuggestionNavigatorView[];
   /** The review is frozen: see ReviewDiffSession.frozenText. */
   frozen: boolean;
+  /**
+   * No pane of the window shows the document, and it holds text that the
+   * author accepted from its review and that is in no file.
+   */
+  unsaved: boolean;
   /** Open annotations: the per-document Resolve all. */
   openCount: number;
   /** Resolved annotations: the per-document Clear resolved. */
@@ -329,7 +351,31 @@ const emit = defineEmits<{
 }>();
 
 const collaborationStore = useDocumentCollaborationStore();
+const documentTreeStore = useDocumentTreeStore();
 const filterQuery = ref("");
+
+/** The paths that a pane of this window shows. */
+const pathsInPanes = computed(
+  () =>
+    new Set(documentTreeStore.paneData.flatMap((leaf) => leaf.openFiles.map((file) => file.path))),
+);
+
+/**
+ * Whether the document of `session` holds accepted text that is in no file
+ * and that no pane of this window shows. A closed document holds it in its
+ * sidecar (the listing names it); a document that a review loaded holds it
+ * as unsaved text without a tab.
+ */
+function holdsUnshownAcceptedText(session: DocumentCollaborationSession): boolean {
+  if (collaborationStore.unsavedDocuments.has(session.documentPath)) {
+    return true;
+  }
+  return (
+    session.review !== undefined &&
+    documentTreeStore.modifiedDocuments.includes(session.documentPath) &&
+    !pathsInPanes.value.has(session.documentPath)
+  );
+}
 const globalAcceptBusy = ref(false);
 const acceptingDocuments = reactive(new Set<string>());
 const recoveringDocuments = reactive(new Set<string>());
@@ -405,13 +451,22 @@ const groups = computed<WorkspaceAnnotationGroup[]>(() =>
         annotations,
         suggestions,
         frozen: session.review?.frozenText !== undefined,
+        unsaved: holdsUnshownAcceptedText(session),
         /** The open threads this document's header can bulk-resolve. */
         openCount: openAnnotationCount(session.annotations.items),
         /** The resolved threads this document's header can bulk-delete. */
         resolvedCount: resolvedAnnotationCount(session.annotations.items),
       };
     })
-    .filter((group) => group.annotations.length > 0 || group.suggestions.length > 0)
+    // A frozen review and accepted text that is in no file each need a
+    // decision of the author, also without an annotation or a proposal.
+    .filter(
+      (group) =>
+        group.annotations.length > 0 ||
+        group.suggestions.length > 0 ||
+        group.frozen ||
+        group.unsaved,
+    )
     .sort(
       (left, right) =>
         left.documentName.localeCompare(right.documentName) ||
@@ -712,6 +767,7 @@ body {
   }
 
   .annotation-frozen-review,
+  .annotation-unsaved-text,
   .annotation-notice {
     display: flex;
     flex-direction: column;
@@ -723,6 +779,7 @@ body {
   }
 
   .annotation-frozen-reason,
+  .annotation-unsaved-reason,
   .annotation-notice-reason,
   .annotation-notice-cause {
     margin: 0;
@@ -733,7 +790,8 @@ body {
     overflow-wrap: anywhere;
   }
 
-  .annotation-frozen-actions {
+  .annotation-frozen-actions,
+  .annotation-unsaved-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;

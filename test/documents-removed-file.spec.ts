@@ -127,7 +127,7 @@ describe("Documents-provider removed file", function () {
       sentMessagesFor(window)
         .filter(([channel]) => channel === REMOTE_CHANGE_KEPT_CHANNEL)
         .map(([, payload]) => payload),
-      [{ filePath, unsavedChanges: false }],
+      [{ filePath, unsavedChanges: false, frozenReview: false }],
       "the window hears of the change of the new file",
     );
   });

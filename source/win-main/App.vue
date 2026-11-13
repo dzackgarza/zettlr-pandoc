@@ -216,7 +216,11 @@ import { loadFromDiskAction } from "@common/util/load-document-from-disk";
 import localiseNumber from "@common/util/localise-number";
 import { pathBasename } from "@common/util/renderer-path-polyfill";
 import { recordRendererError } from "@common/util/run-recoverably";
-import { saveCopyAction, saveRefusalActions } from "@common/util/save-refusal-action";
+import {
+  saveCopyAction,
+  saveRefusalActions,
+  showReviewAction,
+} from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
@@ -1112,6 +1116,23 @@ onMounted(() => {
   // decides, when they choose, whether the disk version replaces them.
   ipcRenderer.on(REMOTE_CHANGE_KEPT_CHANNEL, (event, payload: RemoteChangeKeptBroadcast) => {
     const name = pathBasename(payload.filePath);
+    if (payload.frozenReview) {
+      // The review of the document refuses a save over the new file, so the
+      // text of the editor reaches a file only through a copy or a decision
+      // on the review.
+      showToast(
+        trans(
+          "%s changed on disk. The editor keeps your unsaved changes, and the review of the document is frozen: a save is refused until you reapply or discard the review.",
+          name,
+        ),
+        "info",
+        12000,
+        loadFromDiskAction(payload.filePath),
+        showReviewAction(),
+        saveCopyAction(payload.filePath),
+      );
+      return;
+    }
     const message = payload.unsavedChanges
       ? trans("%s changed on disk. The editor keeps your unsaved changes.", name)
       : trans("%s changed on disk. The editor keeps its contents.", name);

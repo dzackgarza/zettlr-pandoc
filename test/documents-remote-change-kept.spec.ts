@@ -99,7 +99,7 @@ describe("Documents-provider kept remote change", function () {
     assert.deepEqual(messageBoxes.shown, []);
     assert.equal(provider.readMarkdownBufferContent(filePath), EDITOR_SOURCE);
     assert.equal(provider.isModified(filePath), true);
-    assert.deepEqual(keptBroadcasts(), [{ filePath, unsavedChanges: false }]);
+    assert.deepEqual(keptBroadcasts(), [{ filePath, unsavedChanges: false, frozenReview: false }]);
 
     changeOnDisk("A second disk version.\n", 20);
     emitWatchdogEvent("change", filePath);

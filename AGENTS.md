@@ -1145,8 +1145,13 @@ of an isolated instance are in the first comment of #132.
   the review is frozen, the annotations keep their anchors, the window gets
   the message of a kept change, and a save is refused with `disk-changed`
   until the author loads the file or reapplies or discards the review. A
-  review with a proposal opens on the file. Proof:
-  `test/documents-quit-with-review.spec.ts`.
+  review with a proposal opens on the file. A kept change of a document with
+  a review (`RemoteChangeKeptBroadcast.frozenReview`) offers "Load from
+  disk", "Show the review" and "Save a copy…". While the document is closed,
+  the Annotations view names it (`WorkspaceCollaborationListing.unsaved`: a
+  sidecar with a review whose working text is not the text of its fence) and
+  offers to open it. Proof: `test/documents-quit-with-review.spec.ts`,
+  `e2e/accepted-text-of-closed-document.spec.ts`.
 - **"Close anyway" at a window close offers no proposal for a save.** The
   buffer of a document with an undecided proposal takes the text of the
   file; the review and its working text stay in the sidecar. `pullUpdates`

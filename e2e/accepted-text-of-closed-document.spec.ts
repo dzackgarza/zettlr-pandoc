@@ -96,11 +96,16 @@ describe("assembled app: accepted text of a closed document", function () {
 
   after(async function () {
     // The author takes the disk version, so the quit asks nothing: the
-    // Discard control removes the review, and the editor loads the file.
-    if (page !== undefined && (await modifiedDocuments(page)).length > 0) {
-      const group = page.locator(
-        `${ANNOTATIONS_VIEW} .annotation-document-group[data-document-path="${reviewedPath}"]`,
-      );
+    // Discard control removes the frozen review, and the editor loads the
+    // file.
+    const group = page?.locator(
+      `${ANNOTATIONS_VIEW} .annotation-document-group[data-document-path="${reviewedPath}"]`,
+    );
+    if (
+      page !== undefined &&
+      group !== undefined &&
+      (await group.locator(".annotation-frozen-discard").count()) > 0
+    ) {
       await group.locator(".annotation-frozen-discard").click();
       await group.waitFor({ state: "detached", timeout: 30_000 });
       await page.evaluate(
@@ -156,10 +161,13 @@ describe("assembled app: accepted text of a closed document", function () {
     await unsaved.waitFor({ state: "visible", timeout: 30_000 });
     screenshots.set("accepted-not-saved.png", await editorPage.screenshot());
     assert.equal(await readFile(reviewedPath, "utf8"), REVIEWED, "the accept writes no file");
-    assert.equal(
-      await editorPage.locator(".cm-content").first().innerText(),
-      OPEN_DOCUMENT.trimEnd(),
-      "no pane shows the reviewed document",
+    assert.deepEqual(
+      await editorPage
+        .locator(".cm-content")
+        .allInnerTexts()
+        .then((texts) => texts.map((text) => text.includes("Genus"))),
+      [false],
+      "one pane shows the open document, and no pane shows the reviewed document",
     );
 
     await writeFile(reviewedPath, OTHER_PROGRAM, "utf8");

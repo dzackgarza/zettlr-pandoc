@@ -406,7 +406,7 @@ describe("Documents-provider quit with an open review", function () {
       assert.equal(provider.isModified(reviewedPath), true, "the accepted text is unsaved");
       assert.deepEqual(
         kept,
-        [{ filePath: reviewedPath, unsavedChanges: true }],
+        [{ filePath: reviewedPath, unsavedChanges: true, frozenReview: true }],
         "the window is told that the file changed on disk and the document kept its text",
       );
       const saved = await provider.saveFile(reviewedPath);
