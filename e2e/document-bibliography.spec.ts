@@ -14,7 +14,9 @@
  *                  citations of a Quarto chapter from the bibliography of the
  *                  book. The print window, the outline,
  *                  the preview of a wikilink and the Annotations view render
- *                  the same citations from the same files.
+ *                  the same citations from the same files. The References
+ *                  view lists the keys of the front matter field `nocite`
+ *                  too, as Pandoc reads it.
  *
  * END HEADER
  */
@@ -62,6 +64,12 @@ const NOTE_LIBRARY = `@book{Milnor73,
   title = {Symmetric Bilinear Forms},
   year = {1973},
 }
+
+@book{Serre73,
+  author = {Serre, Jean-Pierre},
+  title = {A Course in Arithmetic},
+  year = {1973},
+}
 `;
 
 const MANIFEST = [
@@ -79,6 +87,10 @@ const CHAPTER = "# Packings [@Conway88]\n\nThe Leech lattice gives a dense packi
 const LIST_NOTE =
   "---\nbibliography: [./refs.bib]\n---\n\n# Forms\n\nEach even form has a signature that 8 divides [@Milnor73].\n";
 const STRING_NOTE = "---\nbibliography: refs.bib\n---\n\n# Forms [@Milnor73]\n\nA second note.\n";
+// The text cites nothing; the front matter names two keys that Pandoc puts
+// into the bibliography (`nocite`), with no comma between them.
+const NOCITE_NOTE =
+  '---\nbibliography: refs.bib\nnocite: "@Milnor73 @Serre73"\n---\n\n# Uncited\n\nThis note cites nothing in its text.\n';
 const PLAIN = "# Results [@Shared24]\n\nSee [[chapter]] for the packings.\n";
 
 const DRAWER = "#navigation-sidebar";
@@ -114,6 +126,7 @@ describe("the bibliography of a document", function () {
   let listNotePath = "";
   let stringNotePath = "";
   let plainPath = "";
+  let nociteNotePath = "";
   let getOutput: () => string = () => "";
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
@@ -139,6 +152,8 @@ describe("the bibliography of a document", function () {
     stringNotePath = path.join(workspace, "string.md");
     await writeFile(listNotePath, LIST_NOTE, "utf8");
     await writeFile(stringNotePath, STRING_NOTE, "utf8");
+    nociteNotePath = path.join(workspace, "nocite.md");
+    await writeFile(nociteNotePath, NOCITE_NOTE, "utf8");
     await writeFile(path.join(workspace, "refs.bib"), NOTE_LIBRARY, "utf8");
 
     const mainLibrary = path.join(fixture.root, "main.bib");
@@ -345,5 +360,22 @@ describe("the bibliography of a document", function () {
       (await context.innerText()).replace(/\s+/g, " ").trim(),
       "dense packing (Conway 1988)",
     );
+  });
+
+  it("lists each key of the nocite field of the front matter in the References view", async function () {
+    const editorPage = await activate(nociteNotePath);
+    await editorPage.locator('#activity-bar [data-activity="references"]').click();
+    await editorPage.locator(`${DRAWER}[data-view="references"]`).waitFor({ timeout: 10_000 });
+    const entries = editorPage.locator(`${SECTION("citations")} #references-list .csl-entry`);
+    const listed = async (): Promise<string[]> =>
+      (await entries.allInnerTexts()).map((text) => text.replace(/\s+/g, " "));
+    assert.ok(
+      await until(async () => (await listed()).length === 2, 20_000),
+      `the References view lists the two keys of nocite: ${JSON.stringify(await listed())}`,
+    );
+    screenshots.set("references-nocite.png", await editorPage.screenshot());
+    const shown = await listed();
+    assert.ok(shown[0]?.includes("Milnor"), `the first entry is Milnor: ${shown[0]}`);
+    assert.ok(shown[1]?.includes("Serre"), `the second entry is Serre: ${shown[1]}`);
   });
 });
