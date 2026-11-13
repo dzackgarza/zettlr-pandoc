@@ -530,7 +530,7 @@ describe("a review decision waits for the document authority", function () {
     );
   });
 
-  it("rejects the edited chunk back to its reference text and keeps the owner's edits", async function () {
+  it("rejects the edited chunk back to its reference text and keeps the owner's edits on both sides of it", async function () {
     const activeApi = requireInitialized(api, "the Agent API client must be initialized");
     const activePage = requireInitialized(page, "the editor page must be initialized");
     const activeReviewId = requireInitialized(reviewId, "the review must be open");
@@ -540,12 +540,14 @@ describe("a review decision waits for the document authority", function () {
       await workingText(activeApi),
       "bravo proposed",
     );
+    // The owner types at the first character of the suggestion and after its
+    // last character. Both insertions touch the suggestion and stay outside it.
     await editLines(activePage, {
       editPane: 0,
       line: "bravo proposed",
-      edits: ["bravo proposed one", "bravo proposed one two"],
+      edits: ["bravo OWNERproposed", "bravo OWNERproposed one two"],
     });
-    await controlsLiveOver(activePage, rejectedChunk, "bravo proposed one two");
+    await controlsLiveOver(activePage, rejectedChunk, "bravo OWNERproposed one two");
 
     const textAtClick = await bufferText(activePage);
     await chunkControls(activePage, rejectedChunk).locator(".suggestion-decision.reject").click();
@@ -557,7 +559,7 @@ describe("a review decision waits for the document authority", function () {
     assert.deepEqual(await toastMessages(activePage), []);
     assert.equal(
       await workingText(activeApi),
-      textAtClick.replace("bravo proposed one two", "bravo original one two"),
+      textAtClick.replace("bravo OWNERproposed one two", "bravo OWNERoriginal one two"),
       "rejecting the edited chunk restores its reference text and keeps what the owner typed",
     );
   });
