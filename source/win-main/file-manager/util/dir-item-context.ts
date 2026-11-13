@@ -17,8 +17,8 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import type { DirDescriptor } from "@dts/common/fsal";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore } from "source/pinia";
 import { explorerViewItems, handleExplorerMenuChoice } from "./explorer-view-menu";
 import { ignoreMenuItems } from "./ignore-menu";
@@ -141,10 +141,7 @@ export function displayDirContext(
         navigator.clipboard.writeText(dirObject.path).catch((err) => reportError(err));
         break;
       case "gui.attachments_open_dir":
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: dirObject.path },
-        } as WindowControlsIPCAPI);
+        revealInFileBrowser({ path: dirObject.path });
         break;
       case "menu.rescan_dir":
         ipcRenderer

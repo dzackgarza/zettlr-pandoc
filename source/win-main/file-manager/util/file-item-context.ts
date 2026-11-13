@@ -19,9 +19,9 @@ import showPopupMenu, {
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
 import { projectMembershipForPath } from "@common/util/explorer-ordering";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import showToast from "@common/util/show-toast";
 import type { CodeFileDescriptor, MDFileDescriptor, OtherFileDescriptor } from "@dts/common/fsal";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { useConfigStore, useWorkspaceStore } from "source/pinia";
 import { ignoreMenuItems } from "./ignore-menu";
 
@@ -144,10 +144,7 @@ export function displayFileContext(
         }
         break;
       case "menu.show_file":
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: fileObject.path },
-        } as WindowControlsIPCAPI);
+        revealInFileBrowser({ path: fileObject.path });
         break;
       case "menu.add_to_quarto_book":
         if (membership?.manifestKind === "quarto" && membership.status === "omitted") {

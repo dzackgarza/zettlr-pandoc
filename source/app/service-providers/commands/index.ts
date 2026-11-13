@@ -53,7 +53,7 @@ import {
 import { filePathOfUri } from "source/app/util/file-uri-path";
 import { discoverJustfileCommands } from "source/app/util/justfile-commands";
 import { justRecipeCommand, launchKitty } from "source/app/util/kitty-launch";
-import { openPath } from "source/app/util/open-path";
+import { openPath, revealPath } from "source/app/util/open-path";
 import type { LanguageToolIgnoredRuleEntry } from "../config/get-config-template";
 import type { RecentFiles } from "../recent-docs";
 import AddLanguageToolIgnoreRule from "./add-language-tool-ignore-rule";
@@ -303,6 +303,12 @@ export type ApplicationIPCContract = {
   // application of its type (`openPath`). A refusal rejects.
   "open-desktop-path": {
     request: { payload: string };
+    response: void;
+  };
+  // Answered inline by run(): the desktop shows a folder, or the folder of a
+  // file, in its file browser (`revealPath`). A refusal rejects.
+  "reveal-path": {
+    request: { payload: { path: string } | { uri: string } };
     response: void;
   };
   "edit-text-file": {
@@ -574,6 +580,16 @@ export default class CommandProvider extends ProviderContract {
     } else if (command === "open-desktop-path" && typeof payload === "string") {
       await openPath(payload);
       return;
+    } else if (command === "reveal-path" && typeof payload === "object" && payload !== null) {
+      if ("path" in payload && typeof payload.path === "string") {
+        await revealPath(payload.path);
+        return;
+      }
+      if ("uri" in payload && typeof payload.uri === "string") {
+        await revealPath(filePathOfUri(payload.uri));
+        return;
+      }
+      throw new Error("reveal-path takes a path or a file URI");
     } else if (command === "edit-text-file" && typeof payload === "string") {
       return await launchKitty(path.dirname(payload), ["nvim", payload]);
     } else if (

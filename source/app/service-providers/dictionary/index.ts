@@ -19,7 +19,7 @@ import enumDictFiles, { type DictFileMetadata } from "@common/util/enum-dict-fil
 import findLangCandidates, { type Candidate } from "@common/util/find-lang-candidates";
 import type ConfigProvider from "@providers/config";
 import { FSWatcher } from "chokidar";
-import { app, ipcMain, shell } from "electron";
+import { app, ipcMain } from "electron";
 import EventEmitter from "events";
 import { promises as fs } from "fs";
 // NOTE: We have to include the compiled Nodehun.node library directly, because
@@ -133,7 +133,7 @@ export default class DictionaryProvider extends ProviderContract {
       } else if (command === "add") {
         return terms.map((t) => this.add(t));
       } else if (command === "open-dictionary-folder") {
-        shell.showItemInFolder(path.join(app.getPath("userData"), "/dict"));
+        return openPath(path.join(app.getPath("userData"), "dict"));
       } else if (command === "get-prose-completions") {
         return this.getProseCompletions();
       } else if (command === "add-prose-completion") {

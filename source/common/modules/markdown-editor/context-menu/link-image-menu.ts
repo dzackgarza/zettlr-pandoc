@@ -19,9 +19,9 @@ import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
 import { reportError } from "@common/util/error-reporting";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import { shortenUrlVisually } from "@common/util/shorten-url-visually";
 import { type SyntaxNode } from "@lezer/common";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import makeValidUri from "source/common/util/make-valid-uri";
 import { pathDirname } from "source/common/util/renderer-path-polyfill";
 import { configField } from "../util/configuration";
@@ -168,10 +168,7 @@ export function linkImageMenu(
       enabled: isFileLink,
       type: "normal",
       action() {
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: validAbsoluteURI },
-        } as WindowControlsIPCAPI);
+        revealInFileBrowser({ uri: validAbsoluteURI });
       },
     },
   ];

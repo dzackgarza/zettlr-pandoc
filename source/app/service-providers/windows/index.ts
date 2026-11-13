@@ -26,11 +26,10 @@ import type DocumentManager from "@providers/documents";
 import type LogProvider from "@providers/log";
 import ProviderContract, { type IPCAPI } from "@providers/provider-contract";
 import * as bcp47 from "bcp-47";
-import { app, BrowserWindow, type FileFilter, ipcMain, screen, shell } from "electron";
+import { app, BrowserWindow, type FileFilter, ipcMain, screen } from "electron";
 import EventEmitter from "events";
 import path from "path";
 import { checkedEnvironment } from "source/app/util/environment-check";
-import { filePathOfUri } from "source/app/util/file-uri-path";
 import { showStoreWriteFailure } from "source/app/util/show-store-write-failure";
 import type { PasteModalResult } from "../commands/save-image-from-clipboard";
 import createAboutWindow from "./create-about-window";
@@ -89,7 +88,6 @@ export type WindowControlsIPCAPI = IPCAPI<{
   selectAll: unknown;
   "inspect-element": { x: number; y: number };
   "drag-start": { filePath: string };
-  "show-item-in-folder": { itemPath: string };
 }>;
 
 export default class WindowProvider extends ProviderContract {
@@ -236,9 +234,6 @@ export default class WindowProvider extends ProviderContract {
                 err,
               ),
             );
-          break;
-        case "show-item-in-folder":
-          shell.showItemInFolder(filePathOfUri(payload.itemPath));
           break;
       }
     });

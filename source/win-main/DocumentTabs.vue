@@ -88,9 +88,9 @@
 
 import { reportError } from "@common/util/error-reporting";
 import { pathBasename, pathDirname } from "@common/util/renderer-path-polyfill";
+import { revealInFileBrowser } from "@common/util/reveal-in-file-browser";
 import type { LeafNodeJSON, OpenDocument } from "@dts/common/documents";
 import type { DocumentManagerIPCAPI } from "source/app/service-providers/documents";
-import type { WindowControlsIPCAPI } from "source/app/service-providers/windows";
 import { trans } from "source/common/i18n-renderer";
 import type { AnyMenuItem } from "source/common/modules/window-register/application-menu-helper";
 import showPopupMenu from "source/common/modules/window-register/application-menu-helper";
@@ -514,10 +514,7 @@ function handleContextMenu(event: MouseEvent, doc: OpenDocument): void {
           : trans("Reveal in File Browser"),
       type: "normal",
       action() {
-        ipcRenderer.send("window-controls", {
-          command: "show-item-in-folder",
-          payload: { itemPath: descriptor.path },
-        } satisfies WindowControlsIPCAPI);
+        revealInFileBrowser({ path: descriptor.path });
       },
     },
     {

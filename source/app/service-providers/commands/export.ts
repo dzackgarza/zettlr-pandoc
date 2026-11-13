@@ -24,11 +24,11 @@ import type LinkProvider from "@providers/links";
 import type LogProvider from "@providers/log";
 import type LongRunningTaskProvider from "@providers/long-running-tasks";
 import type WindowProvider from "@providers/windows";
-import { app as electronApp, shell } from "electron";
+import { app as electronApp } from "electron";
 import { promises as fs } from "fs";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import { openPath } from "source/app/util/open-path";
+import { openPath, revealPath } from "source/app/util/open-path";
 import { makeExport } from "./exporter";
 import { runShellCommand } from "./exporter/run-shell-command";
 import type { ExporterOptions } from "./exporter/types";
@@ -310,10 +310,17 @@ async function runDocumentExport(
       });
       task.endTask("success");
 
-      // In case of a textbundle/pack it's a folder, else it's a file
+      // A textbundle is a folder and a textpack an archive: the file browser
+      // shows them, as no application opens them.
       if (app.config.get().export.autoOpenExportedFiles) {
         if (["textbundle", "textpack"].includes(profile.writer)) {
-          shell.showItemInFolder(output.targetFile);
+          revealPath(output.targetFile).catch((refusal: Error) => {
+            app.log.error(refusal.message, refusal);
+            app.windows.showErrorMessage(
+              trans("Could not open the exported file"),
+              refusal.message,
+            );
+          });
         } else {
           openExportedFile();
         }

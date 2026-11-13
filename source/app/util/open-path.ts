@@ -14,6 +14,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { trans } from "@common/i18n-main";
 import { shell } from "electron";
 import path from "path";
@@ -106,6 +107,20 @@ export async function openPath(target: string): Promise<void> {
   if (refusal !== "") {
     throw new AuthoredFileError("open", target, refusal);
   }
+}
+
+/**
+ * Shows a file or a folder in the file browser of the desktop: a folder
+ * opens itself, and a file opens its folder, with the application of the
+ * desktop for a folder (`openPath`). This is the rule of "Open file browser
+ * here" (`resolveDirectoryHere`). A path that cannot be examined rejects
+ * with the cause.
+ */
+export async function revealPath(target: string): Promise<void> {
+  const stats = await stat(target).catch((failure: NodeJS.ErrnoException) => {
+    throw new AuthoredFileError("open", target, systemErrorCause(failure));
+  });
+  await openPath(stats.isDirectory() ? target : path.dirname(target));
 }
 
 /**

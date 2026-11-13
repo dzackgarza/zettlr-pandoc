@@ -65,7 +65,7 @@ export function getSpellcheckingFields(config: ConfigOptions): PreferencesFields
               .invoke("dictionary-provider", {
                 command: "open-dictionary-folder",
               })
-              .catch((err) => reportError(err));
+              .catch(showRefusal);
           },
         },
       ],
