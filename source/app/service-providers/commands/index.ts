@@ -23,7 +23,7 @@ import { trans } from "@common/i18n-main";
 import type { FormatResult } from "@common/modules/markdown-editor/commands/format-document";
 import type {
   CommitRenameOutcome,
-  ReferenceRenamePreview,
+  IssuedReferenceRenamePreview,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import enumDictFiles from "@common/util/enum-dict-files";
@@ -41,7 +41,7 @@ import type {
   ListProblemsRequest,
   WorkspaceProblems,
 } from "@dts/common/problems";
-import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
+import type { CrossReferenceSystem } from "@dts/common/references";
 import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
 import {
   WORKSPACE_EDIT_PROPOSAL_CHANNEL,
@@ -201,7 +201,7 @@ export type ApplicationIPCContract = {
     response: unknown;
   };
   "commit-reference-rename": {
-    request: { payload: { edit: WorkspaceReferenceEdit } };
+    request: { payload: { id: string } };
     response: CommitRenameOutcome;
   };
   "commit-fix-all": {
@@ -397,7 +397,7 @@ export type ApplicationIPCContract = {
   };
   "preview-reference-rename": {
     request: { payload: { oldKey: string; newKey: string } };
-    response: ReferenceRenamePreview;
+    response: IssuedReferenceRenamePreview;
   };
   print: {
     request: { payload?: string };

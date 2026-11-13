@@ -139,7 +139,7 @@ import showPopupMenu, {
 } from "@common/modules/window-register/application-menu-helper";
 import type {
   CommitRenameOutcome,
-  ReferenceRenamePreview,
+  IssuedReferenceRenamePreview,
   ReferenceRenameRejection,
   UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
@@ -164,7 +164,6 @@ import type {
   ProjectRootSpec,
   ReferenceCompletionEntry,
   SourceRange,
-  WorkspaceReferenceEdit,
 } from "@dts/common/references";
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
@@ -1794,18 +1793,17 @@ function promptWorkspaceRename(intent: ReferenceKeyEditPromptIntent): void {
 
 /**
  * The pending rename preview shown by the dialog (#6): the confirmed
- * intent, the previewed workspace edit, and each changed line of each
- * document. Nothing commits while this is pending — Apply commits, Cancel
- * restores the authored local edit.
+ * intent, the id under which the main process keeps the previewed edit,
+ * and each changed line of each document. Nothing commits while this is
+ * pending — Apply commits the edit of the id, Cancel restores the authored
+ * local edit.
  */
 interface RenamePreviewPrompt {
   intent: ReferenceKeyEditPromptIntent;
-  edit: WorkspaceReferenceEdit;
+  id: string;
   documents: WorkspaceEditDocumentPreview[];
 }
 
-// A shallow ref: the edit goes to the main process as it is, and a deep
-// reactive proxy of it cannot be cloned for IPC.
 const renamePreviewPrompt = shallowRef<RenamePreviewPrompt | undefined>(undefined);
 
 /**
@@ -1832,7 +1830,7 @@ async function runWorkspaceRename(intent: ReferenceKeyEditPromptIntent): Promise
   });
   // The preview reads the text of the document authority: it must hold
   // the withdrawal.
-  const preview: ReferenceRenamePreview = await whenAuthoritySynced(() => view.state)
+  const preview: IssuedReferenceRenamePreview = await whenAuthoritySynced(() => view.state)
     .then(
       async () =>
         await ipcRenderer.invoke("application", {
@@ -1851,7 +1849,7 @@ async function runWorkspaceRename(intent: ReferenceKeyEditPromptIntent): Promise
     return;
   }
 
-  renamePreviewPrompt.value = { intent, edit: preview.edit, documents: preview.documents };
+  renamePreviewPrompt.value = { intent, id: preview.id, documents: preview.documents };
 }
 
 /**
@@ -1896,11 +1894,11 @@ async function applyWorkspaceRename(): Promise<void> {
   if (prompt === undefined || view === undefined) {
     return;
   }
-  const { intent, edit } = prompt;
+  const { intent, id, documents } = prompt;
 
   const outcome: CommitRenameOutcome = await ipcRenderer.invoke("application", {
     command: "commit-reference-rename",
-    payload: { edit },
+    payload: { id },
   });
 
   if (outcome.status === "conflict") {
@@ -1915,12 +1913,7 @@ async function applyWorkspaceRename(): Promise<void> {
   }
 
   showToast(
-    trans(
-      "Renamed %s to %s across %s documents.",
-      intent.oldKey,
-      intent.newKey,
-      Object.keys(edit.expectedSourceHashes).length,
-    ),
+    trans("Renamed %s to %s across %s documents.", intent.oldKey, intent.newKey, documents.length),
     "info",
     8000,
     {

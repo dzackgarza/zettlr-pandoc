@@ -102,6 +102,16 @@ export type ReferenceRenamePreview =
   | { status: "rejected"; reason: ReferenceRenameRejection };
 
 /**
+ * The preview that the command 'preview-reference-rename' gives a window.
+ * The main process keeps the edit of an accepted preview under `id`, and
+ * 'commit-reference-rename' commits that edit for that `id` only: a window
+ * commits the rename that the author saw, never an edit of its own.
+ */
+export type IssuedReferenceRenamePreview =
+  | (Extract<ReferenceRenamePreview, { status: "ok" }> & { id: string })
+  | Extract<ReferenceRenamePreview, { status: "rejected" }>;
+
+/**
  * The wire outcome of ReferenceProvider's 'commit-rename' command.
  *
  * BOUNDARY SPLIT: the provider can only write CLOSED files itself (atomic

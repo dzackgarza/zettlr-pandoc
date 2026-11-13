@@ -51,7 +51,7 @@ import ReferenceProvider from "source/app/service-providers/references";
 import type { WorkspaceReferenceState } from "source/app/service-providers/references/reference-index";
 import type {
   CommitRenameOutcome,
-  ReferenceRenamePreview,
+  IssuedReferenceRenamePreview,
   UndoRenameOutcome,
 } from "source/common/pandoc-util/compute-reference-edits";
 import {
@@ -115,13 +115,18 @@ function applyEdits(source: string, edits: WorkspaceTextEdit[]): string {
 }
 
 /** Narrows an accepted preview, failing loudly (red) on rejection. */
-function editOf(preview: ReferenceRenamePreview, label: string): WorkspaceReferenceEdit {
+function editOf(preview: IssuedReferenceRenamePreview, label: string): WorkspaceReferenceEdit {
   assert.equal(
     preview.status,
     "ok",
     `${label}: the preview must be accepted, got ${JSON.stringify(preview)}`,
   );
-  return (preview as Extract<ReferenceRenamePreview, { status: "ok" }>).edit;
+  return (preview as Extract<IssuedReferenceRenamePreview, { status: "ok" }>).edit;
+}
+
+/** The id under which the command keeps an accepted preview. */
+function idOf(preview: IssuedReferenceRenamePreview): string {
+  return (preview as Extract<IssuedReferenceRenamePreview, { status: "ok" }>).id;
 }
 
 /**
@@ -327,7 +332,7 @@ describe("Workspace rename commit protocol", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "command preview-reference-rename");
 
       const touched = [...new Set(edit.edits.map((e) => e.documentPath))].sort();
@@ -365,7 +370,7 @@ describe("Workspace rename commit protocol", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "conflict-path preview");
 
       // Concurrent interference: ONE closed file changes on disk after the
@@ -379,7 +384,7 @@ describe("Workspace rename commit protocol", function () {
       expectedBytes.set(scratch.paths.standalone, mutated);
 
       const outcome = (await scratch.command.run("commit-reference-rename", {
-        edit,
+        id: idOf(preview),
       })) as CommitRenameOutcome;
       assert.equal(
         outcome.status,
@@ -444,7 +449,7 @@ describe("Workspace rename commit protocol", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const shown = editOf(preview, "preview of the forged commit");
       // The window sends the edit of the preview with a key that the author
       // never saw. Each hash of the preview still holds.
@@ -491,11 +496,11 @@ describe("Workspace rename commit protocol", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       previewedEdit = editOf(preview, "applied-path preview");
 
       const outcome = (await scratch.command.run("commit-reference-rename", {
-        edit: previewedEdit,
+        id: idOf(preview),
       })) as CommitRenameOutcome;
       assert.equal(
         outcome.status,
@@ -688,7 +693,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "rollback-path preview");
 
       // The transaction installs closed files in the order the edit fences
@@ -709,7 +714,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
       chmodSync(scratch.paths.otherPaper, 0o444);
 
       await assert.rejects(
-        async () => await scratch.command.run("commit-reference-rename", { edit }),
+        async () => await scratch.command.run("commit-reference-rename", { id: idOf(preview) }),
         "an installation that cannot be performed must fail loudly",
       );
 
@@ -758,14 +763,14 @@ describe("Workspace edit transaction rollback and recovery", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "read-only folder preview");
       // The author may write the file but not create a file beside it, so
       // no temporary file can take its place (§16).
       chmodSync(path.join(scratch.root, "ProjectB"), 0o555);
 
       const outcome = (await scratch.command.run("commit-reference-rename", {
-        edit,
+        id: idOf(preview),
       })) as CommitRenameOutcome;
 
       assert.equal(outcome.status, "applied", `the commit applies, got ${JSON.stringify(outcome)}`);
@@ -808,12 +813,12 @@ describe("Workspace edit transaction rollback and recovery", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "authority-failure preview");
 
       scratch.authorityFault.next = "throw";
       await assert.rejects(
-        async () => await scratch.command.run("commit-reference-rename", { edit }),
+        async () => await scratch.command.run("commit-reference-rename", { id: idOf(preview) }),
         "an open-buffer application the authority refuses must fail loudly",
       );
 
@@ -877,12 +882,12 @@ describe("Workspace edit transaction rollback and recovery", function () {
         const preview = (await scratch.command.run("preview-reference-rename", {
           oldKey: OLD_KEY,
           newKey: NEW_KEY,
-        })) as ReferenceRenamePreview;
+        })) as IssuedReferenceRenamePreview;
         const edit = editOf(preview, `${fault} preview`);
 
         scratch.authorityFault.next = fault;
         await assert.rejects(
-          async () => await scratch.command.run("commit-reference-rename", { edit }),
+          async () => await scratch.command.run("commit-reference-rename", { id: idOf(preview) }),
           `${fault}: an unverified open-buffer application must not be reported as applied`,
         );
 
@@ -931,7 +936,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
-      })) as ReferenceRenamePreview;
+      })) as IssuedReferenceRenamePreview;
       const edit = editOf(preview, "journal-failure preview");
 
       // The journal is the only thing standing between a crash mid-install
@@ -941,7 +946,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
       chmodSync(journalDirectory, 0o555);
 
       await assert.rejects(
-        async () => await scratch.command.run("commit-reference-rename", { edit }),
+        async () => await scratch.command.run("commit-reference-rename", { id: idOf(preview) }),
         "a transaction that cannot journal must fail loudly",
       );
 
