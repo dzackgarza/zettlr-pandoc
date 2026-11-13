@@ -1,6 +1,13 @@
 name: Unit Tests / Lint
-# On every push, for every pull-request and whenever another workflow calls this one
-on: [push, pull_request, workflow_call]
+# A push to develop or master, each pull request, and a call of another workflow.
+# A branch of a pull request gets one run for each head: the pull_request run.
+on:
+  push:
+    branches:
+      - develop
+      - master
+  pull_request: null
+  workflow_call: null
 permissions:
   contents: read
 env:
