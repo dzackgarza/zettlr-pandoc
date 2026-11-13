@@ -32,6 +32,7 @@ import { type ChangeDesc, ChangeSet, Text } from "@codemirror/state";
 import { mapSuggestionThroughChanges } from "@common/util/review-suggestion-anchors";
 import { sha256Text } from "@common/util/sha256";
 import type {
+  AgentErrorCode,
   AgentEvent,
   AgentEventType,
   DocumentRevision,
@@ -100,7 +101,9 @@ export interface DuplicateClaimError {
 }
 
 /** Why a proposal committed nothing. */
-export type ProposalRefusal = { ok: false; code: string; message: string } | DuplicateClaimError;
+export type ProposalRefusal =
+  | { ok: false; code: AgentErrorCode; message: string }
+  | DuplicateClaimError;
 
 export interface RetractionError {
   ok: false;

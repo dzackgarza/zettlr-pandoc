@@ -20,6 +20,7 @@
 // the named import below for the harness-owned userData path.
 import "./headless-electron-harness.cjs";
 
+import $RefParser, { type JSONSchema } from "@apidevtools/json-schema-ref-parser";
 import type { ReapplyReviewRequest, ReviewMutationPrecondition } from "@dts/common/agent-api";
 import type { CodeFileDescriptor } from "@dts/common/fsal";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -981,6 +982,23 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     assert.equal(response.status, 200);
     assert.ok(response.body.includes("openapi:"));
     assert.ok(response.body.includes("Zettlr-Pandoc Editor Agent API"));
+  });
+
+  it("serves documents in which each reference resolves", async function () {
+    // Each `$ref` of the served documents: the schemas, the shared
+    // responses of the operations and the parameters. The JSON leaves out
+    // the Zotero routes, so a component that only they used must still be
+    // there or its reference must be gone with them.
+    for (const served of ["/openapi.yaml", "/openapi.json"]) {
+      const response = await httpRequest("GET", served);
+      const document = (
+        served.endsWith(".json") ? JSON.parse(response.body) : parseYaml(response.body)
+      ) as JSONSchema;
+      await $RefParser.dereference(structuredClone(document), {
+        continueOnError: true,
+        resolve: { external: false },
+      });
+    }
   });
 
   it("GET /help and /v1/help serve Markdown and JSON help documentation", async function () {
@@ -2628,6 +2646,137 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
     } finally {
       await client.close();
     }
+  });
+
+  it("answers PERSISTENCE_FAILED for a retraction and a review comment that the sidecar refuses (#57)", async function () {
+    const filePath = path.join(scratch, "unwritable-review.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "unwritable-review",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+    const sidecars = path.join(userData, "review-sidecars");
+    const reviewPath = `/v1/reviews/${encodeURIComponent(submitted.reviewId)}`;
+    const before = parseAs((await httpRequest("GET", reviewPath)).body, "ReviewDetailResponse");
+
+    chmodSync(sidecars, 0o555);
+    const [retraction, comment] = [
+      await httpRequest(
+        "POST",
+        `/v1/proposals/${encodeURIComponent(submitted.packetIds[0])}/retract`,
+        {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            expectedReviewGeneration: submitted.reviewGeneration,
+            expectedWorkingSha256: sha256Text("alpha\nBETA\n"),
+          }),
+        },
+      ),
+      await httpRequest("POST", `${reviewPath}/comments`, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedReviewGeneration: submitted.reviewGeneration,
+          text: "a note the disk refuses",
+        }),
+      }),
+    ];
+    chmodSync(sidecars, 0o755);
+
+    for (const response of [retraction, comment]) {
+      assert.equal(response.status, 500, response.body);
+      assert.equal(parseAs(response.body, "AgentErrorResponse").error.code, "PERSISTENCE_FAILED");
+    }
+    const after = parseAs((await httpRequest("GET", reviewPath)).body, "ReviewDetailResponse");
+    // The review and the working text are as they were: no packet retracted,
+    // no comment, no new generation.
+    assert.deepEqual(after, before);
+    assert.equal(after.packetCount, 1);
+  });
+
+  it("answers a review wait at once, at the next generation, at its time limit, and forgets a caller that left", async function () {
+    const filePath = path.join(scratch, "review-wait.md");
+    const documentId = await openInPane(filePath, "alpha\nbeta\n");
+    const submitted = await provider.submitProposal(
+      documentId,
+      sha256Text("alpha\nbeta\n"),
+      [
+        {
+          description: "capitalize beta",
+          patch: createPatch("document", "alpha\nbeta\n", "alpha\nBETA\n", "", "", {
+            context: 0,
+          }),
+        },
+      ],
+      "review-wait",
+      0,
+    );
+    if (!submitted.ok) {
+      assert.fail(`The proposal was refused: ${submitted.code}`);
+    }
+    const generation = submitted.reviewGeneration;
+    const events = (after: number, waitSeconds: number): string =>
+      `/v1/reviews/${encodeURIComponent(submitted.reviewId)}/events?afterGeneration=${after}&waitSeconds=${waitSeconds}`;
+
+    // A generation that the caller has not seen answers without a wait.
+    const behind = parseAs(
+      (await httpRequest("GET", events(generation - 1, 30))).body,
+      "ReviewEventsResponse",
+    );
+    assert.equal(behind.status?.generation, generation);
+    assert.deepEqual(behind.events, []);
+
+    // A wait at the current generation answers with the event of the next one.
+    const waiting = httpRequest("GET", events(generation, 30));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const comment = await provider.addReviewComment(submitted.reviewId, "a note", generation);
+    if (!comment.ok) {
+      assert.fail(`The comment was refused: ${comment.code}`);
+    }
+    const woken = parseAs((await waiting).body, "ReviewEventsResponse");
+    assert.equal(woken.timedOut, undefined);
+    assert.equal(woken.events?.length, 1);
+    assert.equal(woken.events?.[0].reviewGeneration, comment.reviewGeneration);
+    assert.equal(woken.status?.generation, comment.reviewGeneration);
+
+    // A wait with no change answers at its limit.
+    const quiet = parseAs(
+      (await httpRequest("GET", events(comment.reviewGeneration, 1))).body,
+      "ReviewEventsResponse",
+    );
+    assert.equal(quiet.timedOut, true);
+    assert.equal(quiet.status?.generation, comment.reviewGeneration);
+
+    // A caller that closes its connection leaves no listener behind.
+    const listeners = provider.agentEvents.listenerCount("*");
+    const left = http.request({
+      hostname: "127.0.0.1",
+      port: httpPort,
+      path: events(comment.reviewGeneration, 30),
+      method: "GET",
+      headers: AUTHORIZED,
+    });
+    const hungUp = new Promise<NodeJS.ErrnoException>((resolve) => left.on("error", resolve));
+    left.end();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(provider.agentEvents.listenerCount("*"), listeners + 1);
+    left.destroy();
+    // The client ends a request that has no answer: Node reports the hang-up.
+    assert.equal((await hungUp).code, "ECONNRESET");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(provider.agentEvents.listenerCount("*"), listeners);
   });
 
   it("returns a patch refusal without opening an unopened document", async function () {
