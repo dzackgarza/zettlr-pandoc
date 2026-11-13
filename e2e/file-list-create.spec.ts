@@ -17,9 +17,9 @@
 
 import { strict as assert } from "node:assert";
 import type { ChildProcess } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import {
   assertCleanExit,
   attach,
@@ -75,7 +75,8 @@ describe("New file and new folder from the file list (#202)", function () {
     assertCleanExit(getOutput());
   });
 
-  async function createFromList(itemId: string, name: string): Promise<void> {
+  /** Open the name field of `itemId` on the row of `lattices` in the list. */
+  async function openNameField(itemId: string): Promise<Locator> {
     const activePage = requireInitialized(page, "The editor page must be initialized");
     // The list shows the folder that the tree selects; a new folder
     // selects itself.
@@ -102,6 +103,11 @@ describe("New file and new folder from the file list (#202)", function () {
       1,
       `the list asks for the name; the folder holds ${JSON.stringify(await readdir(lattices))}`,
     );
+    return field;
+  }
+
+  async function createFromList(itemId: string, name: string): Promise<void> {
+    const field = await openNameField(itemId);
     await field.fill(name);
     await field.press("Enter");
   }
@@ -115,6 +121,27 @@ describe("New file and new folder from the file list (#202)", function () {
     await createFromList("menu.new_file", "discriminant-form");
     assert.deepEqual(await namesOnceHolding(lattices, "discriminant-form.md"), [
       "Genera",
+      "discriminant-form.md",
+    ]);
+  });
+
+  it("the name field stays open while the rows of the list change", async function () {
+    const activePage = requireInitialized(page, "The editor page must be initialized");
+    const field = await openNameField("menu.new_dir");
+    await field.pressSequentially("Gen");
+    // Another program adds a file that sorts before the folder.
+    const basis = path.join(workspace, "a-basis.md");
+    await writeFile(basis, "# Basis\n");
+    await activePage
+      .locator(`#file-list .list-item[data-path=${JSON.stringify(basis)}]`)
+      .waitFor({ state: "visible" });
+    await delay(500);
+    assert.equal(await field.count(), 1, "the field is open");
+    await field.pressSequentially("us");
+    await field.press("Enter");
+    assert.deepEqual(await namesOnceHolding(lattices, "Genus"), [
+      "Genera",
+      "Genus",
       "discriminant-form.md",
     ]);
   });
