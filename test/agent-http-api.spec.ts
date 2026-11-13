@@ -72,6 +72,7 @@ import { createIgnoreFilter, EVERY_FILE_TYPE } from "source/common/util/ignore-r
 import { sha256Text } from "source/common/util/sha256";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { parse as parseYaml } from "yaml";
+import { AGENT_API_ENVIRONMENT, readAgentApiPort } from "../e2e/support/electron-app";
 import { DATABASE_LOADER_THREAD } from "./citeproc-loader-thread";
 import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
@@ -992,6 +993,41 @@ describe("Agent HTTP API (OpenAPI / REST)", function () {
 
     await httpProvider.shutdown();
     assert.equal(existsSync(portFile), false, "shutdown must remove the port file");
+  });
+
+  it("a stale discovery file does not name the instance that took its port (#57)", async function () {
+    // A killed instance leaves its discovery file. Another instance can then
+    // bind that port. A client that reads the stale file must not take that
+    // other instance for the one the file describes: the e2e harness would
+    // then drive an app that the spec did not start.
+    const killedProfile = path.join(scratch, "killed-profile");
+    mkdirSync(killedProfile);
+    writeFileSync(
+      path.join(killedProfile, "agent-api.port"),
+      readFileSync(path.join(userData, "agent-api.port"), "utf8"),
+    );
+    await httpProvider.shutdown();
+
+    httpProvider = new AgentHTTPProvider(
+      new LogProvider(),
+      provider,
+      {
+        config: {
+          get: () => ({
+            ...agentHost.config.get(),
+            agentApi: { enabled: true, port: httpPort, skillsDirectory: null },
+          }),
+        },
+        search: agentHost.search,
+        documentLint: agentHost.documentLint,
+        links: agentHost.links,
+      },
+      { homeDirectory: authoringHome, env: AGENT_API_ENVIRONMENT },
+    );
+    await httpProvider.boot();
+
+    assert.equal(await readAgentApiPort(userData, 5_000), httpPort);
+    await assert.rejects(readAgentApiPort(killedProfile, 1_500), Error);
   });
 
   it("GET /openapi.yaml serves the OpenAPI specification without auth", async function () {
