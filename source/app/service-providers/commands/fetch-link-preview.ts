@@ -70,7 +70,7 @@ export default class FetchLinkPreview extends ZettlrCommand {
           const rawContents = await this._app.fsal.loadAnySupportedFile(arg);
           const { frontmatter, content } = extractYamlFrontmatter(rawContents);
 
-          if (frontmatter !== null && "abstract" in frontmatter) {
+          if (typeof frontmatter?.abstract === "string") {
             returnValue.summary = frontmatter.abstract;
           } else {
             const lines = content.split("\n");

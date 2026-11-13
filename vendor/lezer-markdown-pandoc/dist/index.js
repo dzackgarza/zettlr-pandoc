@@ -3073,6 +3073,9 @@ const CANONICAL_ROMAN_NUMERAL = /^(?=[MDCLXVI]+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|X
 const BARE_CITATION_KEY = /^[\p{L}\p{N}_]+(?:[:.#$%&+?<>~\/-][\p{L}\p{N}_]+)*/u;
 const bracketFollowers = new WeakMap();
 const parenthesizedFollowers = new WeakMap();
+// Each nested opener starts with the same unquoted state as an independent
+// lookahead. Cache its result while scanning, so incomplete followers do not
+// make every later citation scan the paragraph suffix again.
 function balancedFollower(ctx, pos, open, close, quoted, cache) {
     let matches = cache.get(ctx);
     if (matches === undefined) {
@@ -3114,6 +3117,18 @@ function balancedFollower(ctx, pos, open, close, quoted, cache) {
         matches.set(opener, false);
     return false;
 }
+/**
+ * Port the negative lookahead at the end of Pandoc `normalCite`:
+ *
+ *   notFollowedBy (try (void source) <|>
+ *                  (Ext_bracketed_spans *> void attributes) <|>
+ *                  void reference)
+ *
+ * A bracketed citation immediately followed by syntax that would make the
+ * bracket group a link/reference/span is NOT a normal citation. Pandoc then
+ * falls back to parsing the interior `@key` textually. This distinction is
+ * observable in e.g. `[@a][label](url)`.
+ */
 function conflictsWithNormalCiteClose(ctx, pos) {
     const next = ctx.char(pos);
     if (next === CHAR.CURLY_OPEN) {
@@ -4070,6 +4085,15 @@ function blockInput$1(ctx) {
     return ctx.input;
 }
 /**
+ * Pandoc `blankline` (`skipMany spaceChar >> newline`) after a fence: spaces
+ * and tabs to the line end. Pandoc reads CRLF text as LF text, so a CR before
+ * the line feed belongs to the line end.
+ */
+const FENCE_LINE_END = /^[ \t]*\r?$/u;
+function isFenceLine(text, fence) {
+    return text.startsWith(fence) && FENCE_LINE_END.test(text.slice(fence.length));
+}
+/**
  * Non-mutating port of Pandoc Metadata.hs `yamlMetaBlock` / `stopLine`.
  * Lezer cannot roll BlockContext back after `nextLine()`, so recognition must
  * be complete before the block parser advances at all.
@@ -4077,15 +4101,18 @@ function blockInput$1(ctx) {
 function frontmatterExtent(ctx, openingStart) {
     const input = blockInput$1(ctx);
     let bodyFrom = -1;
+    // The end of the last body line, before its line end (LF or CRLF)
+    let bodyTo = -1;
     let linesToClose = 0;
     for (const line of linesFrom(input, openingStart)) {
         if (bodyFrom < 0) {
-            if (!line.text.startsWith('---'))
+            if (!isFenceLine(line.text, '---'))
                 return undefined;
             bodyFrom = line.from + line.text.length + 1;
             // The opener must end in a line feed.
             if (bodyFrom > input.length)
                 return undefined;
+            bodyTo = bodyFrom;
             continue;
         }
         linesToClose++;
@@ -4093,15 +4120,16 @@ function frontmatterExtent(ctx, openingStart) {
             // Pandoc: `notFollowedBy blankline` immediately after the opener.
             return undefined;
         }
-        if (/^(?:---|\.\.\.)[ \t]*$/u.test(line.text)) {
+        if (isFenceLine(line.text, '---') || isFenceLine(line.text, '...')) {
             return {
                 bodyFrom,
-                bodyTo: Math.max(bodyFrom, line.from - 1),
+                bodyTo,
                 closeFrom: line.from,
                 closeTo: line.from + line.text.length,
                 linesToClose,
             };
         }
+        bodyTo = line.from + line.text.replace(/\r$/u, '').length;
     }
     return undefined;
 }
@@ -4112,7 +4140,7 @@ const frontmatterParser = {
         // Pandoc's YAML metadata block is a block parser, not a document-prologue
         // parser. It may occur after ordinary blocks as long as `---` starts the
         // current block.
-        if (line.text !== '---') {
+        if (!isFenceLine(line.text, '---')) {
             return false;
         }
         const openingStart = ctx.lineStart + line.pos;
