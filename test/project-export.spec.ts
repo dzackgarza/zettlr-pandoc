@@ -188,7 +188,8 @@ describe("Project export", function () {
       cslStyle: absentStyle,
     });
 
-    // A Project whose second chapter is in a folder that refuses its content.
+    // A Project whose second chapter is in a folder that refuses its search:
+    // the file cannot be examined.
     refusedFolder = await project("refused-folder", {
       profiles: [listing],
       chapters,
@@ -202,7 +203,7 @@ describe("Project export", function () {
     const settings = JSON.parse(await readFile(settingsFile, "utf8"));
     settings.project.files = ["chapter.md", "part/two.md"];
     await writeFile(settingsFile, JSON.stringify(settings));
-    await chmod(refusedPart, 0o300);
+    await chmod(refusedPart, 0o000);
 
     // An export with pandoc reads the macro projection of the home directory.
     macroHome = path.join(tmpdir(), ".pandoc");

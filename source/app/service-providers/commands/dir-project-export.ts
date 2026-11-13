@@ -16,12 +16,12 @@ import { trans } from "@common/i18n-main";
 import { showNativeNotification } from "@common/util/show-notification";
 import type LogProvider from "@providers/log";
 import { dialog } from "electron";
+import { stat } from "fs/promises";
 import path from "path";
 import type { AppServiceContainer } from "source/app/app-service-container";
 import { openPath } from "source/app/util/open-path";
 import { isHtmlWriter, isTexWriter, PANDOC_WRITERS } from "source/common/pandoc-util/pandoc-maps";
 import { parseReaderWriter } from "source/common/pandoc-util/parse-reader-writer";
-import { innermostRoot } from "source/common/util/renderer-path-polyfill";
 import type { DirDescriptor, ProjectSettings } from "source/types/common/fsal";
 import type AssetsProvider from "../assets";
 import type { PandocProfileMetadata, ValidPandocProfile } from "../assets";
@@ -95,29 +95,27 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     throw new Error(`Could not export the project: ${dir.name} is not a project.`);
   }
 
-  // The export takes each chapter of the settings that the listing of the
-  // Project folder holds. The author gets a message that names each other
-  // chapter, and the cause when its folder refused its content.
-  const listing = await app.fsal.readDirectoryRecursively(dir.path);
-  const availableFiles = new Set(listing.paths);
-  const notListed = new Map(listing.notListed.map((folder) => [folder.path, folder.cause]));
-
-  // The settings hold Unix paths relative to the Project folder.
-  const chapters = config.files.map((file) => ({
-    file,
-    absPath: path.join(dir.path, process.platform === "win32" ? pathToWin(file) : file),
-  }));
+  // The export takes each chapter of the settings that is a file on disk.
+  // The file filters decide what the file manager lists, not which files a
+  // Project holds (§10). The author gets a message that names each other
+  // chapter with its cause.
+  const chapters = await Promise.all(
+    config.files.map(async (file) => {
+      // The settings hold Unix paths relative to the Project folder.
+      const absPath = path.join(dir.path, process.platform === "win32" ? pathToWin(file) : file);
+      const problem = await stat(absPath).then(
+        (stats) => (stats.isFile() ? undefined : `${file}: ${absPath} is not a file`),
+        (error: NodeJS.ErrnoException) => `${file}: ${error.message}`,
+      );
+      return { absPath, problem };
+    }),
+  );
   const existingFilesWithSorting = chapters
-    .filter((chapter) => availableFiles.has(chapter.absPath))
+    .filter((chapter) => chapter.problem === undefined)
     .map((chapter) => chapter.absPath);
-  const missingChapters = chapters
-    .filter((chapter) => !availableFiles.has(chapter.absPath))
-    .map((chapter) => {
-      const refused = innermostRoot(chapter.absPath, notListed.keys());
-      return refused === undefined
-        ? chapter.file
-        : `${chapter.file}: ${refused} cannot be read (${notListed.get(refused)})`;
-    });
+  const missingChapters = chapters.flatMap((chapter) =>
+    chapter.problem === undefined ? [] : [chapter.problem],
+  );
 
   if (existingFilesWithSorting.length === 0) {
     app.log.warning("[Project] Aborting project export: No files to export");
@@ -132,7 +130,7 @@ export async function exportProject(app: ProjectExportServices, arg: string): Pr
     await dialog.showMessageBox({
       title: trans("Project File Mismatch"),
       message: trans(
-        "One or more files specified in the project settings have not been found. They may have moved or been deleted. Please verify that all files that you would like to export are included.",
+        "One or more files of the project settings are not on disk or cannot be read. The export leaves them out.",
       ),
       detail: missingChapters.join("\n"),
       buttons: [trans("Ok")],

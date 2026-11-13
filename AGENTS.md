@@ -672,6 +672,10 @@ of an isolated instance are in the first comment of #132.
 - **A filter hides; it does not close.** An open document that a rule or a
   file type hides stays open, and it saves to its path. The documents
   provider has its own watcher and does not read `fsal-events`.
+- **A filter does not remove a chapter.** A Project export takes each
+  chapter of its settings that is a file on disk (`exportProject`), also a
+  chapter that a rule or a file type hides; the message of the export names
+  each other chapter with its cause. Proof: `test/project-export.spec.ts`.
 - **Cost of a rule change:** one scan of each open workspace before and
   after, on asynchronous `readdir` calls. On 21,226 files in 2,312 folders a
   rule change takes about 300 ms of main-process JavaScript in short steps,
