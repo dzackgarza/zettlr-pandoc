@@ -11,6 +11,7 @@ import { loadMathJaxMacros } from "source/app/util/load-mathjax-macros";
 import { promisify } from "util";
 import { runInNewContext } from "vm";
 import YAML from "yaml";
+import { copyExportMathJax } from "../scripts/export-mathjax.js";
 import { runProbe } from "./visual/display-probe";
 
 // Example macro fixture loaded through the real loader; the app ships none.
@@ -28,7 +29,6 @@ interface MathJaxWindow {
       paths?: Record<string, string>;
     };
     tex?: {
-      inlineMath?: Record<string, string[][]>;
       macros?: Record<string, unknown>;
       packages?: Record<string, string[]>;
     };
@@ -52,7 +52,7 @@ describe("Pandoc math export headers", function () {
     const outputFile = path.join(directory, "output.html");
     const defaultsFile = path.join(directory, "defaults.yaml");
     const existingHeader = path.join(directory, "existing.html");
-    const component = path.join(directory, "mathjax", "tex-chtml.js");
+    const mathJax = path.join(directory, "mathjax");
     const defaults = YAML.parse(
       await readFile("static/defaults/HTML.yaml", { encoding: "utf8" }),
     ) as Record<string, unknown>;
@@ -63,10 +63,9 @@ describe("Pandoc math export headers", function () {
 
     await writeFile(inputFile, "$\\RR$ and $\\ce{H2O}$\n");
     await writeFile(existingHeader, '<meta name="preserved-header" content="yes">');
-    await mkdir(path.dirname(component), { recursive: true });
-    await cp("node_modules/@mathjax/src/bundle/tex-chtml.js", component);
+    await copyExportMathJax(mathJax);
     await injectPandocMathHeaders(defaults, directory, {
-      mathJaxComponent: component,
+      mathJaxDirectory: mathJax,
       macros,
       pandocDirectory: MACRO_TREE,
     });
@@ -86,21 +85,15 @@ describe("Pandoc math export headers", function () {
     }
 
     assert.strictEqual(window.MathJax?.tex?.macros?.RR, "\\mathbb{R}");
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(window.MathJax?.tex?.inlineMath?.["[+]"])), [
-      ["$", "$"],
-    ]);
     assert.deepStrictEqual(Array.from(window.MathJax?.loader?.load ?? []), [
       "[tex]/boldsymbol",
       "[tex]/mhchem",
     ]);
     assert.strictEqual(
       window.MathJax?.loader?.paths?.tex,
-      `${pathToFileURL(path.join(path.dirname(component), "mathjax-tex-extensions")).href}/`,
+      `${pathToFileURL(path.join(mathJax, "tex-extensions")).href}/`,
     );
-    assert.strictEqual(
-      window.MathJax?.loader?.paths?.fonts,
-      `${pathToFileURL(path.dirname(component)).href}/`,
-    );
+    assert.strictEqual(window.MathJax?.loader?.paths?.fonts, `${pathToFileURL(mathJax).href}/`);
     assert.deepStrictEqual(Array.from(window.MathJax?.tex?.packages?.["[+]"] ?? []), [
       "ams",
       "boldsymbol",
@@ -113,9 +106,16 @@ describe("Pandoc math export headers", function () {
     assert.match(config, /"RR": "\\\\mathbb\{R\}"/);
     assert.match(config, /"mhchem"/);
     assert.match(config, /"fontURL": "file:\/\//);
-    assert.match(config, /<\/script>\n<script defer src="file:\/\/[^\"]+tex-chtml\.js">/);
+    // Pandoc keeps each formula as TeX for the component of the application.
+    assert.deepStrictEqual(defaults["html-math-method"], {
+      method: "mathjax",
+      url: pathToFileURL(path.join(mathJax, "tex-chtml.js")).href,
+    });
+    assert.ok(html.includes('<span class="math inline">\\(\\RR\\)</span>'));
+    assert.ok(html.includes('<span class="math inline">\\(\\ce{H2O}\\)</span>'));
+    // The configuration comes before the component, which reads it at its start.
+    assert.ok(html.indexOf("window.MathJax =") < html.indexOf("MathJax.version"));
     assert.ok(html.includes("preserved-header"));
-    assert.ok(html.includes("file:///"));
   });
 
   it("renders canonical macros, boldsymbol, and mhchem in a local Chromium HTML export", async function () {
@@ -123,27 +123,11 @@ describe("Pandoc math export headers", function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-browser-"));
     const inputFile = path.join(directory, "input.md");
     const outputFile = path.join(directory, "output.html");
-    const component = path.join(directory, "assets", "defaults", "mathjax-tex-chtml.js");
-    const extensions = path.join(directory, "assets", "defaults", "mathjax-tex-extensions");
-    const mhchemFontExtension = path.join(
-      directory,
-      "assets",
-      "defaults",
-      "mathjax-mhchem-font-extension",
-    );
-    const fontDirectory = path.join(directory, "assets", "defaults", "mathjax-font");
+    const mathJax = path.join(directory, "mathjax");
     const screenshot = path.join(directory, "render.png");
     const renderedDocument = path.join(directory, "rendered.html");
 
-    await mkdir(path.dirname(component), { recursive: true });
-    await cp("node_modules/@mathjax/src/bundle/tex-chtml.js", component);
-    await cp("node_modules/@mathjax/src/bundle/input/tex/extensions", extensions, {
-      recursive: true,
-    });
-    await cp("node_modules/@mathjax/mathjax-mhchem-font-extension", mhchemFontExtension, {
-      recursive: true,
-    });
-    await cp("node_modules/@mathjax/mathjax-newcm-font/chtml", fontDirectory, { recursive: true });
+    await copyExportMathJax(mathJax);
     await writeFile(inputFile, "$\\RR$ and $\\boldsymbol{\\iota}$ and $\\ce{H2O}$\n");
 
     const config = {
@@ -169,7 +153,7 @@ describe("Pandoc math export headers", function () {
       config,
       [],
       directory,
-      { mathJaxComponent: component, macros, pandocDirectory: MACRO_TREE },
+      { mathJaxDirectory: mathJax, macros, pandocDirectory: MACRO_TREE },
     );
 
     await runPandoc(defaultsFile, outputFile);
@@ -179,15 +163,12 @@ describe("Pandoc math export headers", function () {
     );
     const html = await readFile(renderedDocument, { encoding: "utf8" });
 
-    assert.strictEqual((html.match(/<mjx-container/g) ?? []).length, 2);
+    assert.strictEqual((html.match(/<mjx-container/g) ?? []).length, 3);
     const mathJaxConfig = html.match(/window\.MathJax = ([\s\S]*?)<\/script>/)?.[1] ?? "";
     assert.ok(!mathJaxConfig.includes("https://"));
     assert.ok(!mathJaxConfig.includes("http://"));
-    assert.ok(!html.includes("$\\RR$"));
-    assert.ok(!html.includes("$\\boldsymbol{\\iota}$"));
-    assert.ok(!html.includes("$\\ce{H2O}$"));
     assert.ok(html.includes('data-latex="\\mathbb{R}"'));
-    assert.ok(html.includes("<strong>ι</strong>"));
+    assert.ok(html.includes('data-latex="\\boldsymbol{\\iota}"'));
     assert.ok(html.includes('data-latex="\\ce{H2O}"'));
     // The xvfb-run of some distributions joins the error output of the probe
     // to its output.
@@ -203,14 +184,13 @@ describe("Pandoc math export headers", function () {
     const outputFile = path.join(directory, "output.html");
     const existingHeader = path.join(directory, "existing.html");
     const copiedDefaults = path.join(defaultsDirectory, "Copied Reveal.yaml");
-    const component = path.join(directory, "assets", "defaults", "mathjax-tex-chtml.js");
+    const mathJax = path.join(directory, "mathjax");
     const template = path.join(directory, "project-template.html");
 
     await mkdir(defaultsDirectory, { recursive: true });
     await mkdir(filterDirectory, { recursive: true });
-    await mkdir(path.dirname(component), { recursive: true });
     await cp("static/defaults/Reveal.js.yaml", copiedDefaults);
-    await cp("node_modules/@mathjax/src/bundle/tex-chtml.js", component);
+    await copyExportMathJax(mathJax);
     await writeFile(inputFile, "$\\RR$ and $\\ce{H2O}$\n");
     await writeFile(existingHeader, '<meta name="preserved-header" content="yes">');
     await writeFile(
@@ -243,7 +223,7 @@ describe("Pandoc math export headers", function () {
       config,
       [],
       directory,
-      { mathJaxComponent: component, macros, pandocDirectory: MACRO_TREE },
+      { mathJaxDirectory: mathJax, macros, pandocDirectory: MACRO_TREE },
     );
     const defaults = YAML.parse(await readFile(defaultsFile, { encoding: "utf8" })) as Record<
       string,
@@ -264,7 +244,6 @@ describe("Pandoc math export headers", function () {
   it("classifies copied Reveal, LaTeX, and plain-text profile defaults at the shared header seam", async function () {
     const directory = await mkdtemp(path.join(os.tmpdir(), "zettlr-pandoc-profiles-"));
     const existingHeader = path.join(directory, "existing-header");
-    const component = path.join(directory, "mathjax", "tex-chtml.js");
     const fixtureNames = ["Reveal.js.yaml", "LaTeX.yaml", "Plain Text.yaml"];
     const profileDirectories = ["reveal", "latex", "plain"].map((name) =>
       path.join(directory, name),
@@ -290,13 +269,11 @@ describe("Pandoc math export headers", function () {
     );
 
     await writeFile(existingHeader, "preserved");
-    await mkdir(path.dirname(component), { recursive: true });
-    await cp("node_modules/@mathjax/src/bundle/tex-chtml.js", component);
 
     for (const [index, defaults] of profiles.entries()) {
       defaults["include-in-header"] = [existingHeader];
       await injectPandocMathHeaders(defaults, profileDirectories[index], {
-        mathJaxComponent: component,
+        mathJaxDirectory: path.join(directory, "mathjax"),
         macros,
         pandocDirectory: MACRO_TREE,
       });
@@ -336,7 +313,7 @@ describe("Pandoc math export headers", function () {
     await writeFile(inputFile, "$\\RR$ and $\\ce{H2O}$\n");
     await writeFile(existingHeader, "\\newcommand{\\Preserved}{yes}");
     await injectPandocMathHeaders(defaults, directory, {
-      mathJaxComponent: path.join(directory, "unused.js"),
+      mathJaxDirectory: path.join(directory, "unused-mathjax"),
       macros,
       pandocDirectory: MACRO_TREE,
     });

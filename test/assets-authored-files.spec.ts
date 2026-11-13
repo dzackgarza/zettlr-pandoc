@@ -21,7 +21,7 @@ import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import AssetsProvider from "source/app/service-providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "source/app/service-providers/assets";
 import ConfigProvider from "source/app/service-providers/config";
 import CssProvider from "source/app/service-providers/css";
 import LogProvider from "source/app/service-providers/log";
@@ -63,6 +63,7 @@ describe("The files of the Assets window", function () {
     assets = new AssetsProvider(
       log,
       new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure),
+      BUNDLED_EXPORT_MATHJAX,
     );
     css = new CssProvider(log);
   });

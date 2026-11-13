@@ -60,7 +60,7 @@ describe("Pipeline-integrated export scripts", function () {
           await readFile(`static/defaults/${profileName}`, { encoding: "utf8" }),
         ) as Record<string, unknown>;
         return await writeDefaults(profile, overrides, config, [], directory, {
-          mathJaxComponent: path.join(directory, "unused.js"),
+          mathJaxDirectory: path.join(directory, "unused-mathjax"),
           macros,
           pandocDirectory: MACRO_TREE,
         });

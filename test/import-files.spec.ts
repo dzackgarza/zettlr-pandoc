@@ -22,7 +22,7 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import ZIP from "adm-zip";
-import AssetsProvider from "source/app/service-providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "source/app/service-providers/assets";
 import makeImport from "source/app/service-providers/commands/importer";
 import ConfigProvider from "source/app/service-providers/config";
 import type FSAL from "source/app/service-providers/fsal";
@@ -91,6 +91,7 @@ describe("File import", function () {
     assets = new AssetsProvider(
       log,
       new ConfigProvider(log, [path.resolve("static", "lang")], unexpectedStoreWriteFailure),
+      BUNDLED_EXPORT_MATHJAX,
     );
     fsal = await bootFsal(root);
   });

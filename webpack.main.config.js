@@ -3,6 +3,7 @@ const { DefinePlugin } = require("webpack");
 const path = require("path");
 const rules = require("./webpack.rules");
 const { gitCommitHash } = require("./scripts/get-git-hash.js");
+const { EXPORT_MATHJAX_FILES } = require("./scripts/export-mathjax.js");
 const isLocalPackage = process.env.ZETTLR_LOCAL_PACKAGE === "1";
 
 const config = {
@@ -36,26 +37,7 @@ const config = {
         { from: "static/csl-styles", to: "assets/csl-styles" },
         { from: "static/defaults", to: "assets/defaults" },
         { from: "static/completions", to: "assets/completions" },
-        {
-          from: "node_modules/@mathjax/src/bundle/tex-chtml.js",
-          to: "assets/defaults/mathjax-tex-chtml.js",
-        },
-        {
-          from: "node_modules/@mathjax/src/bundle/input/tex/extensions",
-          to: "assets/defaults/mathjax-tex-extensions",
-        },
-        {
-          from: "node_modules/@mathjax/mathjax-mhchem-font-extension",
-          to: "assets/defaults/mathjax-mhchem-font-extension",
-        },
-        {
-          from: "node_modules/@mathjax/mathjax-newcm-font/chtml",
-          to: "assets/defaults/mathjax-font",
-        },
-        {
-          from: "node_modules/@mathjax/src/bundle/sre",
-          to: "assets/defaults/mathjax-sre",
-        },
+        ...EXPORT_MATHJAX_FILES.map(({ from, to }) => ({ from, to: `assets/mathjax/${to}` })),
         { from: "static/lua-filter", to: "assets/lua-filter" },
         // The vendored TikZ pipeline (issue #14): filter, per-figure
         // template, and the styles tree the template \usepackage's.

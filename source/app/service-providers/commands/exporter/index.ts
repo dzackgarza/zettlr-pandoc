@@ -189,7 +189,7 @@ export async function makeExport(
 
   // Load the central ~/.pandoc MathJax projection once for this export.
   const math: ExportMath = {
-    mathJaxComponent: path.join(__dirname, "assets/defaults/mathjax-tex-chtml.js"),
+    mathJaxDirectory: assets.exportMathJaxDirectory,
     macros: await loadCanonicalMathJaxMacros(app.getPath("home")),
     pandocDirectory: path.join(app.getPath("home"), ".pandoc"),
   };

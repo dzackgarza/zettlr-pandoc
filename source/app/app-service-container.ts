@@ -20,7 +20,7 @@ import { installErrorReporter } from "@common/util/error-reporting";
 import AgentHTTPProvider, { type AgentApiHost } from "@providers/agent-api/http-server";
 // Providers
 import AppearanceProvider from "@providers/appearance";
-import AssetsProvider from "@providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "@providers/assets";
 import CiteprocProvider, {
   BUNDLED_DATABASE_LOADER_THREAD,
   BUNDLED_LOCALE_DIRECTORY,
@@ -135,7 +135,11 @@ export class AppServiceContainer {
 
     // Now according to their dependencies
     this._recentDocsProvider = new RecentDocumentsProvider(this._logProvider, this._configProvider);
-    this._assetsProvider = new AssetsProvider(this._logProvider, this._configProvider);
+    this._assetsProvider = new AssetsProvider(
+      this._logProvider,
+      this._configProvider,
+      BUNDLED_EXPORT_MATHJAX,
+    );
     this._cssProvider = new CssProvider(this._logProvider);
     this._statsProvider = new StatsProvider(this._logProvider, onStoreWriteFailure);
 

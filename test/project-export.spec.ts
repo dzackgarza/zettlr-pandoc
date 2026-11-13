@@ -19,10 +19,10 @@
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import AssetsProvider from "source/app/service-providers/assets";
+import AssetsProvider, { BUNDLED_EXPORT_MATHJAX } from "source/app/service-providers/assets";
 import {
   exportProject,
   type ProjectExportServices,
@@ -205,14 +205,10 @@ describe("Project export", function () {
     await writeFile(settingsFile, JSON.stringify(settings));
     await chmod(refusedPart, 0o000);
 
-    // An export with pandoc reads the macro projection of the home directory.
+    // An export with pandoc reads the macro tree and its MathJax projection
+    // from the home directory.
     macroHome = path.join(tmpdir(), ".pandoc");
-    const projection = path.join(macroHome, "templates", "css");
-    await mkdir(projection, { recursive: true });
-    await copyFile(
-      path.resolve("test", "fixtures", "mathjax-macros.json"),
-      path.join(projection, "mathjax-macros.json"),
-    );
+    await cp(path.resolve("test", "fixtures", "pandoc-macros"), macroHome, { recursive: true });
 
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
@@ -233,7 +229,7 @@ describe("Project export", function () {
       { displayName: "Second command", command: noTemplate },
       { displayName: "Listing", command: listing },
     ]);
-    assets = new AssetsProvider(log, config);
+    assets = new AssetsProvider(log, config, BUNDLED_EXPORT_MATHJAX);
     fsal = await bootFsal(root);
 
     services = {

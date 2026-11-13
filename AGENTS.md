@@ -170,6 +170,17 @@ through its renderer collection. See `packages/pandoc-editor/README.md`.
   MathJax projection is for MathJax only: a projection of a macro that LaTeX
   already defines (`\AA`) is no TeX definition. An absent package refuses the
   export. Proof: `test/export-document.spec.ts` (a LaTeX export, pdflatex).
+- **HTML export:** an HTML writer of `writeDefaults` gets the math method
+  `mathjax` with the component of the app, and a header with the MathJax
+  configuration (the central projection, the extensions, the fonts). Pandoc
+  and the browser of the exported file are no Electron processes and read no
+  file inside `app.asar`: `scripts/export-mathjax.js` names the MathJax
+  files, webpack copies them to `.webpack/main/assets/mathjax`, and the
+  package keeps that folder in `app.asar.unpacked` (`BUNDLED_EXPORT_MATHJAX`,
+  `AssetsProvider.exportMathJaxDirectory`). The exported file loads the
+  extensions and fonts from that folder at run time. Proof:
+  `e2e/html-export-packaged.spec.ts` (the packaged app),
+  `test/pandoc-math-headers.spec.ts`.
 - **Semantic invariant:** macro meanings and arities are owned by `~/.pandoc`; Zettlr
   may project or adapt them to a renderer but must not redefine their mathematics. See
   `~/.pandoc/AGENTS.md` for the object-valued/atomic macro rule.

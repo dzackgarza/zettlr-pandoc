@@ -24,7 +24,10 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import AssetsProvider, { type ValidPandocProfile } from "source/app/service-providers/assets";
+import AssetsProvider, {
+  BUNDLED_EXPORT_MATHJAX,
+  type ValidPandocProfile,
+} from "source/app/service-providers/assets";
 import {
   type DocumentExportServices,
   exportDocument,
@@ -172,7 +175,7 @@ describe("Bibliography of a PDF export", function () {
     config.set("export.autoOpenExportedFiles", false);
     config.set("export.cslStyle", "");
     config.set("export.cslLibrary", mainLibrary);
-    assets = new AssetsProvider(log, config);
+    assets = new AssetsProvider(log, config, BUNDLED_EXPORT_MATHJAX);
     fsal = await bootFsal(root);
     documents = await bootDocumentManager([root]);
 

@@ -18,7 +18,7 @@ const view = await openScene({
 
 await view.page.goto(pathToFileURL(inputFile).href);
 await view.page.waitForFunction(
-  () => document.querySelectorAll("mjx-container").length === 2,
+  () => document.querySelectorAll("mjx-container").length === 3,
   undefined,
   { timeout: 15000 },
 );

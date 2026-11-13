@@ -19,8 +19,8 @@ const MACRO_PACKAGE = "dzg-mathjax";
 
 /** The math of an export. */
 export interface ExportMath {
-  /** The MathJax component that an HTML export loads. */
-  mathJaxComponent: string;
+  /** The folder of the MathJax of an HTML export (`scripts/export-mathjax.js`). */
+  mathJaxDirectory: string;
   /** The MathJax projection of the macro tree, for an HTML export. */
   macros: Record<string, MathJaxMacro>;
   /** The ~/.pandoc directory, whose `styles` hold the macro tree of a TeX export. */
@@ -78,21 +78,19 @@ export async function injectPandocMathHeaders(
   math: ExportMath,
 ): Promise<void> {
   const writer = parseReaderWriter(defaults.writer as string).name;
-  const { mathJaxComponent, macros } = math;
+  const { mathJaxDirectory, macros } = math;
 
   if (isHtmlWriter(writer)) {
     const header = path.join(temporaryDirectory, "zettlr-mathjax-header.html");
-    const fontDirectory = path.join(path.dirname(mathJaxComponent), "mathjax-font");
+    const fileUrl = (name: string): string => pathToFileURL(path.join(mathJaxDirectory, name)).href;
     const config = JSON.stringify(
       {
         loader: {
           paths: {
-            tex: `${pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-tex-extensions")).href}/`,
-            fonts: `${pathToFileURL(path.dirname(mathJaxComponent)).href}/`,
-            sre: pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-sre")).href,
-            mathmaps: pathToFileURL(
-              path.join(path.dirname(mathJaxComponent), "mathjax-sre", "mathmaps"),
-            ).href,
+            tex: `${fileUrl("tex-extensions")}/`,
+            fonts: `${pathToFileURL(mathJaxDirectory).href}/`,
+            sre: fileUrl("sre"),
+            mathmaps: fileUrl(path.join("sre", "mathmaps")),
           },
           load: ["[tex]/boldsymbol", "[tex]/mhchem"],
         },
@@ -108,38 +106,33 @@ export async function injectPandocMathHeaders(
             assistiveMml: [],
           },
           worker: {
-            path: pathToFileURL(path.join(path.dirname(mathJaxComponent), "mathjax-sre")).href,
-            maps: pathToFileURL(
-              path.join(path.dirname(mathJaxComponent), "mathjax-sre", "mathmaps"),
-            ).href,
+            path: fileUrl("sre"),
+            maps: fileUrl(path.join("sre", "mathmaps")),
             worker: "speech-worker.js",
           },
         },
         tex: {
-          inlineMath: { "[+]": [["$", "$"]] },
           packages: { "[+]": mathJaxPackages.slice(1) },
           macros,
         },
         chtml: {
-          fontURL: pathToFileURL(path.join(fontDirectory, "woff2")).href,
-          dynamicPrefix: pathToFileURL(path.join(fontDirectory, "dynamic")).href,
+          fontURL: fileUrl(path.join("font", "woff2")),
+          dynamicPrefix: fileUrl(path.join("font", "dynamic")),
         },
       },
       null,
       2,
     ).replace(/<\/script/gi, "<\\/script");
 
-    await fs.writeFile(
-      header,
-      `<script>\nwindow.MathJax = ${config};\n</script>\n<script defer src="${pathToFileURL(mathJaxComponent).href}"></script>\n`,
-      { encoding: "utf8" },
-    );
+    // The header goes before the script of the math method in the templates
+    // of Pandoc, so MathJax starts with this configuration.
+    await fs.writeFile(header, `<script>\nwindow.MathJax = ${config};\n</script>\n`, {
+      encoding: "utf8",
+    });
     defaults["include-in-header"] = [...headerFiles(defaults), header];
-    // Pandoc writes the math that it can convert as text and leaves the other
-    // math as TeX, which the MathJax of the header renders. The method is
-    // stated: the default of Pandoc is `plain` before version 3.11 and
-    // `mathml` from it.
-    defaults["html-math-method"] = { method: "plain" };
+    // Pandoc writes each formula as TeX between \( \) or \[ \] and loads the
+    // component of the application, which typesets all of them.
+    defaults["html-math-method"] = { method: "mathjax", url: fileUrl("tex-chtml.js") };
   } else if (isTexWriter(writer)) {
     const header = path.join(temporaryDirectory, "zettlr-mathjax-header.tex");
     const macroHeader = await texMacroHeader(math.pandocDirectory, temporaryDirectory);

@@ -56,7 +56,7 @@ describe("Declarative export filter chain", function () {
       [markFilter], // the declared, ordered export filter chain
       directory,
       {
-        mathJaxComponent: path.join(directory, "unused.js"),
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
         macros,
         pandocDirectory: MACRO_TREE,
       },
@@ -108,7 +108,7 @@ describe("Export math-header injection toggle", function () {
       [],
       directory,
       {
-        mathJaxComponent: path.join(directory, "unused.js"),
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
         macros,
         pandocDirectory: MACRO_TREE,
       },
@@ -154,7 +154,7 @@ describe("Export template defaults", function () {
       [],
       directory,
       {
-        mathJaxComponent: path.join(directory, "unused.js"),
+        mathJaxDirectory: path.join(directory, "unused-mathjax"),
         macros,
         pandocDirectory: MACRO_TREE,
       },

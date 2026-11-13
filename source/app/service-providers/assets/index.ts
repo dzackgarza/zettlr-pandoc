@@ -275,6 +275,20 @@ async function renameToFreeName(oldPath: string, newPath: string): Promise<boole
   return true;
 }
 
+/**
+ * The MathJax of an HTML export (`scripts/export-mathjax.js`). Pandoc is a
+ * process of its own and reads it, so it is a file of the filesystem: in the
+ * packaged app the folder is in `app.asar.unpacked` (`asar.unpackDir` in
+ * `forge.config.js`), the place of a file of the app that another process
+ * reads (https://www.electronjs.org/docs/latest/tutorial/asar-archives#adding-unpacked-files-to-asar-archives).
+ * A development start has no archive.
+ */
+export const BUNDLED_EXPORT_MATHJAX = path.join(
+  __dirname.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`),
+  "assets",
+  "mathjax",
+);
+
 export default class AssetsProvider extends ProviderContract {
   /**
    * Holds the path where defaults files can be found.
@@ -328,6 +342,8 @@ export default class AssetsProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
+    /** The folder of the MathJax of an HTML export (BUNDLED_EXPORT_MATHJAX in the app). */
+    readonly exportMathJaxDirectory: string,
   ) {
     super();
 

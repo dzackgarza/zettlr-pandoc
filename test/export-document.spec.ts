@@ -36,7 +36,10 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import AssetsProvider, { type ValidPandocProfile } from "source/app/service-providers/assets";
+import AssetsProvider, {
+  BUNDLED_EXPORT_MATHJAX,
+  type ValidPandocProfile,
+} from "source/app/service-providers/assets";
 import {
   type DocumentExportServices,
   exportDocument,
@@ -181,7 +184,7 @@ describe("Export of one document", function () {
     config.set("export.scripts", [
       { name: WORKING_DIRECTORY.name, profile: LATEX.name, command: script, extension: "txt" },
     ]);
-    assets = new AssetsProvider(log, config);
+    assets = new AssetsProvider(log, config, BUNDLED_EXPORT_MATHJAX);
   });
 
   beforeEach(async function () {

@@ -21,6 +21,7 @@ import YAML from 'yaml'
 import { WikilinkIndex } from '../../source/common/util/wikilink-resolution'
 import { hasMarkdownExt } from '../../source/common/util/file-extention-checks'
 import { parse as parseDirectory } from '../../source/app/service-providers/fsal/fsal-directory'
+import { copyExportMathJax } from '../export-mathjax.js'
 
 function stderr (message: string): void {
   process.stderr.write(`${message}\n`)
@@ -73,7 +74,12 @@ async function main (): Promise<void> {
 
   await fs.mkdir(targetDir, { recursive: true })
   const config: any = { get: () => appConfig }
+  // An exported HTML file loads its MathJax from this folder, so it stays
+  // beside the output.
+  const exportMathJaxDirectory = path.join(targetDir, 'mathjax')
+  await copyExportMathJax(exportMathJaxDirectory)
   const assets: any = {
+    exportMathJaxDirectory,
     getDefaultsFile: async (filename: string) => YAML.parse(readFileSync(path.join(defaultsDir, filename), 'utf8')),
     listDefaults: async () => defaultsProfiles
   }
