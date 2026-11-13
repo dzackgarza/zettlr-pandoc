@@ -21,6 +21,7 @@
 
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -50,6 +51,9 @@ import { bootFsal } from "./fsal-seam";
 import { userData } from "./headless-electron-harness.cjs";
 import { installRecordingJust, type RecordingJust } from "./recording-just";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
+
+/** A document with the LaTeX delimiters of math, which the editor reads as math. */
+const BRACKET_MATH = "# Forms\n\nThe form \\(q(x) = x^2\\) has\n\n\\[\n\\Delta = 4\n\\]\n";
 
 const DOCUMENT = [
   "# Lattices",
@@ -91,6 +95,12 @@ const LATEX: ValidPandocProfile = {
   name: "LaTeX.yaml",
   reader: "markdown",
   writer: "latex",
+  isInvalid: false,
+};
+const WORD: ValidPandocProfile = {
+  name: "Microsoft Word.yaml",
+  reader: "markdown",
+  writer: "docx",
   isInvalid: false,
 };
 const WORKING_DIRECTORY: ValidPandocProfile = {
@@ -156,6 +166,10 @@ describe("Export of one document", function () {
     await copyFile(
       path.resolve("static", "defaults", "LaTeX.yaml"),
       path.join(defaults, "LaTeX.yaml"),
+    );
+    await copyFile(
+      path.resolve("static", "defaults", "Microsoft Word.yaml"),
+      path.join(defaults, "Microsoft Word.yaml"),
     );
 
     // An export script that writes its working directory to its output.
@@ -335,5 +349,32 @@ describe("Export of one document", function () {
     assert.equal(errorWindows.length, 1, "one refused export opens one error window");
     assert.equal(shownText().includes(library), true);
     assert.equal(existsSync(path.join(root, "Lattices.tex")), false);
+  });
+
+  it("exports the LaTeX delimiters of math as math to LaTeX", async function () {
+    const forms = path.join(root, "Forms.md");
+    await writeFile(forms, BRACKET_MATH);
+
+    await exportDocument(services, { file: forms, profile: LATEX, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const body = (await readFile(path.join(root, "Forms.tex"), "utf8")).split("\n");
+    assert.equal(body.includes("The form \\(q(x) = x^2\\) has"), true, "inline math");
+    assert.equal(body.includes("\\[\\Delta = 4\\]"), true, "display math");
+  });
+
+  it("exports the LaTeX delimiters of math as math to Word", async function () {
+    const forms = path.join(root, "Forms.md");
+    await writeFile(forms, BRACKET_MATH);
+
+    await exportDocument(services, { file: forms, profile: WORD, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const xml = execFileSync("unzip", ["-p", path.join(root, "Forms.docx"), "word/document.xml"], {
+      encoding: "utf8",
+    });
+    // Word math is Office Math: one inline and one display formula.
+    assert.equal(xml.match(/<m:oMath>/g)?.length, 2);
+    assert.equal(xml.match(/<m:oMathPara>/g)?.length, 1);
   });
 });
