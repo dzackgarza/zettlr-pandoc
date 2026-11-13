@@ -11,7 +11,8 @@
  *                  shows the key of "Rename file" and opens the name field
  *                  of that row; the key renames the active document in the
  *                  same field of its row. A document whose row the file
- *                  manager does not show asks for the name under its tab.
+ *                  manager does not show (the author hid the file manager)
+ *                  asks for the name under its tab.
  *
  * END HEADER
  */
@@ -131,11 +132,15 @@ describe("Rename from the key and from the menu of a row (#202)", function () {
     const folder = activePage.locator(`#file-tree [data-path=${JSON.stringify(lattices)}]`).first();
     await folder.locator(".item-icon").click();
     await openFromRow(activePage, form);
-    // The author closes the folder: the row of the document is not shown.
-    await folder.locator(".item-icon").click();
-    await activePage
-      .locator(`#file-tree [data-path=${JSON.stringify(form)}]`)
-      .waitFor({ state: "detached" });
+    // The author hides the file manager (View → Toggle the sidebar): no row
+    // of the document is shown.
+    await activePage.evaluate(() => {
+      window.ipc.send("menu-provider", {
+        command: "click-menu-item",
+        payload: "menu.toggle_navigation_sidebar",
+      });
+    });
+    await activePage.locator("#file-tree").waitFor({ state: "hidden" });
     await activePage.locator(".main-editor-wrapper .cm-content:visible").click();
 
     await pressKey(await windowOfPage(activePage), "ctrl+r");

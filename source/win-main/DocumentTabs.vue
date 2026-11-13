@@ -99,6 +99,7 @@ import { useWorkspaceStore } from "source/pinia/workspace-store";
 import tippy from "tippy.js";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { closeRoots } from "./file-manager/util/item-composable";
+import { openRowRenameField } from "./file-manager/util/name-fields";
 import { displayTabbarContext } from "./tabs-context";
 import { getSemanticDocumentTitle } from "./util/get-document-title";
 
@@ -195,8 +196,16 @@ onMounted(() => {
         } as DocumentManagerIPCAPI)
         .catch((e) => reportError(e));
     } else if (shortcut === "rename-file") {
-      // Renaming via shortcut (= Cmd/Ctrl+R) works via a tooltip underneath
-      // the corresponding filetab. First, make sure the container is visible
+      if (currentIdx < 0) {
+        return;
+      }
+      // The key asks for the name in the field of the row of the document,
+      // as the context menu of the row does (#202). A document whose row the
+      // file manager does not show asks in a popup under its tab.
+      const renamed = openFiles.value[currentIdx].path;
+      if (openRowRenameField(renamed, pathBasename(renamed))) {
+        return;
+      }
       scrollActiveFileIntoView();
 
       const containerElement = container.value?.querySelector(".active");
