@@ -16,6 +16,7 @@ import { type EditorState } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { type SyntaxNode, type SyntaxNodeRef } from "@lezer/common";
 import { renderInlineWidgets } from "./base-renderer";
+import clickAndSelect from "./click-and-select";
 
 class TaskWidget extends WidgetType {
   constructor(
@@ -37,7 +38,12 @@ class TaskWidget extends WidgetType {
     const elem = document.createElement("input");
     elem.setAttribute("type", "checkbox");
     elem.checked = this.isChecked;
-    elem.addEventListener("click", () => {
+    elem.addEventListener("click", (event) => {
+      // A Shift-click extends the selection over the task marker (#181).
+      if (event.shiftKey) {
+        clickAndSelect(view)(event);
+        return;
+      }
       const insert = this.isChecked ? "[ ]" : "[x]";
       view.dispatch({ changes: [{ from: this.node.from, to: this.node.to, insert }] });
       view.contentDOM.focus();

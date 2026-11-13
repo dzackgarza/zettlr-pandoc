@@ -153,6 +153,14 @@ imports no application modules. Hosts supply math conversion, preview configurat
 and ranges that must remain source text. Zettlr adds document-specific renderers
 through its renderer collection. See `packages/pandoc-editor/README.md`.
 
+A click on a rendered widget selects its source through
+`selectRenderedSourceRange` or `placeCursorFromRenderedPoint`
+(`renderers/reveal-rendered-source.ts`; `clickAndSelect` calls the first). A
+Shift-click keeps the anchor of the selection and moves the head over the
+source of the widget, as in text; a Shift-click on a task checkbox does not
+toggle the task. A new widget that handles a click calls one of the two
+functions. Proof: `e2e/shift-click-widgets.spec.ts`.
+
 ## System-specific integrations
 
 ### 1. Central mathematical macro system
