@@ -13,10 +13,14 @@
  */
 
 import { trans } from "@common/i18n-renderer";
+import type { ConfigOptions } from "source/app/service-providers/config/get-config-template";
 import { PreferencesGroups } from "./_preferences-groups";
 import { type PreferencesFieldset } from "./types";
 
-export function getAutocorrectFields(): PreferencesFieldset[] {
+export function getAutocorrectFields(config: ConfigOptions): PreferencesFieldset[] {
+  // A typed quote is a MagicQuote only while autocorrect is on (handleQuote),
+  // so the pairs take no choice while it is off, as in the status bar menu.
+  const quotesDisabled = !config.editor.autoCorrect.active;
   return [
     {
       title: trans("Autocorrect"),
@@ -76,6 +80,7 @@ export function getAutocorrectFields(): PreferencesFieldset[] {
               inline: false,
               label: trans("Double/Primary Quotes"),
               model: "editor.autoCorrect.magicQuotes.primary",
+              disabled: quotesDisabled,
               options: {
                 '"…"': trans("Disable Magic Quotes"),
                 "“…”": "“…” (US primary)",
@@ -98,6 +103,7 @@ export function getAutocorrectFields(): PreferencesFieldset[] {
               inline: false,
               label: trans("Single/Secondary Quotes"),
               model: "editor.autoCorrect.magicQuotes.secondary",
+              disabled: quotesDisabled,
               options: {
                 "'…'": trans("Disable Magic Quotes"),
                 "‘…’": "‘…’ (US secondary)",

@@ -85,7 +85,7 @@ export function getPreferenceFieldsets(
   return [
     ...getAdvancedFields(config),
     ...getAppearanceFields(config),
-    ...getAutocorrectFields(),
+    ...getAutocorrectFields(config),
     ...getCitationFields(config, citationProblems),
     ...getEditorFields(config),
     ...getFileManagerFields(config),
