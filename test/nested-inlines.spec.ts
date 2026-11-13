@@ -2,14 +2,15 @@
  * @ignore
  * BEGIN HEADER
  *
- * Contains:        Specs of the inlines in the text of a link
+ * Contains:        Specs of the inlines inside a link or a note
  * CVM-Role:        TESTING
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     Pandoc reads the text of a link and the description of an
- *                  image as inlines: a citation, emphasis and code in it are
- *                  elements of the document (#203). The descriptor of a file
+ * Description:     Pandoc reads the text of a link, the description of an
+ *                  image and the text of an inline note as inlines: a
+ *                  citation, emphasis and code in it are elements of the
+ *                  document (#203). The descriptor of a file
  *                  cites each key that Pandoc cites, and md2html gives the
  *                  text of a link the elements that Pandoc gives it. The
  *                  executable Pandoc 3.10.2 reader is the oracle.
@@ -58,7 +59,7 @@ function linkContent(html: string): string {
   return (match as RegExpExecArray)[1];
 }
 
-describe("inlines in the text of a link", function () {
+describe("inlines inside a link or a note", function () {
   let workspace: string;
 
   beforeEach(async function () {
@@ -73,6 +74,8 @@ describe("inlines in the text of a link", function () {
     ["a link", "See [the proof of @CS10](https://example.org/proof).\n"],
     ["an image description", "See ![the lattice of @CS10](lattice.png) here.\n"],
     ["a bracketed citation in a link", "See [the proof [@CS10, p. 3]](https://example.org).\n"],
+    ["an inline note", "A lattice.^[See @CS10, p. 3, for the proof.]\n"],
+    ["a bracketed citation in an inline note", "A lattice.^[The proof [@CS10, p. 3] uses it.]\n"],
   ];
 
   for (const [name, markdown] of citationCases) {
