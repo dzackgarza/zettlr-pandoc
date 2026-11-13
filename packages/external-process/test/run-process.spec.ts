@@ -17,6 +17,7 @@
  */
 
 import { strict as assert } from "node:assert";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,15 +25,17 @@ import path from "node:path";
 import { probeTool } from "../src/probe-tool";
 import { runProcess } from "../src/run-process";
 
-/** Whether a process with this pid exists. kill(2) with signal 0 only checks. */
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    assert.ok(error instanceof Error && "code" in error && error.code === "ESRCH", String(error));
-    return false;
-  }
+/**
+ * Whether a process with this pid has not ended. A process in state Z has
+ * ended; its entry stays until its parent collects it, and kill(2) still
+ * finds it (https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
+ * `ps` exits 1 for a pid that has no entry.
+ */
+function running(pid: number): boolean {
+  const listed = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" });
+  assert.ok(listed.status === 0 || listed.status === 1, `ps failed: ${listed.stderr}`);
+  const state = listed.stdout.trim();
+  return state !== "" && !state.startsWith("Z");
 }
 
 async function script(dir: string, name: string, body: string, mode: number): Promise<string> {
@@ -75,7 +78,14 @@ describe("runProcess", function () {
     assert.equal(outcome.ended, "timeout");
     assert.ok(Date.now() - started < 5_000, "the run ends soon after its limit");
     const grandchild = Number(readFileSync(pidFile, "utf8"));
-    assert.equal(alive(grandchild), false, "the process that the program started is stopped");
+    // kill(2) returns when the signal is sent, before the process ends. A
+    // process that got SIGKILL ends within a moment; one that got no signal
+    // sleeps for a minute.
+    const deadline = Date.now() + 1_000;
+    while (running(grandchild) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(running(grandchild), false, "the process that the program started is stopped");
   });
 
   it("ends a run that waits for its group after the last process of the group", async function () {
