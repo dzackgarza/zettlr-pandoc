@@ -15,6 +15,7 @@ import {
   assertCleanExit,
   clickToClose,
   delay,
+  findEditorPage,
   launchElectron,
   observeRenderer,
   preserveArtifacts,
@@ -29,6 +30,7 @@ describe("assembled app: first-start onboarding and the file type filters", func
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let fixtureRoot: string | undefined;
+  let tutorialDirectory = "";
   let output = "";
   const rendererEvents: string[] = [];
   const screenshots = new Map<string, Buffer>();
@@ -65,6 +67,7 @@ describe("assembled app: first-start onboarding and the file type filters", func
     await mkdir(configDirectory);
     await mkdir(documentsDirectory);
     await mkdir(xdgConfigHome);
+    tutorialDirectory = path.join(documentsDirectory, "Zettlr Tutorial");
     // A first start copies the tutorial into the documents directory; this
     // keeps it inside the fixture.
     await writeFile(
@@ -105,11 +108,10 @@ describe("assembled app: first-start onboarding and the file type filters", func
     assertCleanExit(output);
   });
 
-  it("switches how images and PDFs open and keeps them listed", async function () {
+  it("keeps the image and the PDF of the tutorial listed after a click on the preview toggle", async function () {
     const page = await onboardingPage(this.timeout());
     await page.locator("#onboarding-progress span").first().waitFor({ state: "visible" });
-    const before = await readFileTypes(page);
-    assert.deepEqual(before, {
+    assert.deepEqual(await readFileTypes(page), {
       images: { showInFilemanager: true, openWith: "system" },
       pdf: { showInFilemanager: true, openWith: "system" },
     });
@@ -121,20 +123,46 @@ describe("assembled app: first-start onboarding and the file type filters", func
     // The page slides in; the welcome page stays mounted until it has left.
     await page.waitForFunction(() => document.querySelectorAll(".page").length === 1);
     screenshots.set("onboarding-other-files.png", await page.screenshot());
-
-    // The page writes through a synchronous IPC call in the click handler.
     await toggle.click();
-    assert.deepEqual(await readFileTypes(page), {
-      images: { showInFilemanager: true, openWith: "zettlr" },
-      pdf: { showInFilemanager: true, openWith: "zettlr" },
-    });
-
-    await toggle.click();
-    assert.deepEqual(await readFileTypes(page), before);
-    screenshots.set("onboarding-other-files-off.png", await page.screenshot());
+    screenshots.set("onboarding-other-files-clicked.png", await page.screenshot());
 
     await clickToClose(page, page.locator('nav button:has-text("Skip")'));
     assert.ok(appProcess !== undefined, "the app process runs");
     await waitForApplicationBoot(appProcess, () => output, this.timeout());
+
+    // The first start opens the tutorial, which has an image and a PDF, as a
+    // workspace. The default file types are the Markdown types; with PNG and
+    // PDF included, as the File filters window includes them, the file
+    // manager lists both, whatever the author chose for the previews.
+    assert.ok(browser !== undefined, "the browser is connected");
+    const main = await findEditorPage(browser, this.timeout());
+    await main.evaluate(() => {
+      const config = window.ipc.sendSync<ConfigOptions>("config-provider", {
+        command: "get-config",
+      });
+      window.ipc.sendSync("config-provider", {
+        command: "set-config-single",
+        payload: {
+          key: "fileManager.filters.include",
+          val: [...config.fileManager.filters.include, ".png", ".pdf"],
+        },
+      });
+    });
+    const row = (name: string) =>
+      main.locator(
+        `#file-manager .tree-item[data-path=${JSON.stringify(path.join(tutorialDirectory, name))}]`,
+      );
+    await row("welcome.md").waitFor({ state: "visible", timeout: 30_000 });
+    screenshots.set("file-manager-after-onboarding.png", await main.screenshot());
+    for (const name of ["zettlr.png", "LaTeX Guide.pdf"]) {
+      await row(name).waitFor({ state: "visible", timeout: 15_000 });
+    }
+    screenshots.set("file-manager-lists-image-and-pdf.png", await main.screenshot());
+
+    // The click decided only where images and PDFs open.
+    assert.deepEqual(await readFileTypes(main), {
+      images: { showInFilemanager: true, openWith: "zettlr" },
+      pdf: { showInFilemanager: true, openWith: "zettlr" },
+    });
   });
 });
