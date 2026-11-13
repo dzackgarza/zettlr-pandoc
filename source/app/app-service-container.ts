@@ -318,7 +318,7 @@ export class AppServiceContainer {
     if (this.config.isFirstStart()) {
       this.log.info("[AppServiceContainer] Copying over the interactive tutorial!");
       this.commands
-        .run("tutorial-open", {})
+        .run("tutorial-open", undefined)
         .catch((err) => this.log.error("[AppServiceContainer] Could not open tutorial", err));
     }
 

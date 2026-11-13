@@ -199,7 +199,7 @@ export default function getMenu(
           id: "menu.open",
           label: trans("Open file…"),
           click: function (_menuitem, _focusedWindow) {
-            commands.run("root-open-files", []).catch((e: Error) => logger.error(e.message, e));
+            commands.run("root-open-files", undefined).catch((e: Error) => logger.error(e.message, e));
           },
         },
         {
@@ -207,7 +207,7 @@ export default function getMenu(
           label: trans("Open workspace…"),
           click: function (_menuitem, _focusedWindow) {
             commands
-              .run("root-open-workspaces", [])
+              .run("root-open-workspaces", undefined)
               .catch((e: Error) => logger.error(e.message, e));
           },
         },

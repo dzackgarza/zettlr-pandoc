@@ -16,6 +16,7 @@ import { trans } from "@common/i18n-main";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
+import type { ApplicationPayload } from ".";
 import ZettlrCommand from "./zettlr-command";
 
 export default class DirNew extends ZettlrCommand {
@@ -28,7 +29,7 @@ export default class DirNew extends ZettlrCommand {
    * @param {String} evt The event name
    * @param  {Object} arg An object containing hash of containing and name of new dir.
    */
-  async run(evt: string, arg: { path: string; name?: string }): Promise<boolean> {
+  async run(evt: string, arg: ApplicationPayload<"dir-new">): Promise<boolean> {
     const sanitizedName =
       arg.name !== undefined ? sanitize(arg.name.trim(), { replacement: "-" }) : trans("Untitled");
 

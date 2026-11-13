@@ -222,7 +222,7 @@ export type ApplicationIPCContract = {
   };
   "dir-new": {
     request: { payload: { path: string; name?: string } };
-    response: unknown;
+    response: boolean;
   };
   "dir-new-project": {
     request: { payload: { path: string } };
@@ -262,10 +262,18 @@ export type ApplicationIPCContract = {
   };
   "file-duplicate": {
     request: { payload: { path: string; windowId: string; leafId?: string; name?: string } };
-    response: unknown;
+    response: undefined;
   };
   "file-new": {
-    request: { payload: { path?: string; name?: string; type?: DocumentType } };
+    request: {
+      payload: {
+        path?: string;
+        name?: string;
+        type?: DocumentType;
+        windowId?: string;
+        leafId?: string;
+      };
+    };
     response: string | undefined;
   };
   "file-rename": {
@@ -391,6 +399,18 @@ export type ApplicationIPCContract = {
     request: { payload?: undefined };
     response: undefined;
   };
+  "tutorial-open": {
+    request: { payload?: undefined };
+    response: undefined;
+  };
+  "import-files": {
+    request: { payload?: undefined };
+    response: boolean;
+  };
+  "import-lang-file": {
+    request: { payload?: undefined };
+    response: boolean;
+  };
   "preview-fix-all": {
     request: { payload: FixAllRequest };
     response: FixAllPlan;
@@ -476,6 +496,17 @@ export type ApplicationIPCContract = {
 
 export type ApplicationIPCAPI = IPCMessage<ApplicationIPCContract>;
 
+/** A command that a caller runs through `CommandProvider.run`. */
+export type ApplicationCommand = keyof ApplicationIPCContract;
+
+/**
+ * The payload of a command, as the contract states it. The handler of the
+ * command takes this type, so the contract, the callers and the handler
+ * cannot name different fields.
+ */
+export type ApplicationPayload<K extends ApplicationCommand> =
+  ApplicationIPCContract[K]["request"]["payload"];
+
 /**
  * Commands that a window runs on its own, not on an action of the author: a
  * lint pass, a figure render, a hover preview, a refresh of the Problems view.
@@ -516,7 +547,7 @@ export default class CommandProvider extends ProviderContract {
     // Set up the command listener
     ipcMain.handle("application", async (event, { command, payload }) => {
       if (typeof command === "string") {
-        return await this._startedBy.run(event.sender, () => this.run(command, payload));
+        return await this._startedBy.run(event.sender, () => this._runWire(command, payload));
       } else {
         throw new Error(`[Commands] Could not run command "${String(command)}": Not a string`);
       }
@@ -530,11 +561,23 @@ export default class CommandProvider extends ProviderContract {
    * cause of each failure once.
    *
    * @param   {string}  command  The command to run
-   * @param   {CommandWireValue}  payload  The payload the command requires
+   * @param   {ApplicationPayload}  payload  The payload of the contract
    *
    * @return  {Promise<CommandWireValue>}  The return from running the command
    */
-  async run(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
+  async run<K extends ApplicationCommand>(
+    command: K,
+    payload: ApplicationPayload<K>,
+  ): Promise<CommandWireValue> {
+    return await this._runWire(command, payload);
+  }
+
+  /**
+   * Runs a command whose name and payload came over the `application`
+   * channel. The type of the renderer call site checks them against the
+   * contract; the wire carries no type.
+   */
+  private async _runWire(command: string, payload: CommandWireValue): Promise<CommandWireValue> {
     try {
       return await this._dispatch(command, payload);
     } catch (err: unknown) {

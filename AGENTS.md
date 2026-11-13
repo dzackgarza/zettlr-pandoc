@@ -1776,6 +1776,17 @@ of an isolated instance are in the first comment of #132.
   - "Rescan directory" runs `rescan-dir` (§24); Window → New directory…
     opens the name field of the selected folder only
     (`newDirectoryRequest`).
+- **The contract types each command.** `ApplicationIPCContract`
+  (`commands/index.ts`) names each command of the `application` channel
+  with its payload and its answer. The invoke of a window and
+  `CommandProvider.run` in the main process check a call against it. A
+  handler takes `ApplicationPayload<K>` (`file-duplicate`, `file-new`,
+  `dir-new`), so the contract, the callers and the handler name one set of
+  fields; a new handler does the same. A command that a provider channel
+  receives through `ipcMain.on` (`get-citation-sync`, `abort-task`) is no
+  invoke command, and the invoke handler of that channel throws for it.
+  Proof: `test/ipc-invoke-channels.contract.ts` (the typecheck),
+  `e2e/file-duplicate.spec.ts`.
 - **A context menu has the width of its labels.** `.application-menu` has
   `width: max-content`; `positionMenu` reads that width to put the menu
   where it fits, also at the right edge of the window.
