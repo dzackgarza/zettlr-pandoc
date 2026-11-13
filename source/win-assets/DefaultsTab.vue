@@ -1,12 +1,6 @@
 <template>
-  <SplitView
-    :initial-size-percent="[ 20, 80 ]"
-    :minimum-size-percent="[ 20, 20 ]"
-    :reset-size-percent="[ 20, 80 ]"
-    :split="'horizontal'"
-    :initial-total-width="100"
-  >
-    <template #view1>
+  <ListDetailSplit>
+    <template #list>
       <div class="asset-container-list">
         <SelectableList
           :items="listItems"
@@ -24,7 +18,7 @@
         />
       </div>
     </template>
-    <template #view2>
+    <template #detail>
       <div class="asset-container">
         <ZtrAdmonition
           type="info"
@@ -83,7 +77,7 @@
         </div>
       </div>
     </template>
-  </SplitView>
+  </ListDetailSplit>
 </template>
 
 <script setup lang="ts">
@@ -111,7 +105,7 @@ import SelectableList, {
   type SelectableListItem,
 } from "@common/vue/form/elements/SelectableList.vue";
 import TextControl from "@common/vue/form/elements/TextControl.vue";
-import SplitView from "@common/vue/window/SplitView.vue";
+import ListDetailSplit from "@common/vue/window/ListDetailSplit.vue";
 import ZtrAdmonition from "@common/vue/ZtrAdmonition.vue";
 import type { PandocProfileMetadata, ValidPandocProfile } from "@providers/assets";
 import { DateTime } from "luxon";

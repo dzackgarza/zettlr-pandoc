@@ -6,14 +6,8 @@
     v-bind:tabbar-label="'Preferences'"
     v-bind:disable-vibrancy="!hasVibrancy"
   >
-    <SplitView
-      v-bind:initial-size-percent="[ 20, 80 ]"
-      v-bind:minimum-size-percent="[ 20, 20 ]"
-      v-bind:reset-size-percent="[ 20, 80 ]"
-      v-bind:split="'horizontal'"
-      v-bind:initial-total-width="100"
-    >
-      <template #view1>
+    <ListDetailSplit>
+      <template #list>
         <div id="preferences-container-list">
           <TextControl
             v-model="query"
@@ -31,7 +25,7 @@
           ></SelectableList>
         </div>
       </template>
-      <template #view2>
+      <template #detail>
         <KeyboardShortcutsEditor v-if="showKeyboardShortcutsEditor" />
         <FormBuilder
           v-else-if="schema.fieldsets.length > 0"
@@ -45,7 +39,7 @@
           {{ noResultsMessage }}
         </div>
       </template>
-    </SplitView>
+    </ListDetailSplit>
   </WindowChrome>
 </template>
 
@@ -71,7 +65,7 @@ import { resolveLangCode } from "@common/util/map-lang-code";
 import SelectableList from "@common/vue/form/elements/SelectableList.vue";
 import TextControl from "@common/vue/form/elements/TextControl.vue";
 import FormBuilder from "@common/vue/form/FormBuilder.vue";
-import SplitView from "@common/vue/window/SplitView.vue";
+import ListDetailSplit from "@common/vue/window/ListDetailSplit.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import type { CitationResourceProblem } from "@dts/common/citeproc";
 import { type PreferenceNavigationTarget, PreferencesGroups } from "@dts/common/preferences";
