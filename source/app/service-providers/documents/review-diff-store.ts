@@ -37,6 +37,7 @@ import type {
 } from "@dts/common/review-domain";
 import { createPatch } from "diff";
 import { assertValidAnnotationSet } from "./annotation-domain-validation";
+import { settleProposalActions } from "./annotation-transitions";
 import type {
   CollaborationSidecarData,
   PersistedReviewState,
@@ -266,16 +267,29 @@ function persistedReview(review: ActiveReviewState): PersistedReviewState {
  * The disk fence is the caller's to decide and is required, because a
  * document may carry annotations with no review at all: drift has to stay
  * detectable for a sidecar that has no review to read a fence off.
+ *
+ * Each proposal action of the annotations gets the outcome that `review`
+ * decided, and an action of `endedReview`, the review that this write ends,
+ * gets its final outcome (`settleProposalActions`). The end of a review is
+ * required too: a write that drops a review and forgets its decisions does
+ * not compile.
  */
 export function collaborationSidecar(input: {
   documentPath: string;
   workingText: string;
   diskFenceSha256: string;
   review: ActiveReviewState | undefined;
+  endedReview: ActiveReviewState | undefined;
   annotations: AnnotationSet;
   pendingSave?: CollaborationSidecarData["pendingSave"];
 }): CollaborationSidecarData {
   assertValidAnnotationSet(input.annotations, `Collaboration state for ${input.documentPath}`);
+  const ended =
+    input.endedReview === undefined
+      ? input.annotations
+      : settleProposalActions(input.annotations, input.endedReview, true);
+  const annotations =
+    input.review === undefined ? ended : settleProposalActions(ended, input.review, false);
   return {
     version: 5,
     documentPath: input.documentPath,
@@ -283,8 +297,8 @@ export function collaborationSidecar(input: {
     diskFenceSha256: input.diskFenceSha256,
     review: input.review === undefined ? null : persistedReview(input.review),
     annotations: {
-      generation: input.annotations.generation,
-      items: input.annotations.items.map((annotation) => ({
+      generation: annotations.generation,
+      items: annotations.items.map((annotation) => ({
         ...annotation,
         anchor: { ...annotation.anchor },
         messages: [...annotation.messages] as TextAnnotation["messages"],

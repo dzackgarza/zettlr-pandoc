@@ -357,10 +357,7 @@ describe("cross-section proposal linkage", function () {
         clientRequestId: "two-threads",
         expectedReviewGeneration: 0,
       });
-      assert.equal(submitted.ok, true);
-      if (!submitted.ok) {
-        throw new Error(submitted.message);
-      }
+      assert.ok(submitted.ok);
       return { fox, dog, submitted };
     }
 
@@ -428,6 +425,49 @@ describe("cross-section proposal linkage", function () {
       );
       assert.equal("ok" in cleared && cleared.ok, true);
       assert.deepEqual(await outcomes(service), [["withdrawn"], ["rejected"]]);
+    });
+
+    it("keeps the outcomes when a save ends the review", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "reject",
+        precondition(service, authority),
+      );
+      await service.acceptAllChunks(submitted.reviewId, precondition(service, authority));
+
+      const saved = authority.readWorkingText(DOCUMENT_ID)!;
+      const save = await service.prepareSave(DOCUMENT_ID, sha256Text(saved));
+      await service.completeSave(save!, sha256Text(saved));
+      assert.equal(service.getReview(DOCUMENT_ID), undefined, "the save ends the review");
+      assert.deepEqual(await outcomes(service), [["rejected"], ["accepted"]]);
+    });
+
+    it("records each undecided proposal of a discarded review as cleared", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "accept",
+        precondition(service, authority),
+      );
+      authority.setDiskText(SWIFT_LEAPS);
+      await service.invalidateOnDiskDrift(DOCUMENT_ID);
+      assert.equal(service.getReview(DOCUMENT_ID)?.invalidated, true);
+
+      const discarded = await service.discardInvalidatedReview({
+        documentId: DOCUMENT_ID,
+        documentPath: DOCUMENT_PATH,
+        reviewId: submitted.reviewId,
+        expectedReviewGeneration: service.getReview(DOCUMENT_ID)!.generation,
+      });
+      assert.equal(discarded.ok, true);
+      assert.deepEqual(await outcomes(service), [["accepted"], ["cleared"]]);
     });
   });
 });

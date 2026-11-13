@@ -225,7 +225,7 @@ function showProposal(card: AnnotationCardView): void {
   );
   const chunk = currentReview.suggestions.find((suggestion) => suggestion.suggestionId === chunkId);
   if (chunk === undefined) {
-    showToast(trans("Every change this annotation proposed has already been decided."));
+    showToast(trans("No change that this annotation proposed is in the review."));
     return;
   }
   const first = chunk.anchors[0] ?? { from: chunk.seam, to: chunk.seam };

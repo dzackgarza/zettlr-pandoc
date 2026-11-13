@@ -11,7 +11,7 @@
       >{{ countLabel }}</span>
     </div>
     <div
-      v-if="!reviewFrozen"
+      v-if="!reviewFrozen && view.pendingCount > 0"
       class="proposal-actions"
     >
       <button
@@ -52,7 +52,10 @@
 import { trans } from "@common/i18n-renderer";
 import type { AnnotationProposalAction } from "@dts/common/annotation-domain";
 import { computed } from "vue";
-import { proposalCardView } from "../sidebar/annotations/annotation-presentation";
+import {
+  type ProposalOutcome,
+  proposalCardView,
+} from "../sidebar/annotations/annotation-presentation";
 
 const props = defineProps<{
   actions: readonly AnnotationProposalAction[];
@@ -67,25 +70,48 @@ const view = computed(() => proposalCardView(props.actions));
 const countLabel = computed(() => {
   const pending = view.value.pendingCount;
   if (pending === 0) {
-    return trans("Decided");
+    return trans("Done");
   }
   return pending === 1 ? trans("1 suggestion") : trans("%s suggestions", String(pending));
 });
 
+function outcomeLabel(outcome: ProposalOutcome, count: number): string {
+  const n = String(count);
+  switch (outcome) {
+    case "accepted":
+      return trans("%s accepted", n);
+    case "rejected":
+      return trans("%s rejected", n);
+    case "mixed":
+      return trans("%s partly accepted", n);
+    case "withdrawn":
+      return trans("%s withdrawn by the agent", n);
+    case "cleared":
+      return trans("%s cleared with the review", n);
+  }
+}
+
+/** What happened to the proposals that are not pending: "1 accepted, 1 rejected." */
+const outcomesLabel = computed(() =>
+  view.value.outcomes.length === 0
+    ? ""
+    : `${view.value.outcomes.map((entry) => outcomeLabel(entry.outcome, entry.count)).join(", ")}.`,
+);
+
 const noteLabel = computed(() => {
   if (view.value.pendingCount === 0) {
-    return trans("All changes have been accepted or rejected.");
+    return outcomesLabel.value;
   }
-  if (props.reviewFrozen) {
-    return trans(
-      "The file changed on disk, so these changes are frozen. Reapply, return or discard the review in the annotations panel.",
-    );
-  }
-  return trans(
-    "%s of %s pending. Accept or reject each change where it appears in the document.",
-    String(view.value.pendingCount),
-    String(view.value.totalCount),
-  );
+  const pending = props.reviewFrozen
+    ? trans(
+        "The file changed on disk, so these changes are frozen. Reapply, return or discard the review in the annotations panel.",
+      )
+    : trans(
+        "%s of %s pending. Accept or reject each change where it appears in the document.",
+        String(view.value.pendingCount),
+        String(view.value.totalCount),
+      );
+  return outcomesLabel.value === "" ? pending : `${outcomesLabel.value} ${pending}`;
 });
 </script>
 

@@ -76,6 +76,7 @@ import {
   prepareAnnotationReopen,
   prepareAnnotationResolution,
   prepareAnnotationResolvedCleanup,
+  settleProposalActions,
 } from "./annotation-transitions";
 import type { CollaborationSidecarData } from "./collaboration-sidecar-schema";
 import {
@@ -394,9 +395,31 @@ export class CollaborationApplicationService {
   // The annotation half of a document's collaboration state
   // ==========================================================================
 
-  /** The committed annotations of a document. Empty is a real answer. */
+  /**
+   * The committed annotations of a document, each proposal action with the
+   * outcome that the review of the document decided. Empty is a real answer.
+   */
   public getAnnotations(documentId: string): AnnotationSet {
-    return this.annotationStates.get(documentId)?.annotations ?? emptyAnnotationSet();
+    const annotations = this.annotationStates.get(documentId)?.annotations ?? emptyAnnotationSet();
+    const review = this.reviews.getReview(documentId);
+    return review === undefined ? annotations : settleProposalActions(annotations, review, false);
+  }
+
+  /**
+   * End the review of a document whose sidecar no longer holds it. The
+   * annotations in memory take the final outcomes of its proposal actions,
+   * which the write that ended the review put on disk
+   * (`collaborationSidecar`).
+   */
+  private endReview(documentId: string, review: ActiveReviewState): void {
+    const state = this.annotationStates.get(documentId);
+    if (state !== undefined) {
+      this.annotationStates.set(documentId, {
+        ...state,
+        annotations: settleProposalActions(state.annotations, review, true),
+      });
+    }
+    this.reviews.removeReview(documentId);
   }
 
   /**
@@ -417,6 +440,7 @@ export class CollaborationApplicationService {
     },
   ): CollaborationSidecarData {
     const committed = this.annotationStates.get(documentId);
+    const current = this.reviews.getReview(documentId);
     return collaborationSidecar({
       documentPath: next.documentPath,
       workingText: next.workingText,
@@ -430,6 +454,8 @@ export class CollaborationApplicationService {
         committed?.diskFenceSha256 ??
         sha256Text(next.workingText),
       review: next.review,
+      endedReview:
+        current !== undefined && current.reviewId !== next.review?.reviewId ? current : undefined,
       annotations: next.annotations ?? committed?.annotations ?? emptyAnnotationSet(),
       pendingSave: next.pendingSave,
     });
@@ -652,6 +678,7 @@ export class CollaborationApplicationService {
           workingText,
           diskFenceSha256: sidecar.diskFenceSha256,
           review: reviewPlan?.nextReview ?? review,
+          endedReview: undefined,
           annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
           pendingSave: sidecar.pendingSave,
         }),
@@ -769,7 +796,7 @@ export class CollaborationApplicationService {
       return;
     }
 
-    this.reviews.removeReview(preparation.documentId);
+    this.endReview(preparation.documentId, review);
     this.deps.authority.broadcastReviewCleared(preparation.documentId, review.reviewId);
     this.deps.emit("review.completed", {
       reviewId: review.reviewId,
@@ -905,7 +932,13 @@ export class CollaborationApplicationService {
     // A frozen review's anchors index its frozen text, so the buffer
     // reverting underneath it changes nothing it points at.
     const frozen = review?.invalidated === true ? review : undefined;
-    await this.orphanAnnotationsThroughDiscard(documentId, documentPath, normalizedDisk, frozen);
+    await this.orphanAnnotationsThroughDiscard(
+      documentId,
+      documentPath,
+      normalizedDisk,
+      frozen,
+      frozen === undefined ? review : undefined,
+    );
     if (review === undefined || frozen !== undefined) {
       return;
     }
@@ -927,10 +960,13 @@ export class CollaborationApplicationService {
     documentPath: string,
     diskText: string,
     frozenReview: ActiveReviewState | undefined,
+    endedReview: ActiveReviewState | undefined,
   ): Promise<void> {
     const annotations = this.getAnnotations(documentId);
     const plan = prepareAnnotationOrphaning(annotations, "unmapped-document-change");
-    const next = plan?.nextAnnotations ?? annotations;
+    const orphaned = plan?.nextAnnotations ?? annotations;
+    const next =
+      endedReview === undefined ? orphaned : settleProposalActions(orphaned, endedReview, true);
     const diskFenceSha256 = sha256Text(diskText);
     await this.sidecars.write(
       collaborationSidecar({
@@ -938,6 +974,7 @@ export class CollaborationApplicationService {
         workingText: diskText,
         diskFenceSha256,
         review: frozenReview,
+        endedReview,
         annotations: next,
       }),
     );
@@ -1006,13 +1043,17 @@ export class CollaborationApplicationService {
     // on the buffer: the buffer is the file. If the two disagree, the
     // anchors were measured against text nobody is looking at, and there is
     // no change set to carry them across the difference.
-    const annotations =
+    const stored = sidecar.review === null ? undefined : reviewFromSidecar(documentId, sidecar);
+    const endedReview = restoresReview ? undefined : stored;
+    const mapped =
       restoresReview || sidecar.workingText === normalizedDisk
         ? sidecar.annotations
         : (prepareAnnotationOrphaning(sidecar.annotations, "unmapped-document-change")
             ?.nextAnnotations ?? sidecar.annotations);
+    const annotations =
+      endedReview === undefined ? mapped : settleProposalActions(mapped, endedReview, true);
 
-    const review = restoresReview ? reviewFromSidecar(documentId, sidecar) : undefined;
+    const review = restoresReview ? stored : undefined;
     const workingText = restoresReview ? sidecar.workingText : normalizedDisk;
 
     // A file that already says exactly this is left alone; the orphaning
@@ -1025,6 +1066,7 @@ export class CollaborationApplicationService {
           workingText,
           diskFenceSha256: sidecar.diskFenceSha256,
           review,
+          endedReview,
           annotations,
         }),
       );
@@ -1077,7 +1119,7 @@ export class CollaborationApplicationService {
       sidecar.review !== null &&
       !proposes &&
       sha256Text(sidecar.workingText) !== sidecar.diskFenceSha256;
-    const annotations = keptOverDisk
+    const mapped = keptOverDisk
       ? sidecar.annotations
       : (prepareAnnotationOrphaning(sidecar.annotations, "external-drift")?.nextAnnotations ??
         sidecar.annotations);
@@ -1087,12 +1129,19 @@ export class CollaborationApplicationService {
       proposes || keptOverDisk
         ? freezeReview(reviewFromSidecar(documentId, sidecar), sidecar.workingText)
         : undefined;
+    const endedReview =
+      review === undefined && sidecar.review !== null
+        ? reviewFromSidecar(documentId, sidecar)
+        : undefined;
+    const annotations =
+      endedReview === undefined ? mapped : settleProposalActions(mapped, endedReview, true);
     await this.sidecars.write(
       collaborationSidecar({
         documentPath,
         workingText: keptOverDisk ? sidecar.workingText : diskText,
         diskFenceSha256: diskSha256,
         review,
+        endedReview,
         annotations,
       }),
     );
@@ -1760,6 +1809,7 @@ export class CollaborationApplicationService {
               workingText: sidecar.workingText,
               diskFenceSha256: sidecar.diskFenceSha256,
               review: freezeReview(review, sidecar.workingText),
+              endedReview: undefined,
               annotations: sidecar.annotations,
               pendingSave: sidecar.pendingSave,
             }),
@@ -1790,6 +1840,7 @@ export class CollaborationApplicationService {
             workingText: plan.nextWorkingText,
             diskFenceSha256: sidecar.diskFenceSha256,
             review: plan.nextReview,
+            endedReview: undefined,
             annotations: sidecar.annotations,
             pendingSave: sidecar.pendingSave,
           }),
@@ -1869,6 +1920,7 @@ export class CollaborationApplicationService {
             workingText: diskText,
             diskFenceSha256: diskSha256,
             review: nextReview,
+            endedReview: undefined,
             annotations: annotationPlan?.nextAnnotations ?? sidecar.annotations,
           }),
         );
@@ -1916,6 +1968,7 @@ export class CollaborationApplicationService {
                 workingText: located.sidecar.workingText,
                 diskFenceSha256: located.sidecar.diskFenceSha256,
                 review: undefined,
+                endedReview: review,
                 annotations: located.sidecar.annotations,
                 pendingSave: located.sidecar.pendingSave,
               }),
@@ -1928,7 +1981,7 @@ export class CollaborationApplicationService {
         documentId: input.documentId,
       });
       if (located.attached) {
-        this.reviews.removeReview(input.documentId);
+        this.endReview(input.documentId, review);
         this.deps.authority.broadcastReviewCleared(input.documentId, review.reviewId);
       }
       return { ok: true, reviewId: review.reviewId, documentId: input.documentId };
@@ -1976,6 +2029,7 @@ export class CollaborationApplicationService {
                 workingText,
                 diskFenceSha256: located.sidecar.diskFenceSha256,
                 review: nextReview,
+                endedReview: undefined,
                 annotations: located.sidecar.annotations,
                 pendingSave: located.sidecar.pendingSave,
               }),

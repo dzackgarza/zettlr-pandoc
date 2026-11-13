@@ -509,6 +509,7 @@ describe("suggestions through owner edits and later claims", function () {
         workingText,
         diskFenceSha256: review.diskFenceSha256,
         review,
+        endedReview: undefined,
         annotations: { generation: 0, items: [] },
       }),
     );
