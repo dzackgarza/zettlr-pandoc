@@ -318,4 +318,116 @@ describe("cross-section proposal linkage", function () {
     assert.equal((await service.readSidecar(DOCUMENT_PATH))?.review?.packets.length, 1);
     assert.deepEqual(service.getAnnotations(DOCUMENT_ID).items[0].proposalActions, []);
   });
+
+  describe("the outcome of a linked proposal (#57)", function () {
+    const SWIFT = BASELINE.replace("quick", "swift");
+    const SWIFT_LEAPS = SWIFT.replace("jumps", "leaps");
+
+    /**
+     * Two threads, each answered by a packet of its own: "quick" for the
+     * first, "jumps" for the second.
+     */
+    async function twoAnsweredThreads(service: CollaborationApplicationService) {
+      const fox = await annotated(service);
+      const dog = committed(
+        await service.createAnnotation({
+          documentId: DOCUMENT_ID,
+          actor: "owner",
+          from: BASELINE.indexOf("lazy dog"),
+          to: BASELINE.indexOf("lazy dog") + "lazy dog".length,
+          instruction: "Is the dog really lazy?",
+          expectedAnnotationGeneration: 1,
+        }),
+      );
+      const submitted = await service.submitProposal({
+        documentId: DOCUMENT_ID,
+        baselineSha256: sha256Text(BASELINE),
+        claims: [
+          {
+            patch: patch(BASELINE, SWIFT),
+            description: "a faster fox",
+            addressesAnnotationIds: [fox.annotationId],
+          },
+          {
+            patch: patch(SWIFT, SWIFT_LEAPS),
+            description: "a livelier verb",
+            addressesAnnotationIds: [dog.annotationId],
+          },
+        ],
+        clientRequestId: "two-threads",
+        expectedReviewGeneration: 0,
+      });
+      assert.equal(submitted.ok, true);
+      if (!submitted.ok) {
+        throw new Error(submitted.message);
+      }
+      return { fox, dog, submitted };
+    }
+
+    async function outcomes(service: CollaborationApplicationService) {
+      const inMemory = service
+        .getAnnotations(DOCUMENT_ID)
+        .items.map((annotation) => annotation.proposalActions.map((a) => a.terminalOutcome));
+      const onDisk = (await service.readSidecar(DOCUMENT_PATH))!.annotations.items.map(
+        (annotation) => annotation.proposalActions.map((a) => a.terminalOutcome),
+      );
+      assert.deepEqual(onDisk, inMemory, "the sidecar holds the outcomes of the state in memory");
+      return inMemory;
+    }
+
+    function precondition(
+      service: CollaborationApplicationService,
+      authority: Harness["authority"],
+    ) {
+      return {
+        expectedReviewGeneration: service.getReview(DOCUMENT_ID)!.generation,
+        expectedWorkingSha256: sha256Text(authority.readWorkingText(DOCUMENT_ID)!),
+      };
+    }
+
+    it("records the decision of the owner on the thread that the packet answers", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      assert.deepEqual(await outcomes(service), [[undefined], [undefined]]);
+
+      const [quick] = service.getOutstandingChunks(DOCUMENT_ID)!;
+      const rejected = await service.decideChunk(
+        submitted.reviewId,
+        quick.chunkId,
+        "reject",
+        precondition(service, authority),
+      );
+      assert.equal("ok" in rejected && rejected.ok, true);
+      assert.deepEqual(
+        await outcomes(service),
+        [["rejected"], [undefined]],
+        "a decision settles its own packet only",
+      );
+
+      const accepted = await service.acceptAllChunks(
+        submitted.reviewId,
+        precondition(service, authority),
+      );
+      assert.equal("ok" in accepted && accepted.ok, true);
+      assert.deepEqual(await outcomes(service), [["rejected"], ["accepted"]]);
+    });
+
+    it("records a retracted packet as withdrawn and a cleared one as rejected", async function () {
+      const { service, authority } = harness();
+      const { submitted } = await twoAnsweredThreads(service);
+      const retracted = await service.retractProposal(
+        submitted.packetIds[0],
+        precondition(service, authority),
+      );
+      assert.equal("ok" in retracted && retracted.ok, true);
+      assert.deepEqual(await outcomes(service), [["withdrawn"], [undefined]]);
+
+      const cleared = await service.clearReview(
+        submitted.reviewId,
+        precondition(service, authority),
+      );
+      assert.equal("ok" in cleared && cleared.ok, true);
+      assert.deepEqual(await outcomes(service), [["withdrawn"], ["rejected"]]);
+    });
+  });
 });
