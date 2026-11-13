@@ -78,6 +78,21 @@ const appListeners = new Map();
 const appQuitRequests = [];
 
 /**
+ * The code of each app.exit() call made by the code under proof.
+ *
+ * @type {number[]}
+ */
+const appExitCodes = [];
+
+/**
+ * Every dialog.showErrorBox() call. The box blocks the main process until the
+ * author closes it, so it has no answer.
+ *
+ * @type {Array<{ title: string, content: string }>}
+ */
+const errorBoxes = [];
+
+/**
  * Every dialog.showMessageBox() call, with the options it was shown. A spec
  * sets `answer` to the response the user gives; while it is unset a dialog
  * throws, because a dialog nobody scripted is a defect in the code under
@@ -168,6 +183,9 @@ Module._load = function (request, ...rest) {
         quit() {
           appQuitRequests.push(Date.now());
         },
+        exit(code) {
+          appExitCodes.push(code);
+        },
         whenReady: async () => {},
       },
       ipcMain: {
@@ -182,7 +200,9 @@ Module._load = function (request, ...rest) {
         },
       },
       dialog: {
-        showErrorBox() {},
+        showErrorBox(title, content) {
+          errorBoxes.push({ title, content });
+        },
         async showMessageBox(...args) {
           const options = args[args.length - 1];
           messageBoxes.shown.push(options);
@@ -228,8 +248,10 @@ Module._load = function (request, ...rest) {
 // directory must ask the harness that created it rather than recomputing the
 // path, which is what coupled the two to a fixed location in the first place.
 module.exports = {
+  appExitCodes,
   appListeners,
   appQuitRequests,
+  errorBoxes,
   ipcMainHandlers,
   ipcMainListeners,
   messageBoxes,
