@@ -18,13 +18,21 @@ export interface PreviewRow {
 /** The rows of the preview dialog, in the order in which it shows them. */
 export async function previewRows(page: Page): Promise<PreviewRow[]> {
   return await page.locator(`${PREVIEW} [data-preview-path]`).evaluateAll((rows) =>
-    rows.map((row) => ({
-      documentPath: row.getAttribute("data-preview-path") ?? "",
-      changes: [...row.querySelectorAll("[data-preview-change]")].map((change) => ({
-        before: change.querySelector("[data-preview-before]")?.textContent ?? "",
-        after: change.querySelector("[data-preview-after]")?.textContent ?? "",
-      })),
-    })),
+    rows.map((row) => {
+      const documentPath = row.getAttribute("data-preview-path");
+      if (documentPath === null) {
+        throw new Error("A row of the preview names no document");
+      }
+      const changes = [...row.querySelectorAll("[data-preview-change]")].map((change) => {
+        const before = change.querySelector("[data-preview-before]");
+        const after = change.querySelector("[data-preview-after]");
+        if (before === null || after === null) {
+          throw new Error(`A change of ${documentPath} in the preview lacks a side`);
+        }
+        return { before: before.textContent, after: after.textContent };
+      });
+      return { documentPath, changes };
+    }),
   );
 }
 

@@ -40,10 +40,10 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { PREVIEW, previewRows } from "./support/workspace-edit-preview";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-rename-tag-e2e-latest");
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
-const PREVIEW = ".workspace-edit-preview";
 const LOCKED = "# Locked\n\nA #lattice-theory note that the author cannot write.\n";
 
 async function findTagManagerPage(browser: Browser, timeoutMs: number): Promise<Page> {
@@ -139,7 +139,10 @@ describe("a tag rename in the tag manager", function () {
   });
 
   /** Starts the rename of lattice-theory and answers the preview with `answer`. */
-  async function renameTag(manager: Page, answer: "[data-apply]" | "[data-cancel]"): Promise<string[]> {
+  async function renameTag(
+    manager: Page,
+    answer: "[data-apply]" | "[data-cancel]",
+  ): Promise<string[]> {
     const row = manager
       .locator("tr.tag-flex")
       .filter({ has: manager.locator("td:first-child span", { hasText: /^lattice-theory$/ }) });
@@ -150,9 +153,7 @@ describe("a tag rename in the tag manager", function () {
 
     const preview = manager.locator(PREVIEW);
     await preview.waitFor({ state: "visible", timeout: 30_000 });
-    const documents = await preview
-      .locator("[data-preview-path]")
-      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-preview-path") ?? ""));
+    const documents = (await previewRows(manager)).map((previewRow) => previewRow.documentPath);
     screenshots.set(`preview-${screenshots.size}.png`, await manager.screenshot());
     await preview.locator(answer).click();
     await preview.waitFor({ state: "detached", timeout: 30_000 });

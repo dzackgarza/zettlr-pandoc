@@ -48,8 +48,13 @@ import type { WikilinkEdge } from "./ipc-contract";
  */
 export interface WikilinkSnapshot {
   index: WikilinkIndex;
-  links: Map<string, string[]>;
-  fileLinks: Map<string, string[]>;
+  documents: Map<string, DocumentLinks>;
+}
+
+/** The wikilink targets and the Markdown link URLs of one document. */
+interface DocumentLinks {
+  links: string[];
+  fileLinks: string[];
 }
 
 /**
@@ -60,7 +65,7 @@ export interface WikilinkSnapshot {
 export default class LinkProvider extends ProviderContract {
   private _fileLinkDatabase: Map<string, string[]>;
   /** The URLs of the Markdown links and images of every file. */
-  private _fileUrlDatabase: Map<string, string[]>;
+  private _documentLinks: Map<string, DocumentLinks>;
   private _index: WikilinkIndex;
   /** What the index was built from: the comparison value of a reindex */
   private _indexEntries: WikilinkDocument[];
@@ -73,7 +78,7 @@ export default class LinkProvider extends ProviderContract {
     super();
 
     this._fileLinkDatabase = new Map();
-    this._fileUrlDatabase = new Map();
+    this._documentLinks = new Map();
     this._index = new WikilinkIndex([]);
     this._indexEntries = [];
 
@@ -152,8 +157,11 @@ export default class LinkProvider extends ProviderContract {
     const links = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor.links]));
     // The windows do not read the Markdown links: a change of them alone
     // broadcasts nothing.
-    this._fileUrlDatabase = new Map(
-      descriptors.map((descriptor) => [descriptor.path, descriptor.fileLinks]),
+    this._documentLinks = new Map(
+      descriptors.map((descriptor) => [
+        descriptor.path,
+        { links: descriptor.links, fileLinks: descriptor.fileLinks },
+      ]),
     );
     const entries: WikilinkDocument[] = descriptors.map((descriptor) => ({
       path: descriptor.path,
@@ -201,8 +209,7 @@ export default class LinkProvider extends ProviderContract {
   snapshot(): WikilinkSnapshot {
     return {
       index: this._index,
-      links: this._fileLinkDatabase,
-      fileLinks: this._fileUrlDatabase,
+      documents: this._documentLinks,
     };
   }
 
@@ -213,17 +220,20 @@ export default class LinkProvider extends ProviderContract {
    */
   async filesChangedByMove(before: WikilinkSnapshot, move: PathMove): Promise<string[]> {
     await this.reindex();
-    const paths = new Set([...before.links.keys(), ...before.fileLinks.keys()]);
-    return [...paths].filter(
-      (sourcePath) =>
-        (before.links.get(sourcePath) ?? []).some((link) => {
-          const { target } = splitWikilinkTarget(link);
-          return retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined;
-        }) ||
-        (before.fileLinks.get(sourcePath) ?? []).some(
-          (url) => retargetedFileLink(url, sourcePath, move, existsSync) !== undefined,
-        ),
-    );
+    return [...before.documents]
+      .filter(
+        ([sourcePath, { links, fileLinks }]) =>
+          links.some((link) => {
+            const { target } = splitWikilinkTarget(link);
+            return (
+              retargetedLink(target, sourcePath, move, before.index, this._index) !== undefined
+            );
+          }) ||
+          fileLinks.some(
+            (url) => retargetedFileLink(url, sourcePath, move, existsSync) !== undefined,
+          ),
+      )
+      .map(([sourcePath]) => sourcePath);
   }
 
   /**
