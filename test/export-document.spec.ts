@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import {
   chmod,
   copyFile,
+  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -151,14 +152,10 @@ describe("Export of one document", function () {
     just = await installRecordingJust();
     scripts = await mkdtemp(path.join(tmpdir(), "zettlr-export-document-commands-"));
 
-    // An export reads the macro projection of the home directory.
+    // An export reads the macro tree and its MathJax projection from the
+    // home directory.
     macroHome = path.join(tmpdir(), ".pandoc");
-    const projection = path.join(macroHome, "templates", "css");
-    await mkdir(projection, { recursive: true });
-    await copyFile(
-      path.resolve("test", "fixtures", "mathjax-macros.json"),
-      path.join(projection, "mathjax-macros.json"),
-    );
+    await cp(path.resolve("test", "fixtures", "pandoc-macros"), macroHome, { recursive: true });
 
     // The export profiles of the author.
     const defaults = path.join(userData, "defaults");
@@ -362,6 +359,23 @@ describe("Export of one document", function () {
     assert.equal(tex.includes("\nThe form \\(q(x) = x^2\\) has\n"), true, "inline math");
     // Pandoc writes display math with the line breaks of its source.
     assert.equal(tex.includes("\n\\[\n\\Delta = 4\n\\]\n"), true, "display math");
+  });
+
+  it("exports a macro to LaTeX with the definition of the macro tree", async function () {
+    const adeles = path.join(root, "Adeles.md");
+    await writeFile(adeles, "# Adeles\n\nThe ring $\\AA$ of adeles.\n");
+
+    await exportDocument(services, { file: adeles, profile: LATEX, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    execFileSync("pdflatex", ["-interaction=nonstopmode", "-halt-on-error", "Adeles.tex"], {
+      cwd: root,
+    });
+    const text = execFileSync("pdftotext", [path.join(root, "Adeles.pdf"), "-"], {
+      encoding: "utf8",
+    });
+    // The macro tree makes \AA a bold A; the command of LaTeX is the letter Å.
+    assert.equal(text.includes("The ring A of adeles."), true, text);
   });
 
   it("exports the LaTeX delimiters of math as math to Word", async function () {
