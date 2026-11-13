@@ -79,10 +79,13 @@ describe("assembled app: a start in the notification area", function () {
   });
 
   after(async function () {
-    // A case that failed leaves the session running; stop it.
-    await stopProcess(app?.appProcess);
-    await app?.browser.close();
-    output = app?.getOutput() ?? "";
+    // A case that failed leaves the session running; stop it. A first case
+    // that did not attach has no session and no output.
+    if (app !== undefined) {
+      await stopProcess(app.appProcess);
+      await app.browser.close();
+      output = app.getOutput();
+    }
     await preserveArtifacts(ARTIFACT_DIRECTORY, fixtureRoot, output, rendererEvents, new Map());
     if (fixtureRoot !== undefined) {
       await rm(fixtureRoot, { recursive: true, force: true });
