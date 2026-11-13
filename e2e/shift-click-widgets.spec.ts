@@ -10,7 +10,9 @@
  * Description:     A click in the text puts the anchor of the selection there.
  *                  A Shift-click on a rendered widget (an equation, a wikilink
  *                  chip) extends the selection from that anchor over the whole
- *                  source of the widget, in either direction (#181).
+ *                  source of the widget, in either direction (#181). A click
+ *                  selects that source. Each click holds the button as a
+ *                  person does (#131).
  *
  * END HEADER
  */
@@ -204,5 +206,17 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     });
     assert.equal(text, DOCUMENT, "a Shift-click on the checkbox does not toggle the task");
     assert.deepEqual(extended, { anchor, head: from + TASK.length });
+  });
+
+  it("selects the whole source of a wikilink chip on a click with a human button hold", async function () {
+    const editor = requireInitialized(page, "page");
+    await editor.locator(".cm-line", { hasText: "Outside probe." }).click();
+    await delay(600);
+    const from = DOCUMENT.indexOf(LINK);
+    const target = await widgetCentre(editor, from);
+    await editor.mouse.click(target.x, target.y, { delay: HUMAN_BUTTON_HOLD_MS });
+    await delay(300);
+    screenshots.set("click-wikilink.png", await editor.screenshot());
+    assert.deepEqual(await selection(editor), { anchor: from, head: from + LINK.length });
   });
 });
