@@ -158,8 +158,9 @@ describe("TikZ TeX typography metadata", function () {
   });
 
   it("offers the macros that TeX reads, with the arguments that TeX reads", async function () {
-    // The user's macro tree has a declaration in a comment
-    // (styles/macros/tier4-preamble.tex) and a paired delimiter
+    // The user's macro tree has declarations and a package load in a
+    // comment (styles/macros/tier4-preamble.tex,
+    // styles/macros/environments.tex) and a paired delimiter
     // (styles/macros/tier3-tex-complex.tex). TeX skips a comment, and
     // mathtools gives a paired delimiter one argument.
     const root = await mkdtemp(path.join(tmpdir(), "zettlr-tikz-macros-"));
@@ -176,12 +177,14 @@ describe("TikZ TeX typography metadata", function () {
       await writeFile(
         path.join(styles, "owned.sty"),
         [
+          "%\\input{retired}",
           "%\\renewcommand{\\labelitemiii}{$\\diamondsuit$}",
           "\\DeclarePairedDelimiter\\qty{(}{)}",
           "\\newcommand{\\dqty}[1]{\\left( \\left( {#1} \\right) \\right)}",
           "",
         ].join("\n"),
       );
+      await writeFile(path.join(styles, "retired.tex"), "\\newcommand{\\Retired}{x}\n");
 
       const completions = tikzTemplateCompletions(template);
       assert.deepEqual(
