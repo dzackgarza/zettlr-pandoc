@@ -102,8 +102,6 @@ function assertShare(actual: number, expected: number, message: string): void {
 }
 
 describe("the list and detail split of the Preferences and Assets windows", function () {
-  this.timeout(300_000);
-
   let app: RunningApp | undefined;
   let fixtureRoot: string | undefined;
   const rendererEvents: string[] = [];

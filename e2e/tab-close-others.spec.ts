@@ -62,8 +62,6 @@ async function typeInto(page: Page, documentPath: string, text: string): Promise
 }
 
 describe("Close other tabs from the context menu of a tab (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";

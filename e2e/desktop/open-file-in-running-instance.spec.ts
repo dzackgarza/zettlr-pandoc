@@ -52,8 +52,6 @@ async function runHandoff(args: string[]): Promise<HandoffResult> {
 }
 
 describe("opening a file while the app is already running", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

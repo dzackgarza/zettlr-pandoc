@@ -942,6 +942,15 @@ of an isolated instance are in the first comment of #132.
   run does not stop its later starts. The reporter (`e2e/support/timed-spec-reporter.ts`)
   prints the seconds of each spec file and a table of the files, the slowest
   first.
+- **A test or a hook has 90 s** (`--timeout 90000` of `test:e2e`,
+  `test-e2e-file` and `test:e2e:desktop`): two times the slowest spec file
+  of a hosted run (46 s), and more than one start of the packaged app. A
+  suite whose test or hook starts the app more than one time sets its limit
+  from those starts (`2 * startDeadline({}) + 60_000`); no suite sets a
+  larger number without that reason (#70). `test-e2e-desktop` builds the
+  package before the run too, so the boot script of the installed launcher
+  starts the current build and does not package it in a test
+  (`e2e/desktop/installed-launcher-delivery.spec.ts`).
 - **The run owns the display.** With `DISPLAY` unset the recipe starts the whole
   Mocha process under one `xvfb-run`; a spec starts no X server of its own.
 - **The run owns its session bus.** The recipe starts the Mocha process

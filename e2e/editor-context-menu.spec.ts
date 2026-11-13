@@ -153,8 +153,6 @@ function clickApplicationMenuItem(page: Page, id: string): Promise<void> {
 }
 
 describe("The context menu of the editor (#202)", function () {
-  this.timeout(180_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";

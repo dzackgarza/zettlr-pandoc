@@ -50,8 +50,6 @@ const LIBRARY = `@article{${CITEKEY},
 `;
 
 describe("A refused attachment open", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

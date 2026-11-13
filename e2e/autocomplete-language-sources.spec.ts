@@ -38,8 +38,6 @@ Package command: $\xmapst$
 type EditorContentElement = HTMLElement & { cmTile?: { root: { view: EditorView } } };
 
 describe("language-aware completion sources in the assembled editor", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

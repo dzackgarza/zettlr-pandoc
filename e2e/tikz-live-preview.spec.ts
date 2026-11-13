@@ -38,8 +38,6 @@ A \arrow[r, "f"] & B
 `;
 
 describe("TikZ microlocal live preview in the assembled app", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

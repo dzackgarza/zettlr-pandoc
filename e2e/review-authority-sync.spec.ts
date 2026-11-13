@@ -424,9 +424,6 @@ async function waitForNoCards(page: Page): Promise<void> {
 }
 
 describe("a review decision waits for the document authority", function () {
-  // One start of the packaged app plus the interactions below.
-  this.timeout(300_000);
-
   let fixtureRoot: string | undefined;
   let documentPath: string | undefined;
   let browser: Browser | undefined;

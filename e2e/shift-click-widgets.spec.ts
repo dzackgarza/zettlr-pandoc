@@ -108,8 +108,6 @@ async function widgetCentre(page: Page, from: number): Promise<{ x: number; y: n
 }
 
 describe("assembled editor: Shift-click on a rendered widget extends the selection", function () {
-  this.timeout(300_000);
-
   let app: RunningApp | undefined;
   let fixtureRoot: string | undefined;
   let page: Page | undefined;

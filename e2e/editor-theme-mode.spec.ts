@@ -88,8 +88,6 @@ function decodeSinglePixelPng(png: Buffer): RGB {
 }
 
 describe("Editor theme enum in the assembled app", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

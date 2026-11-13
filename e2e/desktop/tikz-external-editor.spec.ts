@@ -95,8 +95,6 @@ async function hostUrl(host: EditorHost, timeoutMs: number): Promise<string> {
 }
 
 describe("editing a diagram in Visual TikZ Editor", function () {
-  this.timeout(240_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

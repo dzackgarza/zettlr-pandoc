@@ -150,8 +150,6 @@ function finding(page: Page, documentName: string): ReturnType<Page["locator"]> 
 }
 
 describe("a lint that did not run", function () {
-  this.timeout(240_000);
-
   describe("a Flowmark run that fails", function () {
     let appProcess: ChildProcess | undefined;
     let browser: Browser | undefined;

@@ -39,8 +39,6 @@ const REVEAL = "Reveal in File Browser";
 const SECOND_MESSAGE_MS = 2_000;
 
 describe("Reveal in File Browser (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";

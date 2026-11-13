@@ -88,8 +88,6 @@ async function previewText(page: Page, selector: string, holding: string): Promi
 }
 
 describe("assembled app: a preview whose citation cannot be rendered", function () {
-  this.timeout(300_000);
-
   let app: RunningApp | undefined;
   let fixtureRoot: string | undefined;
   let page: Page | undefined;

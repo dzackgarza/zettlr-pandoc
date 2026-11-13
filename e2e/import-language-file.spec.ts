@@ -53,8 +53,6 @@ const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
 const TRANSLATION = path.join(process.cwd(), "static", "lang", "fr-FR.po");
 
 describe("The language file import", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

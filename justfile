@@ -131,7 +131,7 @@ test-file file: sync-dependencies
 # Run one assembled-app spec against the packaged build of the source.
 test-e2e-file file: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
-    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --reporter ./e2e/support/timed-spec-reporter.ts --timeout 180000 "{{file}}"
+    @just _e2e-run "{{justfile_directory()}}/node_modules/.bin/mocha" --no-config --node-option import=tsx --reporter ./e2e/support/timed-spec-reporter.ts --timeout 90000 "{{file}}"
 
 # An assembled-app spec starts the packaged build (`attach`), so a run
 # compiles the app one time. The build runs when the stamp of the package is
@@ -226,8 +226,7 @@ test-e2e: _current-package
 # drive the installed desktop entry through a live Hyprland compositor and
 # the packaged binary from `just package`; they assert those preconditions
 # loudly instead of skipping, so they run in the local push gate, not CI.
-test-e2e-desktop:
-    {{bun}} x {{package_manager}} install --frozen-lockfile
+test-e2e-desktop: _current-package
     python3 "{{justfile_directory()}}/scripts/assert-dev-server-stopped.py"
     {{bun}} run test:e2e:desktop
 

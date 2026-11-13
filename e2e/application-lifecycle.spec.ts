@@ -11,12 +11,15 @@ import {
   findEditorPage,
   readAppLog,
   requestQuit,
+  startDeadline,
   stopProcess,
   waitForDevTools,
 } from "./support/electron-app";
 
 describe("application launch delivery", function () {
-  this.timeout(120_000);
+  // A test starts the packaged app two times: an owner and a second
+  // launch. Each start has its own deadline, and the work has one minute.
+  this.timeout(2 * startDeadline({}) + 60_000);
   let binary: string;
 
   before(function () {

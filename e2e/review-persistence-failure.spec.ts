@@ -260,9 +260,6 @@ async function waitForWorkingText(
 }
 
 describe("a review that cannot be persisted", function () {
-  // One start of the packaged app plus the five failure scenarios.
-  this.timeout(300_000);
-
   let fixtureRoot: string | undefined;
   let sidecarDirectory: string | undefined;
   let documentPath: string | undefined;

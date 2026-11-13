@@ -44,8 +44,6 @@ async function namesOnceHolding(directory: string, name: string): Promise<string
 }
 
 describe("New file and new folder from the file list (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";

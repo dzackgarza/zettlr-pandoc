@@ -50,8 +50,6 @@ const REFUSAL_BOX_TITLE = "Cannot open workpace";
 const AUTHOR_HOME = homedir();
 
 describe("A refused Open workspace", function () {
-  this.timeout(180_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

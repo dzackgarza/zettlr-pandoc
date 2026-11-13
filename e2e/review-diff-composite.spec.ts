@@ -28,6 +28,7 @@ import {
   findEditorPage,
   readAgentApiPort,
   shutdown,
+  startDeadline,
 } from "./support/electron-app";
 
 /** The editor pane: every review control sits inside it, at its chunk or in the review bar. */
@@ -263,9 +264,10 @@ async function submitBatch(
 }
 
 describe("review-diff closure contract composite lifecycle", function () {
-  // The suite starts the packaged app two times: it restarts in a test to
-  // prove that the sidecar persists.
-  this.timeout(600_000);
+  // The test starts the packaged app two times: it restarts the app to
+  // prove that the sidecar persists. Each start has its own deadline, and
+  // the work of the test has one minute.
+  this.timeout(2 * startDeadline({}) + 60_000);
 
   let fixtureRoot: string | undefined;
   let configDirectory: string | undefined;

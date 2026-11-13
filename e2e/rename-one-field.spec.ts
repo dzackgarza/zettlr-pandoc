@@ -45,8 +45,6 @@ async function namesOnceHolding(directory: string, name: string): Promise<string
 }
 
 describe("Rename from the key and from the menu of a row (#202)", function () {
-  this.timeout(120_000);
-
   let browser: Browser | undefined;
   let appProcess: ChildProcess | undefined;
   let getOutput: () => string = () => "";

@@ -117,8 +117,6 @@ function markedFields(preferences: Page): Promise<string[]> {
 }
 
 describe("assembled app: a citation style that cannot be loaded", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;

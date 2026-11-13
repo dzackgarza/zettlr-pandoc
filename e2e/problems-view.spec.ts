@@ -49,7 +49,6 @@ async function inspectWorkspaceLintProgress(
 }
 
 describe("assembled app: Problems view", function () {
-  this.timeout(180_000);
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page;

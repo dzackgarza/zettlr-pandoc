@@ -310,8 +310,6 @@ function overlap(a: Box, b: Box): boolean {
 }
 
 describe("assembled app: fenced divs with a title", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
@@ -535,8 +533,6 @@ function readRendering(page: Page): Promise<RenderedDocument> {
 }
 
 describe("assembled app: the document of the report of titled fenced divs", function () {
-  this.timeout(300_000);
-
   let appProcess: ChildProcess | undefined;
   let browser: Browser | undefined;
   let page: Page | undefined;
