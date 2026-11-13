@@ -221,7 +221,7 @@ such that for each nonempty overlap $U_i \cap U_j$, the transition maps
         (element) => element.dataset.equation === source.slice(1, -1),
       );
       assert.ok(widget !== undefined, `expected a rendered widget for ${source}`);
-      widget.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      widget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
 
       const { from, to } = view.state.selection.main;
       assert.equal(view.state.sliceDoc(from, to), source);

@@ -159,7 +159,10 @@ A click on a rendered widget selects its source through
 Shift-click keeps the anchor of the selection and moves the head over the
 source of the widget, as in text; a Shift-click on a task checkbox does not
 toggle the task. A new widget that handles a click calls one of the two
-functions. Proof: `e2e/shift-click-widgets.spec.ts`.
+functions on the `mousedown` of the primary button, not on `click`: the
+default mousedown puts the caret at the edge of the widget, the renderer then
+shows the source, and the click of a button that a person holds arrives at
+that source text (#131). Proof: `e2e/shift-click-widgets.spec.ts`.
 
 ## System-specific integrations
 
