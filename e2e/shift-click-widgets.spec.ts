@@ -89,7 +89,11 @@ async function widgetCentre(page: Page, from: number): Promise<{ x: number; y: n
       ).find((element) => view.posAtDOM(element) === start);
       if (widget === undefined) return null;
       const rect = widget.getBoundingClientRect();
-      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      // The click goes to this point: it must be on the widget now.
+      const hit = document.elementFromPoint(x, y);
+      return hit !== null && widget.contains(hit) ? { x, y } : null;
     }, from);
     if (centre !== null) {
       return centre;
@@ -120,6 +124,11 @@ describe("assembled editor: Shift-click on a rendered widget extends the selecti
     page = await findEditorPage(app.browser, 60_000);
     await hideDevServerOverlay(page);
     await page.locator(".cm-content").waitFor({ state: "visible", timeout: 60_000 });
+    // A font that arrives after a measure moves the text and the widgets: the
+    // CI runner reports "Fallback font will be used while loading".
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
   });
 
   after(async function () {
