@@ -34,6 +34,7 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { hashDocumentSource } from "@common/pandoc-util/extract-references";
 import isErrnoException from "@common/util/is-errno-exception";
+import { editedText } from "@common/util/workspace-edit-preview";
 import type { SaveFileResult, UnsavedDocument } from "@dts/common/documents";
 import type { WorkspaceTextEdit } from "@dts/common/references";
 import { randomUUID } from "crypto";
@@ -41,6 +42,7 @@ import { diffChars } from "diff";
 import { readFile, unlink } from "fs/promises";
 import path from "path";
 import writeFileAtomic from "write-file-atomic";
+import { systemErrorCause } from "../../util/system-error-cause";
 import { writeTextFile } from "../fsal/util/write-text-file";
 
 /** The one journal file; a workspace transaction is never concurrent. */
@@ -115,22 +117,6 @@ interface WorkspaceEditJournal {
   openBuffers: JournaledDocument[];
 }
 
-/**
- * Applies one document's edits through a CodeMirror ChangeSet — the same
- * primitive the document authority applies to live buffers, so the closed-file
- * target and the open-buffer target are computed by one implementation.
- *
- * @param   {string}               source  The document source
- * @param   {WorkspaceTextEdit[]}  edits   That document's edits
- *
- * @return  {string}                       The target text
- */
-function computeTarget(source: string, edits: WorkspaceTextEdit[]): string {
-  return changeSetOf(source, edits)
-    .apply(Text.of(source.split("\n")))
-    .toString();
-}
-
 function changeSetOf(source: string, edits: WorkspaceTextEdit[]): ChangeSet {
   return ChangeSet.of(
     edits.map((edit) => ({ from: edit.range.from, to: edit.range.to, insert: edit.insert })),
@@ -156,6 +142,25 @@ function changesBetween(before: string, after: string): ChangeSet {
     }
   }
   return ChangeSet.of(changes, before.length);
+}
+
+/**
+ * The edits of the document at `documentPath` that take its text from
+ * `source` to `target`: the changes of a character diff (`changesBetween`).
+ * An edit that a caller computed as a new text changes only the characters
+ * that differ, so the annotations and the review of an open document keep
+ * their places.
+ */
+export function editsBetween(
+  documentPath: string,
+  source: string,
+  target: string,
+): WorkspaceTextEdit[] {
+  const edits: WorkspaceTextEdit[] = [];
+  changesBetween(source, target).iterChanges((from, to, _fromTarget, _toTarget, inserted) => {
+    edits.push({ documentPath, range: { from, to }, insert: inserted.toString() });
+  });
+  return edits;
 }
 
 /**
@@ -234,7 +239,7 @@ export async function runWorkspaceEditTransaction(
   const resultingHashes: Record<string, string> = {};
   for (const { documentPath, source } of sources) {
     const edits = editsFor(documentPath);
-    const target = computeTarget(source, edits);
+    const target = editedText(source, edits);
     journaled.push({ documentPath, original: source, target, edits });
     resultingHashes[documentPath] = hashDocumentSource(target);
   }
@@ -284,7 +289,11 @@ export async function runWorkspaceEditTransaction(
     }
 
     for (const { documentPath, target } of closedFiles) {
-      await writeTextFile(documentPath, target);
+      await writeTextFile(documentPath, target).catch((failure: NodeJS.ErrnoException) => {
+        throw new Error(`Could not write ${documentPath}: ${systemErrorCause(failure)}.`, {
+          cause: failure,
+        });
+      });
       installed.push(documentPath);
     }
   } catch (err) {

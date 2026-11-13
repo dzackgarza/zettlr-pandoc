@@ -27,6 +27,7 @@ import { extractReferencesFromAST } from "@common/pandoc-util/extract-references
 import { countAll } from "@common/util/counter";
 import { documentFrontmatter } from "@common/util/document-frontmatter";
 import { documentTitleMetadataFromAST } from "@common/util/document-title-metadata";
+import { fileLinkUrls } from "@common/util/replace-links";
 import type { MDFileDescriptor, YamlValue } from "@dts/common/fsal";
 import { getAppServiceContainer, isAppServiceContainerReady } from "../../../app-service-container";
 import extractBOM from "./extract-bom";
@@ -37,7 +38,7 @@ import { extractLinefeed } from "./extract-linefeed";
  * The version of what the parser extracts. A change to what it extracts must
  * move it, so that cached descriptors of another version are parsed again.
  */
-const PARSER_VERSION = 8;
+const PARSER_VERSION = 9;
 
 /**
  * A parser of Markdown files with the settings that decide what it extracts.
@@ -75,6 +76,7 @@ export default function getMarkdownFileParser(
 
     const links = extractASTNodes(ast, "ZettelkastenLink") as ZettelkastenLink[];
     file.links = links.map((link) => link.target);
+    file.fileLinks = fileLinkUrls(content, linkFormat);
 
     const citations = extractASTNodes(ast, "Citation") as CitationNode[];
     file.citekeys = citations.flatMap((node) => node.parsedCitation.items.map((item) => item.id));

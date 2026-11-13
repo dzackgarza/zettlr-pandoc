@@ -185,6 +185,7 @@
   />
   <FixAllDialog ref="fixAllDialog" />
   <IgnoreRulesDialog />
+  <WorkspaceEditProposals />
 </template>
 
 <script setup lang="ts">
@@ -222,6 +223,7 @@ import {
   showReviewAction,
 } from "@common/util/save-refusal-action";
 import showToast from "@common/util/show-toast";
+import WorkspaceEditProposals from "@common/vue/WorkspaceEditProposals.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import {
   COLLABORATION_FILE_UNREADABLE_CHANNEL,

@@ -43,6 +43,10 @@ import type {
 } from "@dts/common/problems";
 import type { CrossReferenceSystem, WorkspaceReferenceEdit } from "@dts/common/references";
 import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
+import {
+  WORKSPACE_EDIT_PROPOSAL_CHANNEL,
+  type WorkspaceEditProposal,
+} from "@dts/common/workspace-edit";
 import type { TikzRenderRequest, TikzRenderResult } from "@dzack/tikz-render/tikz-render";
 import ProviderContract, { type IPCMessage } from "@providers/provider-contract";
 import { clipboard, ipcMain, nativeImage, type WebContents } from "electron";
@@ -109,6 +113,7 @@ import TikzRender from "./tikz-render";
 import TutorialOpen from "./tutorial-open";
 import UpdateProjectProperties from "./update-project-properties";
 import UpdateUserDictionary from "./update-user-dictionary";
+import WorkspaceEditCommand from "./workspace-edit";
 import WorkspaceSort from "./ws-sort";
 import type { CommandWireValue, DispatchedCommand } from "./zettlr-command";
 
@@ -152,6 +157,7 @@ export const commands = [
   TutorialOpen,
   UpdateProjectProperties,
   UpdateUserDictionary,
+  WorkspaceEditCommand,
   WorkspaceSort,
 ];
 
@@ -177,6 +183,18 @@ export type ApplicationIPCContract = {
   "apply-lint-fix": {
     request: { payload: ApplyProblemFixRequest };
     response: FixAllOutcome;
+  };
+  // Applies the proposal that the main process sent to the window
+  // (`CommandProvider.propose`), and answers true when each document has
+  // the edit on disk. A conflict, a failed write and a refused save reject.
+  "apply-workspace-edit": {
+    request: { payload: { id: string } };
+    response: boolean;
+  };
+  // Drops a proposal that the author did not apply.
+  "discard-workspace-edit": {
+    request: { payload: { id: string } };
+    response: undefined;
   };
   "add-language-tool-ignore-rule": {
     request: { payload: LanguageToolIgnoredRuleEntry };
@@ -389,9 +407,10 @@ export type ApplicationIPCContract = {
     request: { payload: QuartoBookEditRequest };
     response: ProjectSettings;
   };
+  // True when a file has the tag; the window then shows the edit.
   "rename-tag": {
     request: { payload: { oldName: string; newName: string } };
-    response: unknown;
+    response: boolean;
   };
   "request-move": {
     request: { payload: { from: string; to: string } };
@@ -483,6 +502,8 @@ export default class CommandProvider extends ProviderContract {
    * a command runs has the window of the first one.
    */
   private readonly _startedBy = new AsyncLocalStorage<WebContents>();
+  /** The proposals that wait for the author, by id. */
+  private readonly _proposals = new Map<string, WorkspaceEditProposal>();
 
   // TODO: Right now this just injects the full service container into the
   // commands, but it mayt be better to only provide those which are actually
@@ -536,17 +557,48 @@ export default class CommandProvider extends ProviderContract {
    * whose window is gone.
    */
   private _showFailure(failure: CommandFailedBroadcast): void {
+    this._startingWindow()?.send(COMMAND_FAILED_CHANNEL, failure);
+  }
+
+  /**
+   * The window that answers for the command that runs: the window that
+   * started it, or the main window for a command that the application
+   * started and for a command whose window is gone.
+   */
+  private _startingWindow(): WebContents | undefined {
     const candidates = [
       this._startedBy.getStore(),
       this._app.windows.getFirstMainWindow()?.webContents,
     ];
-    const window = candidates.find(
+    return candidates.find(
       (candidate) => candidate !== undefined && !candidate.isDestroyed() && !candidate.isCrashed(),
     );
+  }
+
+  /**
+   * Shows a proposal in the window that started the command that runs (see
+   * `_startingWindow`). The proposal waits there until the author applies
+   * or discards it (`takeProposal`); it goes away with its window. Nothing
+   * changes before that.
+   */
+  propose(proposal: WorkspaceEditProposal): void {
+    const window = this._startingWindow();
     if (window === undefined) {
-      return;
+      throw new Error(trans("No window can show the edit: %s", proposal.description));
     }
-    window.send(COMMAND_FAILED_CHANNEL, failure);
+    this._proposals.set(proposal.id, proposal);
+    window.once("destroyed", () => this._proposals.delete(proposal.id));
+    window.send(WORKSPACE_EDIT_PROPOSAL_CHANNEL, proposal);
+  }
+
+  /** The proposal with the id, which no other call can take after this one. */
+  takeProposal(id: string): WorkspaceEditProposal {
+    const proposal = this._proposals.get(id);
+    if (proposal === undefined) {
+      throw new Error(trans("The edit is no longer available. No file changed."));
+    }
+    this._proposals.delete(id);
+    return proposal;
   }
 
   private async _dispatch(command: string, payload: CommandWireValue): Promise<CommandWireValue> {

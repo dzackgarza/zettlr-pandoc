@@ -103,15 +103,16 @@ export default class RequestMove extends ZettlrCommand {
           await this._app.documents.hasMovedDir(from.path, newPath);
         }
       },
-      // Keep every wikilink pointing at the document it named before the move
+      // Offer the edit that keeps each link naming the file it named before the move
       async () => {
-        const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-        await this._app.links.retargetAfterMove(
+        const proposal = await this._app.links.retargetProposal(
           linksBefore,
           move,
-          changedFiles,
           this._app.documents,
         );
+        if (proposal !== undefined) {
+          this._app.commands.propose(proposal);
+        }
       },
     ]);
 

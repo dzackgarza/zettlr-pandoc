@@ -7,7 +7,7 @@
 
 import { strict as assert } from "node:assert";
 import { type ChildProcess } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -21,6 +21,7 @@ import {
   preserveArtifacts,
   shutdown,
 } from "./support/electron-app";
+import { answerPreview, textOnceItIs } from "./support/workspace-edit-preview";
 
 const INDEX = "# Index\n\nSee [[the lattices|old/lattices]].\n";
 
@@ -96,10 +97,9 @@ describe("assembled app: wikilinks of the format title|link", function () {
       { path: path.join(workspace, "old"), name: "algebra" },
     );
     assert.equal(renamed, true);
+    await answerPreview(page, "apply");
 
-    assert.equal(
-      await readFile(path.join(workspace, "index.md"), "utf8"),
-      "# Index\n\nSee [[the lattices|lattices]].\n",
-    );
+    const index = "# Index\n\nSee [[the lattices|lattices]].\n";
+    assert.equal(await textOnceItIs(path.join(workspace, "index.md"), index), index);
   });
 });

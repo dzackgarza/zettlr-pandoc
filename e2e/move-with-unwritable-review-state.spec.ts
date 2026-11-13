@@ -12,12 +12,12 @@
  *                  sidecars then takes no new file, so the state of a
  *                  document cannot go to the key of a new path. A rename, a
  *                  move and a rename of a folder each reach the disk. The
- *                  links to the document follow it, and the author gets the
+ *                  links to the document follow it when the author applies
+ *                  the preview of the link update, and the author gets the
  *                  cause one time.
  *
- *                  The link prompt of a rename and the error of a folder
- *                  rename are native message boxes: the spec finds and
- *                  answers them on the X display of the run
+ *                  The error of a folder rename is a native message box: the
+ *                  spec finds and answers it on the X display of the run
  *                  (`support/native-dialog.ts`).
  *
  * END HEADER
@@ -42,6 +42,7 @@ import {
   shutdown,
 } from "./support/electron-app";
 import { captureWindow, nativeDialog, pressKey } from "./support/native-dialog";
+import { answerPreview } from "./support/workspace-edit-preview";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-move-unwritable-review-e2e-latest");
 const NOTE = "# Lattices\n\nAn even unimodular lattice has a rank that 8 divides.\n";
@@ -50,7 +51,6 @@ const RANK = "# Rank\n\nThe Leech lattice has rank 24.\n";
 const INDEX = "# Index\n\nSee [[note]], [[drafts/genus]] and [[notes/rank]].\n";
 const INSTRUCTION = "State the signature condition.";
 const ERROR_TOAST = "#zettlr-toast-container .zettlr-toast.error";
-const LINK_PROMPT_TITLE = "Confirm";
 const FOLDER_ERROR_TITLE = "Rename directory";
 
 /** Sends a rename as the file manager does. Answers whether the command was refused. */
@@ -213,14 +213,9 @@ describe("a move whose review state cannot follow the document", function () {
     const editorPage = requireInitialized(page, "The editor page must be initialized");
     assert.deepEqual(await errorMessages(editorPage), [], "no error is shown before the rename");
 
-    const refused = renameIsRefused(editorPage, notePath, "lattices.md");
-    const prompt = await nativeDialog(LINK_PROMPT_TITLE, 30_000);
-    screenshots.set("link-prompt.png", await captureWindow(prompt));
-    // The default button is "No". Tab moves the focus to "Yes".
-    await pressKey(prompt, "Tab");
-    await pressKey(prompt, "space");
-
-    assert.equal(await refused, true, "the rename reports the state that did not move");
+    const refused = await renameIsRefused(editorPage, notePath, "lattices.md");
+    assert.equal(refused, true, "the rename reports the state that did not move");
+    assert.deepEqual(await answerPreview(editorPage, "apply"), [indexPath]);
     assert.equal(
       await textOnDisk(indexPath, INDEX.replace("[[note]]", "[[lattices]]"), 20_000),
       INDEX.replace("[[note]]", "[[lattices]]"),
@@ -243,6 +238,7 @@ describe("a move whose review state cannot follow the document", function () {
     const refused = await moveIsRefused(editorPage, genusPath, path.join(workspace, "archive"));
 
     assert.equal(refused, true, "the move reports the state that did not move");
+    assert.deepEqual(await answerPreview(editorPage, "apply"), [indexPath]);
     assert.equal(
       await textOnDisk(indexPath, expected, 20_000),
       expected,
@@ -270,6 +266,7 @@ describe("a move whose review state cannot follow the document", function () {
     await pressKey(box, "Return");
 
     assert.equal(await renamed, false, "the folder rename reports the state that did not move");
+    assert.deepEqual(await answerPreview(editorPage, "apply"), [indexPath]);
     assert.equal(
       await textOnDisk(indexPath, expected, 20_000),
       expected,

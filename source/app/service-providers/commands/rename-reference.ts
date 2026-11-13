@@ -18,11 +18,11 @@
  *                  test/reference-rename-atomicity.spec.ts):
  *
  *                  - 'preview-reference-rename' { oldKey, newKey } returns
- *                    the provider's previewRename() result verbatim: either
- *                    the previewed WorkspaceReferenceEdit or a typed
- *                    rejection (prefix/family violation, collision,
- *                    malformed key, unknown key). No dialog and no write
- *                    happens at preview time.
+ *                    the provider's previewRename() result verbatim: the
+ *                    previewed WorkspaceReferenceEdit with each changed
+ *                    line of each document (#6), or a typed rejection
+ *                    (prefix/family violation, collision, malformed key,
+ *                    unknown key). No write happens at preview time.
  *                  - 'commit-reference-rename' { edit } returns the
  *                    provider's commitRename() outcome: hash-fenced atomic
  *                    application (closed files via temp+rename disk writes;
@@ -34,11 +34,10 @@
  *                    undoRename() outcome: the one-shot, hash-fenced
  *                    inverse application restoring every touched document.
  *
- *                  Unlike RenameTag, this command NEVER shows a blocking
- *                  confirmation dialog: the renderer owns the preview UI,
- *                  and recoverable failures surface as typed results the
- *                  renderer presents as closable toasts (issue #1 forbids
- *                  uncloseable runtime-error overlays).
+ *                  The window shows the preview in the workspace edit
+ *                  preview dialog (WorkspaceEditPreviewDialog) and commits
+ *                  on Apply; a rejection is a typed result that the window
+ *                  shows as a message.
  *
  * END HEADER
  */
@@ -81,7 +80,7 @@ export default class RenameReference extends ZettlrCommand {
       if (arg === undefined || !("oldKey" in arg)) {
         throw new Error("preview-reference-rename requires oldKey and newKey");
       }
-      return this._app.references.previewRename(arg.oldKey, arg.newKey);
+      return await this._app.references.previewRename(arg.oldKey, arg.newKey);
     } else if (evt === "commit-reference-rename") {
       if (arg === undefined || !("edit" in arg)) {
         throw new Error("commit-reference-rename requires a workspace edit");

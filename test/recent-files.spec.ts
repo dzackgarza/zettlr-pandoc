@@ -46,6 +46,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     type: "file",

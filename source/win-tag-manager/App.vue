@@ -115,6 +115,7 @@
       </table>
     </div>
   </WindowChrome>
+  <WorkspaceEditProposals />
 </template>
 
 <script setup lang="ts">
@@ -137,6 +138,7 @@ import { reportError } from "@common/util/error-reporting";
 import ButtonControl from "@common/vue/form/elements/ButtonControl.vue";
 import ColorControl from "@common/vue/form/elements/ColorControl.vue";
 import TextControl from "@common/vue/form/elements/TextControl.vue";
+import WorkspaceEditProposals from "@common/vue/WorkspaceEditProposals.vue";
 import WindowChrome from "@common/vue/window/WindowChrome.vue";
 import { type StatusbarControl } from "@common/vue/window/WindowStatusbar.vue";
 import { useConfigStore, useTagsStore } from "source/pinia";
@@ -262,6 +264,10 @@ function assignColor(tagName: string): void {
   }
 }
 
+/**
+ * Asks for the rename of a tag. The application shows its edit in this
+ * window, and each file changes when the author applies it.
+ */
 async function renameTag(tagName: string): Promise<void> {
   // The application shows a failure of the command in this window.
   const renamed = await ipcRenderer
@@ -281,7 +287,7 @@ async function renameTag(tagName: string): Promise<void> {
   }
 
   newTag.value = "";
-  renameActiveFor.value = tagName;
+  renameActiveFor.value = "";
 }
 
 function changeSorting(which: "name" | "color" | "count" | "idf"): void {

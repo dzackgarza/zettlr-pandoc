@@ -29,9 +29,9 @@ import {
   requireInitialized,
   shutdown,
 } from "./support/electron-app";
+import { PREVIEW, previewRows, textOnceItIs } from "./support/workspace-edit-preview";
 
 const ARTIFACT_DIRECTORY = path.join(tmpdir(), "zettlr-link-update-preview-e2e-latest");
-const PREVIEW = ".workspace-edit-preview";
 
 const INDEX = `# Index
 
@@ -60,35 +60,6 @@ const WORKSPACE: Record<string, string> = {
   "notes/the plan.md": "# The plan\n",
   "archive/2026/placeholder.md": "# Placeholder\n",
 };
-
-interface PreviewRow {
-  documentPath: string;
-  changes: Array<{ before: string; after: string }>;
-}
-
-/** The rows of the preview dialog, in the order in which it shows them. */
-async function previewRows(page: Page): Promise<PreviewRow[]> {
-  return await page.locator(`${PREVIEW} [data-preview-path]`).evaluateAll((rows) =>
-    rows.map((row) => ({
-      documentPath: row.getAttribute("data-preview-path") ?? "",
-      changes: [...row.querySelectorAll("[data-preview-change]")].map((change) => ({
-        before: change.querySelector("[data-preview-before]")?.textContent ?? "",
-        after: change.querySelector("[data-preview-after]")?.textContent ?? "",
-      })),
-    })),
-  );
-}
-
-/** The text of a file once it is `expected`, or its text after ten seconds. */
-async function textOnceItIs(file: string, expected: string): Promise<string> {
-  const deadline = Date.now() + 10_000;
-  let text = await readFile(file, "utf8");
-  while (Date.now() < deadline && text !== expected) {
-    await delay(100);
-    text = await readFile(file, "utf8");
-  }
-  return text;
-}
 
 describe("assembled app: a move asks before it changes a link (#6)", function () {
   let appProcess: ChildProcess | undefined;
@@ -141,7 +112,8 @@ describe("assembled app: a move asks before it changes a link (#6)", function ()
   it("shows the links that a move changes, and changes them when the author applies", async function () {
     const activePage = requireInitialized(page, "The editor window must be open");
     const moved = await activePage.evaluate(
-      async (payload) => await window.ipc.invoke("application", { command: "request-move", payload }),
+      async (payload) =>
+        await window.ipc.invoke("application", { command: "request-move", payload }),
       {
         from: path.join(workspace, "programs", "chain.md"),
         to: path.join(workspace, "archive", "2026"),
@@ -202,7 +174,8 @@ describe("assembled app: a move asks before it changes a link (#6)", function ()
   it("changes the Markdown links to a renamed file when the author applies", async function () {
     const activePage = requireInitialized(page, "The editor window must be open");
     const renamed = activePage.evaluate(
-      async (payload) => await window.ipc.invoke("application", { command: "file-rename", payload }),
+      async (payload) =>
+        await window.ipc.invoke("application", { command: "file-rename", payload }),
       { path: path.join(workspace, "notes", "the plan.md"), name: "the outline.md" },
     );
 
@@ -253,6 +226,9 @@ describe("assembled app: a move asks before it changes a link (#6)", function ()
 
     await delay(1000);
     assert.equal(await readFile(path.join(workspace, "index.md"), "utf8"), index);
-    assert.equal(await readFile(path.join(workspace, "archive", "2026", "chain.md"), "utf8"), chain);
+    assert.equal(
+      await readFile(path.join(workspace, "archive", "2026", "chain.md"), "utf8"),
+      chain,
+    );
   });
 });

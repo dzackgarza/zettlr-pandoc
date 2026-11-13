@@ -86,6 +86,7 @@ function makeDescriptor(documentPath: string): MDFileDescriptor {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     type: "file",

@@ -20,10 +20,8 @@ import { constants as FSConstants } from "fs";
 import path from "path";
 import sanitize from "sanitize-filename";
 import type { AppServiceContainer } from "source/app/app-service-container";
-import type { WikilinkSnapshot } from "source/app/service-providers/links";
 import { runEachStep } from "source/app/util/run-each-step";
 import { systemErrorCause } from "source/app/util/system-error-cause";
-import type { PathMove } from "source/common/util/replace-links";
 import ZettlrCommand from "./zettlr-command";
 
 export default class FileRename extends ZettlrCommand {
@@ -181,29 +179,17 @@ export default class FileRename extends ZettlrCommand {
     await runEachStep([
       // Notify the documents provider so it can exchange any files if necessary
       async () => await this._app.documents.hasMovedFile(file.path, newPath),
-      async () => await this._offerLinkUpdate(linksBefore, move, newName),
+      // Offer the edit that keeps each link naming the file it named before the rename
+      async () => {
+        const proposal = await this._app.links.retargetProposal(
+          linksBefore,
+          move,
+          this._app.documents,
+        );
+        if (proposal !== undefined) {
+          this._app.commands.propose(proposal);
+        }
+      },
     ]);
-  }
-
-  /** Asks whether the links to the renamed file follow it, and updates them for "Yes". */
-  private async _offerLinkUpdate(
-    linksBefore: WikilinkSnapshot,
-    move: PathMove,
-    newName: string,
-  ): Promise<void> {
-    const changedFiles = await this._app.links.filesChangedByMove(linksBefore, move);
-    if (changedFiles.length === 0) {
-      return;
-    }
-    const response = await dialog.showMessageBox({
-      title: trans("Confirm"),
-      message: trans("Update %s internal links to file %s?", changedFiles.length, newName),
-      buttons: [trans("Yes"), trans("No")],
-      defaultId: 1,
-    });
-    if (response.response === 1) {
-      return; // Do not update the links.
-    }
-    await this._app.links.retargetAfterMove(linksBefore, move, changedFiles, this._app.documents);
   }
 }

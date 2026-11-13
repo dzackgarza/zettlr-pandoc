@@ -66,6 +66,7 @@ function descriptorFor(filePath: string): MDFileDescriptor {
     id: "",
     tags: [],
     links: [],
+    fileLinks: [],
     citekeys: [],
     bom: "",
     type: "file",
@@ -220,8 +221,41 @@ describe("Workspace reference rename authority application", function () {
     await rm(scratch.root, { recursive: true, force: true });
   });
 
+  it("previews each changed line of each document before anything changes", async function () {
+    const preview = await scratch.references.previewRename(OLD_KEY, NEW_KEY);
+
+    assert.equal(preview.status, "ok");
+    assert.deepEqual(preview.status === "ok" ? preview.documents : [], [
+      {
+        documentPath: scratch.definitionPath,
+        changes: [
+          {
+            line: 3,
+            before: "::: {.theorem #thm:authority-owned}",
+            after: "::: {.theorem #thm:authority-acknowledged}",
+          },
+        ],
+      },
+      {
+        documentPath: scratch.occurrencePath,
+        changes: [
+          {
+            line: 3,
+            before: "The live consumer cites @thm:authority-owned before saving.",
+            after: "The live consumer cites @thm:authority-acknowledged before saving.",
+          },
+        ],
+      },
+    ]);
+    assert.equal(readFileSync(scratch.definitionPath, "utf-8"), DEFINITION_SOURCE);
+    assert.equal(
+      scratch.documents.readMarkdownBufferContent(scratch.occurrencePath),
+      OCCURRENCE_SOURCE,
+    );
+  });
+
   it("applies every open touched document in the central authority before reporting success", async function () {
-    const edit = acceptedEdit(scratch.references.previewRename(OLD_KEY, NEW_KEY));
+    const edit = acceptedEdit(await scratch.references.previewRename(OLD_KEY, NEW_KEY));
 
     const outcome = await scratch.references.commitRename(edit);
 
@@ -239,7 +273,7 @@ describe("Workspace reference rename authority application", function () {
   });
 
   it("makes immediate undo safe only after the open-buffer application is acknowledged", async function () {
-    const edit = acceptedEdit(scratch.references.previewRename(OLD_KEY, NEW_KEY));
+    const edit = acceptedEdit(await scratch.references.previewRename(OLD_KEY, NEW_KEY));
     const committed = await scratch.references.commitRename(edit);
     assert.equal(committed.status, "applied");
 

@@ -26,6 +26,7 @@ import {
   preserveArtifacts,
   shutdown,
 } from "./support/electron-app";
+import { answerPreview, textOnceItIs } from "./support/workspace-edit-preview";
 
 const INDEX = `# Index
 
@@ -133,15 +134,13 @@ describe("assembled app: wikilinks follow their documents", function () {
       },
     );
     assert.equal(moved, true);
+    await answerPreview(page, "apply");
 
-    assert.equal(
-      await readFile(path.join(workspace, "index.md"), "utf8"),
-      INDEX.replace("[[./programs/chain.md]]", "[[chain]]"),
-    );
-    assert.equal(
-      await readFile(path.join(workspace, "archive", "2026", "chain.md"), "utf8"),
-      CHAIN.replace("[[../notes/basis.md]]", "[[basis]]"),
-    );
+    const index = INDEX.replace("[[./programs/chain.md]]", "[[chain]]");
+    assert.equal(await textOnceItIs(path.join(workspace, "index.md"), index), index);
+    const chain = CHAIN.replace("[[../notes/basis.md]]", "[[basis]]");
+    const movedChain = path.join(workspace, "archive", "2026", "chain.md");
+    assert.equal(await textOnceItIs(movedChain, chain), chain);
   });
 
   it("rewrites a name that a directory rename gives to another document", async function () {
@@ -155,14 +154,13 @@ describe("assembled app: wikilinks follow their documents", function () {
       { path: path.join(workspace, "other"), name: "x" },
     );
     assert.equal(renamed, true);
+    await answerPreview(page, "apply");
 
-    assert.equal(
-      await readFile(path.join(workspace, "index.md"), "utf8"),
-      INDEX.replace("[[./programs/chain.md]]", "[[chain]]").replace(
-        "[[x/lemma]]",
-        "[[deep/x/lemma]]",
-      ),
+    const index = INDEX.replace("[[./programs/chain.md]]", "[[chain]]").replace(
+      "[[x/lemma]]",
+      "[[deep/x/lemma]]",
     );
+    assert.equal(await textOnceItIs(path.join(workspace, "index.md"), index), index);
     assert.equal(await readFile(path.join(workspace, "x", "lemma.md"), "utf8"), "# Lemma B\n");
   });
 

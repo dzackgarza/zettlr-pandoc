@@ -47,14 +47,22 @@
         </TikzPreviewPane>
       </SplitterPanel>
     </SplitterGroup>
-    <RenameReferencePreviewDialog
+    <WorkspaceEditPreviewDialog
       v-if="renamePreviewPrompt !== undefined"
-      :old-key="renamePreviewPrompt.intent.oldKey"
-      :new-key="renamePreviewPrompt.intent.newKey"
-      :files="renamePreviewPrompt.files"
-      @apply="applyWorkspaceRename()"
-      @close="cancelWorkspaceRename()"
-    />
+      :title="trans('Rename reference')"
+      :description="trans('Each use of the reference gets the new key. Nothing changes until you apply.')"
+      :documents="renamePreviewPrompt.documents"
+      @apply="applyWorkspaceRename"
+      @cancel="cancelWorkspaceRename()"
+    >
+      <template #identity>
+        <p class="identity">
+          <code data-rename-old-key>{{ renamePreviewPrompt.intent.oldKey }}</code>
+          <span class="arrow">→</span>
+          <code data-rename-new-key>{{ renamePreviewPrompt.intent.newKey }}</code>
+        </p>
+      </template>
+    </WorkspaceEditPreviewDialog>
     <AnnotationCreateDialog
       v-if="annotationComposerRequest !== null"
       :editor-view="annotationComposerRequest.editorView"
@@ -124,17 +132,16 @@ import {
 import { type EditorWindowConfiguration } from "@common/modules/markdown-editor/util/configuration";
 import { documentAuthorityIPCAPI } from "@common/modules/markdown-editor/util/ipc-api";
 import { saveBuffer } from "@common/modules/markdown-editor/util/save-buffer";
+import { whenAuthoritySynced } from "@common/modules/markdown-editor/util/when-authority-synced";
 import { markdownToAST } from "@common/modules/markdown-utils";
 import showPopupMenu, {
   type AnyMenuItem,
 } from "@common/modules/window-register/application-menu-helper";
-import {
-  buildRenamePreviewSummary,
-  type CommitRenameOutcome,
-  type ReferenceRenamePreview,
-  type ReferenceRenameRejection,
-  type RenamePreviewFileSummary,
-  type UndoRenameOutcome,
+import type {
+  CommitRenameOutcome,
+  ReferenceRenamePreview,
+  ReferenceRenameRejection,
+  UndoRenameOutcome,
 } from "@common/pandoc-util/compute-reference-edits";
 import { annotateCompletionEntries } from "@common/pandoc-util/project-reference-status";
 import { documentCitationDatabase } from "@common/util/document-citation-database";
@@ -146,6 +153,7 @@ import { pathBasename, pathDirname, resolvePath } from "@common/util/renderer-pa
 import { runRecoverably } from "@common/util/run-recoverably";
 import showToast from "@common/util/show-toast";
 import { wikilinkTargetsIn } from "@common/util/wikilink-target";
+import WorkspaceEditPreviewDialog from "@common/vue/WorkspaceEditPreviewDialog.vue";
 import type { AnnotationSet } from "@dts/common/annotation-domain";
 import type { CitationDatabase } from "@dts/common/citeproc";
 import { CITEPROC_MAIN_DB } from "@dts/common/citeproc";
@@ -161,6 +169,7 @@ import type {
 import type { ReviewDiffSession } from "@dts/common/review-diff";
 import { isEditorCommandName } from "@dts/common/shortcut-names";
 import type { TexCommandVocabulary } from "@dts/common/tex-vocabulary";
+import type { WorkspaceEditDocumentPreview } from "@dts/common/workspace-edit";
 import type { TikzPreviewHost } from "@dzack/tikz-render/host";
 import type { TikzLivePreviewTarget } from "@dzack/tikz-render/live-preview";
 import {
@@ -193,7 +202,6 @@ import type { CreateReferenceLabelDialogPrompt, EditorCommands } from "./compone
 import InlineCollaborationControls, {
   type CollaborationBlock,
 } from "./editor-collaboration/InlineCollaborationControls.vue";
-import RenameReferencePreviewDialog from "./RenameReferencePreviewDialog.vue";
 import { resolveReattachSelection } from "./util/annotation-reattach-selection";
 import getDocumentTitle from "./util/get-document-title";
 import { invokeReferenceProviderRecoverably } from "./util/recoverable-reference-errors";
@@ -1785,26 +1793,27 @@ function promptWorkspaceRename(intent: ReferenceKeyEditPromptIntent): void {
 }
 
 /**
- * The pending rename preview shown by the dialog (issue #1, review A4):
- * the confirmed intent, the previewed workspace edit, and the per-file
- * affected-occurrence summary. Nothing commits while this is pending —
- * Apply commits, Cancel restores the authored local edit.
+ * The pending rename preview shown by the dialog (#6): the confirmed
+ * intent, the previewed workspace edit, and each changed line of each
+ * document. Nothing commits while this is pending — Apply commits, Cancel
+ * restores the authored local edit.
  */
 interface RenamePreviewPrompt {
   intent: ReferenceKeyEditPromptIntent;
   edit: WorkspaceReferenceEdit;
-  files: RenamePreviewFileSummary[];
+  documents: WorkspaceEditDocumentPreview[];
 }
 
 const renamePreviewPrompt = ref<RenamePreviewPrompt | undefined>(undefined);
 
 /**
- * Runs the confirmed workspace rename protocol up to the PREVIEW (issue #1,
- * review A4 / US-17): withdraws the local token edit (the atomic workspace
- * rename owns the whole change), previews, and presents the affected
- * occurrences in the rename-preview dialog. Nothing commits here — Apply
- * in the dialog commits, Cancel restores the authored edit. Typed
- * rejections surface as closable toasts, never as blocking dialogs.
+ * Runs the confirmed workspace rename protocol up to the PREVIEW (#6):
+ * withdraws the local token edit (the atomic workspace rename owns the
+ * whole change), previews, and shows each changed line of each document in
+ * the workspace edit preview dialog. Nothing commits here — Apply in the
+ * dialog commits, Cancel restores the authored edit. A rejection and a
+ * failed preview restore the authored edit too; a rejection shows its
+ * reason in a message, a failure rejects to the caller, which shows it.
  *
  * @param   {ReferenceKeyEditPromptIntent}  intent  The confirmed intent
  */
@@ -1819,34 +1828,40 @@ async function runWorkspaceRename(intent: ReferenceKeyEditPromptIntent): Promise
   view.dispatch({
     changes: { from: intent.range.from, to: intent.range.to, insert: "#" + intent.oldKey },
   });
-
-  const preview: ReferenceRenamePreview = await ipcRenderer.invoke("application", {
-    command: "preview-reference-rename",
-    payload: { oldKey: intent.oldKey, newKey: intent.newKey },
-  });
+  // The preview reads the text of the document authority: it must hold
+  // the withdrawal.
+  const preview: ReferenceRenamePreview = await whenAuthoritySynced(() => view.state)
+    .then(
+      async () =>
+        await ipcRenderer.invoke("application", {
+          command: "preview-reference-rename",
+          payload: { oldKey: intent.oldKey, newKey: intent.newKey },
+        }),
+    )
+    .catch((error: Error) => {
+      restoreAuthoredKey(view, intent);
+      throw error;
+    });
 
   if (preview.status === "rejected") {
+    restoreAuthoredKey(view, intent);
     showToast(describeRenameRejection(preview.reason), "error");
     return;
   }
 
-  // The per-file summary is built over the same merged workspace state the
-  // preview was computed from (the provider's snapshots carry the authored
-  // previewSource/clusterRaw context the dialog shows).
-  const outcome = await invokeReferenceProviderRecoverably<WorkspaceReferenceState>(
-    async (channel, message) => await ipcRenderer.invoke(channel, message),
-    { command: "get-snapshot" },
-    trans("Loading workspace references"),
-  );
-  if (outcome.status === "failed") {
-    return; // The boundary surfaced the closable toast; the withdrawal stays.
-  }
+  renamePreviewPrompt.value = { intent, edit: preview.edit, documents: preview.documents };
+}
 
-  renamePreviewPrompt.value = {
-    intent,
-    edit: preview.edit,
-    files: buildRenamePreviewSummary(preview.edit, outcome.value.snapshots, intent.oldKey),
-  };
+/**
+ * Puts the key that the author wrote back in place of the withdrawn one,
+ * when the definition still holds the withdrawn key.
+ */
+function restoreAuthoredKey(view: EditorView, intent: ReferenceKeyEditPromptIntent): void {
+  const from = intent.range.from;
+  const to = from + ("#" + intent.oldKey).length;
+  if (view.state.doc.sliceString(from, to) === "#" + intent.oldKey) {
+    view.dispatch({ changes: { from, to, insert: "#" + intent.newKey } });
+  }
 }
 
 /**
@@ -1861,13 +1876,7 @@ function cancelWorkspaceRename(): void {
   if (prompt === undefined || view === undefined) {
     return;
   }
-
-  const { intent } = prompt;
-  const from = intent.range.from;
-  const to = from + ("#" + intent.oldKey).length;
-  if (view.state.doc.sliceString(from, to) === "#" + intent.oldKey) {
-    view.dispatch({ changes: { from, to, insert: "#" + intent.newKey } });
-  }
+  restoreAuthoredKey(view, prompt.intent);
 }
 
 /**
