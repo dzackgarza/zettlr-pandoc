@@ -20,6 +20,34 @@ DEV_SERVER_HOST = "127.0.0.1"
 DEV_SERVER_PORT = 3100
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ELECTRON = PROJECT_ROOT / "node_modules" / "electron" / "dist" / "electron"
+# An assembled-app e2e start runs the project Electron with the packaged
+# archive (e2e/support/electron-app.ts). Such an app has no webpack watcher, so
+# a test cannot make it reload, and a launch must not stop it.
+PACKAGED_ARCHIVE = PROJECT_ROOT / "out" / "Zettlr-Pandoc-linux-x64" / "resources" / "app.asar"
+
+
+def runs_packaged_archive(pid: int) -> bool:
+    """Whether the process or an Electron ancestor of it runs the packaged archive.
+
+    Chromium children (zygote, GPU, renderer) do not all name the archive, so
+    the walk goes up the parents (proc_pid_stat(5), field 4) while they are the
+    project Electron.
+    """
+    archive = str(PACKAGED_ARCHIVE).encode()
+    current = pid
+    while current > 1:
+        process_dir = Path("/proc") / str(current)
+        try:
+            if archive in (process_dir / "cmdline").read_bytes():
+                return True
+            if (process_dir / "exe").resolve(strict=True) != PROJECT_ELECTRON:
+                return False
+            stat = (process_dir / "stat").read_text()
+        except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
+            return False
+        # The command name in field 2 is in parentheses and can hold spaces.
+        current = int(stat.rsplit(")", 1)[1].split()[1])
+    return False
 
 
 def dev_pids() -> list[int]:
@@ -61,7 +89,9 @@ def dev_pids() -> list[int]:
             executable = (process_dir / "exe").resolve(strict=True)
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             executable = None
-        is_project_electron = executable == PROJECT_ELECTRON
+        is_project_electron = executable == PROJECT_ELECTRON and not runs_packaged_archive(
+            int(process_dir.name)
+        )
         if working_directory == PROJECT_ROOT and (is_forge_start or is_project_electron):
             pids.append(int(process_dir.name))
     return pids
