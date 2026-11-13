@@ -26,9 +26,7 @@ import got, { RequestError, type Response } from "got";
 import path from "path";
 import semver from "semver";
 import { openPath } from "source/app/util/open-path";
-import PACKAGE_JSON from "../../../../package.json";
 import { loadCanonicalMathJaxMacros } from "../../util/load-mathjax-macros";
-import type CommandProvider from "../commands";
 import type LogProvider from "../log";
 import ProviderContract from "../provider-contract";
 import type WindowProvider from "../windows";
@@ -251,12 +249,18 @@ function parseReleases(value: JsonValue): ServerAPIResponse[] {
 
 const CUR_VER = app.getVersion();
 
+/** Where the releases of the app are: the page for a person, the list for the provider. */
+export interface ReleaseLocations {
+  releasePage: string;
+  releasesApi: string;
+}
+
 /**
  * The releases of the GitHub repository that package.json names as the
  * homepage are this app's updates. The GitHub REST API serves them under
  * /repos/{owner}/{repo}/releases.
  */
-function releaseLocations(homepage: string): { releasePage: string; releasesApi: string } {
+export function releaseLocations(homepage: string): ReleaseLocations {
   const repository = new URL(homepage);
   if (repository.hostname !== "github.com") {
     throw new Error(`package.json homepage ${homepage} is not a GitHub repository.`);
@@ -267,7 +271,6 @@ function releaseLocations(homepage: string): { releasePage: string; releasesApi:
   };
 }
 
-const { releasePage, releasesApi } = releaseLocations(PACKAGE_JSON.homepage);
 const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60; // 1 hour
 
 /**
@@ -275,7 +278,7 @@ const UPDATE_CHECK_INTERVAL = 1000 * 60 * 60; // 1 hour
  *
  * @return  {UpdateState}  The clean state
  */
-function getUpdateState(): UpdateState {
+function getUpdateState(releasePage: string): UpdateState {
   return {
     lastErrorMessage: undefined,
     lastErrorCode: undefined,
@@ -303,8 +306,8 @@ export default class UpdateProvider extends ProviderContract {
   constructor(
     private readonly _logger: LogProvider,
     private readonly _config: ConfigProvider,
-    private readonly _commands: CommandProvider,
-    private readonly _windows: WindowProvider,
+    private readonly _windows: Pick<WindowProvider, "showUpdateWindow">,
+    private readonly _releases: ReleaseLocations,
   ) {
     super();
     this._logger.verbose("Update provider booting up ...");
@@ -312,11 +315,13 @@ export default class UpdateProvider extends ProviderContract {
     this._sha256Data = new Map();
 
     // Initialize the update state
-    this._updateState = getUpdateState();
+    this._updateState = getUpdateState(this._releases.releasePage);
 
     // Initialize the write/read streams used during downloads
     this._downloadReadStream = undefined;
     this._downloadWriteStream = undefined;
+
+    this._registerIpcHandler();
   }
 
   private _registerIpcHandler(): void {
@@ -357,7 +362,7 @@ export default class UpdateProvider extends ProviderContract {
    * Resets the update state, and emits an update message.
    */
   private _resetState(): void {
-    this._updateState = getUpdateState();
+    this._updateState = getUpdateState(this._releases.releasePage);
     broadcastIpcMessage("update-provider", "state-changed", this._updateState);
   }
 
@@ -400,7 +405,9 @@ export default class UpdateProvider extends ProviderContract {
     this._resetState();
 
     try {
-      this._logger.info(`[Update Provider] Checking ${releasesApi} for application updates ...`);
+      this._logger.info(
+        `[Update Provider] Checking ${this._releases.releasesApi} for application updates ...`,
+      );
       let platformString = "";
       if (process.platform === "win32") {
         platformString = `Windows NT 10.0; ${process.arch}`;
@@ -414,7 +421,7 @@ export default class UpdateProvider extends ProviderContract {
 
       // got parses the body; a body that is not JSON is a ParseError
       // (a RequestError), which the handler below reports with its message.
-      const response: Response<JsonValue> = await got(releasesApi, {
+      const response: Response<JsonValue> = await got(this._releases.releasesApi, {
         timeout: { request: 5000 },
         method: "GET",
         responseType: "json",
@@ -524,11 +531,13 @@ export default class UpdateProvider extends ProviderContract {
   private async _parseResponse(response: Response<JsonValue>): Promise<UpdateState> {
     // got returns an empty string for an empty body, which parseReleases refuses.
     const releases = parseReleases(response.body);
-    const state = getUpdateState();
+    const state = getUpdateState(this._releases.releasePage);
     state.lastCheck = Date.now();
     const parsedResponse = newestRelease(releases, this._config.get("checkForBeta"));
     if (parsedResponse === undefined) {
-      this._logger.info(`[Update Provider] ${releasePage} has no published release.`);
+      this._logger.info(
+        `[Update Provider] ${this._releases.releasePage} has no published release.`,
+      );
       return state;
     }
 
@@ -707,9 +716,7 @@ export default class UpdateProvider extends ProviderContract {
       );
       showNativeNotification(`Download of ${this._updateState.name} successful!`, "Update", () => {
         // The user has clicked the notification, so we can show the update window here
-        this._commands
-          .run("open-update-window", undefined)
-          .catch((e) => this._logger.error(String(e.message), e));
+        this._windows.showUpdateWindow();
       });
     });
 
@@ -839,7 +846,6 @@ export default class UpdateProvider extends ProviderContract {
 
   async boot(): Promise<void> {
     await initializeMathJax(await loadCanonicalMathJaxMacros(app.getPath("home")));
-    this._registerIpcHandler();
 
     // Initiate the update check
     setInterval(() => {
