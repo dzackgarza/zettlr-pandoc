@@ -22,14 +22,20 @@
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
-import { readdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import ConfigProvider from "source/app/service-providers/config";
 import LogProvider from "source/app/service-providers/log";
 import UpdateProvider, { type UpdateState } from "source/app/service-providers/updates";
-import { downloads, ipcMainHandlers, net, notifications } from "./headless-electron-harness.cjs";
+import {
+  downloads,
+  home,
+  ipcMainHandlers,
+  net,
+  notifications,
+} from "./headless-electron-harness.cjs";
 import { unexpectedStoreWriteFailure } from "./store-write-failure";
 
 const ASSET_NAME = "Zettlr-Pandoc-9.0.0-x86_64.AppImage";
@@ -108,6 +114,15 @@ describe("The failures of the update provider (#210)", function () {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    // A spec starts each check itself; the check of the boot would race it.
+    config.set("system.checkForUpdates", false);
+    // The boot loads the MathJax projection of ~/.pandoc.
+    const projection = path.join(home, ".pandoc", "templates", "css");
+    await mkdir(projection, { recursive: true });
+    await copyFile(
+      path.resolve("test", "fixtures", "mathjax-macros.json"),
+      path.join(projection, "mathjax-macros.json"),
+    );
   });
 
   beforeEach(async function () {
@@ -125,6 +140,11 @@ describe("The failures of the update provider (#210)", function () {
         releasesApi: `${origin}/repos/owner/app/releases`,
       },
     );
+    await provider.boot();
+  });
+
+  afterEach(async function () {
+    await provider.shutdown();
   });
 
   after(async function () {
@@ -132,6 +152,7 @@ describe("The failures of the update provider (#210)", function () {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(path.join(downloads, ASSET_NAME), { force: true });
+    await rm(path.join(home, ".pandoc"), { recursive: true });
   });
 
   /** Sends a command of the update window to the provider. */

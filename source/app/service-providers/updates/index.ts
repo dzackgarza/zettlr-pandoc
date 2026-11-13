@@ -301,6 +301,7 @@ export default class UpdateProvider extends ProviderContract {
   private _updateState: UpdateState;
   private _downloadReadStream: undefined | ReturnType<typeof got.stream>;
   private _downloadWriteStream: undefined | WriteStream;
+  private _checkInterval: undefined | ReturnType<typeof setInterval>;
 
   constructor(
     private readonly _logger: LogProvider,
@@ -319,8 +320,6 @@ export default class UpdateProvider extends ProviderContract {
     // Initialize the write/read streams used during downloads
     this._downloadReadStream = undefined;
     this._downloadWriteStream = undefined;
-
-    this._registerIpcHandler();
   }
 
   private _registerIpcHandler(): void {
@@ -869,9 +868,11 @@ export default class UpdateProvider extends ProviderContract {
 
   async boot(): Promise<void> {
     await initializeMathJax(await loadCanonicalMathJaxMacros(app.getPath("home")));
+    // A check renders the changelog through md2html, which needs MathJax.
+    this._registerIpcHandler();
 
     // Initiate the update check
-    setInterval(() => {
+    this._checkInterval = setInterval(() => {
       // Only check if the user wants to, and if there is not yet a new version.
       const { checkForUpdates } = this._config.get().system;
       if (!checkForUpdates || this.applicationUpdateAvailable()) {
@@ -899,6 +900,7 @@ export default class UpdateProvider extends ProviderContract {
    */
   async shutdown(): Promise<void> {
     this._logger.verbose("Update provider shutting down ...");
+    clearInterval(this._checkInterval);
     // We'll be removing the file IF and only IF the download was not finished.
     const downloadUnfinished =
       this._updateState.size_downloaded > 0 &&

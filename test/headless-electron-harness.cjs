@@ -42,6 +42,10 @@ fs.mkdirSync(path.join(userData, "lang"), { recursive: true });
 // for the same reason.
 const downloads = path.join(userData, "downloads");
 fs.mkdirSync(downloads, { recursive: true });
+// The home folder of the app (`app.getPath("home")`), per process for the
+// same reason. A spec that needs a ~/.pandoc makes it here and removes it.
+const home = path.join(userData, "home");
+fs.mkdirSync(home, { recursive: true });
 
 // Webpack's DefinePlugin puts the build date into the bundle
 // (webpack.main.config.js). The configuration template reads it.
@@ -185,7 +189,13 @@ Module._load = function (request, ...rest) {
     return {
       app: {
         getPath: (key) =>
-          key === "userData" ? userData : key === "downloads" ? downloads : os.tmpdir(),
+          key === "userData"
+            ? userData
+            : key === "downloads"
+              ? downloads
+              : key === "home"
+                ? home
+                : os.tmpdir(),
         isPackaged: false,
         getName: () => "Zettlr-Pandoc",
         getVersion: () => "0.0.0-headless-test",
@@ -267,6 +277,7 @@ module.exports = {
   appQuitRequests,
   downloads,
   errorBoxes,
+  home,
   ipcMainHandlers,
   ipcMainListeners,
   messageBoxes,
