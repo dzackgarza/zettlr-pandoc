@@ -6,10 +6,6 @@
     v-bind:tabbar-label="'Preferences'"
     v-bind:disable-vibrancy="!hasVibrancy"
   >
-    <!--
-      To comply with ARIA, we have to wrap the form in a tab container because
-      we make use of the tabbar on the window chrome.
-    -->
     <SplitView
       v-bind:initial-size-percent="[ 20, 80 ]"
       v-bind:minimum-size-percent="[ 20, 20 ]"
@@ -447,12 +443,6 @@ function selectGroup(which: number): void {
 </script>
 
 <style lang="less">
-div[role="tabpanel"] {
-  overflow: auto; // Enable scrolling, if necessary
-  padding: 10px;
-  width: 100%;
-}
-
 #preferences-container-list {
   display: flex;
   flex-direction: column;
