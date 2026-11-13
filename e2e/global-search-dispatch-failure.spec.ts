@@ -261,23 +261,32 @@ describe("global-search and project-properties failure recovery", function () {
     const page = await findEditorPage(running.browser, this.timeout());
     await openSearchPane(page, 30_000);
 
+    // The first query matches each corpus file, so it runs long enough to be
+    // replaced, and a result of it shows that it ran.
     const queryInput = page.locator(QUERY_INPUT);
-    await queryInput.fill("notpresentinthecorpus");
-    await page.locator(QUERY_INPUT).press("Enter");
-    // Replace the query immediately after starting it. The running indicator
-    // can appear and disappear between two CDP polls on a fast machine; the
-    // user gesture under test is Enter while the dispatched search is active,
-    // not observation of that transient paint.
+    await queryInput.fill("ordinary");
+    await queryInput.press("Enter");
+    await page
+      .locator(`${PANE} .file-match`)
+      .first()
+      .waitFor({ state: "visible", timeout: 60_000 });
     await queryInput.fill("replacementtoken");
     await queryInput.press("Enter");
-    // The pane labels a result with the file's display name, and the default
-    // fileNameDisplay ('title+heading') resolves that to the document's H1.
+    // The pane labels a result with the name of its file.
     await page
       .locator(REPLACEMENT_RESULT)
       .filter({
         hasText: "replacement-hit.md",
       })
       .waitFor({ state: "visible", timeout: 60_000 });
+    await page.locator(RUNNING_INDICATOR).waitFor({ state: "hidden", timeout: 60_000 });
+    // A corpus result here is a result of the first query that the edited
+    // query did not cancel.
+    assert.deepEqual(
+      await page.locator(REPLACEMENT_RESULT).allInnerTexts(),
+      ["replacement-hit.md"],
+      "the pane shows only the result of the edited query",
+    );
   });
 
   it("retries a project edit after descriptor validation recovers", async function () {
