@@ -109,8 +109,11 @@ export function delay(milliseconds: number): Promise<void> {
  * 5 ms of the one before it, and it reports a change only when the
  * modification time moved: the change of the mode alone is no change, and a
  * time change 5 ms after it is lost. The two changes are therefore apart.
+ * The line of the output gives the time of the change, so a run whose app
+ * reports no change shows whether the watch of the app was in place (#62).
  */
 export async function makeUnreadableAndNewer(filePath: string, changedAt: Date): Promise<void> {
+  console.log(`[${new Date().toISOString()}] makeUnreadableAndNewer: chmod 000 ${filePath}`);
   await chmod(filePath, 0o000);
   await delay(100);
   await utimes(filePath, changedAt, changedAt);
