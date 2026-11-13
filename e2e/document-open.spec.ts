@@ -145,10 +145,11 @@ describe("opening a Markdown document", function () {
       state: "visible",
       timeout: this.timeout(),
     });
-    const diskDocument = await readFile(
-      requireInitialized(documentPath, "The document path must be initialized"),
-      "utf8",
+    const diskDocumentPath = requireInitialized(
+      documentPath,
+      "The document path must be initialized",
     );
+    const diskDocument = await readFile(diskDocumentPath, "utf8");
     await page.waitForFunction(
       (expected) => {
         const content = document.querySelector(".cm-content");
@@ -205,6 +206,14 @@ describe("opening a Markdown document", function () {
       [],
       `The renderer reported unexpected errors or dialogs:\n${rendererEvents.join("\n")}`,
     );
+    // An open of a readable document reports no failure about it: each
+    // entry of the error level is read with the lines of its details.
+    const errorsAboutDocument = (
+      await readAppLog(requireInitialized(fixtureRoot, "The fixture must be initialized"))
+    )
+      .split(/\n(?=\[\d\d:\d\d:\d\d\] )/u)
+      .filter((entry) => entry.includes("] [Error] ") && entry.includes(diskDocumentPath));
+    assert.deepEqual(errorsAboutDocument, [], "the open reports no failure about the document");
     screenshots.set("visible-document.png", await page.screenshot());
   });
 
