@@ -17,7 +17,6 @@
  * END HEADER
  */
 
-import "./headless-electron-harness.cjs";
 import { strict as assert } from "node:assert";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,6 +25,7 @@ import type FSAL from "source/app/service-providers/fsal";
 import { buildFlowmarkLintContext } from "source/app/util/flowmark-lint-context";
 import { WikilinkIndex } from "source/common/util/wikilink-resolution";
 import { bootFilteredFsal } from "./fsal-seam";
+import { messageBoxes } from "./headless-electron-harness.cjs";
 
 /** A note with two links, and the text of a link in a code block and in code. */
 const TITLE_FIRST = [
@@ -40,6 +40,9 @@ const TITLE_FIRST = [
   "The text `[[in code]]` is code.",
   "",
 ].join("\n");
+
+/** The button "Restart later" of the restart prompt of a setting. */
+const RESTART_LATER = 1;
 
 const LINK_FIRST = TITLE_FIRST.replace("[[the lattices|lattices]]", "[[lattices|the lattices]]");
 
@@ -63,12 +66,15 @@ describe("The wikilinks of a document", function () {
     before(async function () {
       notes = path.join(root, "notes.md");
       await writeFile(notes, TITLE_FIRST);
+      // The link format takes effect at a restart, and the app asks for one.
+      messageBoxes.answer = RESTART_LATER;
       fsal = await bootFilteredFsal(root, (config) => {
         config.set("zkn.linkFormat", "title|link");
       });
     });
 
     after(async function () {
+      messageBoxes.answer = undefined;
       await fsal.shutdown();
       await rm(notes);
     });
