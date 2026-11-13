@@ -35,7 +35,7 @@ agent-memory phase show <PHASE-ID>
 `agent-memory retrieve` reads memory notes and takes a vault-relative key, not a card id.
 Use `plan show`, `phase show`, or `card show` for cards; they take the id.
 
-The vault card is authoritative. Repository files that restate a plan — `.pr/PR_BODY.md`,
+The vault card is authoritative. Repository files that restate a plan — a PR body,
 design transcripts, mockup directories — are derived copies that go stale. Read the card,
 and when the two disagree, the card wins.
 
