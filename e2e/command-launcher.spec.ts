@@ -411,6 +411,14 @@ describe("the Ctrl+P command launcher", function () {
       await row.locator("[data-reset-keybinding]").click();
       assert.match(await row.innerText(), /Default/);
       assert.match(await row.innerText(), /Unassigned/);
+
+      // The default key of Go Back ends in "-", the character that also
+      // parts the modifiers of the key name (#202).
+      await search.fill("nav-history-back");
+      const back = preferencesPage.locator('[data-command-id="nav-history-back"]');
+      await back.waitFor({ state: "visible" });
+      const keys = await back.locator(".keybinding-cell kbd").allTextContents();
+      assert.equal(keys.at(-1), "-", `the row shows the keys ${JSON.stringify(keys)}`);
     } finally {
       await preferencesPage.close();
     }
