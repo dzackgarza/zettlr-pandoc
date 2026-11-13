@@ -138,8 +138,11 @@ function idOf(preview: IssuedReferenceRenamePreview): string {
  * - `unacknowledged`: it applies them but names fewer buffers than it was given
  * - `divergent`:      it names every buffer but holds different text than the
  *                     transaction computed (a keystroke landed mid-flight)
+ * - `journal-locked`: it applies the edits, and then the folder of the
+ *                     journal refuses each write, so the transaction cannot
+ *                     mark or remove its journal
  */
-type AuthorityFault = "none" | "throw" | "unacknowledged" | "divergent";
+type AuthorityFault = "none" | "throw" | "unacknowledged" | "divergent" | "journal-locked";
 
 /** One scratch workspace: fixture copy, provider, FSAL seam, live Halphen buffer. */
 interface ScratchWorkspace {
@@ -238,6 +241,9 @@ async function setUpScratchWorkspace(
               `${authorityBuffers.get(documentPath) ?? ""}A keystroke that landed mid-transaction.\n`,
             );
           }
+        }
+        if (fault === "journal-locked") {
+          chmodSync(journalDirectory, 0o555);
         }
         return fault === "unacknowledged" ? [] : paths;
       },
@@ -686,10 +692,6 @@ describe("Workspace edit transaction rollback and recovery", function () {
     });
 
     it("restores every installed file and every mutated buffer, and leaves no journal", async function () {
-      if (process.getuid?.() === 0) {
-        this.skip(); // root ignores the file permission this injection needs
-      }
-
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
@@ -929,10 +931,6 @@ describe("Workspace edit transaction rollback and recovery", function () {
     });
 
     it("mutates nothing when the journal cannot be written", async function () {
-      if (process.getuid?.() === 0) {
-        this.skip(); // root ignores the directory permission this injection needs
-      }
-
       const preview = (await scratch.command.run("preview-reference-rename", {
         oldKey: OLD_KEY,
         newKey: NEW_KEY,
@@ -961,6 +959,82 @@ describe("Workspace edit transaction rollback and recovery", function () {
         [],
         "the failed journal write leaves nothing behind",
       );
+    });
+  });
+
+  describe("a journal that the transaction cannot remove (#57)", function () {
+    let scratch: ScratchWorkspace;
+    let journalDirectory: string;
+    let recovering: ReferenceProvider | undefined;
+
+    before(async function () {
+      journalDirectory = await mkdtemp(path.join(tmpdir(), "zettlr-reference-journal-dir-"));
+      scratch = await setUpScratchWorkspace(journalDirectory);
+    });
+
+    after(async function () {
+      chmodSync(journalDirectory, 0o755);
+      if (recovering !== undefined) {
+        await recovering.shutdown();
+      }
+      await scratch.provider.shutdown();
+      await rm(scratch.root, { recursive: true, force: true });
+      await rm(journalDirectory, { recursive: true, force: true });
+    });
+
+    it("leaves no edit that the next start undoes, and keeps the later text of the author", async function () {
+      const preview = (await scratch.command.run("preview-reference-rename", {
+        oldKey: OLD_KEY,
+        newKey: NEW_KEY,
+      })) as IssuedReferenceRenamePreview;
+
+      // The journal is written; then its folder refuses each write, so the
+      // journal stays on disk after the files of the edit are installed.
+      scratch.authorityFault.next = "journal-locked";
+      await assert.rejects(
+        async () => await scratch.command.run("commit-reference-rename", { id: idOf(preview) }),
+        "a transaction that cannot finish its journal must fail loudly",
+      );
+
+      // A rejected transaction is a transaction that did not happen: the
+      // command told the author that the rename failed.
+      assertWorkspaceBytes(scratch, scratch.originals, "after a commit that kept its journal");
+      assert.equal(
+        scratch.authorityBuffers.get(scratch.paths.halphen),
+        scratch.originals.get(scratch.paths.halphen),
+        "the open buffer holds its original text after the rejected commit",
+      );
+
+      // The author writes a document of the workspace, and the app starts
+      // again over the journal that stayed.
+      chmodSync(journalDirectory, 0o755);
+      const authored = "Text that the author wrote after the failed rename.\n";
+      writeFileSync(scratch.paths.otherPaper, authored, "utf-8");
+      recovering = new ReferenceProvider(
+        new LogProvider(),
+        new EventEmitter(),
+        {
+          readMarkdownBufferContent: () => undefined,
+          applyWorkspaceTextEdits: async () => [],
+          restoreStoredWorkingText: async () => false,
+        },
+        () => 500,
+        journalDirectory,
+        {
+          schedule: (callback: () => void) => {
+            callback();
+            return { cancel: () => {} };
+          },
+        },
+      );
+      await recovering.boot();
+
+      assert.equal(
+        readFileSync(scratch.paths.otherPaper, "utf-8"),
+        authored,
+        "the recovery at the next start keeps the text that the author wrote",
+      );
+      assert.deepEqual(readdirSync(journalDirectory), [], "the recovery removes the journal");
     });
   });
 
