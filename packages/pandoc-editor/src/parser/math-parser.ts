@@ -9,6 +9,7 @@
 import { StreamLanguage } from "@codemirror/language";
 import { stexMath } from "@codemirror/legacy-modes/mode/stex";
 import { type ParseWrapper, parseMixed } from "@lezer/common";
+import { mathDisplayForOpen } from "../util/math-delimiters";
 
 const stexParser = StreamLanguage.define(stexMath).parser;
 
@@ -21,9 +22,7 @@ export function mathCodeParse(): ParseWrapper {
     if (mark === null) {
       return null;
     }
-    const opening = input.read(mark.from, mark.to);
-    const isMath = opening === "$" || opening === "$$" || opening === "\\(" || opening === "\\[";
-    if (!isMath) {
+    if (mathDisplayForOpen(input.read(mark.from, mark.to)) === null) {
       return null;
     }
     return {

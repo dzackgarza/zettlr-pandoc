@@ -1055,10 +1055,10 @@ export function parseNode(node: SyntaxNode, markdown: string): ASTNode {
       const mark = node.getChild("CodeMark");
       if (mark !== null) {
         const codeMark = markdown.substring(mark.from, mark.to);
-        if (codeMark === "$$" || codeMark === "\\[") {
+        if (mathDisplayForOpen(codeMark) !== null) {
           // Exchange the (nonexistent) infostring with the opening math
-          // delimiter ($$ or \[) so that consumers can detect that this is
-          // MathTex and its display mode.
+          // delimiter so that consumers can detect that this is MathTex and
+          // its display mode.
           info = mark;
         }
       }
