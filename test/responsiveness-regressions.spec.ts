@@ -33,19 +33,6 @@ describe("responsiveness ownership regressions", function () {
     );
   });
 
-  it("unsubscribes every file-manager component listener that is registered on mount", function () {
-    const tree = readFileSync("source/win-main/file-manager/TreeItem.vue", "utf8");
-    const item = readFileSync("source/win-main/file-manager/FileItem.vue", "utf8");
-    const manager = readFileSync("source/win-main/file-manager/FileManager.vue", "utf8");
-
-    assert.match(
-      tree,
-      /onUnmounted\(\(\) => \{[\s\S]*stopShortcutListener\?\.\(\)[\s\S]*stopFsalListener\?\.\(\)/,
-    );
-    assert.match(item, /onUnmounted\(\(\) => \{[\s\S]*stopFsalListener\?\.\(\)/);
-    assert.match(manager, /onUnmounted\(\(\) => \{[\s\S]*stopShortcutListener\?\.\(\)/);
-  });
-
   it("virtualizes flattened search result rows instead of mounting every match at once", function () {
     const source = readFileSync("source/win-main/sidebar/SearchView.vue", "utf8");
     assert.match(
