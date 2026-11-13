@@ -7,10 +7,11 @@
  * Maintainer:      D. Zack Garza
  * License:         GNU GPL v3
  *
- * Description:     A chapter of a Quarto book has sections, a figure and a
- *                  theorem. The author opens the context menu of each (on
- *                  the text of a heading and right of it, on the drawn
- *                  figure) and chooses "Create reference label…". Quarto numbers a figure whose
+ * Description:     A chapter of a Quarto book has sections, a figure, an
+ *                  equation and a theorem. The author opens the context
+ *                  menu of each (on the text of a heading and right of it,
+ *                  on the drawn figure and equation) and chooses "Create
+ *                  reference label…". Quarto numbers a figure whose
  *                  id has a hyphen (`#fig-key`); the theorem filters of the
  *                  book (custom-numbered-blocks, the amsthm filters of
  *                  ~/.pandoc) number a theorem whose id has a colon
@@ -48,6 +49,8 @@ const DOCUMENT = [
   "## Fixed points",
   "",
   "A point is fixed.",
+  "",
+  "$$ x = g x $$",
   "",
   '::: {.theorem title="Closed orbits"}',
   "Each orbit is closed.",
@@ -105,6 +108,10 @@ async function createLabel(
   await dialog.waitFor({ state: "visible", timeout: 10_000 });
   const prefix = await dialog.locator("[data-family-prefix]").innerText();
   const input = dialog.locator("input");
+  if ((await input.inputValue()) === "") {
+    // The dialog proposes no slug for an equation: the author types one.
+    await input.pressSequentially("orbit-map");
+  }
   const slug = await input.inputValue();
   await input.press("Enter");
   await dialog.waitFor({ state: "detached", timeout: 10_000 });
@@ -216,6 +223,21 @@ describe("assembled app: reference labels in a Quarto book", function () {
       text.includes(`![The orbit of a point](orbit.png){#fig-${slug}}`),
       "the figure carries the Quarto id",
     );
+  });
+
+  it("labels a drawn display equation with the id that Quarto numbers", async function () {
+    const shown = requireInitialized(page, "The editor page must be initialized");
+    const target = requireInitialized(documentPath, "The document path must be initialized");
+    const equation = shown.locator(".preview-math[data-math-mode='display']");
+    await equation.waitFor({ state: "visible", timeout: 20_000 });
+
+    const { prefix, slug } = await createLabel(shown, equation);
+    screenshots.set("equation-labelled.png", await shown.screenshot());
+    const text = await documentText(shown, target);
+    await saveDocument(shown, target);
+
+    assert.equal(prefix, "eq-", "the dialog shows the Quarto equation prefix");
+    assert.ok(text.includes(`$$ x = g x $$ {#eq-${slug}}`), "the equation carries the Quarto id");
   });
 
   it("labels a theorem with the id that the theorem filters number", async function () {
