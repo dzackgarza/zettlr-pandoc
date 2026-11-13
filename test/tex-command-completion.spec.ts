@@ -75,6 +75,22 @@ describe("package-aware TeX command completion", function () {
     assert.ok(optionLabels(result).includes(bs + "xmapsto"));
   });
 
+  // The metadata block is the one that Pandoc and the descriptor read (#203)
+  it("reads the tex packages of the metadata block that Pandoc reads", async function () {
+    const metadata = ["---", "tex:", "  packages: [mathtools]", "---"];
+    const afterParagraph = ["Intro", "", ...metadata, "", "$" + bs + "xma"].join("\n");
+    assert.ok(
+      optionLabels(await completionFor(stateFor(afterParagraph))).includes(bs + "xmapsto"),
+      "a block after a paragraph",
+    );
+
+    const blankAfterOpener = ["---", "", ...metadata.slice(1), "", "$" + bs + "xma"].join("\n");
+    assert.ok(
+      !optionLabels(await completionFor(stateFor(blankAfterOpener))).includes(bs + "xmapsto"),
+      "an opener that a blank line follows opens no block",
+    );
+  });
+
   it("works in LaTeX documents and Pandoc YAML header-includes", async function () {
     const latex = [bs + "usepackage{mathtools}", bs + "xma"].join("\n");
     assert.ok(optionLabels(await completionFor(stateFor(latex, "latex"))).includes(bs + "xmapsto"));
