@@ -18,6 +18,10 @@ from pathlib import Path
 
 DEV_SERVER_HOST = "127.0.0.1"
 DEV_SERVER_PORT = 3100
+# A process that SIGKILL ended leaves the process table and frees its ports
+# once the kernel reaps it; a dev process or port still there after this
+# time is a process that the kill did not reach.
+KILL_SETTLE_SECONDS = 5
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ELECTRON = PROJECT_ROOT / "node_modules" / "electron" / "dist" / "electron"
 # An assembled-app e2e start runs the project Electron with the packaged
@@ -141,6 +145,19 @@ def kill_dev_processes() -> int:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             print(f"Dev process {pid} exited before SIGKILL was delivered.", file=sys.stderr)
+
+    # The caller binds the port next, so the kill succeeded only when no dev
+    # process is left and the port refuses connections.
+    deadline = time.monotonic() + KILL_SETTLE_SECONDS
+    while dev_server_is_running():
+        if time.monotonic() > deadline:
+            print(
+                f"Dev process(es) {dev_pids()} or a server on {DEV_SERVER_HOST}:"
+                f"{DEV_SERVER_PORT} are still running {KILL_SETTLE_SECONDS} s after SIGKILL.",
+                file=sys.stderr,
+            )
+            return 1
+        time.sleep(0.1)
     return 0
 
 
