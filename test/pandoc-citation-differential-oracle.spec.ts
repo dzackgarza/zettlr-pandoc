@@ -233,4 +233,29 @@ describe("Pandoc Differential Oracle Citation Parity Specification", function ()
       });
     }
   });
+
+  // Pandoc reads a textual `@key` after any character that is not the end of
+  // a string: a letter, a number or `.` (Citations.hs `citeKey`, Markdown.hs
+  // `str`). A citation is no string, so a second key directly after a key is
+  // a citation too (#203).
+  describe("7. Textual Citations After Punctuation Parity with Real Pandoc", function () {
+    const testCases = [
+      'As "@Lurie2009" shows.',
+      "As '@Lurie2009' shows.",
+      "The pre-@Lurie2009 results.",
+      "Compare @Lurie2009/@Joyal2002.",
+      "Source:@Lurie2009",
+      "Both,@Lurie2009 and @Joyal2002.",
+      "Lurie\u2026@Lurie2009 shows it.",
+      "Keys @Lurie2009@Joyal2002 here.",
+      "Theorem 2.@Lurie2009 is false.",
+      "Mail lurie@harvard.edu now.",
+    ];
+
+    for (const tc of testCases) {
+      it(`matches real Pandoc AST for: ${tc}`, function () {
+        assertPandocParity(tc);
+      });
+    }
+  });
 });
