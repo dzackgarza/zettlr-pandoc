@@ -208,6 +208,23 @@ function acceptedEdit(
   return preview.edit;
 }
 
+/**
+ * The keys that the reference state, which a window reads at the broadcast
+ * 'references', gives for the definitions and the occurrences of each document.
+ */
+function servedKeys(
+  references: ReferenceProvider,
+): Record<string, { definitions: string[]; occurrences: string[] }> {
+  const keys: Record<string, { definitions: string[]; occurrences: string[] }> = {};
+  for (const snapshot of references.getSnapshot().snapshots) {
+    keys[snapshot.documentPath] = {
+      definitions: snapshot.definitions.map((definition) => definition.key),
+      occurrences: snapshot.occurrences.map((occurrence) => occurrence.key),
+    };
+  }
+  return keys;
+}
+
 describe("Workspace reference rename authority application", function () {
   let scratch: ScratchBoundary;
 
@@ -288,5 +305,21 @@ describe("Workspace reference rename authority application", function () {
       scratch.documents.readMarkdownBufferContent(scratch.occurrencePath),
       OCCURRENCE_SOURCE,
     );
+  });
+
+  it("serves the renamed keys when the commit and the undo announce them (#57)", async function () {
+    const edit = acceptedEdit(await scratch.references.previewRename(OLD_KEY, NEW_KEY));
+
+    assert.equal((await scratch.references.commitRename(edit)).status, "applied");
+    assert.deepEqual(servedKeys(scratch.references), {
+      [scratch.definitionPath]: { definitions: [NEW_KEY], occurrences: [] },
+      [scratch.occurrencePath]: { definitions: [], occurrences: [NEW_KEY] },
+    });
+
+    assert.equal((await scratch.references.undoRename()).status, "applied");
+    assert.deepEqual(servedKeys(scratch.references), {
+      [scratch.definitionPath]: { definitions: [OLD_KEY], occurrences: [] },
+      [scratch.occurrencePath]: { definitions: [], occurrences: [OLD_KEY] },
+    });
   });
 });
