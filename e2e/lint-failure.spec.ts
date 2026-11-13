@@ -53,7 +53,7 @@ type LintResponse = AgentApiComponents["schemas"]["LintResponse"];
 
 const INDEX = "Index of the notes.\n";
 const PROBLEM = "Residue ???\n";
-const TIME_LIMIT_CAUSE = "Markdown processing did not complete within 1 ms";
+const TIME_LIMIT_CAUSE = "flowmark-lint did not end within 1 ms";
 const USUAL_LIMIT_MS = 60_000;
 const NOT_LINTED = "[data-problems-failed]";
 const RETRY = "[data-problems-retry]";
