@@ -222,7 +222,8 @@ export default class ReferenceProvider extends ProviderContract {
     private readonly _logger: LogProvider,
     private readonly _fsal: ReferenceFSALEvents,
     private readonly _authority: ReferenceDocumentAuthority,
-    private readonly _authorityReportDebounceMs: number,
+    /** Reads the report delay that the author set, at each report (#57) */
+    private readonly _authorityReportDebounceMs: () => number,
     /** Application data directory holding the workspace-edit journal */
     private readonly _journalDirectory: string,
     private readonly _scheduler: AuthorityReportScheduler = setTimeoutScheduler,
@@ -264,7 +265,7 @@ export default class ReferenceProvider extends ProviderContract {
       filePath,
       this._scheduler.schedule(
         () => this._reportBufferNow(filePath),
-        immediate ? 0 : this._authorityReportDebounceMs,
+        immediate ? 0 : this._authorityReportDebounceMs(),
       ),
     );
   }

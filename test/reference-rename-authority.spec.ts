@@ -185,7 +185,7 @@ async function createScratchBoundary(): Promise<ScratchBoundary> {
   };
 
   const documents = new DocumentManager(app);
-  references = new ReferenceProvider(app.log, fsalEvents, documents, 500, userData);
+  references = new ReferenceProvider(app.log, fsalEvents, documents, () => 500, userData);
   await references.boot();
 
   fsalEvents.emit("fsal-events", [

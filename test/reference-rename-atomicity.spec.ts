@@ -239,7 +239,7 @@ async function setUpScratchWorkspace(
       // The buffers of this authority have no review and no annotations.
       restoreStoredWorkingText: async () => false,
     },
-    500,
+    () => 500,
     journalDirectory,
     {
       schedule: (callback: () => void, _delayMs: number) => {
@@ -954,7 +954,7 @@ describe("Workspace edit transaction rollback and recovery", function () {
           applyWorkspaceTextEdits: async () => [],
           restoreStoredWorkingText: async () => false,
         },
-        500,
+        () => 500,
         userData,
         {
           schedule: (callback: () => void) => {

@@ -154,7 +154,7 @@ describe("References provider behavior", function () {
         // The buffers of this authority have no review and no annotations.
         restoreStoredWorkingText: async () => false,
       },
-      500,
+      () => 500,
       userData,
       { schedule: scheduler.schedule },
     );
@@ -443,7 +443,7 @@ describe("References provider settings (#57)", function () {
         applyWorkspaceTextEdits: async () => [],
         restoreStoredWorkingText: async () => false,
       },
-      config.get().references.authorityReportDebounceMs,
+      () => config.get().references.authorityReportDebounceMs,
       userData,
       { schedule: scheduler.schedule },
     );

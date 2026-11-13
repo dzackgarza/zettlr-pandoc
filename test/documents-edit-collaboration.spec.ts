@@ -224,7 +224,7 @@ describe("Documents-provider edits of a document with annotations", function () 
       new LogProvider(),
       new EventEmitter(),
       provider,
-      500,
+      () => 500,
       root,
       {
         schedule: (callback: () => void) => {
