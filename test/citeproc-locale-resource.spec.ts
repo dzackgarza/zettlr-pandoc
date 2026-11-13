@@ -19,7 +19,7 @@
 // imports 'electron' at module scope.
 import "./headless-electron-harness.cjs";
 import { strict as assert } from "assert";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import type { CiteprocConfig } from "source/app/service-providers/citeproc";
@@ -53,6 +53,9 @@ describe("citation locale resource", function () {
   let libraryPath: string;
   let declaredLocales: string;
   let emptyLocales: string;
+  let unreadableLocales: string;
+  let launchDirectory: string;
+  const startDirectory = process.cwd();
   const log = new LogProvider();
   const providers: CiteprocProvider[] = [];
 
@@ -77,12 +80,28 @@ describe("citation locale resource", function () {
       assert.notEqual(marked, shipped);
       writeFileSync(path.join(declaredLocales, name), marked);
     }
+    // A launch directory with the layout of a checkout: its en-US locale has
+    // the marked word too.
+    launchDirectory = path.join(directory, "launch");
+    mkdirSync(path.join(launchDirectory, "static", "csl-locales"), { recursive: true });
+    writeFileSync(
+      path.join(launchDirectory, "static", "csl-locales", "locales-en-US.xml"),
+      readFileSync(path.join(declaredLocales, "locales-en-US.xml")),
+    );
     emptyLocales = path.join(directory, "empty");
     mkdirSync(emptyLocales);
+    unreadableLocales = path.join(directory, "unreadable");
+    mkdirSync(unreadableLocales);
+    writeFileSync(
+      path.join(unreadableLocales, "locales-en-US.xml"),
+      readFileSync(path.join(SHIPPED_LOCALES, "locales-en-US.xml")),
+    );
+    chmodSync(path.join(unreadableLocales, "locales-en-US.xml"), 0o000);
     rmSync(path.join(userData, "citeproc-cache"), { recursive: true, force: true });
   });
 
   afterEach(async function () {
+    process.chdir(startDirectory);
     for (const provider of providers.splice(0)) {
       await provider.shutdown();
     }
@@ -111,6 +130,33 @@ describe("citation locale resource", function () {
     assert.equal(
       provider.getCitation(libraryPath, [{ id: "AW71" }], false),
       "(Artin et Winters 1971)",
+    );
+  });
+
+  it("renders with the locale of the declared directory when the launch directory has a locale", async function () {
+    // The provider boots, and reads its locale, in a directory with the
+    // layout of a checkout. It is given the shipped locales, whose word is
+    // "and". The library thread of a spec resolves its TypeScript loader
+    // from the working directory, so the library loads after the boot.
+    process.chdir(launchDirectory);
+    const provider = providerWith("en-US", SHIPPED_LOCALES);
+    await provider.boot();
+    process.chdir(startDirectory);
+    await provider.synchronizeDatabases([libraryPath]);
+
+    assert.equal(
+      provider.getCitation(libraryPath, [{ id: "AW71" }], false),
+      "(Artin and Winters 1971)",
+    );
+  });
+
+  it("stops with the permission failure when the en-US locale cannot be read", async function () {
+    const provider = providerWith("en-US", unreadableLocales);
+
+    await assert.rejects(
+      provider.boot(),
+      (error: NodeJS.ErrnoException) =>
+        error.code === "EACCES" && error.path === path.join(unreadableLocales, "locales-en-US.xml"),
     );
   });
 
