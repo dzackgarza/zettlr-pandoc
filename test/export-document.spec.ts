@@ -197,6 +197,7 @@ describe("Export of one document", function () {
     await just.forget();
     config.set("export.cslStyle", "");
     config.set("export.cslLibrary", "");
+    config.set("zkn.linkFormat", "link|title");
 
     root = await mkdtemp(path.join(tmpdir(), "zettlr-export-document-"));
     document = path.join(root, "Lattices.md");
@@ -392,6 +393,24 @@ describe("Export of one document", function () {
     assert.deepEqual(errorWindows, []);
     const tex = await readFile(path.join(root, "Lattices.tex"), "utf8");
     assert.equal(tex.includes("See \\hyperref[genus]{Lattices\\#Genus}."), true, tex);
+  });
+
+  it("exports a wikilink of the format title|link to LaTeX as a link to its heading", async function () {
+    config.set("zkn.linkFormat", "title|link");
+    const local = path.join(root, "Local.md");
+    await writeFile(
+      local,
+      "# Local\n\n## Local genus\n\nSee [[the local genus|Local#Local genus]].\n",
+    );
+    services.links = {
+      index: new WikilinkIndex([{ path: local, root, id: "", title: undefined, aliases: [] }]),
+    };
+
+    await exportDocument(services, { file: local, profile: LATEX, exportTo: "cwd" });
+
+    assert.deepEqual(errorWindows, []);
+    const tex = await readFile(path.join(root, "Local.tex"), "utf8");
+    assert.equal(tex.includes("See \\hyperref[local-genus]{the local genus}."), true, tex);
   });
 
   it("exports a wikilink to a document outside the export to LaTeX as its label", async function () {

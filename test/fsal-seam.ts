@@ -27,18 +27,25 @@ import { unexpectedStoreWriteFailure } from "./store-write-failure";
  * listed path like any other file.
  */
 export async function bootFsal(root: string): Promise<FSAL> {
-  return await boot(root, true);
+  return await boot(root, true, () => {});
 }
 
 /**
  * A booted FSAL whose only workspace is `root`, with the file filters of the
  * configuration template on, as the application starts.
  */
-export async function bootFilteredFsal(root: string): Promise<FSAL> {
-  return await boot(root, false);
+export async function bootFilteredFsal(
+  root: string,
+  configure: (config: ConfigProvider) => void = () => {},
+): Promise<FSAL> {
+  return await boot(root, false, configure);
 }
 
-async function boot(root: string, showIgnored: boolean): Promise<FSAL> {
+async function boot(
+  root: string,
+  showIgnored: boolean,
+  configure: (config: ConfigProvider) => void,
+): Promise<FSAL> {
   const log = new LogProvider();
   // The real provider with the values of the configuration template. It is
   // not booted: a boot reads the configuration file and opens the onboarding
@@ -50,6 +57,7 @@ async function boot(root: string, showIgnored: boolean): Promise<FSAL> {
   );
   config.set("app.openWorkspaces", [root]);
   config.set("fileManager.showIgnored", showIgnored);
+  configure(config);
 
   const fsal = new FSAL(log, config, new LongRunningTaskProvider(log));
   await fsal.boot();
